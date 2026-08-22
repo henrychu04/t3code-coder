@@ -82,6 +82,7 @@ import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
+  resolveComposerRuntimeMode,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
@@ -483,6 +484,7 @@ export interface ChatComposerHandle {
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
+    runtimeMode: RuntimeMode;
     providerAvailable: boolean;
     selectedProvider: ProviderDriverKind;
     selectedModel: string;
@@ -856,11 +858,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   const availableRuntimeModes = composerProviderState.supportedRuntimeModes ?? runtimeModeOptions;
-  useEffect(() => {
-    if (!availableRuntimeModes.includes(runtimeMode)) {
-      handleRuntimeModeChange(availableRuntimeModes[0] ?? "approval-required");
-    }
-  }, [availableRuntimeModes, handleRuntimeModeChange, runtimeMode]);
+  const effectiveRuntimeMode = resolveComposerRuntimeMode(runtimeMode, availableRuntimeModes);
   // Plan mode is a legacy feature behind Settings → Beta. With the flag off,
   // ChatView forces the effective mode to "default", so hiding the toggle
   // can't trap anyone in plan mode.
@@ -2081,6 +2079,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
         selectedModelSelection,
+        runtimeMode: effectiveRuntimeMode,
         providerAvailable: !noProviderAvailable,
         selectedProvider,
         selectedModel,
@@ -2116,6 +2115,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,
+      effectiveRuntimeMode,
       noProviderAvailable,
       selectedPromptEffort,
       selectedProvider,
@@ -2518,7 +2518,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   {isComposerFooterCompact ? (
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
-                      runtimeMode={runtimeMode}
+                      runtimeMode={effectiveRuntimeMode}
                       runtimeModeOptions={availableRuntimeModes}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       traitsMenuContent={providerTraitsMenuContent}
@@ -2541,7 +2541,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                           composerProviderControls.showInteractionModeToggle
                         }
                         interactionMode={interactionMode}
-                        runtimeMode={runtimeMode}
+                        runtimeMode={effectiveRuntimeMode}
                         runtimeModeOptions={availableRuntimeModes}
                         onToggleInteractionMode={toggleInteractionMode}
                         onRuntimeModeChange={handleRuntimeModeChange}

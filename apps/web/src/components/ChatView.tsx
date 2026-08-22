@@ -3868,6 +3868,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
+      runtimeMode: ctxRuntimeMode,
     } = sendCtx;
     const promptForSend = promptRef.current;
     const {
@@ -4093,7 +4094,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: ctxRuntimeMode,
         interactionMode,
       });
       if (settingsResult._tag === "Failure") {
@@ -4112,7 +4113,7 @@ function ChatViewContent(props: ChatViewProps) {
                       projectId: activeProject.id,
                       title,
                       modelSelection: threadCreateModelSelection,
-                      runtimeMode,
+                      runtimeMode: ctxRuntimeMode,
                       interactionMode,
                       branch: activeThreadBranch,
                       worktreePath: activeThread.worktreePath,
@@ -4152,7 +4153,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: title,
-          runtimeMode,
+          runtimeMode: ctxRuntimeMode,
           interactionMode,
           ...(bootstrap ? { bootstrap } : {}),
           createdAt: messageCreatedAt,
@@ -4479,6 +4480,7 @@ function ChatViewContent(props: ChatViewProps) {
         selectedProviderModels: ctxSelectedProviderModels,
         selectedPromptEffort: ctxSelectedPromptEffort,
         selectedModelSelection: ctxSelectedModelSelection,
+        runtimeMode: ctxRuntimeMode,
       } = sendCtx;
 
       const threadIdForSend = activeThread.id;
@@ -4530,7 +4532,7 @@ function ChatViewContent(props: ChatViewProps) {
         ...(localCheckoutBranchMismatch
           ? { branch: localCheckoutBranchMismatch.currentBranch }
           : {}),
-        runtimeMode,
+        runtimeMode: ctxRuntimeMode,
         interactionMode: nextInteractionMode,
       });
       let failure: AtomCommandResult<unknown, unknown> | null =
@@ -4555,7 +4557,7 @@ function ChatViewContent(props: ChatViewProps) {
             },
             modelSelection: ctxSelectedModelSelection,
             titleSeed: activeThread.title,
-            runtimeMode,
+            runtimeMode: ctxRuntimeMode,
             interactionMode: nextInteractionMode,
             ...(nextInteractionMode === "default" && activeProposedPlan
               ? {
@@ -4601,7 +4603,6 @@ function ChatViewContent(props: ChatViewProps) {
       localCheckoutBranchMismatch,
       persistThreadSettingsForNextTurn,
       resetLocalDispatch,
-      runtimeMode,
       setComposerDraftInteractionMode,
       setThreadError,
       startThreadTurn,
@@ -4634,6 +4635,7 @@ function ChatViewContent(props: ChatViewProps) {
       selectedProviderModels: ctxSelectedProviderModels,
       selectedPromptEffort: ctxSelectedPromptEffort,
       selectedModelSelection: ctxSelectedModelSelection,
+      runtimeMode: ctxRuntimeMode,
     } = sendCtx;
 
     const createdAt = new Date().toISOString();
@@ -4667,7 +4669,7 @@ function ChatViewContent(props: ChatViewProps) {
         projectId: activeProject.id,
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
-        runtimeMode,
+        runtimeMode: ctxRuntimeMode,
         interactionMode: "default",
         branch: activeThreadBranch,
         worktreePath: activeThread.worktreePath,
@@ -4689,7 +4691,7 @@ function ChatViewContent(props: ChatViewProps) {
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,
-          runtimeMode,
+          runtimeMode: ctxRuntimeMode,
           interactionMode: "default",
           sourceProposedPlan: {
             threadId: activeThread.id,
@@ -4763,7 +4765,6 @@ function ChatViewContent(props: ChatViewProps) {
     isServerThread,
     navigate,
     resetLocalDispatch,
-    runtimeMode,
     startThreadTurn,
     environmentId,
     composerRef,

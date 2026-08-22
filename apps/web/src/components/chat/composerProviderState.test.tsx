@@ -10,6 +10,7 @@ import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
+  resolveComposerRuntimeMode,
 } from "./composerProviderState";
 
 // Everything in composerProviderState is now data-driven by the model's
@@ -62,6 +63,15 @@ const ULTRATHINK_FRAME_CLASSES = {
 } as const;
 
 describe("getComposerProviderState", () => {
+  it("falls back when the selected runtime mode is unsupported", () => {
+    expect(
+      resolveComposerRuntimeMode("full-access", ["approval-required", "auto-accept-edits"]),
+    ).toBe("approval-required");
+    expect(
+      resolveComposerRuntimeMode("auto-accept-edits", ["approval-required", "auto-accept-edits"]),
+    ).toBe("auto-accept-edits");
+  });
+
   it("derives a stable prompt injection state for ordinary prompt edits", () => {
     expect(getComposerPromptInjectionState("Investigate this failure")).toBe("none");
     expect(getComposerPromptInjectionState("Ultrathink:\nInvestigate this failure")).toBe(

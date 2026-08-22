@@ -56,6 +56,15 @@ export function getComposerPromptInjectionState(prompt: string): ComposerPromptI
   return isClaudeUltrathinkPrompt(prompt) ? "ultrathink" : "none";
 }
 
+export function resolveComposerRuntimeMode(
+  runtimeMode: RuntimeMode,
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
+): RuntimeMode {
+  return supportedRuntimeModes.includes(runtimeMode)
+    ? runtimeMode
+    : (supportedRuntimeModes[0] ?? "approval-required");
+}
+
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
   const {
     provider,
