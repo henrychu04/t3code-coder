@@ -10,9 +10,27 @@ export interface CoderInvocation {
   readonly args: readonly string[];
 }
 
-const CODER_GLOBAL_ARGS = ["--disable-network-telemetry"] as const;
+const CODER_GLOBAL_ARGS = ["--disable-network-telemetry", "--disable-direct-connections"] as const;
 
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
+export const REMOTE_WORKSPACE_PROBE_COMMAND = [
+  "set -eu",
+  'fail() { printf "%s\\n" "$1" >&2; exit 1; }',
+  '[ "$(uname -s)" = "Linux" ] || fail "T3 Coder requires a Linux workspace."',
+  '[ "$(uname -m)" = "x86_64" ] || fail "T3 Coder requires an x86-64 workspace."',
+  'command -v node >/dev/null 2>&1 || fail "T3 Coder requires Node.js 24.10 or newer."',
+  `node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 24 || (major === 24 && minor >= 10) ? 0 : 1)' || fail "T3 Coder requires Node.js 24.10 or newer."`,
+  'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
+  'command -v claude >/dev/null 2>&1 || fail "T3 Coder requires Claude Code in the workspace PATH."',
+  'command -v script >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1)."',
+  'script -qefc true /dev/null >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1) with -qefc support."',
+  '[ -n "${HOME:-}" ] || fail "T3 Coder requires a workspace HOME directory."',
+  'mkdir -p "$HOME/.t3-coder" || fail "T3 Coder cannot create its workspace state directory."',
+  '[ -w "$HOME/.t3-coder" ] || fail "T3 Coder workspace state directory is not writable."',
+  '[ -d "$T3_CODER_CWD" ] || fail "The configured workspace project root does not exist."',
+  '[ -r "$T3_CODER_CWD" ] && [ -x "$T3_CODER_CWD" ] || fail "The configured workspace project root is not accessible."',
+  'printf "T3_CODER_PREFLIGHT_OK\\n"',
+].join("; ");
 export const REMOTE_HELPER_INSTALL_COMMAND = [
   "set -eu",
   'install_dir="$HOME/.t3-coder/bin"',
@@ -77,9 +95,11 @@ export function buildCoderWorkspaceProbeInvocation(
     "ssh",
     workspace.workspace,
     "--",
-    "uname",
-    "-s",
-    "-m",
+    "env",
+    quotePosixShellArgument(`T3_CODER_CWD=${workspace.workspaceRoot}`),
+    "sh",
+    "-c",
+    quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
   ]);
 }
 

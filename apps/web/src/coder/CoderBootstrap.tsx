@@ -41,6 +41,16 @@ function workspaceFromLocation(): string | null {
   return new URL(window.location.href).searchParams.get("workspace");
 }
 
+async function returnToWorkspaceManager(workspaceId: string): Promise<void> {
+  try {
+    await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
+      method: "DELETE",
+    }).then(readResponse);
+  } finally {
+    window.location.assign("/");
+  }
+}
+
 export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const workspaceId = workspaceFromLocation();
   const [config, setConfig] = useState<CoderProfileConfig | null>(null);
@@ -82,7 +92,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         {app}
         <button
           className="fixed bottom-3 left-3 z-[1000] rounded-md border bg-background px-3 py-1.5 text-xs shadow"
-          onClick={() => window.location.assign("/")}
+          onClick={() => void returnToWorkspaceManager(workspaceId)}
           type="button"
         >
           Coder workspaces

@@ -18,7 +18,9 @@ For every connected workspace, the gateway starts one foreground process through
 Coder CLI. The process runs a version-matched helper in the Linux workspace and carries T3's Effect
 RPC envelopes as newline-delimited JSON over stdin and stdout. The helper has no HTTP server,
 WebSocket server, or other listening socket. Closing the Coder connection stops the helper and any
-active turn.
+active turn. Reloading or temporarily disconnecting the browser does not stop the helper; the
+gateway keeps it attached and reconnects the loopback WebSocket. If the helper or Coder SSH process
+exits, the next browser connection runs preflight again and starts a fresh foreground helper.
 
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> claude
@@ -34,7 +36,9 @@ Coder owns deployment authentication. The gateway invokes `coder login <url>` an
 `--url <url>` to deployment-specific commands. It never asks for, reads, copies, or persists Coder
 tokens. Different deployment URLs can therefore use the credential selection supported by the
 installed Coder CLI.
-All generated Coder invocations include `--disable-network-telemetry`.
+All generated Coder invocations include `--disable-network-telemetry` and
+`--disable-direct-connections`, so the CLI does not send optional network telemetry or establish
+peer-to-peer workspace connections.
 
 The loopback gateway has no application token. It binds only to `127.0.0.1`, validates the exact
 `Host` and `Origin` values for commands and upgrades, exposes no CORS policy, and treats local
@@ -44,8 +48,10 @@ processes and managed browser extensions as trusted by the deployment environmen
 
 Development is supported on macOS. The production local host is Windows 11, so local paths and
 processes must use Node platform APIs and argument-array spawning with `shell: false`. The initial
-workspace target is Linux x86-64. Platform and protocol versions are negotiated before a helper is
-used.
+workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
+remote OS and architecture, Node.js version, Git, Claude Code, `script(1)`, workspace state
+directory, and configured project root. Platform and protocol versions are then negotiated before a
+helper is used.
 
 ## Network and transfer constraints
 

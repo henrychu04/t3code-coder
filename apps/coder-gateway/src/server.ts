@@ -19,6 +19,7 @@ import {
   buildCoderHelperInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
+  buildCoderWorkspaceProbeInvocation,
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
 import {
@@ -31,6 +32,8 @@ export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
 const MAX_RPC_MESSAGE_BYTES = 8 * 1024 * 1024;
 const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
+const MAX_CODER_PROBE_BYTES = 32 * 1024;
+const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -223,6 +226,57 @@ function runCoderWorkspaceList(
   });
 }
 
+function runCoderWorkspaceProbe(invocation: CoderInvocation): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(invocation.executable, invocation.args, {
+      shell: false,
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+    const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
+    let totalBytes = 0;
+    let settled = false;
+    const rejectOnce = (cause: Error): void => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      reject(cause);
+    };
+    const collect = (target: Buffer[], chunk: Buffer): void => {
+      if (settled) return;
+      totalBytes += chunk.byteLength;
+      if (totalBytes > MAX_CODER_PROBE_BYTES) {
+        rejectOnce(new Error("Coder workspace preflight output is too large."));
+        return;
+      }
+      target.push(chunk);
+    };
+    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
+    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    child.once("error", (cause) => rejectOnce(cause));
+    child.once("exit", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      const detail = Buffer.concat(stderr).toString("utf8").trim();
+      if (code !== 0) {
+        reject(
+          new Error(
+            `Coder workspace preflight exited with code ${String(code)} (${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
+          ),
+        );
+        return;
+      }
+      const lines = Buffer.concat(stdout).toString("utf8").split(/\r?\n/u);
+      if (!lines.includes(CODER_PREFLIGHT_SENTINEL)) {
+        reject(new Error("Coder workspace preflight did not complete successfully."));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 export async function startLocalCoderGateway(options?: {
   readonly configPath?: string;
   readonly connectHelper?: typeof connectCoderHelper;
@@ -231,19 +285,63 @@ export async function startLocalCoderGateway(options?: {
   readonly listWorkspaces?: (
     invocation: CoderInvocation,
   ) => Promise<readonly DiscoveredCoderWorkspace[]>;
+  readonly probeWorkspace?: (invocation: CoderInvocation) => Promise<void>;
 }): Promise<LocalCoderGateway> {
   let profileConfig: CoderProfileConfig = options?.configPath
     ? await loadCoderProfileConfig(options.configPath)
     : emptyCoderProfileConfig();
   const workspaceConnections = new Map<string, CoderHelperConnection>();
+  const workspaceConnectionStarts = new Map<string, Promise<CoderHelperConnection>>();
   const workspaceSockets = new Map<string, WebSocket>();
   const openHelper = options?.connectHelper ?? connectCoderHelper;
   const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
+  const probeWorkspace = options?.probeWorkspace ?? runCoderWorkspaceProbe;
   const webSocketServer = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_RPC_MESSAGE_BYTES,
     perMessageDeflate: false,
   });
+
+  const ensureWorkspaceConnection = async (workspaceId: string): Promise<CoderHelperConnection> => {
+    const existing = workspaceConnections.get(workspaceId);
+    if (existing !== undefined) return existing;
+    const pending = workspaceConnectionStarts.get(workspaceId);
+    if (pending !== undefined) return pending;
+
+    const start = (async () => {
+      const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+      const deployment =
+        workspace === undefined
+          ? undefined
+          : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+      if (workspace === undefined || deployment === undefined) {
+        throw new Error("Unknown Coder workspace.");
+      }
+      await probeWorkspace(buildCoderWorkspaceProbeInvocation(deployment, workspace));
+      if (options?.helperBundlePath !== undefined) {
+        await installCoderHelper(
+          buildCoderHelperInstallInvocation(deployment, workspace),
+          options.helperBundlePath,
+        );
+      }
+      const connection = await openHelper(buildCoderHelperInvocation(deployment, workspace));
+      workspaceConnections.set(workspaceId, connection);
+      void connection.closed.then(() => {
+        if (workspaceConnections.get(workspaceId) === connection) {
+          workspaceConnections.delete(workspaceId);
+        }
+      });
+      return connection;
+    })();
+    workspaceConnectionStarts.set(workspaceId, start);
+    try {
+      return await start;
+    } finally {
+      if (workspaceConnectionStarts.get(workspaceId) === start) {
+        workspaceConnectionStarts.delete(workspaceId);
+      }
+    }
+  };
 
   const server = NodeHttp.createServer(async (request, response) => {
     const address = server.address();
@@ -393,23 +491,7 @@ export async function startLocalCoderGateway(options?: {
 
       if (request.method === "POST") {
         try {
-          const existing = workspaceConnections.get(workspaceId);
-          if (existing === undefined && options?.helperBundlePath !== undefined) {
-            await installCoderHelper(
-              buildCoderHelperInstallInvocation(deployment, workspace),
-              options.helperBundlePath,
-            );
-          }
-          const connection =
-            existing ?? (await openHelper(buildCoderHelperInvocation(deployment, workspace)));
-          if (existing === undefined) {
-            workspaceConnections.set(workspaceId, connection);
-            void connection.closed.then(() => {
-              if (workspaceConnections.get(workspaceId) === connection) {
-                workspaceConnections.delete(workspaceId);
-              }
-            });
-          }
+          const connection = await ensureWorkspaceConnection(workspaceId);
           sendText(
             response,
             200,
@@ -442,67 +524,82 @@ export async function startLocalCoderGateway(options?: {
   });
 
   server.on("upgrade", (request, socket, head) => {
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      rejectWebSocketUpgrade(socket, 503, "Service Unavailable");
-      return;
-    }
-    const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
-    const expectedOrigin = `http://${expectedHost}`;
-    if (request.headers.host !== expectedHost || request.headers.origin !== expectedOrigin) {
-      rejectWebSocketUpgrade(socket, 403, "Forbidden");
-      return;
-    }
-    const route = request.url?.match(/^\/api\/workspaces\/([^/]+)\/rpc$/);
-    if (route === null || route === undefined) {
-      rejectWebSocketUpgrade(socket, 404, "Not Found");
-      return;
-    }
-    let workspaceId: string;
-    try {
-      workspaceId = decodeURIComponent(route[1] ?? "");
-    } catch {
-      rejectWebSocketUpgrade(socket, 400, "Bad Request");
-      return;
-    }
-    const helper = workspaceConnections.get(workspaceId);
-    if (helper === undefined) {
-      rejectWebSocketUpgrade(socket, 409, "Conflict");
-      return;
-    }
-    if (workspaceSockets.has(workspaceId)) {
-      rejectWebSocketUpgrade(socket, 409, "Conflict");
-      return;
-    }
+    void (async () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        rejectWebSocketUpgrade(socket, 503, "Service Unavailable");
+        return;
+      }
+      const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
+      const expectedOrigin = `http://${expectedHost}`;
+      if (request.headers.host !== expectedHost || request.headers.origin !== expectedOrigin) {
+        rejectWebSocketUpgrade(socket, 403, "Forbidden");
+        return;
+      }
+      const route = request.url?.match(/^\/api\/workspaces\/([^/]+)\/rpc$/);
+      if (route === null || route === undefined) {
+        rejectWebSocketUpgrade(socket, 404, "Not Found");
+        return;
+      }
+      let workspaceId: string;
+      try {
+        workspaceId = decodeURIComponent(route[1] ?? "");
+      } catch {
+        rejectWebSocketUpgrade(socket, 400, "Bad Request");
+        return;
+      }
+      if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
+        rejectWebSocketUpgrade(socket, 404, "Not Found");
+        return;
+      }
+      if (workspaceSockets.has(workspaceId)) {
+        rejectWebSocketUpgrade(socket, 409, "Conflict");
+        return;
+      }
 
-    webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-      workspaceSockets.set(workspaceId, webSocket);
-      const unsubscribe = helper.onRpcMessage((message) => {
-        if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
+      let helper: CoderHelperConnection;
+      try {
+        helper = await ensureWorkspaceConnection(workspaceId);
+      } catch {
+        rejectWebSocketUpgrade(socket, 502, "Bad Gateway");
+        return;
+      }
+      if (socket.destroyed) return;
+      if (workspaceSockets.has(workspaceId)) {
+        rejectWebSocketUpgrade(socket, 409, "Conflict");
+        return;
+      }
+
+      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+        workspaceSockets.set(workspaceId, webSocket);
+        const unsubscribe = helper.onRpcMessage((message) => {
+          if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
+        });
+        webSocket.on("message", (data, isBinary) => {
+          if (isBinary) {
+            webSocket.close(1003, "Text RPC messages required.");
+            return;
+          }
+          try {
+            helper.sendRpc(JSON.parse(data.toString("utf8")) as unknown);
+          } catch {
+            webSocket.close(1007, "Invalid RPC message.");
+          }
+        });
+        webSocket.once("close", () => {
+          unsubscribe();
+          if (workspaceSockets.get(workspaceId) === webSocket) {
+            workspaceSockets.delete(workspaceId);
+          }
+        });
+        void helper.closed.then((exit) => {
+          if (webSocket.readyState === WebSocket.OPEN) {
+            webSocket.close(exit.expected ? 1001 : 1011, "Coder workspace disconnected.");
+          }
+        });
       });
-      webSocket.on("message", (data, isBinary) => {
-        if (isBinary) {
-          webSocket.close(1003, "Text RPC messages required.");
-          return;
-        }
-        try {
-          helper.sendRpc(JSON.parse(data.toString("utf8")) as unknown);
-        } catch {
-          webSocket.close(1007, "Invalid RPC message.");
-        }
-      });
-      webSocket.once("close", () => {
-        unsubscribe();
-        if (workspaceSockets.get(workspaceId) === webSocket) {
-          workspaceSockets.delete(workspaceId);
-          helper.close();
-        }
-      });
-      void helper.closed.then((exit) => {
-        if (webSocket.readyState === WebSocket.OPEN) {
-          webSocket.close(exit.expected ? 1001 : 1011, "Coder workspace disconnected.");
-        }
-      });
+    })().catch(() => {
+      if (!socket.destroyed) rejectWebSocketUpgrade(socket, 500, "Internal Server Error");
     });
   });
 

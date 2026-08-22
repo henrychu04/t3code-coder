@@ -10,6 +10,10 @@ import { afterEach, describe, it } from "node:test";
 import { WebSocket } from "ws";
 import { EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
 
+import {
+  quotePosixShellArgument,
+  REMOTE_WORKSPACE_PROBE_COMMAND,
+} from "@t3tools/coder-cli/command";
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
 import { CODER_GATEWAY_HOST, startLocalCoderGateway } from "./server.ts";
 
@@ -167,6 +171,7 @@ describe("local Coder gateway", () => {
       executable: "coder",
       args: [
         "--disable-network-telemetry",
+        "--disable-direct-connections",
         "--url",
         "https://coder.example.gs.com",
         "list",
@@ -186,7 +191,9 @@ describe("local Coder gateway", () => {
     const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
       closeConnection = resolve;
     });
-    let receivedArgs: readonly string[] = [];
+    let receivedProbeArgs: readonly string[] = [];
+    let receivedHelperArgs: readonly string[] = [];
+    const lifecycle: string[] = [];
     const connection: CoderHelperConnection = {
       info: helperInfo,
       closed,
@@ -196,8 +203,13 @@ describe("local Coder gateway", () => {
     };
     const gateway = await startLocalCoderGateway({
       configPath,
+      probeWorkspace: async (invocation) => {
+        lifecycle.push("probe");
+        receivedProbeArgs = invocation.args;
+      },
       connectHelper: async (invocation) => {
-        receivedArgs = invocation.args;
+        lifecycle.push("connect");
+        receivedHelperArgs = invocation.args;
         return connection;
       },
     });
@@ -229,8 +241,24 @@ describe("local Coder gateway", () => {
     });
     strictEqual(connected.statusCode, 200);
     strictEqual(JSON.parse(connected.body).info.platform, "linux");
-    deepStrictEqual(receivedArgs, [
+    deepStrictEqual(lifecycle, ["probe", "connect"]);
+    deepStrictEqual(receivedProbeArgs, [
       "--disable-network-telemetry",
+      "--disable-direct-connections",
+      "--url",
+      "https://coder.example.gs.com",
+      "ssh",
+      "henry/project-one",
+      "--",
+      "env",
+      "'T3_CODER_CWD=/workspace/project-one'",
+      "sh",
+      "-c",
+      quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
+    ]);
+    deepStrictEqual(receivedHelperArgs, [
+      "--disable-network-telemetry",
+      "--disable-direct-connections",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
@@ -249,6 +277,7 @@ describe("local Coder gateway", () => {
     const configPath = NodePath.join(directory, "config.json");
     let rpcListener: ((message: unknown) => void) | undefined;
     let closeConnection: (() => void) | undefined;
+    let closeCount = 0;
     const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
       closeConnection = () => resolve({ code: 130, signal: null, expected: true });
     });
@@ -266,10 +295,14 @@ describe("local Coder gateway", () => {
           rpcListener = undefined;
         };
       },
-      close: () => closeConnection?.(),
+      close: () => {
+        closeCount += 1;
+        closeConnection?.();
+      },
     };
     const gateway = await startLocalCoderGateway({
       configPath,
+      probeWorkspace: async () => undefined,
       connectHelper: async () => connection,
     });
     closeGateway = gateway.close;
@@ -315,5 +348,96 @@ describe("local Coder gateway", () => {
     const socketClosed = once(webSocket, "close");
     webSocket.close();
     await socketClosed;
+    strictEqual(closeCount, 0);
+
+    const nextHelperMessage = new Promise<unknown>((resolve) => {
+      receiveHelperMessage = resolve;
+    });
+    const reconnectedWebSocket = new WebSocket(`${rpcUrl}/api/workspaces/project-one/rpc`, {
+      origin: gateway.url,
+    });
+    await once(reconnectedWebSocket, "open");
+    const nextRequestMessage = { _tag: "ReconnectPing" };
+    reconnectedWebSocket.send(JSON.stringify(nextRequestMessage));
+    deepStrictEqual(await nextHelperMessage, nextRequestMessage);
+    const reconnectedSocketClosed = once(reconnectedWebSocket, "close");
+    reconnectedWebSocket.close();
+    await reconnectedSocketClosed;
+    strictEqual(closeCount, 0);
+  });
+
+  it("recreates a workspace helper when the helper exits and the browser retries", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const exitConnections: Array<
+      (exit: { code: number; signal: null; expected: boolean }) => void
+    > = [];
+    let connectCount = 0;
+    let probeCount = 0;
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => {
+        probeCount += 1;
+      },
+      connectHelper: async () => {
+        connectCount += 1;
+        let exitConnection:
+          | ((exit: { code: number; signal: null; expected: boolean }) => void)
+          | undefined;
+        const closed = new Promise<{ code: number; signal: null; expected: boolean }>((resolve) => {
+          exitConnection = resolve;
+        });
+        exitConnections.push((exit) => exitConnection?.(exit));
+        return {
+          info: helperInfo,
+          closed,
+          sendRpc: () => undefined,
+          onRpcMessage: () => () => undefined,
+          close: () => exitConnection?.({ code: 130, signal: null, expected: true }),
+        };
+      },
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+            workspaceRoot: "/workspace/project-one",
+          },
+        ],
+      }),
+    });
+
+    const rpcUrl = gateway.url.replace("http://", "ws://");
+    const firstSocket = new WebSocket(`${rpcUrl}/api/workspaces/project-one/rpc`, {
+      origin: gateway.url,
+    });
+    await once(firstSocket, "open");
+    strictEqual(connectCount, 1);
+    strictEqual(probeCount, 1);
+
+    const firstSocketClosed = once(firstSocket, "close");
+    exitConnections[0]?.({ code: 1, signal: null, expected: false });
+    await firstSocketClosed;
+
+    const secondSocket = new WebSocket(`${rpcUrl}/api/workspaces/project-one/rpc`, {
+      origin: gateway.url,
+    });
+    await once(secondSocket, "open");
+    strictEqual(connectCount, 2);
+    strictEqual(probeCount, 2);
+    const secondSocketClosed = once(secondSocket, "close");
+    secondSocket.close();
+    await secondSocketClosed;
   });
 });

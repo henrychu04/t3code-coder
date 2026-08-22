@@ -42,7 +42,14 @@ Add a Coder deployment URL, discover its workspaces through the installed Coder 
 projects by their absolute Linux paths. Connecting installs the version-matched helper through a
 separate Coder SSH stdin operation and then runs it in the foreground over newline-delimited stdio.
 Coder owns deployment authentication; T3 Coder never reads or stores Coder tokens.
-Every Coder invocation disables the CLI's optional network telemetry.
+Every Coder invocation disables the CLI's optional network telemetry and direct peer-to-peer
+workspace connections. Before installing or starting the helper, the gateway verifies the remote
+Linux architecture, Node.js version, Git, Claude Code, `script(1)`, state directory, and configured
+project root.
+
+Refreshing the browser reconnects to the existing foreground helper. If Coder SSH or the helper
+exits, the browser's next connection attempt runs preflight and starts a fresh helper. Returning to
+the workspace manager explicitly closes that workspace connection.
 
 The local profile is a small JSON file containing only deployment URLs, Coder workspace targets,
 project display names, and remote Linux roots. UI-only preferences such as theme and panel size may

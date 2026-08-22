@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, strictEqual, throws } from "node:assert";
+import { deepStrictEqual, match, strictEqual, throws } from "node:assert";
 import { describe, it } from "node:test";
 
 import {
@@ -11,6 +11,7 @@ import {
   buildCoderWorkspaceProbeInvocation,
   REMOTE_HELPER_COMMAND,
   REMOTE_HELPER_INSTALL_COMMAND,
+  REMOTE_WORKSPACE_PROBE_COMMAND,
   quotePosixShellArgument,
 } from "./command.ts";
 import type { CoderDeploymentProfile, CoderWorkspaceProfile } from "./profile.ts";
@@ -34,12 +35,18 @@ describe("Coder CLI command construction", () => {
   it("builds login and workspace discovery without reading tokens", () => {
     deepStrictEqual(buildCoderLoginInvocation(deployment), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
-      args: ["--disable-network-telemetry", "login", "https://coder.example.gs.com"],
+      args: [
+        "--disable-network-telemetry",
+        "--disable-direct-connections",
+        "login",
+        "https://coder.example.gs.com",
+      ],
     });
     deepStrictEqual(buildCoderListWorkspacesInvocation(deployment), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
       args: [
         "--disable-network-telemetry",
+        "--disable-direct-connections",
         "--url",
         "https://coder.example.gs.com",
         "list",
@@ -52,17 +59,21 @@ describe("Coder CLI command construction", () => {
   it("builds Linux probe and foreground helper invocations as argument arrays", () => {
     deepStrictEqual(buildCoderWorkspaceProbeInvocation(deployment, workspace).args, [
       "--disable-network-telemetry",
+      "--disable-direct-connections",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
       "equities-dev",
       "--",
-      "uname",
-      "-s",
-      "-m",
+      "env",
+      "'T3_CODER_CWD=/workspace/equities'",
+      "sh",
+      "-c",
+      quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
       "--disable-network-telemetry",
+      "--disable-direct-connections",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
@@ -75,6 +86,7 @@ describe("Coder CLI command construction", () => {
     ]);
     deepStrictEqual(buildCoderHelperInstallInvocation(deployment, workspace).args, [
       "--disable-network-telemetry",
+      "--disable-direct-connections",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
@@ -84,6 +96,10 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
     ]);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /Node\.js 24\.10 or newer/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /T3_CODER_CWD/u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");
   });
 
