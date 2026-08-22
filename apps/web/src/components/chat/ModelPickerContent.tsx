@@ -69,8 +69,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
    * When set, the picker is locked to the given driver kind — typically
    * because the user is editing a previously-sent message and can't change
    * which driver served the turn. Multiple instances of the same kind
-   * remain selectable (e.g. locked to `codex` still lets the user switch
-   * between the default Codex and a custom Codex Personal).
+   * remain selectable (e.g. locked to `claudeAgent` still lets the user switch
+   * between the default Claude instance and a custom Claude Personal instance).
    */
   lockedProvider: ProviderDriverKind | null;
   lockedContinuationGroupKey?: string | null;
@@ -83,7 +83,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   keybindings?: ResolvedKeybindingsConfig;
   /**
    * Model options per instance. Keyed by `ProviderInstanceId` so the
-   * default Codex instance and any custom Codex instances each have their
+   * default Claude instance and any custom Claude instances each have their
    * own list (custom instances typically start with the same built-in
    * model set but are free to diverge via customModels).
    */
@@ -164,7 +164,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   // Create a Set for efficient lookup. Favorites are keyed by
   // `${instanceId}:${slug}`; the storage schema widened from ProviderDriverKind
   // to ProviderInstanceId so pre-migration favorites keyed by driver slugs
-  // (e.g. `"codex:gpt-5"`) still resolve — the default instance id equals
+  // (e.g. `"claudeAgent:claude-sonnet-5"`) still resolve — the default instance id equals
   // the driver slug.
   const favoritesSet = useMemo(() => {
     return new Set(favorites.map((fav) => providerModelKey(fav.provider, fav.model)));

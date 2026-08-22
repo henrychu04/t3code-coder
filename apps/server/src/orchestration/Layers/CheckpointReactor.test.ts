@@ -33,7 +33,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
-import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
+import { CoderVcsStatus } from "../../coderVcsStatus.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { CheckpointReactorLive } from "./CheckpointReactor.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
@@ -314,15 +314,13 @@ describe("CheckpointReactor", () => {
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
       prefix: "t3-checkpoint-reactor-test-",
     });
-    const vcsStatusBroadcasterLayer = Layer.succeed(VcsStatusBroadcaster, {
-      getStatus: () => Effect.die("getStatus should not be called in this test"),
-      refreshLocalStatus: (cwd: string) =>
+    const vcsStatusLayer = Layer.succeed(CoderVcsStatus, {
+      refresh: (cwd: string) =>
         Effect.sync(() => {
           options?.gitStatusRefreshCalls?.push(cwd);
         }).pipe(
           Effect.as({
             isRepo: true,
-            hasPrimaryRemote: false,
             isDefaultRef: true,
             refName:
               options?.localStatusRefName !== undefined ? options.localStatusRefName : "main",
@@ -330,8 +328,7 @@ describe("CheckpointReactor", () => {
             workingTree: { files: [], insertions: 0, deletions: 0 },
           }),
         ),
-      refreshStatus: () => Effect.die("refreshStatus should not be called in this test"),
-      streamStatus: () => Stream.empty,
+      stream: () => Stream.empty,
     });
 
     const layer = CheckpointReactorLive.pipe(
@@ -339,7 +336,7 @@ describe("CheckpointReactor", () => {
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(RuntimeReceiptBusLive),
       Layer.provideMerge(Layer.succeed(ProviderService, provider.service)),
-      Layer.provideMerge(vcsStatusBroadcasterLayer),
+      Layer.provideMerge(vcsStatusLayer),
       Layer.provideMerge(CheckpointStore.layer.pipe(Layer.provide(VcsDriverRegistry.layer))),
       Layer.provideMerge(
         WorkspaceEntries.layer.pipe(
@@ -827,7 +824,6 @@ describe("CheckpointReactor", () => {
           messageId: MessageId.make("message-user-1"),
           role: "user",
           text: "start turn",
-          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",

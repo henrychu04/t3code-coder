@@ -10,8 +10,8 @@ import {
 
 function warningProvider(): ServerProvider {
   return {
-    instanceId: ProviderInstanceId.make("codex"),
-    driver: ProviderDriverKind.make("codex"),
+    instanceId: ProviderInstanceId.make("claudeAgent"),
+    driver: ProviderDriverKind.make("claudeAgent"),
     displayName: "Codex",
     enabled: true,
     installed: true,

@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem } from "../localApiTypes";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 
 /**

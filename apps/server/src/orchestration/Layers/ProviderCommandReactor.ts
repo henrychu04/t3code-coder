@@ -1,5 +1,4 @@
 import {
-  type ChatAttachment,
   CommandId,
   EventId,
   type ModelSelection,
@@ -26,7 +25,6 @@ import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
-import { increment, orchestrationEventsProcessedTotal } from "../../observability/Metrics.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
@@ -40,11 +38,8 @@ import {
 } from "../Services/ProviderCommandReactor.ts";
 import { forkParked, ServerActivation } from "../../serverActivation.ts";
 import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
-import {
-  resolveSourceControlWriterModelSelection,
-  ServerSettingsService,
-} from "../../serverSettings.ts";
-import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
+import { CoderVcsStatus } from "../../coderVcsStatus.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
@@ -92,7 +87,6 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
-const MAX_REGENERATION_ATTACHMENTS = 4;
 const MAX_THREAD_TITLE_CONTEXT_CHARS = 8_000;
 const MAX_FIRST_USER_TITLE_CONTEXT_CHARS = 2_000;
 const THREAD_TITLE_CONTEXT_TRUNCATION_MARKER = "[Earlier content truncated]\n\n";
@@ -101,7 +95,6 @@ const FIRST_USER_CONTEXT_TRUNCATION_MARKER = "\n[First user message truncated]";
 type ThreadTitleMessage = {
   readonly role: "user" | "assistant" | "system";
   readonly text: string;
-  readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
 };
 
 function formatThreadTitleSection(message: ThreadTitleMessage): string | undefined {
@@ -109,14 +102,7 @@ function formatThreadTitleSection(message: ThreadTitleMessage): string | undefin
     return undefined;
   }
   const text = message.text.trim();
-  const attachmentSummary = (message.attachments ?? [])
-    .map((attachment) => attachment.name)
-    .join(", ");
-  const contents = [
-    ...(text.length > 0 ? [text] : []),
-    ...(attachmentSummary.length > 0 ? [`[Attachments: ${attachmentSummary}]`] : []),
-  ].join("\n");
-  return contents.length > 0 ? `${message.role.toUpperCase()}:\n${contents}` : undefined;
+  return text.length > 0 ? `${message.role.toUpperCase()}:\n${text}` : undefined;
 }
 
 function limitFirstUserSection(section: string): string {
@@ -134,12 +120,10 @@ function collectRecentThreadTitleContext(
   maxChars: number,
 ): {
   readonly context: string;
-  readonly attachments: ReadonlyArray<ChatAttachment>;
   readonly truncated: boolean;
 } {
   let context = "";
   let truncated = false;
-  const retainedAttachments: Array<ChatAttachment> = [];
 
   for (const message of messages.toReversed()) {
     const section = formatThreadTitleSection(message);
@@ -152,28 +136,20 @@ function collectRecentThreadTitleContext(
     if (section.length > available) {
       if (available > 0) {
         context = `${section.slice(-available)}${separator}${context}`;
-        retainedAttachments.unshift(...(message.attachments ?? []));
       }
       truncated = true;
       break;
     }
     context = `${section}${separator}${context}`;
-    retainedAttachments.unshift(...(message.attachments ?? []));
   }
 
-  return { context, attachments: retainedAttachments, truncated };
+  return { context, truncated };
 }
 
-function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMessage>): {
-  readonly message: string;
-  readonly attachments: ReadonlyArray<ChatAttachment>;
-} {
+function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMessage>): string {
   const recent = collectRecentThreadTitleContext(messages, MAX_THREAD_TITLE_CONTEXT_CHARS);
   if (!recent.truncated) {
-    return {
-      message: recent.context,
-      attachments: recent.attachments.slice(-MAX_REGENERATION_ATTACHMENTS),
-    };
+    return recent.context;
   }
 
   const firstUserMessage = messages.find(
@@ -183,10 +159,7 @@ function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMessage>): 
     ? formatThreadTitleSection(firstUserMessage)
     : undefined;
   if (!firstUserMessage || !firstUserSection) {
-    return {
-      message: `${THREAD_TITLE_CONTEXT_TRUNCATION_MARKER}${recent.context}`,
-      attachments: recent.attachments.slice(-MAX_REGENERATION_ATTACHMENTS),
-    };
+    return `${THREAD_TITLE_CONTEXT_TRUNCATION_MARKER}${recent.context}`;
   }
 
   const pinnedSection = limitFirstUserSection(firstUserSection);
@@ -196,20 +169,7 @@ function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMessage>): 
     "\n\n".length -
     THREAD_TITLE_CONTEXT_TRUNCATION_MARKER.length;
   const retainedRecent = collectRecentThreadTitleContext(messages, recentContextBudget);
-  const pinnedAttachment = firstUserMessage.attachments?.[0];
-  const recentAttachments = retainedRecent.attachments.filter(
-    (attachment) => attachment.id !== pinnedAttachment?.id,
-  );
-
-  return {
-    message: `${pinnedSection}\n\n${THREAD_TITLE_CONTEXT_TRUNCATION_MARKER}${retainedRecent.context}`,
-    attachments: [
-      ...(pinnedAttachment ? [pinnedAttachment] : []),
-      ...recentAttachments.slice(
-        -(MAX_REGENERATION_ATTACHMENTS - (pinnedAttachment === undefined ? 0 : 1)),
-      ),
-    ],
-  };
+  return `${pinnedSection}\n\n${THREAD_TITLE_CONTEXT_TRUNCATION_MARKER}${retainedRecent.context}`;
 }
 
 export function providerErrorLabel(value: string | undefined): string {
@@ -256,15 +216,13 @@ function isUnknownPendingUserInputRequestError(cause: Cause.Cause<ProviderServic
     const detail = error.detail.toLowerCase();
     return (
       detail.includes("unknown pending user-input request") ||
-      detail.includes("unknown pending user input request") ||
-      detail.includes("unknown pending codex user input request")
+      detail.includes("unknown pending user input request")
     );
   }
   const message = Cause.pretty(cause).toLowerCase();
   return (
     message.includes("unknown pending user-input request") ||
-    message.includes("unknown pending user input request") ||
-    message.includes("unknown pending codex user input request")
+    message.includes("unknown pending user input request")
   );
 }
 
@@ -305,7 +263,7 @@ const make = Effect.gen(function* () {
   const providerService = yield* ProviderService;
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
-  const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
+  const vcsStatus = yield* CoderVcsStatus;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
   const serverCommandId = (tag: string) =>
@@ -724,7 +682,6 @@ const make = Effect.gen(function* () {
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly messageText: string;
-    readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
@@ -743,7 +700,6 @@ const make = Effect.gen(function* () {
       threadModelSelections.set(input.threadId, input.modelSelection);
     }
     const normalizedInput = toNonEmptyProviderInput(input.messageText);
-    const normalizedAttachments = input.attachments ?? [];
     const activeSession = yield* providerService
       .listSessions()
       .pipe(
@@ -775,7 +731,6 @@ const make = Effect.gen(function* () {
     return {
       threadId: input.threadId,
       ...(normalizedInput ? { input: normalizedInput } : {}),
-      ...(normalizedAttachments.length > 0 ? { attachments: normalizedAttachments } : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
     };
@@ -788,7 +743,6 @@ const make = Effect.gen(function* () {
     readonly branch: string | null;
     readonly worktreePath: string | null;
     readonly messageText: string;
-    readonly attachments?: ReadonlyArray<ChatAttachment>;
   }) {
     if (!input.branch || !input.worktreePath) {
       return;
@@ -799,21 +753,13 @@ const make = Effect.gen(function* () {
 
     const oldBranch = input.branch;
     const cwd = input.worktreePath;
-    const attachments = input.attachments ?? [];
     yield* Effect.gen(function* () {
       const settings = yield* serverSettingsService.getSettings;
-      const modelSelection =
-        settings.sourceControlWriterModelSelection === null
-          ? settings.textGenerationModelSelection
-          : resolveSourceControlWriterModelSelection(
-              settings,
-              yield* providerRegistry.getProviders,
-            );
+      const modelSelection = settings.textGenerationModelSelection;
 
       const generated = yield* textGeneration.generateBranchName({
         cwd,
         message: input.messageText,
-        ...(attachments.length > 0 ? { attachments } : {}),
         modelSelection,
       });
       if (!generated) return;
@@ -829,7 +775,7 @@ const make = Effect.gen(function* () {
         branch: renamed.branch,
         worktreePath: cwd,
       });
-      yield* vcsStatusBroadcaster.refreshStatus(cwd).pipe(Effect.ignoreCause({ log: true }));
+      yield* vcsStatus.refresh(cwd).pipe(Effect.ignoreCause({ log: true }));
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("provider command reactor failed to generate or rename worktree branch", {
@@ -847,10 +793,8 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
       readonly cwd: string;
       readonly messageText: string;
-      readonly attachments?: ReadonlyArray<ChatAttachment>;
       readonly titleSeed?: string;
     }) {
-      const attachments = input.attachments ?? [];
       yield* Effect.gen(function* () {
         const { textGenerationModelSelection: modelSelection } =
           yield* serverSettingsService.getSettings;
@@ -858,7 +802,6 @@ const make = Effect.gen(function* () {
         const generated = yield* textGeneration.generateThreadTitle({
           cwd: input.cwd,
           message: input.messageText,
-          ...(attachments.length > 0 ? { attachments } : {}),
           modelSelection,
         });
         if (!generated) return;
@@ -900,7 +843,7 @@ const make = Effect.gen(function* () {
       return { _tag: "Superseded" } as const;
     }
 
-    const { message, attachments } = formatThreadTitleContext(thread.messages);
+    const message = formatThreadTitleContext(thread.messages);
     if (message.length === 0) {
       return { _tag: "Completed", title: undefined } as const;
     }
@@ -921,7 +864,6 @@ const make = Effect.gen(function* () {
       cwd,
       message,
       previousTitle,
-      ...(attachments.length > 0 ? { attachments } : {}),
       modelSelection,
     });
     if (generated.title === DEFAULT_THREAD_TITLE || generated.title === previousTitle) {
@@ -1094,7 +1036,6 @@ const make = Effect.gen(function* () {
         }) ?? process.cwd();
       const generationInput = {
         messageText: message.text,
-        ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
         ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
       };
 
@@ -1153,7 +1094,6 @@ const make = Effect.gen(function* () {
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
       messageText: message.text,
-      ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
         : {}),
@@ -1322,9 +1262,6 @@ const make = Effect.gen(function* () {
       "orchestration.event_type": event.type,
       "orchestration.thread_id": event.payload.threadId,
       ...(event.commandId ? { "orchestration.command_id": event.commandId } : {}),
-    });
-    yield* increment(orchestrationEventsProcessedTotal, {
-      eventType: event.type,
     });
     switch (event.type) {
       case "thread.meta-updated":

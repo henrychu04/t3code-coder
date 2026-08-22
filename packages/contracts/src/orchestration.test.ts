@@ -24,7 +24,6 @@ import {
   ThreadCreatedPayload,
   ThreadTurnDiff,
   ThreadTurnStartRequestedPayload,
-  isProviderSendTurnSupportedImageMimeType,
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 
@@ -231,7 +230,6 @@ it.effect("decodes thread.turn.start defaults for provider and runtime mode", ()
         messageId: "msg-1",
         role: "user",
         text: "hello",
-        attachments: [],
       },
       createdAt: "2026-01-01T00:00:00.000Z",
     });
@@ -251,7 +249,6 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
         messageId: "msg-2",
         role: "user",
         text: "hello",
-        attachments: [],
       },
       modelSelection: {
         provider: "codex",
@@ -276,7 +273,6 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
         messageId: "msg-bootstrap",
         role: "user",
         text: "hello",
-        attachments: [],
       },
       bootstrap: {
         createThread: {
@@ -536,7 +532,6 @@ it.effect("accepts provider-scoped model options in thread.turn.start", () =>
         messageId: "msg-options",
         role: "user",
         text: "hello",
-        attachments: [],
       },
       modelSelection: {
         provider: "codex",
@@ -642,7 +637,6 @@ it.effect("accepts a title seed in thread.turn.start", () =>
         messageId: "msg-title-seed",
         role: "user",
         text: "hello",
-        attachments: [],
       },
       titleSeed: "Investigate reconnect failures",
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -708,7 +702,6 @@ it.effect("accepts a source proposed plan reference in thread.turn.start", () =>
         messageId: "msg-source-plan",
         role: "user",
         text: "implement this",
-        attachments: [],
       },
       sourceProposedPlan: {
         threadId: "thread-1",
@@ -950,9 +943,3 @@ it.effect("project favicon overrides accept only supported image files", () =>
     assert.strictEqual(invalid._tag, "Failure");
   }),
 );
-
-it("isProviderSendTurnSupportedImageMimeType accepts raster formats and rejects svg", () => {
-  assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/png"), true);
-  assert.strictEqual(isProviderSendTurnSupportedImageMimeType("IMAGE/JPEG"), true);
-  assert.strictEqual(isProviderSendTurnSupportedImageMimeType("image/svg+xml"), false);
-});

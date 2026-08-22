@@ -1,5 +1,4 @@
 import { useAtomValue } from "@effect/atom-react";
-import { WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import { appAtomRegistry } from "./atomRegistry";
@@ -10,7 +9,6 @@ export const SLOW_RPC_ACK_THRESHOLD_MS = 15_000;
  * server and only respond once the install finishes. Warning about those after
  * 15s is noise, so they get a much longer leash.
  */
-export const LONG_RUNNING_RPC_ACK_THRESHOLD_MS = 120_000;
 export const MAX_TRACKED_RPC_ACK_REQUESTS = 256;
 let slowRpcAckThresholdMs = SLOW_RPC_ACK_THRESHOLD_MS;
 
@@ -28,12 +26,6 @@ interface PendingRpcAckRequest {
 }
 
 const pendingRpcAckRequests = new Map<string, PendingRpcAckRequest>();
-const untrackedRpcAckMethods = new Set<string>([WS_METHODS.previewAutomationConnect]);
-const longRunningRpcAckMethods = new Set<string>([
-  WS_METHODS.serverUpdateProvider,
-  WS_METHODS.serverRefreshProviders,
-  WS_METHODS.serverUpdateServer,
-]);
 
 const slowRpcAckRequestsAtom = Atom.make<ReadonlyArray<SlowRpcAckRequest>>([]).pipe(
   Atom.keepAlive,
@@ -49,17 +41,11 @@ function getSlowRpcAckRequestsValue(): ReadonlyArray<SlowRpcAckRequest> {
 }
 
 function shouldTrackRpcAck(method: string): boolean {
-  return (
-    !method.includes("subscribe") &&
-    !method.startsWith("pullRequests.") &&
-    !untrackedRpcAckMethods.has(method)
-  );
+  return !method.includes("subscribe");
 }
 
-function rpcAckThresholdMs(method: string): number {
-  return longRunningRpcAckMethods.has(method)
-    ? Math.max(slowRpcAckThresholdMs, LONG_RUNNING_RPC_ACK_THRESHOLD_MS)
-    : slowRpcAckThresholdMs;
+function rpcAckThresholdMs(): number {
+  return slowRpcAckThresholdMs;
 }
 
 export function getSlowRpcAckRequests(): ReadonlyArray<SlowRpcAckRequest> {
@@ -80,7 +66,7 @@ export function trackRpcRequestSent(requestId: string, method: string, tag = met
   evictOldestPendingRpcRequestIfNeeded();
 
   const startedAtMs = Date.now();
-  const thresholdMs = rpcAckThresholdMs(method);
+  const thresholdMs = rpcAckThresholdMs();
   const request: SlowRpcAckRequest = {
     requestId,
     startedAt: new Date(startedAtMs).toISOString(),

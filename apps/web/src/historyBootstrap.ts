@@ -18,32 +18,10 @@ function messageRoleLabel(message: ChatMessage): "USER" | "ASSISTANT" {
   return message.role === "assistant" ? "ASSISTANT" : "USER";
 }
 
-function attachmentSummary(message: ChatMessage): string | null {
-  const imageAttachments = message.attachments?.filter((attachment) => attachment.type === "image");
-  const count = imageAttachments?.length ?? 0;
-  if (count === 0) {
-    return null;
-  }
-
-  const names = imageAttachments?.slice(0, 3).map((image) => image.name) ?? [];
-  const namesSummary = names.join(", ");
-  const extraCount = count - names.length;
-  const extraSummary = extraCount > 0 ? ` (+${extraCount} more)` : "";
-  return `[Attached image${count === 1 ? "" : "s"}: ${namesSummary}${extraSummary}]`;
-}
-
 function buildMessageBlock(message: ChatMessage): string {
   const text = message.text;
-  const attachments = attachmentSummary(message);
-
-  if (text && attachments) {
-    return `${messageRoleLabel(message)}:\n${text}\n${attachments}`;
-  }
   if (text) {
     return `${messageRoleLabel(message)}:\n${text}`;
-  }
-  if (attachments) {
-    return `${messageRoleLabel(message)}:\n${attachments}`;
   }
   return `${messageRoleLabel(message)}:\n(empty message)`;
 }

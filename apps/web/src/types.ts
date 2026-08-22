@@ -1,5 +1,4 @@
 import type {
-  ChatImageAttachment as ContractChatImageAttachment,
   OrchestrationCheckpointFile,
   OrchestrationCheckpointSummary,
   OrchestrationLatestTurn,
@@ -31,15 +30,7 @@ export interface ThreadTerminalGroup {
   splitDirection?: "horizontal" | "vertical";
 }
 
-export interface ChatImageAttachment extends ContractChatImageAttachment {
-  readonly previewUrl?: string;
-}
-
-export type ChatAttachment = ChatImageAttachment;
-
-export interface ChatMessage extends Omit<OrchestrationMessage, "attachments"> {
-  readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
-}
+export type ChatMessage = OrchestrationMessage;
 
 export type ProposedPlan = OrchestrationProposedPlan;
 export type TurnDiffFileChange = OrchestrationCheckpointFile;

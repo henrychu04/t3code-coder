@@ -4,12 +4,7 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 export const VcsDriverKind = Schema.Literals(["git", "jj", "unknown"]);
 export type VcsDriverKind = typeof VcsDriverKind.Type;
 
-export const VcsFreshnessSource = Schema.Literals([
-  "live-local",
-  "cached-local",
-  "cached-remote",
-  "explicit-remote",
-]);
+export const VcsFreshnessSource = Schema.Literals(["live-local", "cached-local"]);
 export type VcsFreshnessSource = typeof VcsFreshnessSource.Type;
 
 export const VcsFreshness = Schema.Struct({
@@ -24,7 +19,6 @@ export const VcsDriverCapabilities = Schema.Struct({
   supportsWorktrees: Schema.Boolean,
   supportsBookmarks: Schema.Boolean,
   supportsAtomicSnapshot: Schema.Boolean,
-  supportsPushDefaultRemote: Schema.Boolean,
   ignoreClassifier: Schema.Literals(["native", "git-compatible-fallback"]),
 });
 export type VcsDriverCapabilities = typeof VcsDriverCapabilities.Type;
@@ -44,20 +38,6 @@ export const VcsListWorkspaceFilesResult = Schema.Struct({
 });
 export type VcsListWorkspaceFilesResult = typeof VcsListWorkspaceFilesResult.Type;
 
-export const VcsRemote = Schema.Struct({
-  name: TrimmedNonEmptyString,
-  url: TrimmedNonEmptyString,
-  pushUrl: Schema.Option(TrimmedNonEmptyString),
-  isPrimary: Schema.Boolean,
-});
-export type VcsRemote = typeof VcsRemote.Type;
-
-export const VcsListRemotesResult = Schema.Struct({
-  remotes: Schema.Array(VcsRemote),
-  freshness: VcsFreshness,
-});
-export type VcsListRemotesResult = typeof VcsListRemotesResult.Type;
-
 export interface VcsProcessErrorContext {
   readonly operation: string;
   readonly command: string;
@@ -73,12 +53,7 @@ export interface VcsProcessTimeoutFailure {
   readonly timeoutMs: number;
 }
 
-export const VcsProcessExitFailureKind = Schema.Literals([
-  "authentication",
-  "not-found",
-  "rate-limited",
-  "command-failed",
-]);
+export const VcsProcessExitFailureKind = Schema.Literal("command-failed");
 export type VcsProcessExitFailureKind = typeof VcsProcessExitFailureKind.Type;
 
 export interface VcsProcessExitFailure {
@@ -132,23 +107,10 @@ export class VcsProcessExitError extends Schema.TaggedErrorClass<VcsProcessExitE
     error: VcsProcessExitFailure,
     failureKind: VcsProcessExitFailureKind,
   ) {
-    const detail =
-      failureKind === "authentication"
-        ? "Authentication failed."
-        : failureKind === "rate-limited"
-          ? "API rate limit exceeded."
-          : failureKind === "not-found"
-            ? context.command === "glab"
-              ? "Merge request not found."
-              : context.command === "gh" || context.command === "az"
-                ? "Pull request not found."
-                : "VCS resource not found."
-            : "Process exited with a non-zero status.";
-
     return new VcsProcessExitError({
       ...context,
       exitCode: error.exitCode,
-      detail,
+      detail: "Process exited with a non-zero status.",
       failureKind,
       stderrLength: error.stderr.length,
       stderrTruncated: error.stderrTruncated,

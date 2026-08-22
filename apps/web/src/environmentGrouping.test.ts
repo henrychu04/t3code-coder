@@ -20,11 +20,10 @@ import type { Project } from "./types";
 const primaryEnvironmentId = EnvironmentId.make("env-primary");
 const remoteEnvironmentId = EnvironmentId.make("env-remote");
 const repositoryIdentity = {
-  canonicalKey: "github.com/example/shared-repo",
+  canonicalKey: "workspace:/work/shared-repo",
   locator: {
-    source: "git-remote" as const,
-    remoteName: "origin",
-    remoteUrl: "https://github.com/example/shared-repo.git",
+    source: "workspace-path" as const,
+    path: "/work/shared-repo",
   },
 };
 const defaultGroupingSettings = {

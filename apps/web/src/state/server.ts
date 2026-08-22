@@ -1,6 +1,5 @@
 import {
   DEFAULT_SERVER_SETTINGS,
-  type EditorId,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
@@ -32,7 +31,6 @@ interface PrimaryServerState {
   readonly welcome: ServerLifecycleWelcomePayload | null;
 }
 
-const EMPTY_AVAILABLE_EDITORS: ReadonlyArray<EditorId> = [];
 export const EMPTY_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 const EMPTY_PRIMARY_SERVER_STATE: PrimaryServerState = {
   config: null,
@@ -85,16 +83,6 @@ export const primaryServerKeybindingsAtom = Atom.make(
     get(primaryServerConfigAtom)?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
 ).pipe(Atom.withLabel("web-primary-server-keybindings"));
 
-export const primaryServerAvailableEditorsAtom = Atom.make(
-  (get): ReadonlyArray<EditorId> =>
-    get(primaryServerConfigAtom)?.availableEditors ?? EMPTY_AVAILABLE_EDITORS,
-).pipe(Atom.withLabel("web-primary-server-available-editors"));
-
 export const primaryServerKeybindingsConfigPathAtom = Atom.make(
   (get): string | null => get(primaryServerConfigAtom)?.keybindingsConfigPath ?? null,
 ).pipe(Atom.withLabel("web-primary-server-keybindings-config-path"));
-
-export const primaryServerObservabilityAtom = Atom.make(
-  (get): ServerConfig["observability"] | null =>
-    get(primaryServerConfigAtom)?.observability ?? null,
-).pipe(Atom.withLabel("web-primary-server-observability"));

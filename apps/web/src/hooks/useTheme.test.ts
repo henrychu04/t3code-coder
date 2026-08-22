@@ -165,42 +165,4 @@ describe("theme failure handling", () => {
     expect(errorLog).toHaveBeenCalledTimes(2);
     unsubscribe?.();
   });
-
-  it("preserves desktop sync causes and retries after a failed cosmetic sync", async () => {
-    const cause = new Error("desktop IPC unavailable");
-    const errorLog = vi.spyOn(console, "error").mockImplementation(() => {});
-    const setTheme = vi.fn().mockRejectedValue(cause);
-    vi.stubGlobal("window", { desktopBridge: { setTheme } });
-
-    const { DesktopThemeSyncError, syncDesktopTheme, syncDesktopThemePreference } =
-      await import("./useTheme");
-
-    const error = await syncDesktopThemePreference({ setTheme }, "dark").then(
-      () => undefined,
-      (failure: unknown) => failure,
-    );
-    expect(error).toBeInstanceOf(DesktopThemeSyncError);
-    expect(error).toMatchObject({ theme: "dark", cause });
-
-    setTheme.mockClear();
-    syncDesktopTheme("dark");
-    await Promise.resolve();
-    await Promise.resolve();
-    syncDesktopTheme("dark");
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(setTheme).toHaveBeenCalledTimes(2);
-    expect(errorLog).toHaveBeenCalledWith(
-      "Failed to sync the dark theme to the desktop shell.",
-      expect.objectContaining({
-        theme: "dark",
-        errorTag: "DesktopThemeSyncError",
-      }),
-    );
-    for (const [, attributes] of errorLog.mock.calls) {
-      expect(attributes).not.toHaveProperty("cause");
-      expect(JSON.stringify(attributes)).not.toContain(cause.message);
-    }
-  });
 });

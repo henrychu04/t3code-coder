@@ -337,9 +337,9 @@ export function isTerminalCopyShortcut(
 }
 
 /**
- * Canvas terminals have no DOM selection. Native copy and Electron's Edit
- * menu `role: "copy"` both read the focused textarea, so an empty IME field
- * writes blankness to the clipboard. Park the Ghostty selection there first.
+ * Canvas terminals have no DOM selection. Native copy reads the focused
+ * textarea, so an empty IME field writes blankness to the clipboard. Park the
+ * Ghostty selection there first.
  */
 export function primeTerminalCopyInput(
   input: Pick<HTMLTextAreaElement, "value" | "select">,
@@ -362,9 +362,8 @@ export function clearPrimedTerminalCopyInput(
 
 /**
  * Only a copy event that actually received the selection may cancel the
- * clipboard.writeText fallback. Claiming without clipboardData (Electron's
- * menu Copy) used to preventDefault an empty write and skip the fallback,
- * which is how Cmd+C copied blankness.
+ * clipboard.writeText fallback. Claiming without clipboardData could
+ * preventDefault an empty write and skip the fallback.
  */
 export function applyTerminalCopyEvent(
   selection: string,
@@ -1041,7 +1040,7 @@ export class GhosttyTerminalSurface {
           // (dispatched synchronously with the default action) claims the
           // token first when it actually writes, and the write covers browsers
           // whose shortcut produces no copy event. The primed textarea is what
-          // Electron's edit-menu Copy reads if it runs after this handler.
+          // a browser-native Copy action reads if it runs after this handler.
           const token = ++this.copyShortcutToken;
           void Promise.resolve().then(() => {
             if (this.disposed || this.copyShortcutToken !== token) return;

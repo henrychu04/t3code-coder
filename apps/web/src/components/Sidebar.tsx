@@ -19,7 +19,6 @@ import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
-  changeRequestAutoSettles,
   effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
@@ -49,7 +48,6 @@ import {
   PlusIcon,
   SearchIcon,
   ServerIcon,
-  SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
   Undo2Icon,
@@ -73,7 +71,6 @@ import {
   settlePromise,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -88,7 +85,6 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
-import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { readLocalApi } from "../localApi";
 import { getProjectOrderKey, selectProjectGroupingSettings } from "../logicalProject";
 import {
@@ -145,15 +141,7 @@ import {
 import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   ThreadWorktreeIndicator,
-  nextThreadChangeRequestSnapshot,
-  prStatusIndicator,
-  resolveDisplayedThreadPr,
-  resolveDisplayedThreadPrProvider,
-  setThreadChangeRequestSnapshot,
-  settledPrHoverColorClass,
   terminalStatusFromRunningIds,
-  threadChangeRequestSnapshotsAtom,
-  type ThreadChangeRequestSnapshot,
   type TerminalStatusIndicator,
 } from "./ThreadStatusIndicators";
 import {
@@ -476,18 +464,11 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
 }) {
   const { composer, draftId, onDiscard, onNavigate, session } = props;
   const promptPreview = composer.prompt.trim().split("\n", 1)[0] ?? "";
-  // images mirrors persistedAttachments once rehydration finishes; before
-  // that only the persisted list is populated, hence max not sum.
-  const attachmentCount =
-    Math.max(composer.images.length, composer.persistedAttachments.length) +
-    composer.terminalContexts.length +
-    composer.elementContexts.length +
-    composer.previewAnnotations.length +
-    composer.reviewComments.length;
+  const attachmentCount = composer.terminalContexts.length + composer.reviewComments.length;
   const preview =
     promptPreview.length > 0
       ? promptPreview
-      : `${attachmentCount} attachment${attachmentCount === 1 ? "" : "s"}`;
+      : `${attachmentCount} context${attachmentCount === 1 ? "" : "s"}`;
   const handleActivate = useCallback(() => onNavigate(draftId), [draftId, onNavigate]);
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {
@@ -698,7 +679,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // False on environments whose server predates thread.settle/unsettle:
   // the lifecycle affordances hide entirely rather than fail on click.
   settlementSupported: boolean;
-  autoSettleOnMerge: boolean;
   // Same contract for thread.snooze/unsnooze.
   snoozeSupported: boolean;
   // Renders the pin glyph. Pinned cards keep the full settle/snooze quick
@@ -720,7 +700,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // the user visits the thread.
   wokeAt: string | null;
   isActive: boolean;
-  openPullRequestsInRightPanel: boolean;
   jumpLabel: string | null;
   currentEnvironmentId: string | null;
   environmentLabel: string | null;
@@ -744,16 +723,9 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
-  changeRequestSnapshot: ThreadChangeRequestSnapshot | null;
-  onChangeRequestSnapshot: (
-    threadKey: string,
-    snapshot: ThreadChangeRequestSnapshot | null,
-  ) => void;
 }) {
   const {
     isRenaming,
-    changeRequestSnapshot,
-    onChangeRequestSnapshot,
     onCancelRename,
     onCommitRename,
     onContextMenu,
@@ -767,7 +739,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     onUnsettle,
     onUnsnooze,
     onUnpin,
-    openPullRequestsInRightPanel,
     renamingTitle,
     thread,
     variant,
@@ -781,7 +752,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
-  const openPrLink = useOpenPrLink();
   const runningTerminalIds = useThreadRunningTerminalIds({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -798,14 +768,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         })
       : null,
   );
-  const retainTerminalOnBranchMismatch = thread.worktreePath === null;
-  const pr = resolveDisplayedThreadPr({
-    threadBranch: thread.branch,
-    gitStatus: gitStatus.data,
-    snapshot: changeRequestSnapshot,
-    retainTerminalOnBranchMismatch,
-  });
-
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
@@ -819,13 +781,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // counts as never-visited, so corrupt local data cannot eat the wake signal.
   const lastVisitedDate = lastVisitedAt === undefined ? null : parseTimestampDate(lastVisitedAt);
   const wokeAtDate = props.wokeAt === null ? null : parseTimestampDate(props.wokeAt);
-  const isWoke =
-    wokeAtDate !== null &&
-    (lastVisitedDate === null || lastVisitedDate < wokeAtDate) &&
-    !changeRequestAutoSettles(pr, {
-      autoSettleOnMerge: props.autoSettleOnMerge,
-      thread,
-    });
+  const isWoke = wokeAtDate !== null && (lastVisitedDate === null || lastVisitedDate < wokeAtDate);
   // In-flight rows (working, or waiting on approval/input) fade as a whole:
   // there is nothing for the user to do yet, so prominence is reserved for
   // rows that need a human — done (unread), read-but-unsettled, failed, and
@@ -899,32 +855,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     activeThreadBranch: thread.branch,
     currentGitBranch: gitStatus.data?.refName ?? null,
   });
-  const prProvider = resolveDisplayedThreadPrProvider({
-    threadBranch: thread.branch,
-    gitStatus: gitStatus.data,
-    snapshot: changeRequestSnapshot,
-    retainTerminalOnBranchMismatch,
-  });
-  const prStatus = prStatusIndicator(pr, prProvider);
-  const settledPrHoverClass = pr ? settledPrHoverColorClass(pr.state) : undefined;
-  useEffect(() => {
-    const nextSnapshot = nextThreadChangeRequestSnapshot({
-      threadBranch: thread.branch,
-      gitStatus: gitStatus.data,
-      snapshot: changeRequestSnapshot,
-      retainTerminalOnBranchMismatch,
-    });
-    if (nextSnapshot === undefined) return;
-    onChangeRequestSnapshot(threadKey, nextSnapshot);
-  }, [
-    changeRequestSnapshot,
-    gitStatus.data,
-    onChangeRequestSnapshot,
-    retainTerminalOnBranchMismatch,
-    thread.branch,
-    threadKey,
-  ]);
-
   const modelInstanceId = thread.session?.providerInstanceId ?? thread.modelSelection.instanceId;
   const providerEntry = props.providerEntryByInstanceId.get(modelInstanceId) ?? null;
   const driverKind = providerEntry?.driverKind ?? null;
@@ -1079,21 +1009,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   useEffect(() => {
     if (!showSnoozeButton) setSnoozeMenuOpen(false);
   }, [showSnoozeButton]);
-  const handlePrClick = useCallback(
-    (event: ReactMouseEvent<HTMLAnchorElement>) => {
-      if (!pr?.url) return;
-      const openedInRightPanel = openPrLink(
-        event,
-        pr.url,
-        openPullRequestsInRightPanel ? threadRef : undefined,
-      );
-      if (openedInRightPanel && openPullRequestsInRightPanel && !props.isActive) {
-        onThreadActivate(threadRef);
-      }
-    },
-    [onThreadActivate, openPrLink, openPullRequestsInRightPanel, pr, props.isActive, threadRef],
-  );
-
   // All sidebar rows share one surface model. Live threads used to look
   // like elevated cards while settled threads were plain rows, leaving neither
   // a useful hierarchy nor a reliable hover cue. Status now lives in the row
@@ -1157,31 +1072,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     </span>
   );
 
-  // A real link so cmd/ctrl+click and middle-click open the host in the
-  // browser. A plain click still opens T3's pull request view.
-  const prBadge =
-    prStatus && pr ? (
-      <a
-        href={pr.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={handlePrClick}
-        className={cn(
-          // Sidebar chrome follows the interface font; tabular digits keep the
-          // number from reflowing as PR states stream in.
-          "shrink-0 text-xs tabular-nums hover:underline",
-          variant === "slim" && variantAction === "unsettle"
-            ? props.isActive
-              ? "text-secondary-label"
-              : cn("text-secondary-label transition-colors", settledPrHoverClass)
-            : prStatus.colorClass,
-        )}
-        aria-label={prStatus.tooltip}
-      >
-        #{pr.number}
-      </a>
-    ) : null;
   const terminalStatusIcon = terminalStatus ? (
     <span
       role="img"
@@ -1239,10 +1129,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 Regenerating title
               </span>
             ) : null}
-            {/* The PR badge stays outside the hover-fading slot: it must
-              remain visible AND clickable while the row is hovered. Only
-              the time/jump label yields to the settle affordance. */}
-            {prBadge}
             <span className="relative ml-auto flex h-6 min-w-8 shrink-0 items-center justify-end">
               <span
                 className={cn(
@@ -1548,7 +1434,6 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 <span className="flex-1" />
               )}
               {terminalStatusIcon}
-              {prBadge}
               {diff ? (
                 <span className="shrink-0 font-mono">
                   <span className="text-emerald-600 dark:text-emerald-400">+{diff.insertions}</span>{" "}
@@ -1715,7 +1600,6 @@ export default function Sidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -1923,8 +1807,6 @@ export default function Sidebar() {
   // fresh clock whenever it recomputes.
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
 
-  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
-
   // Project scope: one menu above the list. Scoping filters the list without
   // making the header width depend on the number or length of project names.
   const [projectScopeKey, setProjectScopeKey] = useState<string | null>(null);
@@ -1983,22 +1865,6 @@ export default function Sidebar() {
     clearSelection();
   }, [clearSelection, projectScopeKey]);
 
-  const handleProjectSettings = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>, projectGroup: SidebarProjectSnapshot) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setProjectScopeMenuOpen(false);
-      if (isMobile) {
-        setOpenMobile(false);
-      }
-      void router.navigate({
-        to: "/projects/$projectKey",
-        params: { projectKey: projectGroup.projectKey },
-      });
-    },
-    [isMobile, router, setOpenMobile],
-  );
-
   // Settled threads stay in the live shell stream (settled ≠ archived), so
   // the partition works directly off live shells: no archived-snapshot
   // merging, no optimistic holds. Archived threads remain hidden here —
@@ -2038,11 +1904,6 @@ export default function Sidebar() {
       const supportsSnooze =
         serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-      const snapshot = changeRequestSnapshotByKey.get(threadKey);
-      const changeRequest =
-        snapshot != null && (thread.worktreePath === null || snapshot.branch === thread.branch)
-          ? snapshot.pr
-          : null;
       // Snooze outranks everything, including a pin: "hide until Tuesday"
       // temporarily suspends "keep on top". The pin survives underneath —
       // and so does its pinOrderKey, so on wake the thread reappears at
@@ -2062,8 +1923,6 @@ export default function Sidebar() {
         effectiveSettled(thread, {
           now,
           autoSettleAfterDays,
-          autoSettleOnMerge,
-          changeRequest,
         })
       ) {
         settled.push(thread);
@@ -2097,16 +1956,7 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [
-    autoSettleAfterDays,
-    autoSettleOnMerge,
-    changeRequestSnapshotByKey,
-    nowMinute,
-    scopedProjectKeys,
-    serverConfigs,
-    snoozeWakeTick,
-    threads,
-  ]);
+  }, [autoSettleAfterDays, nowMinute, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -3381,7 +3231,7 @@ export default function Sidebar() {
   const newThreadInProjectShortcutLabel = shortcutLabelForCommand(keybindings, "chat.newLocal");
   return (
     <>
-      <SidebarChromeHeader isElectron={isElectron} />
+      <SidebarChromeHeader />
       <SidebarContent
         className="gap-0"
         fixedHeader={
@@ -3536,19 +3386,6 @@ export default function Sidebar() {
                               className="size-4 shrink-0"
                             />
                             <span className="min-w-0 truncate text-sm">{project.displayName}</span>
-                            <Button
-                              size="icon-xs"
-                              variant="ghost-muted"
-                              aria-label={`Project settings for ${project.displayName}`}
-                              title={`Project settings for ${project.displayName}`}
-                              className="ml-auto size-6 [--control-icon-color:currentColor] text-icon-muted focus-visible:bg-accent focus-visible:text-foreground"
-                              onPointerDown={(event) => event.stopPropagation()}
-                              onClick={(event) => {
-                                void handleProjectSettings(event, project);
-                              }}
-                            >
-                              <SettingsIcon className="size-3.5" />
-                            </Button>
                           </MenuRadioItem>
                         );
                       })}
@@ -3688,7 +3525,6 @@ export default function Sidebar() {
                           serverConfigs.get(thread.environmentId)?.environment.capabilities
                             .threadSettlement === true
                         }
-                        autoSettleOnMerge={autoSettleOnMerge}
                         snoozeSupported={
                           serverConfigs.get(thread.environmentId)?.environment.capabilities
                             .threadSnooze === true
@@ -3712,7 +3548,6 @@ export default function Sidebar() {
                         // rows resolve to null on their own.
                         wokeAt={threadWokeAt(thread, { now: snoozeNow })}
                         isActive={routeThreadKey === threadKey}
-                        openPullRequestsInRightPanel={routeThreadRef !== null}
                         jumpLabel={showJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null}
                         currentEnvironmentId={primaryEnvironmentId}
                         environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
@@ -3749,8 +3584,6 @@ export default function Sidebar() {
                         onUnsnooze={attemptUnsnooze}
                         onUnpin={attemptUnpin}
                         onAcknowledgeWoke={acknowledgeWoke}
-                        changeRequestSnapshot={changeRequestSnapshotByKey.get(threadKey) ?? null}
-                        onChangeRequestSnapshot={setThreadChangeRequestSnapshot}
                       />
                     );
                   };

@@ -2,7 +2,7 @@
  * Instance-aware view over the wire `ServerProvider[]`.
  *
  * The wire carries one `ServerProvider` per *configured instance* — the
- * default built-in codex instance, a user-authored `codex_personal`, an
+ * default built-in Claude instance, a user-authored `claude_personal`, an
  * unavailable shadow for a fork driver, etc. Legacy UI code collapsed these
  * into a single bucket per built-in driver via `.find((p) => p.driver === kind)`,
  * which silently dropped every custom instance after the first. This module
@@ -82,8 +82,8 @@ export function isProviderInstancePickerVisible(entry: ProviderInstanceEntry): b
 
 /**
  * Turn an instance id slug into a human-readable label. Splits on `_` / `-`
- * and camelCase boundaries and title-cases each token, so `codex_personal`
- * becomes "Codex Personal" and `myCustomInstance` becomes "My Custom
+ * and camelCase boundaries and title-cases each token, so `claude_personal`
+ * becomes "Claude Personal" and `myCustomInstance` becomes "My Custom
  * Instance".
  *
  * This is a fallback used only when the wire snapshot's `displayName`
@@ -141,7 +141,7 @@ export function normalizeProviderAccentColor(value: string | undefined): string 
  *   2. For non-default instances, a humanized `instanceId` — the server
  *      fell back to the driver-level presentation constant (which is the
  *      same for every instance of that kind), so we differentiate at the
- *      UI layer by slug. This is what keeps "Codex" + "Codex Personal"
+ *      UI layer by slug. This is what keeps "Claude" + "Claude Personal"
  *      distinguishable in tooltips and list labels today.
  *   3. The snapshot's `displayName` (if any) — default instance, trust
  *      whatever label the driver stamped.

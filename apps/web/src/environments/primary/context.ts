@@ -4,16 +4,9 @@ import {
   type KnownEnvironment,
 } from "@t3tools/client-runtime/environment";
 import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
-
-import { PrimaryEnvironmentRequestError, retryTransientBootstrap } from "./auth";
-import { PrimaryEnvironmentHttpClient } from "./httpClient";
-
-import { runPrimaryHttp } from "../../lib/runtime";
 import { readPrimaryEnvironmentTarget } from "./target";
 
 let primaryEnvironmentDescriptor: ExecutionEnvironmentDescriptor | null = null;
-let primaryEnvironmentDescriptorPromise: Promise<ExecutionEnvironmentDescriptor> | null = null;
 
 function createPrimaryKnownEnvironment(input: {
   readonly source: KnownEnvironment["source"];
@@ -33,25 +26,6 @@ function createPrimaryKnownEnvironment(input: {
     }),
     descriptor,
   );
-}
-
-async function fetchPrimaryEnvironmentDescriptor(): Promise<ExecutionEnvironmentDescriptor> {
-  return retryTransientBootstrap(async () => {
-    let descriptor: ExecutionEnvironmentDescriptor;
-    try {
-      descriptor = await runPrimaryHttp(
-        PrimaryEnvironmentHttpClient.pipe(Effect.flatMap((client) => client.metadata.descriptor())),
-      );
-    } catch (error) {
-      throw PrimaryEnvironmentRequestError.fromCause({
-        operation: "fetch-environment-descriptor",
-        cause: error,
-      });
-    }
-
-    writePrimaryEnvironmentDescriptor(descriptor);
-    return descriptor;
-  });
 }
 
 export function readPrimaryEnvironmentDescriptor(): ExecutionEnvironmentDescriptor | null {
@@ -82,21 +56,10 @@ export function resolveInitialPrimaryEnvironmentDescriptor(): Promise<ExecutionE
     return Promise.resolve(descriptor);
   }
 
-  if (primaryEnvironmentDescriptorPromise) {
-    return primaryEnvironmentDescriptorPromise;
-  }
-
-  const nextPromise = fetchPrimaryEnvironmentDescriptor();
-  primaryEnvironmentDescriptorPromise = nextPromise;
-  return nextPromise.finally(() => {
-    if (primaryEnvironmentDescriptorPromise === nextPromise) {
-      primaryEnvironmentDescriptorPromise = null;
-    }
-  });
+  return Promise.reject(new Error("The Coder workspace has not finished connecting."));
 }
 
 export function __resetPrimaryEnvironmentBootstrapForTests(): void {
-  primaryEnvironmentDescriptorPromise = null;
   primaryEnvironmentDescriptor = null;
 }
 

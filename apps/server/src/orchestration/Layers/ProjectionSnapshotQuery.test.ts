@@ -1850,11 +1850,10 @@ it.effect(
             Effect.sync(() => {
               resolveCalls.push(cwd);
               return {
-                canonicalKey: `github.com/acme${cwd}`,
+                canonicalKey: `workspace:${cwd}`,
                 locator: {
-                  source: "git-remote" as const,
-                  remoteName: "origin",
-                  remoteUrl: `https://github.com/acme${cwd}.git`,
+                  source: "workspace-path" as const,
+                  path: cwd,
                 },
                 rootPath: cwd,
               };

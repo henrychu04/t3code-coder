@@ -46,12 +46,9 @@ export function resolveTimestampLocale(
   }
 }
 
-function readHostSystemLocale(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.desktopBridge?.getSystemLocale?.() ?? null;
-}
-
-const timestampLocale = resolveTimestampLocale(readHostSystemLocale());
+const timestampLocale = resolveTimestampLocale(
+  typeof navigator === "undefined" ? null : navigator.language,
+);
 
 const timestampFormatterCache = new Map<string, Intl.DateTimeFormat>();
 

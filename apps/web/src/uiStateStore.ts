@@ -1,4 +1,3 @@
-import { Debouncer } from "@tanstack/react-pacer";
 import { create } from "zustand";
 import { normalizeProjectPathForComparison } from "./lib/projectPaths";
 
@@ -139,25 +138,7 @@ export function parsePersistedState(parsed: PersistedUiState): UiState {
 }
 
 function readPersistedState(): UiState {
-  if (typeof window === "undefined") {
-    return initialState;
-  }
-  try {
-    const raw = window.localStorage.getItem(PERSISTED_STATE_KEY);
-    if (!raw) {
-      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        const legacyRaw = window.localStorage.getItem(legacyKey);
-        if (!legacyRaw) {
-          continue;
-        }
-        return parsePersistedState(JSON.parse(legacyRaw) as PersistedUiState);
-      }
-      return initialState;
-    }
-    return parsePersistedState(JSON.parse(raw) as PersistedUiState);
-  } catch {
-    return initialState;
-  }
+  return initialState;
 }
 
 function sanitizePersistedThreadChangedFilesExpanded(
@@ -189,38 +170,8 @@ function sanitizePersistedThreadChangedFilesExpanded(
 }
 
 export function persistState(state: UiState): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    const projectExpandedById = Object.fromEntries(
-      Object.entries(state.projectExpandedById).filter(
-        ([key]) => key !== LEGACY_PROJECT_EXPANSION_DEFAULT_KEY,
-      ),
-    );
-    window.localStorage.setItem(
-      PERSISTED_STATE_KEY,
-      JSON.stringify({
-        projectExpandedById,
-        projectOrder: state.projectOrder,
-        threadLastVisitedAtById: state.threadLastVisitedAtById,
-        defaultAdvertisedEndpointKey: state.defaultAdvertisedEndpointKey,
-        threadChangedFilesExpansionVersion: THREAD_CHANGED_FILES_EXPANSION_VERSION,
-        threadChangedFilesExpandedById: state.threadChangedFilesExpandedById,
-      } satisfies PersistedUiState),
-    );
-    if (!legacyKeysCleanedUp) {
-      legacyKeysCleanedUp = true;
-      for (const legacyKey of LEGACY_PERSISTED_STATE_KEYS) {
-        window.localStorage.removeItem(legacyKey);
-      }
-    }
-  } catch {
-    // Ignore quota/storage errors to avoid breaking chat UX.
-  }
+  void state;
 }
-
-const debouncedPersistState = new Debouncer(persistState, { wait: 500 });
 
 export function markThreadVisited(state: UiState, threadId: string, visitedAt: string): UiState {
   const visitedAtMs = Date.parse(visitedAt);
@@ -411,11 +362,3 @@ export const useUiStateStore = create<UiStateStore>((set) => ({
       reorderProjects(state, currentProjectOrder, draggedProjectIds, targetProjectIds),
     ),
 }));
-
-useUiStateStore.subscribe((state) => debouncedPersistState.maybeExecute(state));
-
-if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-  window.addEventListener("beforeunload", () => {
-    debouncedPersistState.flush();
-  });
-}

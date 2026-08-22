@@ -11,17 +11,9 @@
       "types": "./src/themePreview.ts",
       "import": "./src/themePreview.ts"
     },
-    "./projectFavicon": {
-      "types": "./src/projectFavicon.ts",
-      "import": "./src/projectFavicon.ts"
-    },
     "./model": {
       "types": "./src/model.ts",
       "import": "./src/model.ts"
-    },
-    "./advertisedEndpoint": {
-      "types": "./src/advertisedEndpoint.ts",
-      "import": "./src/advertisedEndpoint.ts"
     },
     "./agentAwareness": {
       "types": "./src/agentAwareness.ts",
@@ -31,21 +23,9 @@
       "types": "./src/git.ts",
       "import": "./src/git.ts"
     },
-    "./sourceControl": {
-      "types": "./src/sourceControl.ts",
-      "import": "./src/sourceControl.ts"
-    },
     "./logging": {
       "types": "./src/logging.ts",
       "import": "./src/logging.ts"
-    },
-    "./observability": {
-      "types": "./src/observability.ts",
-      "import": "./src/observability.ts"
-    },
-    "./httpObservability": {
-      "types": "./src/httpObservability.ts",
-      "import": "./src/httpObservability.ts"
     },
     "./shell": {
       "types": "./src/shell.ts",
@@ -54,10 +34,6 @@
     "./semver": {
       "types": "./src/semver.ts",
       "import": "./src/semver.ts"
-    },
-    "./Net": {
-      "types": "./src/Net.ts",
-      "import": "./src/Net.ts"
     },
     "./DrainableWorker": {
       "types": "./src/DrainableWorker.ts",
@@ -87,10 +63,6 @@
       "types": "./src/serverSettings.ts",
       "import": "./src/serverSettings.ts"
     },
-    "./backgroundActivitySettings": {
-      "types": "./src/backgroundActivitySettings.ts",
-      "import": "./src/backgroundActivitySettings.ts"
-    },
     "./String": {
       "types": "./src/String.ts",
       "import": "./src/String.ts"
@@ -99,65 +71,25 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
+    "./terminalEnvironment": {
+      "types": "./src/terminalEnvironment.ts",
+      "import": "./src/terminalEnvironment.ts"
+    },
     "./threadEnvMode": {
       "types": "./src/threadEnvMode.ts",
       "import": "./src/threadEnvMode.ts"
-    },
-    "./t3ProjectFile": {
-      "types": "./src/t3ProjectFile.ts",
-      "import": "./src/t3ProjectFile.ts"
     },
     "./orchestrationTiming": {
       "types": "./src/orchestrationTiming.ts",
       "import": "./src/orchestrationTiming.ts"
     },
-    "./remote": {
-      "types": "./src/remote.ts",
-      "import": "./src/remote.ts"
-    },
-    "./relaySigning": {
-      "types": "./src/relaySigning.ts",
-      "import": "./src/relaySigning.ts"
-    },
-    "./dpop": {
-      "types": "./src/dpop.ts",
-      "import": "./src/dpop.ts"
-    },
-    "./dpopCommon": {
-      "types": "./src/dpopCommon.ts",
-      "import": "./src/dpopCommon.ts"
-    },
-    "./relayAuth": {
-      "types": "./src/relayAuth.ts",
-      "import": "./src/relayAuth.ts"
-    },
-    "./relayUrl": {
-      "types": "./src/relayUrl.ts",
-      "import": "./src/relayUrl.ts"
-    },
-    "./relayJwt": {
-      "types": "./src/relayJwt.ts",
-      "import": "./src/relayJwt.ts"
-    },
-    "./oauthScope": {
-      "types": "./src/oauthScope.ts",
-      "import": "./src/oauthScope.ts"
-    },
     "./searchRanking": {
       "types": "./src/searchRanking.ts",
       "import": "./src/searchRanking.ts"
     },
-    "./qrCode": {
-      "types": "./src/qrCode.ts",
-      "import": "./src/qrCode.ts"
-    },
     "./cliArgs": {
       "types": "./src/cliArgs.ts",
       "import": "./src/cliArgs.ts"
-    },
-    "./connectAuth": {
-      "types": "./src/connectAuth.ts",
-      "import": "./src/connectAuth.ts"
     },
     "./path": {
       "types": "./src/path.ts",
@@ -179,22 +111,6 @@
       "types": "./src/terminalLabels.ts",
       "import": "./src/terminalLabels.ts"
     },
-    "./relayClient": {
-      "types": "./src/relayClient.ts",
-      "import": "./src/relayClient.ts"
-    },
-    "./relayTracing": {
-      "types": "./src/relayTracing.ts",
-      "import": "./src/relayTracing.ts"
-    },
-    "./preview": {
-      "types": "./src/preview.ts",
-      "import": "./src/preview.ts"
-    },
-    "./previewViewport": {
-      "types": "./src/previewViewport.ts",
-      "import": "./src/previewViewport.ts"
-    },
     "./filePreview": {
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"
@@ -207,25 +123,9 @@
       "types": "./src/hostProcess.ts",
       "import": "./src/hostProcess.ts"
     },
-    "./httpReadiness": {
-      "types": "./src/httpReadiness.ts",
-      "import": "./src/httpReadiness.ts"
-    },
     "./devHome": {
       "types": "./src/devHome.ts",
       "import": "./src/devHome.ts"
-    },
-    "./devProxy": {
-      "types": "./src/devProxy.ts",
-      "import": "./src/devProxy.ts"
-    },
-    "./usageMerge": {
-      "types": "./src/usageMerge.ts",
-      "import": "./src/usageMerge.ts"
-    },
-    "./usageFormat": {
-      "types": "./src/usageFormat.ts",
-      "import": "./src/usageFormat.ts"
     }
   },
   "scripts": {
@@ -233,11 +133,8 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@noble/curves": "catalog:",
-    "@noble/hashes": "catalog:",
     "@t3tools/contracts": "workspace:*",
     "effect": "catalog:",
-    "jose": "catalog:",
     "yaml": "catalog:"
   },
   "devDependencies": {

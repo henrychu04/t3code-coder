@@ -7,7 +7,7 @@
  * and `listInstances`; this helper fills both in from a single kind-keyed
  * input so individual fixtures can stay concise.
  *
- * Non-default instance ids (e.g. `codex_personal`) are not addressable via
+ * Non-default instance ids (e.g. `claude_personal`) are not addressable via
  * the shim returned here — the legacy test fixtures only ever had
  * single-instance-per-driver data anyway.
  *

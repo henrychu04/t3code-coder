@@ -10,14 +10,11 @@ import {
 
 const environmentId = EnvironmentId.make("environment");
 const repositoryIdentity = {
-  canonicalKey: "github.com/t3tools/t3code",
+  canonicalKey: "workspace:/work/t3code",
   locator: {
-    source: "git-remote" as const,
-    remoteName: "upstream",
-    remoteUrl: "https://github.com/t3tools/t3code.git",
+    source: "workspace-path" as const,
+    path: "/work/t3code",
   },
-  provider: "github",
-  owner: "t3tools",
   name: "t3code",
   displayName: "T3 Code",
 };

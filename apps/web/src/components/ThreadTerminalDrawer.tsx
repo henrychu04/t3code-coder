@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -13,11 +12,11 @@ import {
   XIcon,
 } from "lucide-react";
 import {
-  type ContextMenuItem,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
   type ThreadId,
 } from "@t3tools/contracts";
+import type { ContextMenuItem } from "../localApiTypes";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as Schema from "effect/Schema";
 import {
@@ -41,8 +40,7 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
-import { useOpenInPreferredEditor } from "../editorPreferences";
-import { isTerminalLinkActivation, resolvePathLinkTarget } from "../terminal-links";
+import { isTerminalLinkActivation } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
@@ -63,10 +61,7 @@ import { confirmTerminalClose } from "~/lib/terminalCloseConfirm";
 import { useClientSettings } from "../hooks/useSettings";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useAttachedTerminalSession } from "../state/terminalSessions";
-import { serverEnvironment } from "../state/server";
-import { previewEnvironment } from "../state/preview";
 import { terminalEnvironment } from "../state/terminal";
-import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import {
@@ -270,8 +265,8 @@ export function terminalSelectionMenuItems(): ContextMenuItem<"add-to-chat" | "c
 /**
  * Right-click menu for the terminal canvas: the selection actions (disabled
  * until a selection exists) plus Paste. Paste is always offered: the browser
- * (and Electron's default editing menu) can only paste into an editable
- * element, so a canvas terminal never gets a usable entry from them.
+ * can only paste into an editable element, so a canvas terminal needs its own
+ * usable entry.
  */
 export function terminalContextMenuItems(options: {
   hasSelection: boolean;
@@ -354,15 +349,6 @@ export function TerminalViewport({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
   const environmentId = threadRef.environmentId;
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const openInPreferredEditor = useOpenInPreferredEditor(
-    environmentId,
-    serverConfig?.availableEditors ?? [],
-  );
-  const openTerminalPath = useEffectEvent((target: string) => openInPreferredEditor(target));
-  const openPreview = useAtomCommand(previewEnvironment.open, {
-    reportFailure: false,
-  });
   const runTerminalWrite = useAtomCommand(terminalEnvironment.write, {
     reportFailure: false,
   });
@@ -624,7 +610,7 @@ export function TerminalViewport({
       const showTerminalContextMenu = async (event: MouseEvent) => {
         if (!localApi || !terminalRef.current) return;
         // Own the gesture before anything async: leaving the default alive lets
-        // the browser (or Electron's editing menu) answer with a Paste entry
+        // the browser answer with a Paste entry
         // that is permanently disabled over the terminal canvas.
         event.preventDefault();
         // A right-click supersedes a selection popup that is pending or open.
@@ -749,41 +735,7 @@ export function TerminalViewport({
         if (!isTerminalLinkActivation(event)) return;
         const latestTerminal = terminalRef.current;
         if (!latestTerminal) return;
-        if (/^https?:\/\//u.test(text)) {
-          if (!localApi) {
-            writeSystemMessage(latestTerminal, "Opening links is unavailable in this browser.");
-            return;
-          }
-          const fallbackToBrowser = () => {
-            void localApi.shell.openExternal(text).catch((error: unknown) => {
-              writeSystemMessage(
-                latestTerminal,
-                error instanceof Error ? error.message : "Unable to open link",
-              );
-            });
-          };
-          void openTerminalLinkInPreview({
-            url: text,
-            position: { x: event.clientX, y: event.clientY },
-            threadRef,
-            openPreview,
-            localApi,
-            fallbackToBrowser,
-          });
-          return;
-        }
-        const target = resolvePathLinkTarget(text, cwd);
-        void (async () => {
-          const result = await openTerminalPath(target);
-          if (result._tag === "Success" || isAtomCommandInterrupted(result)) {
-            return;
-          }
-          const error = squashAtomCommandFailure(result);
-          writeSystemMessage(
-            latestTerminal,
-            error instanceof Error ? error.message : "Unable to open path",
-          );
-        })();
+        writeSystemMessage(latestTerminal, `Link opening is disabled: ${text}`);
       }
 
       function handleData(data: string): void {

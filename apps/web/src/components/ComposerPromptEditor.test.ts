@@ -15,10 +15,10 @@ import { registerComposerInlineTokenPaste } from "./composerInlineTokenPaste";
 class TestClipboardEvent extends Event {
   readonly clipboardData: DataTransfer;
 
-  constructor(text: string) {
+  constructor(text: string, files: ReadonlyArray<File> = []) {
     super("paste", { cancelable: true });
     this.clipboardData = {
-      files: [],
+      files,
       getData: (type: string) => (type === "text/plain" ? text : ""),
     } as unknown as DataTransfer;
   }
@@ -69,6 +69,31 @@ describe("registerComposerInlineTokenPaste", () => {
     expect(editor.getEditorState().read(() => $getRoot().getTextContent())).toBe(
       "<mention:.changeset/improve-deploy-error-logging.md> ",
     );
+  });
+
+  it("blocks clipboard files before another paste handler can consume them", () => {
+    vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
+    const editor = createEditor();
+    const plainTextFallback = vi.fn(() => true);
+
+    registerComposerInlineTokenPaste(editor, {
+      createMentionNode: (path) => $createTextNode(`<mention:${path}>`),
+      getExpandedAbsoluteOffsetForPoint: () => 0,
+    });
+    editor.registerCommand(PASTE_COMMAND, plainTextFallback, COMMAND_PRIORITY_EDITOR);
+
+    const event = new TestClipboardEvent("", [{} as File]);
+    let handled = false;
+    editor.update(
+      () => {
+        handled = editor.dispatchCommand(PASTE_COMMAND, event as ClipboardEvent);
+      },
+      { discrete: true },
+    );
+
+    expect(handled).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+    expect(plainTextFallback).not.toHaveBeenCalled();
   });
 
   it.each([

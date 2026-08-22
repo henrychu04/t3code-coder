@@ -18,17 +18,7 @@ import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 
-const RuntimeEventRawSource = Schema.Union([
-  Schema.Literal("codex.app-server.notification"),
-  Schema.Literal("codex.app-server.request"),
-  Schema.Literal("codex.eventmsg"),
-  Schema.Literal("claude.sdk.message"),
-  Schema.Literal("claude.sdk.permission"),
-  Schema.Literal("codex.sdk.thread-event"),
-  Schema.Literal("opencode.sdk.event"),
-  Schema.Literal("acp.jsonrpc"),
-  Schema.TemplateLiteral(["acp.", Schema.String, ".extension"]),
-]);
+const RuntimeEventRawSource = Schema.Literals(["claude.sdk.message", "claude.sdk.permission"]);
 export type RuntimeEventRawSource = typeof RuntimeEventRawSource.Type;
 
 export const RuntimeEventRaw = Schema.Struct({
@@ -186,8 +176,6 @@ const ProviderRuntimeEventType = Schema.Literals([
   "auth.status",
   "account.updated",
   "account.rate-limits.updated",
-  "mcp.status.updated",
-  "mcp.oauth.completed",
   "model.rerouted",
   "config.warning",
   "deprecation.notice",
@@ -237,8 +225,6 @@ const ToolSummaryType = Schema.Literal("tool.summary");
 const AuthStatusType = Schema.Literal("auth.status");
 const AccountUpdatedType = Schema.Literal("account.updated");
 const AccountRateLimitsUpdatedType = Schema.Literal("account.rate-limits.updated");
-const McpStatusUpdatedType = Schema.Literal("mcp.status.updated");
-const McpOauthCompletedType = Schema.Literal("mcp.oauth.completed");
 const ModelReroutedType = Schema.Literal("model.rerouted");
 const ConfigWarningType = Schema.Literal("config.warning");
 const DeprecationNoticeType = Schema.Literal("deprecation.notice");
@@ -471,8 +457,8 @@ export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 /**
  * Typed per-task usage rollup. Field names match the orchestration-v2 subagent
  * usage vocabulary (#4779) so the eventual migration is a rename, not a remap.
- * Claude reports per-activation deltas; Codex reports cumulative totals — the
- * merge strategy is provider-specific and lives in client-runtime.
+ * Claude reports cumulative task totals; the merge strategy lives in
+ * client-runtime.
  */
 export const RuntimeTaskUsage = Schema.Struct({
   totalTokens: NonNegativeInt,
@@ -574,10 +560,10 @@ const taskAgentLinkageFields = {
   attempt: Schema.optional(NonNegativeInt),
   runHandles: Schema.optional(TaskRunHandles),
   outputFile: Schema.optional(TrimmedNonEmptyStringSchema),
-  /** Codex agent hierarchy path, e.g. "/root/marlow". */
+  /** Provider-reported agent hierarchy path, e.g. "/root/marlow". */
   agentPath: Schema.optional(TrimmedNonEmptyStringSchema),
   /**
-   * Set on provider-synthesized child-agent events (Codex) whose activity
+   * Set on provider-synthesized child-agent events whose activity
    * belongs in the Agents surface, never the parent timeline.
    */
   timelineBypass: Schema.optional(Schema.Boolean),
@@ -703,18 +689,6 @@ const AccountRateLimitsUpdatedPayload = Schema.Struct({
   rateLimits: Schema.Unknown,
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
-
-const McpStatusUpdatedPayload = Schema.Struct({
-  status: Schema.Unknown,
-});
-export type McpStatusUpdatedPayload = typeof McpStatusUpdatedPayload.Type;
-
-const McpOauthCompletedPayload = Schema.Struct({
-  success: Schema.Boolean,
-  name: Schema.optional(TrimmedNonEmptyStringSchema),
-  error: Schema.optional(TrimmedNonEmptyStringSchema),
-});
-export type McpOauthCompletedPayload = typeof McpOauthCompletedPayload.Type;
 
 const ModelReroutedPayload = Schema.Struct({
   fromModel: TrimmedNonEmptyStringSchema,
@@ -1071,21 +1045,6 @@ const ProviderRuntimeAccountRateLimitsUpdatedEvent = Schema.Struct({
 export type ProviderRuntimeAccountRateLimitsUpdatedEvent =
   typeof ProviderRuntimeAccountRateLimitsUpdatedEvent.Type;
 
-const ProviderRuntimeMcpStatusUpdatedEvent = Schema.Struct({
-  ...ProviderRuntimeEventBase.fields,
-  type: McpStatusUpdatedType,
-  payload: McpStatusUpdatedPayload,
-});
-export type ProviderRuntimeMcpStatusUpdatedEvent = typeof ProviderRuntimeMcpStatusUpdatedEvent.Type;
-
-const ProviderRuntimeMcpOauthCompletedEvent = Schema.Struct({
-  ...ProviderRuntimeEventBase.fields,
-  type: McpOauthCompletedType,
-  payload: McpOauthCompletedPayload,
-});
-export type ProviderRuntimeMcpOauthCompletedEvent =
-  typeof ProviderRuntimeMcpOauthCompletedEvent.Type;
-
 const ProviderRuntimeModelReroutedEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: ModelReroutedType,
@@ -1177,8 +1136,6 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeAuthStatusEvent,
   ProviderRuntimeAccountUpdatedEvent,
   ProviderRuntimeAccountRateLimitsUpdatedEvent,
-  ProviderRuntimeMcpStatusUpdatedEvent,
-  ProviderRuntimeMcpOauthCompletedEvent,
   ProviderRuntimeModelReroutedEvent,
   ProviderRuntimeConfigWarningEvent,
   ProviderRuntimeDeprecationNoticeEvent,

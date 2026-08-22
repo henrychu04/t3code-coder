@@ -1,0 +1,23 @@
+{
+  "name": "@t3tools/coder-helper",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"#!/usr/bin/env node\" --outfile=dist/workspace-helper",
+    "start": "node src/bin.ts",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@t3tools/coder-cli": "workspace:*",
+    "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:",
+    "t3": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "esbuild": "^0.28.1",
+    "vite-plus": "catalog:"
+  }
+}

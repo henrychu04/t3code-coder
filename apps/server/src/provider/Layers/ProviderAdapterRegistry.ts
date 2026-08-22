@@ -79,7 +79,7 @@ const makeProviderAdapterRegistry = Effect.fn("makeProviderAdapterRegistry")(fun
           const defaultId = defaultInstanceIdForDriver(instance.driverKind);
           if (instance.instanceId === defaultId) {
             // Only the default-instance rows show up through the legacy
-            // shim — custom instances like `codex_personal` have no
+            // shim — custom instances like `claude_personal` have no
             // `ProviderDriverKind` equivalent.
             kinds.add(instance.driverKind);
           }

@@ -25,7 +25,6 @@ import {
 import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useThread } from "../state/entities";
 import { resolveNewDraftStartFromOrigin } from "../lib/chatThreadActions";
-import { readT3ProjectFileDefaultThreadEnvMode } from "../lib/t3ProjectFileDefaults";
 import { primaryServerSettingsAtom } from "../state/server";
 import { resolveThreadRouteTarget } from "../threadRoutes";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
@@ -75,7 +74,7 @@ export function useNewThreadHandler() {
         startFromOrigin?: boolean;
         replace?: boolean;
         /**
-         * Move the viewed draft's typed content (prompt + images) into the
+         * Move the viewed draft's typed prompt into the
          * draft this request lands on. Set by the draft repo picker: the
          * user started writing in the wrong project and the text should
          * follow them. Explicit new-thread surfaces leave this unset and
@@ -93,7 +92,7 @@ export function useNewThreadHandler() {
         getDraftSession,
         getDraftThread,
         applyStickyState,
-        moveComposerPromptAndImages,
+        moveComposerPrompt,
         setDraftThreadContext,
         setLogicalProjectDraftThreadId,
         setModelSelection,
@@ -153,7 +152,7 @@ export function useNewThreadHandler() {
           !composerDraftHasUserContent(getComposerDraft(destinationDraftId)) &&
           composerDraftHasUserContent(getComposerDraft(carryContentSourceDraftId))
         ) {
-          moveComposerPromptAndImages(carryContentSourceDraftId, destinationDraftId);
+          moveComposerPrompt(carryContentSourceDraftId, destinationDraftId);
         }
       };
       const project = projects.find(
@@ -161,19 +160,9 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
-      // The shared resolver owns the priority order. The t3.json read is
-      // skipped entirely when a higher-priority source decides, and its
-      // query atom caches per project after the first call.
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
-        const consultProjectFile = project !== undefined && project.defaultThreadEnvMode == null;
         return resolveDefaultThreadEnvMode({
           projectSetting: project?.defaultThreadEnvMode,
-          projectFile: consultProjectFile
-            ? await readT3ProjectFileDefaultThreadEnvMode(
-                project.environmentId,
-                project.workspaceRoot,
-              )
-            : null,
           globalDefault: primaryServerSettings.defaultThreadEnvMode,
         });
       };
@@ -200,7 +189,7 @@ export function useNewThreadHandler() {
       }
       // New-thread surfaces (button, hotkeys, "/" landing, palette) only
       // ever reuse a draft the user has NOT invested in. A draft with typed
-      // text or attachments is work in progress: it stays alive where it is
+      // text or context is work in progress: it stays alive where it is
       // (reachable from the sidebar draft rows) and this request mints a
       // fresh draft instead — the remap in the store preserves invested
       // drafts rather than deleting them.

@@ -13,20 +13,10 @@ type RuntimeSqliteLayerConfig = {
   readonly spanAttributes?: Record<string, unknown>;
 };
 
-type Loader = {
-  layer: (config: RuntimeSqliteLayerConfig) => Layer.Layer<SqlClient.SqlClient, SqlError>;
-};
-const defaultSqliteClientLoaders = {
-  bun: () => import("@effect/sql-sqlite-bun/SqliteClient"),
-  node: () => import("../NodeSqliteClient.ts"),
-} satisfies Record<string, () => Promise<Loader>>;
-
 const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
   config: RuntimeSqliteLayerConfig,
 ) {
-  const runtime = process.versions.bun !== undefined ? "bun" : "node";
-  const loader = defaultSqliteClientLoaders[runtime];
-  const clientModule = yield* Effect.promise<Loader>(loader);
+  const clientModule = yield* Effect.promise(() => import("../NodeSqliteClient.ts"));
   return clientModule.layer(config);
 }, Layer.unwrap);
 

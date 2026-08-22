@@ -6,15 +6,12 @@ import type {
 } from "@t3tools/contracts";
 import { OrchestrationCommand } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import * as Clock from "effect/Clock";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Metric from "effect/Metric";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
@@ -22,12 +19,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import {
-  metricAttributes,
-  orchestrationCommandAckDuration,
-  orchestrationCommandsTotal,
-  orchestrationCommandDuration,
-} from "../../observability/Metrics.ts";
 import { toPersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
@@ -55,7 +46,6 @@ const isOrchestrationCommandInvariantError = Schema.is(OrchestrationCommandInvar
 interface CommandEnvelope {
   command: OrchestrationCommand;
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
-  startedAtMs: number;
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
@@ -106,12 +96,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const processEnvelope = (envelope: CommandEnvelope): Effect.Effect<void> => {
     const dispatchStartSequence = commandReadModel.snapshotSequence;
-    let processingStartedAtMs = 0;
     const aggregateRef = commandToAggregateRef(envelope.command);
-    const baseMetricAttributes = {
-      commandType: envelope.command.type,
-      aggregateKind: aggregateRef.aggregateKind,
-    } as const;
     const reconcileReadModelAfterDispatchFailure = Effect.gen(function* () {
       const persistedEvents = yield* Stream.runCollect(
         eventStore.readFromSequence(dispatchStartSequence),
@@ -129,7 +114,6 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
     return Effect.exit(
       Effect.gen(function* () {
-        processingStartedAtMs = yield* Clock.currentTimeMillis;
         yield* Effect.annotateCurrentSpan({
           "orchestration.command_id": envelope.command.commandId,
           "orchestration.command_type": envelope.command.type,
@@ -230,49 +214,14 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           );
 
         commandReadModel = committedCommand.nextCommandReadModel;
-        for (const [index, event] of committedCommand.committedEvents.entries()) {
+        for (const event of committedCommand.committedEvents) {
           yield* PubSub.publish(eventPubSub, event);
-          if (index === 0) {
-            yield* Metric.update(
-              Metric.withAttributes(
-                orchestrationCommandAckDuration,
-                metricAttributes({
-                  ...baseMetricAttributes,
-                  ackEventType: event.type,
-                }),
-              ),
-              Duration.millis(Math.max(0, (yield* Clock.currentTimeMillis) - envelope.startedAtMs)),
-            );
-          }
         }
         return { sequence: committedCommand.lastSequence };
       }).pipe(Effect.withSpan(`orchestration.command.${envelope.command.type}`)),
     ).pipe(
       Effect.flatMap((exit) =>
         Effect.gen(function* () {
-          const outcome = Exit.isSuccess(exit)
-            ? "success"
-            : Cause.hasInterruptsOnly(exit.cause)
-              ? "interrupt"
-              : "failure";
-          yield* Metric.update(
-            Metric.withAttributes(
-              orchestrationCommandDuration,
-              metricAttributes(baseMetricAttributes),
-            ),
-            Duration.millis(Math.max(0, (yield* Clock.currentTimeMillis) - processingStartedAtMs)),
-          );
-          yield* Metric.update(
-            Metric.withAttributes(
-              orchestrationCommandsTotal,
-              metricAttributes({
-                ...baseMetricAttributes,
-                outcome,
-              }),
-            ),
-            1,
-          );
-
           if (Exit.isSuccess(exit)) {
             yield* Deferred.succeed(envelope.result, exit.value);
             return;
@@ -335,7 +284,6 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       yield* Queue.offer(commandQueue, {
         command,
         result,
-        startedAtMs: yield* Clock.currentTimeMillis,
       });
       return yield* Deferred.await(result);
     });

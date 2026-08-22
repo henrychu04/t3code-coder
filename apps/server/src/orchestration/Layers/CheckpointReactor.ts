@@ -36,7 +36,7 @@ import { RuntimeReceiptBus } from "../Services/RuntimeReceiptBus.ts";
 import type { CheckpointStoreError } from "../../checkpointing/Errors.ts";
 import type { OrchestrationDispatchError } from "../Errors.ts";
 import { isGitRepository } from "../../git/Utils.ts";
-import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
+import { CoderVcsStatus } from "../../coderVcsStatus.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -87,7 +87,7 @@ const make = Effect.gen(function* () {
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
   const receiptBus = yield* RuntimeReceiptBus;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-  const vcsStatusBroadcaster = yield* VcsStatusBroadcaster;
+  const vcsStatus = yield* CoderVcsStatus;
 
   const appendRevertFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -422,7 +422,7 @@ const make = Effect.gen(function* () {
   // git-ref-based checkpoint.
   //
   // ProviderRuntimeIngestion creates placeholder checkpoints on turn.diff.updated
-  // events from the Codex runtime. This handler fires when the corresponding
+  // events from the provider runtime. This handler fires when the corresponding
   // domain event arrives, allowing the reactor to capture the actual filesystem
   // state into a git ref and dispatch a replacement checkpoint.
   const captureCheckpointFromPlaceholder = Effect.fn("captureCheckpointFromPlaceholder")(function* (
@@ -537,7 +537,7 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const local = yield* vcsStatusBroadcaster.refreshLocalStatus(sessionRuntime.value.cwd).pipe(
+    const local = yield* vcsStatus.refresh(sessionRuntime.value.cwd).pipe(
       Effect.catch((error) =>
         Effect.logWarning("failed to refresh local git status after turn completion", {
           threadId: event.threadId,

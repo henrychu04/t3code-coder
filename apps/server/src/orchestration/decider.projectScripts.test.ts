@@ -308,7 +308,6 @@ it.layer(NodeServices.layer)("decider project scripts", (it) => {
             messageId: asMessageId("message-user-1"),
             role: "user",
             text: "hello",
-            attachments: [],
           },
           modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.3-codex", [
             { id: "reasoningEffort", value: "high" },

@@ -39,7 +39,6 @@ describe("canonicalizeClientCommandTimestamps", () => {
         messageId: MessageId.make("message-1"),
         role: "user",
         text: "Start a thread",
-        attachments: [],
       },
       runtimeMode: "full-access",
       interactionMode: "default",

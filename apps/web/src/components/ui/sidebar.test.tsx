@@ -39,14 +39,13 @@ describe("sidebar interactive cursors", () => {
     expect(html).toContain('data-sidebar-state="collapsed"');
   });
 
-  it("keeps the sidebar trigger interactive inside Electron drag regions", () => {
+  it("uses the shared titlebar control size for the sidebar trigger", () => {
     const html = renderToStaticMarkup(
       <SidebarProvider>
         <SidebarTrigger />
       </SidebarProvider>,
     );
 
-    expect(html).toContain("[-webkit-app-region:no-drag]");
     expect(html).toContain("size-[var(--workspace-titlebar-control-size)]!");
   });
 

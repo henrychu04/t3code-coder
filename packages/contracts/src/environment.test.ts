@@ -14,16 +14,7 @@ const descriptor = {
 } as const;
 
 describe("ExecutionEnvironmentDescriptor", () => {
-  it("treats a missing pull-request capability as unsupported under version skew", () => {
-    expect(decodeDescriptor(descriptor).capabilities.pullRequests).toBeUndefined();
-  });
-
-  it("preserves an advertised pull-request capability", () => {
-    expect(
-      decodeDescriptor({
-        ...descriptor,
-        capabilities: { ...descriptor.capabilities, pullRequests: true },
-      }).capabilities.pullRequests,
-    ).toBe(true);
+  it("decodes the Coder workspace capabilities", () => {
+    expect(decodeDescriptor(descriptor).capabilities.repositoryIdentity).toBe(true);
   });
 });

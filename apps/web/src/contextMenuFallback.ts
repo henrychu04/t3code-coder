@@ -1,4 +1,4 @@
-import type { ContextMenuItem } from "@t3tools/contracts";
+import type { ContextMenuItem } from "./localApiTypes";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -198,7 +198,7 @@ export function dismissContextMenu(): void {
 }
 
 /**
- * Imperative DOM-based context menu for non-Electron environments.
+ * Imperative DOM-based context menu for the browser client.
  * Supports nested submenus and resolves with the clicked leaf item id.
  */
 export function showContextMenuFallback<T extends string>(

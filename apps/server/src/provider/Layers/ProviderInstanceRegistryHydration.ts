@@ -8,7 +8,7 @@
  *      registry expects. Keyed by `ProviderInstanceId`, values are
  *      `ProviderInstanceConfig` envelopes.
  *   2. `settings.providers.<kind>` — the legacy single-instance-per-driver
- *      fields (`providers.codex`, `providers.claudeAgent`, …). These are
+ *      field (`providers.claudeAgent`). This is
  *      the source of truth for every deployment that hasn't been migrated
  *      yet to an explicit `providerInstances` entry.
  *
@@ -22,7 +22,7 @@
  *
  * Explicit `providerInstances` entries always win — users can already
  * override the legacy `providers.<kind>` blob by authoring a
- * `providerInstances.codex` entry with a matching driver, and we don't
+ * `providerInstances.claudeAgent` entry with a matching driver, and we don't
  * want the synthesized envelope to silently stomp their config.
  *
  * Hot-reload

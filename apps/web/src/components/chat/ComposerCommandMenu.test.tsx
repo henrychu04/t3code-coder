@@ -59,30 +59,30 @@ describe("ComposerCommandMenu", () => {
       <ComposerCommandMenu
         items={[
           {
-            id: "skill:codex:browser",
+            id: "skill:claude:review",
             type: "skill",
-            provider: ProviderDriverKind.make("codex"),
+            provider: ProviderDriverKind.make("claudeAgent"),
             skill: {
-              name: "browser",
-              path: "/Users/maria/.codex/plugins/browser/skills/browser/SKILL.md",
+              name: "review",
+              path: "/home/maria/.claude/skills/review/SKILL.md",
               scope: "user",
               enabled: true,
             },
-            label: "Browser",
-            description: "Open and control the in-app browser",
+            label: "Review",
+            description: "Review the current workspace changes",
           },
         ]}
         resolvedTheme="dark"
         isLoading={false}
         triggerKind="skill"
-        activeItemId="skill:codex:browser"
+        activeItemId="skill:claude:review"
         onHighlightedItemChange={() => {}}
         onSelect={() => {}}
       />,
     );
 
-    expect(markup).toContain("Browser");
-    expect(markup).toContain('<span class="sr-only">App skill</span>');
+    expect(markup).toContain("Review");
+    expect(markup).toContain('<span class="sr-only">Personal skill</span>');
     expect(markup).toContain("<svg");
     expect(markup).toContain("text-icon-muted");
   });
@@ -94,7 +94,7 @@ describe("ComposerCommandMenu", () => {
           {
             id: "skill:codex:browser",
             type: "skill",
-            provider: ProviderDriverKind.make("codex"),
+            provider: ProviderDriverKind.make("claudeAgent"),
             skill: {
               name: "browser",
               path: "/skills/browser/SKILL.md",

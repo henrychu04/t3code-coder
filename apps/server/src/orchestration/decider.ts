@@ -48,8 +48,7 @@ function isStaleRequestFailureDetail(payload: Record<string, unknown> | null): b
     detail.includes("unknown pending permission request") ||
     detail.includes("stale pending user-input request") ||
     detail.includes("unknown pending user-input request") ||
-    detail.includes("unknown pending user input request") ||
-    detail.includes("unknown pending codex user input request")
+    detail.includes("unknown pending user input request")
   );
 }
 
@@ -966,7 +965,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           messageId: command.message.messageId,
           role: "user",
           text: command.message.text,
-          attachments: command.message.attachments,
           turnId: null,
           streaming: false,
           createdAt: command.createdAt,

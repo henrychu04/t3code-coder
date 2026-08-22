@@ -4,7 +4,6 @@ import {
   buildCollapsedProposedPlanPreviewMarkdown,
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
-  buildProposedPlanMarkdownFilename,
   proposedPlanTitle,
   resolvePlanFollowUpSubmission,
   stripDisplayedPlanMarkdown,
@@ -98,17 +97,5 @@ describe("buildPlanImplementationThreadTitle", () => {
 
   it("falls back when the plan has no markdown heading", () => {
     expect(buildPlanImplementationThreadTitle("- step 1")).toBe("Implement plan");
-  });
-});
-
-describe("buildProposedPlanMarkdownFilename", () => {
-  it("derives a stable markdown filename from the plan heading", () => {
-    expect(buildProposedPlanMarkdownFilename("# Integrate Effect RPC Into Server App")).toBe(
-      "integrate-effect-rpc-into-server-app.md",
-    );
-  });
-
-  it("falls back to a generic filename when the plan has no heading", () => {
-    expect(buildProposedPlanMarkdownFilename("- step 1")).toBe("plan.md");
   });
 });

@@ -7,7 +7,7 @@
  * win on name collisions, so precedence is user, `.agents`, then `.claude`.
  * The Agent SDK init handshake surfaces skills only as slash commands without
  * their filesystem paths, so the provider snapshot scans the same locations
- * directly, mirroring how the Codex app-server reports its skills.
+ * directly from the Claude runtime's reported skills.
  *
  * @module provider/Drivers/ClaudeSkills
  */

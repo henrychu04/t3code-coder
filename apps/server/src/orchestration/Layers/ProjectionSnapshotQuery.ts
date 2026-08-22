@@ -1,5 +1,4 @@
 import {
-  ChatAttachment,
   CheckpointRef,
   IsoDateTime,
   MessageId,
@@ -82,7 +81,6 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
-    attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
   }),
 );
 const ProjectionThreadProposedPlanDbRowSchema = ProjectionThreadProposedPlan;
@@ -531,7 +529,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
-          attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -974,7 +971,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
-          attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1217,7 +1213,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
-          attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1308,8 +1303,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                     LIKE '%unknown pending user-input request%'
                   OR lower(COALESCE(json_extract(activity.payload_json, '$.detail'), ''))
                     LIKE '%unknown pending user input request%'
-                  OR lower(COALESCE(json_extract(activity.payload_json, '$.detail'), ''))
-                    LIKE '%unknown pending codex user input request%'
                 )
               )
             )
@@ -1559,7 +1552,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   id: row.messageId,
                   role: row.role,
                   text: row.text,
-                  ...(row.attachments !== null ? { attachments: row.attachments } : {}),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
                   createdAt: row.createdAt,
@@ -2615,7 +2607,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         deletedAt: null,
         messages: messageRows.map((row) => {
-          const message = {
+          return {
             id: row.messageId,
             role: row.role,
             text: row.text,
@@ -2624,10 +2616,6 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             createdAt: row.createdAt,
             updatedAt: row.updatedAt,
           };
-          if (row.attachments !== null) {
-            return Object.assign(message, { attachments: row.attachments });
-          }
-          return message;
         }),
         proposedPlans: proposedPlanRows.map(mapProposedPlanRow),
         activities: selectedActivityRows.map((row) => {

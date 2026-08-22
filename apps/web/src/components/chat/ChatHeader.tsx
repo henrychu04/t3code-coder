@@ -1,7 +1,5 @@
 import {
   type EnvironmentId,
-  type EditorId,
-  type ProjectScript,
   type ResolvedKeybindingsConfig,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -10,7 +8,6 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { ChangeRequestSettleSource } from "@t3tools/client-runtime/state/thread-settled";
 import { ChevronDownIcon } from "lucide-react";
 import {
   memo,
@@ -22,19 +19,9 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import GitActionsControl from "../GitActionsControl";
 import { isTrailingDoubleClick } from "../Sidebar.logic";
-import { type DraftId } from "~/composerDraftStore";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { toastManager } from "../ui/toast";
-import ProjectScriptsControl, {
-  type NewProjectScriptInput,
-  type ProjectScriptActionResult,
-} from "../ProjectScriptsControl";
-import { OpenInPicker } from "./OpenInPicker";
-import { useRemoteOpenState, type RemoteOpenMode } from "../../remoteOpen";
-import { usePrimaryEnvironmentId } from "../../state/environments";
-import { useT3ProjectFileScripts } from "~/hooks/useT3ProjectFileScripts";
 import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -49,31 +36,15 @@ import { cn } from "~/lib/utils";
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
   activeThreadId: ThreadId;
-  draftId?: DraftId;
   activeThreadTitle: string;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
-  /** PR feeding the settled classification, resolved by ChatView. */
-  changeRequest: ChangeRequestSettleSource | null;
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
   activeProjectFaviconPath: string | null;
-  openInCwd: string | null;
-  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
-  preferredScriptId: string | null;
   keybindings: ResolvedKeybindingsConfig;
-  availableEditors: ReadonlyArray<EditorId>;
   rightPanelOpen: boolean;
-  gitCwd: string | null;
-  readonly onOpenPullRequest?: ((number: number) => void) | undefined;
   onNewThreadInProject: () => void;
-  onRunProjectScript: (script: ProjectScript) => void;
-  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
-  onUpdateProjectScript: (
-    scriptId: string,
-    input: NewProjectScriptInput,
-  ) => Promise<ProjectScriptActionResult>;
-  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
 /**
@@ -98,61 +69,18 @@ export function resolveRenameCommit(input: {
 // opens immediately.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
 
-export function shouldShowOpenInPicker(input: {
-  readonly activeProjectName: string | undefined;
-  readonly activeThreadEnvironmentId: EnvironmentId;
-  readonly primaryEnvironmentId: EnvironmentId | null;
-  readonly remoteOpenMode: RemoteOpenMode;
-}): boolean {
-  if (!input.activeProjectName) return false;
-  if (
-    input.primaryEnvironmentId !== null &&
-    input.activeThreadEnvironmentId === input.primaryEnvironmentId
-  ) {
-    return true;
-  }
-  // Remote environments get the picker in deep-link mode (or its explicit
-  // "no SSH route" state). Non-primary local backends (e.g. WSL) keep it
-  // hidden, matching pre-remote behavior.
-  return input.remoteOpenMode !== "local-exec";
-}
-
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
   activeThreadId,
-  draftId,
   activeThreadTitle,
   isServerThread,
-  changeRequest,
   activeProjectName,
   activeProjectCwd,
   activeProjectFaviconPath,
-  openInCwd,
-  activeProjectScripts,
-  preferredScriptId,
   keybindings,
-  availableEditors,
   rightPanelOpen,
-  gitCwd,
-  onOpenPullRequest,
   onNewThreadInProject,
-  onRunProjectScript,
-  onAddProjectScript,
-  onUpdateProjectScript,
-  onDeleteProjectScript,
 }: ChatHeaderProps) {
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const fileScripts = useT3ProjectFileScripts(
-    activeThreadEnvironmentId,
-    activeProjectScripts ? activeProjectCwd : null,
-  );
-  const remoteOpenState = useRemoteOpenState(activeThreadEnvironmentId);
-  const showOpenInPicker = shouldShowOpenInPicker({
-    activeProjectName,
-    activeThreadEnvironmentId,
-    primaryEnvironmentId,
-    remoteOpenMode: remoteOpenState.mode,
-  });
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
     [activeThreadEnvironmentId, activeThreadId],
@@ -201,7 +129,7 @@ export const ChatHeader = memo(function ChatHeader({
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
-    changeRequest,
+    changeRequest: null,
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -233,7 +161,7 @@ export const ChatHeader = memo(function ChatHeader({
       // the first half of a double-click, so they open without waiting.
       const clickedChevron =
         (event.target as HTMLElement).closest("[data-thread-title-chevron]") !== null;
-      if (event.detail === 0 || clickedChevron || window.desktopBridge === undefined) {
+      if (event.detail === 0 || clickedChevron) {
         openTitleMenuNow();
         return;
       }
@@ -379,36 +307,7 @@ export const ChatHeader = memo(function ChatHeader({
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
-      >
-        {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            fileScripts={fileScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
-        )}
-        {showOpenInPicker && (
-          <OpenInPicker
-            environmentId={activeThreadEnvironmentId}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
-        )}
-        {activeProjectName && (
-          <GitActionsControl
-            gitCwd={gitCwd}
-            activeThreadRef={scopeThreadRef(activeThreadEnvironmentId, activeThreadId)}
-            onOpenPullRequest={onOpenPullRequest}
-            {...(draftId ? { draftId } : {})}
-          />
-        )}
-      </div>
+      ></div>
     </div>
   );
 });

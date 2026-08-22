@@ -142,58 +142,9 @@ export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unkn
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
-export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
-export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-export const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES = [
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const;
-const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET = new Set<string>(
-  PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
-);
-
-/** Whether a pasted or picked image mime type can be sent on a provider turn. */
-export function isProviderSendTurnSupportedImageMimeType(mimeType: string): boolean {
-  return PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET.has(mimeType.toLowerCase());
-}
-const PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS = 14_000_000;
-const CHAT_ATTACHMENT_ID_MAX_CHARS = 128;
 // Correlation id is command id by design in this model.
 export const CorrelationId = CommandId;
 export type CorrelationId = typeof CorrelationId.Type;
-
-const ChatAttachmentId = TrimmedNonEmptyString.check(
-  Schema.isMaxLength(CHAT_ATTACHMENT_ID_MAX_CHARS),
-  Schema.isPattern(/^[a-z0-9_-]+$/i),
-);
-export type ChatAttachmentId = typeof ChatAttachmentId.Type;
-
-export const ChatImageAttachment = Schema.Struct({
-  type: Schema.Literal("image"),
-  id: ChatAttachmentId,
-  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100), Schema.isPattern(/^image\//i)),
-  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES)),
-});
-export type ChatImageAttachment = typeof ChatImageAttachment.Type;
-
-const UploadChatImageAttachment = Schema.Struct({
-  type: Schema.Literal("image"),
-  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
-  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100), Schema.isPattern(/^image\//i)),
-  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES)),
-  dataUrl: TrimmedNonEmptyString.check(
-    Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_IMAGE_DATA_URL_CHARS),
-  ),
-});
-export type UploadChatImageAttachment = typeof UploadChatImageAttachment.Type;
-
-export const ChatAttachment = Schema.Union([ChatImageAttachment]);
-export type ChatAttachment = typeof ChatAttachment.Type;
-const UploadChatAttachment = Schema.Union([UploadChatImageAttachment]);
-export type UploadChatAttachment = typeof UploadChatAttachment.Type;
 
 export const ProjectScriptIcon = Schema.Literals([
   "play",
@@ -211,17 +162,6 @@ export const ProjectScript = Schema.Struct({
   command: TrimmedNonEmptyString,
   icon: ProjectScriptIcon,
   runOnWorktreeCreate: Schema.Boolean,
-  /**
-   * URL to open in the in-app browser preview when this script runs (or
-   * when the user explicitly requests a preview). Optional; only honored on
-   * the desktop build.
-   */
-  previewUrl: Schema.optional(TrimmedNonEmptyString),
-  /**
-   * When true, automatically open the preview panel pointed at `previewUrl`
-   * the moment this script starts. Ignored without `previewUrl` or on web.
-   */
-  autoOpenPreview: Schema.optional(Schema.Boolean),
 });
 export type ProjectScript = typeof ProjectScript.Type;
 
@@ -237,8 +177,8 @@ export const OrchestrationProject = Schema.Struct({
   workspaceRoot: TrimmedNonEmptyString,
   repositoryIdentity: Schema.optional(Schema.NullOr(RepositoryIdentity)),
   defaultModelSelection: Schema.NullOr(ModelSelection),
-  // Per-project override for where new threads start. Null/absent means
-  // "no override": clients fall back to t3.json, then the global setting.
+  // Per-project override for where new threads start. Null/absent uses the
+  // workspace helper's global setting.
   defaultThreadEnvMode: Schema.optional(Schema.NullOr(ThreadEnvMode)),
   // Optional on the wire so cached snapshots from older servers still decode.
   faviconPath: Schema.optional(Schema.NullOr(ProjectFaviconPath)),
@@ -256,7 +196,6 @@ export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
-  attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -830,7 +769,6 @@ export const ThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
-    attachments: Schema.Array(ChatAttachment),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -851,7 +789,6 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
-    attachments: Schema.Array(UploadChatAttachment),
   }),
   modelSelection: Schema.optional(ModelSelection),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
@@ -1237,7 +1174,6 @@ export const ThreadMessageSentPayload = Schema.Struct({
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
-  attachments: Schema.optional(Schema.Array(ChatAttachment)),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,

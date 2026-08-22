@@ -20,7 +20,6 @@ import {
   removeCustomTheme,
   removeCustomThemes,
   replaceCustomThemeCollection,
-  resolveDesktopTheme,
   resolveThemeAppearance,
   serializeThemeFile,
   subscribeToThemePreview,
@@ -380,9 +379,7 @@ describe("theme files", () => {
     });
     expect(getThemeModes(T3_CHAT_THEME)).toEqual(["light", "dark"]);
     expect(resolveThemeAppearance(T3_CHAT_THEME.id, true, true)).toBe("dark");
-    expect(resolveDesktopTheme(T3_CHAT_THEME.id, true)).toBe("system");
     expect(resolveThemeAppearance(T3_CHAT_THEME.id, false, false, "dark")).toBe("dark");
-    expect(resolveDesktopTheme(T3_CHAT_THEME.id, false, "dark")).toBe("dark");
     expect(JSON.parse(serializeThemeFile(theme)).variants.dark).toMatchObject({
       canvas: canonical("#101827"),
       text: canonical("#eef5ff"),
@@ -989,7 +986,6 @@ describe("stored theme preferences", () => {
       const halves = { dark: GROVE_THEME.id };
       expect(resolveThemeAppearance("paper", true, true, undefined, halves)).toBe("dark");
       expect(resolveThemeAppearance("paper", false, false, "dark", halves)).toBe("dark");
-      expect(resolveDesktopTheme("paper", true, undefined, halves)).toBe("system");
     } finally {
       vi.unstubAllGlobals();
       invalidateCustomThemes();
@@ -1000,7 +996,6 @@ describe("stored theme preferences", () => {
     expect(getThemeDefinition("t3-chat-dark")).toBe(T3_CHAT_THEME);
     expect(getThemePreferenceMode("t3-chat-dark")).toBe("dark");
     expect(resolveThemeAppearance("t3-chat-dark", true, false)).toBe("dark");
-    expect(resolveDesktopTheme("t3-chat-dark", false)).toBe("dark");
     expect(isKnownThemePreference("t3-chat-dark")).toBe(true);
   });
 

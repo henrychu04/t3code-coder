@@ -4,7 +4,7 @@ import {
   type ServerProvider,
   ServerProvider as ServerProviderSchema,
 } from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -82,7 +82,7 @@ export const hydrateCachedProvider = (input: {
  * `defaultInstanceIdForDriver(kind).toString() === kind`), so existing
  * cached snapshots remain readable without any rename step.
  *
- * Non-default instances (e.g. `codex_personal`) land in their own files and
+ * Non-default instances (e.g. `claude_personal`) land in their own files and
  * never collide with other instances.
  *
  * Cache contents must still carry matching `instanceId` + `driver` identity
@@ -134,7 +134,7 @@ export const readProviderStatusCache = (filePath: string) =>
         onFailure: (cause) =>
           Effect.logWarning("failed to parse provider status cache, ignoring", {
             path: filePath,
-            errorTag: causeErrorTag(cause),
+            cause: Cause.pretty(cause),
           }).pipe(Effect.as(undefined)),
         onSuccess: Effect.succeed,
       }),
@@ -144,10 +144,8 @@ export const readProviderStatusCache = (filePath: string) =>
 export const writeProviderStatusCache = (input: {
   readonly filePath: string;
   readonly provider: ServerProvider;
-}) => {
-  const { updateState: _updateState, ...cacheableProvider } = input.provider;
-  return writeFileStringAtomically({
+}) =>
+  writeFileStringAtomically({
     filePath: input.filePath,
-    contents: `${JSON.stringify(cacheableProvider, null, 2)}\n`,
+    contents: `${JSON.stringify(input.provider, null, 2)}\n`,
   });
-};

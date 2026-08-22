@@ -72,9 +72,7 @@ import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
-import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
 import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
@@ -94,7 +92,6 @@ import {
   type ProviderAdapterError,
 } from "../Errors.ts";
 import { type ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
-import { type EventNdjsonLogger, makeEventNdjsonLogger } from "./EventNdjsonLogger.ts";
 const encodeUnknownJsonStringExit = Schema.encodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 const decodeUnknownJsonStringExit = Schema.decodeUnknownExit(Schema.fromJsonString(Schema.Unknown));
 
@@ -299,8 +296,6 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
-  readonly nativeEventLogPath?: string;
-  readonly nativeEventLogger?: EventNdjsonLogger;
 }
 
 function isUuid(value: string): boolean {
@@ -1195,12 +1190,6 @@ function titleForTool(itemType: CanonicalItemType): string {
   }
 }
 
-const SUPPORTED_CLAUDE_IMAGE_MIME_TYPES = new Set([
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
 const CLAUDE_SETTING_SOURCES = [
   "user",
   "project",
@@ -1237,81 +1226,14 @@ function buildUserMessage(input: {
   } as SDKUserMessage;
 }
 
-function buildClaudeImageContentBlock(input: {
-  readonly mimeType: string;
-  readonly bytes: Uint8Array;
-}): Record<string, unknown> {
-  return {
-    type: "image",
-    source: {
-      type: "base64",
-      media_type: input.mimeType,
-      data: Buffer.from(input.bytes).toString("base64"),
-    },
-  };
-}
-
-const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
+const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")((
   input: ProviderSendTurnInput,
   dependencies: {
-    readonly fileSystem: FileSystem.FileSystem;
-    readonly attachmentsDir: string;
     readonly boundInstanceId: ProviderInstanceId;
   },
-) {
+) => {
   const text = buildPromptText(input, dependencies.boundInstanceId);
-  const sdkContent: Array<Record<string, unknown>> = [];
-
-  if (text.length > 0) {
-    sdkContent.push({ type: "text", text });
-  }
-
-  for (const attachment of input.attachments ?? []) {
-    if (attachment.type !== "image") {
-      continue;
-    }
-
-    if (!SUPPORTED_CLAUDE_IMAGE_MIME_TYPES.has(attachment.mimeType)) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "turn/start",
-        detail: `Unsupported Claude image attachment type '${attachment.mimeType}'.`,
-      });
-    }
-
-    const attachmentPath = resolveAttachmentPath({
-      attachmentsDir: dependencies.attachmentsDir,
-      attachment,
-    });
-    if (!attachmentPath) {
-      return yield* new ProviderAdapterRequestError({
-        provider: PROVIDER,
-        method: "turn/start",
-        detail: `Invalid attachment id '${attachment.id}'.`,
-      });
-    }
-
-    const bytes = yield* dependencies.fileSystem.readFile(attachmentPath).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProviderAdapterRequestError({
-            provider: PROVIDER,
-            method: "turn/start",
-            detail: "Failed to read attachment file.",
-            cause,
-          }),
-      ),
-    );
-
-    sdkContent.push(
-      buildClaudeImageContentBlock({
-        mimeType: attachment.mimeType,
-        bytes,
-      }),
-    );
-  }
-
-  return buildUserMessage({ sdkContent });
+  return Effect.succeed(buildUserMessage({ sdkContent: [{ type: "text", text }] }));
 });
 
 function turnStatusFromResult(result: SDKResultMessage): ProviderRuntimeTurnStatus {
@@ -1667,16 +1589,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     claudeSettings.binaryPath,
     claudeEnvironment,
   );
-  const nativeEventLogger =
-    options?.nativeEventLogger ??
-    (options?.nativeEventLogPath !== undefined
-      ? yield* makeEventNdjsonLogger(options.nativeEventLogPath, {
-          stream: "native",
-        })
-      : undefined);
-  const managedNativeEventLogger =
-    options?.nativeEventLogger === undefined ? nativeEventLogger : undefined;
-
   const createQuery =
     options?.createQuery ??
     ((input: {
@@ -1708,45 +1620,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
-
-  const logNativeSdkMessage = Effect.fnUntraced(function* (
-    context: ClaudeSessionContext,
-    message: SDKMessage,
-  ) {
-    if (!nativeEventLogger) {
-      return;
-    }
-
-    const observedAt = yield* nowIso;
-    const itemId = sdkNativeItemId(message);
-
-    yield* nativeEventLogger.write(
-      {
-        observedAt,
-        event: {
-          id:
-            "uuid" in message && typeof message.uuid === "string"
-              ? message.uuid
-              : yield* randomUUIDv4,
-          kind: "notification",
-          provider: PROVIDER,
-          createdAt: observedAt,
-          method: sdkNativeMethod(message),
-          ...(typeof message.session_id === "string"
-            ? { providerThreadId: message.session_id }
-            : {}),
-          ...(context.turnState
-            ? {
-                turnId: asCanonicalTurnId(context.turnState.turnId),
-              }
-            : {}),
-          ...(itemId ? { itemId: ProviderItemId.make(itemId) } : {}),
-          payload: message,
-        },
-      },
-      context.session.threadId,
-    );
-  });
 
   const snapshotThread = Effect.fn("snapshotThread")(function* (context: ClaudeSessionContext) {
     const threadId = context.session.threadId;
@@ -3092,8 +2965,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     // authoritative per-agent data and the typed background_tasks control
     // request is the reconciliation source. `vcs_state_changed`
     // ({kind: commit|push|rebase}) and `code_change_published`
-    // ({provider, url, repo}) are informational CLI notices; the work log
-    // already shows the underlying git/gh tool calls.
+    // ({provider, url, repo}) are informational CLI notices. T3 Coder does not
+    // expose publication or hosted source-control integration UI.
     switch (message.subtype as string) {
       case "background_tasks_changed":
       case "vcs_state_changed":
@@ -3520,7 +3393,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     context: ClaudeSessionContext,
     message: SDKMessage,
   ) {
-    yield* logNativeSdkMessage(context, message);
     yield* ensureThreadId(context, message);
 
     // Wire-only command bookkeeping has no user-facing T3 lifecycle.
@@ -4142,15 +4014,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(fastMode ? { fastMode: true } : {}),
         ...(ultracode ? { ultracode: true } : {}),
       };
-      const mcpSession = McpProviderSession.readMcpProviderSession(input.threadId);
-      // The attachments dir grant lets the agent Read/copy pasted images at
-      // the paths ProviderService injects into the turn text, without an
-      // approval prompt. It is a leaf directory holding only attachment
-      // files; siblings like secrets/ and state.sqlite stay ungranted.
-      const additionalDirectories = [
-        ...(input.cwd ? [input.cwd] : []),
-        serverConfig.attachmentsDir,
-      ];
+      const additionalDirectories = input.cwd ? [input.cwd] : [];
       const queryOptions: ClaudeQueryOptions = {
         ...(input.cwd ? { cwd: input.cwd } : {}),
         ...(apiModelId ? { model: apiModelId } : {}),
@@ -4176,19 +4040,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         env: claudeEnvironment,
         additionalDirectories,
         ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
-        ...(mcpSession
-          ? {
-              mcpServers: {
-                "t3-code": {
-                  type: "http",
-                  url: mcpSession.endpoint,
-                  headers: {
-                    Authorization: mcpSession.authorizationHeader,
-                  },
-                },
-              },
-            }
-          : {}),
       };
 
       yield* Effect.annotateCurrentSpan({
@@ -4444,8 +4295,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     const message = yield* buildUserMessageEffect(input, {
-      fileSystem,
-      attachmentsDir: serverConfig.attachmentsDir,
       boundInstanceId,
     });
 
@@ -4617,7 +4466,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         Effect.logError("Failed to emit Claude session shutdown event.", { cause }),
       ),
       Effect.tap(() => Queue.shutdown(runtimeEventQueue)),
-      Effect.tap(() => managedNativeEventLogger?.close() ?? Effect.void),
     ),
   );
 

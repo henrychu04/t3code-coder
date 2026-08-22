@@ -52,13 +52,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "../config.ts";
-import {
-  increment,
-  terminalRestartsTotal,
-  terminalSessionsTotal,
-} from "../observability/Metrics.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import * as PortScanner from "../preview/PortScanner.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
 export {
@@ -1132,12 +1126,9 @@ interface TerminalManagerOptions {
 export const make = Effect.fn("TerminalManager.make")(function* () {
   const { terminalLogsDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
-  const portDiscovery = yield* PortScanner.PortDiscovery;
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
     ptyAdapter,
-    registerTerminalProcesses: portDiscovery.registerTerminalProcesses,
-    unregisterTerminal: portDiscovery.unregisterTerminal,
   });
 });
 
@@ -1864,53 +1855,49 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     let startedShell: string | null = null;
 
     const startResult = yield* Effect.result(
-      increment(terminalSessionsTotal, { lifecycle: eventType }).pipe(
-        Effect.andThen(
-          Effect.gen(function* () {
-            const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
-            const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
-            const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
-            ptyProcess = spawnResult.process;
-            startedShell = spawnResult.shellLabel;
+      Effect.gen(function* () {
+        const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
+        const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
+        const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
+        ptyProcess = spawnResult.process;
+        startedShell = spawnResult.shellLabel;
 
-            const processPid = ptyProcess.pid;
-            const unsubscribeData = ptyProcess.onData((data) => {
-              if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
-                return;
-              }
-              runFork(drainProcessEvents(session, processPid));
-            });
-            const unsubscribeExit = ptyProcess.onExit((event) => {
-              if (!enqueueProcessEvent(session, processPid, { type: "exit", event })) {
-                return;
-              }
-              runFork(drainProcessEvents(session, processPid));
-            });
+        const processPid = ptyProcess.pid;
+        const unsubscribeData = ptyProcess.onData((data) => {
+          if (!enqueueProcessEvent(session, processPid, { type: "output", data })) {
+            return;
+          }
+          runFork(drainProcessEvents(session, processPid));
+        });
+        const unsubscribeExit = ptyProcess.onExit((event) => {
+          if (!enqueueProcessEvent(session, processPid, { type: "exit", event })) {
+            return;
+          }
+          runFork(drainProcessEvents(session, processPid));
+        });
 
-            let eventStamp: ReturnType<typeof advanceEventSequence> = {
-              updatedAt: session.updatedAt,
-              sequence: session.eventSequence,
-            };
-            yield* modifyManagerState((state) => {
-              session.process = ptyProcess;
-              session.pid = processPid;
-              session.status = "running";
-              session.unsubscribeData = unsubscribeData;
-              session.unsubscribeExit = unsubscribeExit;
-              eventStamp = advanceEventSequence(session);
-              return [undefined, state] as const;
-            });
+        let eventStamp: ReturnType<typeof advanceEventSequence> = {
+          updatedAt: session.updatedAt,
+          sequence: session.eventSequence,
+        };
+        yield* modifyManagerState((state) => {
+          session.process = ptyProcess;
+          session.pid = processPid;
+          session.status = "running";
+          session.unsubscribeData = unsubscribeData;
+          session.unsubscribeExit = unsubscribeExit;
+          eventStamp = advanceEventSequence(session);
+          return [undefined, state] as const;
+        });
 
-            yield* publishEvent({
-              type: eventType,
-              threadId: session.threadId,
-              terminalId: session.terminalId,
-              sequence: eventStamp.sequence,
-              snapshot: snapshot(session),
-            });
-          }),
-        ),
-      ),
+        yield* publishEvent({
+          type: eventType,
+          threadId: session.threadId,
+          terminalId: session.terminalId,
+          sequence: eventStamp.sequence,
+          snapshot: snapshot(session),
+        });
+      }),
     );
 
     if (startResult._tag === "Success") {
@@ -2555,7 +2542,6 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     withThreadLock(
       input.threadId,
       Effect.gen(function* () {
-        yield* increment(terminalRestartsTotal, { scope: "thread" });
         const terminalId = input.terminalId;
         yield* assertValidCwd(input.cwd);
 

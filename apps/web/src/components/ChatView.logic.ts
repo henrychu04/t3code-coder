@@ -11,7 +11,7 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { type ChatMessage, type SessionPhase, type Thread, type ThreadShell } from "../types";
-import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
+import { type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
@@ -238,60 +238,6 @@ export function reconcileRetainedMountedThreadIds(input: {
   return nextThreadIds;
 }
 
-export function revokeBlobPreviewUrl(previewUrl: string | undefined): void {
-  if (!previewUrl || typeof URL === "undefined" || !previewUrl.startsWith("blob:")) {
-    return;
-  }
-  URL.revokeObjectURL(previewUrl);
-}
-
-export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
-  if (message.role !== "user" || !message.attachments) {
-    return;
-  }
-  for (const attachment of message.attachments) {
-    if (attachment.type !== "image") {
-      continue;
-    }
-    revokeBlobPreviewUrl(attachment.previewUrl);
-  }
-}
-
-export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[] {
-  if (message.role !== "user" || !message.attachments) {
-    return [];
-  }
-  const previewUrls: string[] = [];
-  for (const attachment of message.attachments) {
-    if (attachment.type !== "image") continue;
-    if (!attachment.previewUrl || !attachment.previewUrl.startsWith("blob:")) continue;
-    previewUrls.push(attachment.previewUrl);
-  }
-  return previewUrls;
-}
-
-export interface PullRequestDialogState {
-  initialReference: string | null;
-  key: number;
-}
-
-export function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      if (typeof reader.result === "string") {
-        resolve(reader.result);
-        return;
-      }
-      reject(new Error("Could not read image data."));
-    });
-    reader.addEventListener("error", () => {
-      reject(reader.error ?? new Error("Failed to read image."));
-    });
-    reader.readAsDataURL(file);
-  });
-}
-
 export function resolveSendEnvMode(input: {
   requestedEnvMode: DraftThreadEnvMode;
   isGitRepo: boolean;
@@ -317,32 +263,14 @@ export function resolveBackgroundDraftWorkspaceOptions(input: {
   };
 }
 
-export function cloneComposerImageForRetry(
-  image: ComposerImageAttachment,
-): ComposerImageAttachment {
-  if (typeof URL === "undefined" || !image.previewUrl.startsWith("blob:")) {
-    return image;
-  }
-  try {
-    return {
-      ...image,
-      previewUrl: URL.createObjectURL(image.file),
-    };
-  } catch {
-    return image;
-  }
-}
-
 export function deriveComposerSendState(options: {
   prompt: string;
-  imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   /**
-   * Optional element-pick attachment count. Element contexts contribute to
-   * "sendable content" exactly like images and (text-bearing) terminal
-   * contexts do: a prompt of just element chips is still a valid send.
+   * Optional supplemental context count. Review comments contribute to
+   * sendable content like text-bearing terminal contexts do.
    */
-  elementContextCount?: number;
+  supplementalContextCount?: number;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
@@ -353,16 +281,15 @@ export function deriveComposerSendState(options: {
   const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
-  const elementContextCount = options.elementContextCount ?? 0;
+  const supplementalContextCount = options.supplementalContextCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
     expiredTerminalContextCount,
     hasSendableContent:
       trimmedPrompt.length > 0 ||
-      options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      elementContextCount > 0,
+      supplementalContextCount > 0,
   };
 }
 
@@ -437,7 +364,7 @@ export function threadHasStarted(thread: Thread | null | undefined): boolean {
 //
 // `selectedProvider` takes the same open-string shape because the composer
 // now tracks the picker selection as a `ProviderInstanceId` (e.g.
-// `codex_personal`). Custom instance ids that don't directly match a
+// `claude_personal`). Custom instance ids that don't directly match a
 // registered driver resolve to `null` here, which matches the existing
 // "unknown driver -> unlocked" semantics. Callers that want the lock to track
 // a custom instance's underlying driver kind should resolve the instance id

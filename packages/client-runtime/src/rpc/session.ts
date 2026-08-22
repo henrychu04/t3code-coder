@@ -46,15 +46,9 @@ type ProbeError = Effect.Error<ReturnType<WsRpcProtocolClient[typeof WS_METHODS.
 
 function mapSessionRpcError(error: InitialConfigError | ProbeError): ConnectionAttemptError {
   switch (error._tag) {
-    case "EnvironmentAuthorizationError":
-      return new ConnectionBlockedError({
-        reason: "permission",
-        detail: error.message,
-      });
-    case "KeybindingsConfigParseError":
     case "ServerSettingsError":
       return new ConnectionTransientErrorClass({
-        reason: "remote-unavailable",
+        reason: "transport",
         detail: error.message,
       });
     case "RpcClientError":

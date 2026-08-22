@@ -5,9 +5,6 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
-  PullRequestDiffFileContentsInput,
-  PullRequestDiffFileContentsResult,
-  PullRequestRef,
   ReviewDiffFileContentsInput,
   ReviewDiffFileContentsResult,
   ReviewDiffPreviewSourceKind,
@@ -25,26 +22,14 @@ interface GitDiffFileContentsSource {
   readonly cacheKey: string;
 }
 
-interface PullRequestDiffFileContentsSource {
-  readonly environmentId: EnvironmentId;
-  readonly reference: PullRequestRef;
-  readonly commit: string | null;
-  readonly cacheKey: string;
-}
-
 type GetDiffFileContents<E> = (request: {
   readonly environmentId: EnvironmentId;
   readonly input: ReviewDiffFileContentsInput;
 }) => Promise<AtomCommandResult<ReviewDiffFileContentsResult, E>>;
 
-type GetPullRequestDiffFileContents<E> = (request: {
-  readonly environmentId: EnvironmentId;
-  readonly input: PullRequestDiffFileContentsInput;
-}) => Promise<AtomCommandResult<PullRequestDiffFileContentsResult, E>>;
-
 function createDiffFileContentsLoader(
   load: (input: {
-    readonly changeType: PullRequestDiffFileContentsInput["changeType"];
+    readonly changeType: ReviewDiffFileContentsInput["changeType"];
     readonly oldPath: string;
     readonly newPath: string;
   }) => Promise<{ readonly oldContents: string; readonly newContents: string }>,
@@ -89,29 +74,6 @@ export function createGitDiffFileContentsLoader<E>(
         changeType,
         baseRef: source.baseRef,
         headRef: source.headRef,
-        oldPath,
-        newPath,
-      },
-    });
-    if (result._tag !== "Success") {
-      throw squashAtomCommandFailure(result);
-    }
-    return result.value;
-  }, source.cacheKey);
-}
-
-/** Loads host-backed PR files, which may name revisions this checkout has never fetched. */
-export function createPullRequestDiffFileContentsLoader<E>(
-  getDiffFileContents: GetPullRequestDiffFileContents<E>,
-  source: PullRequestDiffFileContentsSource,
-): FileDiffContentsLoader {
-  return createDiffFileContentsLoader(async ({ changeType, oldPath, newPath }) => {
-    const result = await getDiffFileContents({
-      environmentId: source.environmentId,
-      input: {
-        ...source.reference,
-        ...(source.commit === null ? {} : { commit: source.commit }),
-        changeType,
         oldPath,
         newPath,
       },

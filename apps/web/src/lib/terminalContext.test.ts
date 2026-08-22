@@ -122,7 +122,6 @@ describe("terminalContext", () => {
           body: "12 | git status\n13 | On branch main",
         },
       ],
-      elementContexts: [],
     });
   });
 

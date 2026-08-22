@@ -1,11 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader } from "@pierre/diffs";
 import { useParams } from "@tanstack/react-router";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import type { ScopedThreadRef, TurnId } from "@t3tools/contracts";
 import {
   ArrowRightIcon,
@@ -22,9 +17,7 @@ import {
   TextWrapIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useOpenInPreferredEditor } from "../editorPreferences";
 import { type DraftId } from "../composerDraftStore";
-import { openDiffFilePrimaryAction } from "../diffFileActions";
 import { useCheckpointDiff } from "~/lib/checkpointDiffState";
 import { cn } from "~/lib/utils";
 import { selectThreadDiffPanelSelection, useDiffPanelStore } from "../diffPanelStore";
@@ -134,15 +127,8 @@ export default function DiffPanel({
       : null,
   );
   const activeCwd = activeThread?.worktreePath ?? activeProject?.workspaceRoot;
-  const activeRepositoryRoot = activeThread?.worktreePath
-    ? undefined
-    : activeProject?.repositoryIdentity?.rootPath;
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
-  );
-  const openInPreferredEditor = useOpenInPreferredEditor(
-    activeThread?.environmentId ?? null,
-    serverConfig?.availableEditors ?? [],
   );
   const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
   const gitStatusQuery = useEnvironmentQuery(
@@ -440,34 +426,6 @@ export default function DiffPanel({
     codeViewRef.current?.scrollTo({ type: "item", id: selectedDiffFileKey, align: "start" });
   }, [codeViewMountKey, selectedDiffFileKey, selectedFileRevealRequestId]);
 
-  const openDiffFile = useCallback(
-    (filePath: string) => {
-      openDiffFilePrimaryAction({
-        threadRef: routeThreadRef,
-        filePath,
-        activeCwd,
-        repositoryRoot: activeRepositoryRoot,
-        openInEditor: (targetPath) => {
-          void (async () => {
-            const result = await openInPreferredEditor(targetPath);
-            if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-              console.warn("Failed to open diff file in editor.", {
-                operation: "open-diff-file",
-                ...(routeThreadRef
-                  ? {
-                      environmentId: routeThreadRef.environmentId,
-                      threadId: routeThreadRef.threadId,
-                    }
-                  : {}),
-                ...safeErrorLogAttributes(squashAtomCommandFailure(result)),
-              });
-            }
-          })();
-        },
-      });
-    },
-    [activeCwd, activeRepositoryRoot, openInPreferredEditor, routeThreadRef],
-  );
   const toggleDiffFileCollapsed = useCallback(
     (fileKey: string) => {
       setCollapsedDiffFiles((current) => {
@@ -511,7 +469,7 @@ export default function DiffPanel({
 
   const headerRow = (
     <>
-      <div className="flex min-w-0 flex-1 items-center gap-3 [-webkit-app-region:no-drag]">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <DropdownMenu>
           <DropdownMenuTrigger
             className="inline-flex h-6 max-w-full items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-accent-foreground outline-none transition-colors hover:bg-accent/80 focus-visible:ring-2 focus-visible:ring-ring"
@@ -710,7 +668,7 @@ export default function DiffPanel({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-1 [-webkit-app-region:no-drag]">
+      <div className="flex shrink-0 items-center gap-1">
         {codeViewFiles.length > 0 && (
           <DiffStatLabel
             additions={diffLineStat.additions}
@@ -895,9 +853,9 @@ export default function DiffPanel({
                       node instanceof HTMLElement && node.hasAttribute("data-title"),
                   );
                   const filePath = title?.textContent?.trim();
-                  // The filename remains the explicit "open in editor" affordance.
                   if (filePath) {
-                    openDiffFile(filePath);
+                    const file = codeViewFiles.find((candidate) => candidate.filePath === filePath);
+                    if (file) toggleDiffFileCollapsed(file.fileKey);
                     return;
                   }
                   const header = composedPath.find(

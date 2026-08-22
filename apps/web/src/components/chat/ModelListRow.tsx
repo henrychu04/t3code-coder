@@ -24,7 +24,7 @@ export const ModelListRow = memo(function ModelListRow(props: {
   /**
    * Display name to show in the secondary line (provider footer). Usually
    * the instance's configured `displayName` so custom instances like
-   * "Codex Personal" render with their user-authored label.
+   * "Claude Personal" render with their user-authored label.
    */
   providerDisplayName: string;
   providerAccentColor?: string | undefined;

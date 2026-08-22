@@ -27,7 +27,8 @@ export function registerComposerInlineTokenPaste(
         return false;
       }
       if (event.clipboardData.files.length > 0) {
-        return false;
+        event.preventDefault();
+        return true;
       }
       const text = event.clipboardData.getData("text/plain");
       if (text.length === 0) {

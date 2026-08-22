@@ -1,78 +1,24 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-const ConnectionTargetBase = {
-  environmentId: EnvironmentId,
-  label: Schema.String,
-};
-
 export class PrimaryConnectionTarget extends Schema.TaggedClass<PrimaryConnectionTarget>()(
   "PrimaryConnectionTarget",
   {
-    ...ConnectionTargetBase,
+    environmentId: EnvironmentId,
+    label: Schema.String,
     httpBaseUrl: Schema.String,
     wsBaseUrl: Schema.String,
   },
 ) {}
 
-export class BearerConnectionTarget extends Schema.TaggedClass<BearerConnectionTarget>()(
-  "BearerConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-    connectionId: Schema.String,
-  },
-) {}
-
-export class RelayConnectionTarget extends Schema.TaggedClass<RelayConnectionTarget>()(
-  "RelayConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-  },
-) {}
-
-export class SshConnectionTarget extends Schema.TaggedClass<SshConnectionTarget>()(
-  "SshConnectionTarget",
-  {
-    ...ConnectionTargetBase,
-    connectionId: Schema.String,
-  },
-) {}
-
-export const ConnectionTarget = Schema.Union([
-  PrimaryConnectionTarget,
-  BearerConnectionTarget,
-  RelayConnectionTarget,
-  SshConnectionTarget,
-]);
+export const ConnectionTarget = PrimaryConnectionTarget;
 export type ConnectionTarget = typeof ConnectionTarget.Type;
-
-export const PersistedConnectionTarget = Schema.Union([
-  BearerConnectionTarget,
-  RelayConnectionTarget,
-  SshConnectionTarget,
-]);
-export type PersistedConnectionTarget = typeof PersistedConnectionTarget.Type;
-
 export type ConnectionTargetKind = ConnectionTarget["_tag"];
-
 export type NetworkStatus = "unknown" | "offline" | "online";
 
-export const ConnectionTransientReason = Schema.Literals([
-  "network",
-  "timeout",
-  "transport",
-  "endpoint-unavailable",
-  "relay-unavailable",
-  "remote-unavailable",
-]);
+export const ConnectionTransientReason = Schema.Literals(["network", "timeout", "transport"]);
 export type ConnectionTransientReason = typeof ConnectionTransientReason.Type;
-
-export const ConnectionBlockedReason = Schema.Literals([
-  "authentication",
-  "configuration",
-  "permission",
-  "unsupported",
-]);
+export const ConnectionBlockedReason = Schema.Literals(["configuration", "unsupported"]);
 export type ConnectionBlockedReason = typeof ConnectionBlockedReason.Type;
 
 export class ConnectionTransientError extends Schema.TaggedErrorClass<ConnectionTransientError>()(
@@ -103,22 +49,10 @@ export class ConnectionBlockedError extends Schema.TaggedErrorClass<ConnectionBl
 
 export type ConnectionAttemptError = ConnectionTransientError | ConnectionBlockedError;
 
-export type PreparedHttpAuthorization =
-  | {
-      readonly _tag: "Bearer";
-      readonly token: string;
-    }
-  | {
-      readonly _tag: "Dpop";
-      readonly accessToken: string;
-    };
-
 export interface PreparedConnection {
   readonly environmentId: EnvironmentId;
   readonly label: string;
-  readonly httpBaseUrl: string;
   readonly socketUrl: string;
-  readonly httpAuthorization: PreparedHttpAuthorization | null;
   readonly target: ConnectionTarget;
 }
 
@@ -129,9 +63,7 @@ export type SupervisorConnectionPhase =
   | "backoff"
   | "connected"
   | "blocked";
-
 export type ConnectionAttemptStage = "preparing" | "opening" | "synchronizing";
-
 export interface SupervisorConnectionState {
   readonly desired: boolean;
   readonly network: NetworkStatus;
@@ -144,21 +76,14 @@ export interface SupervisorConnectionState {
 }
 
 export type ConnectionProjectionPhase = "disconnected" | "synchronizing" | "ready";
-
 export function connectionProjectionPhase(
   state: SupervisorConnectionState,
 ): ConnectionProjectionPhase {
-  switch (state.phase) {
-    case "connecting":
-      return "synchronizing";
-    case "connected":
-      return "ready";
-    case "available":
-    case "offline":
-    case "backoff":
-    case "blocked":
-      return "disconnected";
-  }
+  return state.phase === "connected"
+    ? "ready"
+    : state.phase === "connecting"
+      ? "synchronizing"
+      : "disconnected";
 }
 
 export const AVAILABLE_CONNECTION_STATE: SupervisorConnectionState = Object.freeze({

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 
 import { Skeleton } from "./ui/skeleton";
@@ -8,13 +7,10 @@ import { Skeleton } from "./ui/skeleton";
 export type DiffPanelMode = "inline" | "sheet" | "sidebar" | "embedded";
 
 function getDiffPanelHeaderRowClassName(mode: DiffPanelMode) {
-  const shouldUseDragRegion = isElectron && mode !== "sheet" && mode !== "embedded";
   return cn(
     "flex items-center justify-between gap-2",
     mode === "embedded" ? "px-2" : "px-4",
-    shouldUseDragRegion
-      ? "drag-region h-[52px] border-b border-border wco:h-[env(titlebar-area-height)] wco:pr-[calc(100vw-env(titlebar-area-width)-env(titlebar-area-x)+1em)]"
-      : "flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent",
+    "flex h-10 min-h-10 shrink-0 items-center border-b border-border/60 bg-background in-data-[preview-panel-mode=inline]:mb-3 in-data-[preview-panel-mode=inline]:h-7 in-data-[preview-panel-mode=inline]:min-h-7 in-data-[preview-panel-mode=inline]:border-b-transparent",
   );
 }
 
@@ -23,8 +19,6 @@ export function DiffPanelShell(props: {
   header: ReactNode;
   children: ReactNode;
 }) {
-  const shouldUseDragRegion = isElectron && props.mode !== "sheet" && props.mode !== "embedded";
-
   return (
     <div
       className={cn(
@@ -34,13 +28,9 @@ export function DiffPanelShell(props: {
           : "w-full",
       )}
     >
-      {shouldUseDragRegion ? (
-        <div className={getDiffPanelHeaderRowClassName(props.mode)}>{props.header}</div>
-      ) : (
-        <div className={getDiffPanelHeaderRowClassName(props.mode)} data-surface-subheader>
-          {props.header}
-        </div>
-      )}
+      <div className={getDiffPanelHeaderRowClassName(props.mode)} data-surface-subheader>
+        {props.header}
+      </div>
       {props.children}
     </div>
   );

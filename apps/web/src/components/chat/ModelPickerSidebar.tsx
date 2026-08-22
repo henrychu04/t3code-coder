@@ -13,7 +13,7 @@ import {
 /**
  * Build the hover tooltip for an instance button. Mirrors the old
  * kind-based copy but uses the entry's configured `displayName` so custom
- * instances get their user-authored name (e.g. "Codex Personal — Unavailable.").
+ * instances get their user-authored name (e.g. "Claude Personal — Unavailable.").
  */
 function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   const label = entry.displayName;
@@ -45,8 +45,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   onSelectInstance: (instanceId: ProviderInstanceId | "favorites") => void;
   /**
    * Instance entries to render as rail buttons. Each entry becomes one icon
-   * keyed by `instanceId`, so the default built-in Codex and a user-authored
-   * `codex_personal` appear as two distinct rail items, each routing to
+   * keyed by `instanceId`, so the default built-in Claude instance and a user-authored
+   * `claude_personal` appear as two distinct rail items, each routing to
    * their own model list.
    */
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;

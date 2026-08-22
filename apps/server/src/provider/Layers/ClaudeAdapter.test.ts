@@ -32,7 +32,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
-import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
@@ -155,8 +154,6 @@ class FakeClaudeQuery implements AsyncIterable<SDKMessage> {
 }
 
 function makeHarness(config?: {
-  readonly nativeEventLogPath?: string;
-  readonly nativeEventLogger?: ClaudeAdapterLiveOptions["nativeEventLogger"];
   readonly cwd?: string;
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
@@ -176,16 +173,6 @@ function makeHarness(config?: {
       createInput = input;
       return query;
     },
-    ...(config?.nativeEventLogger
-      ? {
-          nativeEventLogger: config.nativeEventLogger,
-        }
-      : {}),
-    ...(config?.nativeEventLogPath
-      ? {
-          nativeEventLogPath: config.nativeEventLogPath,
-        }
-      : {}),
   };
 
   return {
@@ -718,7 +705,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "Investigate the edge cases",
-        attachments: [],
         modelSelection: createModelSelection(
           ProviderInstanceId.make("claudeAgent"),
           "claude-sonnet-4-6",
@@ -730,71 +716,6 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(createInput?.options.effort, "high");
       const promptText = yield* Effect.promise(() => readFirstPromptText(createInput));
       assert.equal(promptText, "Ultrathink:\nInvestigate the edge cases");
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("embeds image attachments in Claude user messages", () => {
-    const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "claude-attachments-"));
-    const harness = makeHarness({
-      cwd: "/tmp/project-claude-attachments",
-      baseDir,
-    });
-    return Effect.gen(function* () {
-      yield* Effect.addFinalizer(() =>
-        Effect.sync(() =>
-          NodeFS.rmSync(baseDir, {
-            recursive: true,
-            force: true,
-          }),
-        ),
-      );
-
-      const adapter = yield* ClaudeAdapter;
-      const { attachmentsDir } = yield* ServerConfig;
-
-      const attachment = {
-        type: "image" as const,
-        id: "thread-claude-attachment-12345678-1234-1234-1234-123456789abc",
-        name: "diagram.png",
-        mimeType: "image/png",
-        sizeBytes: 4,
-      };
-      const attachmentPath = NodePath.join(attachmentsDir, attachmentRelativePath(attachment));
-      NodeFS.mkdirSync(NodePath.dirname(attachmentPath), { recursive: true });
-      NodeFS.writeFileSync(attachmentPath, Uint8Array.from([1, 2, 3, 4]));
-
-      const session = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-
-      yield* adapter.sendTurn({
-        threadId: session.threadId,
-        input: "What's in this image?",
-        attachments: [attachment],
-      });
-
-      const createInput = harness.getLastCreateQueryInput();
-      const promptMessage = yield* Effect.promise(() => readFirstPromptMessage(createInput));
-      assert.isDefined(promptMessage);
-      assert.deepEqual(promptMessage?.message.content, [
-        {
-          type: "text",
-          text: "What's in this image?",
-        },
-        {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: "image/png",
-            data: "AQIDBA==",
-          },
-        },
-      ]);
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
@@ -824,7 +745,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1001,7 +921,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1066,7 +985,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "run 5 commands",
-        attachments: [],
       });
 
       // Steer: a second sendTurn while the turn is still running continues
@@ -1074,7 +992,6 @@ describe("ClaudeAdapterLive", () => {
       const steeredTurn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "actually run 15",
-        attachments: [],
       });
       assert.equal(String(steeredTurn.turnId), String(turn.turnId));
 
@@ -1133,7 +1050,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1312,7 +1228,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1403,7 +1318,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "delegate this",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1479,7 +1393,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1538,7 +1451,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       // Exact shape the CLI emits when Stop lands mid-tool-call: is_error
@@ -1603,7 +1515,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "spawn agents",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -1694,7 +1605,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "run workflow",
-        attachments: [],
       });
 
       const memberSnapshot = (tokens: number) => [
@@ -1778,7 +1688,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "spawn an agent",
-        attachments: [],
       });
 
       // No explicit model/effort on the launch input: the task inherits the
@@ -1855,7 +1764,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: THREAD_ID,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.fail(new Error("All fibers interrupted without error"));
@@ -1916,7 +1824,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: THREAD_ID,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.fail(new Error("credential material that must stay in the cause chain"));
@@ -2431,7 +2338,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: THREAD_ID,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -2498,7 +2404,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: THREAD_ID,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -2563,7 +2468,6 @@ describe("ClaudeAdapterLive", () => {
         yield* adapter.sendTurn({
           threadId: THREAD_ID,
           input: "hello",
-          attachments: [],
         });
 
         harness.query.emit({
@@ -2644,7 +2548,6 @@ describe("ClaudeAdapterLive", () => {
         const turn = yield* adapter.sendTurn({
           threadId: session.threadId,
           input: "hello",
-          attachments: [],
         });
 
         harness.query.emit({
@@ -2735,7 +2638,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -2901,7 +2803,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -2970,7 +2871,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       harness.query.emit({
@@ -3193,7 +3093,6 @@ describe("ClaudeAdapterLive", () => {
       const turn = yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
       assert.equal(turn.threadId, THREAD_ID);
 
@@ -3267,7 +3166,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "approve this",
-        attachments: [],
       });
       yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
 
@@ -3376,7 +3274,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "approve this for the session",
-        attachments: [],
       });
       yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
 
@@ -3718,7 +3615,6 @@ describe("ClaudeAdapterLive", () => {
         const firstTurn = yield* adapter.sendTurn({
           threadId: session.threadId,
           input: "first",
-          attachments: [],
         });
 
         const firstCompletedFiber = yield* Stream.filter(
@@ -3744,7 +3640,6 @@ describe("ClaudeAdapterLive", () => {
         const secondTurn = yield* adapter.sendTurn({
           threadId: session.threadId,
           input: "second",
-          attachments: [],
         });
 
         const secondCompletedFiber = yield* Stream.filter(
@@ -3801,7 +3696,6 @@ describe("ClaudeAdapterLive", () => {
           instanceId: ProviderInstanceId.make("claudeAgent"),
           model: "claude-opus-4-6",
         },
-        attachments: [],
       });
 
       assert.deepEqual(harness.query.setModelCalls, ["claude-opus-4-6[1m]"]);
@@ -3829,7 +3723,6 @@ describe("ClaudeAdapterLive", () => {
           instanceId: customInstanceId,
           model: "openai/gpt-5.5",
         },
-        attachments: [],
       });
 
       assert.deepEqual(harness.query.setModelCalls, ["openai/gpt-5.5"]);
@@ -3861,13 +3754,11 @@ describe("ClaudeAdapterLive", () => {
           threadId: session.threadId,
           input: "hello",
           modelSelection,
-          attachments: [],
         });
         yield* adapter.sendTurn({
           threadId: session.threadId,
           input: "hello again",
           modelSelection,
-          attachments: [],
         });
 
         assert.deepEqual(harness.query.setModelCalls, []);
@@ -3897,7 +3788,6 @@ describe("ClaudeAdapterLive", () => {
           "claude-opus-4-6",
           [{ id: "contextWindow", value: "1m" }],
         ),
-        attachments: [],
       });
       yield* adapter.sendTurn({
         threadId: session.threadId,
@@ -3907,7 +3797,6 @@ describe("ClaudeAdapterLive", () => {
           "claude-opus-4-6",
           [{ id: "contextWindow", value: "200k" }],
         ),
-        attachments: [],
       });
 
       assert.deepEqual(harness.query.setModelCalls, ["claude-opus-4-6[1m]", "claude-opus-4-6"]);
@@ -3931,7 +3820,6 @@ describe("ClaudeAdapterLive", () => {
         threadId: session.threadId,
         input: "plan this for me",
         interactionMode: "plan",
-        attachments: [],
       });
 
       assert.deepEqual(harness.query.setPermissionModeCalls, ["plan"]);
@@ -3963,7 +3851,6 @@ describe("ClaudeAdapterLive", () => {
           threadId: session.threadId,
           input: "plan this",
           interactionMode: "plan",
-          attachments: [],
         });
 
         // Complete the turn so we can send another
@@ -3988,7 +3875,6 @@ describe("ClaudeAdapterLive", () => {
           threadId: session.threadId,
           input: "now do it",
           interactionMode: "default",
-          attachments: [],
         });
 
         assert.deepEqual(harness.query.setPermissionModeCalls, ["plan", expectedBase]);
@@ -4012,7 +3898,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "hello",
-        attachments: [],
       });
 
       assert.deepEqual(harness.query.setPermissionModeCalls, []);
@@ -4039,7 +3924,6 @@ describe("ClaudeAdapterLive", () => {
         threadId: session.threadId,
         input: "plan this",
         interactionMode: "plan",
-        attachments: [],
       });
       yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
 
@@ -4105,7 +3989,6 @@ describe("ClaudeAdapterLive", () => {
         threadId: session.threadId,
         input: "plan this",
         interactionMode: "plan",
-        attachments: [],
       });
       yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
 
@@ -4177,7 +4060,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "question turn",
-        attachments: [],
       });
       yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
 
@@ -4503,108 +4385,6 @@ describe("ClaudeAdapterLive", () => {
         behavior: "deny",
         message: "User cancelled tool execution.",
       } satisfies PermissionResult);
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(harness.layer),
-    );
-  });
-
-  it.effect("writes provider-native observability records when enabled", () => {
-    const nativeEvents: Array<{
-      event?: {
-        provider?: string;
-        method?: string;
-        threadId?: string;
-        turnId?: string;
-      };
-    }> = [];
-    const nativeThreadIds: Array<string | null> = [];
-    const harness = makeHarness({
-      nativeEventLogger: {
-        filePath: "memory://claude-native-events",
-        write: (event, threadId) => {
-          nativeEvents.push(event as (typeof nativeEvents)[number]);
-          nativeThreadIds.push(threadId ?? null);
-          return Effect.void;
-        },
-        close: () => Effect.void,
-      },
-    });
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-
-      const session = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-      const turn = yield* adapter.sendTurn({
-        threadId: session.threadId,
-        input: "hello",
-        attachments: [],
-      });
-
-      const turnCompletedFiber = yield* Stream.filter(
-        adapter.streamEvents,
-        (event) => event.type === "turn.completed",
-      ).pipe(Stream.runHead, Effect.forkChild);
-
-      harness.query.emit({
-        type: "stream_event",
-        session_id: "sdk-session-native-log",
-        uuid: "stream-native-log",
-        parent_tool_use_id: null,
-        event: {
-          type: "content_block_delta",
-          index: 0,
-          delta: {
-            type: "text_delta",
-            text: "hi",
-          },
-        },
-      } as unknown as SDKMessage);
-
-      harness.query.emit({
-        type: "result",
-        subtype: "success",
-        is_error: false,
-        errors: [],
-        session_id: "sdk-session-native-log",
-        uuid: "result-native-log",
-      } as unknown as SDKMessage);
-
-      const turnCompleted = yield* Fiber.join(turnCompletedFiber);
-      assert.equal(turnCompleted._tag, "Some");
-
-      assert.equal(nativeEvents.length > 0, true);
-      assert.equal(
-        nativeEvents.some((record) => record.event?.provider === "claudeAgent"),
-        true,
-      );
-      assert.equal(
-        nativeEvents.some(
-          (record) =>
-            String(
-              (record.event as { readonly providerThreadId?: string } | undefined)
-                ?.providerThreadId,
-            ) === "sdk-session-native-log",
-        ),
-        true,
-      );
-      assert.equal(
-        nativeEvents.some((record) => String(record.event?.turnId) === String(turn.turnId)),
-        true,
-      );
-      assert.equal(
-        nativeEvents.some(
-          (record) => record.event?.method === "claude/stream_event/content_block_delta/text_delta",
-        ),
-        true,
-      );
-      assert.equal(
-        nativeThreadIds.every((threadId) => threadId === String(THREAD_ID)),
-        true,
-      );
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

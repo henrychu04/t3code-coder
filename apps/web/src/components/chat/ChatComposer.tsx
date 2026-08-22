@@ -2,7 +2,6 @@ import type {
   ApprovalRequestId,
   EnvironmentId,
   ModelSelection,
-  PreviewAnnotationPayload,
   ProviderApprovalDecision,
   ProviderInteractionMode,
   ResolvedKeybindingsConfig,
@@ -12,13 +11,7 @@ import type {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import {
-  isProviderSendTurnSupportedImageMimeType,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
-  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
@@ -45,38 +38,19 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { deriveComposerSendState, readFileAsDataUrl } from "../ChatView.logic";
+import { deriveComposerSendState } from "../ChatView.logic";
 import {
-  dataTransferHasComposerMention,
-  makeComposerMentionDragHandlers,
-} from "./composerMentionDrag";
-import {
-  type ComposerImageAttachment,
   type DraftId,
-  type PersistedComposerImageAttachment,
-  hydrateImagesFromPersisted,
   useComposerDraftStore,
   useComposerThreadDraft,
   useEffectiveComposerModelState,
 } from "../../composerDraftStore";
-import {
-  MAX_STASH_ENTRIES,
-  partitionStashAttachments,
-  usePromptStashStore,
-  type PromptStashEntry,
-} from "../../promptStashStore";
-import { ComposerStashBadge } from "./ComposerStashBadge";
-import { ComposerStashMenu } from "./ComposerStashMenu";
 import {
   ComposerTasksBadge,
   ComposerTasksDrawer,
   type ComposerTaskStep,
   type ComposerTasksProgress,
 } from "./ComposerTasksBadge";
-import { compressImageForStash, compressImageToByteLimit } from "../../lib/imageCompression";
-import { isCommandPaletteOpen } from "../../commandPaletteBus";
-import { getTerminalFocusOwner } from "../../lib/terminalFocus";
-import { resolveShortcutCommand } from "../../keybindings";
 import {
   type TerminalContextDraft,
   type TerminalContextSelection,
@@ -85,10 +59,7 @@ import {
   removeInlineTerminalContextPlaceholder,
 } from "../../lib/terminalContext";
 import { useComposerPathSearch } from "../../lib/composerPathSearchState";
-import { type ElementContextDraft } from "../../lib/elementContext";
-import { ComposerPendingElementContexts } from "./ComposerPendingElementContexts";
 import { ComposerPendingReviewComments } from "./ComposerPendingReviewComments";
-import { ComposerPreviewAnnotationCards } from "./ComposerPreviewAnnotationCards";
 import {
   shouldUseCompactComposerPrimaryActions,
   shouldUseCompactComposerFooter,
@@ -113,7 +84,6 @@ import {
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
-import { buildExpandedImagePreview, type ExpandedImagePreview } from "./ExpandedImagePreview";
 import { basenameOfPath } from "../../pierre-icons";
 import { cn, randomUUID } from "~/lib/utils";
 import { Separator } from "../ui/separator";
@@ -483,7 +453,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
-  addDroppedFiles: (files: File[]) => void;
   insertTextAtEnd: (text: string, options?: { ensureLeadingBoundary?: boolean }) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
@@ -505,10 +474,7 @@ export interface ChatComposerHandle {
   /** Get the current prompt/effort/model state for use in send. */
   getSendContext: () => {
     prompt: string;
-    images: ComposerImageAttachment[];
     terminalContexts: TerminalContextDraft[];
-    elementContexts: ElementContextDraft[];
-    previewAnnotations: PreviewAnnotationPayload[];
     reviewComments: ReviewCommentContext[];
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
@@ -599,9 +565,7 @@ export interface ChatComposerProps {
 
   // Refs the parent needs kept in sync
   promptRef: React.RefObject<string>;
-  composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
-  composerElementContextsRef: React.RefObject<ElementContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
 
   // Callbacks
@@ -629,10 +593,7 @@ export interface ChatComposerProps {
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
   handleInteractionModeChange: (mode: ProviderInteractionMode) => void;
 
-  focusComposer: () => void;
   scheduleComposerFocus: () => void;
-  setThreadError: (threadId: ThreadId | null, error: string | null) => void;
-  onExpandImage: (preview: ExpandedImagePreview) => void;
 }
 
 // --------------------------------------------------------------------------
@@ -686,9 +647,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     gitCwd,
     promptRef,
     composerRef,
-    composerImagesRef,
     composerTerminalContextsRef,
-    composerElementContextsRef,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -702,29 +661,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     toggleInteractionMode,
     handleRuntimeModeChange,
     handleInteractionModeChange,
-    focusComposer,
     scheduleComposerFocus,
-    setThreadError,
-    onExpandImage,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
 
   // ------------------------------------------------------------------
-  // Store subscriptions (prompt / images / terminal contexts)
+  // Store subscriptions
   // ------------------------------------------------------------------
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   const prompt = composerDraft.prompt;
-  const composerImages = composerDraft.images;
   const composerTerminalContexts = composerDraft.terminalContexts;
-  const composerElementContexts = composerDraft.elementContexts;
-  const composerPreviewAnnotations = composerDraft.previewAnnotations;
   const composerReviewComments = composerDraft.reviewComments;
-  const nonPersistedComposerImageIds = composerDraft.nonPersistedImageIds;
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
-  const addComposerDraftImage = useComposerDraftStore((store) => store.addImage);
-  const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
-  const removeComposerDraftImage = useComposerDraftStore((store) => store.removeImage);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
     (store) => store.insertTerminalContext,
   );
@@ -734,25 +683,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const setComposerDraftTerminalContexts = useComposerDraftStore(
     (store) => store.setTerminalContexts,
   );
-  const removeComposerDraftElementContext = useComposerDraftStore(
-    (store) => store.removeElementContext,
-  );
-  const removeComposerDraftPreviewAnnotation = useComposerDraftStore(
-    (store) => store.removePreviewAnnotation,
-  );
   const removeComposerDraftReviewComment = useComposerDraftStore(
     (store) => store.removeReviewComment,
   );
-  const clearComposerDraftPersistedAttachments = useComposerDraftStore(
-    (store) => store.clearPersistedAttachments,
-  );
-  const clearComposerDraftPromptAndImages = useComposerDraftStore(
-    (store) => store.clearComposerPromptAndImages,
-  );
-  const syncComposerDraftPersistedAttachments = useComposerDraftStore(
-    (store) => store.syncPersistedAttachments,
-  );
-  const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
 
   // ------------------------------------------------------------------
   // Model state
@@ -979,7 +912,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [composerHighlightedSearchKey, setComposerHighlightedSearchKey] = useState<string | null>(
     null,
   );
-  const [isDragOverComposer, setIsDragOverComposer] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
@@ -989,13 +921,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     null,
   );
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
-  const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
   const [isTasksDrawerOpen, setIsTasksDrawerOpen] = useState(false);
   const [dismissedTasksTurnId, setDismissedTasksTurnId] = useState<TurnId | null>(null);
-  const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
-    key: 0,
-    active: false,
-  });
   const isMobileViewport = useMediaQuery("max-sm");
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
@@ -1015,21 +942,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandFrameRef = useRef<number | null>(null);
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
-  const stashPulseKeyRef = useRef(0);
-  const stashPulseTimeoutRef = useRef<number | null>(null);
-  /**
-   * Snapshots currently being encoded, keyed by target+prompt+image ids.
-   * Keyed rather than boolean so a genuinely different prompt (or a different
-   * thread) can still be stashed while an earlier encode is running.
-   */
-  const stashInFlightRef = useRef<Set<string>>(new Set());
-  /**
-   * Count of pasted images still being compressed, per thread. Reserved
-   * against the attachment limit so concurrent pastes can't overshoot it,
-   * and checked by `submitComposer` so a send can't race an image into the
-   * next draft.
-   */
-  const pendingImageCompressionsRef = useRef<Map<ThreadId, number>>(new Map());
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1038,21 +950,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () =>
       deriveComposerSendState({
         prompt,
-        imageCount: composerImages.length,
         terminalContexts: composerTerminalContexts,
-        elementContextCount:
-          composerElementContexts.length +
-          composerPreviewAnnotations.length +
-          composerReviewComments.length,
+        supplementalContextCount: composerReviewComments.length,
       }),
-    [
-      composerElementContexts.length,
-      composerImages.length,
-      composerPreviewAnnotations.length,
-      composerReviewComments.length,
-      composerTerminalContexts,
-      prompt,
-    ],
+    [composerReviewComments.length, composerTerminalContexts, prompt],
   );
 
   // ------------------------------------------------------------------
@@ -1185,11 +1086,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   composerMenuItemsRef.current = composerMenuItems;
   activeComposerMenuItemRef.current = activeComposerMenuItem;
 
-  const nonPersistedComposerImageIdSet = useMemo(
-    () => new Set(nonPersistedComposerImageIds),
-    [nonPersistedComposerImageIds],
-  );
-
   const isComposerApprovalState = activePendingApproval !== null;
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const showComposerTopDrawer =
@@ -1313,27 +1209,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [composerDraftTarget, setComposerDraftPrompt],
   );
 
-  const addComposerImage = useCallback(
-    (image: ComposerImageAttachment) => {
-      addComposerDraftImage(composerDraftTarget, image);
-    },
-    [composerDraftTarget, addComposerDraftImage],
-  );
-
-  const addComposerImagesToDraft = useCallback(
-    (images: ComposerImageAttachment[]) => {
-      addComposerDraftImages(composerDraftTarget, images);
-    },
-    [composerDraftTarget, addComposerDraftImages],
-  );
-
-  const removeComposerImageFromDraft = useCallback(
-    (imageId: string) => {
-      removeComposerDraftImage(composerDraftTarget, imageId);
-    },
-    [composerDraftTarget, removeComposerDraftImage],
-  );
-
   const removeComposerTerminalContextFromDraft = useCallback(
     (contextId: string) => {
       const contextIndex = composerTerminalContexts.findIndex(
@@ -1376,8 +1251,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     setProviderInputSubmissionError(null);
   }, [
-    composerElementContexts,
-    composerPreviewAnnotations,
     composerReviewComments,
     composerTerminalContexts,
     prompt,
@@ -1387,16 +1260,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   ]);
 
   useEffect(() => {
-    composerImagesRef.current = composerImages;
-  }, [composerImages, composerImagesRef]);
-
-  useEffect(() => {
     composerTerminalContextsRef.current = composerTerminalContexts;
   }, [composerTerminalContexts, composerTerminalContextsRef]);
-
-  useEffect(() => {
-    composerElementContextsRef.current = composerElementContexts;
-  }, [composerElementContexts, composerElementContextsRef]);
 
   // ------------------------------------------------------------------
   // Composer menu highlight sync
@@ -1481,7 +1346,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setProviderInputSubmissionError(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
-    setIsDragOverComposer(false);
   }, [draftId, activeThreadId, promptRef]);
 
   // ------------------------------------------------------------------
@@ -1529,74 +1393,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       observer.disconnect();
     };
   }, [activeThreadId, composerFooterActionLayoutKey, composerFooterHasWideActions]);
-
-  // ------------------------------------------------------------------
-  // Image persist effect
-  // ------------------------------------------------------------------
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      if (composerImages.length === 0) {
-        clearComposerDraftPersistedAttachments(composerDraftTarget);
-        return;
-      }
-      const getPersistedAttachmentsForThread = () =>
-        getComposerDraft(composerDraftTarget)?.persistedAttachments ?? [];
-      try {
-        const currentPersistedAttachments = getPersistedAttachmentsForThread();
-        const existingPersistedById = new Map(
-          currentPersistedAttachments.map((attachment) => [attachment.id, attachment]),
-        );
-        const stagedAttachmentById = new Map<string, PersistedComposerImageAttachment>();
-        await Promise.all(
-          composerImages.map(async (image) => {
-            try {
-              const dataUrl = await readFileAsDataUrl(image.file);
-              stagedAttachmentById.set(image.id, {
-                id: image.id,
-                name: image.name,
-                mimeType: image.mimeType,
-                sizeBytes: image.sizeBytes,
-                dataUrl,
-              });
-            } catch {
-              const existingPersisted = existingPersistedById.get(image.id);
-              if (existingPersisted) {
-                stagedAttachmentById.set(image.id, existingPersisted);
-              }
-            }
-          }),
-        );
-        const serialized = Array.from(stagedAttachmentById.values());
-        if (cancelled) return;
-        syncComposerDraftPersistedAttachments(composerDraftTarget, serialized);
-      } catch {
-        const currentImageIds = new Set(composerImages.map((image) => image.id));
-        const fallbackPersistedAttachments = getPersistedAttachmentsForThread();
-        const fallbackPersistedIds: Array<string> = [];
-        for (const attachment of fallbackPersistedAttachments) {
-          if (currentImageIds.has(attachment.id)) {
-            fallbackPersistedIds.push(attachment.id);
-          }
-        }
-        const fallbackPersistedIdSet = new Set(fallbackPersistedIds);
-        const fallbackAttachments = fallbackPersistedAttachments.filter((attachment) =>
-          fallbackPersistedIdSet.has(attachment.id),
-        );
-        if (cancelled) return;
-        syncComposerDraftPersistedAttachments(composerDraftTarget, fallbackAttachments);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    composerDraftTarget,
-    clearComposerDraftPersistedAttachments,
-    composerImages,
-    getComposerDraft,
-    syncComposerDraftPersistedAttachments,
-  ]);
 
   // ------------------------------------------------------------------
   // Callbacks: prompt change
@@ -1892,19 +1688,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         event?.preventDefault();
         return;
       }
-      // A send while a pasted image is still compressing would strand that
-      // image: the turn snapshot wouldn't include it, and it would surface
-      // in the *next* draft instead. Only oversized images hit this — small
-      // files clear the pending counter within a microtask.
-      if (activeThreadId && (pendingImageCompressionsRef.current.get(activeThreadId) ?? 0) > 0) {
-        event?.preventDefault();
-        toastManager.add({
-          type: "info",
-          title: "Still compressing a pasted image.",
-          description: "Send again once its thumbnail appears.",
-        });
-        return;
-      }
       const submission = submitComposerDraft({
         prompt: promptRef.current,
         submissionTarget: activePendingProgress ? "pending-user-input" : "provider-turn",
@@ -1924,7 +1707,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
     },
     [
-      activeThreadId,
       activePendingProgress,
       blurMobileComposerAfterSend,
       isSendDisabled,
@@ -2003,337 +1785,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return false;
   };
 
-  // ------------------------------------------------------------------
-  // Prompt stash (⌘S)
-  // ------------------------------------------------------------------
-  // One global queue. Stashed prompts carry only text + images so they can be
-  // restored into any thread or provider — stash, switch, restore is the
-  // whole point.
-  const stashQueue = usePromptStashStore((state) => state.entries);
-  const stashEntryToQueue = usePromptStashStore((state) => state.stashEntry);
-  const takeStashEntry = usePromptStashStore((state) => state.takeEntry);
-  const finalizeStashEntryImages = usePromptStashStore((state) => state.finalizeEntryImages);
-
-  useEffect(() => {
-    return () => {
-      if (stashPulseTimeoutRef.current !== null) {
-        window.clearTimeout(stashPulseTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  /** Briefly highlight the badge so the save registers without a flourish. */
-  const pulseStashBadge = useCallback(() => {
-    stashPulseKeyRef.current += 1;
-    setStashPulse({ key: stashPulseKeyRef.current, active: true });
-    if (stashPulseTimeoutRef.current !== null) {
-      window.clearTimeout(stashPulseTimeoutRef.current);
-    }
-    stashPulseTimeoutRef.current = window.setTimeout(() => {
-      stashPulseTimeoutRef.current = null;
-      setStashPulse((current) => ({ ...current, active: false }));
-    }, 1200);
-  }, []);
-
-  const restoreStashEntry = useCallback(
-    (entry: PromptStashEntry) => {
-      // Remove first so a double activation (click + Enter) can't restore twice.
-      const { entry: taken, durable } = takeStashEntry(entry.id);
-      if (!taken) return;
-      if (!durable) {
-        toastManager.add({
-          type: "warning",
-          title: "Restored prompt may reappear in the stash",
-          description:
-            "Browser storage rejected the update, so this entry could still be there after a reload.",
-          data: { hideCopyButton: true },
-        });
-      }
-      setIsStashMenuOpen(false);
-
-      const currentPrompt = promptRef.current;
-      // An image-only stash must not append blank lines to whatever is
-      // already in the composer.
-      const nextPrompt =
-        entry.prompt.length === 0
-          ? currentPrompt
-          : currentPrompt.trim().length
-            ? `${currentPrompt.replace(/\s+$/, "")}\n\n${entry.prompt}`
-            : entry.prompt;
-      const promptChanged = nextPrompt !== currentPrompt;
-      if (promptChanged) {
-        promptRef.current = nextPrompt;
-        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-        setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
-        setComposerTrigger(null);
-      }
-
-      let unrestoredImageNames: string[] = [];
-      if (entry.attachments.length > 0) {
-        const existingIds = new Set(composerImagesRef.current.map((image) => image.id));
-        // The draft store also dedupes by mimeType+sizeBytes+name, so filter
-        // on the same key here. Counting a duplicate against capacity would
-        // burn a slot the store then refuses to fill, pushing a genuinely
-        // unique image into the overflow list for nothing.
-        const existingDedupKeys = new Set(
-          composerImagesRef.current.map(
-            (image) => `${image.mimeType} ${image.sizeBytes} ${image.name}`,
-          ),
-        );
-        const capacity = Math.max(
-          0,
-          PROVIDER_SEND_TURN_MAX_ATTACHMENTS - composerImagesRef.current.length,
-        );
-        const pending = entry.attachments.filter(
-          (attachment) =>
-            !existingIds.has(attachment.id) &&
-            !existingDedupKeys.has(
-              `${attachment.mimeType} ${attachment.sizeBytes} ${attachment.name}`,
-            ),
-        );
-        // Anything past the attachment limit cannot be restored. The entry is
-        // already out of the queue, so report the overflow by name instead of
-        // discarding it silently.
-        unrestoredImageNames = pending.slice(capacity).map((attachment) => attachment.name);
-        const restoredImages = hydrateImagesFromPersisted(pending.slice(0, capacity));
-        if (restoredImages.length > 0) {
-          addComposerDraftImages(composerDraftTarget, restoredImages);
-        }
-      }
-
-      // Deliberately no model/provider restore: the stash exists to carry a
-      // prompt across threads and providers, so whatever the composer has
-      // selected right now stays selected.
-
-      // Each cause gets its own sentence so "too large" is never blamed for a
-      // file that actually failed to decode, or for one the composer simply
-      // had no room to take back.
-      const missingImageReasons: string[] = [];
-      if (entry.droppedImageNames.length > 0) {
-        missingImageReasons.push(
-          `${entry.droppedImageNames.join(", ")} exceeded the stash size limit when this prompt was saved.`,
-        );
-      }
-      if (entry.unreadableImageNames && entry.unreadableImageNames.length > 0) {
-        missingImageReasons.push(
-          `${entry.unreadableImageNames.join(", ")} could not be read when this prompt was saved.`,
-        );
-      }
-      if (unrestoredImageNames.length > 0) {
-        missingImageReasons.push(
-          `${unrestoredImageNames.join(", ")} could not be restored: the composer is at its ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS}-image limit.`,
-        );
-      }
-      if (missingImageReasons.length > 0) {
-        toastManager.add({
-          type: "warning",
-          title: "Some images were not restored",
-          description: missingImageReasons.join(" "),
-        });
-      }
-
-      // Only yank the caret to the end when text was actually inserted;
-      // restoring images alone should leave the user where they were typing.
-      if (promptChanged) {
-        window.requestAnimationFrame(() => {
-          composerEditorRef.current?.focusAtEnd();
-        });
-      }
-    },
-    [
-      addComposerDraftImages,
-      composerDraftTarget,
-      composerImagesRef,
-      promptRef,
-      setComposerDraftPrompt,
-      takeStashEntry,
-    ],
-  );
-
-  const deleteStashEntry = useCallback(
-    (entry: PromptStashEntry) => {
-      const { durable } = takeStashEntry(entry.id);
-      if (!durable) {
-        toastManager.add({
-          type: "warning",
-          title: "Stash entry may come back",
-          description:
-            "Browser storage rejected the delete, so this prompt could reappear after a reload.",
-          data: { hideCopyButton: true },
-        });
-      }
-    },
-    [takeStashEntry],
-  );
-
-  const stashCurrentPrompt = useCallback(async () => {
-    // Terminal-context placeholders reference live sessions the stash can't
-    // round-trip, so they are stripped from the stashed prompt.
-    const prompt = promptRef.current.split(INLINE_TERMINAL_CONTEXT_PLACEHOLDER).join("").trim();
-    const images = [...composerImagesRef.current];
-    if (prompt.length === 0 && images.length === 0) {
-      setIsStashMenuOpen((open) => !open);
-      return;
-    }
-    // A repeat ⌘S on the *same* still-unencoded snapshot would stash it
-    // twice. Guard on the snapshot itself rather than a bare boolean: once
-    // the composer has been cleared the user can type something genuinely
-    // new (or switch threads) while encoding continues, and that deserves its
-    // own entry.
-    const snapshotKey = `${String(composerDraftTarget)} ${prompt} ${images
-      .map((image) => image.id)
-      .join(",")}`;
-    if (stashInFlightRef.current.has(snapshotKey)) return;
-    stashInFlightRef.current.add(snapshotKey);
-
-    const stashTarget = composerDraftTarget;
-    const entryId = randomUUID();
-    try {
-      // Persist the text-only entry *first*, then clear. Ordering matters in
-      // both directions: writing before clearing means a crash or closed tab
-      // mid-encode still leaves the prompt recoverable, while clearing before
-      // the async image work means edits typed during encoding are not wiped.
-      // Images are appended to the stored entry as they finish encoding.
-      const { evicted, written, durable } = stashEntryToQueue({
-        id: entryId,
-        createdAt: new Date().toISOString(),
-        prompt,
-        attachments: [],
-        droppedImageNames: [],
-        unreadableImageNames: [],
-        pendingImageCount: images.length,
-      });
-
-      // Clearing the composer is only safe once the write actually landed.
-      // If it was rejected (quota) the store has already rolled itself back,
-      // so leave the composer untouched rather than making it the second
-      // casualty of a reload.
-      if (!written) {
-        toastManager.add({
-          type: "error",
-          title: "Could not stash this prompt",
-          description:
-            "Browser storage rejected the write, so the composer was left as-is. Free up site data and try again.",
-          data: { hideCopyButton: true },
-        });
-        return;
-      }
-      // Written but only into the in-memory fallback (localStorage blocked):
-      // the entry is visible and restorable this session, so proceed with the
-      // clear, but say it won't survive a reload.
-      if (!durable) {
-        toastManager.add({
-          type: "warning",
-          title: "Stashed prompt will not survive a reload",
-          description:
-            "Browser storage is unavailable, so this stash is kept in memory only for this session.",
-          data: { hideCopyButton: true },
-        });
-      }
-
-      // Only the prompt and images are cleared — terminal/element contexts,
-      // preview annotations, and review comments are not stashable, so
-      // destroying them here would be unrecoverable.
-      promptRef.current = "";
-      clearComposerDraftPromptAndImages(stashTarget);
-      setComposerCursor(0);
-      setComposerTrigger(null);
-      pulseStashBadge();
-
-      if (evicted) {
-        toastManager.add({
-          type: "warning",
-          title: "Oldest stashed prompt discarded",
-          description: `The stash holds ${MAX_STASH_ENTRIES} prompts; the oldest was removed to make room.`,
-          data: { hideCopyButton: true },
-        });
-      }
-
-      // Images are re-encoded for the stash rather than stored verbatim: the
-      // composer allows up to 10MB per image, but localStorage gives the whole
-      // origin ~5MB. Only the stashed copy shrinks; the live attachment (and
-      // anything sent without stashing) keeps the original file.
-      const candidateAttachments: PersistedComposerImageAttachment[] = [];
-      const oversizedImageNames: string[] = [];
-      const unreadableImageNames: string[] = [];
-      for (const image of images) {
-        const result = await compressImageForStash(image.file);
-        if (!result.ok) {
-          // "too large" and "could not be read" are distinct outcomes; the
-          // menu and restore toast report them separately.
-          (result.reason === "too-large" ? oversizedImageNames : unreadableImageNames).push(
-            image.name,
-          );
-          continue;
-        }
-        candidateAttachments.push({
-          id: image.id,
-          name: image.name,
-          mimeType: result.image.mimeType,
-          sizeBytes: result.image.sizeBytes,
-          dataUrl: result.image.dataUrl,
-        });
-      }
-      const { kept, droppedNames } = partitionStashAttachments(candidateAttachments);
-
-      const { attached, durable: imagesDurable } = finalizeStashEntryImages(entryId, {
-        attachments: kept,
-        droppedImageNames: [...oversizedImageNames, ...droppedNames],
-        unreadableImageNames,
-      });
-      if (attached) {
-        // The second phase can be rejected on its own: the text-only entry
-        // fit, but adding image payloads pushed past the quota. Disk would
-        // then still hold the phase-one entry with pendingImageCount set,
-        // which reads as an orphan after reload — so say so now. Gated on the
-        // entry write having been durable: on the in-memory fallback nothing
-        // is ever durable, and the session-only warning already covered it.
-        if (!imagesDurable && durable && images.length > 0) {
-          toastManager.add({
-            type: "warning",
-            title: "Stashed images were not saved",
-            description:
-              "The prompt was stashed, but browser storage rejected its images. They will be missing if you reload.",
-            data: { hideCopyButton: true },
-          });
-        }
-      } else if (kept.length > 0) {
-        // The entry was restored or deleted before its images finished
-        // encoding, so they have nowhere to land. Say so rather than letting
-        // them evaporate.
-        toastManager.add({
-          type: "warning",
-          title: "Stashed images did not attach",
-          description: `That prompt was restored or deleted before ${kept.length} image${kept.length === 1 ? "" : "s"} finished saving. Re-attach ${kept.length === 1 ? "it" : "them"} if you still need ${kept.length === 1 ? "it" : "them"}.`,
-          data: { hideCopyButton: true },
-        });
-      }
-    } finally {
-      // Must clear on every path: a throw that left this set would wedge this
-      // snapshot's ⌘S until the composer remounts.
-      stashInFlightRef.current.delete(snapshotKey);
-    }
-  }, [
-    clearComposerDraftPromptAndImages,
-    composerDraftTarget,
-    composerImagesRef,
-    finalizeStashEntryImages,
-    promptRef,
-    pulseStashBadge,
-    stashEntryToQueue,
-  ]);
-
-  const toggleStashMenu = useCallback(() => {
-    setIsStashMenuOpen((open) => !open);
-  }, []);
-  const toggleInlineStashMenu = useCallback(() => {
-    if (isComposerCollapsedMobile) {
-      expandMobileComposer();
-      setIsStashMenuOpen(true);
-      return;
-    }
-    toggleStashMenu();
-  }, [expandMobileComposer, isComposerCollapsedMobile, toggleStashMenu]);
   const toggleTasksDrawer = useCallback(() => {
     setIsTasksDrawerOpen((open) => !open);
   }, []);
@@ -2350,23 +1801,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     setIsTasksDrawerOpen(false);
   }, [activeTasksTurnId]);
-  const showInlineStashBadge =
-    stashQueue.length > 0 &&
-    !isComposerApprovalState &&
-    (props.externalDrawerAttached ||
-      showComposerTopDrawer ||
-      isTasksDrawerOpen ||
-      isComposerCollapsedMobile);
-  const inlineStashBadge = showInlineStashBadge ? (
-    <ComposerStashBadge
-      count={stashQueue.length}
-      menuOpen={isStashMenuOpen}
-      placement="inline"
-      pulseKey={stashPulse.key}
-      pulsing={stashPulse.active}
-      onToggleMenu={toggleInlineStashMenu}
-    />
-  ) : null;
   const showInlineTasksBadge =
     visibleTasksProgress !== null &&
     visibleTaskSteps !== null &&
@@ -2390,10 +1824,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     !isComposerCollapsedMobile;
   const hasShoulderTab =
     showShoulderTabs &&
-    (stashQueue.length > 0 ||
-      (visibleTasksProgress !== null &&
-        visibleTaskSteps !== null &&
-        visibleTasksProgress.totalSteps > 0));
+    visibleTasksProgress !== null &&
+    visibleTaskSteps !== null &&
+    visibleTasksProgress.totalSteps > 0;
   useEffect(() => {
     if (visibleTasksProgress === null || visibleTaskSteps === null) {
       setIsTasksDrawerOpen(false);
@@ -2409,166 +1842,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     setIsTasksDrawerOpen(false);
   }, [activeThreadId]);
-
-  // Close the stash menu whenever the trigger-driven command menu opens so
-  // the two popovers never stack in the same layer, and when the user
-  // resumes typing (the menu is a transient picker, not a panel).
-  useEffect(() => {
-    if (composerMenuOpen) {
-      setIsStashMenuOpen(false);
-    }
-  }, [composerMenuOpen]);
-  useEffect(() => {
-    setIsStashMenuOpen(false);
-  }, [prompt]);
-
-  useEffect(() => {
-    const handler = (event: globalThis.KeyboardEvent) => {
-      const command = resolveShortcutCommand(event, keybindings, {
-        context: {
-          terminalFocus: getTerminalFocusOwner() !== null,
-          terminalOpen,
-          modelPickerOpen: isComposerModelPickerOpen,
-        },
-      });
-      if (command !== "composer.stash") return;
-      // Always claim the shortcut so the browser save dialog never opens,
-      // even when the composer is in a state that can't stash.
-      event.preventDefault();
-      event.stopPropagation();
-      if (isCommandPaletteOpen()) {
-        return;
-      }
-      if (pendingUserInputs.length > 0 && !isComposerApprovalState) {
-        setIsStashMenuOpen((open) => !open);
-        return;
-      }
-      if (isComposerApprovalState || projectSelectionRequired || activePendingProgress !== null) {
-        return;
-      }
-      void stashCurrentPrompt();
-    };
-    window.addEventListener("keydown", handler, true);
-    return () => window.removeEventListener("keydown", handler, true);
-  }, [
-    activePendingProgress,
-    isComposerApprovalState,
-    isComposerModelPickerOpen,
-    keybindings,
-    pendingUserInputs.length,
-    projectSelectionRequired,
-    stashCurrentPrompt,
-    terminalOpen,
-  ]);
-
-  // ------------------------------------------------------------------
-  // Callbacks: images
-  // ------------------------------------------------------------------
-  const addComposerImages = async (files: File[]) => {
-    if (!activeThreadId || files.length === 0) return;
-    if (pendingUserInputs.length > 0) {
-      toastManager.add({
-        type: "error",
-        title: "Attach images after answering plan questions.",
-      });
-      return;
-    }
-    // Captured before the awaits below: the user may switch threads while a
-    // large image is being compressed, and the attachments and errors belong
-    // to the thread the paste happened in.
-    const threadId = activeThreadId;
-
-    // Validation happens synchronously so concurrent pastes see each other:
-    // accepted files reserve their attachment slots (via the pending counter)
-    // before the first await, keeping the total under the limit.
-    const pendingCount = pendingImageCompressionsRef.current.get(threadId) ?? 0;
-    let reservedCount = composerImagesRef.current.length + pendingCount;
-    const acceptedFiles: File[] = [];
-    let error: string | null = null;
-    for (const file of files) {
-      if (!file.type.startsWith("image/")) {
-        error = `Unsupported file type for '${file.name}'. Please attach image files only.`;
-        continue;
-      }
-      if (!isProviderSendTurnSupportedImageMimeType(file.type)) {
-        error = `'${file.name}' is not a supported image type. Attach GIF, JPEG, PNG, or WebP images.`;
-        continue;
-      }
-      if (reservedCount >= PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
-        error = `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`;
-        break;
-      }
-      acceptedFiles.push(file);
-      reservedCount += 1;
-    }
-    setThreadError(threadId, error);
-    if (acceptedFiles.length === 0) return;
-
-    pendingImageCompressionsRef.current.set(threadId, pendingCount + acceptedFiles.length);
-    try {
-      const nextImages: ComposerImageAttachment[] = [];
-      let compressionError: string | null = null;
-      for (const file of acceptedFiles) {
-        // Images over the wire cap are downscaled to fit rather than
-        // refused; files already within it pass through byte-for-byte.
-        const compressed = await compressImageToByteLimit(file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
-        if (!compressed.ok) {
-          compressionError =
-            compressed.reason === "unreadable"
-              ? `'${file.name}' could not be read as an image.`
-              : `'${file.name}' is too large to attach, even after compression.`;
-          continue;
-        }
-        const attachmentFile = compressed.file;
-        const previewUrl = URL.createObjectURL(attachmentFile);
-        nextImages.push({
-          type: "image",
-          id: randomUUID(),
-          name: attachmentFile.name || "image",
-          mimeType: attachmentFile.type,
-          sizeBytes: attachmentFile.size,
-          previewUrl,
-          file: attachmentFile,
-        });
-      }
-      if (nextImages.length === 1 && nextImages[0]) {
-        addComposerImage(nextImages[0]);
-      } else if (nextImages.length > 1) {
-        addComposerImagesToDraft(nextImages);
-      }
-      // Only failures are reported here. Success must not pass `null`: by
-      // now other work (a failed send, an overlapping paste) may have set a
-      // thread error this call knows nothing about, and clearing it would
-      // swallow that message.
-      if (compressionError !== null) {
-        setThreadError(threadId, compressionError);
-      }
-    } finally {
-      const remaining =
-        (pendingImageCompressionsRef.current.get(threadId) ?? 0) - acceptedFiles.length;
-      if (remaining > 0) {
-        pendingImageCompressionsRef.current.set(threadId, remaining);
-      } else {
-        pendingImageCompressionsRef.current.delete(threadId);
-      }
-    }
-  };
-
-  const removeComposerImage = (imageId: string) => {
-    removeComposerImageFromDraft(imageId);
-  };
-
-  // ------------------------------------------------------------------
-  // Callbacks: paste / drag
-  // ------------------------------------------------------------------
-  const onComposerPaste = (event: React.ClipboardEvent<HTMLElement>) => {
-    const files = Array.from(event.clipboardData.files);
-    if (files.length === 0) return;
-    const imageFiles = files.filter((file) => file.type.startsWith("image/"));
-    if (imageFiles.length === 0) return;
-    event.preventDefault();
-    void addComposerImages(imageFiles);
-  };
 
   const insertComposerTextAtEnd = (
     text: string,
@@ -2593,41 +1866,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
 
-  // File-tree drags land as mentions. Handled in the capture phase so the
-  // editor never sees the drop; the load-bearing rules (native stop, "move"
-  // effect, no eager focus) live in makeComposerMentionDragHandlers.
-  const composerMentionDragHandlers = makeComposerMentionDragHandlers({
-    insertMentionAtEnd: (text) => insertComposerTextAtEnd(text, { ensureLeadingBoundary: true }),
-    setDragActive: setIsDragOverComposer,
-    onInsertRejected: () => {
-      toastManager.add({
-        type: "error",
-        title: "Unable to add to chat",
-        description: "The composer is busy; try again once it is ready.",
-      });
-    },
-  });
-
-  const onComposerMentionDragLeaveCapture = (event: React.DragEvent<HTMLFormElement>) => {
-    if (!dataTransferHasComposerMention(event.dataTransfer.types)) return;
-    event.stopPropagation();
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-    setIsDragOverComposer(false);
-  };
-
-  // A cancelled drag (Escape) can end without a dragleave on the hovered
-  // target, which would leave the drop highlight stuck. dragend always fires
-  // on the in-page drag source and bubbles to window, so it is the reset of
-  // last resort while the highlight is up.
-  useEffect(() => {
-    if (!isDragOverComposer) return;
-    const onWindowDragEnd = () => {
-      setIsDragOverComposer(false);
-    };
-    window.addEventListener("dragend", onWindowDragEnd);
-    return () => window.removeEventListener("dragend", onWindowDragEnd);
-  }, [isDragOverComposer]);
   const handleInterruptPrimaryAction = useCallback(() => {
     void onInterrupt();
   }, [onInterrupt]);
@@ -2691,10 +1929,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       focusAt: (cursor: number) => {
         composerEditorRef.current?.focusAt(cursor);
-      },
-      addDroppedFiles: (files: File[]) => {
-        void addComposerImages(files);
-        focusComposer();
       },
       insertTextAtEnd: insertComposerTextAtEnd,
       openModelPicker: () => {
@@ -2762,10 +1996,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       getSendContext: () => ({
         prompt: promptRef.current,
-        images: composerImagesRef.current,
         terminalContexts: composerTerminalContextsRef.current,
-        elementContexts: composerElementContextsRef.current,
-        previewAnnotations: composerPreviewAnnotations,
         reviewComments: composerReviewComments,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
@@ -2788,18 +2019,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }),
     [
       activeThread,
-      addComposerImages,
       composerDraftTarget,
       composerCursor,
       composerTerminalContexts,
       insertComposerDraftTerminalContext,
       promptRef,
-      composerImagesRef,
       composerTerminalContextsRef,
-      composerElementContextsRef,
-      composerPreviewAnnotations,
       composerReviewComments,
-      focusComposer,
       isConnecting,
       isComposerApprovalState,
       pendingUserInputs.length,
@@ -2841,10 +2067,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       onBlurCapture={() => {
         scheduleComposerCollapseCheck();
       }}
-      onDragEnterCapture={composerMentionDragHandlers.onDragEnter}
-      onDragOverCapture={composerMentionDragHandlers.onDragOver}
-      onDragLeaveCapture={onComposerMentionDragLeaveCapture}
-      onDropCapture={composerMentionDragHandlers.onDrop}
       className={cn("mx-auto w-full min-w-0 max-w-3xl", hasShoulderTab && "pt-7")}
       data-chat-composer-form="true"
     >
@@ -2929,7 +2151,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     {activePendingProgress?.customAnswer || "Write custom answer"}
                   </button>
                   {inlineTasksBadge}
-                  {inlineStashBadge}
                   {activePendingProgress?.activeQuestion?.multiSelect ? (
                     <ComposerPrimaryActions
                       compact
@@ -2974,20 +2195,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         {showShoulderTabs && visibleTasksProgress && visibleTaskSteps ? (
           <ComposerTasksBadge
             expanded={false}
-            hasTrailingShoulder={stashQueue.length > 0}
             onDismiss={dismissTasks}
             onToggle={toggleTasksDrawer}
             progress={visibleTasksProgress}
             steps={visibleTaskSteps}
-          />
-        ) : null}
-        {showShoulderTabs ? (
-          <ComposerStashBadge
-            count={stashQueue.length}
-            menuOpen={isStashMenuOpen}
-            pulseKey={stashPulse.key}
-            pulsing={stashPulse.active}
-            onToggleMenu={toggleStashMenu}
           />
         ) : null}
         <div
@@ -3003,7 +2214,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             data-chat-composer-mobile-collapsed={isComposerCollapsedMobile ? "true" : "false"}
             className={cn(
               "rounded-[20px] transition-[background-color] duration-200",
-              isDragOverComposer ? "bg-accent/45 ring-1 ring-primary/70" : null,
               projectSelectionRequired ? "opacity-75" : null,
               composerProviderState.composerSurfaceClassName,
             )}
@@ -3029,7 +2239,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       (noProviderAvailable ? "Enable a provider in Settings" : "Ask anything...")}
                 </button>
                 {inlineTasksBadge}
-                {inlineStashBadge}
                 <button
                   type="button"
                   className="flex size-8 shrink-0 items-center justify-center rounded-full bg-message-action text-message-action-foreground hover:bg-message-action-hover disabled:opacity-30"
@@ -3063,17 +2272,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 isComposerCollapsedMobile && "hidden",
               )}
             >
-              {isStashMenuOpen && !composerMenuOpen && !isComposerApprovalState && (
-                <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
-                  <ComposerStashMenu
-                    entries={stashQueue}
-                    onRestore={restoreStashEntry}
-                    onDelete={deleteStashEntry}
-                    onClose={() => setIsStashMenuOpen(false)}
-                  />
-                </ComposerCommandMenuLayer>
-              )}
-
               {composerMenuOpen && !isComposerApprovalState && (
                 <ComposerCommandMenuLayer anchor={composerMenuAnchor}>
                   <ComposerCommandMenu
@@ -3092,24 +2290,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               {!isComposerCollapsedMobile &&
                 !isComposerApprovalState &&
                 pendingUserInputs.length === 0 &&
-                composerPreviewAnnotations.length > 0 && (
-                  <ComposerPreviewAnnotationCards
-                    annotations={composerPreviewAnnotations}
-                    images={composerImages}
-                    onRemove={(annotationId) =>
-                      removeComposerDraftPreviewAnnotation(composerDraftTarget, annotationId)
-                    }
-                    onExpandImage={(imageId) => {
-                      const preview = buildExpandedImagePreview(composerImages, imageId);
-                      if (preview) onExpandImage(preview);
-                    }}
-                    className="mb-3"
-                  />
-                )}
-
-              {!isComposerCollapsedMobile &&
-                !isComposerApprovalState &&
-                pendingUserInputs.length === 0 &&
                 composerReviewComments.length > 0 && (
                   <ComposerPendingReviewComments
                     comments={composerReviewComments}
@@ -3118,97 +2298,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     }
                     className="mb-3"
                   />
-                )}
-
-              {!isComposerCollapsedMobile &&
-                !isComposerApprovalState &&
-                pendingUserInputs.length === 0 &&
-                composerElementContexts.length > 0 && (
-                  <ComposerPendingElementContexts
-                    contexts={composerElementContexts}
-                    onRemove={(contextId) =>
-                      removeComposerDraftElementContext(composerDraftTarget, contextId)
-                    }
-                    className="mb-3"
-                  />
-                )}
-
-              {!isComposerCollapsedMobile &&
-                !isComposerApprovalState &&
-                pendingUserInputs.length === 0 &&
-                composerImages.some(
-                  (image) =>
-                    !composerPreviewAnnotations.some((annotation) => annotation.id === image.id),
-                ) && (
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {composerImages
-                      .filter(
-                        (image) =>
-                          !composerPreviewAnnotations.some(
-                            (annotation) => annotation.id === image.id,
-                          ),
-                      )
-                      .map((image) => (
-                        <div
-                          key={image.id}
-                          className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
-                        >
-                          {image.previewUrl ? (
-                            <button
-                              type="button"
-                              className="h-full w-full cursor-zoom-in"
-                              aria-label={`Preview ${image.name}`}
-                              onClick={() => {
-                                const preview = buildExpandedImagePreview(composerImages, image.id);
-                                if (!preview) return;
-                                onExpandImage(preview);
-                              }}
-                            >
-                              <img
-                                src={image.previewUrl}
-                                alt={image.name}
-                                className="h-full w-full object-cover"
-                              />
-                            </button>
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-secondary-label">
-                              {image.name}
-                            </div>
-                          )}
-                          {nonPersistedComposerImageIdSet.has(image.id) && (
-                            <Tooltip>
-                              <TooltipTrigger
-                                render={
-                                  <span
-                                    role="img"
-                                    aria-label="Draft attachment may not persist"
-                                    className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-amber-600"
-                                  >
-                                    <CircleAlertIcon className="size-3" />
-                                  </span>
-                                }
-                              />
-                              <TooltipPopup
-                                side="top"
-                                className="max-w-64 whitespace-normal leading-tight"
-                              >
-                                Draft attachment could not be saved locally and may be lost on
-                                navigation.
-                              </TooltipPopup>
-                            </Tooltip>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="absolute right-1 top-1 bg-background/80 hover:bg-background/90"
-                            onClick={() => removeComposerImage(image.id)}
-                            aria-label={`Remove ${image.name}`}
-                          >
-                            <XIcon />
-                          </Button>
-                        </div>
-                      ))}
-                  </div>
                 )}
 
               <div className="relative">
@@ -3232,7 +2321,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                   onChange={onPromptChange}
                   onCommandKeyDown={onComposerCommandKey}
-                  onPaste={onComposerPaste}
                   placeholder={
                     isComposerApprovalState
                       ? (activePendingApproval?.detail ??
@@ -3257,7 +2345,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     className="absolute bottom-0 right-0 flex items-center justify-end gap-1"
                   >
                     {inlineTasksBadge}
-                    {inlineStashBadge}
                     <ComposerPrimaryActions
                       compact
                       pendingAction={pendingPrimaryAction}
@@ -3382,7 +2469,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
                   {showMobilePendingAnswerActions ? null : inlineTasksBadge}
-                  {showMobilePendingAnswerActions ? null : inlineStashBadge}
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     activeContextWindow={activeContextWindow}

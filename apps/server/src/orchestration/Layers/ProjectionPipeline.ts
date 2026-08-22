@@ -1,6 +1,5 @@
 import {
   ApprovalRequestId,
-  type ChatAttachment,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
   ThreadId,
@@ -48,12 +47,6 @@ import {
   OrchestrationProjectionPipeline,
   type OrchestrationProjectionPipelineShape,
 } from "../Services/ProjectionPipeline.ts";
-import {
-  attachmentRelativePath,
-  parseAttachmentIdFromRelativePath,
-  parseThreadSegmentFromAttachmentId,
-  toSafeThreadAttachmentSegment,
-} from "../../attachmentStore.ts";
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
@@ -95,21 +88,8 @@ function settledTurnStateForSessionStatus(
 
 interface ProjectorDefinition {
   readonly name: ProjectorName;
-  readonly apply: (
-    event: OrchestrationEvent,
-    attachmentSideEffects: AttachmentSideEffects,
-  ) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly apply: (event: OrchestrationEvent) => Effect.Effect<void, ProjectionRepositoryError>;
 }
-
-interface AttachmentSideEffects {
-  readonly deletedThreadIds: Set<string>;
-  readonly prunedThreadRelativePaths: Map<string, Set<string>>;
-}
-
-const materializeAttachmentsForProjection = Effect.fn("materializeAttachmentsForProjection")(
-  (input: { readonly attachments: ReadonlyArray<ChatAttachment> }) =>
-    Effect.succeed(input.attachments.length === 0 ? [] : input.attachments),
-);
 
 function extractActivityRequestId(payload: unknown): ApprovalRequestId | null {
   if (typeof payload !== "object" || payload === null) {
@@ -166,8 +146,7 @@ function derivePendingUserInputCountFromActivities(
       detail !== null &&
       (detail.includes("stale pending user-input request") ||
         detail.includes("unknown pending user-input request") ||
-        detail.includes("unknown pending user input request") ||
-        detail.includes("unknown pending codex user input request"))
+        detail.includes("unknown pending user input request"))
     ) {
       openRequestIds.delete(requestId);
     }
@@ -327,146 +306,6 @@ function retainProjectionProposedPlansAfterRevert(
   );
 }
 
-function collectThreadAttachmentRelativePaths(
-  threadId: string,
-  messages: ReadonlyArray<ProjectionThreadMessage>,
-): Set<string> {
-  const threadSegment = toSafeThreadAttachmentSegment(threadId);
-  if (!threadSegment) {
-    return new Set();
-  }
-  const relativePaths = new Set<string>();
-  for (const message of messages) {
-    for (const attachment of message.attachments ?? []) {
-      if (attachment.type !== "image") {
-        continue;
-      }
-      const attachmentThreadSegment = parseThreadSegmentFromAttachmentId(attachment.id);
-      if (!attachmentThreadSegment || attachmentThreadSegment !== threadSegment) {
-        continue;
-      }
-      relativePaths.add(attachmentRelativePath(attachment));
-    }
-  }
-  return relativePaths;
-}
-
-const runAttachmentSideEffects = Effect.fn("runAttachmentSideEffects")(function* (
-  sideEffects: AttachmentSideEffects,
-) {
-  const serverConfig = yield* Effect.service(ServerConfig);
-  const fileSystem = yield* Effect.service(FileSystem.FileSystem);
-  const path = yield* Effect.service(Path.Path);
-
-  const attachmentsRootDir = serverConfig.attachmentsDir;
-  const readAttachmentRootEntries = fileSystem
-    .readDirectory(attachmentsRootDir, { recursive: false })
-    .pipe(Effect.orElseSucceed(() => [] as Array<string>));
-
-  const removeDeletedThreadAttachmentEntry = Effect.fn("removeDeletedThreadAttachmentEntry")(
-    function* (threadSegment: string, entry: string) {
-      const normalizedEntry = entry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
-      if (normalizedEntry.length === 0 || normalizedEntry.includes("/")) {
-        return;
-      }
-      const attachmentId = parseAttachmentIdFromRelativePath(normalizedEntry);
-      if (!attachmentId) {
-        return;
-      }
-      const attachmentThreadSegment = parseThreadSegmentFromAttachmentId(attachmentId);
-      if (!attachmentThreadSegment || attachmentThreadSegment !== threadSegment) {
-        return;
-      }
-      yield* fileSystem.remove(path.join(attachmentsRootDir, normalizedEntry), {
-        force: true,
-      });
-    },
-  );
-
-  const deleteThreadAttachments = Effect.fn("deleteThreadAttachments")(function* (
-    threadId: string,
-  ) {
-    const threadSegment = toSafeThreadAttachmentSegment(threadId);
-    if (!threadSegment) {
-      yield* Effect.logWarning("skipping attachment cleanup for unsafe thread id", {
-        threadId,
-      });
-      return;
-    }
-
-    const entries = yield* readAttachmentRootEntries;
-    yield* Effect.forEach(
-      entries,
-      (entry) => removeDeletedThreadAttachmentEntry(threadSegment, entry),
-      {
-        concurrency: 1,
-      },
-    );
-  });
-
-  const pruneThreadAttachmentEntry = Effect.fn("pruneThreadAttachmentEntry")(function* (
-    threadSegment: string,
-    keptThreadRelativePaths: Set<string>,
-    entry: string,
-  ) {
-    const relativePath = entry.replace(/^[/\\]+/, "").replace(/\\/g, "/");
-    if (relativePath.length === 0 || relativePath.includes("/")) {
-      return;
-    }
-    const attachmentId = parseAttachmentIdFromRelativePath(relativePath);
-    if (!attachmentId) {
-      return;
-    }
-    const attachmentThreadSegment = parseThreadSegmentFromAttachmentId(attachmentId);
-    if (!attachmentThreadSegment || attachmentThreadSegment !== threadSegment) {
-      return;
-    }
-
-    const absolutePath = path.join(attachmentsRootDir, relativePath);
-    const fileInfo = yield* fileSystem.stat(absolutePath).pipe(Effect.orElseSucceed(() => null));
-    if (!fileInfo || fileInfo.type !== "File") {
-      return;
-    }
-
-    if (!keptThreadRelativePaths.has(relativePath)) {
-      yield* fileSystem.remove(absolutePath, { force: true });
-    }
-  });
-
-  const pruneThreadAttachments = Effect.fn("pruneThreadAttachments")(function* (
-    threadId: string,
-    keptThreadRelativePaths: Set<string>,
-  ) {
-    if (sideEffects.deletedThreadIds.has(threadId)) {
-      return;
-    }
-
-    const threadSegment = toSafeThreadAttachmentSegment(threadId);
-    if (!threadSegment) {
-      yield* Effect.logWarning("skipping attachment prune for unsafe thread id", { threadId });
-      return;
-    }
-
-    const entries = yield* readAttachmentRootEntries;
-    yield* Effect.forEach(
-      entries,
-      (entry) => pruneThreadAttachmentEntry(threadSegment, keptThreadRelativePaths, entry),
-      { concurrency: 1 },
-    );
-  });
-
-  yield* Effect.forEach(sideEffects.deletedThreadIds, deleteThreadAttachments, {
-    concurrency: 1,
-  });
-
-  yield* Effect.forEach(
-    sideEffects.prunedThreadRelativePaths.entries(),
-    ([threadId, keptThreadRelativePaths]) =>
-      pruneThreadAttachments(threadId, keptThreadRelativePaths),
-    { concurrency: 1 },
-  );
-});
-
 const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjectionPipeline")(
   function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -487,7 +326,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyProjectsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyProjectsProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "project.created":
           yield* projectionProjectRepository.upsert({
@@ -599,7 +438,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadsProjection",
-    )(function* (event, attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "thread.created":
           yield* projectionThreadRepository.upsert({
@@ -835,7 +674,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         }
 
         case "thread.deleted": {
-          attachmentSideEffects.deletedThreadIds.add(event.payload.threadId);
           const existingRow = yield* projectionThreadRepository.getById({
             threadId: event.payload.threadId,
           });
@@ -947,7 +785,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadMessagesProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadMessagesProjection",
-    )(function* (event, attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "thread.message-sent": {
           const existingMessage = yield* projectionThreadMessageRepository.getByMessageId({
@@ -966,19 +804,12 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               return event.payload.text;
             },
           });
-          const nextAttachments =
-            event.payload.attachments !== undefined
-              ? yield* materializeAttachmentsForProjection({
-                  attachments: event.payload.attachments,
-                })
-              : previousMessage?.attachments;
           yield* projectionThreadMessageRepository.upsert({
             messageId: event.payload.messageId,
             threadId: event.payload.threadId,
             turnId: event.payload.turnId,
             role: event.payload.role,
             text: nextText,
-            ...(nextAttachments !== undefined ? { attachments: [...nextAttachments] } : {}),
             isStreaming: event.payload.streaming,
             createdAt: previousMessage?.createdAt ?? event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -1012,10 +843,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* Effect.forEach(keptRows, projectionThreadMessageRepository.upsert, {
             concurrency: 1,
           }).pipe(Effect.asVoid);
-          attachmentSideEffects.prunedThreadRelativePaths.set(
-            event.payload.threadId,
-            collectThreadAttachmentRelativePaths(event.payload.threadId, keptRows),
-          );
           return;
         }
 
@@ -1026,7 +853,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadProposedPlansProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadProposedPlansProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "thread.proposed-plan-upserted":
           yield* projectionThreadProposedPlanRepository.upsert({
@@ -1077,7 +904,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadActivitiesProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadActivitiesProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "thread.activity-appended":
           yield* projectionThreadActivityRepository.upsert({
@@ -1129,7 +956,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadSessionsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadSessionsProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event) {
       if (event.type !== "thread.session-set") {
         return;
       }
@@ -1147,7 +974,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyThreadTurnsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadTurnsProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "thread.turn-start-requested": {
           yield* projectionTurnRepository.replacePendingTurnStart({
@@ -1484,7 +1311,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
 
     const applyPendingApprovalsProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyPendingApprovalsProjection",
-    )(function* (event, _attachmentSideEffects) {
+    )(function* (event) {
       switch (event.type) {
         case "thread.activity-appended": {
           const requestId =
@@ -1649,13 +1476,8 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       projector: ProjectorDefinition,
       event: OrchestrationEvent,
     ) {
-      const attachmentSideEffects: AttachmentSideEffects = {
-        deletedThreadIds: new Set<string>(),
-        prunedThreadRelativePaths: new Map<string, Set<string>>(),
-      };
-
       yield* sql.withTransaction(
-        projector.apply(event, attachmentSideEffects).pipe(
+        projector.apply(event).pipe(
           Effect.flatMap(() =>
             projectionStateRepository.upsert({
               projector: projector.name,
@@ -1663,17 +1485,6 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               updatedAt: event.occurredAt,
             }),
           ),
-        ),
-      );
-
-      yield* runAttachmentSideEffects(attachmentSideEffects).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("failed to apply projected attachment side-effects", {
-            projector: projector.name,
-            sequence: event.sequence,
-            eventType: event.type,
-            cause,
-          }),
         ),
       );
     });

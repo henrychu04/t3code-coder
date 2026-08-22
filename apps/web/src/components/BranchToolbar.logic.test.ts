@@ -10,7 +10,6 @@ import {
   resolveEffectiveEnvMode,
   resolveEnvModeLabel,
   resolveBranchTriggerLabel,
-  resolveBranchToolbarPrBranch,
   resolveBranchToolbarValue,
   resolveLockedWorkspaceLabel,
   resolveLocalCheckoutBranchMismatch,
@@ -269,35 +268,6 @@ describe("resolveBranchTriggerLabel", () => {
         startFromOrigin: true,
       }),
     ).toBe("From upstream/feature/demo");
-  });
-});
-
-describe("resolveBranchToolbarPrBranch", () => {
-  it("uses the explicit thread branch when it matches the displayed branch", () => {
-    expect(
-      resolveBranchToolbarPrBranch({
-        activeThreadBranch: "feature/current",
-        resolvedActiveBranch: "feature/current",
-      }),
-    ).toBe("feature/current");
-  });
-
-  it("hides PR state while an optimistic branch switch is in flight", () => {
-    expect(
-      resolveBranchToolbarPrBranch({
-        activeThreadBranch: "feature/current",
-        resolvedActiveBranch: "feature/next",
-      }),
-    ).toBeNull();
-  });
-
-  it("does not infer PR state without an explicit thread branch", () => {
-    expect(
-      resolveBranchToolbarPrBranch({
-        activeThreadBranch: null,
-        resolvedActiveBranch: "feature/current",
-      }),
-    ).toBeNull();
   });
 });
 
@@ -698,24 +668,12 @@ describe("resolveBranchSelectionTarget", () => {
 });
 
 describe("shouldIncludeBranchPickerItem", () => {
-  it("keeps the synthetic checkout PR item visible for gh pr checkout input", () => {
-    expect(
-      shouldIncludeBranchPickerItem({
-        itemValue: "__checkout_pull_request__:1359",
-        normalizedQuery: "gh pr checkout 1359",
-        createBranchItemValue: "__create_new_branch__:gh pr checkout 1359",
-        checkoutPullRequestItemValue: "__checkout_pull_request__:1359",
-      }),
-    ).toBe(true);
-  });
-
   it("keeps the synthetic create-ref item visible for arbitrary ref input", () => {
     expect(
       shouldIncludeBranchPickerItem({
         itemValue: "__create_new_branch__:feature/demo",
         normalizedQuery: "feature/demo",
         createBranchItemValue: "__create_new_branch__:feature/demo",
-        checkoutPullRequestItemValue: null,
       }),
     ).toBe(true);
   });
@@ -724,9 +682,8 @@ describe("shouldIncludeBranchPickerItem", () => {
     expect(
       shouldIncludeBranchPickerItem({
         itemValue: "main",
-        normalizedQuery: "gh pr checkout 1359",
-        createBranchItemValue: "__create_new_branch__:gh pr checkout 1359",
-        checkoutPullRequestItemValue: "__checkout_pull_request__:1359",
+        normalizedQuery: "feature",
+        createBranchItemValue: "__create_new_branch__:feature",
       }),
     ).toBe(false);
   });
@@ -739,7 +696,6 @@ describe("shouldIncludeBranchPickerItem", () => {
         itemValue: "new-branch",
         normalizedQuery: "new branch",
         createBranchItemValue: null,
-        checkoutPullRequestItemValue: null,
       }),
     ).toBe(true);
   });
@@ -752,7 +708,6 @@ describe("shouldIncludeBranchPickerItem", () => {
         itemValue: "hello-world",
         normalizedQuery: "hello w",
         createBranchItemValue: null,
-        checkoutPullRequestItemValue: null,
       }),
     ).toBe(true);
   });
@@ -763,7 +718,6 @@ describe("shouldIncludeBranchPickerItem", () => {
         itemValue: "main",
         normalizedQuery: "new branch",
         createBranchItemValue: null,
-        checkoutPullRequestItemValue: null,
       }),
     ).toBe(false);
   });

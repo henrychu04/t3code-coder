@@ -2,9 +2,6 @@
 
 @custom-variant dark (&:is(.dark, .dark *));
 @custom-variant light (&:not(.dark, .dark *));
-/* Window Controls Overlay: active when Electron exposes native titlebar control geometry. */
-@custom-variant wco (&:is(.wco, .wco *));
-
 /* On mobile, morph the expanded hero composer into the compact docked
    composer while it moves; the rest of the app remains visually stationary. */
 html[data-mobile-composer-route-transition="true"]::view-transition-old(root),
@@ -95,7 +92,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --glass-blur: 12px;
   --glass-opacity: 80%;
   --glass-saturation: 1.14;
-  --desktop-window-right-resize-inset: 0px;
   --workspace-topbar-height: 52px;
   --workspace-controls-top: 0px;
   --workspace-controls-left: calc(env(safe-area-inset-left) + 0.75rem);
@@ -1887,11 +1883,6 @@ body {
   overflow-y: hidden;
   overscroll-behavior-y: none;
   padding-top: max(env(safe-area-inset-top), 0px);
-  padding-right: var(--desktop-window-right-resize-inset);
-}
-
-.electron-windows {
-  --desktop-window-right-resize-inset: 6px;
 }
 
 /* App-chrome grain. Baked into each surface's own background (behind
@@ -1943,19 +1934,6 @@ code {
 :root {
   --diffs-font-family: var(--font-mono);
   --diffs-header-font-family: var(--font-sans);
-}
-
-/* Window drag region (frameless titlebar) */
-.drag-region {
-  -webkit-app-region: drag;
-}
-
-.drag-region button,
-.drag-region input,
-.drag-region textarea,
-.drag-region select,
-.drag-region a {
-  -webkit-app-region: no-drag;
 }
 
 /* Scrollbar styling */

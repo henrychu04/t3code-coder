@@ -1904,34 +1904,6 @@ export function resolveThemeAppearance(
   return getThemePreferenceMode(theme) ?? "light";
 }
 
-export function resolveDesktopTheme(
-  theme: ThemePreference,
-  followSystem?: boolean,
-  appearanceMode?: ThemePreferenceMode,
-  halves?: ThemeHalves | null,
-): "light" | "dark" | "system" {
-  const mode = appearanceMode ?? ((followSystem ?? theme === "system") ? "system" : null);
-  if (mode === "system") {
-    const definition = getThemeDefinition(theme);
-    // A configured half fills in an appearance the base theme cannot render.
-    const hasLightMode =
-      halves?.light !== undefined ||
-      (definition !== null && getThemeColorsForMode(definition, "light") !== null);
-    const hasDarkMode =
-      halves?.dark !== undefined ||
-      (definition !== null && getThemeColorsForMode(definition, "dark") !== null);
-    return definition && (!hasLightMode || !hasDarkMode) ? definition.appearance : "system";
-  }
-  if (mode === "light" || mode === "dark") {
-    if (halves?.[mode]) return mode;
-    const definition = getThemeDefinition(theme);
-    return definition && getThemeColorsForMode(definition, mode) === null
-      ? definition.appearance
-      : mode;
-  }
-  return getThemePreferenceMode(theme) ?? "system";
-}
-
 export function isKnownThemePreference(theme: string): boolean {
   if (theme === "light" || theme === "dark" || theme === "system") return true;
   return getThemeDefinition(theme) !== null;

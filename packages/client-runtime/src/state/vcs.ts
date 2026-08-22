@@ -286,13 +286,6 @@ export function createVcsEnvironmentAtoms<R, E>(
           ),
         ),
     }),
-    pull: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:vcs:pull",
-      tag: WS_METHODS.vcsPull,
-      scheduler: vcsCommandScheduler,
-      concurrency: vcsCommandConcurrency,
-      onSettled: invalidateRefs,
-    }),
     refreshStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:refresh-status",
       tag: WS_METHODS.vcsRefreshStatus,
@@ -338,7 +331,5 @@ export function createVcsEnvironmentAtoms<R, E>(
   };
 }
 
-export * from "./gitActions.ts";
-export * from "./vcsAction.ts";
 export * from "./vcsRef.ts";
 export * from "./vcsStatus.ts";

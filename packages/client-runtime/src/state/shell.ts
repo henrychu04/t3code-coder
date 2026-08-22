@@ -22,7 +22,7 @@ import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { subscribeDynamic } from "../rpc/client.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { ShellSnapshotLoader } from "./shellSnapshotHttp.ts";
+import { ShellSnapshotLoader } from "./snapshotLoaders.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
@@ -415,7 +415,6 @@ export function createEnvironmentShellAtoms<R, E>(
 }
 
 export * from "./models.ts";
-export * from "./shellCommands.ts";
 export * from "./shellReducer.ts";
-export * from "./shellSnapshotHttp.ts";
+export { ShellSnapshotLoader, shellSnapshotLoaderLayer } from "./snapshotLoaders.ts";
 export * from "./snapshots.ts";

@@ -34,9 +34,7 @@ const TARGET = new PrimaryConnectionTarget({
 const PREPARED: PreparedConnection = {
   environmentId: TARGET.environmentId,
   label: TARGET.label,
-  httpBaseUrl: TARGET.httpBaseUrl,
   socketUrl: TARGET.wsBaseUrl,
-  httpAuthorization: null,
   target: TARGET,
 };
 

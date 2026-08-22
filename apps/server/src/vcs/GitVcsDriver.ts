@@ -25,14 +25,14 @@ import {
   type VcsInitInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
-  type VcsPullResult,
+  type VcsRef,
   type VcsRemoveWorktreeInput,
   type VcsStatusInput,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { makeGitVcsDriverCore } from "./GitVcsDriverCore.ts";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
+import * as ServerConfig from "../config.ts";
 
 export interface ExecuteGitInput {
   readonly operation: string;
@@ -57,34 +57,10 @@ export interface ExecuteGitResult {
 
 export interface GitStatusDetails {
   isRepo: boolean;
-  sourceControlProvider?: VcsStatusResult["sourceControlProvider"];
-  hasOriginRemote: boolean;
   isDefaultBranch: boolean;
   branch: string | null;
-  upstreamRef: string | null;
   hasWorkingTreeChanges: boolean;
   workingTree: VcsStatusResult["workingTree"];
-  hasUpstream: boolean;
-  aheadCount: number;
-  behindCount: number;
-  aheadOfDefaultCount: number;
-}
-
-export interface GitRemoteStatusDetails {
-  isRepo: boolean;
-  defaultBranch: string | null;
-  isDefaultBranch: boolean;
-  branch: string | null;
-  upstreamRef: string | null;
-  hasUpstream: boolean;
-  aheadCount: number;
-  behindCount: number;
-  aheadOfDefaultCount: number;
-}
-
-export interface GitPreparedCommitContext {
-  stagedSummary: string;
-  stagedPatch: string;
 }
 
 export interface ExecuteGitProgress {
@@ -98,37 +74,6 @@ export interface ExecuteGitProgress {
   }) => Effect.Effect<void, never>;
 }
 
-export interface GitCommitProgress {
-  readonly onOutputLine?: (input: {
-    stream: "stdout" | "stderr";
-    text: string;
-  }) => Effect.Effect<void, never>;
-  readonly onHookStarted?: (hookName: string) => Effect.Effect<void, never>;
-  readonly onHookFinished?: (input: {
-    hookName: string;
-    exitCode: number | null;
-    durationMs: number | null;
-  }) => Effect.Effect<void, never>;
-}
-
-export interface GitCommitOptions {
-  readonly timeoutMs?: number;
-  readonly progress?: GitCommitProgress;
-}
-
-export interface GitPushResult {
-  status: "pushed" | "skipped_up_to_date";
-  branch: string;
-  upstreamBranch?: string | undefined;
-  setUpstream?: boolean | undefined;
-}
-
-export interface GitRangeContext {
-  commitSummary: string;
-  diffSummary: string;
-  diffPatch: string;
-}
-
 export interface GitRenameBranchInput {
   cwd: string;
   oldBranch: string;
@@ -139,170 +84,23 @@ export interface GitRenameBranchResult {
   branch: string;
 }
 
-export interface GitFetchPullRequestBranchInput {
-  cwd: string;
-  prNumber: number;
-  branch: string;
-}
-
-export interface GitFetchPullRequestHeadCommitInput {
-  cwd: string;
-  prNumber: number;
-}
-
-export interface GitResolveCommitInput {
-  cwd: string;
-  revision: string;
-}
-
-export interface GitResolveCommitResult {
-  commitSha: string;
-}
-
-export interface GitRefreshCheckedOutBranchInput {
-  cwd: string;
-  targetCommit: string;
-  /**
-   * Commit the checkout is allowed to be hard-reset away from: the upstream commit read before
-   * the fetch. HEAD sitting there means the checkout holds no work of its own.
-   */
-  resetWhenHeadCommit?: string | null | undefined;
-}
-
-export interface GitRefreshCheckedOutBranchResult {
-  headCommit: string;
-  moved: boolean;
-  onTarget: boolean;
-}
-
-export interface GitEnsureRemoteInput {
-  cwd: string;
-  preferredName: string;
-  url: string;
-}
-
-export interface GitFetchRemoteBranchInput {
-  cwd: string;
-  remoteName: string;
-  remoteBranch: string;
-  localBranch: string;
-}
-
-export interface GitFetchRemoteTrackingBranchInput {
-  cwd: string;
-  remoteName: string;
-  remoteBranch: string;
-}
-
-export interface GitFetchRemoteInput {
-  cwd: string;
-  remoteName: string;
-}
-
-export interface GitRemoteExistsInput {
-  cwd: string;
-  remoteName: string;
-}
-
-export interface GitResolveRemoteTrackingCommitInput {
-  cwd: string;
-  refName: string;
-  fallbackRemoteName: string;
-}
-
-export interface GitResolveRemoteTrackingCommitResult {
-  commitSha: string;
-  remoteRefName: string;
-}
-
-export interface GitSetBranchUpstreamInput {
-  cwd: string;
-  branch: string;
-  remoteName: string;
-  remoteBranch: string;
-}
-
-export interface GitRemoteStatusOptions {
-  readonly refreshUpstream?: boolean;
-}
-
 export class GitVcsDriver extends Context.Service<
   GitVcsDriver,
   {
     readonly execute: (input: ExecuteGitInput) => Effect.Effect<ExecuteGitResult, GitCommandError>;
-    readonly status: (input: VcsStatusInput) => Effect.Effect<VcsStatusResult, GitCommandError>;
-    readonly statusDetails: (cwd: string) => Effect.Effect<GitStatusDetails, GitCommandError>;
     readonly statusDetailsLocal: (cwd: string) => Effect.Effect<GitStatusDetails, GitCommandError>;
-    readonly statusDetailsRemote: (
-      cwd: string,
-      options?: GitRemoteStatusOptions,
-    ) => Effect.Effect<GitRemoteStatusDetails, GitCommandError>;
-    readonly prepareCommitContext: (
-      cwd: string,
-      filePaths?: readonly string[],
-    ) => Effect.Effect<GitPreparedCommitContext | null, GitCommandError>;
-    readonly commit: (
-      cwd: string,
-      subject: string,
-      body: string,
-      options?: GitCommitOptions,
-    ) => Effect.Effect<{ commitSha: string }, GitCommandError>;
-    readonly pushCurrentBranch: (
-      cwd: string,
-      fallbackBranch: string | null,
-      options?: { readonly remoteName?: string | null },
-    ) => Effect.Effect<GitPushResult, GitCommandError>;
-    readonly readRangeContext: (
-      cwd: string,
-      baseRef: string,
-    ) => Effect.Effect<GitRangeContext, GitCommandError>;
     readonly getReviewDiffPreview: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
     readonly getReviewDiffFileContents: (
       input: ReviewDiffFileContentsInput,
     ) => Effect.Effect<ReviewDiffFileContentsResult, GitCommandError>;
-    readonly readConfigValue: (
-      cwd: string,
-      key: string,
-    ) => Effect.Effect<string | null, GitCommandError>;
     readonly listRefs: (
       input: VcsListRefsInput,
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
-    readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
-    readonly fetchPullRequestBranch: (
-      input: GitFetchPullRequestBranchInput,
-    ) => Effect.Effect<void, GitCommandError>;
-    /** Fetches `refs/pull/<n>/head` without writing a branch, for heads that exist nowhere else. */
-    readonly fetchPullRequestHeadCommit: (
-      input: GitFetchPullRequestHeadCommitInput,
-    ) => Effect.Effect<GitResolveCommitResult, GitCommandError>;
-    readonly resolveCommit: (
-      input: GitResolveCommitInput,
-    ) => Effect.Effect<GitResolveCommitResult, GitCommandError>;
-    /** Moves the branch checked out in `cwd` onto `targetCommit`, from inside that worktree. */
-    readonly refreshCheckedOutBranch: (
-      input: GitRefreshCheckedOutBranchInput,
-    ) => Effect.Effect<GitRefreshCheckedOutBranchResult, GitCommandError>;
-    readonly ensureRemote: (input: GitEnsureRemoteInput) => Effect.Effect<string, GitCommandError>;
-    readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string, GitCommandError>;
-    readonly fetchRemote: (input: GitFetchRemoteInput) => Effect.Effect<void, GitCommandError>;
-    readonly remoteExists: (input: GitRemoteExistsInput) => Effect.Effect<boolean, GitCommandError>;
-    readonly resolveRemoteTrackingCommit: (
-      input: GitResolveRemoteTrackingCommitInput,
-    ) => Effect.Effect<GitResolveRemoteTrackingCommitResult, GitCommandError>;
-    readonly fetchRemoteBranch: (
-      input: GitFetchRemoteBranchInput,
-    ) => Effect.Effect<void, GitCommandError>;
-    readonly fetchRemoteTrackingBranch: (
-      input: GitFetchRemoteTrackingBranchInput,
-    ) => Effect.Effect<void, GitCommandError>;
-    readonly setBranchUpstream: (
-      input: GitSetBranchUpstreamInput,
-    ) => Effect.Effect<void, GitCommandError>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
@@ -316,7 +114,6 @@ export class GitVcsDriver extends Context.Service<
       input: VcsSwitchRefInput,
     ) => Effect.Effect<VcsSwitchRefResult, GitCommandError>;
     readonly initRepo: (input: VcsInitInput) => Effect.Effect<void, GitCommandError>;
-    readonly listLocalBranchNames: (cwd: string) => Effect.Effect<string[], GitCommandError>;
   }
 >()("t3/vcs/GitVcsDriver") {}
 
@@ -380,38 +177,6 @@ function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): stri
   return chunks;
 }
 
-function parseGitRemoteVerboseOutput(
-  output: string,
-): Map<string, { url?: string; pushUrl?: string }> {
-  const remotes = new Map<string, { url?: string; pushUrl?: string }>();
-  for (const line of output.split("\n")) {
-    const trimmed = line.trim();
-    if (trimmed.length === 0) {
-      continue;
-    }
-
-    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/.exec(trimmed);
-    if (!match) {
-      continue;
-    }
-
-    const name = match[1];
-    const url = match[2];
-    const direction = match[3];
-    if (!name || !url || !direction) {
-      continue;
-    }
-    const remote = remotes.get(name) ?? {};
-    if (direction === "fetch") {
-      remote.url = url;
-    } else {
-      remote.pushUrl = url;
-    }
-    remotes.set(name, remote);
-  }
-  return remotes;
-}
-
 const gitCommand = (
   process: VcsProcess.VcsProcess["Service"],
   operation: string,
@@ -453,7 +218,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     supportsWorktrees: true,
     supportsBookmarks: false,
     supportsAtomicSnapshot: false,
-    supportsPushDefaultRemote: true,
     ignoreClassifier: "native" as const,
   };
 
@@ -549,52 +313,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ),
       ),
     );
-
-  const listRemotes: VcsDriver.VcsDriver["Service"]["listRemotes"] = Effect.fn("listRemotes")(
-    function* (cwd) {
-      const result = yield* gitCommand(
-        vcsProcess,
-        "GitVcsDriver.listRemotes",
-        cwd,
-        ["remote", "-v"],
-        {
-          allowNonZeroExit: true,
-          timeoutMs: 5_000,
-          maxOutputBytes: 64 * 1024,
-        },
-      );
-
-      if (result.exitCode !== 0) {
-        return yield* new VcsProcessExitError({
-          operation: "GitVcsDriver.listRemotes",
-          command: "git remote -v",
-          cwd,
-          exitCode: result.exitCode,
-          detail: result.stderr.trim() || "git remote -v failed",
-        });
-      }
-
-      const parsed = parseGitRemoteVerboseOutput(result.stdout);
-      const remotes = Array.from(parsed.entries()).flatMap(([name, remote]) => {
-        if (!remote.url) {
-          return [];
-        }
-        return [
-          {
-            name,
-            url: remote.url,
-            pushUrl: remote.pushUrl ? Option.some(remote.pushUrl) : Option.none(),
-            isPrimary: name === "origin",
-          },
-        ];
-      });
-
-      return {
-        remotes,
-        freshness: yield* nowFreshness(),
-      };
-    },
-  );
 
   const filterIgnoredPaths: VcsDriver.VcsDriver["Service"]["filterIgnoredPaths"] = Effect.fn(
     "filterIgnoredPaths",
@@ -910,7 +628,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     detectRepository,
     isInsideWorkTree,
     listWorkspaceFiles,
-    listRemotes,
     filterIgnoredPaths,
     initRepository,
   };
@@ -921,8 +638,357 @@ export const makeVcsDriver = Effect.gen(function* () {
   return VcsDriver.VcsDriver.of(driver);
 });
 
+const makeLocalGitService = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const vcsProcess = yield* VcsProcess.VcsProcess;
+  const { worktreesDir } = yield* ServerConfig.ServerConfig;
+
+  const run = (
+    operation: string,
+    cwd: string,
+    args: ReadonlyArray<string>,
+    options: {
+      readonly allowNonZeroExit?: boolean;
+      readonly timeoutMs?: number;
+      readonly maxOutputBytes?: number;
+    } = {},
+  ) =>
+    gitCommand(vcsProcess, operation, cwd, args, options).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation,
+            command: `git ${args[0] ?? ""}`.trim(),
+            cwd,
+            detail: cause instanceof Error ? cause.message : "Git command failed.",
+            cause,
+          }),
+      ),
+    );
+
+  const execute: GitVcsDriver["Service"]["execute"] = (input) =>
+    run(input.operation, input.cwd, input.args, {
+      ...(input.allowNonZeroExit !== undefined ? { allowNonZeroExit: input.allowNonZeroExit } : {}),
+      ...(input.timeoutMs != null ? { timeoutMs: input.timeoutMs } : {}),
+      ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
+    });
+
+  const currentBranch = (cwd: string) =>
+    run("GitVcsDriver.currentBranch", cwd, ["symbolic-ref", "--quiet", "--short", "HEAD"], {
+      allowNonZeroExit: true,
+    }).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout.trim() || null : null)));
+
+  const localBranchExists = (cwd: string, branch: string) =>
+    run(
+      "GitVcsDriver.localBranchExists",
+      cwd,
+      ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
+      { allowNonZeroExit: true },
+    ).pipe(Effect.map((result) => result.exitCode === 0));
+
+  const statusDetailsLocal: GitVcsDriver["Service"]["statusDetailsLocal"] = Effect.fn(
+    "GitVcsDriver.statusDetailsLocal",
+  )(function* (cwd) {
+    const inside = yield* run(
+      "GitVcsDriver.status.inside",
+      cwd,
+      ["rev-parse", "--is-inside-work-tree"],
+      { allowNonZeroExit: true },
+    );
+    if (inside.exitCode !== 0 || inside.stdout.trim() !== "true") {
+      return {
+        isRepo: false,
+        isDefaultBranch: false,
+        branch: null,
+        hasWorkingTreeChanges: false,
+        workingTree: { files: [], insertions: 0, deletions: 0 },
+      };
+    }
+
+    const branch = yield* currentBranch(cwd);
+    const [porcelain, numstat, hasMain, hasMaster] = yield* Effect.all([
+      run("GitVcsDriver.status.porcelain", cwd, [
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+      ]),
+      run("GitVcsDriver.status.numstat", cwd, ["diff", "--numstat", "HEAD"], {
+        allowNonZeroExit: true,
+      }),
+      localBranchExists(cwd, "main"),
+      localBranchExists(cwd, "master"),
+    ]);
+
+    const changedPaths = porcelain.stdout
+      .split("\0")
+      .filter(Boolean)
+      .map((entry) => entry.slice(3))
+      .filter(Boolean);
+    const stats = new Map<string, { insertions: number; deletions: number }>();
+    for (const line of numstat.stdout.split("\n")) {
+      const [added, deleted, filePath] = line.split("\t");
+      if (!filePath) continue;
+      stats.set(filePath, {
+        insertions: added === "-" ? 0 : Number.parseInt(added ?? "0", 10) || 0,
+        deletions: deleted === "-" ? 0 : Number.parseInt(deleted ?? "0", 10) || 0,
+      });
+    }
+    const allPaths = [...new Set([...changedPaths, ...stats.keys()])].toSorted();
+    const files = allPaths.map((filePath) => ({
+      path: filePath,
+      insertions: stats.get(filePath)?.insertions ?? 0,
+      deletions: stats.get(filePath)?.deletions ?? 0,
+    }));
+    const defaultBranch = hasMain ? "main" : hasMaster ? "master" : branch;
+    return {
+      isRepo: true,
+      isDefaultBranch: branch !== null && branch === defaultBranch,
+      branch,
+      hasWorkingTreeChanges: files.length > 0,
+      workingTree: {
+        files,
+        insertions: files.reduce((sum, file) => sum + file.insertions, 0),
+        deletions: files.reduce((sum, file) => sum + file.deletions, 0),
+      },
+    };
+  });
+
+  const diffSource = Effect.fn("GitVcsDriver.diffSource")(function* (
+    cwd: string,
+    kind: "working-tree" | "branch-range",
+    title: string,
+    baseRef: string | null,
+    args: ReadonlyArray<string>,
+  ) {
+    const result = yield* run("GitVcsDriver.diff", cwd, args, {
+      allowNonZeroExit: true,
+      maxOutputBytes: 120_000,
+    });
+    if (result.exitCode !== 0 || result.stdout.length === 0) return null;
+    return {
+      id: kind,
+      kind,
+      title,
+      baseRef,
+      headRef: kind === "branch-range" ? "HEAD" : null,
+      diff: result.stdout,
+      diffHash: NodeCrypto.createHash("sha256").update(result.stdout).digest("hex"),
+      truncated: result.stdoutTruncated,
+    } as const;
+  });
+
+  const getReviewDiffPreview: GitVcsDriver["Service"]["getReviewDiffPreview"] = Effect.fn(
+    "GitVcsDriver.getReviewDiffPreview",
+  )(function* (input) {
+    const whitespace = input.ignoreWhitespace ? ["--ignore-all-space"] : [];
+    const sources = [];
+    const working = yield* diffSource(input.cwd, "working-tree", "Working tree", "HEAD", [
+      "diff",
+      "--patch",
+      "--no-color",
+      "--no-ext-diff",
+      ...whitespace,
+      "HEAD",
+    ]);
+    if (working) sources.push(working);
+    if (input.baseRef) {
+      const branch = yield* diffSource(
+        input.cwd,
+        "branch-range",
+        `Changes from ${input.baseRef}`,
+        input.baseRef,
+        [
+          "diff",
+          "--patch",
+          "--no-color",
+          "--no-ext-diff",
+          ...whitespace,
+          `${input.baseRef}...HEAD`,
+        ],
+      );
+      if (branch) sources.push(branch);
+    }
+    return { cwd: input.cwd, generatedAt: yield* DateTime.now, sources };
+  });
+
+  const readRevision = (cwd: string, revision: string, filePath: string) =>
+    run("GitVcsDriver.readRevision", cwd, ["show", `${revision}:${filePath}`], {
+      allowNonZeroExit: true,
+      maxOutputBytes: 1024 * 1024,
+    }).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout : "")));
+
+  const readWorkspaceFile = (cwd: string, filePath: string) => {
+    const candidate = path.resolve(cwd, filePath);
+    const relative = path.relative(cwd, candidate);
+    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+      return Effect.fail(
+        new GitCommandError({
+          operation: "GitVcsDriver.readWorkspaceFile",
+          command: "read workspace file",
+          cwd,
+          detail: "Diff path escapes the workspace.",
+        }),
+      );
+    }
+    return fileSystem
+      .readFileString(candidate)
+      .pipe(Effect.catchTags({ PlatformError: () => Effect.succeed("") }));
+  };
+
+  const getReviewDiffFileContents: GitVcsDriver["Service"]["getReviewDiffFileContents"] = Effect.fn(
+    "GitVcsDriver.getReviewDiffFileContents",
+  )(function* (input) {
+    if (input.sourceKind === "working-tree") {
+      return {
+        oldContents:
+          input.changeType === "new" ? "" : yield* readRevision(input.cwd, "HEAD", input.oldPath),
+        newContents:
+          input.changeType === "deleted" ? "" : yield* readWorkspaceFile(input.cwd, input.newPath),
+      };
+    }
+    const baseRef = input.baseRef ?? "HEAD";
+    const headRef = input.headRef ?? "HEAD";
+    return {
+      oldContents:
+        input.changeType === "new" ? "" : yield* readRevision(input.cwd, baseRef, input.oldPath),
+      newContents:
+        input.changeType === "deleted"
+          ? ""
+          : yield* readRevision(input.cwd, headRef, input.newPath),
+    };
+  });
+
+  const listRefs: GitVcsDriver["Service"]["listRefs"] = Effect.fn("GitVcsDriver.listRefs")(
+    function* (input) {
+      const inside = yield* run(
+        "GitVcsDriver.listRefs.inside",
+        input.cwd,
+        ["rev-parse", "--is-inside-work-tree"],
+        { allowNonZeroExit: true },
+      );
+      if (inside.exitCode !== 0) {
+        return {
+          refs: [],
+          isRepo: false,
+          hasPrimaryRemote: false,
+          nextCursor: null,
+          totalCount: 0,
+        };
+      }
+      const [branches, worktrees, activeBranch, hasMain, hasMaster] = yield* Effect.all([
+        run("GitVcsDriver.listRefs.branches", input.cwd, [
+          "for-each-ref",
+          "--format=%(refname:short)%09%(committerdate:unix)",
+          "refs/heads",
+        ]),
+        run("GitVcsDriver.listRefs.worktrees", input.cwd, ["worktree", "list", "--porcelain"]),
+        currentBranch(input.cwd),
+        localBranchExists(input.cwd, "main"),
+        localBranchExists(input.cwd, "master"),
+      ]);
+      const worktreeByBranch = new Map<string, string>();
+      let worktreePath: string | null = null;
+      for (const line of worktrees.stdout.split("\n")) {
+        if (line.startsWith("worktree ")) worktreePath = line.slice("worktree ".length);
+        if (line.startsWith("branch refs/heads/") && worktreePath) {
+          worktreeByBranch.set(line.slice("branch refs/heads/".length), worktreePath);
+        }
+        if (line.length === 0) worktreePath = null;
+      }
+      const defaultBranch = hasMain ? "main" : hasMaster ? "master" : activeBranch;
+      const query = input.query?.toLocaleLowerCase() ?? "";
+      const refsWithDates = branches.stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [name = "", timestamp = "0"] = line.split("\t");
+          return {
+            timestamp: Number.parseInt(timestamp, 10) || 0,
+            ref: {
+              name,
+              current: name === activeBranch,
+              isDefault: name === defaultBranch,
+              worktreePath: worktreeByBranch.get(name) ?? null,
+            } satisfies VcsRef,
+          };
+        })
+        .filter(({ ref }) => query.length === 0 || ref.name.toLocaleLowerCase().includes(query))
+        .toSorted(
+          (left, right) =>
+            right.timestamp - left.timestamp || left.ref.name.localeCompare(right.ref.name),
+        );
+      const offset = input.cursor ?? 0;
+      const limit = input.limit ?? 100;
+      const refs = refsWithDates.slice(offset, offset + limit).map(({ ref }) => ref);
+      const nextOffset = offset + refs.length;
+      return {
+        refs,
+        isRepo: true,
+        hasPrimaryRemote: false,
+        nextCursor: nextOffset < refsWithDates.length ? nextOffset : null,
+        totalCount: refsWithDates.length,
+      };
+    },
+  );
+
+  const createWorktree: GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
+    "GitVcsDriver.createWorktree",
+  )(function* (input) {
+    const id = NodeCrypto.randomUUID();
+    const targetPath = input.path ?? path.join(worktreesDir, id);
+    const args = ["worktree", "add"];
+    if (input.newRefName) args.push("-b", input.newRefName);
+    args.push(targetPath, input.baseRefName ?? input.refName);
+    yield* run("GitVcsDriver.createWorktree", input.cwd, args, { timeoutMs: 300_000 });
+    return { worktree: { path: targetPath, refName: input.newRefName ?? input.refName } };
+  });
+
+  const removeWorktree: GitVcsDriver["Service"]["removeWorktree"] = (input) =>
+    run(
+      "GitVcsDriver.removeWorktree",
+      input.cwd,
+      ["worktree", "remove", ...(input.force ? ["--force"] : []), input.path],
+      { timeoutMs: 300_000 },
+    ).pipe(Effect.asVoid);
+
+  const switchRef: GitVcsDriver["Service"]["switchRef"] = Effect.fn("GitVcsDriver.switchRef")(
+    function* (input) {
+      yield* run("GitVcsDriver.switchRef", input.cwd, ["switch", input.refName], {
+        timeoutMs: 300_000,
+      });
+      return { refName: yield* currentBranch(input.cwd) };
+    },
+  );
+
+  return GitVcsDriver.of({
+    execute,
+    statusDetailsLocal,
+    getReviewDiffPreview,
+    getReviewDiffFileContents,
+    listRefs,
+    createWorktree,
+    removeWorktree,
+    renameBranch: (input) =>
+      run("GitVcsDriver.renameBranch", input.cwd, [
+        "branch",
+        "-m",
+        input.oldBranch,
+        input.newBranch,
+      ]).pipe(Effect.as({ branch: input.newBranch })),
+    createRef: Effect.fn("GitVcsDriver.createRef")(function* (input) {
+      yield* run("GitVcsDriver.createRef", input.cwd, ["branch", input.refName]);
+      if (input.switchRef) yield* switchRef(input);
+      return { refName: input.refName };
+    }),
+    switchRef,
+    initRepo: (input) => run("GitVcsDriver.initRepo", input.cwd, ["init"]).pipe(Effect.asVoid),
+  });
+});
+
 export const make = Effect.gen(function* () {
-  const git = yield* makeGitVcsDriverCore();
+  const git = yield* makeLocalGitService;
   return GitVcsDriver.of(git);
 });
 

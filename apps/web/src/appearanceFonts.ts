@@ -361,8 +361,8 @@ export interface InstalledFontFamiliesResult {
 let installedFamiliesCache: InstalledFontFamiliesResult | null = null;
 
 /**
- * Every installed family via the Local Font Access API (Chromium and
- * Electron). Call from a user gesture: the first call raises the browser's
+ * Every installed family via the Local Font Access API. Call from a user
+ * gesture: the first call raises the browser's
  * local-fonts permission prompt. A denial is not cached, so reopening the
  * picker can ask again after the user changes the site setting.
  */

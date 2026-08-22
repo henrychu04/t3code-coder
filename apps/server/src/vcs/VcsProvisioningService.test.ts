@@ -18,7 +18,6 @@ function makeDriver(calls: string[]): VcsDriver.VcsDriver["Service"] {
       supportsWorktrees: true,
       supportsBookmarks: false,
       supportsAtomicSnapshot: false,
-      supportsPushDefaultRemote: true,
       ignoreClassifier: "native",
     },
     execute: () =>
@@ -35,15 +34,6 @@ function makeDriver(calls: string[]): VcsDriver.VcsDriver["Service"] {
       Effect.succeed({
         paths: [],
         truncated: false,
-        freshness: {
-          source: "live-local",
-          observedAt: TEST_EPOCH,
-          expiresAt: Option.none(),
-        },
-      }),
-    listRemotes: () =>
-      Effect.succeed({
-        remotes: [],
         freshness: {
           source: "live-local",
           observedAt: TEST_EPOCH,

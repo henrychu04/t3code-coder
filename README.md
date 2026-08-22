@@ -1,120 +1,80 @@
-# T3 Code
+# T3 Coder
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+T3 Coder is a browser interface for Claude Code running inside Linux Coder workspaces. The local
+computer runs only a loopback Node gateway and the web UI. Repositories, Claude sessions, terminals,
+Git operations, checkpoints, and SQLite state stay in the selected Coder workspace.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, and OpenCode. If they're set up on your computer, T3 Code can control them.
-
-## "Wait, what are you selling me?"
-
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
-
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
-
-## Installation
-
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build and OpenCode. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-
-### Try it out (install-free)
-
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
-
-```bash
-npx t3@latest
+```text
+browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> Claude Code
 ```
 
-This will launch T3 Code's backend on your machine as well as the local web app to control your agents.
+This fork intentionally removes the upstream Electron, mobile, hosted-web, relay, OAuth, telemetry,
+third-party source-control, and non-Claude provider implementations. It has no file upload or
+download features and does not expose a remote HTTP or WebSocket listener.
 
-Tip: Use `npx t3@latest --help` for the full CLI reference.
+## Requirements
 
-### Desktop app
+On the local macOS test machine or Windows 11 work computer:
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+- Node.js 24.10 or newer
+- pnpm 11.10
+- the Coder CLI, authenticated to each deployment with `coder login <deployment-url>`
 
-#### Windows (`winget`)
+Inside each Linux Coder workspace:
 
-```bash
-winget install T3Tools.T3Code
-```
+- Claude Code, already authenticated
+- Git
+- Node.js 24.10 or newer
+- the standard Linux `script` utility for terminal PTYs
 
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
-```
-
-#### Arch Linux (AUR)
-
-Stable:
+## Run
 
 ```bash
-yay -S t3code-bin
+pnpm install
+npm start
 ```
 
-Nightly:
+The gateway builds the pinned workspace helper and web client, binds to an ephemeral
+`127.0.0.1` port, and opens the default browser. Use `npm run start:no-browser` when browser launch
+is restricted.
+
+Add a Coder deployment URL, discover its workspaces through the installed Coder CLI, and register
+projects by their absolute Linux paths. Connecting installs the version-matched helper through a
+separate Coder SSH stdin operation and then runs it in the foreground over newline-delimited stdio.
+Coder owns deployment authentication; T3 Coder never reads or stores Coder tokens.
+Every Coder invocation disables the CLI's optional network telemetry.
+
+The local profile is a small JSON file containing only deployment URLs, Coder workspace targets,
+project display names, and remote Linux roots. UI-only preferences such as theme and panel size may
+remain in browser storage. Claude sessions, messages, repository data, terminals, and SQLite state
+are never persisted locally.
+
+## Security boundary
+
+The local gateway accepts only its exact loopback Host and Origin and sends no CORS headers. It has
+no application authentication token by design. Its only non-loopback child transport is the
+installed Coder CLI. The workspace helper opens no listening socket.
+
+Allowed transport paths are:
+
+- browser to the loopback gateway;
+- gateway to the configured Coder deployment through `coder ssh`;
+- Claude Code to endpoints permitted by the workspace policy.
+
+See [the architecture note](./docs/internals/coder-only.md) for the complete boundary and data
+ownership model.
+
+## Focused verification
 
 ```bash
-yay -S t3code-nightly-bin
+pnpm test:coder
+pnpm typecheck:gateway
+pnpm typecheck:helper
+pnpm typecheck:server
+pnpm typecheck:web
+pnpm build
 ```
 
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
-
-## Documentation
-
-Full docs live in [docs/](./docs). There's no docs site yet.
-
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Customize a project icon](./docs/user/project-settings.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- Linux: [run T3 Code as a background service](./docs/user/background-service.md)
-
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
-
-## If you REALLY want to contribute still.... read this first
-
-### Install `vp`
-
-T3 Code uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
-
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+This is a private-purpose fork of the open-source T3 Code project. Review and obtain approval under
+your employer's software, security, data-handling, and open-source policies before using it with
+work systems or data.

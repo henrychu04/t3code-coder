@@ -12,13 +12,13 @@ import { useCallback, useMemo, useState, type ReactNode, type Ref } from "react"
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { fnv1a32 } from "~/lib/diffRendering";
+import { randomHex } from "~/lib/utils";
 import {
   buildDiffReviewComment,
   restoreDiffReviewCommentRange,
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 
-import { nextFileCommentId } from "../files/fileCommentAnnotations";
 import { DiffCommentAnnotation } from "./DiffCommentAnnotation";
 import { StyledDiffCodeView, type StyledDiffCodeViewOptions } from "./StyledDiffCodeView";
 
@@ -37,6 +37,8 @@ interface DiffCommentAnnotationGroup {
 type DiffCommentLineAnnotation = DiffLineAnnotation<DiffCommentAnnotationGroup>;
 export type AnnotatableCodeViewHandle = CodeViewHandle<DiffCommentAnnotationGroup>;
 const EMPTY_REVIEW_COMMENTS: ReadonlyArray<ReviewCommentContext> = [];
+
+const nextFileCommentId = () => randomHex(12);
 
 function annotationSide(range: SelectedLineRange): AnnotationSide {
   return (range.endSide ?? range.side) === "deletions" ? "deletions" : "additions";
