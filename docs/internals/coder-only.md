@@ -76,7 +76,8 @@ User-facing file transfer is disabled. The distribution does not expose attachme
 downloads, exports, drag-and-drop, or clipboard-image transfer. Messages, terminal output, and code
 diffs necessarily cross the foreground connection for display but are not durably cached locally.
 Installing a versioned helper through Coder is a control-plane bootstrap operation, not a file
-transfer feature.
+transfer feature. The bootstrap is length-framed because Coder 2.25.3 requests a PTY for remote
+commands, so EOF does not reliably propagate to a remote reader.
 
 Source-control UI is limited to repository-local operations such as status, diffs, branches,
 worktrees, commits, and checkpoints. Fetch, pull, push, pull-request, and provider-hosted operations

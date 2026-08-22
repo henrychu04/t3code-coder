@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { rejects } from "node:assert";
+import { deepStrictEqual, rejects } from "node:assert";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -18,6 +18,42 @@ afterEach(async () => {
 });
 
 describe("Coder helper installer", () => {
+  it("frames the helper length so the remote command does not need stdin EOF", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-helper-install-"));
+    tempDirectories.push(directory);
+    const bundlePath = NodePath.join(directory, "workspace-helper");
+    const installedPath = NodePath.join(directory, "installed-helper");
+    const bundle = Buffer.from("#!/usr/bin/env node\nconsole.log('helper');\n");
+    await NodeFS.writeFile(bundlePath, bundle);
+
+    await installCoderHelper(
+      {
+        executable: process.execPath,
+        args: [
+          "-e",
+          [
+            'const fs = require("node:fs");',
+            "let buffered = Buffer.alloc(0);",
+            'process.stdin.on("data", (chunk) => {',
+            "  buffered = Buffer.concat([buffered, chunk]);",
+            "  const newline = buffered.indexOf(10);",
+            "  if (newline < 0) return;",
+            '  const size = Number(buffered.subarray(0, newline).toString("ascii"));',
+            "  const payload = buffered.subarray(newline + 1);",
+            "  if (payload.length < size) return;",
+            "  fs.writeFileSync(process.argv[1], payload.subarray(0, size));",
+            "  process.exit(0);",
+            "});",
+          ].join("\n"),
+          installedPath,
+        ],
+      },
+      bundlePath,
+    );
+
+    deepStrictEqual(await NodeFS.readFile(installedPath), bundle);
+  });
+
   it("rejects cleanly when Coder exits during a large helper upload", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-helper-install-"));
     tempDirectories.push(directory);

@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { createReadStream } from "node:fs";
+import * as NodeFS from "node:fs/promises";
 import { spawn } from "node:child_process";
 import * as NodeTimers from "node:timers";
 
@@ -8,11 +9,12 @@ import type { CoderInvocation } from "./command.ts";
 const MAX_INSTALL_ERROR_BYTES = 32 * 1024;
 const DEFAULT_INSTALL_TIMEOUT_MS = 2 * 60_000;
 
-export function installCoderHelper(
+export async function installCoderHelper(
   invocation: CoderInvocation,
   helperBundlePath: string,
   options?: { readonly timeoutMs?: number },
 ): Promise<void> {
+  const { size: bundleSize } = await NodeFS.stat(helperBundlePath);
   return new Promise((resolve, reject) => {
     const child = spawn(invocation.executable, invocation.args, {
       shell: false,
@@ -68,6 +70,7 @@ export function installCoderHelper(
       child.kill();
       rejectOnce(new Error("Timed out while installing the Coder workspace helper."));
     }, options?.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS);
+    child.stdin.write(`${String(bundleSize)}\n`);
     bundle.pipe(child.stdin);
   });
 }

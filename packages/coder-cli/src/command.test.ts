@@ -118,6 +118,8 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
     ]);
+    match(REMOTE_HELPER_INSTALL_COMMAND, /read -r byte_count/u);
+    match(REMOTE_HELPER_INSTALL_COMMAND, /head -c "\$byte_count"/u);
     match(
       REMOTE_WORKSPACE_PROBE_COMMAND,
       /if ! \[ -x .*node24\/bin\/node.*nix-env --profile .*node24.*nixpkgs\.nodejs_24.*; fi/u,
