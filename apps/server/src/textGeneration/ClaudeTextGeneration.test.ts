@@ -225,6 +225,33 @@ function withFakeClaudeEnv<A, E, R>(
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  it.effect("generates labels without requiring bypass-permissions mode", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            title: "Permission-safe labels",
+          },
+        }),
+        argsMustContain: "--permission-mode dontAsk",
+        argsMustNotContain: "--dangerously-skip-permissions",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateThreadTitle({
+            cwd: process.cwd(),
+            message: "Generate labels without bypassing workspace policy.",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated.title).toBe("Permission-safe labels");
+        }),
+    ),
+  );
+
   it.effect("generates branch names with Haiku", () =>
     withFakeClaudeEnv(
       {
