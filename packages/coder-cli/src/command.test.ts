@@ -113,6 +113,7 @@ describe("Coder CLI command construction", () => {
             REMOTE_NODE_COMMAND,
             REMOTE_HELPER_COMMAND,
             "--stdio",
+            "2>/dev/null",
           ].join(" "),
         ].join("; "),
       ),

@@ -204,6 +204,9 @@ export function buildCoderHelperInvocation(
       REMOTE_NODE_COMMAND,
       REMOTE_HELPER_COMMAND,
       "--stdio",
+      // Coder 2.25 always allocates a remote PTY, which merges the helper's stderr
+      // into its stdout and would corrupt the NDJSON transport with Node warnings.
+      "2>/dev/null",
     ].join(" "),
   ].join("; ");
   return invocation(
