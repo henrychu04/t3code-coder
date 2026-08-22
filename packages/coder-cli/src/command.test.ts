@@ -112,8 +112,11 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
     ]);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v nix/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /NixOS\/nixpkgs\/[0-9a-f]{40}#nodejs_24/u);
+    match(
+      REMOTE_WORKSPACE_PROBE_COMMAND,
+      /if ! \[ -x .*node24\/bin\/node.*nix-env --profile .*node24.*nixpkgs\.nodejs_24.*; fi/u,
+    );
+    strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("github:"), false);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);

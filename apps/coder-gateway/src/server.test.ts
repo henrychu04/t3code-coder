@@ -456,7 +456,7 @@ describe("local Coder gateway", () => {
     strictEqual(response.statusCode, 502);
     strictEqual(
       response.body,
-      "Coder workspace preflight timed out. Check that the workspace is running and can access its Nix substituters and GitHub.",
+      "Coder workspace preflight timed out. Check that the workspace is running. On first connection, its configured nixpkgs and Nix substituters must be reachable.",
     );
   });
 

@@ -24,13 +24,13 @@ Inside each Linux Coder workspace:
 
 - Claude Code, already authenticated
 - Git
-- Nix with access to the configured Nix substituters and GitHub
+- Nix with a configured `nixpkgs` and access to its substituters
 - the standard Linux `script` utility for terminal PTYs
 
-The workspace's default Node.js version may remain Node 22. On first connection, T3 uses Nix to
-realize a pinned Node.js 24 package at `$HOME/.t3-coder/node24` and launches only the workspace
-helper through that absolute Node path. The package is reused on later connections and is not added
-to the workspace profile or `PATH`.
+The workspace's default Node.js version may remain Node 22. On first connection, T3 uses
+`nix-env -iA nixpkgs.nodejs_24` with a dedicated profile at `$HOME/.t3-coder/node24` and launches
+only the workspace helper through that absolute Node path. The package is reused on later
+connections and is not added to the workspace's normal profile or `PATH`.
 
 ## Run
 
