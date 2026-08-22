@@ -58,7 +58,7 @@ function CoderSettingsView() {
   };
 
   return (
-    <main className="min-h-dvh bg-background px-6 py-10 text-foreground">
+    <div className="min-h-0 flex-1 overflow-y-auto bg-background px-6 py-10 text-foreground">
       <div className="mx-auto max-w-3xl space-y-8">
         <header>
           <h1 className="text-2xl font-semibold tracking-tight">Coder connections</h1>
@@ -209,7 +209,7 @@ function CoderSettingsView() {
           reads, copies, logs, or displays those token files.
         </aside>
       </div>
-    </main>
+    </div>
   );
 }
 
