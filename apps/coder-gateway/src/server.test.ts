@@ -47,7 +47,7 @@ function request(input: {
   readonly host?: string;
   readonly method?: string;
   readonly headers?: Readonly<Record<string, string>>;
-  readonly body?: string;
+  readonly body?: string | Buffer;
 }) {
   return new Promise<{ readonly statusCode: number; readonly body: string }>((resolve, reject) => {
     const url = new URL(input.url);
@@ -509,6 +509,100 @@ describe("local Coder gateway", () => {
         "whoami",
       ],
     });
+  });
+
+  it("uploads a validated clipboard image only for a connected workspace", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+    let stagedPath = "";
+    let closeConnection: (() => void) | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      closeConnection = () => resolve({ code: 130, signal: null, expected: true });
+    });
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed,
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => closeConnection?.(),
+      }),
+      uploadClipboardImage: async (input) => {
+        stagedPath = input.localPath;
+        strictEqual(input.extension, "png");
+        strictEqual((await NodeFS.readFile(input.localPath)).equals(png), true);
+        strictEqual(input.workspace.workspace, "henry/project-one");
+        return "/home/henry/.t3-coder/attachments/image.png";
+      },
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+
+    const disconnected = await request({
+      url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "image/png" },
+      body: png,
+    });
+    strictEqual(disconnected.statusCode, 409);
+
+    await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    const rejectedOrigin = await request({
+      url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
+      method: "POST",
+      headers: { Origin: "https://attacker.example", "Content-Type": "image/png" },
+      body: png,
+    });
+    strictEqual(rejectedOrigin.statusCode, 403);
+
+    const uploaded = await request({
+      url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "image/png" },
+      body: png,
+    });
+    strictEqual(uploaded.statusCode, 200);
+    deepStrictEqual(JSON.parse(uploaded.body), {
+      path: "/home/henry/.t3-coder/attachments/image.png",
+    });
+    await NodeFS.access(stagedPath).then(
+      () => {
+        throw new Error("staged clipboard image still exists");
+      },
+      () => undefined,
+    );
+
+    const invalid = await request({
+      url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "image/png" },
+      body: Buffer.from("not a png"),
+    });
+    strictEqual(invalid.statusCode, 415);
   });
 
   it("bridges loopback WebSocket RPC messages to helper stdio messages", async () => {

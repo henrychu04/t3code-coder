@@ -24,6 +24,13 @@ export function readCoderWorkspaceEnvironments(): readonly CoderWorkspaceEnviron
   return environments;
 }
 
+export function coderWorkspaceIdForEnvironment(environmentId: string): string | null {
+  return (
+    environments.find((entry) => entry.descriptor.environmentId === environmentId)?.workspaceId ??
+    null
+  );
+}
+
 export function setCoderWorkspaceEnvironment(
   workspaceId: string,
   descriptor: ExecutionEnvironmentDescriptor,

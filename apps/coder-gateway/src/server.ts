@@ -16,7 +16,6 @@ import {
   type CoderProfileConfig,
 } from "@t3tools/coder-cli/configStore";
 import {
-  buildCoderHelperInstallInvocation,
   buildCoderHelperInvocation,
   buildCoderAuthStatusInvocation,
   buildCoderListWorkspacesInvocation,
@@ -28,7 +27,16 @@ import {
   connectCoderHelper,
   type CoderHelperConnection,
 } from "@t3tools/coder-cli/helperConnection";
-import { installCoderHelper } from "@t3tools/coder-cli/helperInstaller";
+import {
+  installCoderHelperWithScp,
+  uploadCoderClipboardImageWithScp,
+} from "@t3tools/coder-cli/scp";
+import {
+  ClipboardImageValidationError,
+  MAX_CLIPBOARD_IMAGE_BYTES,
+  validateClipboardImage,
+  withStagedClipboardImage,
+} from "./clipboardImage.ts";
 
 export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
@@ -133,6 +141,31 @@ function readJsonBody(request: NodeHttp.IncomingMessage): Promise<unknown> {
       } catch (cause) {
         reject(cause);
       }
+    });
+    request.once("error", reject);
+  });
+}
+
+class RequestBodyTooLargeError extends Error {}
+
+function readBody(request: NodeHttp.IncomingMessage, maxBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    let rejected = false;
+    request.on("data", (chunk: Buffer) => {
+      if (rejected) return;
+      totalBytes += chunk.byteLength;
+      if (totalBytes > maxBytes) {
+        rejected = true;
+        chunks.length = 0;
+        reject(new RequestBodyTooLargeError("Request body is too large."));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => {
+      if (!rejected) resolve(Buffer.concat(chunks));
     });
     request.once("error", reject);
   });
@@ -347,6 +380,8 @@ export async function startLocalCoderGateway(options?: {
   readonly probeWorkspace?: (invocation: CoderInvocation) => Promise<void>;
   readonly workspaceProbeTimeoutMs?: number;
   readonly checkAuthentication?: (invocation: CoderInvocation) => Promise<boolean>;
+  readonly installHelper?: typeof installCoderHelperWithScp;
+  readonly uploadClipboardImage?: typeof uploadCoderClipboardImageWithScp;
 }): Promise<LocalCoderGateway> {
   let profileConfig: CoderProfileConfig = options?.configPath
     ? await loadCoderProfileConfig(options.configPath)
@@ -362,6 +397,8 @@ export async function startLocalCoderGateway(options?: {
     ((invocation: CoderInvocation) =>
       runCoderWorkspaceProbe(invocation, options?.workspaceProbeTimeoutMs));
   const checkAuthentication = options?.checkAuthentication ?? runCoderAuthStatus;
+  const installHelper = options?.installHelper ?? installCoderHelperWithScp;
+  const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
   const coderInvocationOptions = (deploymentId: string) => ({
     globalConfig: NodePath.join(
       NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
@@ -396,10 +433,12 @@ export async function startLocalCoderGateway(options?: {
         buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
       );
       if (options?.helperBundlePath !== undefined) {
-        await installCoderHelper(
-          buildCoderHelperInstallInvocation(deployment, workspace, invocationOptions),
-          options.helperBundlePath,
-        );
+        await installHelper({
+          deployment,
+          workspace,
+          helperBundlePath: options.helperBundlePath,
+          invocationOptions,
+        });
       }
       const connection = await openHelper(
         buildCoderHelperInvocation(deployment, workspace, invocationOptions),
@@ -641,6 +680,64 @@ export async function startLocalCoderGateway(options?: {
           sendText(response, 200, "application/json; charset=utf-8", '{"status":"closed"}');
           return;
         }
+      }
+      const imageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/clipboard-image$/);
+      if (request.method === "POST" && imageRoute !== null && imageRoute !== undefined) {
+        if (request.headers.origin !== expectedOrigin) {
+          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+          return;
+        }
+        let workspaceId: string;
+        try {
+          workspaceId = decodeURIComponent(imageRoute[1] ?? "");
+        } catch {
+          sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+          return;
+        }
+        const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+        const deployment =
+          workspace === undefined
+            ? undefined
+            : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+        if (workspace === undefined || deployment === undefined) {
+          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+          return;
+        }
+        if (!workspaceConnections.has(workspaceId)) {
+          sendText(response, 409, "text/plain; charset=utf-8", "Coder workspace is not connected.");
+          return;
+        }
+        const contentType = request.headers["content-type"] ?? "";
+        try {
+          const bytes = await readBody(request, MAX_CLIPBOARD_IMAGE_BYTES);
+          const extension = validateClipboardImage(contentType, bytes);
+          const path = await withStagedClipboardImage(bytes, extension, (localPath) =>
+            uploadClipboardImage({
+              deployment,
+              workspace,
+              localPath,
+              extension,
+              invocationOptions: coderInvocationOptions(deployment.id),
+            }),
+          );
+          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ path }));
+        } catch (cause) {
+          if (cause instanceof RequestBodyTooLargeError) {
+            sendText(response, 413, "text/plain; charset=utf-8", "Clipboard image exceeds 20 MiB.");
+            return;
+          }
+          if (cause instanceof ClipboardImageValidationError) {
+            sendText(response, 415, "text/plain; charset=utf-8", cause.message);
+            return;
+          }
+          sendText(
+            response,
+            502,
+            "text/plain; charset=utf-8",
+            cause instanceof Error ? cause.message : "Clipboard image upload failed.",
+          );
+        }
+        return;
       }
       if (request.method === "GET" && options?.staticDir) {
         if (await serveStaticFile(response, options.staticDir, requestUrl.pathname)) return;

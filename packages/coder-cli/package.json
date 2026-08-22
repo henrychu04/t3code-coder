@@ -19,10 +19,6 @@
       "types": "./src/helperConnection.ts",
       "import": "./src/helperConnection.ts"
     },
-    "./helperInstaller": {
-      "types": "./src/helperInstaller.ts",
-      "import": "./src/helperInstaller.ts"
-    },
     "./profile": {
       "types": "./src/profile.ts",
       "import": "./src/profile.ts"
@@ -30,6 +26,10 @@
     "./rpc": {
       "types": "./src/rpc.ts",
       "import": "./src/rpc.ts"
+    },
+    "./scp": {
+      "types": "./src/scp.ts",
+      "import": "./src/scp.ts"
     }
   },
   "scripts": {

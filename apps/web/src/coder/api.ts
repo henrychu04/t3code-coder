@@ -37,9 +37,7 @@ export async function loadCoderConfig(): Promise<CoderProfileConfig> {
   return (await response.json()) as CoderProfileConfig;
 }
 
-export async function saveCoderConfig(
-  config: CoderProfileConfig,
-): Promise<CoderProfileConfig> {
+export async function saveCoderConfig(config: CoderProfileConfig): Promise<CoderProfileConfig> {
   const response = await fetch("/api/config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -54,23 +52,19 @@ export async function loginToCoderDeployment(deploymentId: string): Promise<void
   }).then(readResponse);
 }
 
-export async function checkCoderDeploymentAuthentication(
-  deploymentId: string,
-): Promise<boolean> {
-  const response = await fetch(
-    `/api/deployments/${encodeURIComponent(deploymentId)}/auth-status`,
-    { method: "POST" },
-  ).then(readResponse);
+export async function checkCoderDeploymentAuthentication(deploymentId: string): Promise<boolean> {
+  const response = await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/auth-status`, {
+    method: "POST",
+  }).then(readResponse);
   return ((await response.json()) as { readonly authenticated: boolean }).authenticated;
 }
 
 export async function discoverCoderWorkspaces(
   deploymentId: string,
 ): Promise<readonly DiscoveredCoderWorkspace[]> {
-  const response = await fetch(
-    `/api/deployments/${encodeURIComponent(deploymentId)}/workspaces`,
-    { method: "POST" },
-  ).then(readResponse);
+  const response = await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/workspaces`, {
+    method: "POST",
+  }).then(readResponse);
   return ((await response.json()) as { readonly workspaces: readonly DiscoveredCoderWorkspace[] })
     .workspaces;
 }
@@ -78,10 +72,9 @@ export async function discoverCoderWorkspaces(
 export async function connectCoderWorkspace(
   workspaceId: string,
 ): Promise<ExecutionEnvironmentDescriptor> {
-  const response = await fetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/connection`,
-    { method: "POST" },
-  ).then(readResponse);
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
+    method: "POST",
+  }).then(readResponse);
   return (
     (await response.json()) as {
       readonly info: { readonly environment: ExecutionEnvironmentDescriptor };
@@ -93,4 +86,26 @@ export async function disconnectCoderWorkspace(workspaceId: string): Promise<voi
   await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
     method: "DELETE",
   }).then(readResponse);
+}
+
+export async function uploadCoderClipboardImage(workspaceId: string, file: File): Promise<string> {
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+    throw new Error("Clipboard image must be PNG, JPEG, or WebP.");
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    throw new Error("Clipboard image exceeds the 20 MiB limit.");
+  }
+  const response = await fetch(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/clipboard-image`,
+    {
+      method: "POST",
+      headers: { "Content-Type": file.type },
+      body: file,
+    },
+  ).then(readResponse);
+  const path = ((await response.json()) as { readonly path?: unknown }).path;
+  if (typeof path !== "string" || !path.startsWith("/")) {
+    throw new Error("Clipboard image upload returned an invalid workspace path.");
+  }
+  return path;
 }

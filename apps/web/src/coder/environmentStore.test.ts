@@ -2,6 +2,7 @@ import { EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  coderWorkspaceIdForEnvironment,
   readCoderWorkspaceEnvironments,
   setCoderWorkspaceEnvironment,
   setCoderWorkspaceOrder,
@@ -29,6 +30,8 @@ describe("Coder workspace environment store", () => {
       "workspace-a",
       "workspace-b",
     ]);
+    expect(coderWorkspaceIdForEnvironment("environment-b")).toBe("workspace-b");
+    expect(coderWorkspaceIdForEnvironment("missing")).toBeNull();
   });
 
   it("removes environments that are no longer configured", () => {

@@ -30,8 +30,9 @@ export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   '[ "$(uname -m)" = "x86_64" ] || fail "T3 Coder requires an x86-64 workspace."',
   '[ -n "${HOME:-}" ] || fail "T3 Coder requires a workspace HOME directory."',
   '[ -d "$HOME" ] && [ -r "$HOME" ] && [ -x "$HOME" ] || fail "The workspace HOME directory is not accessible."',
-  'mkdir -p "$HOME/.t3-coder" || fail "T3 Coder cannot create its workspace state directory."',
-  '[ -w "$HOME/.t3-coder" ] || fail "T3 Coder workspace state directory is not writable."',
+  'mkdir -p "$HOME/.t3-coder/bin" "$HOME/.t3-coder/attachments" || fail "T3 Coder cannot create its workspace state directories."',
+  'chmod 700 "$HOME/.t3-coder" "$HOME/.t3-coder/bin" "$HOME/.t3-coder/attachments" || fail "T3 Coder cannot secure its workspace state directories."',
+  '[ -w "$HOME/.t3-coder/bin" ] && [ -w "$HOME/.t3-coder/attachments" ] || fail "T3 Coder workspace state directories are not writable."',
   `if ! [ -x ${REMOTE_NODE_COMMAND} ] || ! ${REMOTE_NODE_VERSION_CHECK}; then command -v nix-env >/dev/null 2>&1 || fail "T3 Coder requires nix-env to provision Node.js 24."; nix-env --profile "$HOME/.t3-coder/node24" -iA nixpkgs.nodejs_24 || fail "T3 Coder could not provision Node.js 24 from the workspace's configured nixpkgs."; fi`,
   `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
   `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24 or newer from its Nix runtime."`,
@@ -41,22 +42,6 @@ export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   'script -qefc true /dev/null >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1) with -qefc support."',
   'printf "T3_CODER_PREFLIGHT_OK\\n"',
 ].join("; ");
-export const REMOTE_HELPER_INSTALL_COMMAND = [
-  "set -eu",
-  'install_dir="$HOME/.t3-coder/bin"',
-  'mkdir -p "$install_dir"',
-  'temporary="$install_dir/workspace-helper.tmp.$$"',
-  "trap 'rm -f \"$temporary\"' EXIT HUP INT TERM",
-  'stty raw -echo 2>/dev/null || true',
-  'IFS= read -r byte_count',
-  'case "$byte_count" in ""|*[!0-9]*) exit 1 ;; esac',
-  'head -c "$byte_count" > "$temporary"',
-  '[ "$(wc -c < "$temporary")" -eq "$byte_count" ]',
-  'chmod 700 "$temporary"',
-  'mv "$temporary" "$install_dir/workspace-helper"',
-  "trap - EXIT HUP INT TERM",
-].join("; ");
-
 export function quotePosixShellArgument(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -136,6 +121,68 @@ export function buildCoderWorkspaceProbeInvocation(
   );
 }
 
+export function buildCoderWorkspaceShellInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  shellCommand: string,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
+  if (workspace.deploymentId !== deployment.id) {
+    throw new Error("Coder workspace does not belong to the selected deployment.");
+  }
+  if (shellCommand.length === 0 || /\0/.test(shellCommand)) {
+    throw new Error("Coder workspace shell command must not be empty or contain NUL bytes.");
+  }
+  return invocation(
+    deployment,
+    [
+      ...CODER_GLOBAL_ARGS,
+      "--url",
+      deployment.url,
+      "ssh",
+      workspace.workspace,
+      "--",
+      "sh",
+      "-c",
+      quotePosixShellArgument(shellCommand),
+    ],
+    options,
+  );
+}
+
+export function buildCoderScpConfigInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  sshConfigPath: string,
+  hostPrefix: string,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  if (sshConfigPath.trim().length === 0 || /\r|\n|\0/.test(sshConfigPath)) {
+    throw new Error("Temporary SSH config path must be a non-empty single line.");
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*-$/.test(hostPrefix)) {
+    throw new Error("Temporary SSH host prefix contains unsupported characters.");
+  }
+  return invocation(
+    deployment,
+    [
+      ...CODER_GLOBAL_ARGS,
+      "--url",
+      deployment.url,
+      "config-ssh",
+      "--yes",
+      "--wait=no",
+      "--ssh-config-file",
+      sshConfigPath,
+      "--ssh-host-prefix",
+      hostPrefix,
+    ],
+    options,
+  );
+}
+
 export function buildCoderHelperInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,
@@ -160,33 +207,6 @@ export function buildCoderHelperInvocation(
       REMOTE_NODE_COMMAND,
       REMOTE_HELPER_COMMAND,
       "--stdio",
-    ],
-    options,
-  );
-}
-
-export function buildCoderHelperInstallInvocation(
-  deploymentInput: CoderDeploymentProfile,
-  workspaceInput: CoderWorkspaceProfile,
-  options?: CoderInvocationOptions,
-): CoderInvocation {
-  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
-  if (workspace.deploymentId !== deployment.id) {
-    throw new Error("Coder workspace does not belong to the selected deployment.");
-  }
-  return invocation(
-    deployment,
-    [
-      ...CODER_GLOBAL_ARGS,
-      "--url",
-      deployment.url,
-      "ssh",
-      workspace.workspace,
-      "--",
-      "sh",
-      "-c",
-      quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
     ],
     options,
   );

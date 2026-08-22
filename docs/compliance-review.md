@@ -9,14 +9,17 @@ an assertion that any employer has approved the software.
 | --------------------- | --------------------------- | ------------------------------------- | ------------------------------------------------------ |
 | Approved browser      | `127.0.0.1` gateway         | HTTP and WebSocket                    | Load the UI and exchange live RPC                      |
 | Gateway               | installed Coder CLI         | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
+| Gateway               | installed OpenSSH `scp`     | child process, `shell: false`         | Copy the helper and validated pasted images            |
 | Coder CLI             | configured Coder deployment | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
-| Gateway               | workspace helper            | foreground `coder ssh` stdio          | Newline-delimited RPC and versioned helper bootstrap   |
+| OpenSSH `scp`         | Coder CLI ProxyCommand      | `coder ssh --stdio`                   | Coder-authenticated transfer with no direct SSH path   |
+| Gateway               | workspace helper            | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
 | Workspace helper      | workspace Claude Code       | child stdio, `shell: false`           | Streaming JSON conversation and permission control     |
 | Workspace Claude Code | approved Claude backend     | workspace-managed provider connection | Claude inference and authentication                    |
 
 The gateway contains no general HTTP client and makes no direct external request. It binds only to
 IPv4 loopback and validates the exact Host and Origin. The helper opens no listener, tunnel, or
-forwarded port. Every Coder command uses `--disable-network-telemetry` and
+forwarded port. SCP is restricted to generated helper and clipboard-image paths and reaches the
+workspace only through a temporary Coder ProxyCommand. Every Coder command uses `--disable-network-telemetry` and
 `--disable-direct-connections`. T3-managed Claude sessions use an empty strict MCP configuration and
 disable connected claude.ai MCP servers.
 
@@ -30,7 +33,8 @@ The T3-owned local profile is limited to non-secret Coder deployment URLs, optio
 paths, and workspace targets. UI preferences may use browser storage. Repositories, prompts,
 responses, Claude sessions, terminals, checkpoints, project records, project roots, and SQLite state
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
-connection and loopback WebSocket but is not durably cached by the gateway.
+connection and loopback WebSocket but is not durably cached by the gateway. A validated pasted image
+may be staged in an OS temporary directory for one SCP attempt; the gateway removes it afterward.
 
 Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selects a separate opaque
 `--global-config` directory per domain so two file-backed Coder sessions can coexist. Coder 2.25.3
@@ -43,16 +47,18 @@ installed Claude Code CLI.
 - Electron, native desktop packaging, mobile, hosted web, relay, Tailscale, Cloudflare, OAuth,
   Clerk, telemetry, auto-update, and browser preview;
 - providers other than workspace Claude Code;
-- generic SSH, port forwarding, tunnels, and background workspace daemons;
-- uploads, downloads, exports, attachments, drag-and-drop transfer, clipboard-image transfer, and
-  background file synchronization;
+- generic user-facing SSH, port forwarding, tunnels, and background workspace daemons;
+- arbitrary uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer, and
+  background file synchronization; pasted PNG, JPEG, and WebP images up to 20 MiB are the sole
+  user-facing transfer exception;
 - Git fetch, pull, push, pull requests, and hosted source-control integrations;
 - MCP servers, Claude browser integration, free-form Claude launch flags, and the packaged Anthropic
   Agent SDK;
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
   the gateway's loopback URL.
 
-The versioned helper bootstrap over Coder stdin is the sole control-plane transfer exception.
+The versioned helper bootstrap through helper-scoped SCP is the sole control-plane transfer
+exception. Both helper and clipboard-image SCP use `coder ssh --stdio` as their ProxyCommand.
 
 ## Source ZIP and installation review
 
