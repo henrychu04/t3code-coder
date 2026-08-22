@@ -50,7 +50,11 @@ function request(input: {
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: string | Buffer;
 }) {
-  return new Promise<{ readonly statusCode: number; readonly body: string }>((resolve, reject) => {
+  return new Promise<{
+    readonly statusCode: number;
+    readonly headers: NodeHttp.IncomingHttpHeaders;
+    readonly body: string;
+  }>((resolve, reject) => {
     const url = new URL(input.url);
     const request = NodeHttp.request(
       {
@@ -69,6 +73,7 @@ function request(input: {
         response.on("end", () =>
           resolve({
             statusCode: response.statusCode ?? 0,
+            headers: response.headers,
             body: Buffer.concat(chunks).toString("utf8"),
           }),
         );
@@ -87,6 +92,16 @@ describe("local Coder gateway", () => {
     const response = await request({ url: `${gateway.url}/healthz` });
     strictEqual(response.statusCode, 200);
     strictEqual(response.body, '{"status":"ok"}');
+    strictEqual(
+      response.headers["content-security-policy"]?.includes(
+        "script-src 'self' 'wasm-unsafe-eval'",
+      ),
+      true,
+    );
+    strictEqual(
+      response.headers["content-security-policy"]?.includes("script-src 'self' 'unsafe-eval'"),
+      false,
+    );
   });
 
   it("rejects an unexpected Host header", async () => {

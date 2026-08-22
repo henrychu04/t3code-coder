@@ -434,15 +434,12 @@ describe("MessagesTimeline", () => {
     expect(resolveTimelineMinimapInteractiveWidth(40, true)).toBe("22rem");
   });
 
-  it("anchors a sent attachment message using its measured height", () => {
+  it("anchors the first user message using its measured height", () => {
     const onAnchorReady = vi.fn();
-    const firstEntry = buildUserTimelineEntry("First prompt.");
-    const secondEntry = {
-      ...buildUserTimelineEntry("Newest prompt."),
-      id: "entry-2",
+    const firstEntry = {
+      ...buildUserTimelineEntry("First prompt."),
       message: {
-        ...buildUserTimelineEntry("Newest prompt.").message,
-        id: MessageId.make("message-2"),
+        ...buildUserTimelineEntry("First prompt.").message,
         attachments: [
           {
             type: "image" as const,
@@ -458,14 +455,14 @@ describe("MessagesTimeline", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
-        anchorMessageId={secondEntry.message.id}
+        anchorMessageId={firstEntry.message.id}
         onAnchorReady={onAnchorReady}
         contentInsetEndAdjustment={144}
-        timelineEntries={[firstEntry, secondEntry]}
+        timelineEntries={[firstEntry]}
       />,
     );
 
-    expect(markup).toContain('data-anchor-index="1"');
+    expect(markup).toContain('data-anchor-index="0"');
     expect(markup).toContain('data-anchor-offset="16"');
     expect(markup).toContain('data-anchor-on-ready="true"');
     expect(markup).not.toContain("data-anchor-max-size=");
@@ -477,7 +474,32 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-maintain-visible-content-position-size="true"');
     expect(markup).toContain('data-maintain-visible-content-position-restore="true"');
     expect(onAnchorReady).toHaveBeenCalledOnce();
-    expect(onAnchorReady).toHaveBeenCalledWith(secondEntry.message.id, 1);
+    expect(onAnchorReady).toHaveBeenCalledWith(firstEntry.message.id, 0);
+  });
+
+  it("does not reserve end space for a follow-up user message", () => {
+    const onAnchorReady = vi.fn();
+    const firstEntry = buildUserTimelineEntry("First prompt.");
+    const secondEntry = {
+      ...buildUserTimelineEntry("Newest prompt."),
+      id: "entry-2",
+      message: {
+        ...buildUserTimelineEntry("Newest prompt.").message,
+        id: MessageId.make("message-2"),
+      },
+    };
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        anchorMessageId={secondEntry.message.id}
+        onAnchorReady={onAnchorReady}
+        timelineEntries={[firstEntry, secondEntry]}
+      />,
+    );
+
+    expect(markup).not.toContain("data-anchor-index=");
+    expect(markup).toContain('data-maintain-scroll-at-end="enabled"');
+    expect(onAnchorReady).not.toHaveBeenCalled();
   });
 
   it("hands end-following back to the list once the send anchor is released", () => {
@@ -498,7 +520,7 @@ describe("MessagesTimeline", () => {
       renderToStaticMarkup(
         <MessagesTimeline
           {...buildProps()}
-          anchorMessageId={secondEntry.message.id}
+          anchorMessageId={firstEntry.message.id}
           timelineEntries={timelineEntries}
         />,
       ),
@@ -607,11 +629,13 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('<code data-inline-code="">&lt;tag attr=&quot;x&quot;&gt;</code>');
+    expect(markup).toMatch(
+      /<code[^>]*data-inline-code=""[^>]*>&lt;tag attr=&quot;x&quot;&gt;<\/code>/,
+    );
     expect(markup).toContain("&lt;root&gt;&lt;child enabled=&quot;true&quot; /&gt;&lt;/root&gt;");
   });
 
-  it("does not render markdown title attributes in user messages", async () => {
+  it("keeps external links and images inert and drops their title attributes", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -624,8 +648,9 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('href="https://example.com"');
-    expect(markup).toContain('src="https://example.com/image.png"');
+    expect(markup).toContain(">link</span>");
+    expect(markup).toContain("Image unavailable · image");
+    expect(markup).not.toContain("https://example.com");
     expect(markup).not.toContain('title="link tip"');
     expect(markup).not.toContain('title="image tip"');
   });
@@ -724,7 +749,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Show full message");
   }, 20_000);
 
-  it("renders chips for standalone element-pick context messages", () => {
+  it("keeps unsupported element-pick context inert", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -746,7 +771,8 @@ describe("MessagesTimeline", () => {
     );
 
     expect(markup).toContain("SubmitButton");
-    expect(markup).not.toContain("&lt;element_context");
+    expect(markup).toContain("&lt;element_context&gt;");
+    expect(markup).toContain("&lt;button class=&quot;submit&quot;&gt;Save&lt;/button&gt;");
     expect(markup).not.toContain("<element_context");
   });
 
