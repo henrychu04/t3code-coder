@@ -7,8 +7,8 @@ not use the upstream desktop, relay, Tailscale, hosted web, or direct remote-ser
 ## Runtime boundary
 
 The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
-client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace targets,
-project display names and Linux roots, and an optional Coder executable path. Browser UI preferences
+client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace
+targets, and an optional Coder executable path. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
 and provider sessions are memory-only.
 Each active workspace gets one loopback WebSocket that translates frame-delimited browser RPC into
@@ -38,10 +38,13 @@ to workspace policy.
 
 ## Authentication
 
-Coder owns deployment authentication. The gateway invokes `coder login <url>` and supplies
-`--url <url>` to deployment-specific commands. It never asks for, reads, copies, or persists Coder
-tokens. Different deployment URLs can therefore use the credential selection supported by the
-installed Coder CLI.
+Coder owns deployment authentication. For the supported Coder CLI 2.25.3, the gateway assigns each
+deployment an isolated Coder-owned `--global-config` directory, invokes `coder --no-open login
+<url>`, and supplies both that config directory and `--url <url>` to every deployment-specific
+command. Coder prints its login URL and hidden token prompt in the terminal running T3 Coder. The
+gateway never asks for, reads, copies, logs, or writes tokens. Coder 2.25.3 itself stores the session
+token as plaintext in the selected config directory; multi-deployment OS-keyring storage is not
+available until Coder 2.29.
 All generated Coder invocations include `--disable-network-telemetry` and
 `--disable-direct-connections`, so the CLI does not send optional network telemetry or establish
 peer-to-peer workspace connections.
@@ -55,9 +58,8 @@ processes and managed browser extensions as trusted by the deployment environmen
 Development is supported on macOS. The production local host is Windows 11, so local paths and
 processes must use Node platform APIs and argument-array spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
-remote OS and architecture, Node.js version, Git, Claude Code, `script(1)`, workspace state
-directory, and configured project root. Platform and protocol versions are then negotiated before a
-helper is used.
+remote OS and architecture, Node.js version, Git, Claude Code, `script(1)`, and workspace state
+directory. Platform and protocol versions are then negotiated before a helper is used.
 
 ## Network and transfer constraints
 

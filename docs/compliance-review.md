@@ -26,14 +26,17 @@ T3 cannot make those external programs networkless while still connecting to Cod
 
 ## Data ownership
 
-Local persistence is limited to non-secret Coder deployment URLs, optional Coder executable paths,
-workspace targets, project labels, and remote Linux project roots. UI preferences may use browser
-storage. Repositories, prompts, responses, Claude sessions, terminals, checkpoints, project records,
-and SQLite state remain in the selected workspace. Live display data necessarily traverses the
-foreground stdio connection and loopback WebSocket but is not durably cached by the gateway.
+The T3-owned local profile is limited to non-secret Coder deployment URLs, optional Coder executable
+paths, and workspace targets. UI preferences may use browser storage. Repositories, prompts,
+responses, Claude sessions, terminals, checkpoints, project records, project roots, and SQLite state
+remain in the selected workspace. Live display data necessarily traverses the foreground stdio
+connection and loopback WebSocket but is not durably cached by the gateway.
 
-Coder owns deployment credentials. T3 never asks for, reads, logs, copies, or persists Coder tokens.
-Claude authentication exists only in the workspace and is owned by the installed Claude Code CLI.
+Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selects a separate opaque
+`--global-config` directory per domain so two file-backed Coder sessions can coexist. Coder 2.25.3
+writes a plaintext session token in each directory. The gateway never asks for, reads, logs, copies,
+or writes those tokens. Claude authentication exists only in the workspace and is owned by the
+installed Claude Code CLI.
 
 ## Removed and prohibited capabilities
 

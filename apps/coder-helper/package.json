@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/bin.ts --bundle --platform=node --format=esm --target=node24 --banner:js=\"#!/usr/bin/env node\" --outfile=dist/workspace-helper",
+    "build": "node src/build.ts",
     "start": "node src/bin.ts",
     "test": "node --test src/*.test.ts",
     "typecheck": "tsgo --noEmit"

@@ -29,6 +29,7 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   ThreadId,
+  WorkspaceListDirectoriesError,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
@@ -298,6 +299,17 @@ export const layer = CoderWsRpcGroup.toLayer(
                 queryLength: input.query.length,
                 limit: input.limit,
                 ...projectEntriesFailureContext(cause),
+                cause,
+              }),
+          ),
+        ),
+      [WS_METHODS.workspaceListDirectories]: (input) =>
+        workspaceEntries.listDirectories(input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new WorkspaceListDirectoriesError({
+                path: input.path ?? "workspace home",
+                message: cause.message,
                 cause,
               }),
           ),

@@ -36,13 +36,14 @@ export const layer = Layer.effect(
     const environmentId = EnvironmentId.make(
       existing.length > 0 ? existing : yield* crypto.randomUUIDv4,
     );
+    const configuredLabel = process.env.T3_CODER_WORKSPACE_LABEL?.trim();
     if (existing.length === 0) {
       yield* fileSystem.writeFileString(config.environmentIdPath, `${environmentId}\n`);
     }
     return CoderEnvironment.of({
       descriptor: {
         environmentId,
-        label: path.basename(config.cwd) || "Coder workspace",
+        label: configuredLabel || path.basename(config.cwd) || "Coder workspace",
         platform: { os: "linux", arch: platformArch() },
         serverVersion: packageJson.version,
         capabilities: {

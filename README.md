@@ -18,7 +18,7 @@ On the local macOS test machine or Windows 11 work computer:
 
 - Node.js 24.10 or newer
 - pnpm 11.10
-- the Coder CLI, authenticated to each deployment with `coder login <deployment-url>`
+- Coder CLI 2.25.3
 
 Inside each Linux Coder workspace:
 
@@ -39,23 +39,32 @@ The gateway builds the pinned workspace helper and web client, binds to an ephem
 never automatic; `npm run start:open` is an explicit convenience for unrestricted development
 machines.
 
-Add a Coder deployment URL, discover its workspaces through the installed Coder CLI, and register
-projects by their absolute Linux paths. Connecting installs the version-matched helper through a
+The normal T3 Code interface opens even before a workspace is configured. In Settings, add each
+Coder domain and choose **Sign in**. Coder prints its login URL and hidden token prompt in the
+terminal running `npm start`; T3 Coder never accepts the token in its browser UI. Then choose **Add
+project** in the sidebar, select an authenticated domain and workspace, and navigate to a Linux
+folder in the remote folder picker.
+
+Connecting installs the version-matched helper through a
 separate Coder SSH stdin operation and then runs it in the foreground over newline-delimited stdio.
-Coder owns deployment authentication; T3 Coder never reads or stores Coder tokens.
+Coder owns deployment authentication; the gateway never reads, copies, logs, or writes Coder tokens.
 Every Coder invocation disables the CLI's optional network telemetry and direct peer-to-peer
 workspace connections. Before installing or starting the helper, the gateway verifies the remote
-Linux architecture, Node.js version, Git, Claude Code, `script(1)`, state directory, and configured
-project root.
+Linux architecture, Node.js version, Git, Claude Code, `script(1)`, and state directory.
 
 Refreshing the browser reconnects to the existing foreground helper. If Coder SSH or the helper
-exits, the browser's next connection attempt runs preflight and starts a fresh helper. Returning to
-the workspace manager explicitly closes that workspace connection.
+exits, the browser's next connection attempt runs preflight and starts a fresh helper.
 
-The local profile is a small JSON file containing only deployment URLs, Coder workspace targets,
-project display names, and remote Linux roots. UI-only preferences such as theme and panel size may
-remain in browser storage. Claude sessions, messages, repository data, terminals, and SQLite state
-are never persisted locally.
+The local T3 profile is a small JSON file containing only deployment URLs, optional Coder executable
+paths, and Coder workspace targets. Project roots and project records stay in workspace SQLite.
+UI-only preferences such as theme and panel size may remain in browser storage. Claude sessions,
+messages, repository data, terminals, and SQLite state are never persisted locally.
+
+Coder 2.25.3 predates OS-keyring credential storage. To keep two domains signed in, T3 invokes Coder
+with a separate `--global-config` directory for each domain. The Coder CLI writes its session token
+as plaintext inside that directory; the gateway treats the directory as opaque and never reads it.
+Reauthentication repeats the foreground Coder login flow. If corporate policy requires Windows
+Credential Manager storage, the installed Coder CLI must be upgraded to 2.29 or newer.
 
 ## Security boundary
 

@@ -20,8 +20,9 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
 - The helper runs in the foreground through `coder ssh`, uses newline-delimited RPC over stdio, and
   opens no HTTP, WebSocket, tunnel, forwarded port, or other listener.
 - Claude Code exists only in the Linux workspace. Do not probe for or launch a local provider.
-- Keep durable application state in the workspace. Local persistence is limited to non-secret
-  deployment URLs, Coder executable paths, workspace targets, and project root configuration.
+- Keep durable application state in the workspace. T3-owned local persistence is limited to
+  non-secret deployment URLs, Coder executable paths, and workspace targets. Coder 2.25.3 may write
+  tokens only inside opaque deployment-specific CLI config directories; T3 must never read them.
 - Do not add file uploads, downloads, exports, attachments, drag-and-drop transfer, clipboard-image
   transfer, or background file synchronization. The versioned helper bootstrap over Coder stdin is
   the sole control-plane exception.

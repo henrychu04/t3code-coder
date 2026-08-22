@@ -36,6 +36,9 @@ import {
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
+  WorkspaceListDirectoriesError,
+  WorkspaceListDirectoriesInput,
+  WorkspaceListDirectoriesResult,
 } from "./project.ts";
 import {
   ReviewDiffFileContentsInput,
@@ -64,6 +67,7 @@ import { VcsError } from "./vcs.ts";
 
 export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
+  workspaceListDirectories: "workspace.listDirectories",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -118,6 +122,12 @@ const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
   payload: ProjectSearchEntriesInput,
   success: ProjectSearchEntriesResult,
   error: ProjectSearchEntriesError,
+});
+
+const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectories, {
+  payload: WorkspaceListDirectoriesInput,
+  success: WorkspaceListDirectoriesResult,
+  error: WorkspaceListDirectoriesError,
 });
 
 const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -296,6 +306,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsProjectsSearchEntriesRpc,
+  WsWorkspaceListDirectoriesRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsRefreshStatusRpc,
   WsVcsListRefsRpc,

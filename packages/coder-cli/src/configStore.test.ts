@@ -51,13 +51,46 @@ describe("Coder profile config store", () => {
           name: "Equities",
           deploymentId: "goldman-us",
           workspace: "equities-dev",
-          workspaceRoot: "/workspace/equities",
         },
       ],
     } as const;
 
     await saveCoderProfileConfig(configPath, config);
     deepStrictEqual(await loadCoderProfileConfig(configPath), config);
+  });
+
+  it("drops legacy project roots from workspace connection profiles", () => {
+    deepStrictEqual(
+      parseCoderProfileConfig({
+        version: 1,
+        deployments: [
+          { id: "goldman-us", name: "Goldman US", url: "https://coder.example.gs.com" },
+        ],
+        workspaces: [
+          {
+            id: "equities",
+            name: "Equities workspace",
+            deploymentId: "goldman-us",
+            workspace: "equities-dev",
+            workspaceRoot: "/workspace/legacy-project",
+          },
+        ],
+      }),
+      {
+        version: 1,
+        deployments: [
+          { id: "goldman-us", name: "Goldman US", url: "https://coder.example.gs.com" },
+        ],
+        workspaces: [
+          {
+            id: "equities",
+            name: "Equities workspace",
+            deploymentId: "goldman-us",
+            workspace: "equities-dev",
+          },
+        ],
+      },
+    );
   });
 
   it("rejects workspace references to missing deployments", () => {
@@ -71,7 +104,29 @@ describe("Coder profile config store", () => {
             name: "Equities",
             deploymentId: "missing",
             workspace: "dev",
-            workspaceRoot: "/workspace/equities",
+          },
+        ],
+      }),
+    );
+  });
+
+  it("rejects duplicate workspace targets on the same deployment", () => {
+    throws(() =>
+      parseCoderProfileConfig({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example" }],
+        workspaces: [
+          {
+            id: "one",
+            name: "One",
+            deploymentId: "goldman",
+            workspace: "henry/equities",
+          },
+          {
+            id: "two",
+            name: "Two",
+            deploymentId: "goldman",
+            workspace: "henry/equities",
           },
         ],
       }),
@@ -98,6 +153,18 @@ describe("Coder profile config store", () => {
             url: "https://coder.example",
             executable: String.raw`C:\Windows\System32\cmd.exe`,
           },
+        ],
+        workspaces: [],
+      }),
+    );
+  });
+
+  it("rejects deployment ids that could escape an isolated Coder profile directory", () => {
+    throws(() =>
+      parseCoderProfileConfig({
+        version: 1,
+        deployments: [
+          { id: "../other-profile", name: "Goldman", url: "https://coder.example" },
         ],
         workspaces: [],
       }),
@@ -145,7 +212,6 @@ describe("Coder profile config store", () => {
             name: "Project",
             deploymentId: "goldman",
             workspace: "--url=attacker.example",
-            workspaceRoot: "/workspace/project",
           },
         ],
       }),

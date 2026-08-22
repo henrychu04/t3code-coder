@@ -1,12 +1,15 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace enumeration is a small Linux process/filesystem adapter.
 import { execFile } from "node:child_process";
 import * as NodeFS from "node:fs/promises";
+import * as NodeOS from "node:os";
 import { promisify } from "node:util";
 
 import type {
   ProjectEntry,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
+  WorkspaceListDirectoriesInput,
+  WorkspaceListDirectoriesResult,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -18,6 +21,7 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 const execFileAsync = promisify(execFile);
 const MAX_SCANNED_PATHS = 25_000;
+const MAX_LISTED_DIRECTORIES = 500;
 
 export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexSearchFailed>()(
   "WorkspaceSearchIndexSearchFailed",
@@ -46,8 +50,23 @@ export class WorkspaceEntries extends Context.Service<
       input: ProjectSearchEntriesInput,
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
+    readonly listDirectories: (
+      input: WorkspaceListDirectoriesInput,
+    ) => Effect.Effect<WorkspaceListDirectoriesResult, WorkspaceDirectoryListFailed>;
   }
 >()("t3/workspace/WorkspaceEntries") {}
+
+export class WorkspaceDirectoryListFailed extends Schema.TaggedErrorClass<WorkspaceDirectoryListFailed>()(
+  "WorkspaceDirectoryListFailed",
+  {
+    path: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to list directories in '${this.path}'.`;
+  }
+}
 
 const normalizePath = (value: string): string => value.replaceAll("\\", "/").replace(/^\.\//, "");
 
@@ -124,7 +143,50 @@ export const make = Effect.gen(function* () {
     },
   );
 
-  return WorkspaceEntries.of({ search, refresh: () => Effect.void });
+  const listDirectories: WorkspaceEntries["Service"]["listDirectories"] = Effect.fn(
+    "WorkspaceEntries.listDirectories",
+  )(function* (input) {
+    const requestedPath = input.path?.trim() ?? NodeOS.homedir();
+    if (!path.isAbsolute(requestedPath)) {
+      return yield* new WorkspaceDirectoryListFailed({
+        path: requestedPath,
+        cause: new Error("Workspace directory paths must be absolute."),
+      });
+    }
+    const directory = path.resolve(requestedPath);
+    const directories = yield* Effect.tryPromise({
+      try: async () => {
+        const entries = await NodeFS.readdir(directory, { withFileTypes: true });
+        const candidates = await Promise.all(
+          entries.map(async (entry) => {
+            const entryPath = path.join(directory, entry.name);
+            if (entry.isDirectory()) return { name: entry.name, path: entryPath };
+            if (!entry.isSymbolicLink()) return null;
+            try {
+              return (await NodeFS.stat(entryPath)).isDirectory()
+                ? { name: entry.name, path: entryPath }
+                : null;
+            } catch {
+              return null;
+            }
+          }),
+        );
+        return candidates
+          .filter((entry): entry is { readonly name: string; readonly path: string } => entry !== null)
+          .sort((left, right) => left.name.localeCompare(right.name));
+      },
+      catch: (cause) => new WorkspaceDirectoryListFailed({ path: directory, cause }),
+    });
+    const parentPath = path.dirname(directory);
+    return {
+      path: directory,
+      ...(parentPath === directory ? {} : { parentPath }),
+      directories: directories.slice(0, MAX_LISTED_DIRECTORIES),
+      truncated: directories.length > MAX_LISTED_DIRECTORIES,
+    };
+  });
+
+  return WorkspaceEntries.of({ search, listDirectories, refresh: () => Effect.void });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make);

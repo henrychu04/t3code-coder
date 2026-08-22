@@ -15,8 +15,10 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
-import { readPrimaryEnvironmentDescriptor } from "../environments/primary";
-import { readPrimaryEnvironmentTarget } from "../environments/primary/target";
+import {
+  readCoderWorkspaceEnvironments,
+  subscribeCoderWorkspaceEnvironments,
+} from "../coder/environmentStore";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
 import { connectionStorageLayer } from "./storage";
 
@@ -50,18 +52,33 @@ const wakeupsLayer = Wakeups.layer({
 const platformConnectionSourceLayer = Layer.effect(
   PlatformConnectionSource,
   Effect.sync(() => {
-    const descriptor = readPrimaryEnvironmentDescriptor();
-    if (descriptor === null) throw new Error("Coder workspace descriptor is unavailable.");
-    const resolved = readPrimaryEnvironmentTarget();
-    const registration = new PrimaryConnectionRegistration({
-      target: new PrimaryConnectionTarget({
-        environmentId: descriptor.environmentId,
-        label: descriptor.label,
-        httpBaseUrl: resolved.target.httpBaseUrl,
-        wsBaseUrl: resolved.target.wsBaseUrl,
-      }),
+    const registrations = () =>
+      readCoderWorkspaceEnvironments().map(({ workspaceId, descriptor }) => {
+        const socketUrl = new URL(window.location.origin);
+        socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
+        socketUrl.pathname = `/api/workspaces/${encodeURIComponent(workspaceId)}/rpc`;
+        return new PrimaryConnectionRegistration({
+          target: new PrimaryConnectionTarget({
+            environmentId: descriptor.environmentId,
+            label: descriptor.label,
+            httpBaseUrl: window.location.origin,
+            wsBaseUrl: socketUrl.toString(),
+          }),
+        });
+      });
+    return PlatformConnectionSource.of({
+      registrations: Stream.callback<ReadonlyArray<PrimaryConnectionRegistration>>((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() => {
+            Queue.offerUnsafe(queue, registrations());
+            return subscribeCoderWorkspaceEnvironments(() => {
+              Queue.offerUnsafe(queue, registrations());
+            });
+          }),
+          (unsubscribe) => Effect.sync(unsubscribe),
+        ).pipe(Effect.asVoid),
+      ),
     });
-    return PlatformConnectionSource.of({ registrations: Stream.make([registration]) });
   }),
 );
 

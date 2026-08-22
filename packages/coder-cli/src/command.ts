@@ -12,6 +12,10 @@ export interface CoderInvocation {
 
 const CODER_GLOBAL_ARGS = ["--disable-network-telemetry", "--disable-direct-connections"] as const;
 
+export interface CoderInvocationOptions {
+  readonly globalConfig?: string;
+}
+
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
 export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   "set -eu",
@@ -25,10 +29,9 @@ export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   'command -v script >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1)."',
   'script -qefc true /dev/null >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1) with -qefc support."',
   '[ -n "${HOME:-}" ] || fail "T3 Coder requires a workspace HOME directory."',
+  '[ -d "$HOME" ] && [ -r "$HOME" ] && [ -x "$HOME" ] || fail "The workspace HOME directory is not accessible."',
   'mkdir -p "$HOME/.t3-coder" || fail "T3 Coder cannot create its workspace state directory."',
   '[ -w "$HOME/.t3-coder" ] || fail "T3 Coder workspace state directory is not writable."',
-  '[ -d "$T3_CODER_CWD" ] || fail "The configured workspace project root does not exist."',
-  '[ -r "$T3_CODER_CWD" ] && [ -x "$T3_CODER_CWD" ] || fail "The configured workspace project root is not accessible."',
   'printf "T3_CODER_PREFLIGHT_OK\\n"',
 ].join("; ");
 export const REMOTE_HELPER_INSTALL_COMMAND = [
@@ -50,23 +53,46 @@ export function quotePosixShellArgument(value: string): string {
 function invocation(
   deploymentInput: CoderDeploymentProfile,
   args: readonly string[],
+  options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  const globalConfig = options?.globalConfig?.trim();
+  if (options?.globalConfig !== undefined && !globalConfig) {
+    throw new Error("Coder global config path must not be empty.");
+  }
   return {
     executable: deployment.executable ?? "coder",
-    args,
+    args: [...(globalConfig ? ["--global-config", globalConfig] : []), ...args],
   };
 }
 
 export function buildCoderLoginInvocation(
   deploymentInput: CoderDeploymentProfile,
+  options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  return invocation(deployment, [...CODER_GLOBAL_ARGS, "login", deployment.url]);
+  return invocation(
+    deployment,
+    [...CODER_GLOBAL_ARGS, "--no-open", "login", deployment.url],
+    options,
+  );
+}
+
+export function buildCoderAuthStatusInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  return invocation(
+    deployment,
+    [...CODER_GLOBAL_ARGS, "--url", deployment.url, "whoami"],
+    options,
+  );
 }
 
 export function buildCoderListWorkspacesInvocation(
   deploymentInput: CoderDeploymentProfile,
+  options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
   return invocation(deployment, [
@@ -76,12 +102,13 @@ export function buildCoderListWorkspacesInvocation(
     "list",
     "--output",
     "json",
-  ]);
+  ], options);
 }
 
 export function buildCoderWorkspaceProbeInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
   const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
@@ -95,17 +122,16 @@ export function buildCoderWorkspaceProbeInvocation(
     "ssh",
     workspace.workspace,
     "--",
-    "env",
-    quotePosixShellArgument(`T3_CODER_CWD=${workspace.workspaceRoot}`),
     "sh",
     "-c",
     quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
-  ]);
+  ], options);
 }
 
 export function buildCoderHelperInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
   const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
@@ -120,15 +146,16 @@ export function buildCoderHelperInvocation(
     workspace.workspace,
     "--",
     "env",
-    quotePosixShellArgument(`T3_CODER_CWD=${workspace.workspaceRoot}`),
+    quotePosixShellArgument(`T3_CODER_WORKSPACE_LABEL=${deployment.name} · ${workspace.name}`),
     REMOTE_HELPER_COMMAND,
     "--stdio",
-  ]);
+  ], options);
 }
 
 export function buildCoderHelperInstallInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
   const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
@@ -145,7 +172,7 @@ export function buildCoderHelperInstallInvocation(
     "sh",
     "-c",
     quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
-  ]);
+  ], options);
 }
 
 export function buildBrowserOpenInvocation(

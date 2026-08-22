@@ -154,7 +154,6 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
-    yield* CoderRuntimeStartup.autoBootstrapWorkspace;
     yield* commandGate.signalReady;
 
     return CoderRuntimeStartup.CoderRuntimeStartup.of({

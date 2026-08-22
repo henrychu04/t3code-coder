@@ -9,37 +9,61 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION } from "@t3tools/coder-cli/rpc";
-import { WS_METHODS } from "@t3tools/contracts";
+import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
 
-function readNdjsonLine(stream: NodeJS.ReadableStream): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let buffered = "";
-    const onData = (chunk: Buffer) => {
-      buffered += chunk.toString("utf8");
+function makeNdjsonReader(stream: NodeJS.ReadableStream): () => Promise<unknown> {
+  const queued: Array<unknown> = [];
+  const waiting: Array<{
+    readonly resolve: (value: unknown) => void;
+    readonly reject: (cause: unknown) => void;
+  }> = [];
+  let buffered = "";
+
+  const fail = (cause: unknown) => {
+    for (const waiter of waiting.splice(0)) waiter.reject(cause);
+  };
+  stream.on("data", (chunk: Buffer) => {
+    buffered += chunk.toString("utf8");
+    while (true) {
       const newline = buffered.indexOf("\n");
-      if (newline === -1) return;
+      if (newline === -1) break;
+      const line = buffered.slice(0, newline);
+      buffered = buffered.slice(newline + 1);
+      if (line.length === 0) continue;
       try {
-        stream.removeListener("data", onData);
-        resolve(JSON.parse(buffered.slice(0, newline)) as unknown);
+        const value = JSON.parse(line) as unknown;
+        const waiter = waiting.shift();
+        if (waiter) waiter.resolve(value);
+        else queued.push(value);
       } catch (cause) {
-        reject(cause);
+        fail(cause);
       }
-    };
-    stream.on("data", onData);
-    stream.once("error", reject);
+    }
   });
+  stream.on("error", fail);
+
+  return () => {
+    const value = queued.shift();
+    if (value !== undefined) return Promise.resolve(value);
+    return new Promise((resolve, reject) => waiting.push({ resolve, reject }));
+  };
 }
 
 describe("Coder foreground helper", () => {
   it("negotiates Effect RPC over stdio and exits when stdin closes", async () => {
     const helperHome = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-helper-"));
     const helper = spawn(process.execPath, [fileURLToPath(new URL("./bin.ts", import.meta.url))], {
-      env: { ...process.env, T3_CODER_HOME: helperHome },
+      env: {
+        ...process.env,
+        HOME: helperHome,
+        T3_CODER_HOME: NodePath.join(helperHome, ".t3-coder"),
+        T3_CODER_CWD: helperHome,
+      },
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
     });
-    const response = readNdjsonLine(helper.stdout);
+    const readResponse = makeNdjsonReader(helper.stdout);
 
     helper.stdin.write(
       `${JSON.stringify({
@@ -51,7 +75,7 @@ describe("Coder foreground helper", () => {
       })}\n`,
     );
 
-    deepStrictEqual(await response, {
+    deepStrictEqual(await readResponse(), {
       _tag: "Exit",
       requestId: "integration-1",
       exit: {
@@ -64,7 +88,6 @@ describe("Coder foreground helper", () => {
       },
     });
 
-    const configResponse = readNdjsonLine(helper.stdout);
     helper.stdin.write(
       `${JSON.stringify({
         _tag: "Request",
@@ -74,7 +97,7 @@ describe("Coder foreground helper", () => {
         headers: [],
       })}\n`,
     );
-    const configEnvelope = (await configResponse) as {
+    const configEnvelope = (await readResponse()) as {
       readonly exit?: {
         readonly _tag?: string;
         readonly value?: { readonly providers?: ReadonlyArray<{ readonly driver?: string }> };
@@ -85,6 +108,32 @@ describe("Coder foreground helper", () => {
       configEnvelope.exit?.value?.providers?.map((provider) => provider.driver),
       ["claudeAgent"],
     );
+
+    helper.stdin.write(
+      `${JSON.stringify({
+        _tag: "Request",
+        id: "shell-snapshot",
+        tag: ORCHESTRATION_WS_METHODS.subscribeShell,
+        payload: { requestCompletionMarker: true },
+        headers: [],
+      })}\n`,
+    );
+    const shellEnvelope = (await readResponse()) as {
+      readonly _tag?: string;
+      readonly requestId?: string;
+      readonly values?: ReadonlyArray<{
+        readonly kind?: string;
+        readonly snapshot?: {
+          readonly projects?: ReadonlyArray<unknown>;
+          readonly threads?: ReadonlyArray<unknown>;
+        };
+      }>;
+    };
+    strictEqual(shellEnvelope._tag, "Chunk");
+    strictEqual(shellEnvelope.requestId, "shell-snapshot");
+    strictEqual(shellEnvelope.values?.[0]?.kind, "snapshot");
+    deepStrictEqual(shellEnvelope.values?.[0]?.snapshot?.projects, []);
+    deepStrictEqual(shellEnvelope.values?.[0]?.snapshot?.threads, []);
 
     helper.stdin.end();
     const [exitCode] = await once(helper, "exit");

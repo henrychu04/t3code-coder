@@ -17,6 +17,7 @@ import {
 import {
   buildCoderHelperInstallInvocation,
   buildCoderHelperInvocation,
+  buildCoderAuthStatusInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
   buildCoderWorkspaceProbeInvocation,
@@ -155,6 +156,18 @@ function runCoderLogin(executable: string, args: readonly string[]): Promise<voi
   });
 }
 
+function runCoderAuthStatus(invocation: CoderInvocation): Promise<boolean> {
+  return new Promise((resolve) => {
+    const child = spawn(invocation.executable, invocation.args, {
+      shell: false,
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    child.once("error", () => resolve(false));
+    child.once("exit", (code) => resolve(code === 0));
+  });
+}
+
 export interface DiscoveredCoderWorkspace {
   readonly name: string;
   readonly target: string;
@@ -286,6 +299,7 @@ export async function startLocalCoderGateway(options?: {
     invocation: CoderInvocation,
   ) => Promise<readonly DiscoveredCoderWorkspace[]>;
   readonly probeWorkspace?: (invocation: CoderInvocation) => Promise<void>;
+  readonly checkAuthentication?: (invocation: CoderInvocation) => Promise<boolean>;
 }): Promise<LocalCoderGateway> {
   let profileConfig: CoderProfileConfig = options?.configPath
     ? await loadCoderProfileConfig(options.configPath)
@@ -296,6 +310,14 @@ export async function startLocalCoderGateway(options?: {
   const openHelper = options?.connectHelper ?? connectCoderHelper;
   const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
   const probeWorkspace = options?.probeWorkspace ?? runCoderWorkspaceProbe;
+  const checkAuthentication = options?.checkAuthentication ?? runCoderAuthStatus;
+  const coderInvocationOptions = (deploymentId: string) => ({
+    globalConfig: NodePath.join(
+      NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
+      "coder-profiles",
+      deploymentId,
+    ),
+  });
   const webSocketServer = new WebSocketServer({
     noServer: true,
     maxPayload: MAX_RPC_MESSAGE_BYTES,
@@ -317,14 +339,19 @@ export async function startLocalCoderGateway(options?: {
       if (workspace === undefined || deployment === undefined) {
         throw new Error("Unknown Coder workspace.");
       }
-      await probeWorkspace(buildCoderWorkspaceProbeInvocation(deployment, workspace));
+      const invocationOptions = coderInvocationOptions(deployment.id);
+      await probeWorkspace(
+        buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
+      );
       if (options?.helperBundlePath !== undefined) {
         await installCoderHelper(
-          buildCoderHelperInstallInvocation(deployment, workspace),
+          buildCoderHelperInstallInvocation(deployment, workspace, invocationOptions),
           options.helperBundlePath,
         );
       }
-      const connection = await openHelper(buildCoderHelperInvocation(deployment, workspace));
+      const connection = await openHelper(
+        buildCoderHelperInvocation(deployment, workspace, invocationOptions),
+      );
       workspaceConnections.set(workspaceId, connection);
       void connection.closed.then(() => {
         if (workspaceConnections.get(workspaceId) === connection) {
@@ -418,7 +445,10 @@ export async function startLocalCoderGateway(options?: {
         return;
       }
       try {
-        const login = buildCoderLoginInvocation(deployment);
+        const login = buildCoderLoginInvocation(
+          deployment,
+          coderInvocationOptions(deployment.id),
+        );
         await runCoderLogin(login.executable, login.args);
         sendText(response, 200, "application/json; charset=utf-8", '{"status":"authenticated"}');
       } catch (cause) {
@@ -429,6 +459,39 @@ export async function startLocalCoderGateway(options?: {
           cause instanceof Error ? cause.message : "Coder login failed.",
         );
       }
+      return;
+    }
+
+    const authRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/auth-status$/);
+    if (request.method === "POST" && authRoute !== null && authRoute !== undefined) {
+      if (request.headers.origin !== expectedOrigin) {
+        sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+        return;
+      }
+      let deploymentId: string;
+      try {
+        deploymentId = decodeURIComponent(authRoute[1] ?? "");
+      } catch {
+        sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
+        return;
+      }
+      const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
+      if (deployment === undefined) {
+        sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
+        return;
+      }
+      const authenticated = await checkAuthentication(
+        buildCoderAuthStatusInvocation(
+          deployment,
+          coderInvocationOptions(deployment.id),
+        ),
+      );
+      sendText(
+        response,
+        200,
+        "application/json; charset=utf-8",
+        JSON.stringify({ authenticated }),
+      );
       return;
     }
     const workspaceListRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/workspaces$/);
@@ -454,7 +517,12 @@ export async function startLocalCoderGateway(options?: {
         return;
       }
       try {
-        const workspaces = await listWorkspaces(buildCoderListWorkspacesInvocation(deployment));
+        const workspaces = await listWorkspaces(
+          buildCoderListWorkspacesInvocation(
+            deployment,
+            coderInvocationOptions(deployment.id),
+          ),
+        );
         sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ workspaces }));
       } catch (cause) {
         sendText(

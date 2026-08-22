@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 
 import {
   buildBrowserOpenInvocation,
+  buildCoderAuthStatusInvocation,
   buildCoderHelperInvocation,
   buildCoderHelperInstallInvocation,
   buildCoderListWorkspacesInvocation,
@@ -28,23 +29,37 @@ const workspace = {
   name: "Equities",
   deploymentId: "goldman-us",
   workspace: "equities-dev",
-  workspaceRoot: "/workspace/equities",
 } satisfies CoderWorkspaceProfile;
 
 describe("Coder CLI command construction", () => {
-  it("builds login and workspace discovery without reading tokens", () => {
-    deepStrictEqual(buildCoderLoginInvocation(deployment), {
+  it("isolates Coder 2.25 authentication by deployment without reading tokens", () => {
+    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
+    deepStrictEqual(buildCoderLoginInvocation(deployment, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
       args: [
+        "--global-config",
+        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
         "--disable-network-telemetry",
         "--disable-direct-connections",
+        "--no-open",
         "login",
         "https://coder.example.gs.com",
       ],
     });
-    deepStrictEqual(buildCoderListWorkspacesInvocation(deployment), {
+    deepStrictEqual(buildCoderAuthStatusInvocation(deployment, options).args, [
+      "--global-config",
+      String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+      "--disable-network-telemetry",
+      "--disable-direct-connections",
+      "--url",
+      "https://coder.example.gs.com",
+      "whoami",
+    ]);
+    deepStrictEqual(buildCoderListWorkspacesInvocation(deployment, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
       args: [
+        "--global-config",
+        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
         "--disable-network-telemetry",
         "--disable-direct-connections",
         "--url",
@@ -54,6 +69,7 @@ describe("Coder CLI command construction", () => {
         "json",
       ],
     });
+    throws(() => buildCoderLoginInvocation(deployment, { globalConfig: " " }));
   });
 
   it("builds Linux probe and foreground helper invocations as argument arrays", () => {
@@ -65,8 +81,6 @@ describe("Coder CLI command construction", () => {
       "ssh",
       "equities-dev",
       "--",
-      "env",
-      "'T3_CODER_CWD=/workspace/equities'",
       "sh",
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
@@ -80,7 +94,7 @@ describe("Coder CLI command construction", () => {
       "equities-dev",
       "--",
       "env",
-      "'T3_CODER_CWD=/workspace/equities'",
+      "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
       REMOTE_HELPER_COMMAND,
       "--stdio",
     ]);
@@ -99,7 +113,7 @@ describe("Coder CLI command construction", () => {
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /Node\.js 24\.10 or newer/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /T3_CODER_CWD/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");
   });
 

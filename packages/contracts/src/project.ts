@@ -34,6 +34,34 @@ export const ProjectSearchEntriesResult = Schema.Struct({
 });
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 
+export const WorkspaceListDirectoriesInput = Schema.Struct({
+  path: Schema.optional(TrimmedNonEmptyString),
+});
+export type WorkspaceListDirectoriesInput = typeof WorkspaceListDirectoriesInput.Type;
+
+export const WorkspaceDirectoryEntry = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  path: TrimmedNonEmptyString,
+});
+export type WorkspaceDirectoryEntry = typeof WorkspaceDirectoryEntry.Type;
+
+export const WorkspaceListDirectoriesResult = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  parentPath: Schema.optional(TrimmedNonEmptyString),
+  directories: Schema.Array(WorkspaceDirectoryEntry),
+  truncated: Schema.Boolean,
+});
+export type WorkspaceListDirectoriesResult = typeof WorkspaceListDirectoriesResult.Type;
+
+export class WorkspaceListDirectoriesError extends Schema.TaggedErrorClass<WorkspaceListDirectoriesError>()(
+  "WorkspaceListDirectoriesError",
+  {
+    path: TrimmedNonEmptyString,
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {}
+
 export const ProjectEntriesFailure = Schema.Literals([
   "workspace_root_not_found",
   "workspace_root_create_failed",

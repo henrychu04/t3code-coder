@@ -61,6 +61,8 @@ function parseWorkspace(value: unknown): CoderWorkspaceProfile {
   if (!isRecord(value)) throw new Error("Coder workspace profile must be an object.");
   requireAllowedKeys(
     value,
+    // workspaceRoot is accepted only to migrate version-1 configs written by
+    // earlier Coder-only builds. Projects now live exclusively in the helper.
     ["id", "name", "deploymentId", "workspace", "workspaceRoot"],
     "Coder workspace profile",
   );
@@ -68,17 +70,18 @@ function parseWorkspace(value: unknown): CoderWorkspaceProfile {
     typeof value.id !== "string" ||
     typeof value.name !== "string" ||
     typeof value.deploymentId !== "string" ||
-    typeof value.workspace !== "string" ||
-    typeof value.workspaceRoot !== "string"
+    typeof value.workspace !== "string"
   ) {
     throw new Error("Coder workspace profile is missing an id, deployment id, or workspace name.");
+  }
+  if (value.workspaceRoot !== undefined && typeof value.workspaceRoot !== "string") {
+    throw new Error("Legacy workspace root must be a string.");
   }
   return normalizeCoderWorkspaceProfile({
     id: value.id,
     name: value.name,
     deploymentId: value.deploymentId,
     workspace: value.workspace,
-    workspaceRoot: value.workspaceRoot,
   });
 }
 
@@ -105,12 +108,20 @@ export function parseCoderProfileConfig(value: unknown): CoderProfileConfig {
   requireUniqueIds(workspaces, "workspace");
 
   const deploymentIds = new Set(deployments.map((deployment) => deployment.id));
+  const workspaceTargets = new Set<string>();
   for (const workspace of workspaces) {
     if (!deploymentIds.has(workspace.deploymentId)) {
       throw new Error(
         `Coder workspace ${workspace.id} references unknown deployment ${workspace.deploymentId}.`,
       );
     }
+    const target = `${workspace.deploymentId}\0${workspace.workspace}`;
+    if (workspaceTargets.has(target)) {
+      throw new Error(
+        `Coder workspace ${workspace.workspace} is configured more than once for deployment ${workspace.deploymentId}.`,
+      );
+    }
+    workspaceTargets.add(target);
   }
   return { version: 1, deployments, workspaces };
 }

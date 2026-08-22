@@ -170,6 +170,8 @@ describe("local Coder gateway", () => {
     deepStrictEqual(receivedInvocation, {
       executable: "coder",
       args: [
+        "--global-config",
+        NodePath.join(directory, "coder-profiles", "goldman"),
         "--disable-network-telemetry",
         "--disable-direct-connections",
         "--url",
@@ -223,7 +225,6 @@ describe("local Coder gateway", () => {
           name: "Project One",
           deploymentId: "goldman",
           workspace: "henry/project-one",
-          workspaceRoot: "/workspace/project-one",
         },
       ],
     });
@@ -243,6 +244,8 @@ describe("local Coder gateway", () => {
     strictEqual(JSON.parse(connected.body).info.platform, "linux");
     deepStrictEqual(lifecycle, ["probe", "connect"]);
     deepStrictEqual(receivedProbeArgs, [
+      "--global-config",
+      NodePath.join(directory, "coder-profiles", "goldman"),
       "--disable-network-telemetry",
       "--disable-direct-connections",
       "--url",
@@ -250,13 +253,13 @@ describe("local Coder gateway", () => {
       "ssh",
       "henry/project-one",
       "--",
-      "env",
-      "'T3_CODER_CWD=/workspace/project-one'",
       "sh",
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);
     deepStrictEqual(receivedHelperArgs, [
+      "--global-config",
+      NodePath.join(directory, "coder-profiles", "goldman"),
       "--disable-network-telemetry",
       "--disable-direct-connections",
       "--url",
@@ -265,10 +268,57 @@ describe("local Coder gateway", () => {
       "henry/project-one",
       "--",
       "env",
-      "'T3_CODER_CWD=/workspace/project-one'",
+      "'T3_CODER_WORKSPACE_LABEL=Goldman · Project One'",
       '"$HOME/.t3-coder/bin/workspace-helper"',
       "--stdio",
     ]);
+  });
+
+  it("checks authentication through the deployment's isolated Coder 2.25 profile", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    let receivedInvocation:
+      | { readonly executable: string; readonly args: readonly string[] }
+      | undefined;
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      checkAuthentication: async (invocation) => {
+        receivedInvocation = invocation;
+        return true;
+      },
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [],
+      }),
+    });
+
+    const status = await request({
+      url: `${gateway.url}/api/deployments/goldman/auth-status`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(status.statusCode, 200);
+    deepStrictEqual(JSON.parse(status.body), { authenticated: true });
+    deepStrictEqual(receivedInvocation, {
+      executable: "coder",
+      args: [
+        "--global-config",
+        NodePath.join(directory, "coder-profiles", "goldman"),
+        "--disable-network-telemetry",
+        "--disable-direct-connections",
+        "--url",
+        "https://coder.example.gs.com",
+        "whoami",
+      ],
+    });
   });
 
   it("bridges loopback WebSocket RPC messages to helper stdio messages", async () => {
@@ -319,7 +369,6 @@ describe("local Coder gateway", () => {
             name: "Project One",
             deploymentId: "goldman",
             workspace: "henry/project-one",
-            workspaceRoot: "/workspace/project-one",
           },
         ],
       }),
@@ -412,7 +461,6 @@ describe("local Coder gateway", () => {
             name: "Project One",
             deploymentId: "goldman",
             workspace: "henry/project-one",
-            workspaceRoot: "/workspace/project-one",
           },
         ],
       }),

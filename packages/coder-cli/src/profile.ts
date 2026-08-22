@@ -10,7 +10,6 @@ export interface CoderWorkspaceProfile {
   readonly name: string;
   readonly deploymentId: string;
   readonly workspace: string;
-  readonly workspaceRoot: string;
 }
 
 function requireSingleLine(value: string, field: string): string {
@@ -38,6 +37,10 @@ function normalizeCoderExecutable(value: string | undefined): string | undefined
 export function normalizeCoderDeploymentProfile(
   profile: CoderDeploymentProfile,
 ): CoderDeploymentProfile {
+  const id = requireSingleLine(profile.id, "Coder deployment id");
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id)) {
+    throw new Error("Coder deployment id contains unsupported characters.");
+  }
   const rawUrl = requireSingleLine(profile.url, "Coder deployment URL");
   const url = new URL(rawUrl);
   if (url.protocol !== "https:" && url.protocol !== "http:") {
@@ -53,7 +56,7 @@ export function normalizeCoderDeploymentProfile(
 
   const executable = normalizeCoderExecutable(profile.executable);
   return {
-    id: requireSingleLine(profile.id, "Coder deployment id"),
+    id,
     name: requireSingleLine(profile.name, "Coder deployment name"),
     url: url.href.replace(/\/$/, ""),
     ...(executable === undefined ? {} : { executable }),
@@ -63,19 +66,14 @@ export function normalizeCoderDeploymentProfile(
 export function normalizeCoderWorkspaceProfile(
   profile: CoderWorkspaceProfile,
 ): CoderWorkspaceProfile {
-  const workspaceRoot = requireSingleLine(profile.workspaceRoot, "Workspace root");
-  if (!workspaceRoot.startsWith("/") || workspaceRoot.includes("\\")) {
-    throw new Error("Workspace root must be an absolute Linux path.");
-  }
   const workspace = requireSingleLine(profile.workspace, "Coder workspace name");
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9._-]*)?$/.test(workspace)) {
     throw new Error("Coder workspace name must be a workspace or owner/workspace target.");
   }
   return {
     id: requireSingleLine(profile.id, "Coder workspace id"),
-    name: requireSingleLine(profile.name, "Coder project name"),
+    name: requireSingleLine(profile.name, "Coder workspace profile name"),
     deploymentId: requireSingleLine(profile.deploymentId, "Coder deployment id"),
     workspace,
-    workspaceRoot,
   };
 }

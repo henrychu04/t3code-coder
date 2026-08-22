@@ -38,6 +38,11 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
     }),
+    listDirectories: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:workspace:list-directories",
+      tag: WS_METHODS.workspaceListDirectories,
+      staleTimeMs: 5_000,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:create",
       execute: (input: CreateProjectInput) => createProject(input),
