@@ -484,117 +484,135 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
         Stream.unwrap(
-          Effect.gen(function* () {
-            const snapshot = yield* projections.getShellSnapshot().pipe(
-              Effect.mapError(
-                (cause) =>
-                  new OrchestrationGetSnapshotError({
-                    message: "Failed to load projects and threads",
-                    cause,
-                  }),
-              ),
-            );
-            const live = orchestration.streamDomainEvents.pipe(Stream.mapEffect(shellEvent));
-            if (input.afterSequence !== undefined) {
-              const head = yield* orchestration.latestSequence;
-              const gap = head - input.afterSequence;
-              if (gap >= 0 && gap <= RESUME_MAX_GAP) {
-                const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
-                  Stream.mapEffect(shellEvent),
-                  Stream.mapError(
+          orchestration.subscribeDomainEvents.pipe(
+            Effect.flatMap((subscribedEvents) =>
+              Effect.gen(function* () {
+                if (input.afterSequence !== undefined) {
+                  const head = yield* orchestration.latestSequence;
+                  const gap = head - input.afterSequence;
+                  if (gap >= 0 && gap <= RESUME_MAX_GAP) {
+                    const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
+                      Stream.mapEffect(shellEvent),
+                      Stream.mapError(
+                        (cause) =>
+                          new OrchestrationGetSnapshotError({
+                            message: "Failed to resume projects and threads",
+                            cause,
+                          }),
+                      ),
+                    );
+                    const live = subscribedEvents.pipe(
+                      Stream.filter((event) => event.sequence > head),
+                      Stream.mapEffect(shellEvent),
+                    );
+                    return Stream.concat(
+                      replay,
+                      input.requestCompletionMarker
+                        ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
+                        : live,
+                    );
+                  }
+                }
+                const snapshot = yield* projections.getShellSnapshot().pipe(
+                  Effect.mapError(
                     (cause) =>
                       new OrchestrationGetSnapshotError({
-                        message: "Failed to resume projects and threads",
+                        message: "Failed to load projects and threads",
                         cause,
                       }),
                   ),
                 );
+                const live = subscribedEvents.pipe(
+                  Stream.filter((event) => event.sequence > snapshot.snapshotSequence),
+                  Stream.mapEffect(shellEvent),
+                );
                 return Stream.concat(
-                  replay,
+                  Stream.make({ kind: "snapshot" as const, snapshot }),
                   input.requestCompletionMarker
                     ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
                     : live,
                 );
-              }
-            }
-            return Stream.concat(
-              Stream.make({ kind: "snapshot" as const, snapshot }),
-              input.requestCompletionMarker
-                ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                : live,
-            );
-          }),
+              }),
+            ),
+          ),
         ),
       [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
         Stream.unwrap(
-          Effect.gen(function* () {
-            const matching = (event: OrchestrationEvent) =>
-              event.aggregateKind === "thread" &&
-              event.aggregateId === input.threadId &&
-              isThreadDetailEvent(event);
-            const live = orchestration.streamDomainEvents.pipe(
-              Stream.filter(matching),
-              Stream.map((event) => ({
-                kind: "event" as const,
-                event: projectActivityEvent(event),
-              })),
-            );
-            if (input.afterSequence !== undefined) {
-              const head = yield* orchestration.latestSequence;
-              const gap = head - input.afterSequence;
-              if (gap >= 0 && gap <= RESUME_MAX_GAP) {
-                const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
-                  Stream.filter(matching),
-                  Stream.map((event) => ({
-                    kind: "event" as const,
-                    event: projectActivityEvent(event),
-                  })),
-                  Stream.mapError(
-                    (cause) =>
-                      new OrchestrationGetSnapshotError({
-                        message: `Failed to resume thread ${input.threadId}`,
-                        cause,
-                      }),
-                  ),
-                );
+          orchestration.subscribeDomainEvents.pipe(
+            Effect.flatMap((subscribedEvents) =>
+              Effect.gen(function* () {
+                const matching = (event: OrchestrationEvent) =>
+                  event.aggregateKind === "thread" &&
+                  event.aggregateId === input.threadId &&
+                  isThreadDetailEvent(event);
+                const liveAfter = (sequence: number) =>
+                  subscribedEvents.pipe(
+                    Stream.filter((event) => event.sequence > sequence && matching(event)),
+                    Stream.map((event) => ({
+                      kind: "event" as const,
+                      event: projectActivityEvent(event),
+                    })),
+                  );
+                if (input.afterSequence !== undefined) {
+                  const head = yield* orchestration.latestSequence;
+                  const gap = head - input.afterSequence;
+                  if (gap >= 0 && gap <= RESUME_MAX_GAP) {
+                    const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
+                      Stream.filter(matching),
+                      Stream.map((event) => ({
+                        kind: "event" as const,
+                        event: projectActivityEvent(event),
+                      })),
+                      Stream.mapError(
+                        (cause) =>
+                          new OrchestrationGetSnapshotError({
+                            message: `Failed to resume thread ${input.threadId}`,
+                            cause,
+                          }),
+                      ),
+                    );
+                    const live = liveAfter(head);
+                    return Stream.concat(
+                      replay,
+                      input.requestCompletionMarker
+                        ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
+                        : live,
+                    );
+                  }
+                }
+                const snapshot = yield* projections
+                  .getThreadDetailSnapshot(
+                    input.threadId,
+                    input.turnLimit === undefined ? undefined : { turnLimit: input.turnLimit },
+                  )
+                  .pipe(
+                    Effect.mapError(
+                      (cause) =>
+                        new OrchestrationGetSnapshotError({
+                          message: `Failed to load thread ${input.threadId}`,
+                          cause,
+                        }),
+                    ),
+                  );
+                if (Option.isNone(snapshot)) {
+                  return yield* new OrchestrationGetSnapshotError({
+                    message: `Thread ${input.threadId} was not found`,
+                    cause: input.threadId,
+                  });
+                }
+                const live = liveAfter(snapshot.value.snapshotSequence);
                 return Stream.concat(
-                  replay,
+                  Stream.make({
+                    kind: "snapshot" as const,
+                    snapshot: projectThreadDetailSnapshot(snapshot.value),
+                  }),
                   input.requestCompletionMarker
                     ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
                     : live,
                 );
-              }
-            }
-            const snapshot = yield* projections
-              .getThreadDetailSnapshot(
-                input.threadId,
-                input.turnLimit === undefined ? undefined : { turnLimit: input.turnLimit },
-              )
-              .pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new OrchestrationGetSnapshotError({
-                      message: `Failed to load thread ${input.threadId}`,
-                      cause,
-                    }),
-                ),
-              );
-            if (Option.isNone(snapshot)) {
-              return yield* new OrchestrationGetSnapshotError({
-                message: `Thread ${input.threadId} was not found`,
-                cause: input.threadId,
-              });
-            }
-            return Stream.concat(
-              Stream.make({
-                kind: "snapshot" as const,
-                snapshot: projectThreadDetailSnapshot(snapshot.value),
               }),
-              input.requestCompletionMarker
-                ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                : live,
-            );
-          }),
+            ),
+          ),
         ),
     });
   }),

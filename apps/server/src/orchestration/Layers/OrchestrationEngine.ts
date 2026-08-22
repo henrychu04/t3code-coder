@@ -48,6 +48,9 @@ interface CommandEnvelope {
   result: Deferred.Deferred<{ sequence: number }, OrchestrationDispatchError>;
 }
 
+export const subscribeToDomainEvents = <A>(eventPubSub: PubSub.PubSub<A>) =>
+  PubSub.subscribe(eventPubSub).pipe(Effect.map(Stream.fromSubscription));
+
 function commandToAggregateRef(command: OrchestrationCommand): {
   readonly aggregateKind: "project" | "thread";
   readonly aggregateId: ProjectId | ThreadId;
@@ -297,6 +300,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
     get streamDomainEvents(): OrchestrationEngineShape["streamDomainEvents"] {
       return Stream.fromPubSub(eventPubSub);
     },
+    subscribeDomainEvents: subscribeToDomainEvents(eventPubSub),
     // The command read model's snapshotSequence tracks the latest committed
     // event sequence (updated on the worker fiber). A plain property read is a
     // consistent, committed value — reassignment of `commandReadModel` is

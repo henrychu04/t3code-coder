@@ -11,7 +11,9 @@
     "typecheck:helper": "tsgo --noEmit -p apps/coder-helper/tsconfig.json",
     "typecheck:server": "tsgo --noEmit -p apps/server/tsconfig.json",
     "typecheck:web": "tsgo --noEmit -p apps/web/tsconfig.json",
-    "test:coder": "node --test apps/coder-gateway/src/server.test.ts apps/coder-helper/src/*.test.ts packages/coder-cli/src/*.test.ts"
+    "test:contracts": "pnpm --filter @t3tools/contracts test",
+    "test:server": "vp test run apps/server/src/provider/Drivers/ClaudeCli.test.ts apps/server/src/provider/Layers/ClaudeAdapter.test.ts apps/server/src/coderVcsStatus.test.ts apps/server/src/orchestration/Layers/OrchestrationSubscription.test.ts apps/server/src/serverSettings.redaction.test.ts apps/server/src/terminal/ScriptPtyAdapter.test.ts",
+    "test:coder": "node --test apps/coder-gateway/src/server.test.ts apps/coder-helper/src/*.test.ts packages/coder-cli/src/*.test.ts && pnpm test:contracts && pnpm test:server"
   },
   "devDependencies": {
     "@types/node": "catalog:",

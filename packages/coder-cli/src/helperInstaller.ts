@@ -17,26 +17,44 @@ export function installCoderHelper(
       windowsHide: true,
     });
     let stderr = "";
+    let stdinError: Error | undefined;
+    let settled = false;
+    const resolveOnce = (): void => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const rejectOnce = (cause: unknown): void => {
+      if (settled) return;
+      settled = true;
+      reject(cause);
+    };
     child.stderr.on("data", (chunk: Buffer) => {
       if (stderr.length >= MAX_INSTALL_ERROR_BYTES) return;
       stderr += chunk.toString("utf8").slice(0, MAX_INSTALL_ERROR_BYTES - stderr.length);
     });
-    child.once("error", reject);
+    child.stdin.on("error", (cause: Error) => {
+      // The process exit below is authoritative and includes Coder's stderr.
+      // Retaining this error keeps an early EPIPE from becoming uncaught.
+      stdinError = cause;
+    });
+    child.once("error", rejectOnce);
     child.once("exit", (code, signal) => {
       if (code === 0) {
-        resolve();
+        resolveOnce();
         return;
       }
-      reject(
+      const detail = stderr.trim() || stdinError?.message.trim() || "";
+      rejectOnce(
         new Error(
-          `Coder helper installation failed (code ${String(code)}, signal ${String(signal)}).${stderr.trim().length === 0 ? "" : ` ${stderr.trim()}`}`,
+          `Coder helper installation failed (code ${String(code)}, signal ${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
         ),
       );
     });
     const bundle = createReadStream(helperBundlePath);
     bundle.once("error", (cause) => {
       child.kill();
-      reject(cause);
+      rejectOnce(cause);
     });
     bundle.pipe(child.stdin);
   });

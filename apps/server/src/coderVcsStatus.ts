@@ -38,19 +38,21 @@ export const layer = Layer.effect(
     return CoderVcsStatus.of({
       refresh,
       stream: (cwd) =>
-        Stream.concat(
-          Stream.fromEffect(
-            read(cwd).pipe(
-              Effect.map((status) => ({
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const subscription = yield* PubSub.subscribe(changes);
+            const latest = yield* read(cwd);
+            return Stream.concat(
+              Stream.make({
                 _tag: "snapshot" as const,
-                local: status,
-              })),
-            ),
-          ),
-          Stream.fromPubSub(changes).pipe(
-            Stream.filter((change) => change.cwd === cwd),
-            Stream.map((change) => change.event),
-          ),
+                local: latest,
+              }),
+              Stream.fromSubscription(subscription).pipe(
+                Stream.filter((change) => change.cwd === cwd),
+                Stream.map((change) => change.event),
+              ),
+            );
+          }),
         ),
     });
   }),

@@ -13,6 +13,7 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   type ProviderInstanceConfig,
+  type ProviderInstanceEnvironmentVariable,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -108,8 +109,33 @@ const normalizeServerSettings = (
     ),
   );
 
+function redactProviderEnvironmentVariable(
+  variable: ProviderInstanceEnvironmentVariable,
+): ProviderInstanceEnvironmentVariable {
+  if (!variable.sensitive) {
+    const { valueRedacted: _omit, ...rest } = variable;
+    return rest;
+  }
+  return {
+    ...variable,
+    value: "",
+    ...(variable.value.length > 0 || variable.valueRedacted ? { valueRedacted: true } : {}),
+  };
+}
+
 export function redactServerSettingsForClient(settings: ServerSettings): ServerSettings {
-  return settings;
+  const providerInstances = Object.fromEntries(
+    Object.entries(settings.providerInstances).map(([instanceId, instance]) => [
+      instanceId,
+      instance.environment
+        ? {
+            ...instance,
+            environment: instance.environment.map(redactProviderEnvironmentVariable),
+          }
+        : instance,
+    ]),
+  );
+  return { ...settings, providerInstances };
 }
 
 export class ServerSettingsService extends Context.Service<
