@@ -1,6 +1,7 @@
 import {
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
+  DEFAULT_RUNTIME_MODE,
   type ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -118,7 +119,7 @@ export const autoBootstrapWorkspace = Effect.gen(function* () {
     title: "New thread",
     modelSelection: defaultModelSelection,
     interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
-    runtimeMode: "full-access",
+    runtimeMode: DEFAULT_RUNTIME_MODE,
     branch: null,
     worktreePath: null,
     createdAt,

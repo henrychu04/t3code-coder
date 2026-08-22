@@ -46,7 +46,8 @@ Claude authentication exists only in the workspace and is owned by the installed
 - Git fetch, pull, push, pull requests, and hosted source-control integrations;
 - MCP servers, Claude browser integration, free-form Claude launch flags, and the packaged Anthropic
   Agent SDK;
-- automatic browser launch and hosted CI workflows.
+- automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
+  the gateway's loopback URL.
 
 The versioned helper bootstrap over Coder stdin is the sole control-plane transfer exception.
 
@@ -80,7 +81,7 @@ pnpm build
 npm start
 ```
 
-`npm start` prints an ephemeral loopback URL. Open it manually in an approved browser. Dependency
-installation is the only step that normally contacts a package registry; runtime startup does not
-install packages or check for updates. Registry URLs present in the SBOM are inventory metadata, not
-runtime endpoints.
+`npm start` prints an ephemeral loopback URL. Open it manually in an approved browser, or use the
+explicit `npm run start:open` opt-in to open that loopback URL. Dependency installation is the only
+step that normally contacts a package registry; runtime startup does not install packages or check
+for updates. Registry URLs present in the SBOM are inventory metadata, not runtime endpoints.

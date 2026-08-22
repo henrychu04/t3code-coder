@@ -100,7 +100,8 @@ async function serveStaticFile(
     );
     return true;
   } catch (cause) {
-    if ((cause as NodeJS.ErrnoException).code !== "ENOENT") throw cause;
+    const code = (cause as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "EISDIR" && code !== "ENOTDIR") throw cause;
     return false;
   }
 }
@@ -158,6 +159,29 @@ function runCoderLogin(executable: string, args: readonly string[]): Promise<voi
 export interface DiscoveredCoderWorkspace {
   readonly name: string;
   readonly target: string;
+}
+
+function workspaceConnectionIsCurrent(
+  previous: CoderProfileConfig,
+  next: CoderProfileConfig,
+  workspaceId: string,
+): boolean {
+  const previousWorkspace = previous.workspaces.find((entry) => entry.id === workspaceId);
+  const nextWorkspace = next.workspaces.find((entry) => entry.id === workspaceId);
+  if (previousWorkspace === undefined || nextWorkspace === undefined) return false;
+  const previousDeployment = previous.deployments.find(
+    (entry) => entry.id === previousWorkspace.deploymentId,
+  );
+  const nextDeployment = next.deployments.find((entry) => entry.id === nextWorkspace.deploymentId);
+  return (
+    previousDeployment !== undefined &&
+    nextDeployment !== undefined &&
+    previousWorkspace.deploymentId === nextWorkspace.deploymentId &&
+    previousWorkspace.workspace === nextWorkspace.workspace &&
+    previousWorkspace.workspaceRoot === nextWorkspace.workspaceRoot &&
+    previousDeployment.url === nextDeployment.url &&
+    previousDeployment.executable === nextDeployment.executable
+  );
 }
 
 function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
@@ -293,6 +317,7 @@ export async function startLocalCoderGateway(options?: {
   const workspaceConnections = new Map<string, CoderHelperConnection>();
   const workspaceConnectionStarts = new Map<string, Promise<CoderHelperConnection>>();
   const workspaceSockets = new Map<string, WebSocket>();
+  const pendingWorkspaceUpgrades = new Set<string>();
   const openHelper = options?.connectHelper ?? connectCoderHelper;
   const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
   const probeWorkspace = options?.probeWorkspace ?? runCoderWorkspaceProbe;
@@ -309,11 +334,12 @@ export async function startLocalCoderGateway(options?: {
     if (pending !== undefined) return pending;
 
     const start = (async () => {
-      const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+      const connectionConfig = profileConfig;
+      const workspace = connectionConfig.workspaces.find((entry) => entry.id === workspaceId);
       const deployment =
         workspace === undefined
           ? undefined
-          : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+          : connectionConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
       if (workspace === undefined || deployment === undefined) {
         throw new Error("Unknown Coder workspace.");
       }
@@ -325,6 +351,10 @@ export async function startLocalCoderGateway(options?: {
         );
       }
       const connection = await openHelper(buildCoderHelperInvocation(deployment, workspace));
+      if (!workspaceConnectionIsCurrent(connectionConfig, profileConfig, workspaceId)) {
+        connection.close();
+        throw new Error("Coder workspace configuration changed while connecting.");
+      }
       workspaceConnections.set(workspaceId, connection);
       void connection.closed.then(() => {
         if (workspaceConnections.get(workspaceId) === connection) {
@@ -344,183 +374,202 @@ export async function startLocalCoderGateway(options?: {
   };
 
   const server = NodeHttp.createServer(async (request, response) => {
-    const address = server.address();
-    if (address === null || typeof address === "string") {
-      sendText(response, 503, "text/plain; charset=utf-8", "Gateway unavailable.");
-      return;
-    }
-    const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
-    const expectedOrigin = `http://${expectedHost}`;
-    if (request.headers.host !== expectedHost) {
-      sendText(response, 421, "text/plain; charset=utf-8", "Misdirected request.");
-      return;
-    }
+    try {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        sendText(response, 503, "text/plain; charset=utf-8", "Gateway unavailable.");
+        return;
+      }
+      const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
+      const expectedOrigin = `http://${expectedHost}`;
+      if (request.headers.host !== expectedHost) {
+        sendText(response, 421, "text/plain; charset=utf-8", "Misdirected request.");
+        return;
+      }
 
-    const requestUrl = new URL(request.url ?? "/", expectedOrigin);
-    if (request.method === "GET" && request.url === "/healthz") {
-      sendText(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
-      return;
-    }
-    if (request.method === "GET" && request.url === "/api/config") {
-      sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(profileConfig));
-      return;
-    }
-    if (request.method === "GET" && request.url === "/api/connections") {
-      sendText(
-        response,
-        200,
-        "application/json; charset=utf-8",
-        JSON.stringify(
-          [...workspaceConnections].map(([workspaceId, connection]) => ({
-            workspaceId,
-            info: connection.info,
-          })),
-        ),
-      );
-      return;
-    }
-    if (request.method === "POST" && request.url === "/api/config") {
-      if (request.headers.origin !== expectedOrigin) {
-        sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+      const requestUrl = new URL(request.url ?? "/", expectedOrigin);
+      if (request.method === "GET" && request.url === "/healthz") {
+        sendText(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
         return;
       }
-      if (!request.headers["content-type"]?.startsWith("application/json")) {
-        sendText(response, 415, "text/plain; charset=utf-8", "JSON content required.");
-        return;
-      }
-      try {
-        const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
-        if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
-        profileConfig = nextConfig;
+      if (request.method === "GET" && request.url === "/api/config") {
         sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(profileConfig));
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : "Invalid configuration.";
-        sendText(response, 400, "text/plain; charset=utf-8", message);
-      }
-      return;
-    }
-    const loginRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/login$/);
-    if (request.method === "POST" && loginRoute !== null && loginRoute !== undefined) {
-      if (request.headers.origin !== expectedOrigin) {
-        sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
         return;
       }
-      let deploymentId: string;
-      try {
-        deploymentId = decodeURIComponent(loginRoute[1] ?? "");
-      } catch {
-        sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
-        return;
-      }
-      const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
-      if (deployment === undefined) {
-        sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
-        return;
-      }
-      try {
-        const login = buildCoderLoginInvocation(deployment);
-        await runCoderLogin(login.executable, login.args);
-        sendText(response, 200, "application/json; charset=utf-8", '{"status":"authenticated"}');
-      } catch (cause) {
+      if (request.method === "GET" && request.url === "/api/connections") {
         sendText(
           response,
-          502,
-          "text/plain; charset=utf-8",
-          cause instanceof Error ? cause.message : "Coder login failed.",
+          200,
+          "application/json; charset=utf-8",
+          JSON.stringify(
+            [...workspaceConnections].map(([workspaceId, connection]) => ({
+              workspaceId,
+              info: connection.info,
+            })),
+          ),
         );
-      }
-      return;
-    }
-    const workspaceListRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/workspaces$/);
-    if (
-      request.method === "POST" &&
-      workspaceListRoute !== null &&
-      workspaceListRoute !== undefined
-    ) {
-      if (request.headers.origin !== expectedOrigin) {
-        sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
         return;
       }
-      let deploymentId: string;
-      try {
-        deploymentId = decodeURIComponent(workspaceListRoute[1] ?? "");
-      } catch {
-        sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
-        return;
-      }
-      const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
-      if (deployment === undefined) {
-        sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
-        return;
-      }
-      try {
-        const workspaces = await listWorkspaces(buildCoderListWorkspacesInvocation(deployment));
-        sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ workspaces }));
-      } catch (cause) {
-        sendText(
-          response,
-          502,
-          "text/plain; charset=utf-8",
-          cause instanceof Error ? cause.message : "Coder workspace discovery failed.",
-        );
-      }
-      return;
-    }
-    const connectionRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/connection$/);
-    if (connectionRoute !== null && connectionRoute !== undefined) {
-      if (request.headers.origin !== expectedOrigin) {
-        sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-        return;
-      }
-      let workspaceId: string;
-      try {
-        workspaceId = decodeURIComponent(connectionRoute[1] ?? "");
-      } catch {
-        sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
-        return;
-      }
-      const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
-      const deployment =
-        workspace === undefined
-          ? undefined
-          : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-      if (workspace === undefined || deployment === undefined) {
-        sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
-        return;
-      }
-
-      if (request.method === "POST") {
+      if (request.method === "POST" && request.url === "/api/config") {
+        if (request.headers.origin !== expectedOrigin) {
+          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+          return;
+        }
+        if (!request.headers["content-type"]?.startsWith("application/json")) {
+          sendText(response, 415, "text/plain; charset=utf-8", "JSON content required.");
+          return;
+        }
         try {
-          const connection = await ensureWorkspaceConnection(workspaceId);
+          const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
+          if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
+          for (const [workspaceId, connection] of workspaceConnections) {
+            if (workspaceConnectionIsCurrent(profileConfig, nextConfig, workspaceId)) continue;
+            connection.close();
+            workspaceConnections.delete(workspaceId);
+            workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
+          }
+          profileConfig = nextConfig;
+          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(profileConfig));
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : "Invalid configuration.";
+          sendText(response, 400, "text/plain; charset=utf-8", message);
+        }
+        return;
+      }
+      const loginRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/login$/);
+      if (request.method === "POST" && loginRoute !== null && loginRoute !== undefined) {
+        if (request.headers.origin !== expectedOrigin) {
+          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+          return;
+        }
+        let deploymentId: string;
+        try {
+          deploymentId = decodeURIComponent(loginRoute[1] ?? "");
+        } catch {
+          sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
+          return;
+        }
+        const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
+        if (deployment === undefined) {
+          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
+          return;
+        }
+        try {
+          const login = buildCoderLoginInvocation(deployment);
+          await runCoderLogin(login.executable, login.args);
+          sendText(response, 200, "application/json; charset=utf-8", '{"status":"authenticated"}');
+        } catch (cause) {
+          sendText(
+            response,
+            502,
+            "text/plain; charset=utf-8",
+            cause instanceof Error ? cause.message : "Coder login failed.",
+          );
+        }
+        return;
+      }
+      const workspaceListRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/workspaces$/);
+      if (
+        request.method === "POST" &&
+        workspaceListRoute !== null &&
+        workspaceListRoute !== undefined
+      ) {
+        if (request.headers.origin !== expectedOrigin) {
+          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+          return;
+        }
+        let deploymentId: string;
+        try {
+          deploymentId = decodeURIComponent(workspaceListRoute[1] ?? "");
+        } catch {
+          sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
+          return;
+        }
+        const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
+        if (deployment === undefined) {
+          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
+          return;
+        }
+        try {
+          const workspaces = await listWorkspaces(buildCoderListWorkspacesInvocation(deployment));
           sendText(
             response,
             200,
             "application/json; charset=utf-8",
-            JSON.stringify({ workspaceId, info: connection.info }),
+            JSON.stringify({ workspaces }),
           );
         } catch (cause) {
-          const message = cause instanceof Error ? cause.message : "Coder connection failed.";
-          sendText(response, 502, "text/plain; charset=utf-8", message);
+          sendText(
+            response,
+            502,
+            "text/plain; charset=utf-8",
+            cause instanceof Error ? cause.message : "Coder workspace discovery failed.",
+          );
         }
         return;
       }
-      if (request.method === "DELETE") {
-        const connection = workspaceConnections.get(workspaceId);
-        connection?.close();
-        workspaceConnections.delete(workspaceId);
-        sendText(response, 200, "application/json; charset=utf-8", '{"status":"closed"}');
+      const connectionRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/connection$/);
+      if (connectionRoute !== null && connectionRoute !== undefined) {
+        if (request.headers.origin !== expectedOrigin) {
+          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+          return;
+        }
+        let workspaceId: string;
+        try {
+          workspaceId = decodeURIComponent(connectionRoute[1] ?? "");
+        } catch {
+          sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+          return;
+        }
+        const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+        const deployment =
+          workspace === undefined
+            ? undefined
+            : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+        if (workspace === undefined || deployment === undefined) {
+          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+          return;
+        }
+
+        if (request.method === "POST") {
+          try {
+            const connection = await ensureWorkspaceConnection(workspaceId);
+            sendText(
+              response,
+              200,
+              "application/json; charset=utf-8",
+              JSON.stringify({ workspaceId, info: connection.info }),
+            );
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "Coder connection failed.";
+            sendText(response, 502, "text/plain; charset=utf-8", message);
+          }
+          return;
+        }
+        if (request.method === "DELETE") {
+          const connection = workspaceConnections.get(workspaceId);
+          connection?.close();
+          workspaceConnections.delete(workspaceId);
+          sendText(response, 200, "application/json; charset=utf-8", '{"status":"closed"}');
+          return;
+        }
+      }
+      if (request.method === "GET" && options?.staticDir) {
+        if (await serveStaticFile(response, options.staticDir, requestUrl.pathname)) return;
+        if (await serveStaticFile(response, options.staticDir, "/")) return;
+      }
+      if (request.method === "GET" && requestUrl.pathname === "/") {
+        sendText(response, 200, "text/html; charset=utf-8", indexHtml);
         return;
       }
+      sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
+    } catch {
+      if (response.headersSent) {
+        response.destroy();
+      } else {
+        sendText(response, 500, "text/plain; charset=utf-8", "Internal server error.");
+      }
     }
-    if (request.method === "GET" && options?.staticDir) {
-      if (await serveStaticFile(response, options.staticDir, requestUrl.pathname)) return;
-      if (await serveStaticFile(response, options.staticDir, "/")) return;
-    }
-    if (request.method === "GET" && requestUrl.pathname === "/") {
-      sendText(response, 200, "text/html; charset=utf-8", indexHtml);
-      return;
-    }
-    sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
   });
 
   server.on("upgrade", (request, socket, head) => {
@@ -552,52 +601,69 @@ export async function startLocalCoderGateway(options?: {
         rejectWebSocketUpgrade(socket, 404, "Not Found");
         return;
       }
-      if (workspaceSockets.has(workspaceId)) {
+      if (workspaceSockets.has(workspaceId) || pendingWorkspaceUpgrades.has(workspaceId)) {
         rejectWebSocketUpgrade(socket, 409, "Conflict");
         return;
       }
+      pendingWorkspaceUpgrades.add(workspaceId);
 
       let helper: CoderHelperConnection;
       try {
         helper = await ensureWorkspaceConnection(workspaceId);
       } catch {
+        pendingWorkspaceUpgrades.delete(workspaceId);
         rejectWebSocketUpgrade(socket, 502, "Bad Gateway");
         return;
       }
-      if (socket.destroyed) return;
-      if (workspaceSockets.has(workspaceId)) {
-        rejectWebSocketUpgrade(socket, 409, "Conflict");
+      if (socket.destroyed) {
+        pendingWorkspaceUpgrades.delete(workspaceId);
         return;
       }
 
-      webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-        workspaceSockets.set(workspaceId, webSocket);
-        const unsubscribe = helper.onRpcMessage((message) => {
-          if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
+      try {
+        webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+          pendingWorkspaceUpgrades.delete(workspaceId);
+          workspaceSockets.set(workspaceId, webSocket);
+          const unsubscribe = helper.onRpcMessage((message) => {
+            if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
+          });
+          webSocket.on("message", (data, isBinary) => {
+            if (isBinary) {
+              webSocket.close(1003, "Text RPC messages required.");
+              return;
+            }
+            let message: unknown;
+            try {
+              message = JSON.parse(data.toString("utf8")) as unknown;
+            } catch {
+              webSocket.close(1007, "Invalid RPC message.");
+              return;
+            }
+            try {
+              helper.sendRpc(message);
+            } catch {
+              webSocket.close(1011, "Coder workspace disconnected.");
+            }
+          });
+          webSocket.once("close", () => {
+            unsubscribe();
+            if (workspaceSockets.get(workspaceId) === webSocket) {
+              workspaceSockets.delete(workspaceId);
+            }
+          });
+          void helper.closed.then((exit) => {
+            if (webSocket.readyState === WebSocket.OPEN) {
+              webSocket.close(
+                exit.expected ? 1001 : 1011,
+                exit.reason ?? "Coder workspace disconnected.",
+              );
+            }
+          });
         });
-        webSocket.on("message", (data, isBinary) => {
-          if (isBinary) {
-            webSocket.close(1003, "Text RPC messages required.");
-            return;
-          }
-          try {
-            helper.sendRpc(JSON.parse(data.toString("utf8")) as unknown);
-          } catch {
-            webSocket.close(1007, "Invalid RPC message.");
-          }
-        });
-        webSocket.once("close", () => {
-          unsubscribe();
-          if (workspaceSockets.get(workspaceId) === webSocket) {
-            workspaceSockets.delete(workspaceId);
-          }
-        });
-        void helper.closed.then((exit) => {
-          if (webSocket.readyState === WebSocket.OPEN) {
-            webSocket.close(exit.expected ? 1001 : 1011, "Coder workspace disconnected.");
-          }
-        });
-      });
+      } catch (cause) {
+        pendingWorkspaceUpgrades.delete(workspaceId);
+        throw cause;
+      }
     })().catch(() => {
       if (!socket.destroyed) rejectWebSocketUpgrade(socket, 500, "Internal Server Error");
     });
@@ -622,6 +688,7 @@ export async function startLocalCoderGateway(options?: {
     close: async () => {
       for (const webSocket of workspaceSockets.values()) webSocket.close(1001, "Gateway stopped.");
       workspaceSockets.clear();
+      pendingWorkspaceUpgrades.clear();
       const connectionClosures = [...workspaceConnections.values()].map((connection) => {
         connection.close();
         return connection.closed;

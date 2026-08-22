@@ -8,6 +8,19 @@ import * as PtyAdapter from "./PtyAdapter.ts";
 
 const quoteShellWord = (value: string): string => `'${value.replaceAll("'", `'"'"'`)}'`;
 
+export const buildScriptCommand = (input: {
+  readonly shell: string;
+  readonly args?: readonly string[];
+  readonly cols: number;
+  readonly rows: number;
+}): string =>
+  [
+    `stty cols ${Math.max(1, input.cols)} rows ${Math.max(1, input.rows)};`,
+    "exec",
+    quoteShellWord(input.shell),
+    ...(input.args ?? []).map(quoteShellWord),
+  ].join(" ");
+
 class ScriptPtyProcess implements PtyAdapter.PtyProcess {
   private readonly child: ChildProcessWithoutNullStreams;
   private readonly dataListeners = new Set<(data: string) => void>();
@@ -69,12 +82,7 @@ export const make = Effect.succeed(
     spawn: (input) =>
       Effect.try({
         try: () => {
-          const command = [
-            `stty cols ${Math.max(1, input.cols)} rows ${Math.max(1, input.rows)}`,
-            "exec",
-            quoteShellWord(input.shell),
-            ...(input.args ?? []).map(quoteShellWord),
-          ].join(" ");
+          const command = buildScriptCommand(input);
           const child = spawn("script", ["-qefc", command, "/dev/null"], {
             cwd: input.cwd,
             env: { ...input.env, TERM: input.env.TERM ?? "xterm-256color" },

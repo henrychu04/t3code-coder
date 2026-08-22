@@ -16,11 +16,13 @@ import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION, CoderHelperInf
 const MAX_HELPER_LINE_BYTES = 8 * 1024 * 1024;
 const MAX_HELPER_ERROR_BYTES = 32 * 1024;
 const DEFAULT_NEGOTIATION_TIMEOUT_MS = 60_000;
+const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 
 export interface CoderHelperExit {
   readonly code: number | null;
   readonly signal: NodeJS.Signals | null;
   readonly expected: boolean;
+  readonly reason?: string;
 }
 
 export interface CoderHelperConnection {
@@ -81,6 +83,7 @@ export function connectCoderHelper(
     readonly environment?: NodeJS.ProcessEnv;
     readonly negotiationTimeoutMs?: number;
     readonly spawnProcess?: SpawnCoderProcess;
+    readonly terminationGraceMs?: number;
   },
 ): Promise<CoderHelperConnection> {
   const spawnProcess = options?.spawnProcess ?? spawn;
@@ -91,14 +94,30 @@ export function connectCoderHelper(
     ...(options?.environment === undefined ? {} : { env: options.environment }),
   });
   let closeRequested = false;
+  let unexpectedExitReason: string | undefined;
   let stderr = "";
   const rpcListeners = new Set<(message: unknown) => void>();
 
   const closed = new Promise<CoderHelperExit>((resolve) => {
-    child.once("exit", (code, signal) =>
-      resolve({ code, signal, expected: isExpectedCoderHelperExit(code, signal, closeRequested) }),
+    child.once("exit", (code, signal) => {
+      const expected =
+        unexpectedExitReason === undefined &&
+        isExpectedCoderHelperExit(code, signal, closeRequested);
+      resolve({
+        code,
+        signal,
+        expected,
+        ...(unexpectedExitReason === undefined ? {} : { reason: unexpectedExitReason }),
+      });
+    });
+    child.once("error", () =>
+      resolve({
+        code: null,
+        signal: null,
+        expected: closeRequested && unexpectedExitReason === undefined,
+        ...(unexpectedExitReason === undefined ? {} : { reason: unexpectedExitReason }),
+      }),
     );
-    child.once("error", () => resolve({ code: null, signal: null, expected: closeRequested }));
   });
 
   child.stderr.on("data", (chunk: Buffer) => {
@@ -127,6 +146,15 @@ export function connectCoderHelper(
       cleanupNegotiation();
       reject(cause);
     };
+    const terminateForFailure = (reason: string, cause?: unknown): void => {
+      if (closeRequested) return;
+      if (negotiated) {
+        unexpectedExitReason = reason;
+      } else {
+        fail(cause ?? new Error(reason));
+      }
+      child.kill();
+    };
     const onError = (cause: Error) => fail(cause);
     const onEarlyExit = (code: number | null, signal: NodeJS.Signals | null) => {
       const detail = stderr.trim();
@@ -139,8 +167,11 @@ export function connectCoderHelper(
     const onStdout = (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
       if (Buffer.byteLength(stdout, "utf8") > MAX_HELPER_LINE_BYTES) {
-        fail(new Error("Coder helper negotiation response is too large."));
-        child.kill();
+        terminateForFailure(
+          negotiated
+            ? "Coder helper emitted an oversized RPC message."
+            : "Coder helper negotiation response is too large.",
+        );
         return;
       }
       let newline = stdout.indexOf("\n");
@@ -172,7 +203,7 @@ export function connectCoderHelper(
               info: { ...helperInfo, environment: serverConfig.environment },
               closed,
               sendRpc: (rpcMessage) => {
-                if (closeRequested || child.stdin.destroyed) {
+                if (closeRequested || child.stdin.destroyed || child.stdin.writableEnded) {
                   throw new Error("Coder workspace helper is disconnected.");
                 }
                 const encoded = JSON.stringify(rpcMessage);
@@ -189,14 +220,29 @@ export function connectCoderHelper(
                 if (closeRequested) return;
                 closeRequested = true;
                 child.stdin.end();
+                if (child.exitCode === null && child.signalCode === null) {
+                  child.kill("SIGTERM");
+                  const forceKillSignal = AbortSignal.timeout(
+                    options?.terminationGraceMs ?? DEFAULT_TERMINATION_GRACE_MS,
+                  );
+                  forceKillSignal.addEventListener("abort", () => {
+                    if (child.exitCode === null && child.signalCode === null) {
+                      child.kill("SIGKILL");
+                    }
+                  });
+                }
               },
             });
           } else {
             for (const listener of rpcListeners) listener(message);
           }
         } catch (cause) {
-          fail(cause);
-          child.kill();
+          terminateForFailure(
+            negotiated
+              ? "Coder helper emitted a malformed RPC message."
+              : "Coder helper returned an invalid negotiation response.",
+            cause,
+          );
           return;
         }
         newline = stdout.indexOf("\n");
@@ -205,6 +251,9 @@ export function connectCoderHelper(
 
     child.once("error", onError);
     child.once("exit", onEarlyExit);
+    child.stdin.on("error", (cause: Error) => {
+      terminateForFailure("Coder workspace helper stdin failed.", cause);
+    });
     child.stdout.on("data", onStdout);
     child.stdin.write(
       `${JSON.stringify({
