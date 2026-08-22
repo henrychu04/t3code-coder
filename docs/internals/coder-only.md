@@ -8,7 +8,9 @@ not use the upstream desktop, relay, Tailscale, hosted web, or direct remote-ser
 
 The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
 client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace
-targets, and an optional Coder executable path. Browser UI preferences
+targets, and an optional Coder executable path. A clipboard image may be staged temporarily in an OS
+temporary directory while it is copied to the workspace; the local copy is deleted immediately after
+the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
 and provider sessions are memory-only.
 Each active workspace gets one loopback WebSocket that translates frame-delimited browser RPC into
@@ -56,8 +58,9 @@ processes and managed browser extensions as trusted by the deployment environmen
 
 ## Supported hosts
 
-Development is supported on macOS. The production local host is Windows 11, so local paths and
-processes must use Node platform APIs and argument-array spawning with `shell: false`. The initial
+Development is supported on macOS. The production local host is Windows 11 with the OpenSSH Client
+feature installed, so local paths and processes must use Node platform APIs and argument-array
+spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
 remote OS and architecture, realizes a Node.js 24 package from the workspace's configured
 `nixpkgs` only when that runtime is not already available, and checks Git, Claude Code, `script(1)`,
@@ -68,16 +71,24 @@ negotiated before a helper is used.
 
 ## Network and transfer constraints
 
-The T3 gateway does not make external HTTP requests. Its only non-loopback child transport is the
-installed Coder CLI. The helper opens no network listener; Claude and user-initiated terminal
-commands remain subject to workspace network policy.
+The T3 gateway does not make external HTTP requests. The installed Coder CLI is the only process
+allowed to make a non-loopback workspace connection. The gateway may invoke OpenSSH `scp` for helper
+bootstrap and validated clipboard-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
+SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
+no network listener; Claude and user-initiated terminal commands remain subject to workspace policy.
 
-User-facing file transfer is disabled. The distribution does not expose attachments, uploads,
-downloads, exports, drag-and-drop, or clipboard-image transfer. Messages, terminal output, and code
-diffs necessarily cross the foreground connection for display but are not durably cached locally.
-Installing a versioned helper through Coder is a control-plane bootstrap operation, not a file
-transfer feature. The bootstrap is length-framed because Coder 2.25.3 requests a PTY for remote
-commands, so EOF does not reliably propagate to a remote reader.
+General user-facing file transfer remains disabled. The sole user-facing exception is an image
+pasted into the message composer. The browser sends the image only to the loopback gateway. The
+gateway accepts signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS
+temporary directory, and copies it through helper-scoped SCP to a generated path beneath
+`$HOME/.t3-coder/attachments`. It then deletes the local staging file and inserts the remote path
+into the draft. User-controlled filesystem paths, arbitrary files, downloads, exports,
+drag-and-drop, and background synchronization remain prohibited.
+
+Remote uploads must first use a generated temporary filename and then be atomically renamed to
+their final generated filename after successful transfer. Failed or incomplete transfers must be
+removed. Image bytes, local paths, Coder credentials, and SCP configuration must not be logged.
+Any temporary SSH configuration must contain no credentials and must be removed after the transfer.
 
 Source-control UI is limited to repository-local operations such as status, diffs, branches,
 worktrees, commits, and checkpoints. Fetch, pull, push, pull-request, and provider-hosted operations

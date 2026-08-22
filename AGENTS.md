@@ -13,29 +13,41 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
 - Keep the local gateway on IPv4 loopback with an ephemeral port, exact Host/Origin checks, no
   CORS, and no application authentication token.
-- The only local non-loopback child transport is the installed Coder CLI. Use argument-array
-  spawning with `shell: false` and include `--disable-network-telemetry` in every Coder invocation.
+- The installed Coder CLI is the only process allowed to make a non-loopback workspace connection.
+  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated clipboard-image
+  uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
+  to a workspace. Use argument-array spawning with `shell: false` and include
+  `--disable-network-telemetry`, `--disable-direct-connections`, and `--no-version-warning` in every
+  underlying Coder invocation.
 - Coder owns authentication for each configured deployment. Never ask for, read, copy, log, or
   persist Coder tokens.
 - The helper runs in the foreground through `coder ssh`, uses newline-delimited RPC over stdio, and
   opens no HTTP, WebSocket, tunnel, forwarded port, or other listener.
 - Claude Code exists only in the Linux workspace. Do not probe for or launch a local provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
-  non-secret deployment URLs, Coder executable paths, and workspace targets. Coder 2.25.3 may write
-  tokens only inside opaque deployment-specific CLI config directories; T3 must never read them.
-- Do not add file uploads, downloads, exports, attachments, drag-and-drop transfer, clipboard-image
-  transfer, or background file synchronization. The versioned helper bootstrap over Coder stdin is
-  the sole control-plane exception.
+  non-secret deployment URLs, Coder executable paths, workspace targets, and ephemeral staging of
+  validated clipboard images in an OS temporary directory. Delete staged images immediately after
+  each transfer attempt. Coder 2.25.3 may write tokens only inside opaque deployment-specific CLI
+  config directories; T3 must never read them.
+- Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
+  transfer, or background file synchronization. The only user-facing transfer exception is an image
+  pasted directly into the message composer. Accept PNG, JPEG, and WebP images only, validate their
+  signatures rather than trusting browser metadata, and reject images larger than 20 MiB. Generate
+  filenames internally and copy images only into `$HOME/.t3-coder/attachments`; never accept a
+  user-controlled local or remote path. The versioned helper bootstrap is the other transfer
+  exception.
 - Git is repository-local in the workspace. Do not add fetch, pull, push, pull-request, or hosted
   source-control integrations.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
-  OAuth, telemetry, auto-update, browser preview, WSL, generic SSH, or providers other than Claude.
+  OAuth, telemetry, auto-update, browser preview, WSL, generic user-facing SSH, or providers other
+  than Claude. OpenSSH use is limited to helper bootstrap and validated clipboard-image uploads
+  through a `coder ssh --stdio` ProxyCommand.
 - External markdown links and images remain inert, and terminal URLs must not open automatically.
 
 ## Supported platforms
 
 - Local development and testing: macOS.
-- Production local host: Windows 11.
+- Production local host: Windows 11 with the OpenSSH Client feature (`ssh.exe` and `scp.exe`).
 - Remote workspace: Linux x86-64 with Nix, Git, Claude Code, and `script(1)`. T3 provisions its
   pinned Node.js 24 runtime through Nix without changing the workspace's default Node.js version.
 
