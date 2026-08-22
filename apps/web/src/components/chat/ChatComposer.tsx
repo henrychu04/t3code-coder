@@ -18,6 +18,7 @@ import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model"
 import {
   memo,
   type ReactNode,
+  type ClipboardEvent as ReactClipboardEvent,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -93,6 +94,8 @@ import {
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
+import { uploadCoderClipboardImage } from "../../coder/api";
+import { coderWorkspaceIdForEnvironment } from "../../coder/environmentStore";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -299,6 +302,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  runtimeModeOptions: ReadonlyArray<RuntimeMode>;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -358,7 +362,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             <SelectValue>{runtimeModeOption.label}</SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
-            {runtimeModeOptions.map((mode) => {
+            {props.runtimeModeOptions.map((mode) => {
               const option = runtimeModeConfig[mode];
               const OptionIcon = option.icon;
               return (
@@ -851,6 +855,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
+  const availableRuntimeModes = composerProviderState.supportedRuntimeModes ?? runtimeModeOptions;
+  useEffect(() => {
+    if (!availableRuntimeModes.includes(runtimeMode)) {
+      handleRuntimeModeChange(availableRuntimeModes[0] ?? "approval-required");
+    }
+  }, [availableRuntimeModes, handleRuntimeModeChange, runtimeMode]);
   // Plan mode is a legacy feature behind Settings → Beta. With the flag off,
   // ChatView forces the effective mode to "default", so hiding the toggle
   // can't trap anyone in plan mode.
@@ -917,6 +927,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
+  const [isUploadingClipboardImages, setIsUploadingClipboardImages] = useState(false);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -926,6 +937,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isMobileViewport = useMediaQuery("max-sm");
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
+  const isComposerBusy = isSendBusy || isUploadingClipboardImages;
 
   // ------------------------------------------------------------------
   // Refs
@@ -942,6 +954,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandFrameRef = useRef<number | null>(null);
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
+  const clipboardImageUploadInFlightRef = useRef(false);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1106,14 +1119,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     if (showPlanFollowUpPrompt) {
       return prompt.trim().length > 0 ? "plan:refine" : "plan:implement";
     }
-    return `idle:${composerSendState.hasSendableContent}:${isSendBusy}:${isConnecting}:${isPreparingWorktree}`;
+    return `idle:${composerSendState.hasSendableContent}:${isComposerBusy}:${isConnecting}:${isPreparingWorktree}`;
   }, [
     activePendingIsResponding,
     activePendingProgress,
     composerSendState.hasSendableContent,
     isConnecting,
     isPreparingWorktree,
-    isSendBusy,
+    isComposerBusy,
     phase,
     prompt,
     showPlanFollowUpPrompt,
@@ -1188,7 +1201,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const collapsedComposerPrimaryActionDisabled =
     phase === "running" ||
-    isSendBusy ||
+    isComposerBusy ||
     isSendDisabled ||
     isConnecting ||
     noProviderAvailable ||
@@ -1655,7 +1668,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const shouldBlurMobileComposerOnSubmit = useCallback(() => {
     if (!isMobileViewport) return false;
     if (
-      isSendBusy ||
+      isComposerBusy ||
       isSendDisabled ||
       isConnecting ||
       noProviderAvailable ||
@@ -1675,7 +1688,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentUnavailable,
     isConnecting,
     isMobileViewport,
-    isSendBusy,
+    isComposerBusy,
     isSendDisabled,
     noProviderAvailable,
     phase,
@@ -1684,7 +1697,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const submitComposer = useCallback(
     (event?: { preventDefault: () => void }, intent: ComposerSubmissionIntent = "foreground") => {
-      if (noProviderAvailable || isSendDisabled) {
+      if (noProviderAvailable || isSendDisabled || isUploadingClipboardImages) {
         event?.preventDefault();
         return;
       }
@@ -1710,6 +1723,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       activePendingProgress,
       blurMobileComposerAfterSend,
       isSendDisabled,
+      isUploadingClipboardImages,
       noProviderAvailable,
       onSend,
       promptRef,
@@ -1864,6 +1878,72 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       prompt.length,
       needsLeadingSpace ? ` ${text}` : text,
     );
+  };
+
+  const onComposerPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (imageFiles.length === 0) return;
+    event.preventDefault();
+    if (clipboardImageUploadInFlightRef.current) {
+      setComposerSubmissionError("Wait for the current pasted image upload to finish.");
+      return;
+    }
+    if (isComposerApprovalState || pendingUserInputs.length > 0 || projectSelectionRequired) {
+      setComposerSubmissionError("Paste images after resolving the current composer prompt.");
+      return;
+    }
+    const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
+    if (workspaceId === null) {
+      setComposerSubmissionError("The Coder workspace is not connected.");
+      return;
+    }
+    const snapshot = readComposerSnapshot();
+    for (const file of imageFiles) {
+      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+        setComposerSubmissionError("Clipboard image must be PNG, JPEG, or WebP.");
+        return;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        setComposerSubmissionError("Clipboard image exceeds the 20 MiB limit.");
+        return;
+      }
+    }
+    setComposerSubmissionError(null);
+    clipboardImageUploadInFlightRef.current = true;
+    setIsUploadingClipboardImages(true);
+    void (async () => {
+      const paths: string[] = [];
+      const insertUploadedPaths = () => {
+        if (paths.length === 0) return;
+        const links = paths.map((path) => serializeComposerFileLink(path)).join(" ");
+        const preceding = snapshot.value.slice(
+          Math.max(0, snapshot.expandedCursor - 1),
+          snapshot.expandedCursor,
+        );
+        const following = snapshot.value.slice(
+          snapshot.expandedCursor,
+          snapshot.expandedCursor + 1,
+        );
+        const replacement = `${preceding.length > 0 && !/\s/u.test(preceding) ? " " : ""}${links}${following.length === 0 || !/\s/u.test(following) ? " " : ""}`;
+        applyPromptReplacement(snapshot.expandedCursor, snapshot.expandedCursor, replacement);
+      };
+      try {
+        for (const file of imageFiles) {
+          paths.push(await uploadCoderClipboardImage(workspaceId, file));
+        }
+        insertUploadedPaths();
+      } catch (cause) {
+        insertUploadedPaths();
+        setComposerSubmissionError(
+          cause instanceof Error ? cause.message : "Clipboard image upload failed.",
+        );
+      } finally {
+        clipboardImageUploadInFlightRef.current = false;
+        setIsUploadingClipboardImages(false);
+      }
+    })();
   };
 
   const handleInterruptPrimaryAction = useCallback(() => {
@@ -2158,7 +2238,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isRunning={false}
                       showPlanFollowUpPrompt={false}
                       promptHasText={false}
-                      isSendBusy={isSendBusy}
+                      isSendBusy={isComposerBusy}
                       sendDisabledReason={sendDisabledReason}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={
@@ -2321,6 +2401,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                   onChange={onPromptChange}
                   onCommandKeyDown={onComposerCommandKey}
+                  onPaste={onComposerPaste}
                   placeholder={
                     isComposerApprovalState
                       ? (activePendingApproval?.detail ??
@@ -2335,9 +2416,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Enable a provider in Settings to send a message"
                               : phase === "disconnected"
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                : isUploadingClipboardImages
+                                  ? "Uploading pasted image…"
+                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
                   }
-                  disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
+                  disabled={
+                    isConnecting ||
+                    isUploadingClipboardImages ||
+                    isComposerApprovalState ||
+                    projectSelectionRequired
+                  }
                 />
                 {showMobilePendingAnswerActions ? (
                   <div
@@ -2351,7 +2439,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       isRunning={false}
                       showPlanFollowUpPrompt={false}
                       promptHasText={false}
-                      isSendBusy={isSendBusy}
+                      isSendBusy={isComposerBusy}
                       sendDisabledReason={sendDisabledReason}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={
@@ -2431,6 +2519,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
+                      runtimeModeOptions={availableRuntimeModes}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       traitsMenuContent={providerTraitsMenuContent}
                       onToggleInteractionMode={toggleInteractionMode}
@@ -2453,6 +2542,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         }
                         interactionMode={interactionMode}
                         runtimeMode={runtimeMode}
+                        runtimeModeOptions={availableRuntimeModes}
                         onToggleInteractionMode={toggleInteractionMode}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
@@ -2479,7 +2569,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       pendingUserInputs.length === 0 && showPlanFollowUpPrompt
                     }
                     promptHasText={prompt.trim().length > 0}
-                    isSendBusy={isSendBusy}
+                    isSendBusy={isComposerBusy}
                     sendDisabledReason={sendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={

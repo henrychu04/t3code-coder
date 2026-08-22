@@ -90,6 +90,26 @@ describe("getComposerProviderState", () => {
     });
   });
 
+  it("returns the selected model's supported runtime modes", () => {
+    const models = modelWith([]).map((model) => ({
+      ...model,
+      capabilities: {
+        ...model.capabilities,
+        supportedRuntimeModes: ["approval-required", "auto-accept-edits"] as const,
+      },
+    }));
+
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models,
+      modelOptions: undefined,
+      planModeEnabled: true,
+    });
+
+    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
+  });
+
   it("lets selections override defaults and propagates them through dispatch", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,

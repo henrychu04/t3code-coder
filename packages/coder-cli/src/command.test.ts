@@ -6,12 +6,13 @@ import {
   buildBrowserOpenInvocation,
   buildCoderAuthStatusInvocation,
   buildCoderHelperInvocation,
-  buildCoderHelperInstallInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
+  buildCoderScpConfigInvocation,
+  buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceProbeInvocation,
   REMOTE_HELPER_COMMAND,
-  REMOTE_HELPER_INSTALL_COMMAND,
+  REMOTE_HELPER_READY_SENTINEL,
   REMOTE_NODE_COMMAND,
   REMOTE_WORKSPACE_PROBE_COMMAND,
   quotePosixShellArgument,
@@ -99,27 +100,24 @@ describe("Coder CLI command construction", () => {
       "ssh",
       "equities-dev",
       "--",
-      "env",
-      "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
-      REMOTE_NODE_COMMAND,
-      REMOTE_HELPER_COMMAND,
-      "--stdio",
-    ]);
-    deepStrictEqual(buildCoderHelperInstallInvocation(deployment, workspace).args, [
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
-      "--no-version-warning",
-      "--url",
-      "https://coder.example.gs.com",
-      "ssh",
-      "equities-dev",
-      "--",
       "sh",
       "-c",
-      quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
+      quotePosixShellArgument(
+        [
+          "set -eu",
+          "stty raw -echo 2>/dev/null || true",
+          `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
+          [
+            "exec env",
+            "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
+            REMOTE_NODE_COMMAND,
+            REMOTE_HELPER_COMMAND,
+            "--stdio",
+            "2>/dev/null",
+          ].join(" "),
+        ].join("; "),
+      ),
     ]);
-    match(REMOTE_HELPER_INSTALL_COMMAND, /read -r byte_count/u);
-    match(REMOTE_HELPER_INSTALL_COMMAND, /head -c "\$byte_count"/u);
     match(
       REMOTE_WORKSPACE_PROBE_COMMAND,
       /if ! \[ -x .*node24\/bin\/node.*nix-env --profile .*node24.*nixpkgs\.nodejs_24.*; fi/u,
@@ -132,7 +130,55 @@ describe("Coder CLI command construction", () => {
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/attachments/u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");
+  });
+
+  it("builds temporary SCP configuration and remote commands through Coder", () => {
+    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
+    deepStrictEqual(
+      buildCoderScpConfigInvocation(
+        deployment,
+        String.raw`C:\Temp\t3-coder\ssh-config`,
+        "t3-coder-1234-",
+        options,
+      ).args,
+      [
+        "--global-config",
+        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+        "--disable-network-telemetry",
+        "--disable-direct-connections",
+        "--no-version-warning",
+        "--url",
+        "https://coder.example.gs.com",
+        "config-ssh",
+        "--yes",
+        "--wait=no",
+        "--ssh-config-file",
+        String.raw`C:\Temp\t3-coder\ssh-config`,
+        "--ssh-host-prefix",
+        "t3-coder-1234-",
+      ],
+    );
+    deepStrictEqual(
+      buildCoderWorkspaceShellInvocation(deployment, workspace, 'printf "%s\\n" "$HOME"', options)
+        .args,
+      [
+        "--global-config",
+        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+        "--disable-network-telemetry",
+        "--disable-direct-connections",
+        "--no-version-warning",
+        "--url",
+        "https://coder.example.gs.com",
+        "ssh",
+        "equities-dev",
+        "--",
+        "sh",
+        "-c",
+        quotePosixShellArgument('printf "%s\\n" "$HOME"'),
+      ],
+    );
   });
 
   it("rejects a workspace from another deployment", () => {

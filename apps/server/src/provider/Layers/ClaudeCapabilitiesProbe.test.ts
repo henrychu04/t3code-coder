@@ -11,6 +11,7 @@ import {
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
   isLegacyClaudeModel,
   probeClaudeCapabilities,
+  providerModelsFromClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
@@ -53,6 +54,66 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "true");
 });
 
+it("uses Claude's reported model and permission capabilities as authoritative", () => {
+  const models = providerModelsFromClaudeCapabilities({
+    models: [
+      {
+        value: "sonnet",
+        resolvedModel: "claude-sonnet-5",
+        displayName: "Sonnet",
+        description: "Balanced model",
+        supportsAutoMode: false,
+      },
+      {
+        value: "opus",
+        resolvedModel: "claude-opus-5",
+        displayName: "Opus",
+        description: "Most capable model",
+        supportsAutoMode: true,
+      },
+    ],
+    autoModeDisabled: true,
+    bypassPermissionsDisabled: true,
+  });
+
+  assert.deepEqual(
+    models.map((model) => model.slug),
+    ["claude-sonnet-5", "claude-opus-5"],
+  );
+  assert.deepEqual(models[0]?.capabilities?.supportedRuntimeModes, [
+    "approval-required",
+    "auto-accept-edits",
+  ]);
+  assert.deepEqual(models[1]?.capabilities?.supportedRuntimeModes, [
+    "approval-required",
+    "auto-accept-edits",
+  ]);
+  assert.equal(
+    models.some((model) => model.slug === "claude-fable-5"),
+    false,
+  );
+
+  const unrestrictedModel = providerModelsFromClaudeCapabilities({
+    models: [
+      {
+        value: "opus",
+        resolvedModel: "claude-opus-5",
+        displayName: "Opus",
+        description: "Most capable model",
+        supportsAutoMode: true,
+      },
+    ],
+    autoModeDisabled: false,
+    bypassPermissionsDisabled: false,
+  })[0];
+  assert.deepEqual(unrestrictedModel?.capabilities?.supportedRuntimeModes, [
+    "approval-required",
+    "auto-accept-edits",
+    "auto",
+    "full-access",
+  ]);
+});
+
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
   it.effect("serializes strict no-MCP options and still resolves account capabilities", () =>
     Effect.gen(function* () {
@@ -87,7 +148,8 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "const lines = createInterface({ input: process.stdin });",
           'lines.on("line", (line) => {',
           "  const message = JSON.parse(line);",
-          '  if (message.type !== "control_request" || message.request?.subtype !== "initialize") return;',
+          '  if (message.type !== "control_request") return;',
+          '  if (message.request?.subtype === "initialize") {',
           "  process.stdout.write(JSON.stringify({",
           '    type: "control_response",',
           "    response: {",
@@ -98,11 +160,29 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "        agents: [],",
           '        output_style: "default",',
           '        available_output_styles: ["default"],',
-          "        models: [],",
+          "        models: [{",
+          '          value: "sonnet",',
+          '          resolvedModel: "claude-sonnet-5",',
+          '          displayName: "Sonnet",',
+          '          description: "Balanced model",',
+          "          supportsAutoMode: false,",
+          "        }],",
           '        account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },',
           "      },",
           "    },",
           '  }) + "\\n");',
+          "  return;",
+          "  }",
+          '  if (message.request?.subtype === "get_settings") {',
+          "    process.stdout.write(JSON.stringify({",
+          '      type: "control_response",',
+          "      response: {",
+          '        subtype: "success",',
+          "        request_id: message.request_id,",
+          '        response: { effective: { permissions: { disableAutoMode: "disable", disableBypassPermissionsMode: "disable" } } },',
+          "      },",
+          '    }) + "\\n");',
+          "  }",
           "});",
           "setInterval(() => {}, 1_000);",
           "",
@@ -125,6 +205,17 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         subscriptionType: "pro",
         tokenSource: "oauth",
         apiProvider: undefined,
+        models: [
+          {
+            value: "sonnet",
+            resolvedModel: "claude-sonnet-5",
+            displayName: "Sonnet",
+            description: "Balanced model",
+            supportsAutoMode: false,
+          },
+        ],
+        autoModeDisabled: true,
+        bypassPermissionsDisabled: true,
         slashCommands: [
           {
             name: "review",

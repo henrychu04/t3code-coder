@@ -306,10 +306,22 @@ export type SlashCommand = {
   readonly argumentHint: string;
 };
 
+export type ModelInfo = {
+  readonly value: string;
+  readonly resolvedModel?: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly supportsEffort?: boolean;
+  readonly supportedEffortLevels?: ReadonlyArray<"low" | "medium" | "high" | "xhigh" | "max">;
+  readonly supportsAdaptiveThinking?: boolean;
+  readonly supportsFastMode?: boolean;
+  readonly supportsAutoMode?: boolean;
+};
+
 export type SDKControlInitializeResponse = {
   readonly commands: ReadonlyArray<SlashCommand>;
   readonly agents?: ReadonlyArray<Record<string, unknown>>;
-  readonly models?: ReadonlyArray<Record<string, unknown>>;
+  readonly models?: ReadonlyArray<ModelInfo>;
   readonly account?: Record<string, unknown>;
   readonly [key: string]: unknown;
 };
@@ -438,6 +450,7 @@ export interface Query extends AsyncIterable<SDKMessage> {
   setPermissionMode(mode: PermissionMode): Promise<void>;
   setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
   getContextUsage(): Promise<SDKControlGetContextUsageResponse>;
+  getSettings(): Promise<Record<string, unknown>>;
   initializationResult(): Promise<SDKControlInitializeResponse>;
   close(): void;
 }
@@ -574,6 +587,12 @@ class ClaudeCliQuery implements Query {
   getContextUsage(): Promise<SDKControlGetContextUsageResponse> {
     return this.request({ subtype: "get_context_usage" }).then(
       (response) => response as SDKControlGetContextUsageResponse,
+    );
+  }
+
+  getSettings(): Promise<Record<string, unknown>> {
+    return this.request({ subtype: "get_settings" }).then(
+      (response) => response as Record<string, unknown>,
     );
   }
 
