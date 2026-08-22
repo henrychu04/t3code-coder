@@ -55,6 +55,7 @@ describe("Coder CLI command construction", () => {
       "--disable-network-telemetry",
       "--disable-direct-connections",
       "--no-version-warning",
+      "--verbose",
       "--url",
       "https://coder.example.gs.com",
       "whoami",

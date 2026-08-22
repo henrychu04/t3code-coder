@@ -80,7 +80,11 @@ export function buildCoderAuthStatusInvocation(
   options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  return invocation(deployment, [...CODER_GLOBAL_ARGS, "--url", deployment.url, "whoami"], options);
+  return invocation(
+    deployment,
+    [...CODER_GLOBAL_ARGS, "--verbose", "--url", deployment.url, "whoami"],
+    options,
+  );
 }
 
 export function buildCoderListWorkspacesInvocation(

@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   checkCoderDeploymentAuthentication,
   discoverCoderWorkspaces,
+  type CoderDeploymentAuthenticationStatus,
   type DiscoveredCoderWorkspace,
 } from "../coder/api";
 import { useCoder } from "../coder/CoderBootstrap";
@@ -66,7 +67,9 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
   const navigate = useNavigate();
   const { config, connectWorkspace, saveConfig } = useCoder();
   const [deploymentId, setDeploymentId] = useState(config.deployments[0]?.id ?? "");
-  const [authByDeployment, setAuthByDeployment] = useState<Readonly<Record<string, boolean>>>({});
+  const [authByDeployment, setAuthByDeployment] = useState<
+    Readonly<Record<string, CoderDeploymentAuthenticationStatus>>
+  >({});
   const [workspaces, setWorkspaces] = useState<readonly DiscoveredCoderWorkspace[]>([]);
   const [discovering, setDiscovering] = useState(false);
   const [connectingTarget, setConnectingTarget] = useState<string | null>(null);
@@ -81,17 +84,20 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
     let cancelled = false;
     for (const deployment of config.deployments) {
       void checkCoderDeploymentAuthentication(deployment.id)
-        .then((authenticated) => {
+        .then((status) => {
           if (!cancelled) {
             setAuthByDeployment((current) => ({
               ...current,
-              [deployment.id]: authenticated,
+              [deployment.id]: status,
             }));
           }
         })
         .catch(() => {
           if (!cancelled) {
-            setAuthByDeployment((current) => ({ ...current, [deployment.id]: false }));
+            setAuthByDeployment((current) => ({
+              ...current,
+              [deployment.id]: "unavailable",
+            }));
           }
         });
     }
@@ -109,7 +115,8 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
   }, [onClose]);
 
   const selectedDeployment = config.deployments.find((entry) => entry.id === deploymentId) ?? null;
-  const authenticated = authByDeployment[deploymentId] === true;
+  const authenticationStatus = authByDeployment[deploymentId];
+  const authenticated = authenticationStatus === "authenticated";
 
   const discover = async (): Promise<void> => {
     if (!selectedDeployment) return;
@@ -232,9 +239,14 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
                       className="pointer-events-none absolute end-3 top-1/2 size-3 -translate-y-1/2 text-icon-muted opacity-50"
                     />
                   </div>
-                  {authByDeployment[deploymentId] === false ? (
+                  {authenticationStatus === "unauthenticated" ? (
                     <p className="mt-2 text-xs text-warning-foreground">
                       This domain needs sign-in. Authentication is managed in Settings.
+                    </p>
+                  ) : null}
+                  {authenticationStatus === "unavailable" ? (
+                    <p className="mt-2 text-xs text-warning-foreground">
+                      Could not verify this Coder domain. Check its connection in Settings.
                     </p>
                   ) : null}
                 </div>
@@ -248,7 +260,11 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
                       disabled={!authenticated || discovering}
                       onClick={() => void discover()}
                     >
-                      {discovering ? "Loading…" : workspaces.length > 0 ? "Refresh" : "Load workspaces"}
+                      {discovering
+                        ? "Loading…"
+                        : workspaces.length > 0
+                          ? "Refresh"
+                          : "Load workspaces"}
                     </Button>
                   </div>
                   {workspaces.length > 0 ? (
@@ -281,7 +297,9 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
                     <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                       {authenticated
                         ? "Load the workspaces available on this domain."
-                        : "Sign in to this domain from Settings before adding a project."}
+                        : authenticationStatus === "unauthenticated"
+                          ? "Sign in to this domain from Settings before adding a project."
+                          : "Verify this Coder domain in Settings before adding a project."}
                     </p>
                   )}
                 </div>
