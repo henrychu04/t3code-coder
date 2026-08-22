@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION } from "@t3tools/coder-cli/rpc";
-import { ORCHESTRATION_WS_METHODS, WS_METHODS } from "@t3tools/contracts";
+import { ORCHESTRATION_WS_METHODS, ProviderInstanceId, WS_METHODS } from "@t3tools/contracts";
 
 function makeNdjsonReader(stream: NodeJS.ReadableStream): () => Promise<unknown> {
   const queued: Array<unknown> = [];
@@ -108,6 +108,24 @@ describe("Coder foreground helper", () => {
       configEnvelope.exit?.value?.providers?.map((provider) => provider.driver),
       ["claudeAgent"],
     );
+
+    helper.stdin.write(
+      `${JSON.stringify({
+        _tag: "Request",
+        id: "provider-slash-commands",
+        tag: WS_METHODS.providerListSlashCommands,
+        payload: {
+          instanceId: ProviderInstanceId.make("missing-provider"),
+          cwd: helperHome,
+        },
+        headers: [],
+      })}\n`,
+    );
+    deepStrictEqual(await readResponse(), {
+      _tag: "Exit",
+      requestId: "provider-slash-commands",
+      exit: { _tag: "Success", value: [] },
+    });
 
     helper.stdin.write(
       `${JSON.stringify({

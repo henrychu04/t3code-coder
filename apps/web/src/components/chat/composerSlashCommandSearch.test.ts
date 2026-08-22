@@ -2,7 +2,30 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind } from "@t3tools/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
-import { searchSlashCommandItems } from "./composerSlashCommandSearch";
+import { mergeProviderSlashCommands, searchSlashCommandItems } from "./composerSlashCommandSearch";
+
+describe("mergeProviderSlashCommands", () => {
+  it("adds project commands without losing the global catalog", () => {
+    expect(
+      mergeProviderSlashCommands(
+        [{ name: "compact", description: "Compact the conversation" }],
+        [{ name: "btw", description: "Run a project command" }],
+      ),
+    ).toEqual([
+      { name: "compact", description: "Compact the conversation" },
+      { name: "btw", description: "Run a project command" },
+    ]);
+  });
+
+  it("deduplicates case-insensitively and preserves missing global metadata", () => {
+    expect(
+      mergeProviderSlashCommands(
+        [{ name: "Review", description: "Review changes", input: { hint: "[path]" } }],
+        [{ name: "review" }],
+      ),
+    ).toEqual([{ name: "review", description: "Review changes", input: { hint: "[path]" } }]);
+  });
+});
 
 describe("searchSlashCommandItems", () => {
   const claudeDriver = ProviderDriverKind.make("claudeAgent");
@@ -67,6 +90,32 @@ describe("searchSlashCommandItems", () => {
     expect(searchSlashCommandItems(items, "gfc").map((item) => item.id)).toEqual([
       "provider-slash-command:claudeAgent:gh-fix-ci",
     ]);
+  });
+
+  it("finds Claude built-in and custom commands", () => {
+    const items = [
+      {
+        id: "provider-slash-command:claudeAgent:compact",
+        type: "provider-slash-command",
+        provider: claudeDriver,
+        command: { name: "compact" },
+        label: "/compact",
+        description: "Compact the conversation",
+      },
+      {
+        id: "provider-slash-command:claudeAgent:btw",
+        type: "provider-slash-command",
+        provider: claudeDriver,
+        command: { name: "btw" },
+        label: "/btw",
+        description: "Run a custom command",
+      },
+    ] satisfies Array<Extract<ComposerCommandItem, { type: "provider-slash-command" }>>;
+
+    expect(searchSlashCommandItems(items, "compact").map((item) => item.label)).toEqual([
+      "/compact",
+    ]);
+    expect(searchSlashCommandItems(items, "btw").map((item) => item.label)).toEqual(["/btw"]);
   });
 
   it("includes skills by name and description", () => {

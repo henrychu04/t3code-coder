@@ -21,6 +21,7 @@ import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
   followStreamInEnvironment,
 } from "./runtime.ts";
@@ -251,6 +252,11 @@ export function createServerEnvironmentAtoms<R, E>(
     configValueAtom,
     settingsValueAtom,
     providersValueAtom,
+    slashCommands: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:provider:slash-commands",
+      tag: WS_METHODS.providerListSlashCommands,
+      staleTimeMs: 5 * 60_000,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",

@@ -54,6 +54,23 @@ describe("ComposerCommandMenu", () => {
     expect(markup).toContain("text-right");
   });
 
+  it("describes project-aware provider command loading", () => {
+    const markup = renderToStaticMarkup(
+      <ComposerCommandMenu
+        items={[]}
+        resolvedTheme="dark"
+        isLoading
+        triggerKind="slash-command"
+        activeItemId={null}
+        onHighlightedItemChange={() => {}}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(markup).toContain("Loading provider commands...");
+    expect(markup).not.toContain("Searching workspace files...");
+  });
+
   it("renders a skill source icon with an accessible source label", () => {
     const markup = renderToStaticMarkup(
       <ComposerCommandMenu

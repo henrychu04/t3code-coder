@@ -114,6 +114,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           ),
       });
       const capabilitiesCacheKey = yield* makeClaudeCapabilitiesCacheKey(effectiveConfig, cwd);
+      const slashCommandsByCwd = yield* Cache.make({
+        capacity: 32,
+        timeToLive: CAPABILITIES_PROBE_TTL,
+        lookup: (commandCwd: string) =>
+          probeClaudeCapabilities(effectiveConfig, processEnv, commandCwd).pipe(
+            Effect.provideService(Path.Path, path),
+            Effect.map((capabilities) => capabilities?.slashCommands ?? []),
+          ),
+      });
 
       const checkProvider = checkClaudeProviderStatus(
         effectiveConfig,
@@ -157,6 +166,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        listSlashCommands: (commandCwd) => Cache.get(slashCommandsByCwd, commandCwd),
         adapter,
         textGeneration,
       } satisfies ProviderInstance;

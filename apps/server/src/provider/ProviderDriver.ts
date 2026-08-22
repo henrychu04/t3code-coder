@@ -2,8 +2,9 @@
  * ProviderDriver / ProviderInstance — driver SPI as plain values.
  *
  * `ProviderDriver` is a record, not a Context.Service. The thing it produces
- * (`ProviderInstance`) is also a record — three captured closures
- * (`snapshot`, `adapter`, `textGeneration`), an id, and a driver kind. There
+ * (`ProviderInstance`) is also a record — captured provider operations
+ * (`snapshot`, `adapter`, `textGeneration`, and optional command discovery),
+ * an id, and a driver kind. There
  * are intentionally no per-driver Context tags because tags are
  * singleton-per-runtime and we need many instances of the same driver.
  *
@@ -25,6 +26,7 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
+  ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
@@ -69,6 +71,10 @@ export interface ProviderInstance {
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
   readonly snapshot: ServerProviderShape;
+  /** Resolve provider commands in the same cwd that will run the turn. */
+  readonly listSlashCommands?: (
+    cwd: string,
+  ) => Effect.Effect<ReadonlyArray<ServerProviderSlashCommand>>;
   readonly adapter: ProviderAdapterShape<ProviderAdapterError>;
   readonly textGeneration: TextGeneration.TextGeneration["Service"];
 }

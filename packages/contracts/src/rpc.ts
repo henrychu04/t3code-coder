@@ -47,7 +47,13 @@ import {
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
 } from "./review.ts";
-import { ServerConfig, ServerConfigStreamEvent, ServerLifecycleStreamEvent } from "./server.ts";
+import {
+  ServerConfig,
+  ServerConfigStreamEvent,
+  ServerLifecycleStreamEvent,
+  ServerProviderSlashCommands,
+  ServerProviderSlashCommandsInput,
+} from "./server.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
 import {
   TerminalAttachInput,
@@ -68,6 +74,7 @@ import { VcsError } from "./vcs.ts";
 export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   workspaceListDirectories: "workspace.listDirectories",
+  providerListSlashCommands: "provider.listSlashCommands",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -128,6 +135,11 @@ const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectori
   payload: WorkspaceListDirectoriesInput,
   success: WorkspaceListDirectoriesResult,
   error: WorkspaceListDirectoriesError,
+});
+
+const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashCommands, {
+  payload: ServerProviderSlashCommandsInput,
+  success: ServerProviderSlashCommands,
 });
 
 const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -307,6 +319,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerUpdateSettingsRpc,
   WsProjectsSearchEntriesRpc,
   WsWorkspaceListDirectoriesRpc,
+  WsProviderListSlashCommandsRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsRefreshStatusRpc,
   WsVcsListRefsRpc,

@@ -3,6 +3,7 @@ import {
   normalizeSearchQuery,
   scoreQueryMatch,
 } from "@t3tools/shared/searchRanking";
+import type { ServerProviderSlashCommand } from "@t3tools/contracts";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { scoreProviderSkill } from "../../providerSkillSearch";
@@ -11,6 +12,24 @@ type SlashSearchItem = Extract<
   ComposerCommandItem,
   { type: "slash-command" | "provider-slash-command" | "skill" }
 >;
+
+export function mergeProviderSlashCommands(
+  base: ReadonlyArray<ServerProviderSlashCommand>,
+  scoped: ReadonlyArray<ServerProviderSlashCommand>,
+): ReadonlyArray<ServerProviderSlashCommand> {
+  const commands = new Map(base.map((command) => [command.name.toLowerCase(), command] as const));
+  for (const command of scoped) {
+    const key = command.name.toLowerCase();
+    const fallback = commands.get(key);
+    commands.set(key, {
+      ...fallback,
+      ...command,
+      description: command.description ?? fallback?.description,
+      input: command.input ?? fallback?.input,
+    });
+  }
+  return [...commands.values()];
+}
 
 function scoreSlashCommandItem(item: SlashSearchItem, query: string): number | null {
   if (item.type === "skill") {

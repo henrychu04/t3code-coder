@@ -48,6 +48,7 @@ import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -113,6 +114,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const diffs = yield* CheckpointDiffQuery.CheckpointDiffQuery;
     const providers = yield* ProviderRegistry.ProviderRegistry;
+    const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const settings = yield* ServerSettings.ServerSettingsService;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
@@ -313,6 +315,17 @@ export const layer = CoderWsRpcGroup.toLayer(
                 cause,
               }),
           ),
+        ),
+      [WS_METHODS.providerListSlashCommands]: ({ instanceId, cwd }) =>
+        providerInstances.getInstance(instanceId).pipe(
+          Effect.flatMap((instance) => {
+            if (instance?.listSlashCommands) {
+              return instance.listSlashCommands(cwd);
+            }
+            return instance
+              ? instance.snapshot.getSnapshot.pipe(Effect.map((snapshot) => snapshot.slashCommands))
+              : Effect.succeed([]);
+          }),
         ),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
       [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),

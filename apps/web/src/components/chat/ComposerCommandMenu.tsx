@@ -114,7 +114,9 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
               {props.isLoading
                 ? props.triggerKind === "skill"
                   ? "Searching workspace skills..."
-                  : "Searching workspace files..."
+                  : props.triggerKind === "slash-command"
+                    ? "Loading provider commands..."
+                    : "Searching workspace files..."
                 : (props.emptyStateText ??
                   (props.triggerKind === "skill"
                     ? "No skills found. Try / to browse provider commands."
