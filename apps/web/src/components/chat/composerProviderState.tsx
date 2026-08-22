@@ -2,6 +2,7 @@ import {
   type ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderOptionSelection,
+  type RuntimeMode,
   type ScopedThreadRef,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -32,6 +33,7 @@ export type ComposerProviderState = {
   provider: ProviderDriverKind;
   promptEffort: string | null;
   modelOptionsForDispatch: ReadonlyArray<ProviderOptionSelection> | undefined;
+  supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   composerFrameClassName?: string;
   composerSurfaceClassName?: string;
   modelPickerIconClassName?: string;
@@ -79,6 +81,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     provider,
     promptEffort,
     modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
+    ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

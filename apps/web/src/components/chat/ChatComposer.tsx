@@ -302,6 +302,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
   showInteractionModeToggle: boolean;
   interactionMode: ProviderInteractionMode;
   runtimeMode: RuntimeMode;
+  runtimeModeOptions: ReadonlyArray<RuntimeMode>;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
@@ -361,7 +362,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
             <SelectValue>{runtimeModeOption.label}</SelectValue>
           </TooltipTrigger>
           <SelectPopup alignItemWithTrigger={false}>
-            {runtimeModeOptions.map((mode) => {
+            {props.runtimeModeOptions.map((mode) => {
               const option = runtimeModeConfig[mode];
               const OptionIcon = option.icon;
               return (
@@ -854,6 +855,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
+  const availableRuntimeModes = composerProviderState.supportedRuntimeModes ?? runtimeModeOptions;
+  useEffect(() => {
+    if (!availableRuntimeModes.includes(runtimeMode)) {
+      handleRuntimeModeChange(availableRuntimeModes[0] ?? "approval-required");
+    }
+  }, [availableRuntimeModes, handleRuntimeModeChange, runtimeMode]);
   // Plan mode is a legacy feature behind Settings → Beta. With the flag off,
   // ChatView forces the effective mode to "default", so hiding the toggle
   // can't trap anyone in plan mode.
@@ -2512,6 +2519,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     <CompactComposerControlsMenu
                       interactionMode={interactionMode}
                       runtimeMode={runtimeMode}
+                      runtimeModeOptions={availableRuntimeModes}
                       showInteractionModeToggle={composerProviderControls.showInteractionModeToggle}
                       traitsMenuContent={providerTraitsMenuContent}
                       onToggleInteractionMode={toggleInteractionMode}
@@ -2534,6 +2542,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         }
                         interactionMode={interactionMode}
                         runtimeMode={runtimeMode}
+                        runtimeModeOptions={availableRuntimeModes}
                         onToggleInteractionMode={toggleInteractionMode}
                         onRuntimeModeChange={handleRuntimeModeChange}
                       />
