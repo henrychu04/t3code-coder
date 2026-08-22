@@ -1,5 +1,4 @@
 import {
-  DEFAULT_UNIFIED_SETTINGS,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
@@ -265,51 +264,6 @@ function GeneralSettingsView() {
                 updateSettings({ confirmThreadDelete: Boolean(checked) })
               }
             />
-          }
-        />
-      </SettingsSection>
-
-      <SettingsSection title="Legacy features">
-        <SettingsRow
-          title="Plan mode"
-          description="Restore the legacy Build/Plan composer toggle and slash commands."
-          control={
-            <Switch
-              aria-label="Plan mode"
-              checked={settings.planModeEnabled}
-              onCheckedChange={(checked) => updateSettings({ planModeEnabled: Boolean(checked) })}
-            />
-          }
-        />
-        <SettingsRow
-          title="Stream token by token"
-          description="Use legacy token streaming instead of buffered assistant updates."
-          control={
-            <Switch
-              aria-label="Stream token by token"
-              checked={settings.enableLegacyTokenStreaming}
-              onCheckedChange={(checked) =>
-                updateSettings({ enableLegacyTokenStreaming: Boolean(checked) })
-              }
-            />
-          }
-        />
-        <SettingsRow
-          title="Restore defaults"
-          description="Reset the legacy feature toggles."
-          control={
-            <button
-              className="h-8 rounded-md border px-3 text-sm hover:bg-muted"
-              type="button"
-              onClick={() =>
-                updateSettings({
-                  enableLegacyTokenStreaming: DEFAULT_UNIFIED_SETTINGS.enableLegacyTokenStreaming,
-                  planModeEnabled: DEFAULT_UNIFIED_SETTINGS.planModeEnabled,
-                })
-              }
-            >
-              Reset
-            </button>
           }
         />
       </SettingsSection>
