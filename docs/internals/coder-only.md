@@ -47,7 +47,8 @@ token as plaintext in the selected config directory; multi-deployment OS-keyring
 available until Coder 2.29.
 All generated Coder invocations include `--disable-network-telemetry` and
 `--disable-direct-connections`, so the CLI does not send optional network telemetry or establish
-peer-to-peer workspace connections.
+peer-to-peer workspace connections. They also include Coder 2.25.3's `--no-version-warning`
+because the managed deployment may run a newer fixed server version.
 
 The loopback gateway has no application token. It binds only to `127.0.0.1`, validates the exact
 `Host` and `Origin` values for commands and upgrades, exposes no CORS policy, and treats local

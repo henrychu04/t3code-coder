@@ -42,6 +42,7 @@ describe("Coder CLI command construction", () => {
         String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
         "--disable-network-telemetry",
         "--disable-direct-connections",
+        "--no-version-warning",
         "--no-open",
         "login",
         "https://coder.example.gs.com",
@@ -52,6 +53,7 @@ describe("Coder CLI command construction", () => {
       String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
       "--disable-network-telemetry",
       "--disable-direct-connections",
+      "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
       "whoami",
@@ -63,6 +65,7 @@ describe("Coder CLI command construction", () => {
         String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
         "--disable-network-telemetry",
         "--disable-direct-connections",
+        "--no-version-warning",
         "--url",
         "https://coder.example.gs.com",
         "list",
@@ -77,6 +80,7 @@ describe("Coder CLI command construction", () => {
     deepStrictEqual(buildCoderWorkspaceProbeInvocation(deployment, workspace).args, [
       "--disable-network-telemetry",
       "--disable-direct-connections",
+      "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
@@ -89,6 +93,7 @@ describe("Coder CLI command construction", () => {
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
       "--disable-network-telemetry",
       "--disable-direct-connections",
+      "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
@@ -103,6 +108,7 @@ describe("Coder CLI command construction", () => {
     deepStrictEqual(buildCoderHelperInstallInvocation(deployment, workspace).args, [
       "--disable-network-telemetry",
       "--disable-direct-connections",
+      "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
       "ssh",
@@ -116,6 +122,7 @@ describe("Coder CLI command construction", () => {
       REMOTE_WORKSPACE_PROBE_COMMAND,
       /if ! \[ -x .*node24\/bin\/node.*nix-env --profile .*node24.*nixpkgs\.nodejs_24.*; fi/u,
     );
+    strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("--attr-path"), false);
     strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("github:"), false);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);

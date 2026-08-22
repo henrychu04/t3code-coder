@@ -10,7 +10,11 @@ export interface CoderInvocation {
   readonly args: readonly string[];
 }
 
-const CODER_GLOBAL_ARGS = ["--disable-network-telemetry", "--disable-direct-connections"] as const;
+const CODER_GLOBAL_ARGS = [
+  "--disable-network-telemetry",
+  "--disable-direct-connections",
+  "--no-version-warning",
+] as const;
 
 export interface CoderInvocationOptions {
   readonly globalConfig?: string;
@@ -28,7 +32,7 @@ export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   '[ -d "$HOME" ] && [ -r "$HOME" ] && [ -x "$HOME" ] || fail "The workspace HOME directory is not accessible."',
   'mkdir -p "$HOME/.t3-coder" || fail "T3 Coder cannot create its workspace state directory."',
   '[ -w "$HOME/.t3-coder" ] || fail "T3 Coder workspace state directory is not writable."',
-  `if ! [ -x ${REMOTE_NODE_COMMAND} ] || ! ${REMOTE_NODE_VERSION_CHECK}; then command -v nix-env >/dev/null 2>&1 || fail "T3 Coder requires nix-env to provision Node.js 24."; nix-env --profile "$HOME/.t3-coder/node24" --install --attr-path nixpkgs.nodejs_24 || fail "T3 Coder could not provision Node.js 24 from the workspace's configured nixpkgs."; fi`,
+  `if ! [ -x ${REMOTE_NODE_COMMAND} ] || ! ${REMOTE_NODE_VERSION_CHECK}; then command -v nix-env >/dev/null 2>&1 || fail "T3 Coder requires nix-env to provision Node.js 24."; nix-env --profile "$HOME/.t3-coder/node24" -iA nixpkgs.nodejs_24 || fail "T3 Coder could not provision Node.js 24 from the workspace's configured nixpkgs."; fi`,
   `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
   `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24.10 or newer from its Nix runtime."`,
   'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
