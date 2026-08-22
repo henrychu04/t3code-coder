@@ -5,6 +5,7 @@ import { inferProjectTitleFromPath } from "@t3tools/client-runtime/state/project
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  ChevronDownIcon,
   ChevronLeftIcon,
   FolderIcon,
   FolderOpenIcon,
@@ -210,21 +211,27 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
               <>
                 <div>
                   <Label className="mb-2 text-xs">Coder domain</Label>
-                  <select
-                    className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
-                    value={deploymentId}
-                    onChange={(event) => {
-                      setDeploymentId(event.target.value);
-                      setWorkspaces([]);
-                      setError(null);
-                    }}
-                  >
-                    {config.deployments.map((deployment) => (
-                      <option key={deployment.id} value={deployment.id}>
-                        {deployment.name} · {deployment.url}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      className="h-9 w-full appearance-none rounded-lg border border-input bg-background px-3 pe-9 text-sm"
+                      value={deploymentId}
+                      onChange={(event) => {
+                        setDeploymentId(event.target.value);
+                        setWorkspaces([]);
+                        setError(null);
+                      }}
+                    >
+                      {config.deployments.map((deployment) => (
+                        <option key={deployment.id} value={deployment.id}>
+                          {deployment.name} · {deployment.url}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDownIcon
+                      aria-hidden="true"
+                      className="pointer-events-none absolute end-3 top-1/2 size-3 -translate-y-1/2 text-icon-muted opacity-50"
+                    />
+                  </div>
                   {authByDeployment[deploymentId] === false ? (
                     <p className="mt-2 text-xs text-warning-foreground">
                       This domain needs sign-in. Authentication is managed in Settings.
