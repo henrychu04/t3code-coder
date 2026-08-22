@@ -287,6 +287,62 @@ describe("local Coder gateway", () => {
     ]);
   });
 
+  it("reports remote preflight failures emitted on stdout", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const executablePath = NodePath.join(directory, "coder");
+    await NodeFS.writeFile(
+      executablePath,
+      [
+        "#!/usr/bin/env node",
+        'process.stdout.write("T3 Coder requires Node.js 24.10 or newer.\\n");',
+        'process.stderr.write("version mismatch: client v2.25.3, server v2.34.5\\n");',
+        "process.exit(1);",
+      ].join("\n"),
+      { mode: 0o700 },
+    );
+    const gateway = await startLocalCoderGateway({ configPath });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+            executable: executablePath,
+          },
+        ],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+
+    const response = await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(response.statusCode, 502);
+    strictEqual(
+      response.body,
+      "Coder workspace preflight exited with code 1 (null). " +
+        "T3 Coder requires Node.js 24.10 or newer.\n" +
+        "version mismatch: client v2.25.3, server v2.34.5",
+    );
+  });
+
   it("checks authentication through the deployment's isolated Coder 2.25 profile", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
