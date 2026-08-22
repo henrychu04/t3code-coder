@@ -225,6 +225,33 @@ function withFakeClaudeEnv<A, E, R>(
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  it.effect("generates branch names with Haiku", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            branch: "use-haiku-for-labels",
+          },
+        }),
+        argsMustContain: "--model claude-haiku-4-5",
+        argsMustNotContain: "claude-sonnet-4-6",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateBranchName({
+            cwd: process.cwd(),
+            message: "Use Haiku for generated worktree branch names.",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated.branch).toBe("use-haiku-for-labels");
+        }),
+    ),
+  );
+
   it.effect("generates thread titles through the Claude provider", () =>
     withFakeClaudeEnv(
       {
@@ -234,6 +261,8 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               '  "Reconnect failures after restart because the session state does not recover"  ',
           },
         }),
+        argsMustContain: "--model claude-haiku-4-5",
+        argsMustNotContain: "claude-sonnet-4-6",
         stdinMustContain: "Please investigate reconnect failures after restarting the session.",
       },
       (textGeneration) =>

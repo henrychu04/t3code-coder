@@ -37,6 +37,7 @@ import {
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
+const LABEL_GENERATION_MODEL = "claude-haiku-4-5";
 
 /**
  * Schema for the wrapper JSON returned by `claude -p --output-format json`.
@@ -259,7 +260,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
-        modelSelection: input.modelSelection,
+        modelSelection: {
+          instanceId: input.modelSelection.instanceId,
+          model: LABEL_GENERATION_MODEL,
+        },
       });
 
       return {
@@ -279,7 +283,10 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
-        modelSelection: input.modelSelection,
+        modelSelection: {
+          instanceId: input.modelSelection.instanceId,
+          model: LABEL_GENERATION_MODEL,
+        },
       });
 
       return {
