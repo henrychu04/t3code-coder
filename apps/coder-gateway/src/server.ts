@@ -44,8 +44,10 @@ const MAX_CONFIG_BODY_BYTES = 64 * 1024;
 const MAX_RPC_MESSAGE_BYTES = 8 * 1024 * 1024;
 const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
 const MAX_CODER_PROBE_BYTES = 32 * 1024;
+const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
 const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -193,15 +195,44 @@ function runCoderLogin(executable: string, args: readonly string[]): Promise<voi
   });
 }
 
-function runCoderAuthStatus(invocation: CoderInvocation): Promise<boolean> {
+export type CoderAuthenticationStatus = "authenticated" | "unauthenticated" | "unavailable";
+
+export function runCoderAuthStatus(
+  invocation: CoderInvocation,
+  timeoutMs = DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS,
+): Promise<CoderAuthenticationStatus> {
   return new Promise((resolve) => {
+    let settled = false;
+    let sawUnauthorizedStatus = false;
+    let stderr = "";
+    let timeout: NodeJS.Timeout | undefined;
     const child = spawn(invocation.executable, invocation.args, {
       shell: false,
-      stdio: "ignore",
+      stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
-    child.once("error", () => resolve(false));
-    child.once("exit", (code) => resolve(code === 0));
+    const finish = (status: CoderAuthenticationStatus): void => {
+      if (settled) return;
+      settled = true;
+      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
+      resolve(status);
+    };
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf8")}`.slice(-MAX_CODER_AUTH_STATUS_BYTES);
+      if (/\bStatus code 401\b/.test(stderr)) sawUnauthorizedStatus = true;
+    });
+    child.once("error", () => finish("unavailable"));
+    child.once("exit", (code) => {
+      if (code === 0) {
+        finish("authenticated");
+        return;
+      }
+      finish(sawUnauthorizedStatus ? "unauthenticated" : "unavailable");
+    });
+    timeout = NodeTimers.setTimeout(() => {
+      child.kill();
+      finish("unavailable");
+    }, timeoutMs);
   });
 }
 
@@ -380,7 +411,10 @@ export async function startLocalCoderGateway(options?: {
   ) => Promise<readonly DiscoveredCoderWorkspace[]>;
   readonly probeWorkspace?: (invocation: CoderInvocation) => Promise<void>;
   readonly workspaceProbeTimeoutMs?: number;
-  readonly checkAuthentication?: (invocation: CoderInvocation) => Promise<boolean>;
+  readonly coderAuthStatusTimeoutMs?: number;
+  readonly checkAuthentication?: (
+    invocation: CoderInvocation,
+  ) => Promise<CoderAuthenticationStatus>;
   readonly installHelper?: typeof installCoderHelperWithScp;
   readonly uploadClipboardImage?: typeof uploadCoderClipboardImageWithScp;
 }): Promise<LocalCoderGateway> {
@@ -400,7 +434,10 @@ export async function startLocalCoderGateway(options?: {
     options?.probeWorkspace ??
     ((invocation: CoderInvocation) =>
       runCoderWorkspaceProbe(invocation, options?.workspaceProbeTimeoutMs));
-  const checkAuthentication = options?.checkAuthentication ?? runCoderAuthStatus;
+  const checkAuthentication =
+    options?.checkAuthentication ??
+    ((invocation: CoderInvocation) =>
+      runCoderAuthStatus(invocation, options?.coderAuthStatusTimeoutMs));
   const installHelper = options?.installHelper ?? installCoderHelperWithScp;
   const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
   const coderInvocationOptions = (deploymentId: string) => ({
@@ -586,15 +623,10 @@ export async function startLocalCoderGateway(options?: {
           sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
           return;
         }
-        const authenticated = await checkAuthentication(
+        const status = await checkAuthentication(
           buildCoderAuthStatusInvocation(deployment, coderInvocationOptions(deployment.id)),
         );
-        sendText(
-          response,
-          200,
-          "application/json; charset=utf-8",
-          JSON.stringify({ authenticated }),
-        );
+        sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ status }));
         return;
       }
       const workspaceListRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/workspaces$/);

@@ -4,12 +4,15 @@ import { PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { openCommandPalette } from "../commandPaletteBus";
+import { useCoder } from "../coder/CoderBootstrap";
 import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+import { WorkspaceConnectionStatus } from "../components/WorkspaceConnectionStatus";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
+import { useEnvironments } from "../state/environments";
 import {
   useAllEnvironmentShellsBootstrapped,
   useProjects,
@@ -29,6 +32,8 @@ function IndexDraftLanding() {
   const projects = useProjects();
   const threads = useThreadShells();
   const bootstrapped = useAllEnvironmentShellsBootstrapped();
+  const { config } = useCoder();
+  const { environments } = useEnvironments();
   const handleNewThread = useNewThreadHandler();
   const startingRef = useRef(false);
   const [startState, setStartState] = useState({ failed: false, retryRequest: 0 });
@@ -54,8 +59,10 @@ function IndexDraftLanding() {
     });
   }, [handleNewThread, mostRecentProject, startState.retryRequest]);
 
-  if (!bootstrapped) {
-    return null;
+  const configuredWorkspacesUnavailable = config.workspaces.length > 0 && environments.length === 0;
+
+  if (!bootstrapped || (projects.length === 0 && configuredWorkspacesUnavailable)) {
+    return <WorkspaceConnectionStatus />;
   }
   if (mostRecentProject !== null) {
     return startState.failed ? (

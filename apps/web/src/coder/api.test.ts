@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { uploadCoderClipboardImage } from "./api";
+import { checkCoderDeploymentAuthentication, uploadCoderClipboardImage } from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -38,5 +38,17 @@ describe("Coder clipboard image API", () => {
       "Clipboard image must be PNG, JPEG, or WebP.",
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("Coder authentication API", () => {
+  it("returns the gateway's tri-state authentication result", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ status: "unavailable" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(checkCoderDeploymentAuthentication("deployment one")).resolves.toBe("unavailable");
+    expect(fetchMock).toHaveBeenCalledWith("/api/deployments/deployment%20one/auth-status", {
+      method: "POST",
+    });
   });
 });

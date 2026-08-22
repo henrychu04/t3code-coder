@@ -16,7 +16,7 @@ import {
   REMOTE_WORKSPACE_PROBE_COMMAND,
 } from "@t3tools/coder-cli/command";
 import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
-import { CODER_GATEWAY_HOST, startLocalCoderGateway } from "./server.ts";
+import { CODER_GATEWAY_HOST, runCoderAuthStatus, startLocalCoderGateway } from "./server.ts";
 
 let closeGateway: (() => Promise<void>) | undefined;
 const tempDirectories: string[] = [];
@@ -93,9 +93,7 @@ describe("local Coder gateway", () => {
     strictEqual(response.statusCode, 200);
     strictEqual(response.body, '{"status":"ok"}');
     strictEqual(
-      response.headers["content-security-policy"]?.includes(
-        "script-src 'self' 'wasm-unsafe-eval'",
-      ),
+      response.headers["content-security-policy"]?.includes("script-src 'self' 'wasm-unsafe-eval'"),
       true,
     );
     strictEqual(
@@ -490,7 +488,7 @@ describe("local Coder gateway", () => {
       configPath,
       checkAuthentication: async (invocation) => {
         receivedInvocation = invocation;
-        return true;
+        return "authenticated";
       },
     });
     closeGateway = gateway.close;
@@ -511,7 +509,7 @@ describe("local Coder gateway", () => {
       headers: { Origin: gateway.url },
     });
     strictEqual(status.statusCode, 200);
-    deepStrictEqual(JSON.parse(status.body), { authenticated: true });
+    deepStrictEqual(JSON.parse(status.body), { status: "authenticated" });
     deepStrictEqual(receivedInvocation, {
       executable: "coder",
       args: [
@@ -520,11 +518,48 @@ describe("local Coder gateway", () => {
         "--disable-network-telemetry",
         "--disable-direct-connections",
         "--no-version-warning",
+        "--verbose",
         "--url",
         "https://coder.example.gs.com",
         "whoami",
       ],
     });
+  });
+
+  it("distinguishes unavailable Coder deployments from expired authentication", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const executablePath = NodePath.join(directory, "coder");
+    const invocation = { executable: executablePath, args: [] };
+
+    await NodeFS.writeFile(executablePath, "#!/usr/bin/env node\nprocess.exit(0);\n", {
+      mode: 0o700,
+    });
+    strictEqual(await runCoderAuthStatus(invocation), "authenticated");
+
+    await NodeFS.writeFile(
+      executablePath,
+      '#!/usr/bin/env node\nprocess.stderr.write("API request failed. Status code 401\\n");\nprocess.exit(1);\n',
+      { mode: 0o700 },
+    );
+    strictEqual(await runCoderAuthStatus(invocation), "unauthenticated");
+
+    await NodeFS.writeFile(
+      executablePath,
+      '#!/usr/bin/env node\nprocess.stderr.write("API request failed. Status code 503\\n");\nprocess.exit(1);\n',
+      { mode: 0o700 },
+    );
+    strictEqual(await runCoderAuthStatus(invocation), "unavailable");
+
+    strictEqual(
+      await runCoderAuthStatus({ executable: NodePath.join(directory, "missing-coder"), args: [] }),
+      "unavailable",
+    );
+
+    await NodeFS.writeFile(executablePath, "#!/usr/bin/env node\nsetTimeout(() => {}, 60_000);\n", {
+      mode: 0o700,
+    });
+    strictEqual(await runCoderAuthStatus(invocation, 20), "unavailable");
   });
 
   it("uploads a validated clipboard image only for a connected workspace", async () => {

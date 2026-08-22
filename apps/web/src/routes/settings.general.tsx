@@ -5,6 +5,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import {
   checkCoderDeploymentAuthentication,
   loginToCoderDeployment,
+  type CoderDeploymentAuthenticationStatus,
   type CoderDeploymentProfile,
 } from "../coder/api";
 import { useCoder } from "../coder/CoderBootstrap";
@@ -14,7 +15,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { randomUUID } from "../lib/utils";
 
-type AuthStatus = "checking" | "authenticated" | "signed-out";
+type AuthStatus = "checking" | CoderDeploymentAuthenticationStatus;
 
 function newDeploymentId(): string {
   return `coder-${randomUUID()}`;
@@ -23,23 +24,25 @@ function newDeploymentId(): string {
 function CoderSettingsView() {
   const { config, connectionErrors, connectWorkspace, disconnectWorkspace, saveConfig } =
     useCoder();
-  const [authByDeployment, setAuthByDeployment] = useState<Readonly<Record<string, AuthStatus>>>({});
+  const [authByDeployment, setAuthByDeployment] = useState<Readonly<Record<string, AuthStatus>>>(
+    {},
+  );
   const [authenticating, setAuthenticating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshAuth = async (deploymentId: string): Promise<void> => {
     setAuthByDeployment((current) => ({ ...current, [deploymentId]: "checking" }));
-    const authenticated = await checkCoderDeploymentAuthentication(deploymentId);
+    const status = await checkCoderDeploymentAuthentication(deploymentId);
     setAuthByDeployment((current) => ({
       ...current,
-      [deploymentId]: authenticated ? "authenticated" : "signed-out",
+      [deploymentId]: status,
     }));
   };
 
   useEffect(() => {
     for (const deployment of config.deployments) {
       void refreshAuth(deployment.id).catch(() => {
-        setAuthByDeployment((current) => ({ ...current, [deployment.id]: "signed-out" }));
+        setAuthByDeployment((current) => ({ ...current, [deployment.id]: "unavailable" }));
       });
     }
   }, [config.deployments]);
@@ -91,6 +94,7 @@ function CoderSettingsView() {
               )}
               key={deployment.id}
               onLogin={() => void login(deployment.id)}
+              onRefreshAuth={() => void refreshAuth(deployment.id)}
               onRemove={async () => {
                 setError(null);
                 try {
@@ -204,9 +208,9 @@ function CoderSettingsView() {
         </section>
 
         <aside className="rounded-xl border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
-          Coder 2.25.3 stores each session token in a plaintext Coder config file. T3 Coder gives each
-          domain a separate profile directory so multiple domains remain signed in, but it never
-          reads, copies, logs, or displays those token files.
+          Coder 2.25.3 stores each session token in a plaintext Coder config file. T3 Coder gives
+          each domain a separate profile directory so multiple domains remain signed in, but it
+          never reads, copies, logs, or displays those token files.
         </aside>
       </div>
     </div>
@@ -221,6 +225,7 @@ function DeploymentCard({
   hasWorkspaces,
   onLogin,
   onRemove,
+  onRefreshAuth,
   onSave,
 }: {
   readonly authStatus: AuthStatus;
@@ -230,6 +235,7 @@ function DeploymentCard({
   readonly hasWorkspaces: boolean;
   readonly onLogin: () => void;
   readonly onRemove: () => Promise<void>;
+  readonly onRefreshAuth: () => void;
   readonly onSave: (deployment: CoderDeploymentProfile) => Promise<void>;
 }) {
   const [draft, setDraft] = useState(deployment);
@@ -248,10 +254,7 @@ function DeploymentCard({
       </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
         <Field label="Display name">
-          <Input
-            value={draft.name}
-            onValueChange={(name) => setDraft({ ...draft, name })}
-          />
+          <Input value={draft.name} onValueChange={(name) => setDraft({ ...draft, name })} />
         </Field>
         <Field label="Coder domain">
           <Input
@@ -274,11 +277,21 @@ function DeploymentCard({
       <div className="mt-5 flex flex-wrap items-center gap-2">
         <Button
           size="sm"
-          disabled={authenticationBusy}
-          onClick={onLogin}
-          variant={authStatus === "authenticated" ? "outline" : "default"}
+          disabled={authenticationBusy || authStatus === "checking"}
+          onClick={authStatus === "unavailable" ? onRefreshAuth : onLogin}
+          variant={
+            authStatus === "authenticated" || authStatus === "unavailable" ? "outline" : "default"
+          }
         >
-          {authenticating ? "Waiting for terminal…" : authStatus === "authenticated" ? "Reauthenticate" : "Sign in"}
+          {authenticating
+            ? "Waiting for terminal…"
+            : authStatus === "authenticated"
+              ? "Reauthenticate"
+              : authStatus === "unavailable"
+                ? "Check again"
+                : authStatus === "checking"
+                  ? "Checking…"
+                  : "Sign in"}
         </Button>
         <Button
           size="sm"
@@ -331,6 +344,13 @@ function AuthBadge({ status }: { readonly status: AuthStatus }) {
       </Badge>
     );
   }
+  if (status === "unavailable") {
+    return (
+      <Badge variant="warning">
+        <CircleAlertIcon /> Unavailable
+      </Badge>
+    );
+  }
   return (
     <Badge variant="warning">
       <CircleAlertIcon /> Sign-in required
@@ -376,12 +396,7 @@ function AddDeploymentForm({
       </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Field label="Display name">
-          <Input
-            placeholder="Goldman Coder"
-            required
-            value={name}
-            onValueChange={setName}
-          />
+          <Input placeholder="Goldman Coder" required value={name} onValueChange={setName} />
         </Field>
         <Field label="Coder domain">
           <Input

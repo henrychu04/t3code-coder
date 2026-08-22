@@ -25,6 +25,11 @@ export interface DiscoveredCoderWorkspace {
   readonly target: string;
 }
 
+export type CoderDeploymentAuthenticationStatus =
+  | "authenticated"
+  | "unauthenticated"
+  | "unavailable";
+
 async function readResponse(response: Response): Promise<Response> {
   if (!response.ok) {
     throw new Error((await response.text()) || `Request failed (${response.status}).`);
@@ -52,11 +57,14 @@ export async function loginToCoderDeployment(deploymentId: string): Promise<void
   }).then(readResponse);
 }
 
-export async function checkCoderDeploymentAuthentication(deploymentId: string): Promise<boolean> {
+export async function checkCoderDeploymentAuthentication(
+  deploymentId: string,
+): Promise<CoderDeploymentAuthenticationStatus> {
   const response = await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/auth-status`, {
     method: "POST",
   }).then(readResponse);
-  return ((await response.json()) as { readonly authenticated: boolean }).authenticated;
+  return ((await response.json()) as { readonly status: CoderDeploymentAuthenticationStatus })
+    .status;
 }
 
 export async function discoverCoderWorkspaces(
