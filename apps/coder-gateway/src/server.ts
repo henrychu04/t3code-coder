@@ -294,8 +294,10 @@ function runCoderWorkspaceProbe(invocation: CoderInvocation): Promise<void> {
     child.once("exit", (code, signal) => {
       if (settled) return;
       settled = true;
-      const detail = Buffer.concat(stderr).toString("utf8").trim();
+      const stdoutDetail = Buffer.concat(stdout).toString("utf8").trim();
+      const stderrDetail = Buffer.concat(stderr).toString("utf8").trim();
       if (code !== 0) {
+        const detail = [stdoutDetail, stderrDetail].filter((value) => value.length > 0).join("\n");
         reject(
           new Error(
             `Coder workspace preflight exited with code ${String(code)} (${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
