@@ -24,8 +24,13 @@ Inside each Linux Coder workspace:
 
 - Claude Code, already authenticated
 - Git
-- Node.js 24.10 or newer
+- Nix with access to the configured Nix substituters and GitHub
 - the standard Linux `script` utility for terminal PTYs
+
+The workspace's default Node.js version may remain Node 22. On first connection, T3 uses Nix to
+realize a pinned Node.js 24 package at `$HOME/.t3-coder/node24` and launches only the workspace
+helper through that absolute Node path. The package is reused on later connections and is not added
+to the workspace profile or `PATH`.
 
 ## Run
 
@@ -50,7 +55,8 @@ separate Coder SSH stdin operation and then runs it in the foreground over newli
 Coder owns deployment authentication; the gateway never reads, copies, logs, or writes Coder tokens.
 Every Coder invocation disables the CLI's optional network telemetry and direct peer-to-peer
 workspace connections. Before installing or starting the helper, the gateway verifies the remote
-Linux architecture, Node.js version, Git, Claude Code, `script(1)`, and state directory.
+Linux architecture, provisions and verifies its pinned Node.js runtime through Nix, and checks Git,
+Claude Code, `script(1)`, and the state directory.
 
 Refreshing the browser reconnects to the existing foreground helper. If Coder SSH or the helper
 exits, the browser's next connection attempt runs preflight and starts a fresh helper.

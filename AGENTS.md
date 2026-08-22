@@ -36,7 +36,8 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
 - Local development and testing: macOS.
 - Production local host: Windows 11.
-- Remote workspace: Linux x86-64 with Node.js 24.10+, Git, Claude Code, and `script(1)`.
+- Remote workspace: Linux x86-64 with Nix, Git, Claude Code, and `script(1)`. T3 provisions its
+  pinned Node.js 24 runtime through Nix without changing the workspace's default Node.js version.
 
 Use Node platform APIs for local paths and processes. Never assume POSIX paths on the local host.
 Remote commands may assume Linux and must quote user-configured values for the shell behavior of

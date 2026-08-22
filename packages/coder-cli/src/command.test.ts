@@ -12,6 +12,7 @@ import {
   buildCoderWorkspaceProbeInvocation,
   REMOTE_HELPER_COMMAND,
   REMOTE_HELPER_INSTALL_COMMAND,
+  REMOTE_NODE_COMMAND,
   REMOTE_WORKSPACE_PROBE_COMMAND,
   quotePosixShellArgument,
 } from "./command.ts";
@@ -95,6 +96,7 @@ describe("Coder CLI command construction", () => {
       "--",
       "env",
       "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
+      REMOTE_NODE_COMMAND,
       REMOTE_HELPER_COMMAND,
       "--stdio",
     ]);
@@ -110,7 +112,9 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
     ]);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /Node\.js 24\.10 or newer/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v nix/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /NixOS\/nixpkgs\/[0-9a-f]{40}#nodejs_24/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
@@ -137,6 +141,7 @@ describe("Coder CLI command construction", () => {
     });
     throws(() => buildBrowserOpenInvocation("win32", "http://localhost:43127"));
     throws(() => buildBrowserOpenInvocation("darwin", "https://example.com"));
+    strictEqual(REMOTE_NODE_COMMAND, '"$HOME/.t3-coder/node24/bin/node"');
     strictEqual(REMOTE_HELPER_COMMAND, '"$HOME/.t3-coder/bin/workspace-helper"');
   });
 });

@@ -16,22 +16,27 @@ export interface CoderInvocationOptions {
   readonly globalConfig?: string;
 }
 
+const REMOTE_NODE_RUNTIME_FLAKE =
+  "github:NixOS/nixpkgs/b6018f87da91d19d0ab4cf979885689b469cdd41#nodejs_24";
+export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
 export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   "set -eu",
   'fail() { printf "%s\\n" "$1" >&2; exit 1; }',
   '[ "$(uname -s)" = "Linux" ] || fail "T3 Coder requires a Linux workspace."',
   '[ "$(uname -m)" = "x86_64" ] || fail "T3 Coder requires an x86-64 workspace."',
-  'command -v node >/dev/null 2>&1 || fail "T3 Coder requires Node.js 24.10 or newer."',
-  `node -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 24 || (major === 24 && minor >= 10) ? 0 : 1)' || fail "T3 Coder requires Node.js 24.10 or newer."`,
-  'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
-  'command -v claude >/dev/null 2>&1 || fail "T3 Coder requires Claude Code in the workspace PATH."',
-  'command -v script >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1)."',
-  'script -qefc true /dev/null >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1) with -qefc support."',
   '[ -n "${HOME:-}" ] || fail "T3 Coder requires a workspace HOME directory."',
   '[ -d "$HOME" ] && [ -r "$HOME" ] && [ -x "$HOME" ] || fail "The workspace HOME directory is not accessible."',
   'mkdir -p "$HOME/.t3-coder" || fail "T3 Coder cannot create its workspace state directory."',
   '[ -w "$HOME/.t3-coder" ] || fail "T3 Coder workspace state directory is not writable."',
+  'command -v nix >/dev/null 2>&1 || fail "T3 Coder requires Nix in the workspace PATH."',
+  `nix --extra-experimental-features 'nix-command flakes' build --out-link "$HOME/.t3-coder/node24" '${REMOTE_NODE_RUNTIME_FLAKE}' || fail "T3 Coder could not provision its pinned Node.js 24 runtime with Nix."`,
+  `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
+  `${REMOTE_NODE_COMMAND} -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 24 || (major === 24 && minor >= 10) ? 0 : 1)' || fail "T3 Coder requires Node.js 24.10 or newer from its pinned Nix runtime."`,
+  'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
+  'command -v claude >/dev/null 2>&1 || fail "T3 Coder requires Claude Code in the workspace PATH."',
+  'command -v script >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1)."',
+  'script -qefc true /dev/null >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1) with -qefc support."',
   'printf "T3_CODER_PREFLIGHT_OK\\n"',
 ].join("; ");
 export const REMOTE_HELPER_INSTALL_COMMAND = [
@@ -83,11 +88,7 @@ export function buildCoderAuthStatusInvocation(
   options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  return invocation(
-    deployment,
-    [...CODER_GLOBAL_ARGS, "--url", deployment.url, "whoami"],
-    options,
-  );
+  return invocation(deployment, [...CODER_GLOBAL_ARGS, "--url", deployment.url, "whoami"], options);
 }
 
 export function buildCoderListWorkspacesInvocation(
@@ -95,14 +96,11 @@ export function buildCoderListWorkspacesInvocation(
   options?: CoderInvocationOptions,
 ): CoderInvocation {
   const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  return invocation(deployment, [
-    ...CODER_GLOBAL_ARGS,
-    "--url",
-    deployment.url,
-    "list",
-    "--output",
-    "json",
-  ], options);
+  return invocation(
+    deployment,
+    [...CODER_GLOBAL_ARGS, "--url", deployment.url, "list", "--output", "json"],
+    options,
+  );
 }
 
 export function buildCoderWorkspaceProbeInvocation(
@@ -115,17 +113,21 @@ export function buildCoderWorkspaceProbeInvocation(
   if (workspace.deploymentId !== deployment.id) {
     throw new Error("Coder workspace does not belong to the selected deployment.");
   }
-  return invocation(deployment, [
-    ...CODER_GLOBAL_ARGS,
-    "--url",
-    deployment.url,
-    "ssh",
-    workspace.workspace,
-    "--",
-    "sh",
-    "-c",
-    quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
-  ], options);
+  return invocation(
+    deployment,
+    [
+      ...CODER_GLOBAL_ARGS,
+      "--url",
+      deployment.url,
+      "ssh",
+      workspace.workspace,
+      "--",
+      "sh",
+      "-c",
+      quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
+    ],
+    options,
+  );
 }
 
 export function buildCoderHelperInvocation(
@@ -138,18 +140,23 @@ export function buildCoderHelperInvocation(
   if (workspace.deploymentId !== deployment.id) {
     throw new Error("Coder workspace does not belong to the selected deployment.");
   }
-  return invocation(deployment, [
-    ...CODER_GLOBAL_ARGS,
-    "--url",
-    deployment.url,
-    "ssh",
-    workspace.workspace,
-    "--",
-    "env",
-    quotePosixShellArgument(`T3_CODER_WORKSPACE_LABEL=${deployment.name} · ${workspace.name}`),
-    REMOTE_HELPER_COMMAND,
-    "--stdio",
-  ], options);
+  return invocation(
+    deployment,
+    [
+      ...CODER_GLOBAL_ARGS,
+      "--url",
+      deployment.url,
+      "ssh",
+      workspace.workspace,
+      "--",
+      "env",
+      quotePosixShellArgument(`T3_CODER_WORKSPACE_LABEL=${deployment.name} · ${workspace.name}`),
+      REMOTE_NODE_COMMAND,
+      REMOTE_HELPER_COMMAND,
+      "--stdio",
+    ],
+    options,
+  );
 }
 
 export function buildCoderHelperInstallInvocation(
@@ -162,17 +169,21 @@ export function buildCoderHelperInstallInvocation(
   if (workspace.deploymentId !== deployment.id) {
     throw new Error("Coder workspace does not belong to the selected deployment.");
   }
-  return invocation(deployment, [
-    ...CODER_GLOBAL_ARGS,
-    "--url",
-    deployment.url,
-    "ssh",
-    workspace.workspace,
-    "--",
-    "sh",
-    "-c",
-    quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
-  ], options);
+  return invocation(
+    deployment,
+    [
+      ...CODER_GLOBAL_ARGS,
+      "--url",
+      deployment.url,
+      "ssh",
+      workspace.workspace,
+      "--",
+      "sh",
+      "-c",
+      quotePosixShellArgument(REMOTE_HELPER_INSTALL_COMMAND),
+    ],
+    options,
+  );
 }
 
 export function buildBrowserOpenInvocation(

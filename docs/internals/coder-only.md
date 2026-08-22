@@ -58,8 +58,11 @@ processes and managed browser extensions as trusted by the deployment environmen
 Development is supported on macOS. The production local host is Windows 11, so local paths and
 processes must use Node platform APIs and argument-array spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
-remote OS and architecture, Node.js version, Git, Claude Code, `script(1)`, and workspace state
-directory. Platform and protocol versions are then negotiated before a helper is used.
+remote OS and architecture, realizes a pinned Node.js 24 package through workspace-installed Nix,
+and checks Git, Claude Code, `script(1)`, and the workspace state directory. The helper is launched
+with the Nix package's absolute Node path without changing `PATH`, so workspace shells and helper
+children retain the workspace's default Node.js version. Platform and protocol versions are then
+negotiated before a helper is used.
 
 ## Network and transfer constraints
 
@@ -81,6 +84,7 @@ are not exposed by T3.
 
 `npm start` builds the web client and Linux helper from the checked-out source and lockfile, then
 starts the local gateway without opening a browser. Connecting never installs from npm or downloads
-an update. On the first
-connection to a workspace in each local gateway session, the gateway replaces the remote helper
-with that locally built bundle through Coder before starting it in the foreground.
+an application update. The first connection may download the pinned Node.js package through Nix if
+it is not already in the workspace's Nix store. On the first connection to a workspace in each local
+gateway session, the gateway replaces the remote helper with that locally built bundle through
+Coder before starting it in the foreground.

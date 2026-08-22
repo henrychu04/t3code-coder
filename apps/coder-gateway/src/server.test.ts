@@ -282,6 +282,7 @@ describe("local Coder gateway", () => {
       "--",
       "env",
       "'T3_CODER_WORKSPACE_LABEL=Goldman · Project One'",
+      '"$HOME/.t3-coder/node24/bin/node"',
       '"$HOME/.t3-coder/bin/workspace-helper"',
       "--stdio",
     ]);
@@ -296,7 +297,7 @@ describe("local Coder gateway", () => {
       executablePath,
       [
         "#!/usr/bin/env node",
-        'process.stdout.write("T3 Coder requires Node.js 24.10 or newer.\\n");',
+        'process.stdout.write("T3 Coder requires Nix in the workspace PATH.\\n");',
         'process.stderr.write("version mismatch: client v2.25.3, server v2.34.5\\n");',
         "process.exit(1);",
       ].join("\n"),
@@ -338,7 +339,7 @@ describe("local Coder gateway", () => {
     strictEqual(
       response.body,
       "Coder workspace preflight exited with code 1 (null). " +
-        "T3 Coder requires Node.js 24.10 or newer.\n" +
+        "T3 Coder requires Nix in the workspace PATH.\n" +
         "version mismatch: client v2.25.3, server v2.34.5",
     );
   });
