@@ -5,7 +5,7 @@
  * `<cwd>/.agents/skills` and `<cwd>/.claude/skills` (project scope), one
  * directory per skill with a `SKILL.md` carrying YAML frontmatter. Later roots
  * win on name collisions, so precedence is user, `.agents`, then `.claude`.
- * The Agent SDK init handshake surfaces skills only as slash commands without
+ * The Claude Code init handshake surfaces skills only as slash commands without
  * their filesystem paths, so the provider snapshot scans the same locations
  * directly from the Claude runtime's reported skills.
  *

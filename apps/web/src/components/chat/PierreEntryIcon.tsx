@@ -28,7 +28,6 @@ const ICON_COLORS: Record<string, readonly [light: string, dark: string]> = {
   javascript: ["#d5a910", "#ffd452"],
   json: ["#d47628", "#ffa359"],
   markdown: ["#199f43", "#5ecc71"],
-  mcp: ["#17a5af", "#64d1db"],
   nextjs: ["#84848a", "#adadb1"],
   npm: ["#d52c36", "#ff6762"],
   oxc: ["#1ca1c7", "#68cdf2"],

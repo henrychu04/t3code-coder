@@ -10,7 +10,7 @@ import type {
   PermissionResult,
   SDKMessage,
   SDKUserMessage,
-} from "@anthropic-ai/claude-agent-sdk";
+} from "../Drivers/ClaudeCli.ts";
 import {
   ApprovalRequestId,
   ClaudeSettings,
@@ -3303,27 +3303,29 @@ describe("ClaudeAdapterLive", () => {
         yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
       });
 
-      // MCP tools frequently arrive with no usable suggestion (Claude Code
-      // sends an empty array); the decision must still stick for the session.
-      const mcpPermissionPromise = canUseTool(
-        "mcp__linear__create_issue",
+      // Custom tools can arrive with no usable suggestion; the decision must
+      // still stick for the session.
+      const customPermissionPromise = canUseTool(
+        "CustomCreateIssue",
         { title: "hello" },
         {
           signal: new AbortController().signal,
           suggestions: [],
-          toolUseID: "tool-use-mcp-1",
+          toolUseID: "tool-use-custom-1",
         },
       );
       yield* respondToNextRequest;
-      const mcpPermission = (yield* Effect.promise(() => mcpPermissionPromise)) as PermissionResult;
-      assert.equal(mcpPermission.behavior, "allow");
-      if (mcpPermission.behavior !== "allow") {
+      const customPermission = (yield* Effect.promise(
+        () => customPermissionPromise,
+      )) as PermissionResult;
+      assert.equal(customPermission.behavior, "allow");
+      if (customPermission.behavior !== "allow") {
         return;
       }
-      assert.deepEqual(mcpPermission.updatedPermissions, [
+      assert.deepEqual(customPermission.updatedPermissions, [
         {
           type: "addRules",
-          rules: [{ toolName: "mcp__linear__create_issue" }],
+          rules: [{ toolName: "CustomCreateIssue" }],
           behavior: "allow",
           destination: "session",
         },
@@ -3532,7 +3534,6 @@ describe("ClaudeAdapterLive", () => {
         claude_code_version: "test",
         cwd: "/tmp/claude-adapter-test",
         tools: [],
-        mcp_servers: [],
         model: "claude-sonnet-4-5",
         permissionMode: "bypassPermissions",
         slash_commands: [],

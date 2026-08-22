@@ -7,7 +7,7 @@ not use the upstream desktop, relay, Tailscale, hosted web, or direct remote-ser
 ## Runtime boundary
 
 The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
-client to the default browser. It stores only non-secret Coder deployment URLs, workspace targets,
+client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace targets,
 project display names and Linux roots, and an optional Coder executable path. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
 and provider sessions are memory-only.
@@ -29,6 +29,12 @@ browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> claude
 The workspace helper owns the existing T3 orchestration store, project records, threads, Claude
 sessions, repository-local Git and filesystem operations, terminals, and checkpoints. Its durable
 state remains in the workspace. The local gateway does not open or mirror its SQLite file.
+
+The helper starts the workspace-installed `claude` executable directly with argument-array spawning
+and streaming JSON over stdin/stdout. No Anthropic Agent SDK package or Claude executable is bundled.
+T3 passes an empty strict MCP configuration and disables connected claude.ai MCP servers for every
+managed session. Claude's provider connection remains owned by the workspace executable and subject
+to workspace policy.
 
 ## Authentication
 
@@ -72,6 +78,7 @@ are not exposed by T3.
 ## Distribution
 
 `npm start` builds the web client and Linux helper from the checked-out source and lockfile, then
-starts the local gateway. Connecting never installs from npm or downloads an update. On the first
+starts the local gateway without opening a browser. Connecting never installs from npm or downloads
+an update. On the first
 connection to a workspace in each local gateway session, the gateway replaces the remote helper
 with that locally built bundle through Coder before starting it in the foreground.

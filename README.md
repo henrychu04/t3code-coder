@@ -30,13 +30,14 @@ Inside each Linux Coder workspace:
 ## Run
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile --ignore-scripts
 npm start
 ```
 
 The gateway builds the pinned workspace helper and web client, binds to an ephemeral
-`127.0.0.1` port, and opens the default browser. Use `npm run start:no-browser` when browser launch
-is restricted.
+`127.0.0.1` port, and prints the local URL. Open that URL in an approved browser. Browser launch is
+never automatic; `npm run start:open` is an explicit convenience for unrestricted development
+machines.
 
 Add a Coder deployment URL, discover its workspaces through the installed Coder CLI, and register
 projects by their absolute Linux paths. Connecting installs the version-matched helper through a
@@ -62,6 +63,10 @@ The local gateway accepts only its exact loopback Host and Origin and sends no C
 no application authentication token by design. Its only non-loopback child transport is the
 installed Coder CLI. The workspace helper opens no listening socket.
 
+The helper invokes the workspace-installed `claude` executable directly with streaming JSON over
+stdio. This repository does not package Anthropic's Agent SDK. Filesystem and claude.ai MCP servers
+are disabled for T3-managed Claude sessions.
+
 Allowed transport paths are:
 
 - browser to the loopback gateway;
@@ -69,7 +74,9 @@ Allowed transport paths are:
 - Claude Code to endpoints permitted by the workspace policy.
 
 See [the architecture note](./docs/internals/coder-only.md) for the complete boundary and data
-ownership model.
+ownership model. [The compliance review](./docs/compliance-review.md),
+[security policy](./SECURITY.md), [third-party notices](./THIRD_PARTY_NOTICES.md), and
+[CycloneDX SBOM](./docs/sbom.cdx.json) are included for software-intake review.
 
 ## Focused verification
 

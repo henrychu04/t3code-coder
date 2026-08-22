@@ -3,10 +3,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "prepare": "effect-tsgo patch",
     "build": "pnpm --filter @t3tools/coder-helper build && pnpm --filter @t3tools/web build",
     "start": "pnpm build && node apps/coder-gateway/src/bin.ts",
-    "start:no-browser": "pnpm build && node apps/coder-gateway/src/bin.ts --no-browser",
+    "start:open": "pnpm build && node apps/coder-gateway/src/bin.ts --open-browser",
+    "generate:sbom": "pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --lockfile-only --prod --out docs/sbom.cdx.json",
     "typecheck:gateway": "tsgo --noEmit -p apps/coder-gateway/tsconfig.json",
     "typecheck:helper": "tsgo --noEmit -p apps/coder-helper/tsconfig.json",
     "typecheck:server": "tsgo --noEmit -p apps/server/tsconfig.json",
@@ -14,7 +14,6 @@
     "test:coder": "node --test apps/coder-gateway/src/server.test.ts apps/coder-helper/src/bin.test.ts packages/coder-cli/src/*.test.ts"
   },
   "devDependencies": {
-    "@effect/tsgo": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "vite-plus": "catalog:"

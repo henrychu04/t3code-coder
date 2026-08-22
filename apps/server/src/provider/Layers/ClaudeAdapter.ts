@@ -1,7 +1,7 @@
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
  *
- * Wraps `@anthropic-ai/claude-agent-sdk` query sessions behind the generic
+ * Wraps workspace-local Claude Code streaming sessions behind the generic
  * provider adapter contract and emits canonical runtime events.
  *
  * @module ClaudeAdapterLive
@@ -19,8 +19,7 @@ import {
   type SettingSource,
   type SDKUserMessage,
   type ModelUsage,
-} from "@anthropic-ai/claude-agent-sdk";
-import { parseCliArgs } from "@t3tools/shared/cliArgs";
+} from "../Drivers/ClaudeCli.ts";
 import {
   ApprovalRequestId,
   type CanonicalItemType,
@@ -73,7 +72,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { ServerConfig } from "../../config.ts";
-import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
@@ -164,7 +162,7 @@ interface PendingApproval {
  * `destination: "session"` — echoing them verbatim would persist the
  * session-only choice as a permanent rule (suggestions typically target
  * `localSettings`, i.e. `.claude/settings.local.json`). When Claude Code
- * offers no suggestion — common for MCP tools — fall back to a whole-tool
+ * offers no suggestion, fall back to a whole-tool
  * session allow rule so the decision still sticks for the session instead of
  * silently degrading into a one-shot accept.
  */
@@ -721,9 +719,6 @@ function classifyToolItemType(toolName: string): CanonicalItemType {
   ) {
     return "file_change";
   }
-  if (normalized.includes("mcp")) {
-    return "mcp_tool_call";
-  }
   if (normalized.includes("websearch") || normalized.includes("web search")) {
     return "web_search";
   }
@@ -1175,8 +1170,6 @@ function titleForTool(itemType: CanonicalItemType): string {
       return "Command run";
     case "file_change":
       return "File change";
-    case "mcp_tool_call":
-      return "MCP tool call";
     case "collab_agent_tool_call":
       return "Subagent task";
     case "web_search":
@@ -1584,10 +1577,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const crypto = yield* Crypto.Crypto;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
     Effect.provideService(Path.Path, path),
-  );
-  const claudeSdkExecutablePath = yield* resolveClaudeSdkExecutablePath(
-    claudeSettings.binaryPath,
-    claudeEnvironment,
   );
   const createQuery =
     options?.createQuery ??
@@ -2287,8 +2276,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const dropStart =
         event.type === "content_block_start" &&
         event.content_block.type !== "tool_use" &&
-        event.content_block.type !== "server_tool_use" &&
-        event.content_block.type !== "mcp_tool_use";
+        event.content_block.type !== "server_tool_use";
       const dropDelta =
         event.type === "content_block_delta" &&
         (event.delta.type === "text_delta" || event.delta.type === "thinking_delta");
@@ -2476,11 +2464,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         });
         return;
       }
-      if (
-        block.type !== "tool_use" &&
-        block.type !== "server_tool_use" &&
-        block.type !== "mcp_tool_use"
-      ) {
+      if (block.type !== "tool_use" && block.type !== "server_tool_use") {
         return;
       }
 
@@ -3694,11 +3678,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ) {
         const requestId = ApprovalRequestId.make(yield* randomUUIDv4);
 
-        // Parse questions from the SDK's AskUserQuestion input.
-        // `id` MUST equal the full question text — Claude SDK >= 2.1.121 looks
+        // Parse questions from Claude Code's AskUserQuestion input.
+        // `id` MUST equal the full question text — Claude Code looks
         // up answers by question text in `mapToolResultToToolResultBlockParam`,
-        // so the key the UI uses to keep its draft answer must match the SDK's
-        // expected lookup key. See https://github.com/pingdotgg/t3code/issues/2388
+        // so the key the UI uses to keep its draft answer must match the CLI's
+        // expected lookup key.
         const rawQuestions = Array.isArray(toolInput.questions) ? toolInput.questions : [];
         const questions: Array<UserInputQuestion> = rawQuestions.map(
           (q: Record<string, unknown>, idx: number) => ({
@@ -3979,8 +3963,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const canUseTool: CanUseTool = (toolName, toolInput, callbackOptions) =>
         runPromise(canUseToolEffect(toolName, toolInput, callbackOptions));
 
-      const claudeBinaryPath = claudeSdkExecutablePath;
-      const extraArgs = parseCliArgs(claudeSettings.launchArgs).flags;
+      const claudeBinaryPath = claudeSettings.binaryPath;
       const modelSelection =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const caps = getClaudeModelCapabilities(modelSelection?.model);
@@ -4037,9 +4020,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
+        // The CLI transport enforces an empty strict integration config.
         env: claudeEnvironment,
         additionalDirectories,
-        ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
       };
 
       yield* Effect.annotateCurrentSpan({
@@ -4063,7 +4046,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         "claude.query.additional_directories": additionalDirectories,
         "claude.query.setting_sources": [...CLAUDE_SETTING_SOURCES],
         "claude.query.settings_json": encodeJsonStringForDiagnostics(settings) ?? "",
-        "claude.query.extra_args_json": encodeJsonStringForDiagnostics(extraArgs) ?? "",
         "claude.query.path_to_executable": claudeBinaryPath,
       });
 

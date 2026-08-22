@@ -442,17 +442,15 @@ export const layer = CoderWsRpcGroup.toLayer(
             ),
           ),
       [ORCHESTRATION_WS_METHODS.getFullThreadDiff]: (input) =>
-        diffs
-          .getFullThreadDiff(input)
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationGetFullThreadDiffError({
-                  message: "Failed to load thread diff",
-                  cause,
-                }),
-            ),
+        diffs.getFullThreadDiff(input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationGetFullThreadDiffError({
+                message: "Failed to load thread diff",
+                cause,
+              }),
           ),
+        ),
       [ORCHESTRATION_WS_METHODS.searchThreads]: (input) =>
         projections
           .searchThreads(input)
@@ -463,31 +461,27 @@ export const layer = CoderWsRpcGroup.toLayer(
             ),
           ),
       [ORCHESTRATION_WS_METHODS.getArchivedShellSnapshot]: () =>
-        projections
-          .getArchivedShellSnapshot()
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new OrchestrationGetSnapshotError({
-                  message: "Failed to load archived threads",
-                  cause,
-                }),
-            ),
+        projections.getArchivedShellSnapshot().pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationGetSnapshotError({
+                message: "Failed to load archived threads",
+                cause,
+              }),
           ),
+        ),
       [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
         Stream.unwrap(
           Effect.gen(function* () {
-            const snapshot = yield* projections
-              .getShellSnapshot()
-              .pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new OrchestrationGetSnapshotError({
-                      message: "Failed to load projects and threads",
-                      cause,
-                    }),
-                ),
-              );
+            const snapshot = yield* projections.getShellSnapshot().pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: "Failed to load projects and threads",
+                    cause,
+                  }),
+              ),
+            );
             const live = orchestration.streamDomainEvents.pipe(Stream.mapEffect(shellEvent));
             if (input.afterSequence !== undefined) {
               const head = yield* orchestration.latestSequence;

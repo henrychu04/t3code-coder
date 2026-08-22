@@ -10,12 +10,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    exclude: [
-      "**/.repos/**",
-      "**/node_modules/**",
-      "**/dist/**",
-      "**/.{idea,git,cache,output,temp}/**",
-    ],
+    exclude: ["**/node_modules/**", "**/dist/**", "**/.{idea,git,cache,output,temp}/**"],
     hookTimeout: 60_000,
     testTimeout: 60_000,
   },
@@ -25,9 +20,6 @@ export default defineConfig({
   },
   fmt: {
     ignorePatterns: [
-      ".reference",
-      ".repos/**",
-      ".alchemy",
       "dist",
       "node_modules",
       "pnpm-lock.yaml",
@@ -38,19 +30,9 @@ export default defineConfig({
       "*.icon/**",
     ],
     sortPackageJson: {},
-    overrides: [
-      {
-        files: [".devcontainer/devcontainer.json"],
-        options: {
-          trailingComma: "none",
-        },
-      },
-    ],
   },
   lint: {
     ignorePatterns: [
-      ".repos",
-      ".repos/**",
       "dist",
       "node_modules",
       "pnpm-lock.yaml",
@@ -58,7 +40,6 @@ export default defineConfig({
       "**/routeTree.gen.ts",
     ],
     plugins: ["eslint", "oxc", "react", "unicorn", "typescript"],
-    jsPlugins: ["./oxlint-plugin-t3code/index.ts"],
     categories: {
       correctness: "warn",
       suspicious: "warn",
@@ -108,11 +89,6 @@ export default defineConfig({
           ],
         },
       ],
-      "t3code/no-global-process-runtime": "error",
-      "t3code/no-inline-schema-compile": "warn",
-      "t3code/no-manual-effect-runtime-in-tests": "error",
-      "t3code/no-native-title-tooltip": "error",
-      "t3code/namespace-node-imports": "error",
     },
     options: {
       // Revisit once Oxlint's tsgolint path can integrate with @effect/tsgo diagnostics.

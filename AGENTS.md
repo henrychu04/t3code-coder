@@ -77,7 +77,6 @@ without explicit user permission. Do not test against or modify `~/.t3/userdata`
 ## Working practices
 
 - Prefer `rg`/`rg --files` for discovery.
-- Read `.repos/effect-smol/LLMS.md` before writing Effect code.
 - Preserve unrelated user changes and avoid destructive Git commands.
 - Never kill processes by pattern; stop only a PID captured at spawn.
 - Never commit plans, scratch notes, local state, secrets, credentials, or generated build output.

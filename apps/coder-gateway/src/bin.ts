@@ -20,7 +20,7 @@ const gateway = await startLocalCoderGateway({
 });
 process.stdout.write(`T3 Coder listening on ${gateway.url}\n`);
 
-if (!process.argv.includes("--no-browser")) {
+if (process.argv.includes("--open-browser")) {
   const browser = buildBrowserOpenInvocation(process.platform, gateway.url);
   const browserProcess = spawn(browser.executable, browser.args, {
     shell: false,

@@ -408,7 +408,6 @@ function toolGroupSummaryKind(entries: ReadonlyArray<WorkLogEntry>): ToolGroupSu
 
   const fallbackKinds = new Set(
     entries.map((entry): ToolGroupSummaryKind => {
-      if (entry.itemType === "mcp_tool_call") return "other";
       if (entry.itemType === "dynamic_tool_call") return "dynamic-tool";
       if (entry.itemType === "collab_agent_tool_call" || entry.taskId) return "agent-tool";
       if (entry.tone === "thinking") return "agent-tool";

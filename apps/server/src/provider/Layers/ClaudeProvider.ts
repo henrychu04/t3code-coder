@@ -26,7 +26,7 @@ import {
   type SlashCommand as ClaudeSlashCommand,
   type SDKUserMessage,
   type SettingSource,
-} from "@anthropic-ai/claude-agent-sdk";
+} from "../Drivers/ClaudeCli.ts";
 
 import {
   buildBooleanOptionDescriptor,
@@ -39,7 +39,6 @@ import {
   spawnAndCollect,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
-import { resolveClaudeSdkExecutablePath } from "../Drivers/ClaudeExecutable.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 
@@ -412,7 +411,7 @@ export function resolveClaudeEffort(
  * Normalize a resolved Claude effort value into one suitable for the Claude
  * CLI's `--effort` flag.
  *
- * Mirrors the mapping used when invoking the Claude Agent SDK
+ * Mirrors the mapping used when invoking the Claude Code CLI
  * ({@link getEffectiveClaudeAgentEffort} in ClaudeAdapter): `ultracode` is a
  * Claude Code setting that pairs with `xhigh`, `ultrathink` is filtered out
  * because it is a prompt-prefix mode, and older model compatibility mappings
@@ -576,9 +575,9 @@ function apiProviderAuthMetadata(
   return apiProvider === "bedrock" ? { type: "bedrock", label: "Amazon Bedrock" } : undefined;
 }
 
-// ── SDK capability probe ────────────────────────────────────────────
+// ── CLI capability probe ────────────────────────────────────────────
 
-// Amazon Bedrock initializes far slower than first-party auth: the SDK boots the
+// Amazon Bedrock initializes far slower than first-party auth: the CLI boots the
 // Bedrock backend and runs the `awsAuthRefresh` credential hook before returning
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
@@ -594,7 +593,7 @@ export const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
   "local",
 ] as const satisfies ReadonlyArray<SettingSource>;
 
-/** Build the exact SDK options used by the periodic Claude capability probe. */
+/** Build the exact CLI options used by the periodic Claude capability probe. */
 export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly executablePath: string;
   readonly abortController: AbortController;
@@ -611,16 +610,8 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     // SessionStart hooks would run on every health check.
     settings: { disableAllHooks: true },
     allowedTools: [],
-    // Ignore MCP definitions from every filesystem setting source above. The
-    // SDK combines this empty explicit map with --strict-mcp-config.
-    mcpServers: {},
-    strictMcpConfig: true,
-    env: {
-      ...input.environment,
-      // Connected claude.ai MCP servers are discovered outside filesystem
-      // config; disable them independently for this health check.
-      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
-    },
+    // The CLI transport enforces an empty strict integration config.
+    env: input.environment,
     ...(input.cwd ? { cwd: input.cwd } : {}),
     stderr: () => {},
   };
@@ -636,7 +627,7 @@ type ClaudeCapabilitiesProbe = {
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
   /**
-   * Active API backend reported by the SDK's `AccountInfo`. Anthropic OAuth
+   * Active API backend reported by Claude Code's initialization response. Anthropic OAuth
    * login only applies when `"firstParty"`; for Amazon Bedrock (`"bedrock"`)
    * the subscription/token fields are absent and auth is external AWS creds.
    */
@@ -717,8 +708,8 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Probe account information by spawning a lightweight Claude Agent SDK
- * session and reading the initialization result.
+ * Probe account information by spawning a lightweight Claude Code CLI session
+ * and reading the initialization result.
  *
  * We pass a never-yielding AsyncIterable as the prompt so that no user
  * message is ever written to the subprocess stdin. This means the Claude
@@ -737,10 +728,7 @@ const probeClaudeCapabilities = (
   const abort = new AbortController();
   return Effect.gen(function* () {
     const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, environment);
-    const executablePath = yield* resolveClaudeSdkExecutablePath(
-      claudeSettings.binaryPath,
-      claudeEnvironment,
-    );
+    const executablePath = claudeSettings.binaryPath;
     return yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
         // Never yield — we only need initialization data, not a conversation.
