@@ -344,6 +344,122 @@ describe("local Coder gateway", () => {
     );
   });
 
+  it("allows verbose preflight output while retaining the final success marker", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const executablePath = NodePath.join(directory, "coder");
+    await NodeFS.writeFile(
+      executablePath,
+      [
+        "#!/usr/bin/env node",
+        'process.stderr.write("x".repeat(64 * 1024));',
+        'process.stdout.write("T3_CODER_PREFLIGHT_OK\\n");',
+      ].join("\n"),
+      { mode: 0o700 },
+    );
+    let closeConnection:
+      | ((exit: { code: number; signal: null; expected: true }) => void)
+      | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      closeConnection = resolve;
+    });
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed,
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => closeConnection?.({ code: 130, signal: null, expected: true }),
+      }),
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+            executable: executablePath,
+          },
+        ],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+
+    const response = await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(response.statusCode, 200);
+  });
+
+  it("times out when the remote workspace preflight stops responding", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const executablePath = NodePath.join(directory, "coder");
+    await NodeFS.writeFile(
+      executablePath,
+      ["#!/usr/bin/env node", "setInterval(() => undefined, 1000);"].join("\n"),
+      { mode: 0o700 },
+    );
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      workspaceProbeTimeoutMs: 25,
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+            executable: executablePath,
+          },
+        ],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+
+    const response = await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(response.statusCode, 502);
+    strictEqual(
+      response.body,
+      "Coder workspace preflight timed out. Check that the workspace is running and can access its Nix substituters and GitHub.",
+    );
+  });
+
   it("checks authentication through the deployment's isolated Coder 2.25 profile", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);

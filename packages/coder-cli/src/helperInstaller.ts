@@ -1,14 +1,17 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { createReadStream } from "node:fs";
 import { spawn } from "node:child_process";
+import * as NodeTimers from "node:timers";
 
 import type { CoderInvocation } from "./command.ts";
 
 const MAX_INSTALL_ERROR_BYTES = 32 * 1024;
+const DEFAULT_INSTALL_TIMEOUT_MS = 2 * 60_000;
 
 export function installCoderHelper(
   invocation: CoderInvocation,
   helperBundlePath: string,
+  options?: { readonly timeoutMs?: number },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(invocation.executable, invocation.args, {
@@ -16,17 +19,23 @@ export function installCoderHelper(
       stdio: ["pipe", "ignore", "pipe"],
       windowsHide: true,
     });
+    const bundle = createReadStream(helperBundlePath);
     let stderr = "";
     let stdinError: Error | undefined;
     let settled = false;
+    let timeout: NodeJS.Timeout | undefined;
     const resolveOnce = (): void => {
       if (settled) return;
       settled = true;
+      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
+      bundle.destroy();
       resolve();
     };
     const rejectOnce = (cause: unknown): void => {
       if (settled) return;
       settled = true;
+      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
+      bundle.destroy();
       reject(cause);
     };
     child.stderr.on("data", (chunk: Buffer) => {
@@ -51,11 +60,14 @@ export function installCoderHelper(
         ),
       );
     });
-    const bundle = createReadStream(helperBundlePath);
     bundle.once("error", (cause) => {
       child.kill();
       rejectOnce(cause);
     });
+    timeout = NodeTimers.setTimeout(() => {
+      child.kill();
+      rejectOnce(new Error("Timed out while installing the Coder workspace helper."));
+    }, options?.timeoutMs ?? DEFAULT_INSTALL_TIMEOUT_MS);
     bundle.pipe(child.stdin);
   });
 }

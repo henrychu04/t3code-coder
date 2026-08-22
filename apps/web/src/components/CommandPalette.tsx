@@ -269,7 +269,9 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
                           <span className="min-w-0">
                             <span className="block truncate font-medium">{workspace.name}</span>
                             <span className="block truncate text-xs text-muted-foreground">
-                              {workspace.target}
+                              {connectingTarget === workspace.target
+                                ? "Preparing workspace… The first connection can take a few minutes."
+                                : workspace.target}
                             </span>
                           </span>
                         </button>

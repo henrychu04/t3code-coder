@@ -2,6 +2,7 @@
 import * as NodeHttp from "node:http";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
+import * as NodeTimers from "node:timers";
 import { spawn } from "node:child_process";
 import type { Duplex } from "node:stream";
 
@@ -35,6 +36,7 @@ const MAX_RPC_MESSAGE_BYTES = 8 * 1024 * 1024;
 const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
 const MAX_CODER_PROBE_BYTES = 32 * 1024;
 const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
+const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -262,40 +264,50 @@ function runCoderWorkspaceList(
   });
 }
 
-function runCoderWorkspaceProbe(invocation: CoderInvocation): Promise<void> {
+function runCoderWorkspaceProbe(
+  invocation: CoderInvocation,
+  timeoutMs = DEFAULT_CODER_PROBE_TIMEOUT_MS,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(invocation.executable, invocation.args, {
       shell: false,
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
     });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let totalBytes = 0;
+    let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     let settled = false;
+    let timeout: NodeJS.Timeout | undefined;
     const rejectOnce = (cause: Error): void => {
       if (settled) return;
       settled = true;
+      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
       child.kill();
       reject(cause);
     };
-    const collect = (target: Buffer[], chunk: Buffer): void => {
-      if (settled) return;
-      totalBytes += chunk.byteLength;
-      if (totalBytes > MAX_CODER_PROBE_BYTES) {
-        rejectOnce(new Error("Coder workspace preflight output is too large."));
-        return;
+    const appendOutput = (
+      current: Buffer<ArrayBufferLike>,
+      chunk: Buffer<ArrayBufferLike>,
+    ): Buffer<ArrayBufferLike> => {
+      if (chunk.byteLength >= MAX_CODER_PROBE_BYTES) {
+        return chunk.subarray(chunk.byteLength - MAX_CODER_PROBE_BYTES);
       }
-      target.push(chunk);
+      const overflow = current.byteLength + chunk.byteLength - MAX_CODER_PROBE_BYTES;
+      return Buffer.concat([overflow > 0 ? current.subarray(overflow) : current, chunk]);
     };
-    child.stdout.on("data", (chunk: Buffer) => collect(stdout, chunk));
-    child.stderr.on("data", (chunk: Buffer) => collect(stderr, chunk));
+    child.stdout.on("data", (chunk: Buffer) => {
+      if (!settled) stdout = appendOutput(stdout, chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (!settled) stderr = appendOutput(stderr, chunk);
+    });
     child.once("error", (cause) => rejectOnce(cause));
     child.once("exit", (code, signal) => {
       if (settled) return;
       settled = true;
-      const stdoutDetail = Buffer.concat(stdout).toString("utf8").trim();
-      const stderrDetail = Buffer.concat(stderr).toString("utf8").trim();
+      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
+      const stdoutDetail = stdout.toString("utf8").trim();
+      const stderrDetail = stderr.toString("utf8").trim();
       if (code !== 0) {
         const detail = [stdoutDetail, stderrDetail].filter((value) => value.length > 0).join("\n");
         reject(
@@ -305,13 +317,22 @@ function runCoderWorkspaceProbe(invocation: CoderInvocation): Promise<void> {
         );
         return;
       }
-      const lines = Buffer.concat(stdout).toString("utf8").split(/\r?\n/u);
+      const lines = stdout.toString("utf8").split(/\r?\n/u);
       if (!lines.includes(CODER_PREFLIGHT_SENTINEL)) {
         reject(new Error("Coder workspace preflight did not complete successfully."));
         return;
       }
       resolve();
     });
+    timeout = NodeTimers.setTimeout(
+      () =>
+        rejectOnce(
+          new Error(
+            "Coder workspace preflight timed out. Check that the workspace is running and can access its Nix substituters and GitHub.",
+          ),
+        ),
+      timeoutMs,
+    );
   });
 }
 
@@ -324,6 +345,7 @@ export async function startLocalCoderGateway(options?: {
     invocation: CoderInvocation,
   ) => Promise<readonly DiscoveredCoderWorkspace[]>;
   readonly probeWorkspace?: (invocation: CoderInvocation) => Promise<void>;
+  readonly workspaceProbeTimeoutMs?: number;
   readonly checkAuthentication?: (invocation: CoderInvocation) => Promise<boolean>;
 }): Promise<LocalCoderGateway> {
   let profileConfig: CoderProfileConfig = options?.configPath
@@ -335,7 +357,10 @@ export async function startLocalCoderGateway(options?: {
   const pendingWorkspaceUpgrades = new Set<string>();
   const openHelper = options?.connectHelper ?? connectCoderHelper;
   const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
-  const probeWorkspace = options?.probeWorkspace ?? runCoderWorkspaceProbe;
+  const probeWorkspace =
+    options?.probeWorkspace ??
+    ((invocation: CoderInvocation) =>
+      runCoderWorkspaceProbe(invocation, options?.workspaceProbeTimeoutMs));
   const checkAuthentication = options?.checkAuthentication ?? runCoderAuthStatus;
   const coderInvocationOptions = (deploymentId: string) => ({
     globalConfig: NodePath.join(

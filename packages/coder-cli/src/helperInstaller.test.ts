@@ -29,4 +29,20 @@ describe("Coder helper installer", () => {
       /Coder helper installation failed/,
     );
   });
+
+  it("times out when Coder stops consuming the helper upload", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-helper-install-"));
+    tempDirectories.push(directory);
+    const bundlePath = NodePath.join(directory, "workspace-helper");
+    await NodeFS.writeFile(bundlePath, "helper");
+
+    await rejects(
+      installCoderHelper(
+        { executable: process.execPath, args: ["-e", "setInterval(() => undefined, 1000)"] },
+        bundlePath,
+        { timeoutMs: 25 },
+      ),
+      /Timed out while installing the Coder workspace helper/,
+    );
+  });
 });
