@@ -22,7 +22,7 @@ export interface CoderInvocationOptions {
 
 export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
-const REMOTE_NODE_VERSION_CHECK = `${REMOTE_NODE_COMMAND} -e 'const [major, minor] = process.versions.node.split(".").map(Number); process.exit(major > 24 || (major === 24 && minor >= 10) ? 0 : 1)'`;
+const REMOTE_NODE_VERSION_CHECK = `${REMOTE_NODE_COMMAND} -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)'`;
 export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   "set -eu",
   'fail() { printf "%s\\n" "$1" >&2; exit 1; }',
@@ -34,7 +34,7 @@ export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   '[ -w "$HOME/.t3-coder" ] || fail "T3 Coder workspace state directory is not writable."',
   `if ! [ -x ${REMOTE_NODE_COMMAND} ] || ! ${REMOTE_NODE_VERSION_CHECK}; then command -v nix-env >/dev/null 2>&1 || fail "T3 Coder requires nix-env to provision Node.js 24."; nix-env --profile "$HOME/.t3-coder/node24" -iA nixpkgs.nodejs_24 || fail "T3 Coder could not provision Node.js 24 from the workspace's configured nixpkgs."; fi`,
   `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
-  `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24.10 or newer from its Nix runtime."`,
+  `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24 or newer from its Nix runtime."`,
   'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
   'command -v claude >/dev/null 2>&1 || fail "T3 Coder requires Claude Code in the workspace PATH."',
   'command -v script >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1)."',

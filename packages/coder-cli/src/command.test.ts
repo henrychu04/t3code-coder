@@ -124,6 +124,8 @@ describe("Coder CLI command construction", () => {
     );
     strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("--attr-path"), false);
     strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("github:"), false);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /process\.exit\(major >= 24 \? 0 : 1\)/u);
+    strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("24.10"), false);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
