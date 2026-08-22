@@ -12,6 +12,7 @@ import {
   buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceProbeInvocation,
   REMOTE_HELPER_COMMAND,
+  REMOTE_HELPER_READY_SENTINEL,
   REMOTE_NODE_COMMAND,
   REMOTE_WORKSPACE_PROBE_COMMAND,
   quotePosixShellArgument,
@@ -99,11 +100,22 @@ describe("Coder CLI command construction", () => {
       "ssh",
       "equities-dev",
       "--",
-      "env",
-      "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
-      REMOTE_NODE_COMMAND,
-      REMOTE_HELPER_COMMAND,
-      "--stdio",
+      "sh",
+      "-c",
+      quotePosixShellArgument(
+        [
+          "set -eu",
+          "stty raw -echo 2>/dev/null || true",
+          `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
+          [
+            "exec env",
+            "'T3_CODER_WORKSPACE_LABEL=Goldman US · Equities'",
+            REMOTE_NODE_COMMAND,
+            REMOTE_HELPER_COMMAND,
+            "--stdio",
+          ].join(" "),
+        ].join("; "),
+      ),
     ]);
     match(
       REMOTE_WORKSPACE_PROBE_COMMAND,

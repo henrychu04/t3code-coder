@@ -22,6 +22,7 @@ export interface CoderInvocationOptions {
 
 export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
+export const REMOTE_HELPER_READY_SENTINEL = "T3_CODER_HELPER_READY";
 const REMOTE_NODE_VERSION_CHECK = `${REMOTE_NODE_COMMAND} -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)'`;
 export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   "set -eu",
@@ -193,6 +194,18 @@ export function buildCoderHelperInvocation(
   if (workspace.deploymentId !== deployment.id) {
     throw new Error("Coder workspace does not belong to the selected deployment.");
   }
+  const helperCommand = [
+    "set -eu",
+    "stty raw -echo 2>/dev/null || true",
+    `printf '${REMOTE_HELPER_READY_SENTINEL}\\n'`,
+    [
+      "exec env",
+      quotePosixShellArgument(`T3_CODER_WORKSPACE_LABEL=${deployment.name} · ${workspace.name}`),
+      REMOTE_NODE_COMMAND,
+      REMOTE_HELPER_COMMAND,
+      "--stdio",
+    ].join(" "),
+  ].join("; ");
   return invocation(
     deployment,
     [
@@ -202,11 +215,9 @@ export function buildCoderHelperInvocation(
       "ssh",
       workspace.workspace,
       "--",
-      "env",
-      quotePosixShellArgument(`T3_CODER_WORKSPACE_LABEL=${deployment.name} · ${workspace.name}`),
-      REMOTE_NODE_COMMAND,
-      REMOTE_HELPER_COMMAND,
-      "--stdio",
+      "sh",
+      "-c",
+      quotePosixShellArgument(helperCommand),
     ],
     options,
   );

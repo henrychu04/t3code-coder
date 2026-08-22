@@ -11,6 +11,7 @@ import { WebSocket } from "ws";
 import { EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
 
 import {
+  buildCoderHelperInvocation,
   quotePosixShellArgument,
   REMOTE_WORKSPACE_PROBE_COMMAND,
 } from "@t3tools/coder-cli/command";
@@ -272,23 +273,23 @@ describe("local Coder gateway", () => {
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);
-    deepStrictEqual(receivedHelperArgs, [
-      "--global-config",
-      NodePath.join(directory, "coder-profiles", "goldman"),
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
-      "--no-version-warning",
-      "--url",
-      "https://coder.example.gs.com",
-      "ssh",
-      "henry/project-one",
-      "--",
-      "env",
-      "'T3_CODER_WORKSPACE_LABEL=Goldman · Project One'",
-      '"$HOME/.t3-coder/node24/bin/node"',
-      '"$HOME/.t3-coder/bin/workspace-helper"',
-      "--stdio",
-    ]);
+    deepStrictEqual(
+      receivedHelperArgs,
+      buildCoderHelperInvocation(
+        {
+          id: "goldman",
+          name: "Goldman",
+          url: "https://coder.example.gs.com",
+        },
+        {
+          id: "project-one",
+          name: "Project One",
+          deploymentId: "goldman",
+          workspace: "henry/project-one",
+        },
+        { globalConfig: NodePath.join(directory, "coder-profiles", "goldman") },
+      ).args,
+    );
   });
 
   it("reports remote preflight failures emitted on stdout", async () => {

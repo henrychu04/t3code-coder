@@ -21,6 +21,7 @@ import {
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
   buildCoderWorkspaceProbeInvocation,
+  REMOTE_HELPER_READY_SENTINEL,
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
 import {
@@ -390,7 +391,10 @@ export async function startLocalCoderGateway(options?: {
   const workspaceConnectionStarts = new Map<string, Promise<CoderHelperConnection>>();
   const workspaceSockets = new Map<string, WebSocket>();
   const pendingWorkspaceUpgrades = new Set<string>();
-  const openHelper = options?.connectHelper ?? connectCoderHelper;
+  const openHelper =
+    options?.connectHelper ??
+    ((invocation: CoderInvocation) =>
+      connectCoderHelper(invocation, { readySentinel: REMOTE_HELPER_READY_SENTINEL }));
   const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
   const probeWorkspace =
     options?.probeWorkspace ??

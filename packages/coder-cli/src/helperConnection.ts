@@ -15,6 +15,7 @@ import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION, CoderHelperInf
 
 const MAX_HELPER_LINE_BYTES = 8 * 1024 * 1024;
 const MAX_HELPER_ERROR_BYTES = 32 * 1024;
+const MAX_HELPER_PREAMBLE_BYTES = 32 * 1024;
 const DEFAULT_NEGOTIATION_TIMEOUT_MS = 60_000;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 
@@ -82,6 +83,7 @@ export function connectCoderHelper(
   options?: {
     readonly environment?: NodeJS.ProcessEnv;
     readonly negotiationTimeoutMs?: number;
+    readonly readySentinel?: string;
     readonly spawnProcess?: SpawnCoderProcess;
     readonly terminationGraceMs?: number;
   },
@@ -129,6 +131,8 @@ export function connectCoderHelper(
     let stdout = "";
     let settled = false;
     let negotiated = false;
+    let ready = options?.readySentinel === undefined;
+    let preambleBytes = 0;
     let helperInfo: CoderHelperInfo | undefined;
     const timeout = NodeTimers.setTimeout(() => {
       fail(new Error("Timed out while negotiating with the Coder workspace helper."));
@@ -164,6 +168,17 @@ export function connectCoderHelper(
         ),
       );
     };
+    const writeInfoRequest = () => {
+      child.stdin.write(
+        `${JSON.stringify({
+          _tag: "Request",
+          id: "gateway-info",
+          tag: CODER_HELPER_INFO_METHOD,
+          payload: { protocolVersion: CODER_HELPER_PROTOCOL_VERSION },
+          headers: [],
+        })}\n`,
+      );
+    };
     const onStdout = (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
       if (Buffer.byteLength(stdout, "utf8") > MAX_HELPER_LINE_BYTES) {
@@ -178,6 +193,19 @@ export function connectCoderHelper(
       while (newline !== -1) {
         const line = stdout.slice(0, newline);
         stdout = stdout.slice(newline + 1);
+        if (!ready) {
+          preambleBytes += Buffer.byteLength(line, "utf8") + 1;
+          if (preambleBytes > MAX_HELPER_PREAMBLE_BYTES) {
+            terminateForFailure("Coder helper readiness preamble is too large.");
+            return;
+          }
+          if (line.trimEnd() === options?.readySentinel) {
+            ready = true;
+            writeInfoRequest();
+          }
+          newline = stdout.indexOf("\n");
+          continue;
+        }
         try {
           const message = JSON.parse(line) as unknown;
           if (!negotiated) {
@@ -255,14 +283,6 @@ export function connectCoderHelper(
       terminateForFailure("Coder workspace helper stdin failed.", cause);
     });
     child.stdout.on("data", onStdout);
-    child.stdin.write(
-      `${JSON.stringify({
-        _tag: "Request",
-        id: "gateway-info",
-        tag: CODER_HELPER_INFO_METHOD,
-        payload: { protocolVersion: CODER_HELPER_PROTOCOL_VERSION },
-        headers: [],
-      })}\n`,
-    );
+    if (ready) writeInfoRequest();
   });
 }

@@ -142,6 +142,26 @@ describe("Coder helper connection", () => {
     await NodeFS.rm(helperHome, { recursive: true, force: true });
   });
 
+  it("waits for remote terminal setup before sending negotiation data", async () => {
+    const fake = makeFakeHelperProcess();
+    const connectionPromise = connectCoderHelper(
+      { executable: "coder", args: [] },
+      {
+        readySentinel: "T3_CODER_HELPER_READY",
+        spawnProcess: () => fake.child,
+        negotiationTimeoutMs: 1_000,
+      },
+    );
+
+    fake.stdout.write('remote login banner\n{"echoed":"shell output"}\n');
+    fake.stdout.write("T3_CODER_HELPER_READY\n");
+
+    const connection = await connectionPromise;
+    strictEqual(connection.info.protocolVersion, CODER_HELPER_PROTOCOL_VERSION);
+    connection.close();
+    strictEqual((await connection.closed).expected, true);
+  });
+
   it("treats Effect's stdin interruption exit as a normal disconnect", () => {
     strictEqual(isExpectedCoderHelperExit(130, null, false), true);
     strictEqual(isExpectedCoderHelperExit(1, null, false), false);
