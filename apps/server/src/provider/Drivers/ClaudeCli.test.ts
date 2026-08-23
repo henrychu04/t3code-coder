@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import { rejects } from "node:assert/strict";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -101,4 +102,59 @@ for await (const line of lines) {
       await NodeFS.rm(temporaryDirectory, { recursive: true, force: true });
     }
   });
+
+  for (const testCase of [
+    {
+      name: "malformed control responses",
+      output: 'JSON.stringify({ type: "control_response", response: "invalid" }) + "\\n"',
+      expected: "response",
+    },
+    {
+      name: "control responses with missing fields",
+      output: 'JSON.stringify({ type: "control_response" }) + "\\n"',
+      expected: "response",
+    },
+    {
+      name: "truncated JSON",
+      output: `'{' + '"type":"control_response"' + "\\n"`,
+      expected: "JSON",
+    },
+    {
+      name: "oversized lines",
+      output: '"x".repeat(1024 * 1024 + 1)',
+      expected: "oversized",
+    },
+  ]) {
+    it(`fails the session for ${testCase.name} without crashing the process`, async () => {
+      const temporaryDirectory = await NodeFS.mkdtemp(
+        NodePath.join(NodeOS.tmpdir(), "t3-claude-cli-invalid-"),
+      );
+      const executablePath = NodePath.join(temporaryDirectory, "fake-claude");
+      await NodeFS.writeFile(
+        executablePath,
+        `#!/usr/bin/env node
+process.stdout.write(${testCase.output});
+setInterval(() => undefined, 1_000);
+`,
+        { mode: 0o700 },
+      );
+
+      try {
+        const runtime = query({
+          prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+            await new Promise(() => undefined);
+          })(),
+          options: {
+            pathToClaudeCodeExecutable: executablePath,
+            env: process.env,
+          },
+        });
+
+        await rejects(runtime.initializationResult(), new RegExp(testCase.expected, "iu"));
+        runtime.close();
+      } finally {
+        await NodeFS.rm(temporaryDirectory, { recursive: true, force: true });
+      }
+    });
+  }
 });

@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, match, strictEqual, throws } from "node:assert";
+import { deepStrictEqual, match, rejects, strictEqual, throws } from "node:assert";
 import { describe, it } from "node:test";
 
-import { buildCoderScpInvocation, scopeCoderScpConfig } from "./scp.ts";
+import { buildCoderScpInvocation, runProcess, scopeCoderScpConfig } from "./scp.ts";
 
 describe("Coder SCP", () => {
   it("keeps only the randomized Coder host and hardens its ProxyCommand", () => {
@@ -61,5 +61,27 @@ describe("Coder SCP", () => {
         }),
       /generated T3 Coder transfer path/u,
     );
+  });
+
+  it("waits for a timed-out child to exit after escalating termination", async () => {
+    const startedAt = Date.now();
+
+    await rejects(
+      runProcess(
+        {
+          executable: process.execPath,
+          args: [
+            "-e",
+            'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
+          ],
+        },
+        "Test process",
+        200,
+        50,
+      ),
+      /Test process timed out/u,
+    );
+
+    strictEqual(Date.now() - startedAt >= 240, true);
   });
 });

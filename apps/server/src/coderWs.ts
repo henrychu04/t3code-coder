@@ -15,7 +15,9 @@ import {
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
+  type OrchestrationProjectShell,
   type OrchestrationShellStreamEvent,
+  type OrchestrationThreadShell,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
   OrchestrationGetTurnDiffError,
@@ -104,6 +106,87 @@ function isThreadDetailEvent(event: OrchestrationEvent): boolean {
   );
 }
 
+interface ShellProjectionQueries {
+  readonly getProjectShellById: (
+    projectId: ProjectId,
+  ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, unknown>;
+  readonly getThreadShellById: (
+    threadId: ThreadId,
+  ) => Effect.Effect<Option.Option<OrchestrationThreadShell>, unknown>;
+}
+
+export function projectShellEvent(
+  event: OrchestrationEvent,
+  projections: ShellProjectionQueries,
+): Effect.Effect<OrchestrationShellStreamEvent, OrchestrationGetSnapshotError> {
+  const sequence = event.sequence;
+  if (event.type === "project.deleted") {
+    return Effect.succeed({
+      kind: "project-removed" as const,
+      sequence,
+      projectId: event.payload.projectId,
+    });
+  }
+  if (event.type === "thread.deleted" || event.type === "thread.archived") {
+    return Effect.succeed({
+      kind: "thread-removed" as const,
+      sequence,
+      threadId: event.payload.threadId,
+    });
+  }
+  if (event.aggregateKind === "project") {
+    const projectId = ProjectId.make(event.aggregateId);
+    return projections.getProjectShellById(projectId).pipe(
+      Effect.map(
+        Option.match({
+          onNone: () => ({ kind: "project-removed" as const, sequence, projectId }),
+          onSome: (project) => ({ kind: "project-upserted" as const, sequence, project }),
+        }),
+      ),
+      Effect.mapError(
+        (cause) =>
+          new OrchestrationGetSnapshotError({
+            message: `Failed to project project ${projectId}`,
+            cause,
+          }),
+      ),
+    );
+  }
+  const threadId = ThreadId.make(event.aggregateId);
+  return projections.getThreadShellById(threadId).pipe(
+    Effect.map(
+      Option.match({
+        onNone: () => ({ kind: "thread-removed" as const, sequence, threadId }),
+        onSome: (thread) => ({ kind: "thread-upserted" as const, sequence, thread }),
+      }),
+    ),
+    Effect.mapError(
+      (cause) =>
+        new OrchestrationGetSnapshotError({
+          message: `Failed to project thread ${threadId}`,
+          cause,
+        }),
+    ),
+  );
+}
+
+export function compensateFailedBootstrap(input: {
+  readonly worktree?: { readonly cwd: string; readonly path: string };
+  readonly removeWorktree: (worktree: {
+    readonly cwd: string;
+    readonly path: string;
+    readonly force: true;
+  }) => Effect.Effect<unknown, unknown>;
+  readonly deleteThread?: Effect.Effect<unknown, unknown>;
+}): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    if (input.worktree) {
+      yield* input.removeWorktree({ ...input.worktree, force: true }).pipe(Effect.ignore);
+    }
+    if (input.deleteThread) yield* input.deleteThread.pipe(Effect.ignore);
+  });
+}
+
 export const layer = CoderWsRpcGroup.toLayer(
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
@@ -146,19 +229,25 @@ export const layer = CoderWsRpcGroup.toLayer(
         const bootstrap = command.bootstrap;
         const { bootstrap: _bootstrap, ...turnStart } = command;
         let createdThread = false;
+        let createdWorktree: { readonly cwd: string; readonly path: string } | undefined;
         const cleanup = () =>
-          createdThread
-            ? commandId("bootstrap-cleanup").pipe(
-                Effect.flatMap((nextCommandId) =>
-                  orchestration.dispatch({
-                    type: "thread.delete",
-                    commandId: nextCommandId,
-                    threadId: command.threadId,
-                  }),
-                ),
-                Effect.asVoid,
-              )
-            : Effect.void;
+          compensateFailedBootstrap({
+            ...(createdWorktree ? { worktree: createdWorktree } : {}),
+            removeWorktree: git.removeWorktree,
+            ...(createdThread
+              ? {
+                  deleteThread: commandId("bootstrap-cleanup").pipe(
+                    Effect.flatMap((nextCommandId) =>
+                      orchestration.dispatch({
+                        type: "thread.delete",
+                        commandId: nextCommandId,
+                        threadId: command.threadId,
+                      }),
+                    ),
+                  ),
+                }
+              : {}),
+          });
         const program = Effect.gen(function* () {
           if (bootstrap?.createThread) {
             yield* orchestration.dispatch({
@@ -184,6 +273,10 @@ export const layer = CoderWsRpcGroup.toLayer(
               baseRefName: bootstrap.prepareWorktree.baseBranch,
               path: null,
             });
+            createdWorktree = {
+              cwd: bootstrap.prepareWorktree.projectCwd,
+              path: worktree.worktree.path,
+            };
             yield* orchestration.dispatch({
               type: "thread.meta.update",
               commandId: yield* commandId("thread-worktree"),
@@ -240,48 +333,6 @@ export const layer = CoderWsRpcGroup.toLayer(
         threadSnapshotPagination: true,
       };
     });
-
-    const shellEvent = (
-      event: OrchestrationEvent,
-    ): Effect.Effect<OrchestrationShellStreamEvent> => {
-      const sequence = event.sequence;
-      if (event.type === "project.deleted") {
-        return Effect.succeed({
-          kind: "project-removed" as const,
-          sequence,
-          projectId: event.payload.projectId,
-        });
-      }
-      if (event.type === "thread.deleted" || event.type === "thread.archived") {
-        return Effect.succeed({
-          kind: "thread-removed" as const,
-          sequence,
-          threadId: event.payload.threadId,
-        });
-      }
-      if (event.aggregateKind === "project") {
-        const projectId = ProjectId.make(event.aggregateId);
-        return projections.getProjectShellById(projectId).pipe(
-          Effect.map(
-            Option.match({
-              onNone: () => ({ kind: "project-removed" as const, sequence, projectId }),
-              onSome: (project) => ({ kind: "project-upserted" as const, sequence, project }),
-            }),
-          ),
-          Effect.orElseSucceed(() => ({ kind: "project-removed" as const, sequence, projectId })),
-        );
-      }
-      const threadId = ThreadId.make(event.aggregateId);
-      return projections.getThreadShellById(threadId).pipe(
-        Effect.map(
-          Option.match({
-            onNone: () => ({ kind: "thread-removed" as const, sequence, threadId }),
-            onSome: (thread) => ({ kind: "thread-upserted" as const, sequence, thread }),
-          }),
-        ),
-        Effect.orElseSucceed(() => ({ kind: "thread-removed" as const, sequence, threadId })),
-      );
-    };
 
     return CoderWsRpcGroup.of({
       [WS_METHODS.serverProbe]: () => Effect.succeed({}),
@@ -505,7 +556,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                   const gap = head - input.afterSequence;
                   if (gap >= 0 && gap <= RESUME_MAX_GAP) {
                     const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
-                      Stream.mapEffect(shellEvent),
+                      Stream.mapEffect((event) => projectShellEvent(event, projections)),
                       Stream.mapError(
                         (cause) =>
                           new OrchestrationGetSnapshotError({
@@ -516,7 +567,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                     );
                     const live = subscribedEvents.pipe(
                       Stream.filter((event) => event.sequence > head),
-                      Stream.mapEffect(shellEvent),
+                      Stream.mapEffect((event) => projectShellEvent(event, projections)),
                     );
                     return Stream.concat(
                       replay,
@@ -537,7 +588,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                 );
                 const live = subscribedEvents.pipe(
                   Stream.filter((event) => event.sequence > snapshot.snapshotSequence),
-                  Stream.mapEffect(shellEvent),
+                  Stream.mapEffect((event) => projectShellEvent(event, projections)),
                 );
                 return Stream.concat(
                   Stream.make({ kind: "snapshot" as const, snapshot }),

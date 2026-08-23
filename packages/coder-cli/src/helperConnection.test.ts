@@ -194,6 +194,26 @@ describe("Coder helper connection", () => {
     });
   });
 
+  it("isolates throwing RPC listeners without closing the helper connection", async () => {
+    const fake = makeFakeHelperProcess();
+    const connection = await connectCoderHelper(
+      { executable: "coder", args: [] },
+      { spawnProcess: () => fake.child, negotiationTimeoutMs: 1_000 },
+    );
+    connection.onRpcMessage(() => {
+      throw new Error("consumer failed");
+    });
+    const received = new Promise<unknown>((resolve) => {
+      connection.onRpcMessage(resolve);
+    });
+
+    fake.stdout.write(`${JSON.stringify({ _tag: "RpcEvent", value: 1 })}\n`);
+
+    deepStrictEqual(await received, { _tag: "RpcEvent", value: 1 });
+    connection.close();
+    strictEqual((await connection.closed).expected, true);
+  });
+
   it("marks oversized post-negotiation output as an unexpected protocol failure", async () => {
     const fake = makeFakeHelperProcess();
     const connection = await connectCoderHelper(
