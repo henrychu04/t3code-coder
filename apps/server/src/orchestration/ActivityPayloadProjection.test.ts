@@ -136,6 +136,23 @@ describe("projectActivityPayload", () => {
     expect(JSON.stringify(openCode.payload).length).toBeLessThan(200);
   });
 
+  it("preserves a failed Claude tool outcome stored on the provider item", () => {
+    const projected = projectActivityPayload(
+      activity({
+        itemType: "command_execution",
+        status: "completed",
+        data: {
+          item: {
+            command: "pnpm test:coder",
+            status: "failed",
+          },
+        },
+      }),
+    );
+
+    expect(projected.payload).toMatchObject({ status: "failed" });
+  });
+
   it("passes task lifecycle payloads (no data field) through untouched", () => {
     const source = activity({
       taskId: "task-9",

@@ -62,6 +62,14 @@ export const GlassOpacity = Schema.Int.check(
 );
 export type GlassOpacity = typeof GlassOpacity.Type;
 export const DEFAULT_GLASS_OPACITY: GlassOpacity = 80;
+
+export const MIN_APPEARANCE_CONTRAST = 50;
+export const MAX_APPEARANCE_CONTRAST = 200;
+export const AppearanceContrast = Schema.Int.check(
+  Schema.isBetween({ minimum: MIN_APPEARANCE_CONTRAST, maximum: MAX_APPEARANCE_CONTRAST }),
+);
+export type AppearanceContrast = typeof AppearanceContrast.Type;
+export const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
 /**
  * Font size preferences, in CSS pixels. The ranges are deliberately narrow:
  * the interface size scales every rem-based dimension in the app, so the
@@ -111,6 +119,9 @@ export const FontFamilyPreference = Schema.String.check(Schema.isMaxLength(200))
 export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 
 export const ClientSettingsSchema = Schema.Struct({
+  appearanceContrast: AppearanceContrast.pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
+  ),
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffIgnoreWhitespace: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
@@ -435,6 +446,7 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
+  appearanceContrast: Schema.optionalKey(AppearanceContrast),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),
   diffIgnoreWhitespace: Schema.optionalKey(Schema.Boolean),

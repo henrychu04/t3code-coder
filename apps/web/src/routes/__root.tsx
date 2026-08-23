@@ -23,6 +23,7 @@ import {
   toastManager,
 } from "../components/ui/toast";
 import { applyAppearanceFontVariables } from "~/appearanceFonts";
+import { applyAppearanceContrast } from "~/appearanceContrast";
 import { useClientSettings } from "../hooks/useSettings";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -76,6 +77,7 @@ function RootRouteView() {
     <ToastProvider>
       <AnchoredToastProvider>
         <DocumentTitleSync />
+        <ContrastAppearanceSync />
         <GlassAppearanceSync />
         <FontAppearanceSync />
         <ConfirmDialogHost />
@@ -85,6 +87,16 @@ function RootRouteView() {
       </AnchoredToastProvider>
     </ToastProvider>
   );
+}
+
+function ContrastAppearanceSync() {
+  const appearanceContrast = useClientSettings((settings) => settings.appearanceContrast);
+
+  useEffect(() => {
+    applyAppearanceContrast(document.documentElement, appearanceContrast);
+  }, [appearanceContrast]);
+
+  return null;
 }
 
 function GlassAppearanceSync() {

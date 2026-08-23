@@ -1,9 +1,11 @@
 import {
+  MAX_APPEARANCE_CONTRAST,
   MAX_CODE_FONT_SIZE,
   MAX_GLASS_OPACITY,
   MAX_INTERFACE_FONT_SIZE,
   MAX_PROMPT_FONT_SIZE,
   MAX_TERMINAL_FONT_SIZE,
+  MIN_APPEARANCE_CONTRAST,
   MIN_CODE_FONT_SIZE,
   MIN_GLASS_OPACITY,
   MIN_INTERFACE_FONT_SIZE,
@@ -81,6 +83,36 @@ function AppearanceSettingsView() {
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </SettingsSelect>
+          }
+        />
+        <SettingsRow
+          title="Contrast"
+          description="Adjust the contrast of colors and borders across the interface."
+          control={
+            <div className="flex w-full items-center gap-3 sm:w-64">
+              <output className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs">
+                {settings.appearanceContrast}%
+              </output>
+              <input
+                aria-label="Contrast"
+                className="settings-slider min-w-0 flex-1"
+                max={MAX_APPEARANCE_CONTRAST}
+                min={MIN_APPEARANCE_CONTRAST}
+                step={5}
+                type="range"
+                value={settings.appearanceContrast}
+                onChange={(event) => {
+                  const appearanceContrast = Number(event.currentTarget.value);
+                  if (
+                    Number.isInteger(appearanceContrast) &&
+                    appearanceContrast >= MIN_APPEARANCE_CONTRAST &&
+                    appearanceContrast <= MAX_APPEARANCE_CONTRAST
+                  ) {
+                    updateSettings({ appearanceContrast });
+                  }
+                }}
+              />
+            </div>
           }
         />
         <SettingsRow
