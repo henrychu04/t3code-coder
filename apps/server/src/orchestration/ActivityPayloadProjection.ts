@@ -234,6 +234,12 @@ export function projectActivityPayload(
     return activity;
   }
 
+  const itemStatus = asRecord(data.item)?.status;
+  const projectedPayload =
+    payload.status === "completed" && (itemStatus === "failed" || itemStatus === "declined")
+      ? { ...payload, status: itemStatus }
+      : payload;
+
   const projectedData: Record<string, unknown> = {};
   const item = projectCommandData(data);
   if (item) {
@@ -266,7 +272,7 @@ export function projectActivityPayload(
   return {
     ...activity,
     payload: {
-      ...payload,
+      ...projectedPayload,
       data: projectedData,
     },
   };
