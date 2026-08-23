@@ -26,6 +26,7 @@ class ScriptPtyProcess implements PtyAdapter.PtyProcess {
   private readonly dataListeners = new Set<(data: string) => void>();
   private readonly exitListeners = new Set<(event: PtyAdapter.PtyExitEvent) => void>();
   private didExit = false;
+  private exitEvent: PtyAdapter.PtyExitEvent | undefined;
 
   constructor(child: ChildProcessWithoutNullStreams) {
     this.child = child;
@@ -37,11 +38,9 @@ class ScriptPtyProcess implements PtyAdapter.PtyProcess {
     child.stderr.on("data", (data: string) => {
       for (const listener of this.dataListeners) listener(data);
     });
-    child.once("exit", (exitCode) => {
-      this.didExit = true;
-      const event = { exitCode: exitCode ?? 1, signal: null };
-      for (const listener of this.exitListeners) listener(event);
-    });
+    child.stdin.on("error", () => undefined);
+    child.once("error", () => this.emitExit({ exitCode: 1, signal: null }));
+    child.once("exit", (exitCode) => this.emitExit({ exitCode: exitCode ?? 1, signal: null }));
   }
 
   get pid(): number {
@@ -49,7 +48,7 @@ class ScriptPtyProcess implements PtyAdapter.PtyProcess {
   }
 
   write(data: string): void {
-    this.child.stdin.write(data);
+    this.child.stdin.write(data, () => undefined);
   }
 
   resize(_cols: number, _rows: number): void {
@@ -68,14 +67,26 @@ class ScriptPtyProcess implements PtyAdapter.PtyProcess {
   }
 
   onExit(callback: (event: PtyAdapter.PtyExitEvent) => void): () => void {
-    if (this.didExit) {
-      queueMicrotask(() => callback({ exitCode: this.child.exitCode ?? 1, signal: null }));
+    if (this.didExit && this.exitEvent) {
+      const event = this.exitEvent;
+      queueMicrotask(() => callback(event));
       return () => undefined;
     }
     this.exitListeners.add(callback);
     return () => this.exitListeners.delete(callback);
   }
+
+  private emitExit(event: PtyAdapter.PtyExitEvent): void {
+    if (this.didExit) return;
+    this.didExit = true;
+    this.exitEvent = event;
+    for (const listener of this.exitListeners) listener(event);
+  }
 }
+
+export const createScriptPtyProcess = (
+  child: ChildProcessWithoutNullStreams,
+): PtyAdapter.PtyProcess => new ScriptPtyProcess(child);
 
 export const make = Effect.succeed(
   PtyAdapter.PtyAdapter.of({
@@ -88,7 +99,7 @@ export const make = Effect.succeed(
             env: { ...input.env, TERM: input.env.TERM ?? "xterm-256color" },
             stdio: ["pipe", "pipe", "pipe"],
           });
-          return new ScriptPtyProcess(child);
+          return createScriptPtyProcess(child);
         },
         catch: (cause) =>
           new PtyAdapter.PtySpawnError({

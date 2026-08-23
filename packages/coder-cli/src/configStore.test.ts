@@ -59,6 +59,35 @@ describe("Coder profile config store", () => {
     deepStrictEqual(await loadCoderProfileConfig(configPath), config);
   });
 
+  it("supports concurrent atomic saves without sharing a temporary path", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-config-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const configs = Array.from({ length: 20 }, (_, index) => ({
+      version: 1 as const,
+      deployments: [
+        {
+          id: `deployment-${index}`,
+          name: `Deployment ${index}`,
+          url: `https://coder-${index}.example.test`,
+        },
+      ],
+      workspaces: [],
+    }));
+
+    await Promise.all(configs.map((config) => saveCoderProfileConfig(configPath, config)));
+
+    const saved = await loadCoderProfileConfig(configPath);
+    deepStrictEqual(
+      configs.some((config) => JSON.stringify(config) === JSON.stringify(saved)),
+      true,
+    );
+    deepStrictEqual(
+      (await NodeFS.readdir(directory)).filter((entry) => entry.endsWith(".tmp")),
+      [],
+    );
+  });
+
   it("drops legacy project roots from workspace connection profiles", () => {
     deepStrictEqual(
       parseCoderProfileConfig({
@@ -163,9 +192,7 @@ describe("Coder profile config store", () => {
     throws(() =>
       parseCoderProfileConfig({
         version: 1,
-        deployments: [
-          { id: "../other-profile", name: "Goldman", url: "https://coder.example" },
-        ],
+        deployments: [{ id: "../other-profile", name: "Goldman", url: "https://coder.example" }],
         workspaces: [],
       }),
     );

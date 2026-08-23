@@ -672,6 +672,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus,
   } = props;
   const isSendDisabled = sendDisabledReason !== null;
+  const clipboardUploadTarget =
+    typeof composerDraftTarget === "string"
+      ? `draft:${composerDraftTarget}`
+      : `thread:${composerDraftTarget.environmentId}:${composerDraftTarget.threadId}`;
+  const clipboardUploadTargetRef = useRef(clipboardUploadTarget);
+  clipboardUploadTargetRef.current = clipboardUploadTarget;
 
   // ------------------------------------------------------------------
   // Store subscriptions
@@ -1916,6 +1922,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     const snapshot = readComposerSnapshot();
+    const uploadTarget = clipboardUploadTarget;
     for (const file of imageFiles) {
       if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
         setComposerSubmissionError("Clipboard image must be PNG, JPEG, or WebP.");
@@ -1931,8 +1938,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsUploadingClipboardImages(true);
     void (async () => {
       const paths: string[] = [];
+      const uploadTargetIsActive = () => clipboardUploadTargetRef.current === uploadTarget;
       const insertUploadedPaths = () => {
-        if (paths.length === 0) return;
+        if (paths.length === 0 || !uploadTargetIsActive()) return;
         const links = paths.map((path) => serializeComposerFileLink(path)).join(" ");
         const preceding = snapshot.value.slice(
           Math.max(0, snapshot.expandedCursor - 1),
@@ -1949,8 +1957,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         for (const file of imageFiles) {
           paths.push(await uploadCoderClipboardImage(workspaceId, file));
         }
+        if (!uploadTargetIsActive()) {
+          setComposerSubmissionError("Image upload finished after you left the thread.");
+          return;
+        }
         insertUploadedPaths();
       } catch (cause) {
+        if (!uploadTargetIsActive()) {
+          setComposerSubmissionError("Image upload finished after you left the thread.");
+          return;
+        }
         insertUploadedPaths();
         setComposerSubmissionError(
           cause instanceof Error ? cause.message : "Clipboard image upload failed.",

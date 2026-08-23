@@ -1,7 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import * as Readline from "node:readline";
+
+import * as Schema from "effect/Schema";
 
 export type PermissionMode =
   | "default"
@@ -394,6 +395,80 @@ type ControlResponse = {
       };
 };
 
+const PermissionUpdateSchema = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literals(["addRules", "replaceRules", "removeRules"]),
+    rules: Schema.Array(
+      Schema.Struct({
+        toolName: Schema.String,
+        ruleContent: Schema.optional(Schema.String),
+      }),
+    ),
+    behavior: Schema.Literals(["allow", "deny", "ask"]),
+    destination: Schema.Literals(["userSettings", "projectSettings", "localSettings", "session"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("setMode"),
+    mode: Schema.Literals([
+      "default",
+      "acceptEdits",
+      "bypassPermissions",
+      "plan",
+      "dontAsk",
+      "auto",
+    ]),
+    destination: Schema.Literals(["userSettings", "projectSettings", "localSettings", "session"]),
+  }),
+  Schema.Struct({
+    type: Schema.Literals(["addDirectories", "removeDirectories"]),
+    directories: Schema.Array(Schema.String),
+    destination: Schema.Literals(["userSettings", "projectSettings", "localSettings", "session"]),
+  }),
+]);
+
+const ControlResponseSchema = Schema.Struct({
+  type: Schema.Literal("control_response"),
+  response: Schema.Union([
+    Schema.Struct({
+      subtype: Schema.Literal("success"),
+      request_id: Schema.String,
+      response: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    }),
+    Schema.Struct({
+      subtype: Schema.Literal("error"),
+      request_id: Schema.String,
+      error: Schema.String,
+    }),
+  ]),
+});
+
+const ControlRequestSchema = Schema.Struct({
+  type: Schema.Literal("control_request"),
+  request_id: Schema.String,
+  request: Schema.Struct({
+    subtype: Schema.String,
+    tool_name: Schema.optional(Schema.String),
+    input: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+    permission_suggestions: Schema.optional(Schema.Array(PermissionUpdateSchema)),
+    blocked_path: Schema.optional(Schema.String),
+    decision_reason: Schema.optional(Schema.String),
+    title: Schema.optional(Schema.String),
+    display_name: Schema.optional(Schema.String),
+    description: Schema.optional(Schema.String),
+    tool_use_id: Schema.optional(Schema.String),
+    agent_id: Schema.optional(Schema.String),
+  }),
+});
+
+const ControlCancelRequestSchema = Schema.Struct({
+  type: Schema.Literal("control_cancel_request"),
+  request_id: Schema.String,
+});
+
+const decodeControlResponse = Schema.decodeUnknownSync(ControlResponseSchema);
+const decodeControlRequest = Schema.decodeUnknownSync(ControlRequestSchema);
+const decodeControlCancelRequest = Schema.decodeUnknownSync(ControlCancelRequestSchema);
+
 type PendingControlResponse = {
   readonly resolve: (value: Record<string, unknown>) => void;
   readonly reject: (cause: Error) => void;
@@ -457,6 +532,7 @@ export interface Query extends AsyncIterable<SDKMessage> {
 
 const CONTROL_REQUEST_TIMEOUT_MS = 60_000;
 const PROCESS_TERMINATION_GRACE_MS = 5_000;
+const MAX_CLAUDE_CLI_LINE_BYTES = 1024 * 1024;
 
 function stringifyError(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -632,34 +708,48 @@ class ClaudeCliQuery implements Query {
   }
 
   private readStdout(): void {
-    const lines = Readline.createInterface({ input: this.process.stdout, crlfDelay: Infinity });
-    lines.on("line", (line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
-      let message: unknown;
-      try {
-        message = JSON.parse(trimmed) as unknown;
-      } catch {
-        return;
+    let buffered = Buffer.alloc(0);
+    this.process.stdout.on("data", (chunk: Buffer) => {
+      if (this.closed) return;
+      buffered = Buffer.concat([buffered, chunk]);
+      let newline = buffered.indexOf(0x0a);
+      while (newline !== -1) {
+        if (newline > MAX_CLAUDE_CLI_LINE_BYTES) {
+          this.fail(new Error("Claude Code emitted an oversized stream-json message."));
+          return;
+        }
+        const line = buffered.subarray(0, newline).toString("utf8").trim();
+        buffered = buffered.subarray(newline + 1);
+        if (line) {
+          try {
+            this.handleWireMessage(JSON.parse(line) as unknown);
+          } catch (cause) {
+            this.fail(cause);
+            return;
+          }
+        }
+        newline = buffered.indexOf(0x0a);
       }
-      this.handleWireMessage(message);
+      if (buffered.byteLength > MAX_CLAUDE_CLI_LINE_BYTES) {
+        this.fail(new Error("Claude Code emitted an oversized stream-json message."));
+      }
     });
-    lines.once("error", (cause) => this.fail(cause));
+    this.process.stdout.once("error", (cause) => this.fail(cause));
   }
 
   private handleWireMessage(message: unknown): void {
     if (!message || typeof message !== "object" || !("type" in message)) return;
     const typed = message as { readonly type: unknown };
     if (typed.type === "control_response") {
-      this.handleControlResponse(message as ControlResponse);
+      this.handleControlResponse(decodeControlResponse(message) as ControlResponse);
       return;
     }
     if (typed.type === "control_request") {
-      void this.handleControlRequest(message as ControlRequest);
+      void this.handleControlRequest(decodeControlRequest(message) as ControlRequest);
       return;
     }
     if (typed.type === "control_cancel_request") {
-      const cancel = message as ControlCancelRequest;
+      const cancel = decodeControlCancelRequest(message) as ControlCancelRequest;
       this.callbackControllers.get(cancel.request_id)?.abort();
       this.callbackControllers.delete(cancel.request_id);
       return;

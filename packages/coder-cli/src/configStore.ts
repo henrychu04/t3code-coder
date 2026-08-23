@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
+import { randomUUID } from "node:crypto";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
@@ -143,10 +144,14 @@ export async function saveCoderProfileConfig(
 ): Promise<void> {
   const normalized = parseCoderProfileConfig(config);
   const directory = NodePath.dirname(configPath);
-  const temporaryPath = `${configPath}.tmp`;
+  const temporaryPath = `${configPath}.${randomUUID()}.tmp`;
   await NodeFS.mkdir(directory, { recursive: true });
-  await NodeFS.writeFile(temporaryPath, `${JSON.stringify(normalized, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  await NodeFS.rename(temporaryPath, configPath);
+  try {
+    await NodeFS.writeFile(temporaryPath, `${JSON.stringify(normalized, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await NodeFS.rename(temporaryPath, configPath);
+  } finally {
+    await NodeFS.rm(temporaryPath, { force: true }).catch(() => undefined);
+  }
 }

@@ -21,6 +21,7 @@ import {
 const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 2 * 60_000;
 const DEFAULT_SCP_TIMEOUT_MS = 10 * 60_000;
+const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 const REQUIRED_CODER_PROXY_FLAGS = [
   "--disable-network-telemetry",
   "--disable-direct-connections",
@@ -35,10 +36,11 @@ function appendOutput(current: Buffer, chunk: Buffer): Buffer {
   return Buffer.concat([current, chunk.subarray(0, MAX_PROCESS_OUTPUT_BYTES - current.byteLength)]);
 }
 
-function runProcess(
+export function runProcess(
   invocation: CoderInvocation,
   label: string,
   timeoutMs: number,
+  terminationGraceMs = DEFAULT_TERMINATION_GRACE_MS,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(invocation.executable, invocation.args, {
@@ -48,12 +50,22 @@ function runProcess(
     });
     let stdout: Buffer = Buffer.alloc(0);
     let settled = false;
+    let timedOut = false;
+    let forceKillTimeout: NodeJS.Timeout | undefined;
     const timeout = NodeTimers.setTimeout(() => {
       if (settled) return;
-      settled = true;
-      child.kill();
-      reject(new Error(`${label} timed out.`));
+      timedOut = true;
+      child.kill("SIGTERM");
+      forceKillTimeout = NodeTimers.setTimeout(() => {
+        if (!settled && child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, terminationGraceMs);
     }, timeoutMs);
+    const clearTimers = () => {
+      NodeTimers.clearTimeout(timeout);
+      if (forceKillTimeout !== undefined) NodeTimers.clearTimeout(forceKillTimeout);
+    };
     child.stdout.on("data", (chunk: Buffer) => {
       stdout = appendOutput(stdout, chunk);
     });
@@ -62,13 +74,21 @@ function runProcess(
     child.once("error", (cause) => {
       if (settled) return;
       settled = true;
-      NodeTimers.clearTimeout(timeout);
-      reject(new Error(`${label} could not start.`, { cause }));
+      clearTimers();
+      reject(
+        timedOut
+          ? new Error(`${label} timed out.`)
+          : new Error(`${label} could not start.`, { cause }),
+      );
     });
     child.once("exit", (code, signal) => {
       if (settled) return;
       settled = true;
-      NodeTimers.clearTimeout(timeout);
+      clearTimers();
+      if (timedOut) {
+        reject(new Error(`${label} timed out.`));
+        return;
+      }
       if (code === 0) {
         resolve(stdout.toString("utf8"));
         return;
@@ -279,6 +299,7 @@ export async function uploadCoderClipboardImageWithScp(input: {
   const imageId = randomUUID();
   const filename = `${imageId}.${input.extension}`;
   const remotePath = `.t3-coder/attachments/${filename}.tmp`;
+  const finalRemotePath = `.t3-coder/attachments/${filename}`;
   try {
     await copyWithCoderScp({
       deployment: input.deployment,
@@ -319,6 +340,12 @@ export async function uploadCoderClipboardImageWithScp(input: {
       input.deployment,
       input.workspace,
       remotePath,
+      input.invocationOptions,
+    );
+    await cleanupRemoteTransfer(
+      input.deployment,
+      input.workspace,
+      finalRemotePath,
       input.invocationOptions,
     );
     throw cause;

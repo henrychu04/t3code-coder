@@ -206,9 +206,20 @@ export function connectCoderHelper(
           newline = stdout.indexOf("\n");
           continue;
         }
+        let message: unknown;
         try {
-          const message = JSON.parse(line) as unknown;
-          if (!negotiated) {
+          message = JSON.parse(line) as unknown;
+        } catch (cause) {
+          terminateForFailure(
+            negotiated
+              ? "Coder helper emitted a malformed RPC message."
+              : "Coder helper returned an invalid negotiation response.",
+            cause,
+          );
+          return;
+        }
+        if (!negotiated) {
+          try {
             if (helperInfo === undefined) {
               helperInfo = parseInfoResponse(message);
               child.stdin.write(
@@ -261,17 +272,18 @@ export function connectCoderHelper(
                 }
               },
             });
-          } else {
-            for (const listener of rpcListeners) listener(message);
+          } catch (cause) {
+            terminateForFailure("Coder helper returned an invalid negotiation response.", cause);
+            return;
           }
-        } catch (cause) {
-          terminateForFailure(
-            negotiated
-              ? "Coder helper emitted a malformed RPC message."
-              : "Coder helper returned an invalid negotiation response.",
-            cause,
-          );
-          return;
+        } else {
+          for (const listener of rpcListeners) {
+            try {
+              listener(message);
+            } catch {
+              // A consumer failure must not be misclassified as malformed helper RPC.
+            }
+          }
         }
         newline = stdout.indexOf("\n");
       }

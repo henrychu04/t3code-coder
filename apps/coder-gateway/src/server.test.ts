@@ -2,6 +2,7 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { once } from "node:events";
 import * as NodeHttp from "node:http";
+import * as NodeNet from "node:net";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -209,6 +210,58 @@ describe("local Coder gateway", () => {
         "json",
       ],
     });
+  });
+
+  it("shares one interactive login process per deployment", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const executablePath = NodePath.join(directory, "coder");
+    const invocationLogPath = NodePath.join(directory, "login-invocations.txt");
+    await NodeFS.writeFile(
+      executablePath,
+      `#!/usr/bin/env node
+import * as fs from "node:fs";
+fs.appendFileSync(${JSON.stringify(invocationLogPath)}, "login\\n");
+setTimeout(() => process.exit(0), 100);
+`,
+      { mode: 0o700 },
+    );
+    const gateway = await startLocalCoderGateway({ configPath });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+            executable: executablePath,
+          },
+        ],
+        workspaces: [],
+      }),
+    });
+    const loginRequest = () =>
+      request({
+        url: `${gateway.url}/api/deployments/goldman/login`,
+        method: "POST",
+        headers: { Origin: gateway.url },
+      });
+
+    const concurrent = await Promise.all([loginRequest(), loginRequest()]);
+    deepStrictEqual(
+      concurrent.map((response) => response.statusCode),
+      [200, 200],
+    );
+    strictEqual((await NodeFS.readFile(invocationLogPath, "utf8")).trim().split("\n").length, 1);
+
+    strictEqual((await loginRequest()).statusCode, 200);
+    strictEqual((await NodeFS.readFile(invocationLogPath, "utf8")).trim().split("\n").length, 2);
   });
 
   it("connects a configured workspace through its deployment-specific Coder invocation", async () => {
@@ -556,10 +609,14 @@ describe("local Coder gateway", () => {
       "unavailable",
     );
 
-    await NodeFS.writeFile(executablePath, "#!/usr/bin/env node\nsetTimeout(() => {}, 60_000);\n", {
-      mode: 0o700,
-    });
-    strictEqual(await runCoderAuthStatus(invocation, 20), "unavailable");
+    await NodeFS.writeFile(
+      executablePath,
+      '#!/usr/bin/env node\nprocess.on("SIGTERM", () => undefined);\nsetInterval(() => undefined, 1_000);\n',
+      { mode: 0o700 },
+    );
+    const timeoutStartedAt = Date.now();
+    strictEqual(await runCoderAuthStatus(invocation, 100, 30), "unavailable");
+    strictEqual(Date.now() - timeoutStartedAt >= 120, true);
   });
 
   it("uploads a validated clipboard image only for a connected workspace", async () => {
@@ -899,6 +956,146 @@ describe("local Coder gateway", () => {
     const firstClosed = once(firstSocket, "close");
     firstSocket.close();
     await firstClosed;
+  });
+
+  it("closes a helper that finishes connecting during gateway shutdown", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    let releaseConnect: ((connection: CoderHelperConnection) => void) | undefined;
+    let markConnectStarted: (() => void) | undefined;
+    const connectStarted = new Promise<void>((resolve) => {
+      markConnectStarted = resolve;
+    });
+    let resolveClosed: (() => void) | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      resolveClosed = () => resolve({ code: 130, signal: null, expected: true });
+    });
+    let closeCount = 0;
+    const connection: CoderHelperConnection = {
+      info: helperInfo,
+      closed,
+      sendRpc: () => undefined,
+      onRpcMessage: () => () => undefined,
+      close: () => {
+        closeCount += 1;
+        resolveClosed?.();
+      },
+    };
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => {
+        markConnectStarted?.();
+        return await new Promise<CoderHelperConnection>((resolve) => {
+          releaseConnect = resolve;
+        });
+      },
+    });
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+
+    const connectionRequest = request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    await connectStarted;
+    const gatewayClosed = gateway.close();
+    releaseConnect?.(connection);
+
+    await gatewayClosed;
+    strictEqual((await connectionRequest).statusCode, 502);
+    strictEqual(closeCount, 1);
+  });
+
+  it("clears a pending upgrade after ws rejects invalid handshake headers", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    let closeConnection: (() => void) | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      closeConnection = () => resolve({ code: 130, signal: null, expected: true });
+    });
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed,
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => closeConnection?.(),
+      }),
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+    await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+
+    const url = new URL(gateway.url);
+    const invalidSocket = NodeNet.createConnection(Number(url.port), url.hostname);
+    await once(invalidSocket, "connect");
+    const invalidResponse = once(invalidSocket, "data");
+    const invalidClosed = once(invalidSocket, "close");
+    invalidSocket.write(
+      [
+        "GET /api/workspaces/project-one/rpc HTTP/1.1",
+        `Host: ${url.host}`,
+        `Origin: ${gateway.url}`,
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        "Sec-WebSocket-Version: 13",
+        "",
+        "",
+      ].join("\r\n"),
+    );
+    const [responseBytes] = await invalidResponse;
+    await invalidClosed;
+    strictEqual(responseBytes.toString("utf8").startsWith("HTTP/1.1 400"), true);
+
+    const rpcUrl = gateway.url.replace("http://", "ws://");
+    const validSocket = new WebSocket(`${rpcUrl}/api/workspaces/project-one/rpc`, {
+      origin: gateway.url,
+    });
+    await once(validSocket, "open");
+    const validClosed = once(validSocket, "close");
+    validSocket.close();
+    await validClosed;
   });
 
   it("closes a helper connection removed by a config update", async () => {

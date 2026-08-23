@@ -48,6 +48,7 @@ const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
 const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
+const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -200,12 +201,14 @@ export type CoderAuthenticationStatus = "authenticated" | "unauthenticated" | "u
 export function runCoderAuthStatus(
   invocation: CoderInvocation,
   timeoutMs = DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS,
+  terminationGraceMs = DEFAULT_PROCESS_TERMINATION_GRACE_MS,
 ): Promise<CoderAuthenticationStatus> {
   return new Promise((resolve) => {
     let settled = false;
     let sawUnauthorizedStatus = false;
     let stderr = "";
     let timeout: NodeJS.Timeout | undefined;
+    let forceKillTimeout: NodeJS.Timeout | undefined;
     const child = spawn(invocation.executable, invocation.args, {
       shell: false,
       stdio: ["ignore", "ignore", "pipe"],
@@ -215,6 +218,7 @@ export function runCoderAuthStatus(
       if (settled) return;
       settled = true;
       if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
+      if (forceKillTimeout !== undefined) NodeTimers.clearTimeout(forceKillTimeout);
       resolve(status);
     };
     child.stderr.on("data", (chunk: Buffer) => {
@@ -230,8 +234,12 @@ export function runCoderAuthStatus(
       finish(sawUnauthorizedStatus ? "unauthenticated" : "unavailable");
     });
     timeout = NodeTimers.setTimeout(() => {
-      child.kill();
-      finish("unavailable");
+      child.kill("SIGTERM");
+      forceKillTimeout = NodeTimers.setTimeout(() => {
+        if (!settled && child.exitCode === null && child.signalCode === null) {
+          child.kill("SIGKILL");
+        }
+      }, terminationGraceMs);
     }, timeoutMs);
   });
 }
@@ -423,8 +431,38 @@ export async function startLocalCoderGateway(options?: {
     : emptyCoderProfileConfig();
   const workspaceConnections = new Map<string, CoderHelperConnection>();
   const workspaceConnectionStarts = new Map<string, Promise<CoderHelperConnection>>();
+  const workspaceConnectionGenerations = new Map<string, number>();
   const workspaceSockets = new Map<string, WebSocket>();
   const pendingWorkspaceUpgrades = new Set<string>();
+  let gatewayClosed = false;
+  let gatewayClosePromise: Promise<void> | undefined;
+  const deploymentLoginStarts = new Map<string, Promise<void>>();
+  let configMutationQueue = Promise.resolve();
+  const serializeConfigMutation = <T>(mutation: () => Promise<T>): Promise<T> => {
+    const result = configMutationQueue.then(mutation);
+    configMutationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+  const loginToDeployment = (
+    deploymentId: string,
+    executable: string,
+    args: readonly string[],
+  ): Promise<void> => {
+    const existing = deploymentLoginStarts.get(deploymentId);
+    if (existing !== undefined) return existing;
+    const start = runCoderLogin(executable, args);
+    deploymentLoginStarts.set(deploymentId, start);
+    const cleanup = () => {
+      if (deploymentLoginStarts.get(deploymentId) === start) {
+        deploymentLoginStarts.delete(deploymentId);
+      }
+    };
+    void start.then(cleanup, cleanup);
+    return start;
+  };
   const openHelper =
     options?.connectHelper ??
     ((invocation: CoderInvocation) =>
@@ -454,11 +492,18 @@ export async function startLocalCoderGateway(options?: {
   });
 
   const ensureWorkspaceConnection = async (workspaceId: string): Promise<CoderHelperConnection> => {
+    if (gatewayClosed) throw new Error("Coder gateway is closed.");
     const existing = workspaceConnections.get(workspaceId);
     if (existing !== undefined) return existing;
     const pending = workspaceConnectionStarts.get(workspaceId);
     if (pending !== undefined) return pending;
 
+    const generation = workspaceConnectionGenerations.get(workspaceId) ?? 0;
+    const startIsCurrent = () =>
+      !gatewayClosed && (workspaceConnectionGenerations.get(workspaceId) ?? 0) === generation;
+    const assertStartIsCurrent = () => {
+      if (!startIsCurrent()) throw new Error("Coder workspace connection was cancelled.");
+    };
     const start = (async () => {
       const connectionConfig = profileConfig;
       const workspace = connectionConfig.workspaces.find((entry) => entry.id === workspaceId);
@@ -473,6 +518,7 @@ export async function startLocalCoderGateway(options?: {
       await probeWorkspace(
         buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
       );
+      assertStartIsCurrent();
       if (options?.helperBundlePath !== undefined) {
         await installHelper({
           deployment,
@@ -480,10 +526,16 @@ export async function startLocalCoderGateway(options?: {
           helperBundlePath: options.helperBundlePath,
           invocationOptions,
         });
+        assertStartIsCurrent();
       }
       const connection = await openHelper(
         buildCoderHelperInvocation(deployment, workspace, invocationOptions),
       );
+      if (!startIsCurrent()) {
+        connection.close();
+        await connection.closed;
+        throw new Error("Coder workspace connection was cancelled.");
+      }
       if (!workspaceConnectionIsCurrent(connectionConfig, profileConfig, workspaceId)) {
         connection.close();
         throw new Error("Coder workspace configuration changed while connecting.");
@@ -554,15 +606,18 @@ export async function startLocalCoderGateway(options?: {
         }
         try {
           const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
-          if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
-          for (const [workspaceId, connection] of workspaceConnections) {
-            if (workspaceConnectionIsCurrent(profileConfig, nextConfig, workspaceId)) continue;
-            connection.close();
-            workspaceConnections.delete(workspaceId);
-            workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
-          }
-          profileConfig = nextConfig;
-          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(profileConfig));
+          const savedConfig = await serializeConfigMutation(async () => {
+            if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
+            for (const [workspaceId, connection] of workspaceConnections) {
+              if (workspaceConnectionIsCurrent(profileConfig, nextConfig, workspaceId)) continue;
+              connection.close();
+              workspaceConnections.delete(workspaceId);
+              workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
+            }
+            profileConfig = nextConfig;
+            return profileConfig;
+          });
+          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
         } catch (cause) {
           const message = cause instanceof Error ? cause.message : "Invalid configuration.";
           sendText(response, 400, "text/plain; charset=utf-8", message);
@@ -592,7 +647,7 @@ export async function startLocalCoderGateway(options?: {
             deployment,
             coderInvocationOptions(deployment.id),
           );
-          await runCoderLogin(login.executable, login.args);
+          await loginToDeployment(deploymentId, login.executable, login.args);
           sendText(response, 200, "application/json; charset=utf-8", '{"status":"authenticated"}');
         } catch (cause) {
           sendText(
@@ -710,9 +765,15 @@ export async function startLocalCoderGateway(options?: {
           return;
         }
         if (request.method === "DELETE") {
+          workspaceConnectionGenerations.set(
+            workspaceId,
+            (workspaceConnectionGenerations.get(workspaceId) ?? 0) + 1,
+          );
+          const pendingStart = workspaceConnectionStarts.get(workspaceId);
           const connection = workspaceConnections.get(workspaceId);
           connection?.close();
           workspaceConnections.delete(workspaceId);
+          if (pendingStart !== undefined) await pendingStart.catch(() => undefined);
           sendText(response, 200, "application/json; charset=utf-8", '{"status":"closed"}');
           return;
         }
@@ -827,23 +888,33 @@ export async function startLocalCoderGateway(options?: {
         return;
       }
       pendingWorkspaceUpgrades.add(workspaceId);
+      let upgradePending = true;
+      const cleanupPendingUpgrade = () => {
+        if (!upgradePending) return;
+        upgradePending = false;
+        pendingWorkspaceUpgrades.delete(workspaceId);
+        socket.off("close", cleanupPendingUpgrade);
+        socket.off("error", cleanupPendingUpgrade);
+      };
+      socket.once("close", cleanupPendingUpgrade);
+      socket.once("error", cleanupPendingUpgrade);
 
       let helper: CoderHelperConnection;
       try {
         helper = await ensureWorkspaceConnection(workspaceId);
       } catch {
-        pendingWorkspaceUpgrades.delete(workspaceId);
+        cleanupPendingUpgrade();
         rejectWebSocketUpgrade(socket, 502, "Bad Gateway");
         return;
       }
       if (socket.destroyed) {
-        pendingWorkspaceUpgrades.delete(workspaceId);
+        cleanupPendingUpgrade();
         return;
       }
 
       try {
         webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-          pendingWorkspaceUpgrades.delete(workspaceId);
+          cleanupPendingUpgrade();
           workspaceSockets.set(workspaceId, webSocket);
           const unsubscribe = helper.onRpcMessage((message) => {
             if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
@@ -882,7 +953,7 @@ export async function startLocalCoderGateway(options?: {
           });
         });
       } catch (cause) {
-        pendingWorkspaceUpgrades.delete(workspaceId);
+        cleanupPendingUpgrade();
         throw cause;
       }
     })().catch(() => {
@@ -906,20 +977,27 @@ export async function startLocalCoderGateway(options?: {
 
   return {
     url: `http://${CODER_GATEWAY_HOST}:${address.port}`,
-    close: async () => {
-      for (const webSocket of workspaceSockets.values()) webSocket.close(1001, "Gateway stopped.");
-      workspaceSockets.clear();
-      pendingWorkspaceUpgrades.clear();
-      const connectionClosures = [...workspaceConnections.values()].map((connection) => {
-        connection.close();
-        return connection.closed;
-      });
-      workspaceConnections.clear();
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      });
-      await Promise.all(connectionClosures);
-      webSocketServer.close();
+    close: () => {
+      gatewayClosePromise ??= (async () => {
+        gatewayClosed = true;
+        for (const webSocket of workspaceSockets.values()) {
+          webSocket.close(1001, "Gateway stopped.");
+        }
+        workspaceSockets.clear();
+        pendingWorkspaceUpgrades.clear();
+        const connectionClosures = [...workspaceConnections.values()].map((connection) => {
+          connection.close();
+          return connection.closed;
+        });
+        workspaceConnections.clear();
+        await Promise.allSettled([...workspaceConnectionStarts.values()]);
+        await new Promise<void>((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()));
+        });
+        await Promise.all(connectionClosures);
+        webSocketServer.close();
+      })();
+      return gatewayClosePromise;
     },
   };
 }
