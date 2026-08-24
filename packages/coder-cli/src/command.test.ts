@@ -11,6 +11,7 @@ import {
   buildCoderPortForwardInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
+  buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
   buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
@@ -155,6 +156,10 @@ describe("Coder CLI command construction", () => {
     deepStrictEqual(buildCoderStartWorkspaceInvocation(deployment, workspace, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,
       args: [...commonArgs, "start", "--yes", "equities-dev"],
+    });
+    deepStrictEqual(buildCoderStopWorkspaceInvocation(deployment, workspace, options), {
+      executable: String.raw`C:\Program Files\Coder\coder.exe`,
+      args: [...commonArgs, "stop", "--yes", "equities-dev"],
     });
     deepStrictEqual(buildCoderRestartWorkspaceInvocation(deployment, workspace, options), {
       executable: String.raw`C:\Program Files\Coder\coder.exe`,

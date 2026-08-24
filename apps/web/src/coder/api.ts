@@ -32,7 +32,7 @@ export interface CoderProfileConfig {
 
 export interface CoderPortForwardRuntimeStatus {
   readonly id: string;
-  readonly status: "starting" | "running" | "error";
+  readonly status: "starting" | "running" | "stopped" | "error";
   readonly error?: string;
 }
 
@@ -145,6 +145,12 @@ export async function restartCoderWorkspace(workspaceId: string): Promise<void> 
 
 export async function startCoderWorkspace(workspaceId: string): Promise<void> {
   await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/start`, {
+    method: "POST",
+  }).then(readResponse);
+}
+
+export async function stopCoderWorkspace(workspaceId: string): Promise<void> {
+  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/stop`, {
     method: "POST",
   }).then(readResponse);
 }

@@ -17,6 +17,7 @@ import {
   restartCoderWorkspace,
   saveCoderConfig,
   startCoderWorkspace,
+  stopCoderWorkspace,
   updateCoderWorkspace,
   type CoderProfileConfig,
   type CoderWorkspaceRuntimeStatus,
@@ -39,6 +40,7 @@ interface CoderContextValue {
     Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
   >;
   readonly startWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
+  readonly stopWorkspace: (workspaceId: string) => Promise<void>;
   readonly restartWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly updateWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
 }
@@ -282,6 +284,37 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     (workspaceId: string) => completeWorkspaceAction(workspaceId, startCoderWorkspace),
     [completeWorkspaceAction],
   );
+  const stopWorkspace = useCallback(
+    async (workspaceId: string) => {
+      removeCoderWorkspaceEnvironment(workspaceId);
+      const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+      connectionAttemptGenerations.current[workspaceId] = actionGeneration;
+      setConnectionErrors((current) => {
+        if (current[workspaceId] === undefined) return current;
+        const next = { ...current };
+        delete next[workspaceId];
+        return next;
+      });
+      try {
+        await stopCoderWorkspace(workspaceId);
+        setWorkspaceRuntime((current) => ({
+          ...current,
+          [workspaceId]: {
+            status: "stopped",
+            updateAvailable: current[workspaceId]?.updateAvailable ?? false,
+          },
+        }));
+      } catch (cause) {
+        if (connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
+        }
+        void refreshWorkspaceRuntime();
+        throw cause;
+      }
+    },
+    [refreshWorkspaceRuntime],
+  );
   const restartWorkspace = useCallback(
     (workspaceId: string) => completeWorkspaceAction(workspaceId, restartCoderWorkspace),
     [completeWorkspaceAction],
@@ -304,6 +337,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
             disconnectWorkspace,
             refreshWorkspaceRuntime,
             startWorkspace,
+            stopWorkspace,
             restartWorkspace,
             updateWorkspace,
           },
@@ -316,6 +350,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       restartWorkspace,
       saveConfig,
       startWorkspace,
+      stopWorkspace,
       updateWorkspace,
       workspaceRuntime,
     ],

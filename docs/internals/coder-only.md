@@ -25,10 +25,11 @@ gateway keeps it attached and reconnects the loopback WebSocket. If the helper o
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
 T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
 report whether a template update is available. It does not implicitly connect to a stopped
-workspace because Coder SSH would start it without an explicit user action. Starting, restarting,
-or updating a workspace first closes its helper and active sessions, stops its saved port forwards,
-invokes the corresponding Coder command through the same deployment-specific CLI profile, restores
-the saved forwards, and reconnects only after Coder reports success. The browser reports workspace
+workspace because Coder SSH would start it without an explicit user action. Starting, stopping,
+restarting, or updating a workspace first closes its helper and active sessions and stops its saved
+port forwards before invoking the corresponding Coder command through the same deployment-specific
+CLI profile. A successful start, restart, or update restores the saved forwards and reconnects; a
+successful stop leaves the helper and forwards stopped. The browser reports workspace
 and port-forward status as unavailable when their status requests fail; it does not leave a request
 checking indefinitely or retain a stale running label.
 

@@ -107,6 +107,8 @@ export function PortForwardSettings({
             const status = statuses[rule.id];
             const workspaceStatus = workspaceRuntime[workspace.id];
             const workspaceStatusUnavailable = workspaceStatus?.status === "unavailable";
+            const workspaceInactive =
+              workspaceStatus?.status === "stopped" || workspaceStatus?.status === "starting";
             const checkingWorkspaceStatus = workspaceStatus === undefined;
             const displayError =
               (workspaceStatusUnavailable ? workspaceStatus.error : undefined) ??
@@ -141,6 +143,7 @@ export function PortForwardSettings({
                       status === undefined ||
                       statusError !== null ||
                       checkingWorkspaceStatus ||
+                      workspaceInactive ||
                       workspaceStatusUnavailable
                     }
                     size="sm"
@@ -218,6 +221,7 @@ export function PortForwardStatusBadge({
     );
   }
   if (status?.status === "running") return <Badge variant="success">Running</Badge>;
+  if (status?.status === "stopped") return <Badge variant="outline">Stopped</Badge>;
   if (status?.status === "error") {
     return (
       <Badge variant="error">
