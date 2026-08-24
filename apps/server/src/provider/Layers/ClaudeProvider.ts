@@ -635,7 +635,10 @@ function readClaudePermissionModeDisabled(
 ): boolean {
   const effective = settings.effective;
   if (!effective || typeof effective !== "object") return false;
-  const permissions = (effective as Record<string, unknown>).permissions;
+  const effectiveSettings = effective as Record<string, unknown>;
+  if (effectiveSettings[key] === "disable") return true;
+
+  const permissions = effectiveSettings.permissions;
   return (
     permissions !== null &&
     typeof permissions === "object" &&

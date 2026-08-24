@@ -121,6 +121,18 @@ describe("getComposerProviderState", () => {
     expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
   });
 
+  it("fails closed when Claude has no verified model capabilities", () => {
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models: [],
+      modelOptions: undefined,
+      planModeEnabled: true,
+    });
+
+    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
+  });
+
   it("fails closed when a warning provider retains cached model capabilities", () => {
     expect(
       resolveAvailableRuntimeModes(
