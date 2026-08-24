@@ -9,6 +9,7 @@ import {
   ProviderRuntimeEvent,
   ProviderSession,
   ProviderInstanceId,
+  ScreenshotArtifactId,
 } from "@t3tools/contracts";
 import {
   ApprovalRequestId,
@@ -1113,6 +1114,59 @@ describe("ProviderRuntimeIngestion", () => {
     expect(data?.toolCallId).toBe("tool-read-1");
     expect(data?.kind).toBe("read");
     expect(rawOutput?.content).toBe('import * as Effect from "effect/Effect"\n');
+  });
+
+  it("projects screenshot references without hydrating artifact bytes", async () => {
+    const harness = await createHarness();
+    const artifactId = ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538");
+
+    harness.emit({
+      type: "item.completed",
+      eventId: asEventId("evt-screenshot-artifacts"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: asThreadId("thread-1"),
+      turnId: asTurnId("turn-screenshot-artifacts"),
+      itemId: asItemId("item-screenshot-artifacts"),
+      payload: {
+        itemType: "image_view",
+        status: "completed",
+        title: "Visual artifacts",
+        artifacts: [
+          {
+            id: artifactId,
+            name: "home.png",
+            mimeType: "image/png",
+            sizeBytes: 128,
+          },
+        ],
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.activities.some(
+        (activity: ProviderRuntimeTestActivity) => activity.id === "evt-screenshot-artifacts",
+      ),
+    );
+    const activity = thread.activities.find(
+      (entry: ProviderRuntimeTestActivity) => entry.id === "evt-screenshot-artifacts",
+    );
+    expect(activity).toMatchObject({
+      kind: "tool.completed",
+      summary: "Visual artifacts",
+      payload: {
+        itemType: "image_view",
+        artifacts: [
+          {
+            id: artifactId,
+            name: "home.png",
+            mimeType: "image/png",
+            sizeBytes: 128,
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(activity)).not.toContain("dataBase64");
   });
 
   it("normalizes command execution activities to ran-command summaries", async () => {

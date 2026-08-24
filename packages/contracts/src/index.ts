@@ -13,4 +13,5 @@ export * from "./vcs.ts";
 export * from "./orchestration.ts";
 export * from "./project.ts";
 export * from "./review.ts";
+export * from "./screenshotArtifact.ts";
 export * from "./rpc.ts";

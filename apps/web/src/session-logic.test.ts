@@ -882,6 +882,41 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  it("preserves validated screenshot artifact metadata for visual artifact rows", () => {
+    const [entry] = deriveWorkLogEntries([
+      makeActivity({
+        id: "visual-artifacts",
+        kind: "tool.completed",
+        summary: "Visual artifacts",
+        payload: {
+          itemType: "image_view",
+          status: "completed",
+          artifacts: [
+            {
+              id: "c56a4180-65aa-42ec-a945-5fd21dec0538",
+              name: "home.png",
+              mimeType: "image/png",
+              sizeBytes: 128,
+            },
+          ],
+        },
+      }),
+    ]);
+
+    expect(entry).toMatchObject({
+      label: "Visual artifacts",
+      itemType: "image_view",
+      artifacts: [
+        {
+          id: "c56a4180-65aa-42ec-a945-5fd21dec0538",
+          name: "home.png",
+          mimeType: "image/png",
+          sizeBytes: 128,
+        },
+      ],
+    });
+  });
+
   it("omits tool started entries and keeps completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
