@@ -43,6 +43,12 @@ const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infini
 for await (const line of lines) {
   const message = JSON.parse(line);
   if (message.type === "control_request" && message.request.subtype === "initialize") {
+    if (process.env.CLAUDE_CODE_ENTRYPOINT !== "sdk-ts") {
+      throw new Error("missing SDK entrypoint");
+    }
+    if (JSON.stringify(message.request.hooks) !== "{}") {
+      throw new Error("missing SDK hooks payload");
+    }
     process.stdout.write(JSON.stringify({
       type: "control_response",
       response: {

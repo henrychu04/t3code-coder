@@ -580,9 +580,16 @@ class ClaudeCliQuery implements Query {
   constructor(prompt: AsyncIterable<SDKUserMessage>, options: Options) {
     this.options = options;
     this.abortController = options.abortController ?? new AbortController();
+    const environment: NodeJS.ProcessEnv = {
+      ...options.env,
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+    };
+    if (!environment.CLAUDE_CODE_ENTRYPOINT) {
+      environment.CLAUDE_CODE_ENTRYPOINT = "sdk-ts";
+    }
     this.process = spawn(options.pathToClaudeCodeExecutable, buildClaudeCliArgs(options), {
       cwd: options.cwd,
-      env: { ...options.env, ENABLE_CLAUDEAI_MCP_SERVERS: "false" },
+      env: environment,
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -620,7 +627,7 @@ class ClaudeCliQuery implements Query {
 
     this.readStdout();
     this.abortController.signal.addEventListener("abort", () => this.close(), { once: true });
-    this.initialization = this.request({ subtype: "initialize" }).then(
+    this.initialization = this.request({ subtype: "initialize", hooks: {} }).then(
       (response) => response as SDKControlInitializeResponse,
     );
     this.initialization.catch(() => undefined);
