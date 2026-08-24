@@ -1,7 +1,9 @@
 import {
   normalizeCoderDeploymentProfile,
+  normalizeCoderPortForwardProfile,
   normalizeCoderWorkspaceProfile,
   type CoderDeploymentProfile,
+  type CoderPortForwardProfile,
   type CoderWorkspaceProfile,
 } from "./profile.ts";
 
@@ -152,6 +154,36 @@ export function buildCoderWorkspaceShellInvocation(
       "sh",
       "-c",
       quotePosixShellArgument(shellCommand),
+    ],
+    options,
+  );
+}
+
+export function buildCoderPortForwardInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  portForwardInput: CoderPortForwardProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
+  const portForward = normalizeCoderPortForwardProfile(portForwardInput);
+  if (workspace.deploymentId !== deployment.id) {
+    throw new Error("Coder workspace does not belong to the selected deployment.");
+  }
+  if (portForward.workspaceId !== workspace.id) {
+    throw new Error("Coder port forward does not belong to the selected workspace.");
+  }
+  return invocation(
+    deployment,
+    [
+      ...CODER_GLOBAL_ARGS,
+      "--url",
+      deployment.url,
+      "port-forward",
+      workspace.workspace,
+      `--${portForward.protocol}`,
+      `127.0.0.1:${portForward.localPort}:${portForward.remotePort}`,
     ],
     options,
   );

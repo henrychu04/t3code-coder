@@ -88,6 +88,63 @@ describe("Coder profile config store", () => {
     );
   });
 
+  it("validates and round-trips workspace port forwards", () => {
+    const base = {
+      version: 1,
+      deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example" }],
+      workspaces: [
+        {
+          id: "equities",
+          name: "Equities",
+          deploymentId: "goldman",
+          workspace: "henry/equities",
+        },
+      ],
+    } as const;
+    const config = {
+      ...base,
+      portForwards: [
+        {
+          id: "web",
+          workspaceId: "equities",
+          protocol: "tcp",
+          localPort: 8080,
+          remotePort: 3000,
+        },
+        {
+          id: "dns",
+          workspaceId: "equities",
+          protocol: "udp",
+          localPort: 8080,
+          remotePort: 53,
+        },
+      ],
+    } as const;
+
+    deepStrictEqual(parseCoderProfileConfig(config), config);
+    throws(() =>
+      parseCoderProfileConfig({
+        ...base,
+        portForwards: [
+          config.portForwards[0],
+          { ...config.portForwards[0], id: "duplicate" },
+        ],
+      }),
+    );
+    throws(() =>
+      parseCoderProfileConfig({
+        ...base,
+        portForwards: [{ ...config.portForwards[0], workspaceId: "missing" }],
+      }),
+    );
+    throws(() =>
+      parseCoderProfileConfig({
+        ...base,
+        portForwards: [{ ...config.portForwards[0], localPort: 70_000 }],
+      }),
+    );
+  });
+
   it("drops legacy project roots from workspace connection profiles", () => {
     deepStrictEqual(
       parseCoderProfileConfig({

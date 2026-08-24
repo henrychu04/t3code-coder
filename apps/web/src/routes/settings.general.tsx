@@ -9,6 +9,7 @@ import {
   type CoderDeploymentProfile,
 } from "../coder/api";
 import { useCoder } from "../coder/CoderBootstrap";
+import { PortForwardSettings } from "../components/settings/PortForwardSettings";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -191,6 +192,13 @@ function CoderSettingsView() {
                           workspaces: config.workspaces.filter(
                             (entry) => entry.id !== workspace.id,
                           ),
+                          ...(config.portForwards === undefined
+                            ? {}
+                            : {
+                                portForwards: config.portForwards.filter(
+                                  (entry) => entry.workspaceId !== workspace.id,
+                                ),
+                              }),
                         });
                       } catch (cause) {
                         setError(
@@ -206,6 +214,12 @@ function CoderSettingsView() {
             })
           )}
         </section>
+
+        <PortForwardSettings
+          config={config}
+          onError={setError}
+          onSaveConfig={saveConfig}
+        />
 
         <aside className="rounded-xl border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
           Coder 2.25.3 stores each session token in a plaintext Coder config file. T3 Coder gives
