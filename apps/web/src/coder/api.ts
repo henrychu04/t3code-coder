@@ -14,10 +14,26 @@ export interface CoderWorkspaceProfile {
   readonly workspace: string;
 }
 
+export interface CoderPortForwardProfile {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly protocol: "tcp" | "udp";
+  readonly localPort: number;
+  readonly remotePort: number;
+}
+
 export interface CoderProfileConfig {
   readonly version: 1;
   readonly deployments: readonly CoderDeploymentProfile[];
   readonly workspaces: readonly CoderWorkspaceProfile[];
+  /** Added by the port-forward gateway change; absent configs are treated as empty. */
+  readonly portForwards?: readonly CoderPortForwardProfile[];
+}
+
+export interface CoderPortForwardRuntimeStatus {
+  readonly id: string;
+  readonly status: "starting" | "running" | "error";
+  readonly error?: string;
 }
 
 export interface DiscoveredCoderWorkspace {
@@ -75,6 +91,23 @@ export async function discoverCoderWorkspaces(
   }).then(readResponse);
   return ((await response.json()) as { readonly workspaces: readonly DiscoveredCoderWorkspace[] })
     .workspaces;
+}
+
+export async function loadCoderPortForwardStatuses(): Promise<
+  readonly CoderPortForwardRuntimeStatus[]
+> {
+  const response = await fetch("/api/port-forwards", { cache: "no-store" }).then(readResponse);
+  return (
+    (await response.json()) as {
+      readonly portForwards: readonly CoderPortForwardRuntimeStatus[];
+    }
+  ).portForwards;
+}
+
+export async function restartCoderPortForward(portForwardId: string): Promise<void> {
+  await fetch(`/api/port-forwards/${encodeURIComponent(portForwardId)}/restart`, {
+    method: "POST",
+  }).then(readResponse);
 }
 
 export async function connectCoderWorkspace(

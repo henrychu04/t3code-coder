@@ -8,9 +8,9 @@ not use the upstream desktop, relay, Tailscale, hosted web, or direct remote-ser
 
 The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
 client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace
-targets, and an optional Coder executable path. A clipboard image may be staged temporarily in an OS
-temporary directory while it is copied to the workspace; the local copy is deleted immediately after
-the transfer attempt. Browser UI preferences
+targets, structured port-forward rules, and an optional Coder executable path. A clipboard image may
+be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
+copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
 and provider sessions are memory-only.
 Each active workspace gets one loopback WebSocket that translates frame-delimited browser RPC into
@@ -24,8 +24,15 @@ active turn. Reloading or temporarily disconnecting the browser does not stop th
 gateway keeps it attached and reconnects the loopback WebSocket. If the helper or Coder SSH process
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
 
+Each saved port-forward rule starts a separate foreground `coder port-forward` process. The rule
+contains only a configured workspace, TCP or UDP protocol, and validated local and remote ports. The
+gateway always supplies `127.0.0.1` as the local bind address. It reports process state to the
+settings UI, does not loop on failures, and stops the exact captured process when a rule changes, is
+removed, or the gateway exits.
+
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> claude
+local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```
 
 The workspace helper owns the existing T3 orchestration store, project records, threads, Claude
@@ -72,7 +79,9 @@ negotiated before a helper is used.
 ## Network and transfer constraints
 
 The T3 gateway does not make external HTTP requests. The installed Coder CLI is the only process
-allowed to make a non-loopback workspace connection. The gateway may invoke OpenSSH `scp` for helper
+allowed to make a non-loopback workspace connection. Structured port-forward rules use foreground
+`coder port-forward` processes and bind only to IPv4 loopback; reverse forwarding, arbitrary bind
+addresses, and raw tunnel arguments are not exposed. The gateway may invoke OpenSSH `scp` for helper
 bootstrap and validated clipboard-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
 no network listener; Claude and user-initiated terminal commands remain subject to workspace policy.

@@ -8,6 +8,7 @@ import {
   buildCoderHelperInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
+  buildCoderPortForwardInvocation,
   buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceProbeInvocation,
@@ -179,6 +180,49 @@ describe("Coder CLI command construction", () => {
         "-c",
         quotePosixShellArgument('printf "%s\\n" "$HOME"'),
       ],
+    );
+  });
+
+  it("builds loopback-only port forwards through the selected Coder deployment", () => {
+    const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
+    deepStrictEqual(
+      buildCoderPortForwardInvocation(
+        deployment,
+        workspace,
+        {
+          id: "web",
+          workspaceId: workspace.id,
+          protocol: "tcp",
+          localPort: 8080,
+          remotePort: 3000,
+        },
+        options,
+      ),
+      {
+        executable: String.raw`C:\Program Files\Coder\coder.exe`,
+        args: [
+          "--global-config",
+          String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+          "--disable-network-telemetry",
+          "--disable-direct-connections",
+          "--no-version-warning",
+          "--url",
+          "https://coder.example.gs.com",
+          "port-forward",
+          "equities-dev",
+          "--tcp",
+          "127.0.0.1:8080:3000",
+        ],
+      },
+    );
+    throws(() =>
+      buildCoderPortForwardInvocation(deployment, workspace, {
+        id: "web",
+        workspaceId: "another-workspace",
+        protocol: "tcp",
+        localPort: 8080,
+        remotePort: 3000,
+      }),
     );
   });
 

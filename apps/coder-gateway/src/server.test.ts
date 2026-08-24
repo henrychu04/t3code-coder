@@ -153,6 +153,137 @@ describe("local Coder gateway", () => {
     strictEqual(JSON.parse(await NodeFS.readFile(configPath, "utf8")).version, 1);
   });
 
+  it("auto-starts, reports, restarts, and removes configured port forwards", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    await NodeFS.writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+        portForwards: [
+          {
+            id: "web",
+            workspaceId: "project-one",
+            protocol: "tcp",
+            localPort: 8080,
+            remotePort: 3000,
+          },
+        ],
+      }),
+    );
+    const invocations: Array<{ readonly executable: string; readonly args: readonly string[] }> = [];
+    const exits: Array<
+      (exit: { readonly expected: boolean; readonly reason?: string }) => void
+    > = [];
+    let closeCount = 0;
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      connectPortForward: async (invocation) => {
+        invocations.push(invocation);
+        let resolveClosed:
+          | ((exit: { readonly expected: boolean; readonly reason?: string }) => void)
+          | undefined;
+        const closed = new Promise<{ readonly expected: boolean; readonly reason?: string }>(
+          (resolve) => {
+            resolveClosed = resolve;
+          },
+        );
+        exits.push((exit) => resolveClosed?.(exit));
+        return {
+          closed: closed.then((exit) => ({ code: null, signal: null, ...exit })),
+          close: () => {
+            closeCount += 1;
+            resolveClosed?.({ expected: true });
+          },
+        };
+      },
+    });
+    closeGateway = gateway.close;
+
+    deepStrictEqual(invocations, [
+      {
+        executable: "coder",
+        args: [
+          "--global-config",
+          NodePath.join(directory, "coder-profiles", "goldman"),
+          "--disable-network-telemetry",
+          "--disable-direct-connections",
+          "--no-version-warning",
+          "--url",
+          "https://coder.example.gs.com",
+          "port-forward",
+          "henry/project-one",
+          "--tcp",
+          "127.0.0.1:8080:3000",
+        ],
+      },
+    ]);
+    deepStrictEqual(
+      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body),
+      { portForwards: [{ id: "web", status: "running" }] },
+    );
+
+    exits[0]?.({ expected: false, reason: "Local port 8080 is already in use." });
+    await Promise.resolve();
+    deepStrictEqual(
+      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body),
+      {
+        portForwards: [
+          { id: "web", status: "error", error: "Local port 8080 is already in use." },
+        ],
+      },
+    );
+
+    const rejectedRestart = await request({
+      url: `${gateway.url}/api/port-forwards/web/restart`,
+      method: "POST",
+      headers: { Origin: "https://attacker.example" },
+    });
+    strictEqual(rejectedRestart.statusCode, 403);
+    const restarted = await request({
+      url: `${gateway.url}/api/port-forwards/web/restart`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(restarted.statusCode, 200);
+    strictEqual(invocations.length, 2);
+
+    const removed = await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+        portForwards: [],
+      }),
+    });
+    strictEqual(removed.statusCode, 200);
+    strictEqual(closeCount, 1);
+    deepStrictEqual(
+      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body),
+      { portForwards: [] },
+    );
+  });
+
   it("discovers workspaces through the configured deployment's Coder domain", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);

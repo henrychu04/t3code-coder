@@ -12,6 +12,14 @@ export interface CoderWorkspaceProfile {
   readonly workspace: string;
 }
 
+export interface CoderPortForwardProfile {
+  readonly id: string;
+  readonly workspaceId: string;
+  readonly protocol: "tcp" | "udp";
+  readonly localPort: number;
+  readonly remotePort: number;
+}
+
 function requireSingleLine(value: string, field: string): string {
   const normalized = value.trim();
   if (normalized.length === 0) {
@@ -75,5 +83,31 @@ export function normalizeCoderWorkspaceProfile(
     name: requireSingleLine(profile.name, "Coder workspace profile name"),
     deploymentId: requireSingleLine(profile.deploymentId, "Coder deployment id"),
     workspace,
+  };
+}
+
+function normalizePort(value: number, field: string): number {
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) {
+    throw new Error(`${field} must be an integer between 1 and 65535.`);
+  }
+  return value;
+}
+
+export function normalizeCoderPortForwardProfile(
+  profile: CoderPortForwardProfile,
+): CoderPortForwardProfile {
+  const id = requireSingleLine(profile.id, "Coder port forward id");
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(id)) {
+    throw new Error("Coder port forward id contains unsupported characters.");
+  }
+  if (profile.protocol !== "tcp" && profile.protocol !== "udp") {
+    throw new Error("Coder port forward protocol must be TCP or UDP.");
+  }
+  return {
+    id,
+    workspaceId: requireSingleLine(profile.workspaceId, "Coder port forward workspace id"),
+    protocol: profile.protocol,
+    localPort: normalizePort(profile.localPort, "Local port"),
+    remotePort: normalizePort(profile.remotePort, "Remote port"),
   };
 }

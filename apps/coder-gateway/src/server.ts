@@ -16,6 +16,7 @@ import {
   type CoderProfileConfig,
 } from "@t3tools/coder-cli/configStore";
 import {
+  buildCoderPortForwardInvocation,
   buildCoderHelperInvocation,
   buildCoderAuthStatusInvocation,
   buildCoderListWorkspacesInvocation,
@@ -28,6 +29,10 @@ import {
   connectCoderHelper,
   type CoderHelperConnection,
 } from "@t3tools/coder-cli/helperConnection";
+import {
+  connectCoderPortForward,
+  type CoderPortForwardConnection,
+} from "@t3tools/coder-cli/portForward";
 import {
   installCoderHelperWithScp,
   uploadCoderClipboardImageWithScp,
@@ -271,6 +276,24 @@ function workspaceConnectionIsCurrent(
   );
 }
 
+function portForwardIsCurrent(
+  previous: CoderProfileConfig,
+  next: CoderProfileConfig,
+  portForwardId: string,
+): boolean {
+  const previousPortForward = previous.portForwards?.find((entry) => entry.id === portForwardId);
+  const nextPortForward = next.portForwards?.find((entry) => entry.id === portForwardId);
+  return (
+    previousPortForward !== undefined &&
+    nextPortForward !== undefined &&
+    previousPortForward.workspaceId === nextPortForward.workspaceId &&
+    previousPortForward.protocol === nextPortForward.protocol &&
+    previousPortForward.localPort === nextPortForward.localPort &&
+    previousPortForward.remotePort === nextPortForward.remotePort &&
+    workspaceConnectionIsCurrent(previous, next, previousPortForward.workspaceId)
+  );
+}
+
 function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -425,6 +448,7 @@ export async function startLocalCoderGateway(options?: {
   ) => Promise<CoderAuthenticationStatus>;
   readonly installHelper?: typeof installCoderHelperWithScp;
   readonly uploadClipboardImage?: typeof uploadCoderClipboardImageWithScp;
+  readonly connectPortForward?: typeof connectCoderPortForward;
 }): Promise<LocalCoderGateway> {
   let profileConfig: CoderProfileConfig = options?.configPath
     ? await loadCoderProfileConfig(options.configPath)
@@ -434,6 +458,10 @@ export async function startLocalCoderGateway(options?: {
   const workspaceConnectionGenerations = new Map<string, number>();
   const workspaceSockets = new Map<string, WebSocket>();
   const pendingWorkspaceUpgrades = new Set<string>();
+  const portForwardConnections = new Map<string, CoderPortForwardConnection>();
+  const portForwardStarts = new Map<string, Promise<CoderPortForwardConnection>>();
+  const portForwardGenerations = new Map<string, number>();
+  const portForwardErrors = new Map<string, string>();
   let gatewayClosed = false;
   let gatewayClosePromise: Promise<void> | undefined;
   const deploymentLoginStarts = new Map<string, Promise<void>>();
@@ -478,6 +506,7 @@ export async function startLocalCoderGateway(options?: {
       runCoderAuthStatus(invocation, options?.coderAuthStatusTimeoutMs));
   const installHelper = options?.installHelper ?? installCoderHelperWithScp;
   const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
+  const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
   const coderInvocationOptions = (deploymentId: string) => ({
     globalConfig: NodePath.join(
       NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
@@ -490,6 +519,111 @@ export async function startLocalCoderGateway(options?: {
     maxPayload: MAX_RPC_MESSAGE_BYTES,
     perMessageDeflate: false,
   });
+
+  const ensurePortForward = async (
+    portForwardId: string,
+  ): Promise<CoderPortForwardConnection> => {
+    if (gatewayClosed) throw new Error("Coder gateway is closed.");
+    const existing = portForwardConnections.get(portForwardId);
+    if (existing !== undefined) return existing;
+    const pending = portForwardStarts.get(portForwardId);
+    if (pending !== undefined) return pending;
+
+    const generation = portForwardGenerations.get(portForwardId) ?? 0;
+    const startIsCurrent = () =>
+      !gatewayClosed && (portForwardGenerations.get(portForwardId) ?? 0) === generation;
+    const start = (async () => {
+      const connectionConfig = profileConfig;
+      const portForward = connectionConfig.portForwards?.find(
+        (entry) => entry.id === portForwardId,
+      );
+      const workspace = connectionConfig.workspaces.find(
+        (entry) => entry.id === portForward?.workspaceId,
+      );
+      const deployment = connectionConfig.deployments.find(
+        (entry) => entry.id === workspace?.deploymentId,
+      );
+      if (portForward === undefined || workspace === undefined || deployment === undefined) {
+        throw new Error("Unknown Coder port forward.");
+      }
+      const connection = await openPortForward(
+        buildCoderPortForwardInvocation(
+          deployment,
+          workspace,
+          portForward,
+          coderInvocationOptions(deployment.id),
+        ),
+      );
+      if (
+        !startIsCurrent() ||
+        !portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
+      ) {
+        connection.close();
+        await connection.closed;
+        throw new Error("Coder port forward was cancelled.");
+      }
+      portForwardConnections.set(portForwardId, connection);
+      portForwardErrors.delete(portForwardId);
+      void connection.closed.then((exit) => {
+        if (portForwardConnections.get(portForwardId) === connection) {
+          portForwardConnections.delete(portForwardId);
+        }
+        if (
+          !exit.expected &&
+          !gatewayClosed &&
+          portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
+        ) {
+          portForwardErrors.set(
+            portForwardId,
+            exit.reason ?? "Coder port forward stopped unexpectedly.",
+          );
+        }
+      });
+      return connection;
+    })();
+    portForwardStarts.set(portForwardId, start);
+    try {
+      return await start;
+    } catch (cause) {
+      if (
+        startIsCurrent() &&
+        profileConfig.portForwards?.some((entry) => entry.id === portForwardId)
+      ) {
+        portForwardErrors.set(
+          portForwardId,
+          cause instanceof Error ? cause.message : "Coder port forward failed to start.",
+        );
+      }
+      throw cause;
+    } finally {
+      if (portForwardStarts.get(portForwardId) === start) {
+        portForwardStarts.delete(portForwardId);
+      }
+    }
+  };
+
+  const stopPortForward = async (portForwardId: string): Promise<void> => {
+    portForwardGenerations.set(
+      portForwardId,
+      (portForwardGenerations.get(portForwardId) ?? 0) + 1,
+    );
+    const pending = portForwardStarts.get(portForwardId);
+    const connection = portForwardConnections.get(portForwardId);
+    connection?.close();
+    portForwardConnections.delete(portForwardId);
+    await Promise.allSettled([
+      ...(pending === undefined ? [] : [pending]),
+      ...(connection === undefined ? [] : [connection.closed]),
+    ]);
+  };
+
+  const startConfiguredPortForwards = async (): Promise<void> => {
+    await Promise.allSettled(
+      (profileConfig.portForwards ?? []).map((portForward) =>
+        ensurePortForward(portForward.id),
+      ),
+    );
+  };
 
   const ensureWorkspaceConnection = async (workspaceId: string): Promise<CoderHelperConnection> => {
     if (gatewayClosed) throw new Error("Coder gateway is closed.");
@@ -595,6 +729,30 @@ export async function startLocalCoderGateway(options?: {
         );
         return;
       }
+      if (request.method === "GET" && request.url === "/api/port-forwards") {
+        sendText(
+          response,
+          200,
+          "application/json; charset=utf-8",
+          JSON.stringify({
+            portForwards: (profileConfig.portForwards ?? []).map((portForward) => {
+              const error = portForwardErrors.get(portForward.id);
+              return {
+                id: portForward.id,
+                status: portForwardStarts.has(portForward.id)
+                  ? "starting"
+                  : portForwardConnections.has(portForward.id)
+                    ? "running"
+                    : error === undefined
+                      ? "starting"
+                      : "error",
+                ...(error === undefined ? {} : { error }),
+              };
+            }),
+          }),
+        );
+        return;
+      }
       if (request.method === "POST" && request.url === "/api/config") {
         if (request.headers.origin !== expectedOrigin) {
           sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
@@ -608,19 +766,73 @@ export async function startLocalCoderGateway(options?: {
           const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
           const savedConfig = await serializeConfigMutation(async () => {
             if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
+            const previousConfig = profileConfig;
+            const stalePortForwardIds = new Set(
+              (previousConfig.portForwards ?? [])
+                .filter(
+                  (portForward) =>
+                    !portForwardIsCurrent(previousConfig, nextConfig, portForward.id),
+                )
+                .map((portForward) => portForward.id),
+            );
             for (const [workspaceId, connection] of workspaceConnections) {
-              if (workspaceConnectionIsCurrent(profileConfig, nextConfig, workspaceId)) continue;
+              if (workspaceConnectionIsCurrent(previousConfig, nextConfig, workspaceId)) continue;
               connection.close();
               workspaceConnections.delete(workspaceId);
               workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
             }
             profileConfig = nextConfig;
+            await Promise.allSettled(
+              [...stalePortForwardIds].map((portForwardId) => stopPortForward(portForwardId)),
+            );
+            for (const portForwardId of stalePortForwardIds) {
+              portForwardErrors.delete(portForwardId);
+            }
+            await startConfiguredPortForwards();
             return profileConfig;
           });
           sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
         } catch (cause) {
           const message = cause instanceof Error ? cause.message : "Invalid configuration.";
           sendText(response, 400, "text/plain; charset=utf-8", message);
+        }
+        return;
+      }
+      const portForwardRestartRoute = request.url?.match(
+        /^\/api\/port-forwards\/([^/]+)\/restart$/,
+      );
+      if (
+        request.method === "POST" &&
+        portForwardRestartRoute !== null &&
+        portForwardRestartRoute !== undefined
+      ) {
+        if (request.headers.origin !== expectedOrigin) {
+          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+          return;
+        }
+        let portForwardId: string;
+        try {
+          portForwardId = decodeURIComponent(portForwardRestartRoute[1] ?? "");
+        } catch {
+          sendText(response, 400, "text/plain; charset=utf-8", "Invalid port forward id.");
+          return;
+        }
+        if (!profileConfig.portForwards?.some((entry) => entry.id === portForwardId)) {
+          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder port forward.");
+          return;
+        }
+        try {
+          await stopPortForward(portForwardId);
+          portForwardErrors.delete(portForwardId);
+          await ensurePortForward(portForwardId);
+          sendText(response, 200, "application/json; charset=utf-8", '{"status":"running"}');
+        } catch (cause) {
+          sendText(
+            response,
+            502,
+            "text/plain; charset=utf-8",
+            cause instanceof Error ? cause.message : "Coder port forward failed to restart.",
+          );
         }
         return;
       }
@@ -975,6 +1187,8 @@ export async function startLocalCoderGateway(options?: {
     throw new Error("Local gateway did not bind to a TCP port.");
   }
 
+  await startConfiguredPortForwards();
+
   return {
     url: `http://${CODER_GATEWAY_HOST}:${address.port}`,
     close: () => {
@@ -985,16 +1199,29 @@ export async function startLocalCoderGateway(options?: {
         }
         workspaceSockets.clear();
         pendingWorkspaceUpgrades.clear();
+        for (const portForwardId of profileConfig.portForwards?.map((entry) => entry.id) ?? []) {
+          portForwardGenerations.set(
+            portForwardId,
+            (portForwardGenerations.get(portForwardId) ?? 0) + 1,
+          );
+        }
         const connectionClosures = [...workspaceConnections.values()].map((connection) => {
           connection.close();
           return connection.closed;
         });
         workspaceConnections.clear();
+        const portForwardClosures = [...portForwardConnections.values()].map((connection) => {
+          connection.close();
+          return connection.closed;
+        });
+        portForwardConnections.clear();
         await Promise.allSettled([...workspaceConnectionStarts.values()]);
+        await Promise.allSettled([...portForwardStarts.values()]);
         await new Promise<void>((resolve, reject) => {
           server.close((error) => (error ? reject(error) : resolve()));
         });
         await Promise.all(connectionClosures);
+        await Promise.all(portForwardClosures);
         webSocketServer.close();
       })();
       return gatewayClosePromise;

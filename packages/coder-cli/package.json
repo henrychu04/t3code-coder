@@ -23,6 +23,10 @@
       "types": "./src/profile.ts",
       "import": "./src/profile.ts"
     },
+    "./portForward": {
+      "types": "./src/portForward.ts",
+      "import": "./src/portForward.ts"
+    },
     "./rpc": {
       "types": "./src/rpc.ts",
       "import": "./src/rpc.ts"
