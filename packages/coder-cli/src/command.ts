@@ -12,9 +12,7 @@ export interface CoderInvocation {
   readonly args: readonly string[];
 }
 
-const CODER_GLOBAL_ARGS = [
-  "--no-version-warning",
-] as const;
+const CODER_GLOBAL_ARGS = ["--no-version-warning"] as const;
 
 export interface CoderInvocationOptions {
   readonly globalConfig?: string;
@@ -23,6 +21,13 @@ export interface CoderInvocationOptions {
 export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
 export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
 export const REMOTE_HELPER_READY_SENTINEL = "T3_CODER_HELPER_READY";
+export const REMOTE_WORKSPACE_STATS_COMMAND = [
+  "set -eu",
+  'cpu="$(coder stat cpu --output=json)"',
+  'memory="$(coder stat mem --output=json)"',
+  'disk="$(coder stat disk --path "$HOME" --output=json)"',
+  `printf '{"cpu":%s,"memory":%s,"disk":%s}\\n' "$cpu" "$memory" "$disk"`,
+].join("; ");
 const REMOTE_NODE_VERSION_CHECK = `${REMOTE_NODE_COMMAND} -e 'const major = Number(process.versions.node.split(".")[0]); process.exit(major >= 24 ? 0 : 1)'`;
 export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   "set -eu",
@@ -95,6 +100,23 @@ export function buildCoderListWorkspacesInvocation(
   return invocation(
     deployment,
     [...CODER_GLOBAL_ARGS, "--url", deployment.url, "list", "--output", "json"],
+    options,
+  );
+}
+
+export function buildCoderPingWorkspaceInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
+  if (workspace.deploymentId !== deployment.id) {
+    throw new Error("Coder workspace does not belong to the selected deployment.");
+  }
+  return invocation(
+    deployment,
+    [...CODER_GLOBAL_ARGS, "--url", deployment.url, "ping", workspace.workspace],
     options,
   );
 }
@@ -218,6 +240,19 @@ export function buildCoderWorkspaceShellInvocation(
       "-c",
       quotePosixShellArgument(shellCommand),
     ],
+    options,
+  );
+}
+
+export function buildCoderWorkspaceStatsInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  return buildCoderWorkspaceShellInvocation(
+    deploymentInput,
+    workspaceInput,
+    REMOTE_WORKSPACE_STATS_COMMAND,
     options,
   );
 }

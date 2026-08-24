@@ -14,6 +14,7 @@ import {
   discoverCoderWorkspaces,
   disconnectCoderWorkspace,
   loadCoderConfig,
+  loadCoderWorkspaceLatency,
   restartCoderWorkspace,
   saveCoderConfig,
   startCoderWorkspace,
@@ -33,6 +34,7 @@ interface CoderContextValue {
   readonly config: CoderProfileConfig;
   readonly connectionErrors: Readonly<Record<string, string>>;
   readonly workspaceRuntime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>;
+  readonly workspaceLatencyMs: Readonly<Record<string, number>>;
   readonly saveConfig: (config: CoderProfileConfig) => Promise<CoderProfileConfig>;
   readonly connectWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly disconnectWorkspace: (workspaceId: string) => Promise<void>;
@@ -70,7 +72,7 @@ export async function readWorkspaceRuntime(
   const next: Record<string, CoderWorkspaceRuntimeStatus> = Object.fromEntries(
     config.workspaces.map((workspace) => [
       workspace.id,
-      { status: "unknown", updateAvailable: false },
+      { status: "unknown", updateAvailable: false, healthy: null },
     ]),
   );
   for (const workspace of config.workspaces) {
@@ -81,6 +83,7 @@ export async function readWorkspaceRuntime(
       next[workspace.id] = {
         status: "unavailable",
         updateAvailable: false,
+        healthy: null,
         error: deployment.error,
       };
       continue;
@@ -94,6 +97,7 @@ export async function readWorkspaceRuntime(
       next[workspace.id] = {
         status: discovered.status,
         updateAvailable: discovered.updateAvailable,
+        healthy: discovered.healthy,
       };
     }
   }
@@ -129,6 +133,10 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const [workspaceRuntime, setWorkspaceRuntime] = useState<
     Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
   >({});
+  const [connectedWorkspaceIds, setConnectedWorkspaceIds] = useState<readonly string[]>([]);
+  const [workspaceLatencyMs, setWorkspaceLatencyMs] = useState<Readonly<Record<string, number>>>(
+    {},
+  );
 
   const reload = useCallback(async () => {
     setLoadError(null);
@@ -156,19 +164,58 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       const descriptor = await connectCoderWorkspace(workspaceId);
       if (connectionAttemptGenerations.current[workspaceId] !== generation) return descriptor;
       setCoderWorkspaceEnvironment(workspaceId, descriptor);
+      setConnectedWorkspaceIds((current) =>
+        current.includes(workspaceId) ? current : [...current, workspaceId],
+      );
       return descriptor;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (connectionAttemptGenerations.current[workspaceId] === generation) {
+        setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
         setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
       }
       throw cause;
     }
   }, []);
 
+  useEffect(() => {
+    if (connectedWorkspaceIds.length === 0) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const refresh = async (): Promise<void> => {
+      const measurements = await Promise.all(
+        connectedWorkspaceIds.map(async (workspaceId) => {
+          try {
+            return [workspaceId, await loadCoderWorkspaceLatency(workspaceId)] as const;
+          } catch {
+            return [workspaceId, null] as const;
+          }
+        }),
+      );
+      if (cancelled) return;
+      setWorkspaceLatencyMs((current) => {
+        const next: Record<string, number> = { ...current };
+        let changed = false;
+        for (const [workspaceId, latencyMs] of measurements) {
+          if (latencyMs === null || current[workspaceId] === latencyMs) continue;
+          next[workspaceId] = latencyMs;
+          changed = true;
+        }
+        return changed ? next : current;
+      });
+      timer = window.setTimeout(() => void refresh(), 1_000);
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [connectedWorkspaceIds]);
+
   const applyWorkspaceRuntime = useCallback(
     (runtime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>) => {
       setWorkspaceRuntime(runtime);
+      const inactiveWorkspaceIds = new Set<string>();
       for (const [workspaceId, status] of Object.entries(runtime)) {
         if (
           status.status !== "stopped" &&
@@ -179,7 +226,19 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         }
         connectionAttemptGenerations.current[workspaceId] =
           (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+        inactiveWorkspaceIds.add(workspaceId);
       }
+      setConnectedWorkspaceIds((current) =>
+        current.some((workspaceId) => inactiveWorkspaceIds.has(workspaceId))
+          ? current.filter((workspaceId) => !inactiveWorkspaceIds.has(workspaceId))
+          : current,
+      );
+      setWorkspaceLatencyMs((current) => {
+        const next = Object.fromEntries(
+          Object.entries(current).filter(([workspaceId]) => !inactiveWorkspaceIds.has(workspaceId)),
+        );
+        return Object.keys(next).length === Object.keys(current).length ? current : next;
+      });
       setConnectionErrors((current) => discardInactiveWorkspaceConnectionErrors(current, runtime));
     },
     [],
@@ -233,6 +292,13 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
     await disconnectCoderWorkspace(workspaceId);
     removeCoderWorkspaceEnvironment(workspaceId);
+    setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
+    setWorkspaceLatencyMs((current) => {
+      if (current[workspaceId] === undefined) return current;
+      const next = { ...current };
+      delete next[workspaceId];
+      return next;
+    });
     setConnectionErrors((current) => {
       const next = { ...current };
       delete next[workspaceId];
@@ -243,6 +309,13 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const completeWorkspaceAction = useCallback(
     async (workspaceId: string, action: (workspaceId: string) => Promise<void>) => {
       removeCoderWorkspaceEnvironment(workspaceId);
+      setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
+      setWorkspaceLatencyMs((current) => {
+        if (current[workspaceId] === undefined) return current;
+        const next = { ...current };
+        delete next[workspaceId];
+        return next;
+      });
       const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
       connectionAttemptGenerations.current[workspaceId] = actionGeneration;
       setConnectionErrors((current) => {
@@ -256,6 +329,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         [workspaceId]: {
           status: "starting",
           updateAvailable: current[workspaceId]?.updateAvailable ?? false,
+          healthy: null,
         },
       }));
       try {
@@ -287,6 +361,13 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const stopWorkspace = useCallback(
     async (workspaceId: string) => {
       removeCoderWorkspaceEnvironment(workspaceId);
+      setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
+      setWorkspaceLatencyMs((current) => {
+        if (current[workspaceId] === undefined) return current;
+        const next = { ...current };
+        delete next[workspaceId];
+        return next;
+      });
       const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
       connectionAttemptGenerations.current[workspaceId] = actionGeneration;
       setConnectionErrors((current) => {
@@ -302,6 +383,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           [workspaceId]: {
             status: "stopped",
             updateAvailable: current[workspaceId]?.updateAvailable ?? false,
+            healthy: null,
           },
         }));
       } catch (cause) {
@@ -332,6 +414,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
             config,
             connectionErrors,
             workspaceRuntime,
+            workspaceLatencyMs,
             saveConfig,
             connectWorkspace,
             disconnectWorkspace,
@@ -353,6 +436,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       stopWorkspace,
       updateWorkspace,
       workspaceRuntime,
+      workspaceLatencyMs,
     ],
   );
 

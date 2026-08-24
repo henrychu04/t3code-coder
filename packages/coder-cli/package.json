@@ -27,6 +27,10 @@
       "types": "./src/portForward.ts",
       "import": "./src/portForward.ts"
     },
+    "./workspacePing": {
+      "types": "./src/workspacePing.ts",
+      "import": "./src/workspacePing.ts"
+    },
     "./rpc": {
       "types": "./src/rpc.ts",
       "import": "./src/rpc.ts"

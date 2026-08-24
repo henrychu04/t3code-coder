@@ -8,6 +8,7 @@ import {
   buildCoderHelperInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
+  buildCoderPingWorkspaceInvocation,
   buildCoderPortForwardInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
@@ -15,11 +16,13 @@ import {
   buildCoderUpdateWorkspaceInvocation,
   buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
+  buildCoderWorkspaceStatsInvocation,
   buildCoderWorkspaceProbeInvocation,
   REMOTE_HELPER_COMMAND,
   REMOTE_HELPER_READY_SENTINEL,
   REMOTE_NODE_COMMAND,
   REMOTE_WORKSPACE_PROBE_COMMAND,
+  REMOTE_WORKSPACE_STATS_COMMAND,
   quotePosixShellArgument,
 } from "./command.ts";
 import type { CoderDeploymentProfile, CoderWorkspaceProfile } from "./profile.ts";
@@ -74,6 +77,18 @@ describe("Coder CLI command construction", () => {
         "json",
       ],
     });
+    deepStrictEqual(buildCoderPingWorkspaceInvocation(deployment, workspace, options), {
+      executable: String.raw`C:\Program Files\Coder\coder.exe`,
+      args: [
+        "--global-config",
+        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+        "--no-version-warning",
+        "--url",
+        "https://coder.example.gs.com",
+        "ping",
+        "equities-dev",
+      ],
+    });
     throws(() => buildCoderLoginInvocation(deployment, { globalConfig: " " }));
   });
 
@@ -89,6 +104,20 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);
+    deepStrictEqual(buildCoderWorkspaceStatsInvocation(deployment, workspace).args, [
+      "--no-version-warning",
+      "--url",
+      "https://coder.example.gs.com",
+      "ssh",
+      "equities-dev",
+      "--",
+      "sh",
+      "-c",
+      quotePosixShellArgument(REMOTE_WORKSPACE_STATS_COMMAND),
+    ]);
+    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder stat cpu --output=json/u);
+    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder stat mem --output=json/u);
+    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder stat disk --path "\$HOME" --output=json/u);
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
       "--no-version-warning",
       "--url",

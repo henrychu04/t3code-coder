@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, strictEqual } from "node:assert";
+import { deepStrictEqual, strictEqual, throws } from "node:assert";
 import { once } from "node:events";
 import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
@@ -20,12 +20,14 @@ import {
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
+  buildCoderWorkspaceStatsInvocation,
   quotePosixShellArgument,
   REMOTE_WORKSPACE_PROBE_COMMAND,
 } from "@t3tools/coder-cli/command";
 import {
   CODER_GATEWAY_HOST,
   makeLocalCoderGateway,
+  parseCoderWorkspaceResourceUsage,
   runCoderAuthStatus,
   startLocalCoderGateway,
   type PromiseCoderHelperConnection as CoderHelperConnection,
@@ -54,6 +56,36 @@ afterEach(async () => {
       .splice(0)
       .map((directory) => NodeFS.rm(directory, { recursive: true, force: true })),
   );
+});
+
+describe("Coder workspace resource usage", () => {
+  it("parses Coder stat JSON without accepting malformed totals", () => {
+    deepStrictEqual(
+      parseCoderWorkspaceResourceUsage(
+        JSON.stringify({
+          cpu: { used: 0.75, total: 4, unit: "cores" },
+          memory: { used: 3_221_225_472, total: 8_589_934_592, unit: "B" },
+          disk: { used: 42_949_672_960, total: 107_374_182_400, unit: "B" },
+        }),
+      ),
+      {
+        cpu: { used: 0.75, total: 4, unit: "cores" },
+        memory: { used: 3_221_225_472, total: 8_589_934_592, unit: "B" },
+        disk: { used: 42_949_672_960, total: 107_374_182_400, unit: "B" },
+      },
+    );
+    throws(
+      () =>
+        parseCoderWorkspaceResourceUsage(
+          JSON.stringify({
+            cpu: { used: 0.75, total: 4, unit: "cores" },
+            memory: { used: 1024, total: 0, unit: "B" },
+            disk: { used: 4096, total: 8192, unit: "B" },
+          }),
+        ),
+      /invalid memory usage/u,
+    );
+  });
 });
 
 function request(input: {
@@ -325,6 +357,7 @@ describe("local Coder gateway", () => {
           target: "henry/project-one",
           status: "stopped",
           updateAvailable: false,
+          healthy: null,
         },
       ],
       startWorkspace: async () => {
@@ -400,6 +433,7 @@ describe("local Coder gateway", () => {
           target: "henry/project-one",
           status: "running",
           updateAvailable: false,
+          healthy: true,
         },
       ],
       connectPortForward: async () => {
@@ -669,6 +703,7 @@ describe("local Coder gateway", () => {
             target: "henry/project-one",
             status: "running",
             updateAvailable: true,
+            healthy: true,
           },
         ];
       },
@@ -705,6 +740,7 @@ describe("local Coder gateway", () => {
           target: "henry/project-one",
           status: "running",
           updateAvailable: true,
+          healthy: true,
         },
       ],
     });
@@ -732,7 +768,7 @@ describe("local Coder gateway", () => {
       executablePath,
       `#!/usr/bin/env node
 process.stdout.write(JSON.stringify([
-  { name: "starting-workspace", owner_name: "henry", latest_build: { status: "starting" }, outdated: true },
+  { name: "starting-workspace", owner_name: "henry", latest_build: { status: "starting" }, outdated: true, health: { healthy: true } },
   { name: "stopped-workspace", latest_build: { status: "stopped" }, outdated: false },
   { name: "unknown-workspace", latest_build: { status: "failed" }, outdated: false }
 ]));
@@ -773,18 +809,21 @@ process.stdout.write(JSON.stringify([
           target: "henry/starting-workspace",
           status: "starting",
           updateAvailable: true,
+          healthy: true,
         },
         {
           name: "stopped-workspace",
           target: "stopped-workspace",
           status: "stopped",
           updateAvailable: false,
+          healthy: null,
         },
         {
           name: "unknown-workspace",
           target: "unknown-workspace",
           status: "unknown",
           updateAvailable: false,
+          healthy: null,
         },
       ],
     });
@@ -932,6 +971,219 @@ setTimeout(() => process.exit(0), 100);
         { globalConfig: NodePath.join(directory, "coder-profiles", "goldman") },
       ).args,
     );
+  });
+
+  it("streams one foreground Coder ping per connected workspace", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const executablePath = NodePath.join(directory, "coder");
+    const invocationLogPath = NodePath.join(directory, "ping-invocations.txt");
+    const lifecycleLogPath = NodePath.join(directory, "ping-lifecycle.txt");
+    await NodeFS.writeFile(
+      executablePath,
+      `#!/usr/bin/env node
+import * as fs from "node:fs";
+fs.appendFileSync(${JSON.stringify(invocationLogPath)}, JSON.stringify(process.argv.slice(2)) + "\\n");
+fs.appendFileSync(${JSON.stringify(lifecycleLogPath)}, "started\\n");
+process.stdout.write("pong from henry/project-one proxied via DERP(test) in 37ms\\n");
+const timer = setInterval(() => process.stdout.write("pong from henry/project-one proxied via DERP(test) in 35ms\\n"), 25);
+process.on("SIGTERM", () => {
+  clearInterval(timer);
+  fs.appendFileSync(${JSON.stringify(lifecycleLogPath)}, "stopped\\n");
+  process.exit(0);
+});
+`,
+      { mode: 0o700 },
+    );
+    let closeConnection: (() => void) | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      closeConnection = () => resolve({ code: 130, signal: null, expected: true });
+    });
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed,
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => closeConnection?.(),
+      }),
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+            executable: executablePath,
+          },
+        ],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+    strictEqual(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/latency`,
+        })
+      ).statusCode,
+      409,
+    );
+    strictEqual(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/connection`,
+          method: "POST",
+          headers: { Origin: gateway.url },
+        })
+      ).statusCode,
+      200,
+    );
+
+    let latencyMs: number | null = null;
+    for (let attempt = 0; attempt < 50 && latencyMs === null; attempt += 1) {
+      const response = await request({
+        url: `${gateway.url}/api/workspaces/project-one/latency`,
+      });
+      strictEqual(response.statusCode, 200);
+      latencyMs = (JSON.parse(response.body) as { latencyMs: number | null }).latencyMs;
+      if (latencyMs === null) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    strictEqual(latencyMs === 37 || latencyMs === 35, true);
+    strictEqual(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/latency`,
+        })
+      ).statusCode,
+      200,
+    );
+    const invocations = (await NodeFS.readFile(invocationLogPath, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    strictEqual(invocations.length, 1);
+    deepStrictEqual(invocations[0], [
+      "--global-config",
+      NodePath.join(directory, "coder-profiles", "goldman"),
+      "--no-version-warning",
+      "--url",
+      "https://coder.example.gs.com",
+      "ping",
+      "henry/project-one",
+    ]);
+
+    strictEqual(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/connection`,
+          method: "DELETE",
+          headers: { Origin: gateway.url },
+        })
+      ).statusCode,
+      200,
+    );
+    strictEqual(
+      (await NodeFS.readFile(lifecycleLogPath, "utf8")).trim().split("\n").at(-1),
+      "stopped",
+    );
+  });
+
+  it("samples workspace resource usage only while the helper is connected", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    let closeConnection: (() => void) | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      closeConnection = () => resolve({ code: 130, signal: null, expected: true });
+    });
+    const invocations: Array<ReturnType<typeof buildCoderWorkspaceStatsInvocation>> = [];
+    const usage = {
+      cpu: { used: 0.75, total: 4, unit: "cores" as const },
+      memory: { used: 3_221_225_472, total: 8_589_934_592, unit: "B" as const },
+      disk: { used: 42_949_672_960, total: 107_374_182_400, unit: "B" as const },
+    };
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed,
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => closeConnection?.(),
+      }),
+      readWorkspaceResourceUsage: async (invocation) => {
+        invocations.push(invocation);
+        return usage;
+      },
+      listWorkspaces: async () => [
+        {
+          name: "project-one",
+          target: "henry/project-one",
+          status: "running",
+          updateAvailable: false,
+          healthy: true,
+        },
+      ],
+    });
+    closeGateway = gateway.close;
+    const deployment = {
+      id: "goldman",
+      name: "Goldman",
+      url: "https://coder.example.gs.com",
+    };
+    const workspace = {
+      id: "project-one",
+      name: "Project One",
+      deploymentId: "goldman",
+      workspace: "henry/project-one",
+    };
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [deployment],
+        workspaces: [workspace],
+      }),
+    });
+
+    strictEqual(
+      (await request({ url: `${gateway.url}/api/workspaces/project-one/metrics` })).statusCode,
+      409,
+    );
+    await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    const response = await request({
+      url: `${gateway.url}/api/workspaces/project-one/metrics`,
+    });
+    strictEqual(response.statusCode, 200);
+    deepStrictEqual(JSON.parse(response.body), { healthy: true, ...usage });
+    deepStrictEqual(invocations, [
+      buildCoderWorkspaceStatsInvocation(deployment, workspace, {
+        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+      }),
+    ]);
   });
 
   it("reports remote preflight failures emitted on stdout", async () => {
