@@ -321,6 +321,13 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    renameThreadBranch: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:rename-thread-branch",
+      tag: WS_METHODS.vcsRenameThreadBranch,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
     init: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:init",
       tag: WS_METHODS.vcsInit,

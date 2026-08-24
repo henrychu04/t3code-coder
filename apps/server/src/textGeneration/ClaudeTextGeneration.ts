@@ -50,6 +50,12 @@ const ClaudeOutputEnvelope = Schema.Struct({
 const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const decodeClaudeOutputEnvelope = Schema.decodeEffect(Schema.fromJsonString(ClaudeOutputEnvelope));
 
+function stripClaudeLauncherPreamble(output: string): string {
+  const lines = output.split(/\r?\n/);
+  const jsonLine = lines.findIndex((line) => line.trimStart().startsWith("{"));
+  return jsonLine === -1 ? output : lines.slice(jsonLine).join("\n");
+}
+
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
@@ -218,7 +224,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ),
     );
 
-    const envelope = yield* decodeClaudeOutputEnvelope(rawStdout).pipe(
+    const envelope = yield* decodeClaudeOutputEnvelope(stripClaudeLauncherPreamble(rawStdout)).pipe(
       Effect.catchTags({
         SchemaError: (cause) =>
           Effect.fail(

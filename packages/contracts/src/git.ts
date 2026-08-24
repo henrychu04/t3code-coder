@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 import { VcsDriverKind } from "./vcs.ts";
 
 const GIT_LIST_REFS_MAX_LIMIT = 200;
@@ -116,6 +116,33 @@ export const VcsSwitchRefResult = Schema.Struct({
   refName: Schema.NullOr(TrimmedNonEmptyString),
 });
 export type VcsSwitchRefResult = typeof VcsSwitchRefResult.Type;
+
+export const VcsRenameThreadBranchInput = Schema.Struct({
+  threadId: ThreadId,
+  cwd: TrimmedNonEmptyString,
+  expectedBranch: TrimmedNonEmptyString,
+  newBranch: TrimmedNonEmptyString,
+  renameWorktreeFolder: Schema.Boolean,
+});
+export type VcsRenameThreadBranchInput = typeof VcsRenameThreadBranchInput.Type;
+
+export const VcsRenameThreadBranchResult = Schema.Struct({
+  branch: TrimmedNonEmptyString,
+  worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type VcsRenameThreadBranchResult = typeof VcsRenameThreadBranchResult.Type;
+
+export class VcsRenameThreadBranchError extends Schema.TaggedErrorClass<VcsRenameThreadBranchError>()(
+  "VcsRenameThreadBranchError",
+  {
+    detail: Schema.String,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 export class GitCommandError extends Schema.TaggedErrorClass<GitCommandError>()("GitCommandError", {
   operation: Schema.String,

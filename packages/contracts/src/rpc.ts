@@ -13,6 +13,9 @@ import {
   VcsListRefsInput,
   VcsListRefsResult,
   VcsRemoveWorktreeInput,
+  VcsRenameThreadBranchError,
+  VcsRenameThreadBranchInput,
+  VcsRenameThreadBranchResult,
   VcsStatusInput,
   VcsStatusResult,
   VcsStatusStreamEvent,
@@ -81,6 +84,7 @@ export const WS_METHODS = {
   vcsRemoveWorktree: "vcs.removeWorktree",
   vcsCreateRef: "vcs.createRef",
   vcsSwitchRef: "vcs.switchRef",
+  vcsRenameThreadBranch: "vcs.renameThreadBranch",
   vcsInit: "vcs.init",
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
@@ -182,6 +186,12 @@ const WsVcsSwitchRefRpc = Rpc.make(WS_METHODS.vcsSwitchRef, {
   payload: VcsSwitchRefInput,
   success: VcsSwitchRefResult,
   error: GitCommandError,
+});
+
+const WsVcsRenameThreadBranchRpc = Rpc.make(WS_METHODS.vcsRenameThreadBranch, {
+  payload: VcsRenameThreadBranchInput,
+  success: VcsRenameThreadBranchResult,
+  error: VcsRenameThreadBranchError,
 });
 
 const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
@@ -327,6 +337,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsVcsRemoveWorktreeRpc,
   WsVcsCreateRefRpc,
   WsVcsSwitchRefRpc,
+  WsVcsRenameThreadBranchRpc,
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,

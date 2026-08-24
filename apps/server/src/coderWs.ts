@@ -3,8 +3,10 @@ import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -31,10 +33,12 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   ThreadId,
+  VcsRenameThreadBranchError,
   WorkspaceListDirectoriesError,
   WS_METHODS,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { sanitizeBranchFragment } from "@t3tools/shared/git";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -51,6 +55,7 @@ import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngi
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderService } from "./provider/Services/ProviderService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -190,6 +195,8 @@ export function compensateFailedBootstrap(input: {
 export const layer = CoderWsRpcGroup.toLayer(
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
     const environment = yield* CoderEnvironment.CoderEnvironment;
     const startup = yield* CoderRuntimeStartup.CoderRuntimeStartup;
@@ -198,6 +205,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const diffs = yield* CheckpointDiffQuery.CheckpointDiffQuery;
     const providers = yield* ProviderRegistry.ProviderRegistry;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const providerService = yield* ProviderService;
     const settings = yield* ServerSettings.ServerSettingsService;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
@@ -221,6 +229,228 @@ export const layer = CoderWsRpcGroup.toLayer(
         detail: cause instanceof Error ? cause.message : `Git ${operation} failed.`,
         cause,
       });
+    const renameThreadBranchError = (detail: string, cause?: unknown) =>
+      new VcsRenameThreadBranchError({
+        detail,
+        ...(cause === undefined ? {} : { cause }),
+      });
+
+    const nextManagedWorktreePath = Effect.fn("nextManagedWorktreePath")(function* (
+      currentPath: string,
+      branch: string,
+    ) {
+      const worktreesRoot = path.resolve(config.worktreesDir);
+      const resolvedCurrentPath = path.resolve(currentPath);
+      if (path.dirname(resolvedCurrentPath) !== worktreesRoot) {
+        return yield* Effect.fail(
+          renameThreadBranchError(
+            "Only worktree folders managed by T3 Code can be renamed from the UI.",
+          ),
+        );
+      }
+
+      const baseName = sanitizeBranchFragment(branch).replaceAll("/", "-");
+      for (let suffix = 1; suffix <= 1_000; suffix += 1) {
+        const name = suffix === 1 ? baseName : `${baseName}-${suffix}`;
+        const candidate = path.join(worktreesRoot, name);
+        if (candidate === resolvedCurrentPath || !(yield* fileSystem.exists(candidate))) {
+          return candidate;
+        }
+      }
+      return yield* Effect.fail(
+        renameThreadBranchError("Could not find an available folder name for this worktree."),
+      );
+    });
+
+    const renameThreadBranch = Effect.fn("renameThreadBranch")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly cwd: string;
+      readonly expectedBranch: string;
+      readonly newBranch: string;
+      readonly renameWorktreeFolder: boolean;
+    }) {
+      const thread = yield* projections.getThreadShellById(input.threadId).pipe(
+        Effect.map(Option.getOrUndefined),
+        Effect.mapError((cause) => renameThreadBranchError("Could not load the thread.", cause)),
+      );
+      if (!thread) {
+        return yield* Effect.fail(renameThreadBranchError("The thread no longer exists."));
+      }
+      if (thread.branch !== input.expectedBranch) {
+        return yield* Effect.fail(
+          renameThreadBranchError(
+            `The thread branch changed from ${input.expectedBranch} to ${thread.branch ?? "an unknown branch"}. Refresh and try again.`,
+          ),
+        );
+      }
+
+      const project = yield* projections.getProjectShellById(thread.projectId).pipe(
+        Effect.map(Option.getOrUndefined),
+        Effect.mapError((cause) => renameThreadBranchError("Could not load the project.", cause)),
+      );
+      if (!project) {
+        return yield* Effect.fail(renameThreadBranchError("The project no longer exists."));
+      }
+
+      const currentCwd = thread.worktreePath ?? project.workspaceRoot;
+      if (path.resolve(input.cwd) !== path.resolve(currentCwd)) {
+        return yield* Effect.fail(
+          renameThreadBranchError("The thread workspace changed. Refresh and try again."),
+        );
+      }
+      const localStatus = yield* git
+        .localStatus({ cwd: currentCwd })
+        .pipe(
+          Effect.mapError((cause) =>
+            renameThreadBranchError("Could not read the checked-out branch.", cause),
+          ),
+        );
+      if (localStatus.refName !== input.expectedBranch) {
+        return yield* Effect.fail(
+          renameThreadBranchError(
+            `The checkout is on ${localStatus.refName ?? "a detached HEAD"}, not ${input.expectedBranch}. Refresh and try again.`,
+          ),
+        );
+      }
+
+      let nextWorktreePath = thread.worktreePath;
+      if (input.renameWorktreeFolder) {
+        if (!thread.worktreePath) {
+          return yield* Effect.fail(
+            renameThreadBranchError("This thread does not have a dedicated worktree folder."),
+          );
+        }
+        const shell = yield* projections
+          .getShellSnapshot()
+          .pipe(
+            Effect.mapError((cause) =>
+              renameThreadBranchError("Could not inspect worktree ownership.", cause),
+            ),
+          );
+        if (
+          shell.threads.some(
+            (other) => other.id !== thread.id && other.worktreePath === thread.worktreePath,
+          )
+        ) {
+          return yield* Effect.fail(
+            renameThreadBranchError(
+              "This worktree is shared by another thread, so its folder cannot be renamed here.",
+            ),
+          );
+        }
+        nextWorktreePath = yield* nextManagedWorktreePath(thread.worktreePath, input.newBranch);
+      }
+
+      if (input.renameWorktreeFolder) {
+        if (thread.session && thread.session.status !== "stopped") {
+          yield* providerService
+            .stopSession({ threadId: thread.id })
+            .pipe(
+              Effect.mapError((cause) =>
+                renameThreadBranchError("Could not stop the agent session.", cause),
+              ),
+            );
+          yield* orchestration
+            .dispatch({
+              type: "thread.session.set",
+              commandId: yield* commandId("worktree-rename-session-stop"),
+              threadId: thread.id,
+              session: {
+                ...thread.session,
+                status: "stopped",
+                activeTurnId: null,
+                updatedAt: yield* nowIso,
+              },
+              createdAt: yield* nowIso,
+            })
+            .pipe(
+              Effect.mapError((cause) =>
+                renameThreadBranchError("Could not update the stopped agent session.", cause),
+              ),
+            );
+        }
+        yield* terminals
+          .close({ threadId: thread.id })
+          .pipe(
+            Effect.mapError((cause) =>
+              renameThreadBranchError("Could not close the thread terminals.", cause),
+            ),
+          );
+      }
+
+      let branchRenamed = false;
+      let worktreeMoved = false;
+      const mutate = Effect.gen(function* () {
+        yield* git.renameBranch({
+          cwd: currentCwd,
+          oldBranch: input.expectedBranch,
+          newBranch: input.newBranch,
+        });
+        branchRenamed = input.expectedBranch !== input.newBranch;
+
+        if (
+          input.renameWorktreeFolder &&
+          thread.worktreePath &&
+          nextWorktreePath &&
+          thread.worktreePath !== nextWorktreePath
+        ) {
+          yield* git.moveWorktree({
+            cwd: project.workspaceRoot,
+            oldPath: thread.worktreePath,
+            newPath: nextWorktreePath,
+          });
+          worktreeMoved = true;
+        }
+
+        yield* orchestration.dispatch({
+          type: "thread.meta.update",
+          commandId: yield* commandId("thread-branch-rename"),
+          threadId: thread.id,
+          branch: input.newBranch,
+          expectedBranch: input.expectedBranch,
+          worktreePath: nextWorktreePath,
+        });
+      });
+
+      yield* mutate.pipe(
+        Effect.catchCause((cause) =>
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              if (worktreeMoved && thread.worktreePath && nextWorktreePath) {
+                yield* git
+                  .moveWorktree({
+                    cwd: project.workspaceRoot,
+                    oldPath: nextWorktreePath,
+                    newPath: thread.worktreePath,
+                  })
+                  .pipe(Effect.ignore);
+              }
+              if (branchRenamed) {
+                yield* git
+                  .renameBranch({
+                    cwd: project.workspaceRoot,
+                    oldBranch: input.newBranch,
+                    newBranch: input.expectedBranch,
+                  })
+                  .pipe(Effect.ignore);
+              }
+              return yield* Effect.fail(
+                renameThreadBranchError(
+                  "Could not rename the branch and worktree.",
+                  Cause.squash(cause),
+                ),
+              );
+            }),
+          ),
+        ),
+      );
+
+      const refreshCwd = nextWorktreePath ?? project.workspaceRoot;
+      yield* Effect.all([vcsStatus.refresh(refreshCwd), vcsStatus.refresh(project.workspaceRoot)], {
+        concurrency: "unbounded",
+      }).pipe(Effect.ignore);
+      return { branch: input.newBranch, worktreePath: nextWorktreePath };
+    });
 
     const dispatchBootstrap = (
       command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
@@ -400,6 +630,16 @@ export const layer = CoderWsRpcGroup.toLayer(
         git.switchRef(input).pipe(
           Effect.mapError((cause) => gitCommandError("switch-ref", input.cwd, cause)),
           Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+        ),
+      [WS_METHODS.vcsRenameThreadBranch]: (input) =>
+        renameThreadBranch(input).pipe(
+          Effect.catch((cause) =>
+            Effect.fail(
+              cause instanceof VcsRenameThreadBranchError
+                ? cause
+                : renameThreadBranchError("Could not rename the branch and worktree.", cause),
+            ),
+          ),
         ),
       [WS_METHODS.vcsInit]: (input) =>
         provisioning.initRepository(input).pipe(

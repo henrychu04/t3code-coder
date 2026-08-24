@@ -548,6 +548,33 @@ describe("CheckpointReactor", () => {
     expect(gitStatusRefreshCalls).toEqual([harness.cwd]);
   });
 
+  it("refreshes local git status when an agent shell command completes", async () => {
+    const gitStatusRefreshCalls: string[] = [];
+    const harness = await createHarness({
+      seedFilesystemCheckpoints: false,
+      gitStatusRefreshCalls,
+    });
+
+    harness.provider.emit({
+      type: "item.completed",
+      eventId: EventId.make("evt-command-completed-refresh-local-status"),
+      provider: ProviderDriverKind.make("codex"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: ThreadId.make("thread-1"),
+      turnId: asTurnId("turn-refresh-local-status"),
+      itemId: "command-1",
+      payload: {
+        itemType: "command_execution",
+        status: "completed",
+        title: "git switch feature/agent",
+      },
+    });
+
+    await harness.drain();
+
+    expect(gitStatusRefreshCalls).toEqual([harness.cwd]);
+  });
+
   it("adopts a drifted checkout as the thread branch on a dedicated worktree", async () => {
     const harness = await createHarness({
       seedFilesystemCheckpoints: false,

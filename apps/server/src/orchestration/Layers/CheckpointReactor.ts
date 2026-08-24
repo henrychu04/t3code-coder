@@ -529,9 +529,11 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const refreshLocalGitStatusFromTurnCompletion = Effect.fn(
-    "refreshLocalGitStatusFromTurnCompletion",
-  )(function* (event: Extract<ProviderRuntimeEvent, { type: "turn.completed" }>) {
+  const refreshLocalGitStatusAfterAgentCommand = Effect.fn(
+    "refreshLocalGitStatusAfterAgentCommand",
+  )(function* (
+    event: Extract<ProviderRuntimeEvent, { type: "item.completed" | "turn.completed" }>,
+  ) {
     const sessionRuntime = yield* resolveSessionRuntimeForThread(event.threadId);
     if (Option.isNone(sessionRuntime)) {
       return;
@@ -539,7 +541,7 @@ const make = Effect.gen(function* () {
 
     const local = yield* vcsStatus.refresh(sessionRuntime.value.cwd).pipe(
       Effect.catch((error) =>
-        Effect.logWarning("failed to refresh local git status after turn completion", {
+        Effect.logWarning("failed to refresh local git status after agent command", {
           threadId: event.threadId,
           turnId: event.turnId ?? null,
           cwd: sessionRuntime.value.cwd,
@@ -868,9 +870,14 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    if (event.type === "item.completed" && event.payload.itemType === "command_execution") {
+      yield* refreshLocalGitStatusAfterAgentCommand(event);
+      return;
+    }
+
     if (event.type === "turn.completed") {
       const turnId = toTurnId(event.turnId);
-      yield* refreshLocalGitStatusFromTurnCompletion(event);
+      yield* refreshLocalGitStatusAfterAgentCommand(event);
       yield* captureCheckpointFromTurnCompletion(event).pipe(
         Effect.catch((error) =>
           Effect.flatMap(nowIso, (createdAt) =>
@@ -929,7 +936,11 @@ const make = Effect.gen(function* () {
 
     yield* forkParked(
       Stream.runForEach(providerService.streamEvents, (event) => {
-        if (event.type !== "turn.started" && event.type !== "turn.completed") {
+        if (
+          event.type !== "turn.started" &&
+          event.type !== "turn.completed" &&
+          !(event.type === "item.completed" && event.payload.itemType === "command_execution")
+        ) {
           return Effect.void;
         }
         return worker.enqueue({ source: "runtime", event });
