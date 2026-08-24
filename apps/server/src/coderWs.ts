@@ -38,7 +38,11 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { sanitizeBranchFragment } from "@t3tools/shared/git";
+import {
+  buildGeneratedWorktreeBranchName,
+  isTemporaryWorktreeBranch,
+  sanitizeBranchFragment,
+} from "@t3tools/shared/git";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -59,6 +63,7 @@ import { ProviderService } from "./provider/Services/ProviderService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
+import { TextGeneration } from "./textGeneration/TextGeneration.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 
@@ -207,6 +212,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const providerService = yield* ProviderService;
     const settings = yield* ServerSettings.ServerSettingsService;
+    const textGeneration = yield* TextGeneration;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
@@ -235,32 +241,41 @@ export const layer = CoderWsRpcGroup.toLayer(
         ...(cause === undefined ? {} : { cause }),
       });
 
-    const nextManagedWorktreePath = Effect.fn("nextManagedWorktreePath")(function* (
-      currentPath: string,
-      branch: string,
-    ) {
-      const worktreesRoot = path.resolve(config.worktreesDir);
-      const resolvedCurrentPath = path.resolve(currentPath);
-      if (path.dirname(resolvedCurrentPath) !== worktreesRoot) {
-        return yield* Effect.fail(
-          renameThreadBranchError(
-            "Only worktree folders managed by T3 Code can be renamed from the UI.",
-          ),
-        );
-      }
-
-      const baseName = sanitizeBranchFragment(branch).replaceAll("/", "-");
-      for (let suffix = 1; suffix <= 1_000; suffix += 1) {
-        const name = suffix === 1 ? baseName : `${baseName}-${suffix}`;
-        const candidate = path.join(worktreesRoot, name);
-        if (candidate === resolvedCurrentPath || !(yield* fileSystem.exists(candidate))) {
-          return candidate;
+    const nextManagedWorktreePathForBranch = Effect.fn("nextManagedWorktreePathForBranch")(
+      function* (branch: string, currentPath?: string) {
+        const worktreesRoot = path.resolve(config.worktreesDir);
+        const resolvedCurrentPath = currentPath ? path.resolve(currentPath) : undefined;
+        const currentParent = resolvedCurrentPath
+          ? path.dirname(resolvedCurrentPath)
+          : worktreesRoot;
+        if (
+          resolvedCurrentPath &&
+          currentParent !== worktreesRoot &&
+          path.dirname(currentParent) !== worktreesRoot
+        ) {
+          return yield* Effect.fail(
+            renameThreadBranchError(
+              "Only worktree folders managed by T3 Code can be renamed from the UI.",
+            ),
+          );
         }
-      }
-      return yield* Effect.fail(
-        renameThreadBranchError("Could not find an available folder name for this worktree."),
-      );
-    });
+
+        const baseName = sanitizeBranchFragment(branch).replaceAll("/", "-");
+        for (let suffix = 1; suffix <= 1_000; suffix += 1) {
+          const name = suffix === 1 ? baseName : `${baseName}-${suffix}`;
+          const candidate = path.join(currentParent, name);
+          if (candidate === resolvedCurrentPath || !(yield* fileSystem.exists(candidate))) {
+            return candidate;
+          }
+        }
+        return yield* Effect.fail(
+          renameThreadBranchError("Could not find an available folder name for this worktree."),
+        );
+      },
+    );
+
+    const nextManagedWorktreePath = (currentPath: string, branch: string) =>
+      nextManagedWorktreePathForBranch(branch, currentPath);
 
     const renameThreadBranch = Effect.fn("renameThreadBranch")(function* (input: {
       readonly threadId: ThreadId;
@@ -496,15 +511,62 @@ export const layer = CoderWsRpcGroup.toLayer(
             createdThread = true;
           }
           if (bootstrap?.prepareWorktree) {
+            const prepareWorktree = bootstrap.prepareWorktree;
+            const temporaryBranch = prepareWorktree.branch;
+            const generatedBranch = temporaryBranch
+              ? yield* Effect.gen(function* () {
+                  if (!isTemporaryWorktreeBranch(temporaryBranch)) {
+                    return undefined;
+                  }
+                  const serverSettings = yield* settings.getSettings;
+                  const generated = yield* textGeneration.generateBranchName({
+                    cwd: prepareWorktree.projectCwd,
+                    message: turnStart.message.text,
+                    modelSelection: serverSettings.textGenerationModelSelection,
+                  });
+                  const baseBranch = buildGeneratedWorktreeBranchName(generated.branch);
+                  const matchingRefs = yield* git.listRefs({
+                    cwd: prepareWorktree.projectCwd,
+                    query: baseBranch,
+                    refKind: "local",
+                    limit: 200,
+                  });
+                  const existingBranches = new Set(matchingRefs.refs.map((ref) => ref.name));
+                  const repoWorktreesDir = path.join(
+                    config.worktreesDir,
+                    path.basename(prepareWorktree.projectCwd),
+                  );
+                  for (let suffix = 1; suffix <= 1_000; suffix += 1) {
+                    const branch = suffix === 1 ? baseBranch : `${baseBranch}-${suffix}`;
+                    const worktreePath = path.join(repoWorktreesDir, branch.replaceAll("/", "-"));
+                    if (
+                      !existingBranches.has(branch) &&
+                      !(yield* fileSystem.exists(worktreePath))
+                    ) {
+                      return branch;
+                    }
+                  }
+                  return yield* Effect.fail(
+                    new Error(`Could not find an available worktree name for '${baseBranch}'.`),
+                  );
+                }).pipe(
+                  Effect.catchCause((cause) =>
+                    Effect.logWarning("failed to generate initial branch and worktree name", {
+                      threadId: command.threadId,
+                      cause: Cause.pretty(cause),
+                    }).pipe(Effect.as(undefined)),
+                  ),
+                )
+              : undefined;
             const worktree = yield* git.createWorktree({
-              cwd: bootstrap.prepareWorktree.projectCwd,
-              refName: bootstrap.prepareWorktree.baseBranch,
-              newRefName: bootstrap.prepareWorktree.branch,
-              baseRefName: bootstrap.prepareWorktree.baseBranch,
+              cwd: prepareWorktree.projectCwd,
+              refName: prepareWorktree.baseBranch,
+              newRefName: generatedBranch ?? temporaryBranch,
+              baseRefName: prepareWorktree.baseBranch,
               path: null,
             });
             createdWorktree = {
-              cwd: bootstrap.prepareWorktree.projectCwd,
+              cwd: prepareWorktree.projectCwd,
               path: worktree.worktree.path,
             };
             yield* orchestration.dispatch({

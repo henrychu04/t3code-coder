@@ -31,6 +31,18 @@ export function sanitizeFeatureBranchName(raw: string): string {
   return `feature/${sanitized}`;
 }
 
+export function buildGeneratedWorktreeBranchName(raw: string): string {
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^refs\/heads\//, "")
+    .replace(/['"`]/g, "");
+  const withoutPrefix = normalized.startsWith(`${WORKTREE_BRANCH_PREFIX}/`)
+    ? normalized.slice(`${WORKTREE_BRANCH_PREFIX}/`.length)
+    : normalized;
+  return `${WORKTREE_BRANCH_PREFIX}/${sanitizeBranchFragment(withoutPrefix)}`;
+}
+
 export function deriveLocalBranchNameFromRemoteRef(branchName: string): string {
   const separator = branchName.indexOf("/");
   return separator <= 0 || separator === branchName.length - 1
