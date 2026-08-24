@@ -1,7 +1,20 @@
 import { Bot, FileDiff, Plus, TerminalSquare, X } from "lucide-react";
-import type { ReactNode } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
+import { useResizableWidth } from "../hooks/useResizableWidth";
 import type { RightPanelSurface } from "../rightPanelStore";
+import {
+  resolveRightPanelWidths,
+  RIGHT_PANEL_MIN_WIDTH,
+  RIGHT_PANEL_WIDTH_STORAGE_KEY,
+} from "../rightPanelLayout";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
 
@@ -44,15 +57,45 @@ function SurfaceIcon({ surface }: { readonly surface: RightPanelSurface }) {
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const noSurfaces = props.surfaces.length === 0;
+  const resizable = props.mode === "inline" && !props.maximized;
+  const hostRef = useRef<HTMLElement | null>(null);
+  const { defaultWidth, maxWidth } = useClampedRightPanelWidths(hostRef, resizable);
+  const { width, handlers } = useResizableWidth({
+    storageKey: RIGHT_PANEL_WIDTH_STORAGE_KEY,
+    defaultWidth,
+    minWidth: RIGHT_PANEL_MIN_WIDTH,
+    maxWidth,
+    edge: "left",
+  });
 
   return (
     <section
+      ref={hostRef}
       className={cn(
-        "flex h-full min-h-0 flex-col border-l border-border bg-background",
-        props.mode === "inline" && (props.maximized ? "w-full" : "w-[min(48vw,52rem)]"),
+        "relative flex h-full min-h-0 min-w-0 max-w-full flex-col border-l border-border bg-background",
+        props.mode === "inline" && (props.maximized ? "w-full" : "shrink-0"),
         props.mode === "sheet" && "w-full",
       )}
+      style={resizable ? { width: `${width}px` } : undefined}
     >
+      {resizable ? (
+        <div
+          role="separator"
+          aria-label="Resize right panel"
+          aria-orientation="vertical"
+          aria-valuemin={RIGHT_PANEL_MIN_WIDTH}
+          aria-valuemax={maxWidth}
+          aria-valuenow={width}
+          title="Drag to resize right panel"
+          className="group absolute inset-y-0 -left-1 z-40 w-2 cursor-col-resize touch-none select-none"
+          {...handlers}
+        >
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors duration-150 group-hover:bg-border group-active:bg-primary/60"
+          />
+        </div>
+      ) : null}
       <header className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {props.surfaces.map((surface) => (
@@ -140,4 +183,54 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       )}
     </section>
   );
+}
+
+function useViewportWidth(): number {
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1280 : window.innerWidth,
+  );
+
+  useEffect(() => {
+    let frame = 0;
+    const onResize = () => {
+      if (frame !== 0) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        setViewportWidth(window.innerWidth);
+      });
+    };
+
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (frame !== 0) window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  return viewportWidth;
+}
+
+function useClampedRightPanelWidths(
+  hostRef: RefObject<HTMLElement | null>,
+  enabled: boolean,
+): ReturnType<typeof resolveRightPanelWidths> {
+  const viewportWidth = useViewportWidth();
+  const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
+
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const parent = hostRef.current?.parentElement;
+    if (!parent) return;
+
+    const measure = () => {
+      setContainerWidth(parent.clientWidth);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [enabled, hostRef]);
+
+  return resolveRightPanelWidths(viewportWidth, containerWidth);
 }
