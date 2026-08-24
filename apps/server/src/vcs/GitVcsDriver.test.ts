@@ -108,3 +108,45 @@ it.effect("GitVcsDriver forwards execute env to the VCS process", () => {
     ),
   );
 });
+
+it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-rename-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const oldWorktreePath = path.join(fixtureRoot, "old-worktree");
+    const newWorktreePath = path.join(fixtureRoot, "renamed-worktree");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+
+    yield* driver.createWorktree({
+      cwd: repo,
+      refName: "main",
+      newRefName: "feature/old-name",
+      baseRefName: "main",
+      path: oldWorktreePath,
+    });
+    yield* driver.renameBranch({
+      cwd: oldWorktreePath,
+      oldBranch: "feature/old-name",
+      newBranch: "feature/new-name",
+    });
+    yield* driver.moveWorktree({
+      cwd: repo,
+      oldPath: oldWorktreePath,
+      newPath: newWorktreePath,
+    });
+
+    const status = yield* driver.statusDetailsLocal(newWorktreePath);
+    assert.strictEqual(status.branch, "feature/new-name");
+    assert.strictEqual(yield* fileSystem.exists(oldWorktreePath), false);
+    assert.strictEqual(yield* fileSystem.exists(newWorktreePath), true);
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);

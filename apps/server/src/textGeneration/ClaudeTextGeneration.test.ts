@@ -228,11 +228,15 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
   it.effect("generates labels without requiring bypass-permissions mode", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({
-          structured_output: {
-            title: "Permission-safe labels",
-          },
-        }),
+        output: [
+          "Claude Startup Script",
+          "Authentication verified",
+          JSON.stringify({
+            structured_output: {
+              title: "Permission-safe labels",
+            },
+          }),
+        ].join("\n"),
         argsMustContain: "--permission-mode dontAsk",
         argsMustNotContain: "--dangerously-skip-permissions",
       },
@@ -255,11 +259,15 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
   it.effect("generates branch names with Haiku", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({
-          structured_output: {
-            branch: "use-haiku-for-labels",
-          },
-        }),
+        output: [
+          "Claude Startup Script",
+          "Authentication verified",
+          JSON.stringify({
+            structured_output: {
+              branch: "use-haiku-for-labels",
+            },
+          }),
+        ].join("\n"),
         argsMustContain: "--model claude-haiku-4-5",
         argsMustNotContain: "claude-sonnet-4-6",
       },

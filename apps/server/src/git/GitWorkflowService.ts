@@ -44,6 +44,11 @@ export class GitWorkflowService extends Context.Service<
       readonly oldBranch: string;
       readonly newBranch: string;
     }) => Effect.Effect<{ readonly branch: string }, GitCommandError>;
+    readonly moveWorktree: (input: {
+      readonly cwd: string;
+      readonly oldPath: string;
+      readonly newPath: string;
+    }) => Effect.Effect<void, GitCommandError>;
   }
 >()("t3/git/GitWorkflowService") {}
 
@@ -68,6 +73,7 @@ export const layer = Layer.effect(
       createRef: git.createRef,
       switchRef: (input) => Effect.scoped(git.switchRef(input)),
       renameBranch: git.renameBranch,
+      moveWorktree: git.moveWorktree,
     });
   }),
 );

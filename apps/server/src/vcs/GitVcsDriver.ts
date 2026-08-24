@@ -84,6 +84,12 @@ export interface GitRenameBranchResult {
   branch: string;
 }
 
+export interface GitMoveWorktreeInput {
+  cwd: string;
+  oldPath: string;
+  newPath: string;
+}
+
 export class GitVcsDriver extends Context.Service<
   GitVcsDriver,
   {
@@ -107,6 +113,7 @@ export class GitVcsDriver extends Context.Service<
     readonly renameBranch: (
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;
+    readonly moveWorktree: (input: GitMoveWorktreeInput) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;
@@ -971,12 +978,24 @@ const makeLocalGitService = Effect.gen(function* () {
     createWorktree,
     removeWorktree,
     renameBranch: (input) =>
-      run("GitVcsDriver.renameBranch", input.cwd, [
-        "branch",
-        "-m",
-        input.oldBranch,
-        input.newBranch,
-      ]).pipe(Effect.as({ branch: input.newBranch })),
+      input.oldBranch === input.newBranch
+        ? Effect.succeed({ branch: input.newBranch })
+        : run("GitVcsDriver.renameBranch", input.cwd, [
+            "branch",
+            "-m",
+            "--",
+            input.oldBranch,
+            input.newBranch,
+          ]).pipe(Effect.as({ branch: input.newBranch })),
+    moveWorktree: (input) =>
+      input.oldPath === input.newPath
+        ? Effect.void
+        : run(
+            "GitVcsDriver.moveWorktree",
+            input.cwd,
+            ["worktree", "move", input.oldPath, input.newPath],
+            { timeoutMs: 300_000 },
+          ).pipe(Effect.asVoid),
     createRef: Effect.fn("GitVcsDriver.createRef")(function* (input) {
       yield* run("GitVcsDriver.createRef", input.cwd, ["branch", input.refName]);
       if (input.switchRef) yield* switchRef(input);

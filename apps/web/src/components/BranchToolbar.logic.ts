@@ -191,20 +191,26 @@ export function resolveBranchTriggerLabel(input: {
   return resolvedActiveBranch;
 }
 
-export function resolveLocalCheckoutBranchMismatch(input: {
+export function resolveCheckoutBranchMismatch(input: {
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
   activeThreadBranch: string | null;
   currentGitBranch: string | null;
-}): { threadBranch: string; currentBranch: string } | null {
+}): { threadBranch: string; currentBranch: string; checkoutKind: "local" | "worktree" } | null {
   const { effectiveEnvMode, activeWorktreePath, activeThreadBranch, currentGitBranch } = input;
-  if (effectiveEnvMode !== "local" || activeWorktreePath !== null) {
+  const checkoutKind =
+    effectiveEnvMode === "local" && activeWorktreePath === null
+      ? "local"
+      : effectiveEnvMode === "worktree" && activeWorktreePath !== null
+        ? "worktree"
+        : null;
+  if (checkoutKind === null) {
     return null;
   }
   if (!activeThreadBranch || !currentGitBranch || activeThreadBranch === currentGitBranch) {
     return null;
   }
-  return { threadBranch: activeThreadBranch, currentBranch: currentGitBranch };
+  return { threadBranch: activeThreadBranch, currentBranch: currentGitBranch, checkoutKind };
 }
 
 export function resolveBranchSelectionTarget(input: {

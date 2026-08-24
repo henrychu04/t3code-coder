@@ -5,7 +5,13 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, VcsRef, ThreadId } from "@t3tools/contracts";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
-import { ChevronDownIcon, GitBranchIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  GitBranchIcon,
+  PencilIcon,
+  RefreshCwIcon,
+  SearchIcon,
+} from "lucide-react";
 import {
   useCallback,
   useDeferredValue,
@@ -43,6 +49,18 @@ import {
   shouldIncludeBranchPickerItem,
 } from "./BranchToolbar.logic";
 import { Button } from "./ui/button";
+import { Checkbox } from "./ui/checkbox";
+import {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "./ui/dialog";
+import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 import { getVirtualizedScrollFadeClassName } from "./ui/scroll-area";
 import {
@@ -99,6 +117,9 @@ export function BranchToolbarBranchSelector({
     reportFailure: false,
   });
   const createRefMutation = useAtomCommand(vcsEnvironment.createRef, {
+    reportFailure: false,
+  });
+  const renameThreadBranchMutation = useAtomCommand(vcsEnvironment.renameThreadBranch, {
     reportFailure: false,
   });
   // ---------------------------------------------------------------------------
@@ -303,6 +324,9 @@ export function BranchToolbarBranchSelector({
         ? queriedActiveBranch.isRemote === true
         : null;
   const [isBranchActionPending, startBranchActionTransition] = useTransition();
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameBranchName, setRenameBranchName] = useState("");
+  const [renameWorktreeFolder, setRenameWorktreeFolder] = useState(false);
   const totalBranchCount = branchRefState.data?.totalCount ?? 0;
   const branchStatusText = isInitialBranchesLoadPending
     ? "Loading refs..."
@@ -453,6 +477,68 @@ export function BranchToolbarBranchSelector({
             type: "error",
             title: "Failed to create and switch ref.",
             description: toBranchActionErrorMessage(squashAtomCommandFailure(createBranchResult)),
+          }),
+        );
+      }
+    });
+  };
+
+  const openRenameDialog = () => {
+    if (
+      !hasServerThread ||
+      !resolvedActiveBranch ||
+      activeThreadBranch !== resolvedActiveBranch ||
+      resolvedActiveBranchIsRemote === true
+    ) {
+      return;
+    }
+    setRenameBranchName(resolvedActiveBranch);
+    setRenameWorktreeFolder(false);
+    setIsBranchMenuOpen(false);
+    setRenameDialogOpen(true);
+  };
+
+  const renameBranch = () => {
+    const name = sanitizeNewRefName(renameBranchName);
+    if (
+      !hasServerThread ||
+      !activeThreadId ||
+      !branchCwd ||
+      !resolvedActiveBranch ||
+      !name ||
+      isBranchActionPending ||
+      (name === resolvedActiveBranch && !renameWorktreeFolder)
+    ) {
+      return;
+    }
+
+    runBranchAction(async () => {
+      const previousBranch = resolvedActiveBranch;
+      setOptimisticBranch(name);
+      const renameResult = await renameThreadBranchMutation({
+        environmentId,
+        input: {
+          threadId: activeThreadId,
+          cwd: branchCwd,
+          expectedBranch: previousBranch,
+          newBranch: name,
+          renameWorktreeFolder,
+        },
+      });
+      if (renameResult._tag === "Success") {
+        setOptimisticBranch(renameResult.value.branch);
+        onActiveThreadBranchOverrideChange?.(renameResult.value.branch);
+        setRenameDialogOpen(false);
+        onComposerFocusRequest?.();
+        return;
+      }
+      setOptimisticBranch(previousBranch);
+      if (!isAtomCommandInterrupted(renameResult)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to rename branch.",
+            description: toBranchActionErrorMessage(squashAtomCommandFailure(renameResult)),
           }),
         );
       }
@@ -765,9 +851,74 @@ export function BranchToolbarBranchSelector({
               </TooltipPopup>
             </Tooltip>
           ) : null}
+          {hasServerThread &&
+          resolvedActiveBranch &&
+          activeThreadBranch === resolvedActiveBranch &&
+          resolvedActiveBranchIsRemote !== true ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 border-t border-border/60 px-3 py-2 text-left text-xs font-medium text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+              onClick={openRenameDialog}
+            >
+              <PencilIcon aria-hidden="true" className="size-3 shrink-0 opacity-70" />
+              Rename current branch…
+            </button>
+          ) : null}
           {branchStatusText ? <ComboboxStatus>{branchStatusText}</ComboboxStatus> : null}
         </div>
       </ComboboxPopup>
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Rename branch</DialogTitle>
+            <DialogDescription>Rename the checked-out branch for this thread.</DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <label className="grid gap-1.5 text-sm font-medium">
+              Branch name
+              <Input
+                autoFocus
+                value={renameBranchName}
+                onChange={(event) => setRenameBranchName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    renameBranch();
+                  }
+                }}
+              />
+            </label>
+            {activeWorktreePath ? (
+              <label className="flex items-start gap-2.5 text-sm">
+                <Checkbox
+                  checked={renameWorktreeFolder}
+                  onCheckedChange={(checked) => setRenameWorktreeFolder(Boolean(checked))}
+                />
+                <span className="grid gap-1">
+                  <span className="font-medium">Also rename the T3 worktree folder</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    This stops the agent session and closes terminals attached to this thread.
+                  </span>
+                </span>
+              </label>
+            ) : null}
+          </DialogPanel>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button
+              disabled={
+                isBranchActionPending ||
+                !sanitizeNewRefName(renameBranchName) ||
+                (sanitizeNewRefName(renameBranchName) === resolvedActiveBranch &&
+                  !renameWorktreeFolder)
+              }
+              onClick={renameBranch}
+            >
+              {isBranchActionPending ? "Renaming…" : "Rename"}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </Combobox>
   );
 }
