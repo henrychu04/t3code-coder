@@ -67,6 +67,24 @@ describe("gateway child processes", () => {
     strictEqual((await result).signal, "SIGTERM");
   });
 
+  it("reports a missing Coder executable without exposing ENOENT jargon", async () => {
+    await rejects(
+      Effect.runPromise(
+        runGatewayProcess(
+          { executable: "/missing/coder", args: [] },
+          {
+            label: "Coder workspace discovery",
+            spawnProcess: () => {
+              const cause = Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" });
+              throw cause;
+            },
+          },
+        ),
+      ),
+      /Coder executable does not exist: \/missing\/coder\./u,
+    );
+  });
+
   it("escalates a timed-out process and waits for exit", async () => {
     const killSignals: NodeJS.Signals[] = [];
     let child: ChildProcess;

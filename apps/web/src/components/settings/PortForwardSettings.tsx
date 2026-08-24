@@ -16,6 +16,7 @@ import {
   type CoderPortForwardRuntimeStatus,
   type CoderProfileConfig,
   type CoderWorkspaceProfile,
+  type CoderWorkspaceRuntimeStatus,
 } from "../../coder/api";
 import { randomUUID } from "../../lib/utils";
 import { Badge } from "../ui/badge";
@@ -40,28 +41,42 @@ function port(value: string): number | null {
 
 export function PortForwardSettings({
   config,
+  workspaceRuntime,
   onSaveConfig,
   onError,
 }: {
   readonly config: CoderProfileConfig;
+  readonly workspaceRuntime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>;
   readonly onSaveConfig: (config: CoderProfileConfig) => Promise<unknown>;
   readonly onError: (message: string) => void;
 }) {
   const rules = config.portForwards ?? EMPTY_PORT_FORWARDS;
   const [statuses, setStatuses] = useState<StatusById>({});
+  const [statusError, setStatusError] = useState<string | null>(null);
 
   const refreshStatuses = async (): Promise<void> => {
     if (rules.length === 0) {
       setStatuses({});
+      setStatusError(null);
       return;
     }
-    const next = await loadCoderPortForwardStatuses();
-    setStatuses(Object.fromEntries(next.map((status) => [status.id, status])));
+    try {
+      const next = await loadCoderPortForwardStatuses();
+      setStatuses(Object.fromEntries(next.map((status) => [status.id, status])));
+      setStatusError(null);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : String(cause);
+      setStatusError(
+        `Could not fetch port-forward status.${detail.length === 0 ? "" : ` ${detail}`}`,
+      );
+      throw cause;
+    }
   };
 
   useEffect(() => {
     if (rules.length === 0) {
       setStatuses({});
+      setStatusError(null);
       return;
     }
     void refreshStatuses().catch(() => undefined);
@@ -90,13 +105,23 @@ export function PortForwardSettings({
             const workspace = config.workspaces.find((entry) => entry.id === rule.workspaceId);
             if (workspace === undefined) return null;
             const status = statuses[rule.id];
+            const workspaceStatus = workspaceRuntime[workspace.id];
+            const workspaceStatusUnavailable = workspaceStatus?.status === "unavailable";
+            const checkingWorkspaceStatus = workspaceStatus === undefined;
+            const displayError =
+              (workspaceStatusUnavailable ? workspaceStatus.error : undefined) ??
+              statusError ??
+              (status?.status === "error" ? status.error : undefined);
             return (
               <div className="rounded-xl border bg-card p-4" key={rule.id}>
                 <div className="flex flex-wrap items-start gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium">{workspace.name}</p>
-                      <PortForwardStatusBadge status={status} />
+                      <PortForwardStatusBadge
+                        status={checkingWorkspaceStatus ? undefined : status}
+                        unavailable={statusError !== null || workspaceStatusUnavailable}
+                      />
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                       <span className="uppercase">{rule.protocol}</span>
@@ -106,12 +131,18 @@ export function PortForwardSettings({
                         {workspace.workspace}:{rule.remotePort}
                       </span>
                     </div>
-                    {status?.status === "error" && status.error ? (
-                      <p className="mt-2 text-xs text-destructive-foreground">{status.error}</p>
+                    {displayError ? (
+                      <p className="mt-2 text-xs text-destructive-foreground">{displayError}</p>
                     ) : null}
                   </div>
                   <Button
                     aria-label="Restart port forward"
+                    disabled={
+                      status === undefined ||
+                      statusError !== null ||
+                      checkingWorkspaceStatus ||
+                      workspaceStatusUnavailable
+                    }
                     size="sm"
                     variant="outline"
                     onClick={async () => {
@@ -119,7 +150,11 @@ export function PortForwardSettings({
                         await restartCoderPortForward(rule.id);
                         await refreshStatuses();
                       } catch (cause) {
-                        onError(cause instanceof Error ? cause.message : "Could not restart port forward.");
+                        onError(
+                          cause instanceof Error
+                            ? cause.message
+                            : "Could not restart port forward.",
+                        );
                       }
                     }}
                   >
@@ -136,7 +171,9 @@ export function PortForwardSettings({
                           portForwards: rules.filter((entry) => entry.id !== rule.id),
                         });
                       } catch (cause) {
-                        onError(cause instanceof Error ? cause.message : "Could not remove port forward.");
+                        onError(
+                          cause instanceof Error ? cause.message : "Could not remove port forward.",
+                        );
                       }
                     }}
                   >
@@ -166,11 +203,20 @@ export function PortForwardSettings({
   );
 }
 
-function PortForwardStatusBadge({
+export function PortForwardStatusBadge({
   status,
+  unavailable,
 }: {
   readonly status: CoderPortForwardRuntimeStatus | undefined;
+  readonly unavailable: boolean;
 }) {
+  if (unavailable) {
+    return (
+      <Badge variant="error">
+        <CircleAlertIcon /> Status unavailable
+      </Badge>
+    );
+  }
   if (status?.status === "running") return <Badge variant="success">Running</Badge>;
   if (status?.status === "error") {
     return (
@@ -181,7 +227,8 @@ function PortForwardStatusBadge({
   }
   return (
     <Badge variant="outline">
-      <LoaderCircleIcon className="animate-spin" /> Starting
+      <LoaderCircleIcon className="animate-spin" />
+      {status === undefined ? "Checking…" : "Starting"}
     </Badge>
   );
 }

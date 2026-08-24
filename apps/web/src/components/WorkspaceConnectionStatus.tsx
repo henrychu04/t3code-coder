@@ -1,6 +1,12 @@
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { CircleAlertIcon, LoaderCircleIcon, LogInIcon, RotateCcwIcon } from "lucide-react";
+import {
+  CircleAlertIcon,
+  LoaderCircleIcon,
+  LogInIcon,
+  PowerIcon,
+  RotateCcwIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 import {
@@ -11,6 +17,7 @@ import {
 import { useCoder } from "../coder/CoderBootstrap";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
 import { useEnvironments } from "../state/environments";
+import { summarizeCoderWorkspaceError } from "./CoderWorkspaceIssues";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
@@ -90,8 +97,16 @@ export function WorkspaceConnectionStatus({
   readonly environmentId?: EnvironmentId | null;
 }) {
   const { environments } = useEnvironments();
-  const { config, connectionErrors, connectWorkspace } = useCoder();
+  const {
+    config,
+    connectionErrors,
+    connectWorkspace,
+    refreshWorkspaceRuntime,
+    startWorkspace,
+    workspaceRuntime,
+  } = useCoder();
   const [retrying, setRetrying] = useState(false);
+  const [startingWorkspace, setStartingWorkspace] = useState(false);
   const [authenticationCheckRequest, setAuthenticationCheckRequest] = useState(0);
   const [authenticationCheck, setAuthenticationCheck] = useState<AuthenticationCheck | null>(null);
   const [reauthenticating, setReauthenticating] = useState(false);
@@ -138,14 +153,40 @@ export function WorkspaceConnectionStatus({
     (authenticationStatus === null || authenticationStatus === "checking");
   const authenticationRequired = phase === "error" && authenticationStatus === "unauthenticated";
   const workspaceLabel = environment?.label ?? workspace?.name ?? "Coder workspace";
-  const status = checkingAuthentication
+  const runtime = workspace === undefined ? undefined : workspaceRuntime[workspace.id];
+  const workspaceStopped = runtime?.status === "stopped";
+  const workspaceStarting = runtime?.status === "starting" || startingWorkspace;
+  const workspaceUnavailable = runtime?.status === "unavailable";
+  const status = workspaceStopped
     ? {
-        title: "Checking Coder authentication…",
-        description: `Verifying the session for ${deployment?.name ?? "the Coder deployment"}.`,
+        title: `${workspaceLabel} is stopped`,
+        description: "Start the workspace when you’re ready to reconnect.",
       }
-    : authenticationRequired && deployment !== undefined
-      ? coderAuthenticationStatusText(deployment.name, workspaceLabel, reauthenticating)
-      : workspaceConnectionStatusText(phase, workspaceLabel, connectionError);
+    : workspaceStarting
+      ? {
+          title: `Starting ${workspaceLabel}…`,
+          description: "Coder is preparing the workspace. T3 Coder will reconnect automatically.",
+        }
+      : workspaceUnavailable
+        ? {
+            title: "Workspace status unavailable",
+            description:
+              runtime.error === undefined
+                ? "Could not fetch workspace status."
+                : summarizeCoderWorkspaceError(runtime.error),
+          }
+        : checkingAuthentication
+          ? {
+              title: "Checking Coder authentication…",
+              description: `Verifying the session for ${deployment?.name ?? "the Coder deployment"}.`,
+            }
+          : authenticationRequired && deployment !== undefined
+            ? coderAuthenticationStatusText(deployment.name, workspaceLabel, reauthenticating)
+            : workspaceConnectionStatusText(
+                phase,
+                workspaceLabel,
+                connectionError === null ? null : summarizeCoderWorkspaceError(connectionError),
+              );
 
   useEffect(() => {
     if (phase !== "error" || deployment === undefined) return;
@@ -166,7 +207,11 @@ export function WorkspaceConnectionStatus({
   }, [authenticationCheckRequest, deployment, phase]);
 
   const retry =
-    phase === "error" && workspace !== undefined
+    phase === "error" &&
+    workspace !== undefined &&
+    !workspaceStopped &&
+    !workspaceStarting &&
+    !workspaceUnavailable
       ? async () => {
           setRetrying(true);
           try {
@@ -179,8 +224,24 @@ export function WorkspaceConnectionStatus({
           }
         }
       : null;
+  const start =
+    workspaceStopped && workspace !== undefined
+      ? async () => {
+          setStartingWorkspace(true);
+          try {
+            await startWorkspace(workspace.id);
+          } finally {
+            setStartingWorkspace(false);
+          }
+        }
+      : null;
   const reauthenticate =
-    authenticationRequired && deployment !== undefined && workspace !== undefined
+    authenticationRequired &&
+    !workspaceStopped &&
+    !workspaceStarting &&
+    !workspaceUnavailable &&
+    deployment !== undefined &&
+    workspace !== undefined
       ? async () => {
           setReauthenticating(true);
           setReauthenticationError(null);
@@ -212,13 +273,21 @@ export function WorkspaceConnectionStatus({
     deployment !== undefined && reauthenticationError?.deploymentId === deployment.id
       ? reauthenticationError.message
       : null;
-  const showErrorIcon = phase === "error" && !checkingAuthentication && !reauthenticating;
+  const showErrorIcon =
+    workspaceUnavailable ||
+    (phase === "error" &&
+      !checkingAuthentication &&
+      !reauthenticating &&
+      !workspaceStopped &&
+      !workspaceStarting);
 
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       <Empty className="flex-1" role="status" aria-live="polite">
         <EmptyHeader className="max-w-md">
-          {showErrorIcon ? (
+          {workspaceStopped ? (
+            <PowerIcon aria-hidden className="mb-4 size-5 text-muted-foreground" />
+          ) : showErrorIcon ? (
             <CircleAlertIcon aria-hidden className="mb-4 size-5 text-destructive" />
           ) : (
             <LoaderCircleIcon
@@ -258,6 +327,18 @@ export function WorkspaceConnectionStatus({
               )}
             </>
           )}
+          {start === null ? null : (
+            <Button className="mt-5" size="sm" onClick={() => void start()}>
+              <PowerIcon className="size-4" />
+              Start workspace
+            </Button>
+          )}
+          {workspaceUnavailable ? (
+            <Button className="mt-5" size="sm" onClick={() => void refreshWorkspaceRuntime()}>
+              <RotateCcwIcon className="size-4" />
+              Retry status
+            </Button>
+          ) : null}
           {reauthenticate !== null || retry === null ? null : (
             <Button className="mt-5" size="sm" onClick={() => void retry()}>
               <RotateCcwIcon className="size-4" />

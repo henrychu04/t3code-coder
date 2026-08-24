@@ -4,16 +4,22 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 
 import {
   connectCoderWorkspace,
+  discoverCoderWorkspaces,
   disconnectCoderWorkspace,
   loadCoderConfig,
+  restartCoderWorkspace,
   saveCoderConfig,
+  startCoderWorkspace,
+  updateCoderWorkspace,
   type CoderProfileConfig,
+  type CoderWorkspaceRuntimeStatus,
 } from "./api";
 import {
   removeCoderWorkspaceEnvironment,
@@ -25,12 +31,87 @@ import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 interface CoderContextValue {
   readonly config: CoderProfileConfig;
   readonly connectionErrors: Readonly<Record<string, string>>;
+  readonly workspaceRuntime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>;
   readonly saveConfig: (config: CoderProfileConfig) => Promise<CoderProfileConfig>;
   readonly connectWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly disconnectWorkspace: (workspaceId: string) => Promise<void>;
+  readonly refreshWorkspaceRuntime: () => Promise<
+    Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
+  >;
+  readonly startWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
+  readonly restartWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
+  readonly updateWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
 }
 
 const CoderContext = createContext<CoderContextValue | null>(null);
+
+export async function readWorkspaceRuntime(
+  config: CoderProfileConfig,
+): Promise<Readonly<Record<string, CoderWorkspaceRuntimeStatus>>> {
+  const discoveredByDeployment = await Promise.all(
+    config.deployments.map(async (deployment) => {
+      try {
+        return {
+          deploymentId: deployment.id,
+          workspaces: await discoverCoderWorkspaces(deployment.id),
+        };
+      } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        return {
+          deploymentId: deployment.id,
+          workspaces: [],
+          error: `Could not fetch workspace status.${detail.length === 0 ? "" : ` ${detail}`}`,
+        };
+      }
+    }),
+  );
+  const next: Record<string, CoderWorkspaceRuntimeStatus> = Object.fromEntries(
+    config.workspaces.map((workspace) => [
+      workspace.id,
+      { status: "unknown", updateAvailable: false },
+    ]),
+  );
+  for (const workspace of config.workspaces) {
+    const deployment = discoveredByDeployment.find(
+      (entry) => entry.deploymentId === workspace.deploymentId,
+    );
+    if (deployment?.error !== undefined) {
+      next[workspace.id] = {
+        status: "unavailable",
+        updateAvailable: false,
+        error: deployment.error,
+      };
+      continue;
+    }
+    const discovered = deployment?.workspaces.find(
+      (entry) =>
+        entry.target === workspace.workspace ||
+        (!workspace.workspace.includes("/") && entry.name === workspace.workspace),
+    );
+    if (discovered !== undefined) {
+      next[workspace.id] = {
+        status: discovered.status,
+        updateAvailable: discovered.updateAvailable,
+      };
+    }
+  }
+  return next;
+}
+
+export function discardInactiveWorkspaceConnectionErrors(
+  errors: Readonly<Record<string, string>>,
+  runtime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>,
+): Readonly<Record<string, string>> {
+  const next = { ...errors };
+  let changed = false;
+  for (const workspaceId of Object.keys(errors)) {
+    const status = runtime[workspaceId]?.status;
+    if (status !== "stopped" && status !== "starting" && status !== "unavailable") continue;
+    delete next[workspaceId];
+    changed = true;
+  }
+  return changed ? next : errors;
+}
 
 export function useCoder(): CoderContextValue {
   const value = useContext(CoderContext);
@@ -42,6 +123,10 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const [config, setConfig] = useState<CoderProfileConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [connectionErrors, setConnectionErrors] = useState<Readonly<Record<string, string>>>({});
+  const connectionAttemptGenerations = useRef<Record<string, number>>({});
+  const [workspaceRuntime, setWorkspaceRuntime] = useState<
+    Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
+  >({});
 
   const reload = useCallback(async () => {
     setLoadError(null);
@@ -57,41 +142,83 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   }, [reload]);
 
   const connectWorkspace = useCallback(async (workspaceId: string) => {
+    const generation = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+    connectionAttemptGenerations.current[workspaceId] = generation;
+    setConnectionErrors((current) => {
+      if (current[workspaceId] === undefined) return current;
+      const next = { ...current };
+      delete next[workspaceId];
+      return next;
+    });
     try {
       const descriptor = await connectCoderWorkspace(workspaceId);
+      if (connectionAttemptGenerations.current[workspaceId] !== generation) return descriptor;
       setCoderWorkspaceEnvironment(workspaceId, descriptor);
-      setConnectionErrors((current) => {
-        const next = { ...current };
-        delete next[workspaceId];
-        return next;
-      });
       return descriptor;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
+      if (connectionAttemptGenerations.current[workspaceId] === generation) {
+        setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
+      }
       throw cause;
     }
   }, []);
+
+  const applyWorkspaceRuntime = useCallback(
+    (runtime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>) => {
+      setWorkspaceRuntime(runtime);
+      for (const [workspaceId, status] of Object.entries(runtime)) {
+        if (
+          status.status !== "stopped" &&
+          status.status !== "starting" &&
+          status.status !== "unavailable"
+        ) {
+          continue;
+        }
+        connectionAttemptGenerations.current[workspaceId] =
+          (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+      }
+      setConnectionErrors((current) => discardInactiveWorkspaceConnectionErrors(current, runtime));
+    },
+    [],
+  );
 
   useEffect(() => {
     if (config === null) return;
     setCoderWorkspaceOrder(config.workspaces.map((workspace) => workspace.id));
     let cancelled = false;
-    for (const workspace of config.workspaces) {
-      void connectCoderWorkspace(workspace.id)
-        .then((descriptor) => {
-          if (!cancelled) setCoderWorkspaceEnvironment(workspace.id, descriptor);
-        })
-        .catch((cause: unknown) => {
-          if (cancelled) return;
-          const message = cause instanceof Error ? cause.message : String(cause);
-          setConnectionErrors((current) => ({ ...current, [workspace.id]: message }));
-        });
-    }
+    let retryTimer: number | undefined;
+    const connectAvailableWorkspaces = async (): Promise<void> => {
+      const runtime = await readWorkspaceRuntime(config);
+      if (cancelled) return;
+      applyWorkspaceRuntime(runtime);
+      let hasPendingWorkspaceStatus = false;
+      for (const workspace of config.workspaces) {
+        const status = runtime[workspace.id]?.status;
+        if (status === "stopped" || status === "starting" || status === "unavailable") {
+          removeCoderWorkspaceEnvironment(workspace.id);
+          hasPendingWorkspaceStatus ||= status === "starting" || status === "unavailable";
+          continue;
+        }
+        void connectWorkspace(workspace.id).catch(() => undefined);
+      }
+      if (hasPendingWorkspaceStatus) {
+        retryTimer = window.setTimeout(() => void connectAvailableWorkspaces(), 2_000);
+      }
+    };
+    void connectAvailableWorkspaces();
     return () => {
       cancelled = true;
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
     };
-  }, [config]);
+  }, [applyWorkspaceRuntime, config, connectWorkspace]);
+
+  const refreshWorkspaceRuntime = useCallback(async () => {
+    if (config === null) return {};
+    const runtime = await readWorkspaceRuntime(config);
+    applyWorkspaceRuntime(runtime);
+    return runtime;
+  }, [applyWorkspaceRuntime, config]);
 
   const saveConfig = useCallback(async (nextConfig: CoderProfileConfig) => {
     const saved = await saveCoderConfig(nextConfig);
@@ -100,6 +227,8 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   }, []);
 
   const disconnectWorkspace = useCallback(async (workspaceId: string) => {
+    connectionAttemptGenerations.current[workspaceId] =
+      (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
     await disconnectCoderWorkspace(workspaceId);
     removeCoderWorkspaceEnvironment(workspaceId);
     setConnectionErrors((current) => {
@@ -109,12 +238,87 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     });
   }, []);
 
+  const completeWorkspaceAction = useCallback(
+    async (workspaceId: string, action: (workspaceId: string) => Promise<void>) => {
+      removeCoderWorkspaceEnvironment(workspaceId);
+      const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+      connectionAttemptGenerations.current[workspaceId] = actionGeneration;
+      setConnectionErrors((current) => {
+        if (current[workspaceId] === undefined) return current;
+        const next = { ...current };
+        delete next[workspaceId];
+        return next;
+      });
+      setWorkspaceRuntime((current) => ({
+        ...current,
+        [workspaceId]: {
+          status: "starting",
+          updateAvailable: current[workspaceId]?.updateAvailable ?? false,
+        },
+      }));
+      try {
+        await action(workspaceId);
+      } catch (cause) {
+        if (connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
+          const message = cause instanceof Error ? cause.message : String(cause);
+          setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
+        }
+        void refreshWorkspaceRuntime();
+        throw cause;
+      }
+      try {
+        const descriptor = await connectWorkspace(workspaceId);
+        void refreshWorkspaceRuntime();
+        return descriptor;
+      } catch (cause) {
+        void refreshWorkspaceRuntime();
+        throw cause;
+      }
+    },
+    [connectWorkspace, refreshWorkspaceRuntime],
+  );
+
+  const startWorkspace = useCallback(
+    (workspaceId: string) => completeWorkspaceAction(workspaceId, startCoderWorkspace),
+    [completeWorkspaceAction],
+  );
+  const restartWorkspace = useCallback(
+    (workspaceId: string) => completeWorkspaceAction(workspaceId, restartCoderWorkspace),
+    [completeWorkspaceAction],
+  );
+  const updateWorkspace = useCallback(
+    (workspaceId: string) => completeWorkspaceAction(workspaceId, updateCoderWorkspace),
+    [completeWorkspaceAction],
+  );
+
   const value = useMemo<CoderContextValue | null>(
     () =>
       config === null
         ? null
-        : { config, connectionErrors, saveConfig, connectWorkspace, disconnectWorkspace },
-    [config, connectWorkspace, connectionErrors, disconnectWorkspace, saveConfig],
+        : {
+            config,
+            connectionErrors,
+            workspaceRuntime,
+            saveConfig,
+            connectWorkspace,
+            disconnectWorkspace,
+            refreshWorkspaceRuntime,
+            startWorkspace,
+            restartWorkspace,
+            updateWorkspace,
+          },
+    [
+      config,
+      connectWorkspace,
+      connectionErrors,
+      disconnectWorkspace,
+      refreshWorkspaceRuntime,
+      restartWorkspace,
+      saveConfig,
+      startWorkspace,
+      updateWorkspace,
+      workspaceRuntime,
+    ],
   );
 
   if (value === null) {

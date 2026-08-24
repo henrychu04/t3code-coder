@@ -128,6 +128,58 @@ export function buildCoderWorkspaceProbeInvocation(
   );
 }
 
+function buildCoderWorkspaceActionInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  actionArgs: readonly string[],
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
+  const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
+  if (workspace.deploymentId !== deployment.id) {
+    throw new Error("Coder workspace does not belong to the selected deployment.");
+  }
+  return invocation(
+    deployment,
+    [...CODER_GLOBAL_ARGS, "--url", deployment.url, ...actionArgs, workspace.workspace],
+    options,
+  );
+}
+
+export function buildCoderStartWorkspaceInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  return buildCoderWorkspaceActionInvocation(
+    deploymentInput,
+    workspaceInput,
+    ["start", "--yes"],
+    options,
+  );
+}
+
+export function buildCoderRestartWorkspaceInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  return buildCoderWorkspaceActionInvocation(
+    deploymentInput,
+    workspaceInput,
+    ["restart", "--yes"],
+    options,
+  );
+}
+
+export function buildCoderUpdateWorkspaceInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  return buildCoderWorkspaceActionInvocation(deploymentInput, workspaceInput, ["update"], options);
+}
+
 export function buildCoderWorkspaceShellInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,

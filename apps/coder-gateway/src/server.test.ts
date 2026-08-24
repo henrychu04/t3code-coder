@@ -16,6 +16,9 @@ import { EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
 
 import {
   buildCoderHelperInvocation,
+  buildCoderRestartWorkspaceInvocation,
+  buildCoderStartWorkspaceInvocation,
+  buildCoderUpdateWorkspaceInvocation,
   quotePosixShellArgument,
   REMOTE_WORKSPACE_PROBE_COMMAND,
 } from "@t3tools/coder-cli/command";
@@ -285,6 +288,338 @@ describe("local Coder gateway", () => {
     });
   });
 
+  it("keeps a stopped workspace and its saved port forwards stopped until an explicit start", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    await NodeFS.writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+        portForwards: [
+          {
+            id: "web",
+            workspaceId: "project-one",
+            protocol: "tcp",
+            localPort: 8080,
+            remotePort: 3000,
+          },
+        ],
+      }),
+    );
+    let portForwardStarts = 0;
+    let startCommands = 0;
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      listWorkspaces: async () => [
+        {
+          name: "project-one",
+          target: "henry/project-one",
+          status: "stopped",
+          updateAvailable: false,
+        },
+      ],
+      startWorkspace: async () => {
+        startCommands += 1;
+      },
+      connectPortForward: async () => {
+        portForwardStarts += 1;
+        let resolveClosed:
+          | ((exit: {
+              readonly code: null;
+              readonly signal: null;
+              readonly expected: true;
+            }) => void)
+          | undefined;
+        return {
+          closed: new Promise((resolve) => {
+            resolveClosed = resolve;
+          }),
+          close: () => resolveClosed?.({ code: null, signal: null, expected: true }),
+        };
+      },
+    });
+    closeGateway = gateway.close;
+
+    strictEqual(portForwardStarts, 0);
+    deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
+      portForwards: [{ id: "web", status: "error", error: "Coder workspace is stopped." }],
+    });
+
+    const started = await request({
+      url: `${gateway.url}/api/workspaces/project-one/start`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(started.statusCode, 200);
+    strictEqual(startCommands, 1);
+    strictEqual(portForwardStarts, 1);
+  });
+
+  it("disconnects the helper and restores saved port forwards around a workspace restart", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const lifecycle: string[] = [];
+    let receivedRestartInvocation:
+      | { readonly executable: string; readonly args: readonly string[] }
+      | undefined;
+    let closeConnection:
+      | ((exit: { code: number; signal: null; expected: true }) => void)
+      | undefined;
+    const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
+      closeConnection = resolve;
+    });
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed,
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => {
+          lifecycle.push("close");
+          closeConnection?.({ code: 130, signal: null, expected: true });
+        },
+      }),
+      listWorkspaces: async () => [
+        {
+          name: "project-one",
+          target: "henry/project-one",
+          status: "running",
+          updateAvailable: false,
+        },
+      ],
+      connectPortForward: async () => {
+        lifecycle.push("forward-start");
+        let resolveClosed:
+          | ((exit: { readonly expected: true; readonly reason?: string }) => void)
+          | undefined;
+        const portForwardClosed = new Promise<{
+          readonly expected: true;
+          readonly reason?: string;
+        }>((resolve) => {
+          resolveClosed = resolve;
+        });
+        return {
+          closed: portForwardClosed.then((exit) => ({ code: null, signal: null, ...exit })),
+          close: () => {
+            lifecycle.push("forward-close");
+            resolveClosed?.({ expected: true });
+          },
+        };
+      },
+      restartWorkspace: async (invocation) => {
+        lifecycle.push("restart");
+        receivedRestartInvocation = invocation;
+      },
+    });
+    closeGateway = gateway.close;
+    const deployment = {
+      id: "goldman",
+      name: "Goldman",
+      url: "https://coder.example.gs.com",
+    } as const;
+    const workspace = {
+      id: "project-one",
+      name: "Project One",
+      deploymentId: "goldman",
+      workspace: "henry/project-one",
+    } as const;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [deployment],
+        workspaces: [workspace],
+        portForwards: [
+          {
+            id: "web",
+            workspaceId: workspace.id,
+            protocol: "tcp",
+            localPort: 8080,
+            remotePort: 3000,
+          },
+        ],
+      }),
+    });
+    await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+
+    const rejected = await request({
+      url: `${gateway.url}/api/workspaces/project-one/restart`,
+      method: "POST",
+      headers: { Origin: "https://attacker.example" },
+    });
+    strictEqual(rejected.statusCode, 403);
+
+    const restarted = await request({
+      url: `${gateway.url}/api/workspaces/project-one/restart`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(restarted.statusCode, 200);
+    strictEqual(restarted.body, '{"status":"restarted"}');
+    deepStrictEqual(lifecycle, [
+      "forward-start",
+      "close",
+      "forward-close",
+      "restart",
+      "forward-start",
+    ]);
+    deepStrictEqual(
+      receivedRestartInvocation,
+      buildCoderRestartWorkspaceInvocation(deployment, workspace, {
+        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+      }),
+    );
+    const connections = await request({ url: `${gateway.url}/api/connections` });
+    deepStrictEqual(JSON.parse(connections.body), []);
+  });
+
+  it("starts and updates a configured workspace through Coder", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const invocations: Array<{ readonly executable: string; readonly args: readonly string[] }> =
+      [];
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      startWorkspace: async (invocation) => {
+        invocations.push(invocation);
+      },
+      updateWorkspace: async (invocation) => {
+        invocations.push(invocation);
+      },
+    });
+    closeGateway = gateway.close;
+    const deployment = {
+      id: "goldman",
+      name: "Goldman",
+      url: "https://coder.example.gs.com",
+    } as const;
+    const workspace = {
+      id: "project-one",
+      name: "Project One",
+      deploymentId: "goldman",
+      workspace: "henry/project-one",
+    } as const;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({ version: 1, deployments: [deployment], workspaces: [workspace] }),
+    });
+
+    const started = await request({
+      url: `${gateway.url}/api/workspaces/project-one/start`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    const updated = await request({
+      url: `${gateway.url}/api/workspaces/project-one/update`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+
+    strictEqual(started.statusCode, 200);
+    strictEqual(started.body, '{"status":"started"}');
+    strictEqual(updated.statusCode, 200);
+    strictEqual(updated.body, '{"status":"updated"}');
+    deepStrictEqual(invocations, [
+      buildCoderStartWorkspaceInvocation(deployment, workspace, {
+        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+      }),
+      buildCoderUpdateWorkspaceInvocation(deployment, workspace, {
+        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+      }),
+    ]);
+  });
+
+  it("shares the same workspace action and rejects a conflicting transition", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    let restartCount = 0;
+    let releaseRestart: (() => void) | undefined;
+    let signalRestartStarted: (() => void) | undefined;
+    const restartStarted = new Promise<void>((resolve) => {
+      signalRestartStarted = resolve;
+    });
+    const restartReleased = new Promise<void>((resolve) => {
+      releaseRestart = resolve;
+    });
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      restartWorkspace: async () => {
+        restartCount += 1;
+        signalRestartStarted?.();
+        await restartReleased;
+      },
+    });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [{ id: "goldman", name: "Goldman", url: "https://coder.example.gs.com" }],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    });
+
+    const firstRestart = request({
+      url: `${gateway.url}/api/workspaces/project-one/restart`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    await restartStarted;
+    const duplicateRestart = request({
+      url: `${gateway.url}/api/workspaces/project-one/restart`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    const conflictingUpdate = await request({
+      url: `${gateway.url}/api/workspaces/project-one/update`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+
+    strictEqual(conflictingUpdate.statusCode, 409);
+    strictEqual(conflictingUpdate.body, "Coder workspace is already restarting.");
+    strictEqual(restartCount, 1);
+    releaseRestart?.();
+    const restartResponses = await Promise.all([firstRestart, duplicateRestart]);
+    deepStrictEqual(
+      restartResponses.map((response) => response.statusCode),
+      [200, 200],
+    );
+    strictEqual(restartCount, 1);
+  });
+
   it("discovers workspaces through the configured deployment's Coder domain", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
@@ -296,7 +631,14 @@ describe("local Coder gateway", () => {
       configPath,
       listWorkspaces: async (invocation) => {
         receivedInvocation = invocation;
-        return [{ name: "project-one", target: "henry/project-one" }];
+        return [
+          {
+            name: "project-one",
+            target: "henry/project-one",
+            status: "running",
+            updateAvailable: true,
+          },
+        ];
       },
     });
     closeGateway = gateway.close;
@@ -325,7 +667,14 @@ describe("local Coder gateway", () => {
     });
     strictEqual(discovered.statusCode, 200);
     deepStrictEqual(JSON.parse(discovered.body), {
-      workspaces: [{ name: "project-one", target: "henry/project-one" }],
+      workspaces: [
+        {
+          name: "project-one",
+          target: "henry/project-one",
+          status: "running",
+          updateAvailable: true,
+        },
+      ],
     });
     deepStrictEqual(receivedInvocation, {
       executable: "coder",
@@ -340,6 +689,73 @@ describe("local Coder gateway", () => {
         "list",
         "--output",
         "json",
+      ],
+    });
+  });
+
+  it("parses stopped, starting, and update-available state from Coder", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    const executablePath = NodePath.join(directory, "coder");
+    await NodeFS.writeFile(
+      executablePath,
+      `#!/usr/bin/env node
+process.stdout.write(JSON.stringify([
+  { name: "starting-workspace", owner_name: "henry", latest_build: { status: "starting" }, outdated: true },
+  { name: "stopped-workspace", latest_build: { status: "stopped" }, outdated: false },
+  { name: "unknown-workspace", latest_build: { status: "failed" }, outdated: false }
+]));
+`,
+      { mode: 0o700 },
+    );
+    const gateway = await startLocalCoderGateway({ configPath });
+    closeGateway = gateway.close;
+    await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+            executable: executablePath,
+          },
+        ],
+        workspaces: [],
+      }),
+    });
+
+    const response = await request({
+      url: `${gateway.url}/api/deployments/goldman/workspaces`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+
+    strictEqual(response.statusCode, 200);
+    deepStrictEqual(JSON.parse(response.body), {
+      workspaces: [
+        {
+          name: "starting-workspace",
+          target: "henry/starting-workspace",
+          status: "starting",
+          updateAvailable: true,
+        },
+        {
+          name: "stopped-workspace",
+          target: "stopped-workspace",
+          status: "stopped",
+          updateAvailable: false,
+        },
+        {
+          name: "unknown-workspace",
+          target: "unknown-workspace",
+          status: "unknown",
+          updateAvailable: false,
+        },
       ],
     });
   });

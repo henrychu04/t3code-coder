@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { checkCoderDeploymentAuthentication, uploadCoderClipboardImage } from "./api";
+import {
+  checkCoderDeploymentAuthentication,
+  discoverCoderWorkspaces,
+  restartCoderWorkspace,
+  startCoderWorkspace,
+  updateCoderWorkspace,
+  uploadCoderClipboardImage,
+} from "./api";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -48,6 +55,53 @@ describe("Coder authentication API", () => {
 
     await expect(checkCoderDeploymentAuthentication("deployment one")).resolves.toBe("unavailable");
     expect(fetchMock).toHaveBeenCalledWith("/api/deployments/deployment%20one/auth-status", {
+      method: "POST",
+    });
+  });
+});
+
+describe("Coder workspace lifecycle API", () => {
+  it("returns explicit Coder workspace lifecycle and update state", async () => {
+    const workspaces = [
+      {
+        name: "Workspace One",
+        target: "owner/workspace-one",
+        status: "stopped",
+        updateAvailable: true,
+      },
+    ] as const;
+    const fetchMock = vi.fn(async () => Response.json({ workspaces }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(discoverCoderWorkspaces("deployment one")).resolves.toEqual(workspaces);
+  });
+
+  it("requests a start for the selected workspace", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ status: "started" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(startCoderWorkspace("workspace one")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/start", {
+      method: "POST",
+    });
+  });
+
+  it("requests a restart for the selected workspace", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ status: "restarted" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(restartCoderWorkspace("workspace one")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/restart", {
+      method: "POST",
+    });
+  });
+
+  it("requests a template update for the selected workspace", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ status: "updated" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(updateCoderWorkspace("workspace one")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/update", {
       method: "POST",
     });
   });

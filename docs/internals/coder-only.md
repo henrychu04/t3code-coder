@@ -23,6 +23,21 @@ WebSocket server, or other listening socket. Closing the Coder connection stops 
 active turn. Reloading or temporarily disconnecting the browser does not stop the helper; the
 gateway keeps it attached and reconnects the loopback WebSocket. If the helper or Coder SSH process
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
+T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
+report whether a template update is available. It does not implicitly connect to a stopped
+workspace because Coder SSH would start it without an explicit user action. Starting, restarting,
+or updating a workspace first closes its helper and active sessions, stops its saved port forwards,
+invokes the corresponding Coder command through the same deployment-specific CLI profile, restores
+the saved forwards, and reconnects only after Coder reports success. The browser reports workspace
+and port-forward status as unavailable when their status requests fail; it does not leave a request
+checking indefinitely or retain a stale running label.
+
+The gateway stores each workspace and saved forward in one tagged lifecycle state held by an Effect
+`SynchronizedRef`. Workspace connection and action claims, and port-forward start and stop claims,
+are serialized transitions. Duplicate requests for the same workspace action share its result;
+conflicting actions are rejected instead of being coalesced into a different command. Process exits
+can update only the state that still owns that exact connection, so a late exit cannot overwrite a
+newer start, stop, or restart transition.
 
 Each saved port-forward rule starts a separate foreground `coder port-forward` process. The rule
 contains only a configured workspace, TCP or UDP protocol, and validated local and remote ports. The

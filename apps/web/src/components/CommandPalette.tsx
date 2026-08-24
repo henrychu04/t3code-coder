@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   checkCoderDeploymentAuthentication,
   discoverCoderWorkspaces,
+  startCoderWorkspace,
   type CoderDeploymentAuthenticationStatus,
   type DiscoveredCoderWorkspace,
 } from "../coder/api";
@@ -151,6 +152,7 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
       if (!existing) {
         await saveConfig({ ...config, workspaces: [...config.workspaces, profile] });
       }
+      if (workspace.status === "stopped") await startCoderWorkspace(profile.id);
       const descriptor = await connectWorkspace(profile.id);
       setEnvironmentId(descriptor.environmentId);
     } catch (cause) {
@@ -272,7 +274,7 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
                       {workspaces.map((workspace) => (
                         <button
                           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
-                          disabled={connectingTarget !== null}
+                          disabled={connectingTarget !== null || workspace.status === "starting"}
                           key={workspace.target}
                           onClick={() => void chooseWorkspace(workspace)}
                           type="button"
@@ -287,7 +289,15 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
                             <span className="block truncate text-xs text-muted-foreground">
                               {connectingTarget === workspace.target
                                 ? "Preparing workspace… The first connection can take a few minutes."
-                                : workspace.target}
+                                : `${workspace.target} · ${
+                                    workspace.status === "running"
+                                      ? "Running"
+                                      : workspace.status === "starting"
+                                        ? "Starting"
+                                        : workspace.status === "stopped"
+                                          ? "Stopped"
+                                          : "Unknown"
+                                  }${workspace.updateAvailable ? " · Update available" : ""}`}
                             </span>
                           </span>
                         </button>

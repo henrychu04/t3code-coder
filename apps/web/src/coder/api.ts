@@ -39,6 +39,14 @@ export interface CoderPortForwardRuntimeStatus {
 export interface DiscoveredCoderWorkspace {
   readonly name: string;
   readonly target: string;
+  readonly status: "running" | "starting" | "stopped" | "unknown";
+  readonly updateAvailable: boolean;
+}
+
+export interface CoderWorkspaceRuntimeStatus {
+  readonly status: DiscoveredCoderWorkspace["status"] | "unavailable";
+  readonly updateAvailable: boolean;
+  readonly error?: string;
 }
 
 export type CoderDeploymentAuthenticationStatus =
@@ -126,6 +134,24 @@ export async function connectCoderWorkspace(
 export async function disconnectCoderWorkspace(workspaceId: string): Promise<void> {
   await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
     method: "DELETE",
+  }).then(readResponse);
+}
+
+export async function restartCoderWorkspace(workspaceId: string): Promise<void> {
+  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/restart`, {
+    method: "POST",
+  }).then(readResponse);
+}
+
+export async function startCoderWorkspace(workspaceId: string): Promise<void> {
+  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/start`, {
+    method: "POST",
+  }).then(readResponse);
+}
+
+export async function updateCoderWorkspace(workspaceId: string): Promise<void> {
+  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/update`, {
+    method: "POST",
   }).then(readResponse);
 }
 
