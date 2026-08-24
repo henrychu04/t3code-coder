@@ -4,7 +4,7 @@ export const RIGHT_PANEL_SHEET_CLASS_NAME =
 
 export const RIGHT_PANEL_WIDTH_STORAGE_KEY = "t3code:coder-right-panel-width:v1";
 export const RIGHT_PANEL_MIN_WIDTH = 320;
-export const RIGHT_PANEL_MAX_WIDTH = 52 * 16;
+export const RIGHT_PANEL_DEFAULT_MAX_WIDTH = 52 * 16;
 export const RIGHT_PANEL_SIBLING_MIN_WIDTH = 360;
 
 const RIGHT_PANEL_DEFAULT_WIDTH_FRACTION = 0.48;
@@ -24,7 +24,6 @@ export function resolveRightPanelWidths(
   const maxWidth = Math.max(
     RIGHT_PANEL_MIN_WIDTH,
     Math.min(
-      RIGHT_PANEL_MAX_WIDTH,
       Math.floor(viewportWidth * RIGHT_PANEL_MAX_WIDTH_FRACTION),
       containerCap,
     ),
@@ -33,9 +32,10 @@ export function resolveRightPanelWidths(
   return {
     defaultWidth: Math.min(
       maxWidth,
+      RIGHT_PANEL_DEFAULT_MAX_WIDTH,
       Math.max(
         RIGHT_PANEL_MIN_WIDTH,
-        Math.floor(viewportWidth * RIGHT_PANEL_DEFAULT_WIDTH_FRACTION),
+        Math.floor((containerWidth ?? viewportWidth) * RIGHT_PANEL_DEFAULT_WIDTH_FRACTION),
       ),
     ),
     maxWidth,

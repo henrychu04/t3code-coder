@@ -50,23 +50,24 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   );
 
   // No cross-tab subscription: panel width is per-window state.
-  const [width, setWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return defaultWidth;
+  const [width, setWidth] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
     try {
       const stored = getLocalStorageItem(storageKey, WidthSchema);
-      return clamp(stored ?? defaultWidth);
+      return stored === null ? null : clamp(stored);
     } catch (error) {
       console.error("Could not read persisted panel width.", error);
-      return defaultWidth;
+      return null;
     }
   });
 
-  const clampedWidth = clamp(width);
+  const clampedWidth = width === null ? clamp(defaultWidth) : clamp(width);
 
   const dragStateRef = useRef<{
     pointerId: number;
     startX: number;
     startWidth: number;
+    startedFromDefault: boolean;
     pending: number;
     rafId: number | null;
     target: HTMLElement;
@@ -107,12 +108,13 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
         pointerId: event.pointerId,
         startX: event.clientX,
         startWidth: clampedWidth,
+        startedFromDefault: width === null,
         pending: clampedWidth,
         rafId: null,
         target,
       };
     },
-    [clampedWidth],
+    [clampedWidth, width],
   );
 
   const onPointerMove = useCallback(
@@ -156,7 +158,7 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
       if (!state || state.pointerId !== event.pointerId) return;
       // Don't persist a cancelled drag; revert to the start width.
       releasePointer(event.pointerId);
-      setWidth(state.startWidth);
+      setWidth(state.startedFromDefault ? null : state.startWidth);
     },
     [releasePointer],
   );
