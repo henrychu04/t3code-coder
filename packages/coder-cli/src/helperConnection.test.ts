@@ -10,10 +10,43 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_SERVER_SETTINGS, EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
-import { connectCoderHelper, isExpectedCoderHelperExit } from "./helperConnection.ts";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
+import {
+  connectCoderHelper as connectCoderHelperEffect,
+  isExpectedCoderHelperExit,
+} from "./helperConnection.ts";
 import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION } from "./rpc.ts";
 
 const helperPath = fileURLToPath(new URL("../../../apps/coder-helper/src/bin.ts", import.meta.url));
+
+async function connectCoderHelper(...args: Parameters<typeof connectCoderHelperEffect>) {
+  const scope = await Effect.runPromise(Scope.make("sequential"));
+  try {
+    const connection = await Effect.runPromise(
+      connectCoderHelperEffect(...args).pipe(Scope.provide(scope)),
+    );
+    const closed = Effect.runPromise(connection.closed);
+    void closed
+      .then(
+        () => Effect.runPromise(Scope.close(scope, Exit.void)),
+        () => Effect.runPromise(Scope.close(scope, Exit.void)),
+      )
+      .catch(() => undefined);
+    return {
+      ...connection,
+      closed,
+      sendRpc: (message: unknown) => Effect.runSync(connection.sendRpc(message)),
+      close: () => {
+        void Effect.runPromise(connection.close).catch(() => undefined);
+      },
+    };
+  } catch (cause) {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    throw cause;
+  }
+}
 
 function makeFakeHelperProcess(options?: { readonly ignoreSigterm?: boolean }) {
   const events = new EventEmitter();
@@ -253,5 +286,22 @@ describe("Coder helper connection", () => {
 
     strictEqual((await connection.closed).expected, true);
     deepStrictEqual(fake.killSignals, ["SIGTERM", "SIGKILL"]);
+  });
+
+  it("terminates the helper when its owning Effect scope closes", async () => {
+    const fake = makeFakeHelperProcess();
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    const connection = await Effect.runPromise(
+      connectCoderHelperEffect(
+        { executable: "coder", args: [] },
+        { spawnProcess: () => fake.child, negotiationTimeoutMs: 1_000 },
+      ).pipe(Scope.provide(scope)),
+    );
+    const closed = Effect.runPromise(connection.closed);
+
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+
+    strictEqual((await closed).expected, true);
+    deepStrictEqual(fake.killSignals, ["SIGTERM"]);
   });
 });

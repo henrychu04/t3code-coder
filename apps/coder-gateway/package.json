@@ -8,8 +8,10 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
     "@t3tools/coder-cli": "workspace:*",
     "@t3tools/contracts": "workspace:*",
+    "effect": "catalog:",
     "ws": "8.21.0"
   },
   "devDependencies": {

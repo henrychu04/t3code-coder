@@ -8,6 +8,9 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, describe, it } from "node:test";
 
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Scope from "effect/Scope";
 import { WebSocket } from "ws";
 import { EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
 
@@ -16,8 +19,13 @@ import {
   quotePosixShellArgument,
   REMOTE_WORKSPACE_PROBE_COMMAND,
 } from "@t3tools/coder-cli/command";
-import type { CoderHelperConnection } from "@t3tools/coder-cli/helperConnection";
-import { CODER_GATEWAY_HOST, runCoderAuthStatus, startLocalCoderGateway } from "./server.ts";
+import {
+  CODER_GATEWAY_HOST,
+  makeLocalCoderGateway,
+  runCoderAuthStatus,
+  startLocalCoderGateway,
+  type PromiseCoderHelperConnection as CoderHelperConnection,
+} from "./server.ts";
 
 let closeGateway: (() => Promise<void>) | undefined;
 const tempDirectories: string[] = [];
@@ -181,10 +189,10 @@ describe("local Coder gateway", () => {
         ],
       }),
     );
-    const invocations: Array<{ readonly executable: string; readonly args: readonly string[] }> = [];
-    const exits: Array<
-      (exit: { readonly expected: boolean; readonly reason?: string }) => void
-    > = [];
+    const invocations: Array<{ readonly executable: string; readonly args: readonly string[] }> =
+      [];
+    const exits: Array<(exit: { readonly expected: boolean; readonly reason?: string }) => void> =
+      [];
     let closeCount = 0;
     const gateway = await startLocalCoderGateway({
       configPath,
@@ -228,21 +236,15 @@ describe("local Coder gateway", () => {
         ],
       },
     ]);
-    deepStrictEqual(
-      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body),
-      { portForwards: [{ id: "web", status: "running" }] },
-    );
+    deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
+      portForwards: [{ id: "web", status: "running" }],
+    });
 
     exits[0]?.({ expected: false, reason: "Local port 8080 is already in use." });
     await Promise.resolve();
-    deepStrictEqual(
-      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body),
-      {
-        portForwards: [
-          { id: "web", status: "error", error: "Local port 8080 is already in use." },
-        ],
-      },
-    );
+    deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
+      portForwards: [{ id: "web", status: "error", error: "Local port 8080 is already in use." }],
+    });
 
     const rejectedRestart = await request({
       url: `${gateway.url}/api/port-forwards/web/restart`,
@@ -278,10 +280,9 @@ describe("local Coder gateway", () => {
     });
     strictEqual(removed.statusCode, 200);
     strictEqual(closeCount, 1);
-    deepStrictEqual(
-      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body),
-      { portForwards: [] },
-    );
+    deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
+      portForwards: [],
+    });
   });
 
   it("discovers workspaces through the configured deployment's Coder domain", async () => {
@@ -1089,7 +1090,7 @@ setTimeout(() => process.exit(0), 100);
     await firstClosed;
   });
 
-  it("closes a helper that finishes connecting during gateway shutdown", async () => {
+  it("does not wait for a legacy helper that finishes connecting after shutdown", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
     const configPath = NodePath.join(directory, "config.json");
@@ -1148,11 +1149,160 @@ setTimeout(() => process.exit(0), 100);
     });
     await connectStarted;
     const gatewayClosed = gateway.close();
-    releaseConnect?.(connection);
 
     await gatewayClosed;
     strictEqual((await connectionRequest).statusCode, 502);
+    releaseConnect?.(connection);
+    await closed;
     strictEqual(closeCount, 1);
+  });
+
+  it("interrupts an Effect-native helper acquisition when the gateway scope closes", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    await NodeFS.writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+          },
+        ],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    );
+    let markAcquisitionStarted: (() => void) | undefined;
+    const acquisitionStarted = new Promise<void>((resolve) => {
+      markAcquisitionStarted = resolve;
+    });
+    let acquisitionFinalized = false;
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    const gateway = await Effect.runPromise(
+      makeLocalCoderGateway({
+        configPath,
+        probeWorkspace: () => Effect.void,
+        connectHelper: () =>
+          Effect.acquireRelease(
+            Effect.sync(() => {
+              markAcquisitionStarted?.();
+            }),
+            () =>
+              Effect.sync(() => {
+                acquisitionFinalized = true;
+              }),
+          ).pipe(Effect.andThen(Effect.never)),
+      }).pipe(Scope.provide(scope)),
+    );
+
+    const connectionRequest = request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    await acquisitionStarted;
+
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    await connectionRequest.catch(() => undefined);
+
+    strictEqual(acquisitionFinalized, true);
+  });
+
+  it("finishes an explicit connection close during concurrent gateway shutdown", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    await NodeFS.writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        deployments: [
+          {
+            id: "goldman",
+            name: "Goldman",
+            url: "https://coder.example.gs.com",
+          },
+        ],
+        workspaces: [
+          {
+            id: "project-one",
+            name: "Project One",
+            deploymentId: "goldman",
+            workspace: "henry/project-one",
+          },
+        ],
+      }),
+    );
+    let markFinalizerStarted: (() => void) | undefined;
+    const finalizerStarted = new Promise<void>((resolve) => {
+      markFinalizerStarted = resolve;
+    });
+    let releaseFinalizer: (() => void) | undefined;
+    const finalizerReleased = new Promise<void>((resolve) => {
+      releaseFinalizer = resolve;
+    });
+    let finalizerCompleted = false;
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    const gateway = await Effect.runPromise(
+      makeLocalCoderGateway({
+        configPath,
+        probeWorkspace: () => Effect.void,
+        connectHelper: () =>
+          Effect.acquireRelease(
+            Effect.succeed({
+              info: helperInfo,
+              closed: Effect.never,
+              sendRpc: () => Effect.void,
+              onRpcMessage: () => () => undefined,
+              close: Effect.void,
+            }),
+            () =>
+              Effect.gen(function* () {
+                yield* Effect.sync(() => markFinalizerStarted?.());
+                yield* Effect.promise(() => finalizerReleased);
+                finalizerCompleted = true;
+              }),
+          ),
+      }).pipe(Scope.provide(scope)),
+    );
+    strictEqual(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/connection`,
+          method: "POST",
+          headers: { Origin: gateway.url },
+        })
+      ).statusCode,
+      200,
+    );
+
+    const connectionClosed = request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "DELETE",
+      headers: { Origin: gateway.url },
+    });
+    await finalizerStarted;
+    let gatewayClosed = false;
+    const close = Effect.runPromise(Scope.close(scope, Exit.void)).then(() => {
+      gatewayClosed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    strictEqual(gatewayClosed, false);
+
+    releaseFinalizer?.();
+    await close;
+    await connectionClosed.catch(() => undefined);
+    strictEqual(finalizerCompleted, true);
   });
 
   it("clears a pending upgrade after ws rejects invalid handshake headers", async () => {
