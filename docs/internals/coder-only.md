@@ -16,6 +16,19 @@ and provider sessions are memory-only.
 Each active workspace gets one loopback WebSocket that translates frame-delimited browser RPC into
 newline-delimited helper RPC; the gateway does not persist those application messages.
 
+After the browser requests latency for a connected workspace, the gateway starts one additional
+foreground `coder ping` process for that workspace. It parses each pong into an in-memory latest
+round-trip value and serves that value only through the loopback gateway. Repeated reads share the
+same process. The ping is stopped with the exact workspace connection scope, and an unexpected exit
+is retried only when the browser requests latency again.
+
+The header's workspace health card reads Coder's workspace health from `coder list --output json`.
+While the card is open, the browser refreshes that health and asks the gateway for workspace-scoped
+CPU, memory, and home-disk usage every ten seconds. Each resource sample is a bounded, foreground `coder ssh` invocation of Coder
+2.25.3's `coder stat` commands inside the connected workspace. The gateway accepts only Coder's
+fixed JSON result shape, never samples the shared host explicitly, and does not run resource polling
+while the card is closed.
+
 For every connected workspace, the gateway starts one foreground process through the authenticated
 Coder CLI. The process runs a version-matched helper in the Linux workspace and carries T3's Effect
 RPC envelopes as newline-delimited JSON over stdin and stdout. The helper has no HTTP server,
@@ -48,6 +61,8 @@ removed, or the gateway exits.
 
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> claude
+browser -> 127.0.0.1 gateway -> coder ping -> workspace agent
+browser -> 127.0.0.1 gateway -> coder ssh -> coder stat in connected workspace
 local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```
 

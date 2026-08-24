@@ -41,12 +41,24 @@ export interface DiscoveredCoderWorkspace {
   readonly target: string;
   readonly status: "running" | "starting" | "stopped" | "unknown";
   readonly updateAvailable: boolean;
+  readonly healthy: boolean | null;
 }
 
 export interface CoderWorkspaceRuntimeStatus {
   readonly status: DiscoveredCoderWorkspace["status"] | "unavailable";
   readonly updateAvailable: boolean;
+  readonly healthy: boolean | null;
   readonly error?: string;
+}
+
+export interface CoderWorkspaceResourceUsage {
+  readonly cpu: { readonly used: number; readonly total: number; readonly unit: "cores" };
+  readonly memory: { readonly used: number; readonly total: number; readonly unit: "B" };
+  readonly disk: { readonly used: number; readonly total: number; readonly unit: "B" };
+}
+
+export interface CoderWorkspaceMetrics extends CoderWorkspaceResourceUsage {
+  readonly healthy: boolean | null;
 }
 
 export type CoderDeploymentAuthenticationStatus =
@@ -135,6 +147,55 @@ export async function disconnectCoderWorkspace(workspaceId: string): Promise<voi
   await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
     method: "DELETE",
   }).then(readResponse);
+}
+
+export async function loadCoderWorkspaceLatency(workspaceId: string): Promise<number | null> {
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/latency`, {
+    cache: "no-store",
+  }).then(readResponse);
+  const latencyMs = ((await response.json()) as { readonly latencyMs?: unknown }).latencyMs;
+  return typeof latencyMs === "number" && Number.isFinite(latencyMs) && latencyMs >= 0
+    ? latencyMs
+    : null;
+}
+
+function isResourceMeasurement(
+  value: unknown,
+  unit: "cores" | "B",
+): value is { readonly used: number; readonly total: number; readonly unit: "cores" | "B" } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.used === "number" &&
+    Number.isFinite(record.used) &&
+    record.used >= 0 &&
+    typeof record.total === "number" &&
+    Number.isFinite(record.total) &&
+    record.total > 0 &&
+    record.unit === unit
+  );
+}
+
+export async function loadCoderWorkspaceMetrics(
+  workspaceId: string,
+): Promise<CoderWorkspaceMetrics> {
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/metrics`, {
+    cache: "no-store",
+  }).then(readResponse);
+  const value = (await response.json()) as unknown;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Coder returned invalid workspace resource usage.");
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    (record.healthy !== null && typeof record.healthy !== "boolean") ||
+    !isResourceMeasurement(record.cpu, "cores") ||
+    !isResourceMeasurement(record.memory, "B") ||
+    !isResourceMeasurement(record.disk, "B")
+  ) {
+    throw new Error("Coder returned invalid workspace resource usage.");
+  }
+  return value as CoderWorkspaceMetrics;
 }
 
 export async function restartCoderWorkspace(workspaceId: string): Promise<void> {

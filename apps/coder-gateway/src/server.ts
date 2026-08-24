@@ -24,11 +24,13 @@ import {
   buildCoderAuthStatusInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
+  buildCoderPingWorkspaceInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
   buildCoderWorkspaceProbeInvocation,
+  buildCoderWorkspaceStatsInvocation,
   REMOTE_HELPER_READY_SENTINEL,
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
@@ -43,6 +45,10 @@ import {
   type CoderPortForwardConnection,
   type CoderPortForwardExit,
 } from "@t3tools/coder-cli/portForward";
+import {
+  connectCoderWorkspacePing,
+  type CoderWorkspacePingConnection,
+} from "@t3tools/coder-cli/workspacePing";
 import {
   installCoderHelperWithScp,
   uploadCoderClipboardImageWithScp,
@@ -62,10 +68,12 @@ const MAX_CODER_LIST_BYTES = 2 * 1024 * 1024;
 const MAX_CODER_PROBE_BYTES = 32 * 1024;
 const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_ACTION_BYTES = 64 * 1024;
+const MAX_CODER_WORKSPACE_STATS_BYTES = 64 * 1024;
 const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
 const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
+const DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS = 15_000;
 const PROMISE_ADAPTER_CLOSE_TIMEOUT_MS = 5_000;
 
 const indexHtml = `<!doctype html>
@@ -269,6 +277,13 @@ export interface DiscoveredCoderWorkspace {
   readonly target: string;
   readonly status: "running" | "starting" | "stopped" | "unknown";
   readonly updateAvailable: boolean;
+  readonly healthy: boolean | null;
+}
+
+export interface CoderWorkspaceResourceUsage {
+  readonly cpu: { readonly used: number; readonly total: number; readonly unit: "cores" };
+  readonly memory: { readonly used: number; readonly total: number; readonly unit: "B" };
+  readonly disk: { readonly used: number; readonly total: number; readonly unit: "B" };
 }
 
 function workspaceConnectionIsCurrent(
@@ -333,11 +348,16 @@ function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
       ? rawStatus
       : "unknown";
   if (name.length === 0) return null;
+  const health =
+    typeof record.health === "object" && record.health !== null && !Array.isArray(record.health)
+      ? (record.health as Record<string, unknown>)
+      : undefined;
   return {
     name,
     target: owner.length === 0 ? name : `${owner}/${name}`,
     status,
     updateAvailable: record.outdated === true,
+    healthy: typeof health?.healthy === "boolean" ? health.healthy : null,
   };
 }
 
@@ -452,6 +472,81 @@ function runCoderWorkspaceAction(
           `Coder workspace ${action} exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
         ),
       );
+    }),
+  );
+}
+
+function parseWorkspaceStat<Unit extends "cores" | "B">(
+  value: unknown,
+  expectedUnit: Unit,
+  label: string,
+): { readonly used: number; readonly total: number; readonly unit: Unit } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new GatewayProcessError(`Coder returned invalid ${label} usage.`);
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.used !== "number" ||
+    !Number.isFinite(record.used) ||
+    record.used < 0 ||
+    typeof record.total !== "number" ||
+    !Number.isFinite(record.total) ||
+    record.total <= 0 ||
+    record.unit !== expectedUnit
+  ) {
+    throw new GatewayProcessError(`Coder returned invalid ${label} usage.`);
+  }
+  return { used: record.used, total: record.total, unit: expectedUnit };
+}
+
+export function parseCoderWorkspaceResourceUsage(output: string): CoderWorkspaceResourceUsage {
+  let value: unknown;
+  try {
+    value = JSON.parse(output);
+  } catch (cause) {
+    throw new GatewayProcessError("Coder returned invalid workspace resource usage.", { cause });
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new GatewayProcessError("Coder returned invalid workspace resource usage.");
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    cpu: parseWorkspaceStat(record.cpu, "cores", "CPU"),
+    memory: parseWorkspaceStat(record.memory, "B", "memory"),
+    disk: parseWorkspaceStat(record.disk, "B", "disk"),
+  };
+}
+
+function runCoderWorkspaceResourceUsage(
+  invocation: CoderInvocation,
+  timeoutMs = DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS,
+): Effect.Effect<CoderWorkspaceResourceUsage, GatewayProcessError> {
+  return runGatewayProcess(invocation, {
+    label: "Coder workspace resource usage",
+    timeoutMs,
+    maxStdoutBytes: MAX_CODER_WORKSPACE_STATS_BYTES,
+    maxStderrBytes: MAX_CODER_WORKSPACE_STATS_BYTES,
+    stdoutMode: "error",
+    stderrMode: "tail",
+  }).pipe(
+    Effect.flatMap((result) => {
+      if (result.code !== 0) {
+        const detail = result.stderr.toString("utf8").trim();
+        return Effect.fail(
+          new GatewayProcessError(
+            `Coder workspace resource usage exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
+          ),
+        );
+      }
+      return Effect.try({
+        try: () => parseCoderWorkspaceResourceUsage(result.stdout.toString("utf8")),
+        catch: (cause) =>
+          cause instanceof GatewayProcessError
+            ? cause
+            : new GatewayProcessError("Coder returned invalid workspace resource usage.", {
+                cause,
+              }),
+      });
     }),
   );
 }
@@ -585,6 +680,13 @@ export interface LocalCoderGatewayEffectOptions {
   readonly connectPortForward?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderPortForwardConnection, unknown, Scope.Scope>;
+  readonly connectWorkspacePing?: (
+    invocation: CoderInvocation,
+  ) => Effect.Effect<CoderWorkspacePingConnection, unknown, Scope.Scope>;
+  readonly readWorkspaceResourceUsage?: (
+    invocation: CoderInvocation,
+  ) => Effect.Effect<CoderWorkspaceResourceUsage, unknown>;
+  readonly workspaceResourceUsageTimeoutMs?: number;
 }
 
 export function makeLocalCoderGateway(
@@ -606,6 +708,14 @@ export function makeLocalCoderGateway(
       SynchronizedRef.SynchronizedRef<WorkspaceLifecycleState>
     >();
     const workspaceSockets = new Map<string, WebSocket>();
+    const workspacePings = new Map<
+      string,
+      {
+        readonly connection: CoderWorkspacePingConnection;
+        readonly helper: CoderHelperConnection;
+      }
+    >();
+    const workspacePingStarts = new Map<string, Promise<CoderWorkspacePingConnection>>();
     const pendingWorkspaceUpgrades = new Set<string>();
     const portForwardLifecycles = new Map<
       string,
@@ -663,6 +773,11 @@ export function makeLocalCoderGateway(
     const installHelper = options?.installHelper ?? installCoderHelperWithScp;
     const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
     const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
+    const openWorkspacePing = options?.connectWorkspacePing ?? connectCoderWorkspacePing;
+    const readWorkspaceResourceUsage =
+      options?.readWorkspaceResourceUsage ??
+      ((invocation: CoderInvocation) =>
+        runCoderWorkspaceResourceUsage(invocation, options?.workspaceResourceUsageTimeoutMs));
     const coderInvocationOptions = (deploymentId: string) => ({
       globalConfig: NodePath.join(
         NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
@@ -861,10 +976,80 @@ export function makeLocalCoderGateway(
         await claim.operation.catch(() => undefined);
         return closeWorkspaceConnection(workspaceId);
       }
+      workspacePings.delete(workspaceId);
+      workspacePingStarts.delete(workspaceId);
       if (claim.scope !== undefined) {
         await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
       }
       if (claim.pending !== undefined) await claim.pending.catch(() => undefined);
+    };
+
+    const ensureWorkspacePing = (workspaceId: string): Promise<CoderWorkspacePingConnection> => {
+      const state = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+      if (state._tag !== "Connected") {
+        return Promise.reject(new Error("Coder workspace is not connected."));
+      }
+      const existing = workspacePings.get(workspaceId);
+      if (existing?.helper === state.connection) return Promise.resolve(existing.connection);
+      const pending = workspacePingStarts.get(workspaceId);
+      if (pending !== undefined) return pending;
+
+      const start = runPromise(
+        Effect.gen(function* () {
+          const connectionConfig = profileConfig;
+          const workspace = connectionConfig.workspaces.find((entry) => entry.id === workspaceId);
+          const deployment =
+            workspace === undefined
+              ? undefined
+              : connectionConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+          if (workspace === undefined || deployment === undefined) {
+            return yield* Effect.fail(new Error("Unknown Coder workspace."));
+          }
+          const pingScope = yield* Scope.fork(state.scope, "sequential");
+          return yield* Effect.gen(function* () {
+            const connection = yield* openWorkspacePing(
+              buildCoderPingWorkspaceInvocation(
+                deployment,
+                workspace,
+                coderInvocationOptions(deployment.id),
+              ),
+            ).pipe(Scope.provide(pingScope));
+            const currentState = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+            if (
+              currentState._tag !== "Connected" ||
+              currentState.connection !== state.connection ||
+              !workspaceConnectionIsCurrent(connectionConfig, profileConfig, workspaceId)
+            ) {
+              return yield* Effect.fail(new Error("Coder workspace connection changed."));
+            }
+            workspacePings.set(workspaceId, {
+              connection,
+              helper: state.connection,
+            });
+            runFork(
+              connection.closed.pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    if (workspacePings.get(workspaceId)?.connection === connection) {
+                      workspacePings.delete(workspaceId);
+                    }
+                  }),
+                ),
+                Effect.ensuring(Scope.close(pingScope, Exit.void)),
+              ),
+            );
+            return connection;
+          }).pipe(Effect.onError(() => Scope.close(pingScope, Exit.void)));
+        }),
+      );
+      workspacePingStarts.set(workspaceId, start);
+      const cleanup = () => {
+        if (workspacePingStarts.get(workspaceId) === start) {
+          workspacePingStarts.delete(workspaceId);
+        }
+      };
+      void start.then(cleanup, cleanup);
+      return start;
     };
 
     const ensurePortForward = async (
@@ -1194,6 +1379,8 @@ export function makeLocalCoderGateway(
                 ?.filter((entry) => entry.workspaceId === workspaceId)
                 .map((entry) => entry.id) ?? [];
             workspaceSockets.get(workspaceId)?.close(1012, "Coder workspace state is changing.");
+            workspacePings.delete(workspaceId);
+            workspacePingStarts.delete(workspaceId);
             if (claim.scope !== undefined) {
               await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
             }
@@ -1331,6 +1518,114 @@ export function makeLocalCoderGateway(
               }),
             ),
           );
+          return;
+        }
+        const latencyRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/latency$/);
+        if (request.method === "GET" && latencyRoute !== null && latencyRoute !== undefined) {
+          let workspaceId: string;
+          try {
+            workspaceId = decodeURIComponent(latencyRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+            return;
+          }
+          try {
+            const ping = await ensureWorkspacePing(workspaceId);
+            sendText(
+              response,
+              200,
+              "application/json; charset=utf-8",
+              JSON.stringify({ latencyMs: ping.latestLatencyMs() }),
+            );
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "Coder workspace ping failed.";
+            sendText(
+              response,
+              message === "Coder workspace is not connected." ? 409 : 502,
+              "text/plain; charset=utf-8",
+              message,
+            );
+          }
+          return;
+        }
+        const resourceUsageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/metrics$/);
+        if (
+          request.method === "GET" &&
+          resourceUsageRoute !== null &&
+          resourceUsageRoute !== undefined
+        ) {
+          let workspaceId: string;
+          try {
+            workspaceId = decodeURIComponent(resourceUsageRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+          const deployment =
+            workspace === undefined
+              ? undefined
+              : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+          if (workspace === undefined || deployment === undefined) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+            return;
+          }
+          const state = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+          if (state._tag !== "Connected") {
+            sendText(
+              response,
+              409,
+              "text/plain; charset=utf-8",
+              "Coder workspace is not connected.",
+            );
+            return;
+          }
+          try {
+            const invocationOptions = coderInvocationOptions(deployment.id);
+            const [usage, healthy] = await Promise.all([
+              runPromise(
+                readWorkspaceResourceUsage(
+                  buildCoderWorkspaceStatsInvocation(deployment, workspace, invocationOptions),
+                ),
+              ),
+              runPromise(
+                listWorkspaces(buildCoderListWorkspacesInvocation(deployment, invocationOptions)),
+              )
+                .then(
+                  (workspaces) =>
+                    workspaces.find((entry) => discoveredWorkspaceMatches(entry, workspace))
+                      ?.healthy ?? null,
+                )
+                .catch(() => null),
+            ]);
+            const currentState = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+            if (currentState._tag !== "Connected" || currentState.connection !== state.connection) {
+              sendText(
+                response,
+                409,
+                "text/plain; charset=utf-8",
+                "Coder workspace connection changed.",
+              );
+              return;
+            }
+            sendText(
+              response,
+              200,
+              "application/json; charset=utf-8",
+              JSON.stringify({ healthy, ...usage }),
+            );
+          } catch (cause) {
+            sendText(
+              response,
+              502,
+              "text/plain; charset=utf-8",
+              cause instanceof Error ? cause.message : "Coder workspace resource usage failed.",
+            );
+          }
           return;
         }
         if (request.method === "GET" && request.url === "/api/port-forwards") {
@@ -1847,6 +2142,8 @@ export function makeLocalCoderGateway(
           webSocket.close(1001, "Gateway stopped.");
         }
         workspaceSockets.clear();
+        workspacePings.clear();
+        workspacePingStarts.clear();
         pendingWorkspaceUpgrades.clear();
         yield* FiberSet.clear(fibers);
         const connectionScopes = [
@@ -1943,6 +2240,10 @@ interface LocalCoderGatewayOptions {
   readonly connectPortForward?: (
     invocation: CoderInvocation,
   ) => Promise<PromiseCoderPortForwardConnection>;
+  readonly readWorkspaceResourceUsage?: (
+    invocation: CoderInvocation,
+  ) => Promise<CoderWorkspaceResourceUsage>;
+  readonly workspaceResourceUsageTimeoutMs?: number;
 }
 
 const fromPromise = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
@@ -1965,6 +2266,9 @@ export async function startLocalCoderGateway(
     ...(options?.coderAuthStatusTimeoutMs === undefined
       ? {}
       : { coderAuthStatusTimeoutMs: options.coderAuthStatusTimeoutMs }),
+    ...(options?.workspaceResourceUsageTimeoutMs === undefined
+      ? {}
+      : { workspaceResourceUsageTimeoutMs: options.workspaceResourceUsageTimeoutMs }),
     ...(options?.listWorkspaces === undefined
       ? {}
       : { listWorkspaces: (invocation) => fromPromise(() => options.listWorkspaces!(invocation)) }),
@@ -2065,6 +2369,12 @@ export async function startLocalCoderGateway(
                 ),
               { interruptible: true },
             ),
+        }),
+    ...(options?.readWorkspaceResourceUsage === undefined
+      ? {}
+      : {
+          readWorkspaceResourceUsage: (invocation) =>
+            fromPromise(() => options.readWorkspaceResourceUsage!(invocation)),
         }),
     ...(options?.connectHelper === undefined
       ? {}

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   checkCoderDeploymentAuthentication,
   discoverCoderWorkspaces,
+  loadCoderWorkspaceMetrics,
   restartCoderWorkspace,
   startCoderWorkspace,
   stopCoderWorkspace,
@@ -69,12 +70,29 @@ describe("Coder workspace lifecycle API", () => {
         target: "owner/workspace-one",
         status: "stopped",
         updateAvailable: true,
+        healthy: true,
       },
     ] as const;
     const fetchMock = vi.fn(async () => Response.json({ workspaces }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(discoverCoderWorkspaces("deployment one")).resolves.toEqual(workspaces);
+  });
+
+  it("loads validated workspace resource usage", async () => {
+    const usage = {
+      healthy: true,
+      cpu: { used: 0.5, total: 4, unit: "cores" },
+      memory: { used: 1024, total: 2048, unit: "B" },
+      disk: { used: 4096, total: 8192, unit: "B" },
+    };
+    const fetchMock = vi.fn(async () => Response.json(usage));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(loadCoderWorkspaceMetrics("workspace one")).resolves.toEqual(usage);
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/metrics", {
+      cache: "no-store",
+    });
   });
 
   it("requests a start for the selected workspace", async () => {

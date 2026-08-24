@@ -26,6 +26,7 @@ import { useThreadActionMenu } from "~/hooks/useThreadActionMenu";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { CoderWorkspaceLatency } from "../CoderWorkspaceLatency";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
@@ -307,7 +308,12 @@ export const ChatHeader = memo(function ChatHeader({
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
-      ></div>
+      >
+        <CoderWorkspaceLatency
+          key={activeThreadEnvironmentId}
+          environmentId={activeThreadEnvironmentId}
+        />
+      </div>
     </div>
   );
 });

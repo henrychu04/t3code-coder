@@ -31,6 +31,7 @@ describe("Coder workspace runtime discovery", () => {
       "workspace-one": {
         status: "unavailable",
         updateAvailable: false,
+        healthy: null,
         error: "Could not fetch workspace status. Failed to fetch",
       },
     });
@@ -43,7 +44,7 @@ describe("Coder workspace runtime discovery", () => {
     );
 
     await expect(readWorkspaceRuntime(config)).resolves.toEqual({
-      "workspace-one": { status: "unknown", updateAvailable: false },
+      "workspace-one": { status: "unknown", updateAvailable: false, healthy: null },
     });
   });
 });
@@ -59,6 +60,7 @@ describe("Coder workspace connection errors", () => {
             "workspace-one": {
               status,
               updateAvailable: false,
+              healthy: null,
               ...(status === "unavailable" ? { error: "Status request failed" } : {}),
             },
           },
@@ -72,7 +74,7 @@ describe("Coder workspace connection errors", () => {
 
     expect(
       discardInactiveWorkspaceConnectionErrors(errors, {
-        "workspace-one": { status: "running", updateAvailable: false },
+        "workspace-one": { status: "running", updateAvailable: false, healthy: true },
       }),
     ).toBe(errors);
   });
