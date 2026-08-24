@@ -850,9 +850,18 @@ const probeClaudeCapabilities = (
     ),
     Effect.timeoutOption(CAPABILITIES_PROBE_TIMEOUT_MS),
     Effect.result,
-    Effect.map((result) => {
-      if (Result.isFailure(result)) return undefined;
-      return Option.isSome(result.success) ? result.success.value : undefined;
+    Effect.flatMap((result) => {
+      if (Result.isFailure(result)) {
+        return Effect.logWarning("Claude capability initialization failed.", {
+          errorTag: result.failure._tag,
+        }).pipe(Effect.as(undefined));
+      }
+      if (Option.isNone(result.success)) {
+        return Effect.logWarning("Claude capability initialization timed out.").pipe(
+          Effect.as(undefined),
+        );
+      }
+      return Effect.succeed(result.success.value);
     }),
   );
 };
@@ -1017,7 +1026,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         version: parsedVersion,
         status: "warning",
         auth: { status: "unknown" },
-        message: "Could not verify Claude authentication status from initialization result.",
+        message: "Could not initialize Claude capabilities. CLI authentication may still be valid.",
       },
     });
   }

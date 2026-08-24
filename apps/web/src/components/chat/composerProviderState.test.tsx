@@ -120,6 +120,18 @@ describe("getComposerProviderState", () => {
     expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
   });
 
+  it("fails closed to safe runtime modes when capability discovery returns no models", () => {
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models: [],
+      modelOptions: undefined,
+      planModeEnabled: true,
+    });
+
+    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
+  });
+
   it("lets selections override defaults and propagates them through dispatch", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,

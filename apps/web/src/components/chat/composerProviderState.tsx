@@ -29,6 +29,11 @@ export type ComposerProviderStateInput = {
 
 export type ComposerPromptInjectionState = "none" | "ultrathink";
 
+const SAFE_RUNTIME_MODES = [
+  "approval-required",
+  "auto-accept-edits",
+] as const satisfies ReadonlyArray<RuntimeMode>;
+
 export type ComposerProviderState = {
   provider: ProviderDriverKind;
   promptEffort: string | null;
@@ -85,12 +90,14 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   const ultrathinkActive =
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     promptInjectionState === "ultrathink";
+  const supportedRuntimeModes =
+    caps.supportedRuntimeModes ?? (models.length === 0 ? SAFE_RUNTIME_MODES : undefined);
 
   return {
     provider,
     promptEffort,
     modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
-    ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
+    ...(supportedRuntimeModes ? { supportedRuntimeModes } : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",
