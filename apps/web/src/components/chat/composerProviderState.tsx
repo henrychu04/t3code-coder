@@ -12,6 +12,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
+  normalizeModelSlug,
 } from "@t3tools/shared/model";
 import type { ReactNode } from "react";
 
@@ -91,6 +92,9 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     planModeEnabled,
   } = input;
   const caps = getProviderModelCapabilities(models, model, provider, planModeEnabled);
+  const selectedModelAvailable = models.some(
+    (candidate) => candidate.slug === normalizeModelSlug(model, provider),
+  );
   const descriptors = getProviderOptionDescriptors({ caps, selections: modelOptions });
   const primarySelectDescriptor = descriptors.find(
     (descriptor): descriptor is Extract<(typeof descriptors)[number], { type: "select" }> =>
@@ -106,7 +110,11 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     provider,
     promptEffort,
     modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
-    ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
+    ...(caps.supportedRuntimeModes
+      ? { supportedRuntimeModes: caps.supportedRuntimeModes }
+      : provider === "claudeAgent" && !selectedModelAvailable
+        ? { supportedRuntimeModes: SAFE_RUNTIME_MODES }
+        : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

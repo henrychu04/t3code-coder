@@ -179,7 +179,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "      response: {",
           '        subtype: "success",',
           "        request_id: message.request_id,",
-          '        response: { effective: { permissions: { disableAutoMode: "disable", disableBypassPermissionsMode: "disable" } } },',
+          '        response: { effective: { disableAutoMode: "disable", permissions: { disableBypassPermissionsMode: "disable" } } },',
           "      },",
           '    }) + "\\n");',
           "  }",

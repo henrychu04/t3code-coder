@@ -68,11 +68,11 @@ const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean 
   (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
 const mergeProviderModels = (
-  _provider: ServerProvider,
+  provider: ServerProvider,
   previousModels: ReadonlyArray<ServerProvider["models"][number]>,
   nextModels: ReadonlyArray<ServerProvider["models"][number]>,
 ): ReadonlyArray<ServerProvider["models"][number]> => {
-  if (nextModels.length === 0 && previousModels.length > 0) {
+  if (provider.status !== "ready" && nextModels.length === 0 && previousModels.length > 0) {
     return previousModels;
   }
 
@@ -87,6 +87,11 @@ const mergeProviderModels = (
       capabilities: previousModel.capabilities,
     };
   });
+
+  if (provider.status === "ready") {
+    return mergedModels;
+  }
+
   const nextSlugs = new Set(nextModels.map((model) => model.slug));
   return [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))];
 };
