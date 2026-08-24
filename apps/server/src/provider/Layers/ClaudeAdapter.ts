@@ -811,6 +811,20 @@ function readClaudeToolUseResult(message: SDKMessage): Record<string, unknown> |
     : undefined;
 }
 
+function cwdFromClaudeWorktreeToolResult(
+  toolName: string,
+  result: Record<string, unknown> | undefined,
+): string | undefined {
+  switch (toolName) {
+    case "EnterWorktree":
+      return readString(result?.worktreePath);
+    case "ExitWorktree":
+      return readString(result?.originalCwd);
+    default:
+      return undefined;
+  }
+}
+
 function readClaudeTaskFromResult(
   result: Record<string, unknown> | undefined,
 ): Record<string, unknown> | undefined {
@@ -1609,6 +1623,40 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
+
+  const updateSessionCwdFromWorktreeTool = Effect.fn("updateSessionCwdFromWorktreeTool")(function* (
+    context: ClaudeSessionContext,
+    tool: ToolInFlight,
+    result: Record<string, unknown> | undefined,
+    rawMessage: SDKMessage,
+  ) {
+    const cwd = cwdFromClaudeWorktreeToolResult(tool.toolName, result);
+    if (!cwd || cwd === context.session.cwd) {
+      return;
+    }
+
+    const stamp = yield* makeEventStamp();
+    context.session = {
+      ...context.session,
+      cwd,
+      updatedAt: stamp.createdAt,
+    };
+    yield* offerRuntimeEvent({
+      type: "session.configured",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      ...(context.turnState ? { turnId: asCanonicalTurnId(context.turnState.turnId) } : {}),
+      payload: { config: { cwd } },
+      providerRefs: nativeProviderRefs(context),
+      raw: {
+        source: "claude.sdk.message",
+        method: "claude/worktree_cwd_changed",
+        payload: rawMessage,
+      },
+    });
+  });
 
   const snapshotThread = Effect.fn("snapshotThread")(function* (context: ClaudeSessionContext) {
     const threadId = context.session.threadId;
@@ -2575,6 +2623,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const [index, tool] = toolEntry;
       const itemStatus = toolResult.isError ? "failed" : "completed";
       const toolUseResult = readClaudeToolUseResult(message);
+      if (!toolResult.isError) {
+        yield* updateSessionCwdFromWorktreeTool(context, tool, toolUseResult, message);
+      }
       const toolData = {
         toolName: tool.toolName,
         input: tool.input,
