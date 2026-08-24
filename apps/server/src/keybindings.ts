@@ -58,6 +58,11 @@ export {
   parseKeybindingShortcut,
 };
 
+const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
+  { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
+  { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
+];
+
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
   Schema.decodeTo(
     Schema.toType(ResolvedKeybindingRule),
@@ -492,7 +497,13 @@ const make = Effect.gen(function* () {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
-      const customConfig = runtimeConfig.keybindings;
+      const customConfig = runtimeConfig.keybindings.filter(
+        (entry) =>
+          !RETIRED_CODER_DEFAULT_KEYBINDINGS.some((retired) =>
+            isSameKeybindingRule(entry, retired),
+          ),
+      );
+      const removedRetiredDefaults = customConfig.length !== runtimeConfig.keybindings.length;
       const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
@@ -529,7 +540,7 @@ const make = Effect.gen(function* () {
           reason: "shortcut context already used by existing rule",
         });
       }
-      if (missingDefaults.length === 0) {
+      if (missingDefaults.length === 0 && !removedRetiredDefaults) {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }
@@ -558,7 +569,7 @@ const make = Effect.gen(function* () {
           commands: skippedDefaults.map((rule) => rule.command),
         });
       }
-      if (defaultsToAppend.length === 0) {
+      if (defaultsToAppend.length === 0 && !removedRetiredDefaults) {
         yield* Cache.invalidate(resolvedConfigCache, resolvedConfigCacheKey);
         return;
       }

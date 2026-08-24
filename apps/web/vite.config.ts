@@ -16,6 +16,7 @@ const unitTestProject = {
 } satisfies TestProjectInlineConfiguration;
 
 export default defineConfig({
+  assetsInclude: ["**/*.wasm"],
   plugins: [
     tanstackRouter(),
     react(),

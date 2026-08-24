@@ -176,16 +176,14 @@ describe("formatDayAwareTimestamp", () => {
     );
   });
 
-  it("uses the host locale for both the numeric date and wall-clock time", async () => {
-    vi.stubGlobal("window", {
-      desktopBridge: { getSystemLocale: () => "en-GB" },
-    });
+  it("uses the browser locale for both the numeric date and wall-clock time", async () => {
+    vi.stubGlobal("navigator", { language: "en-GB" });
     vi.resetModules();
 
-    const { formatDayAwareTimestamp: formatWithHostLocale } = await import("./timestampFormat");
+    const { formatDayAwareTimestamp: formatWithBrowserLocale } = await import("./timestampFormat");
     const messageAt = iso(2026, 7, 12, 15, 44);
 
-    expect(formatWithHostLocale(messageAt, "locale", now)).toBe("12/08 15:44");
+    expect(formatWithBrowserLocale(messageAt, "locale", now)).toBe("12/08 15:44");
 
     vi.unstubAllGlobals();
   });
