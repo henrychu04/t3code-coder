@@ -1249,7 +1249,9 @@ describe("ProviderCommandReactor", () => {
     const now = "2026-01-01T00:00:00.000Z";
     const worktreesRoot = NodePath.join(NodePath.dirname(harness.stateDir), "worktrees");
     const initialWorktreePath = NodePath.join(worktreesRoot, "1234abcd");
-    const generatedWorktreePath = NodePath.join(worktreesRoot, "t3code-safer-reconnect-backoff");
+    const generatedBranch = await harness.runEffect(
+      Deferred.make<{ readonly branch: string }, never>(),
+    );
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -1261,9 +1263,7 @@ describe("ProviderCommandReactor", () => {
       }),
     );
 
-    harness.generateBranchName.mockImplementation(() =>
-      Effect.succeed({ branch: "safer-reconnect-backoff" }),
-    );
+    harness.generateBranchName.mockReturnValue(Deferred.await(generatedBranch));
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -1282,9 +1282,16 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.generateBranchName.mock.calls.length === 1);
-    await waitFor(() => harness.moveWorktree.mock.calls.length === 1);
-    await waitFor(() => harness.refreshStatus.mock.calls.length === 1);
     await waitFor(() => harness.startSession.mock.calls.length === 1);
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.renameBranch).not.toHaveBeenCalled();
+    expect(harness.moveWorktree).not.toHaveBeenCalled();
+
+    await harness.runEffect(
+      Deferred.succeed(generatedBranch, { branch: "safer-reconnect-backoff" }),
+    );
+    await waitFor(() => harness.renameBranch.mock.calls.length === 1);
+    await waitFor(() => harness.refreshStatus.mock.calls.length === 1);
     expect(harness.generateBranchName.mock.calls[0]?.[0]).toMatchObject({
       message: "Add a safer reconnect backoff.",
     });
@@ -1293,20 +1300,16 @@ describe("ProviderCommandReactor", () => {
       oldBranch: "t3code/1234abcd",
       newBranch: "t3code/safer-reconnect-backoff",
     });
-    expect(harness.moveWorktree.mock.calls[0]?.[0]).toEqual({
-      cwd: "/tmp/provider-project",
-      oldPath: initialWorktreePath,
-      newPath: generatedWorktreePath,
-    });
-    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe(generatedWorktreePath);
+    expect(harness.moveWorktree).not.toHaveBeenCalled();
+    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe(initialWorktreePath);
     expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
-      cwd: generatedWorktreePath,
+      cwd: initialWorktreePath,
     });
 
     const readModel = await harness.readModel();
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.branch).toBe("t3code/safer-reconnect-backoff");
-    expect(thread?.worktreePath).toBe(generatedWorktreePath);
+    expect(thread?.worktreePath).toBe(initialWorktreePath);
   });
 
   it("forwards codex model options through session start and turn send", async () => {
