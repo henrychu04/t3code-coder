@@ -109,6 +109,40 @@ it.effect("GitVcsDriver forwards execute env to the VCS process", () => {
   );
 });
 
+it.effect("GitVcsDriver derives the default worktree path from the repo and branch", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-naming-" });
+    const repo = path.join(fixtureRoot, "semantic-repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+
+    const created = yield* driver.createWorktree({
+      cwd: repo,
+      refName: "main",
+      newRefName: "t3code/fix-reconnect",
+      baseRefName: "main",
+      path: null,
+    });
+    assert.strictEqual(
+      created.worktree.path.endsWith(
+        path.join("worktrees", "semantic-repo", "t3code-fix-reconnect"),
+      ),
+      true,
+    );
+    assert.strictEqual(yield* fileSystem.exists(created.worktree.path), true);
+
+    yield* driver.removeWorktree({ cwd: repo, path: created.worktree.path, force: true });
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
 it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

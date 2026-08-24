@@ -264,6 +264,7 @@ describe("ProviderCommandReactor", () => {
             : "renamed-branch",
       }),
     );
+    const moveWorktree = vi.fn((_: unknown) => Effect.void);
     const refreshStatus = vi.fn((_: string) =>
       Effect.succeed({
         isRepo: true,
@@ -396,6 +397,7 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           renameBranch,
+          moveWorktree,
         } satisfies Partial<GitWorkflowService.GitWorkflowService["Service"]>),
       ),
       Layer.provideMerge(
@@ -497,6 +499,7 @@ describe("ProviderCommandReactor", () => {
       respondToUserInput,
       stopSession,
       renameBranch,
+      moveWorktree,
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
@@ -1244,6 +1247,9 @@ describe("ProviderCommandReactor", () => {
   it("generates a worktree branch name for the first turn", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
+    const worktreesRoot = NodePath.join(NodePath.dirname(harness.stateDir), "worktrees");
+    const initialWorktreePath = NodePath.join(worktreesRoot, "1234abcd");
+    const generatedWorktreePath = NodePath.join(worktreesRoot, "t3code-safer-reconnect-backoff");
 
     await Effect.runPromise(
       harness.engine.dispatch({
@@ -1251,23 +1257,12 @@ describe("ProviderCommandReactor", () => {
         commandId: CommandId.make("cmd-thread-branch"),
         threadId: ThreadId.make("thread-1"),
         branch: "t3code/1234abcd",
-        worktreePath: "/tmp/provider-project-worktree",
+        worktreePath: initialWorktreePath,
       }),
     );
 
-    harness.generateBranchName.mockImplementation((input: unknown) =>
-      Effect.succeed({
-        branch:
-          typeof input === "object" &&
-          input !== null &&
-          "modelSelection" in input &&
-          typeof input.modelSelection === "object" &&
-          input.modelSelection !== null &&
-          "model" in input.modelSelection &&
-          typeof input.modelSelection.model === "string"
-            ? `feature/${input.modelSelection.model}`
-            : "feature/generated",
-      }),
+    harness.generateBranchName.mockImplementation(() =>
+      Effect.succeed({ branch: "safer-reconnect-backoff" }),
     );
 
     await Effect.runPromise(
@@ -1287,11 +1282,31 @@ describe("ProviderCommandReactor", () => {
     );
 
     await waitFor(() => harness.generateBranchName.mock.calls.length === 1);
+    await waitFor(() => harness.moveWorktree.mock.calls.length === 1);
     await waitFor(() => harness.refreshStatus.mock.calls.length === 1);
+    await waitFor(() => harness.startSession.mock.calls.length === 1);
     expect(harness.generateBranchName.mock.calls[0]?.[0]).toMatchObject({
       message: "Add a safer reconnect backoff.",
     });
-    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe("/tmp/provider-project-worktree");
+    expect(harness.renameBranch.mock.calls[0]?.[0]).toEqual({
+      cwd: initialWorktreePath,
+      oldBranch: "t3code/1234abcd",
+      newBranch: "t3code/safer-reconnect-backoff",
+    });
+    expect(harness.moveWorktree.mock.calls[0]?.[0]).toEqual({
+      cwd: "/tmp/provider-project",
+      oldPath: initialWorktreePath,
+      newPath: generatedWorktreePath,
+    });
+    expect(harness.refreshStatus.mock.calls[0]?.[0]).toBe(generatedWorktreePath);
+    expect(harness.startSession.mock.calls[0]?.[1]).toMatchObject({
+      cwd: generatedWorktreePath,
+    });
+
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.branch).toBe("t3code/safer-reconnect-backoff");
+    expect(thread?.worktreePath).toBe(generatedWorktreePath);
   });
 
   it("forwards codex model options through session start and turn send", async () => {

@@ -943,8 +943,10 @@ const makeLocalGitService = Effect.gen(function* () {
   const createWorktree: GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "GitVcsDriver.createWorktree",
   )(function* (input) {
-    const id = NodeCrypto.randomUUID();
-    const targetPath = input.path ?? path.join(worktreesDir, id);
+    const targetBranch = input.newRefName ?? input.refName;
+    const sanitizedBranch = targetBranch.replace(/\//g, "-");
+    const repoName = path.basename(input.cwd);
+    const targetPath = input.path ?? path.join(worktreesDir, repoName, sanitizedBranch);
     const args = ["worktree", "add"];
     if (input.newRefName) args.push("-b", input.newRefName);
     args.push(targetPath, input.baseRefName ?? input.refName);
