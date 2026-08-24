@@ -1,73 +1,21 @@
-import { afterEach, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
+import {
+  APP_BASE_NAME,
+  APP_DISPLAY_NAME,
+  HOSTED_APP_CHANNEL,
+  HOSTED_APP_CHANNEL_LABEL,
+} from "./branding";
 import {
   resolveServerBackedAppDisplayName,
   resolveServerBackedAppStageLabel,
 } from "./branding.logic";
 
-const originalWindow = globalThis.window;
-
-afterEach(() => {
-  vi.resetModules();
-
-  if (originalWindow === undefined) {
-    Reflect.deleteProperty(globalThis, "window");
-    return;
-  }
-
-  globalThis.window = originalWindow;
-});
-
 describe("branding", () => {
-  it("uses injected desktop branding when available", async () => {
-    Object.defineProperty(globalThis, "window", {
-      configurable: true,
-      value: {
-        desktopBridge: {
-          getAppBranding: () => ({
-            baseName: "T3 Code",
-            stageLabel: "Nightly",
-            displayName: "T3 Code (Nightly)",
-          }),
-        },
-      },
-    });
-
-    const branding = await import("./branding");
-
-    expect(branding.APP_BASE_NAME).toBe("T3 Code");
-    expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Code (Nightly)");
-  });
-
-  it("normalizes hosted app channel metadata", async () => {
-    vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "nightly");
-
-    const branding = await import("./branding");
-
-    expect(branding.HOSTED_APP_CHANNEL).toBe("nightly");
-    expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Nightly");
-    expect(branding.APP_STAGE_LABEL).toBe("Nightly");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Code (Nightly)");
-  });
-
-  it("does not label the latest hosted app channel", async () => {
-    vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "latest");
-
-    const branding = await import("./branding");
-
-    expect(branding.HOSTED_APP_CHANNEL).toBe("latest");
-    expect(branding.HOSTED_APP_CHANNEL_LABEL).toBe("Latest");
-    expect(branding.APP_STAGE_LABEL).toBe("Latest");
-    expect(branding.APP_DISPLAY_NAME).toBe("T3 Code");
-  });
-
-  it("ignores unknown hosted app channels", async () => {
-    vi.stubEnv("VITE_HOSTED_APP_CHANNEL", "preview");
-
-    const branding = await import("./branding");
-
-    expect(branding.HOSTED_APP_CHANNEL).toBeNull();
-    expect(branding.HOSTED_APP_CHANNEL_LABEL).toBeNull();
+  it("uses fixed Coder-only branding without hosted channel metadata", () => {
+    expect(APP_BASE_NAME).toBe("T3 Coder");
+    expect(APP_DISPLAY_NAME).toContain("T3 Coder");
+    expect(HOSTED_APP_CHANNEL).toBeNull();
+    expect(HOSTED_APP_CHANNEL_LABEL).toBeNull();
   });
 });
 

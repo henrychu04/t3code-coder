@@ -187,7 +187,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
-  it.effect("ships configurable thread navigation defaults", () =>
+  it.effect("ships only supported configurable navigation defaults", () =>
     Effect.sync(() => {
       const defaultsByCommand = new Map(
         Keybindings.DEFAULT_KEYBINDINGS.map((binding) => [binding.command, binding.key] as const),
@@ -198,9 +198,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.equal(defaultsByCommand.get("thread.jump.1"), "mod+1");
       assert.equal(defaultsByCommand.get("thread.jump.9"), "mod+9");
       assert.equal(defaultsByCommand.get("modelPicker.toggle"), "mod+shift+m");
-      assert.equal(defaultsByCommand.get("themeEditor.toggle"), "mod+alt+shift+t");
       assert.equal(defaultsByCommand.get("filePicker.toggle"), "mod+p");
-      assert.equal(defaultsByCommand.get("projectSearch.toggle"), "mod+shift+f");
+      assert.isFalse(defaultsByCommand.has("themeEditor.toggle"));
+      assert.isFalse(defaultsByCommand.has("projectSearch.toggle"));
       assert.equal(defaultsByCommand.get("sidebar.toggle"), "mod+b");
       assert.equal(defaultsByCommand.get("rightPanel.toggle"), "mod+alt+b");
       assert.isFalse(defaultsByCommand.has("rightPanel.toggleMaximized"));
@@ -303,6 +303,35 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         }
         assert.isTrue(byCommand.has("script.run-tests.run"));
       }).pipe(Effect.provide(makeKeybindingsLayer())),
+  );
+
+  it.effect("removes retired Coder defaults without deleting customized rules", () =>
+    Effect.gen(function* () {
+      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+        { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
+        { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
+        { key: "mod+shift+g", command: "projectSearch.toggle", when: "!terminalFocus" },
+      ]);
+
+      yield* Effect.gen(function* () {
+        const keybindings = yield* Keybindings.Keybindings;
+        yield* keybindings.syncDefaultKeybindingsOnStartup;
+      });
+
+      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+      assert.isFalse(
+        persisted.some(
+          (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+f",
+        ),
+      );
+      assert.isFalse(persisted.some((entry) => entry.command === "themeEditor.toggle"));
+      assert.isTrue(
+        persisted.some(
+          (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+g",
+        ),
+      );
+    }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
   it.effect("skips conflicting default keybindings on startup and logs a detailed warning", () => {

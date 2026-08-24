@@ -7,7 +7,6 @@ import {
   markThreadVisited,
   parsePersistedState,
   PERSISTED_STATE_KEY,
-  type PersistedUiState,
   persistState,
   reorderProjects,
   resolveProjectExpanded,
@@ -264,7 +263,7 @@ describe("uiStateStore persistence", () => {
     vi.unstubAllGlobals();
   });
 
-  it("persists raw UI preferences including thread visit markers", () => {
+  it("keeps workspace-derived UI state out of browser storage", () => {
     const state = makeUiState({
       projectExpandedById: {
         logical: false,
@@ -284,41 +283,6 @@ describe("uiStateStore persistence", () => {
 
     persistState(state);
 
-    const persisted = JSON.parse(
-      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
-    ) as PersistedUiState;
-    expect(persisted).toEqual({
-      projectExpandedById: {
-        logical: false,
-      },
-      projectOrder: ["physical-b", "physical-a"],
-      threadLastVisitedAtById: {
-        "environment:thread-1": "2026-02-25T12:35:00.000Z",
-      },
-      defaultAdvertisedEndpointKey: "desktop-core:lan:http",
-      threadChangedFilesExpansionVersion: 1,
-      threadChangedFilesExpandedById: {
-        "environment:thread-1": {
-          "turn-1": false,
-          "turn-2": true,
-        },
-      },
-    });
-    expect(parsePersistedState(persisted)).toEqual({
-      ...state,
-    });
-  });
-
-  it("drops the temporary expanded-only migration fallback when rewriting state", () => {
-    const migrated = parsePersistedState({
-      expandedProjectCwds: ["/repo/a"],
-    });
-
-    persistState(migrated);
-
-    const persisted = JSON.parse(
-      localStorageStub.getItem(PERSISTED_STATE_KEY) ?? "{}",
-    ) as PersistedUiState;
-    expect(resolveProjectExpanded(persisted.projectExpandedById ?? {}, ["unknown"])).toBe(true);
+    expect(localStorageStub.getItem(PERSISTED_STATE_KEY)).toBeNull();
   });
 });
