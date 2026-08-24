@@ -69,11 +69,9 @@ deployment an isolated Coder-owned `--global-config` directory, invokes `coder -
 command. Coder prints its login URL and hidden token prompt in the terminal running T3 Coder. The
 gateway never asks for, reads, copies, logs, or writes tokens. Coder 2.25.3 itself stores the session
 token as plaintext in the selected config directory; multi-deployment OS-keyring storage is not
-available until Coder 2.29.
-All generated Coder invocations include `--disable-network-telemetry` and
-`--disable-direct-connections`, so the CLI does not send optional network telemetry or establish
-peer-to-peer workspace connections. They also include Coder 2.25.3's `--no-version-warning`
-because the managed deployment may run a newer fixed server version.
+available until Coder 2.29. Network telemetry and direct workspace connections follow the
+configured Coder deployment and CLI defaults. All generated Coder invocations include Coder
+2.25.3's `--no-version-warning` because the managed deployment may run a newer fixed server version.
 
 The loopback gateway has no application token. It binds only to `127.0.0.1`, validates the exact
 `Host` and `Origin` values for commands and upgrades, exposes no CORS policy, and treats local

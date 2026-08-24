@@ -13,8 +13,6 @@ export interface CoderInvocation {
 }
 
 const CODER_GLOBAL_ARGS = [
-  "--disable-network-telemetry",
-  "--disable-direct-connections",
   "--no-version-warning",
 ] as const;
 

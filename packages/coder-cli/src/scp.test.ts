@@ -31,10 +31,9 @@ describe("Coder SCP", () => {
     const scoped = scopeCoderScpConfig(config, "t3-coder-1234-");
 
     match(scoped, /^Host t3-coder-1234-\*/u);
-    match(
-      scoped,
-      /--disable-network-telemetry --disable-direct-connections --no-version-warning ssh --stdio/u,
-    );
+    match(scoped, /--no-version-warning ssh --stdio/u);
+    strictEqual(scoped.includes("--disable-network-telemetry"), false);
+    strictEqual(scoped.includes("--disable-direct-connections"), false);
     strictEqual(scoped.includes("coder.example"), false);
     strictEqual(scoped.includes(" connect "), false);
   });

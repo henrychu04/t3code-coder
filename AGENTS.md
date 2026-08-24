@@ -17,8 +17,8 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated clipboard-image
   uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
   to a workspace. Use argument-array spawning with `shell: false` and include
-  `--disable-network-telemetry`, `--disable-direct-connections`, and `--no-version-warning` in every
-  underlying Coder invocation.
+  `--no-version-warning` in every underlying Coder invocation. Network telemetry and direct
+  workspace connections follow the configured Coder deployment and CLI defaults.
 - User-configured TCP and UDP forwards may use foreground `coder port-forward` processes. Bind every
   local endpoint to `127.0.0.1`, accept structured workspace/protocol/port fields rather than raw
   commands, and stop only the exact child process captured at spawn. Saved forwards may auto-start
@@ -44,9 +44,9 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
 - Git is repository-local in the workspace. Do not add fetch, pull, push, pull-request, or hosted
   source-control integrations.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
-  OAuth, telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse forwarding,
-  arbitrary tunnels, or providers other than Claude. OpenSSH use is limited to helper bootstrap and
-  validated clipboard-image uploads through a `coder ssh --stdio` ProxyCommand.
+  OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
+  forwarding, arbitrary tunnels, or providers other than Claude. OpenSSH use is limited to helper
+  bootstrap and validated clipboard-image uploads through a `coder ssh --stdio` ProxyCommand.
 - External markdown links and images remain inert, and terminal URLs must not open automatically.
 
 ## Supported platforms
