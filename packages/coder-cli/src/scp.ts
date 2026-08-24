@@ -26,8 +26,6 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 2 * 60_000;
 const DEFAULT_SCP_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
 const REQUIRED_CODER_PROXY_FLAGS = [
-  "--disable-network-telemetry",
-  "--disable-direct-connections",
   "--no-version-warning",
 ] as const;
 const IMAGE_PATH_SENTINEL = "T3_CODER_IMAGE_PATH=";

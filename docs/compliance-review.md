@@ -23,9 +23,9 @@ IPv4 loopback and validates the exact Host and Origin. The helper opens no liste
 forwarded port. Separately, validated settings may start foreground `coder port-forward` processes
 whose local endpoint is fixed to `127.0.0.1`; raw arguments, reverse forwards, and non-loopback bind
 addresses are not accepted. SCP is restricted to generated helper and clipboard-image paths and
-reaches the workspace only through a temporary Coder ProxyCommand. Every Coder command uses
-`--disable-network-telemetry` and `--disable-direct-connections`. T3-managed Claude sessions use an
-empty strict MCP configuration and disable connected claude.ai MCP servers.
+reaches the workspace only through a temporary Coder ProxyCommand. Network telemetry and direct
+workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Claude
+sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers.
 
 User commands entered in a workspace terminal, repository-local Git hooks, and the externally
 installed Claude or Coder executables remain subject to the workspace and corporate network policy;

@@ -228,8 +228,6 @@ describe("local Coder gateway", () => {
         args: [
           "--global-config",
           NodePath.join(directory, "coder-profiles", "goldman"),
-          "--disable-network-telemetry",
-          "--disable-direct-connections",
           "--no-version-warning",
           "--url",
           "https://coder.example.gs.com",
@@ -715,8 +713,6 @@ describe("local Coder gateway", () => {
       args: [
         "--global-config",
         NodePath.join(directory, "coder-profiles", "goldman"),
-        "--disable-network-telemetry",
-        "--disable-direct-connections",
         "--no-version-warning",
         "--url",
         "https://coder.example.gs.com",
@@ -909,8 +905,6 @@ setTimeout(() => process.exit(0), 100);
     deepStrictEqual(receivedProbeArgs, [
       "--global-config",
       NodePath.join(directory, "coder-profiles", "goldman"),
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
       "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
@@ -1150,8 +1144,6 @@ setTimeout(() => process.exit(0), 100);
       args: [
         "--global-config",
         NodePath.join(directory, "coder-profiles", "goldman"),
-        "--disable-network-telemetry",
-        "--disable-direct-connections",
         "--no-version-warning",
         "--verbose",
         "--url",

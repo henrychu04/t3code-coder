@@ -46,8 +46,6 @@ describe("Coder CLI command construction", () => {
       args: [
         "--global-config",
         String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--disable-network-telemetry",
-        "--disable-direct-connections",
         "--no-version-warning",
         "--no-open",
         "login",
@@ -57,8 +55,6 @@ describe("Coder CLI command construction", () => {
     deepStrictEqual(buildCoderAuthStatusInvocation(deployment, options).args, [
       "--global-config",
       String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
       "--no-version-warning",
       "--verbose",
       "--url",
@@ -70,8 +66,6 @@ describe("Coder CLI command construction", () => {
       args: [
         "--global-config",
         String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--disable-network-telemetry",
-        "--disable-direct-connections",
         "--no-version-warning",
         "--url",
         "https://coder.example.gs.com",
@@ -85,8 +79,6 @@ describe("Coder CLI command construction", () => {
 
   it("builds Linux probe and foreground helper invocations as argument arrays", () => {
     deepStrictEqual(buildCoderWorkspaceProbeInvocation(deployment, workspace).args, [
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
       "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
@@ -98,8 +90,6 @@ describe("Coder CLI command construction", () => {
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
       "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
@@ -147,8 +137,6 @@ describe("Coder CLI command construction", () => {
     const commonArgs = [
       "--global-config",
       String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-      "--disable-network-telemetry",
-      "--disable-direct-connections",
       "--no-version-warning",
       "--url",
       "https://coder.example.gs.com",
@@ -183,8 +171,6 @@ describe("Coder CLI command construction", () => {
       [
         "--global-config",
         String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--disable-network-telemetry",
-        "--disable-direct-connections",
         "--no-version-warning",
         "--url",
         "https://coder.example.gs.com",
@@ -203,8 +189,6 @@ describe("Coder CLI command construction", () => {
       [
         "--global-config",
         String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--disable-network-telemetry",
-        "--disable-direct-connections",
         "--no-version-warning",
         "--url",
         "https://coder.example.gs.com",
@@ -238,8 +222,6 @@ describe("Coder CLI command construction", () => {
         args: [
           "--global-config",
           String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-          "--disable-network-telemetry",
-          "--disable-direct-connections",
           "--no-version-warning",
           "--url",
           "https://coder.example.gs.com",
