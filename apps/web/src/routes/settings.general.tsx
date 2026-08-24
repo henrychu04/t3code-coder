@@ -38,6 +38,7 @@ function CoderSettingsView() {
     restartWorkspace,
     saveConfig,
     startWorkspace,
+    stopWorkspace,
     updateWorkspace,
     workspaceRuntime,
   } = useCoder();
@@ -47,7 +48,7 @@ function CoderSettingsView() {
   const [authenticating, setAuthenticating] = useState<string | null>(null);
   const [workspaceAction, setWorkspaceAction] = useState<{
     readonly id: string;
-    readonly kind: "start" | "restart" | "update";
+    readonly kind: "start" | "stop" | "restart" | "update";
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -90,18 +91,25 @@ function CoderSettingsView() {
   const runWorkspaceAction = async (
     workspaceId: string,
     workspaceName: string,
-    kind: "start" | "restart" | "update",
+    kind: "start" | "stop" | "restart" | "update",
   ): Promise<void> => {
     if (kind !== "start") {
       const localApi = readLocalApi();
       if (localApi === undefined) return;
-      const label = kind === "restart" ? "Restart" : "Update";
+      const label = kind === "stop" ? "Stop" : kind === "restart" ? "Restart" : "Update";
       const confirmed = await localApi.dialogs.confirm(
-        [
-          `${label} ${workspaceName}?`,
-          "All ongoing sessions in this workspace will be stopped.",
-          `T3 Coder will reconnect after the ${kind} completes.`,
-        ].join("\n"),
+        (kind === "stop"
+          ? [
+              `${label} ${workspaceName}?`,
+              "All ongoing sessions in this workspace will be stopped.",
+              "Saved port forwards will remain stopped until the workspace starts again.",
+            ]
+          : [
+              `${label} ${workspaceName}?`,
+              "All ongoing sessions in this workspace will be stopped.",
+              `T3 Coder will reconnect after the ${kind} completes.`,
+            ]
+        ).join("\n"),
         { variant: "destructive" },
       );
       if (!confirmed) return;
@@ -111,6 +119,7 @@ function CoderSettingsView() {
     setError(null);
     try {
       if (kind === "start") await startWorkspace(workspaceId);
+      else if (kind === "stop") await stopWorkspace(workspaceId);
       else if (kind === "restart") await restartWorkspace(workspaceId);
       else await updateWorkspace(workspaceId);
       await refreshWorkspaceRuntime();
@@ -256,17 +265,19 @@ function CoderSettingsView() {
                       </p>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         <Badge variant="outline">
-                          {runtime === undefined
-                            ? "Checking…"
-                            : runtime.status === "running"
-                              ? "Running"
-                              : runtime.status === "starting"
-                                ? "Starting"
-                                : runtime.status === "stopped"
-                                  ? "Stopped"
-                                  : runtime.status === "unavailable"
-                                    ? "Status unavailable"
-                                    : "Unknown"}
+                          {action === "stop"
+                            ? "Stopping…"
+                            : runtime === undefined
+                              ? "Checking…"
+                              : runtime.status === "running"
+                                ? "Running"
+                                : runtime.status === "starting"
+                                  ? "Starting"
+                                  : runtime.status === "stopped"
+                                    ? "Stopped"
+                                    : runtime.status === "unavailable"
+                                      ? "Status unavailable"
+                                      : "Unknown"}
                         </Badge>
                         {runtime?.updateAvailable ? (
                           <Badge variant="outline">Update available</Badge>
@@ -317,6 +328,23 @@ function CoderSettingsView() {
                           {action === "update" ? "Updating…" : "Update"}
                         </Button>
                       ) : null}
+                      {runtime?.status === "stopped" ? null : (
+                        <Button
+                          disabled={
+                            workspaceAction !== null ||
+                            checking ||
+                            runtime?.status === "starting" ||
+                            statusUnavailable
+                          }
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void runWorkspaceAction(workspace.id, workspace.name, "stop")
+                          }
+                        >
+                          {action === "stop" ? "Stopping…" : "Stop"}
+                        </Button>
+                      )}
                       {runtime?.status === "stopped" ? null : (
                         <Button
                           disabled={

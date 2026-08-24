@@ -26,6 +26,7 @@ import {
   buildCoderLoginInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
+  buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
   buildCoderWorkspaceProbeInvocation,
   REMOTE_HELPER_READY_SENTINEL,
@@ -431,7 +432,7 @@ function runCoderWorkspaceProbe(
 
 function runCoderWorkspaceAction(
   invocation: CoderInvocation,
-  action: "start" | "restart" | "update",
+  action: WorkspaceAction,
 ): Effect.Effect<void, GatewayProcessError> {
   return runGatewayProcess(invocation, {
     label: `Coder workspace ${action}`,
@@ -455,7 +456,7 @@ function runCoderWorkspaceAction(
   );
 }
 
-type WorkspaceAction = "start" | "restart" | "update";
+type WorkspaceAction = "start" | "stop" | "restart" | "update";
 
 class WorkspaceActionConflictError extends Error {}
 
@@ -497,6 +498,7 @@ type WorkspaceLifecycleState =
 
 type PortForwardLifecycleState =
   | { readonly _tag: "Idle"; readonly generation: number }
+  | { readonly _tag: "WorkspaceStopped"; readonly generation: number }
   | {
       readonly _tag: "Starting";
       readonly generation: number;
@@ -571,6 +573,7 @@ export interface LocalCoderGatewayEffectOptions {
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderAuthenticationStatus, unknown>;
   readonly startWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
+  readonly stopWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
   readonly restartWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
   readonly updateWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
   readonly installHelper?: (
@@ -651,6 +654,8 @@ export function makeLocalCoderGateway(
         checkCoderAuthStatus(invocation, options?.coderAuthStatusTimeoutMs));
     const runWorkspaceStart =
       options?.startWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "start"));
+    const runWorkspaceStop =
+      options?.stopWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "stop"));
     const runWorkspaceRestart =
       options?.restartWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "restart"));
     const runWorkspaceUpdate =
@@ -880,6 +885,7 @@ export function makeLocalCoderGateway(
               case "Stopping":
                 return [{ _tag: "Stopping" as const, operation: state.operation }, state];
               case "Idle":
+              case "WorkspaceStopped":
               case "Failed":
                 return [
                   { _tag: "Start" as const, generation: state.generation },
@@ -1020,7 +1026,11 @@ export function makeLocalCoderGateway(
               return [{ _tag: "Pending" as const, operation: state.operation }, state];
             }
             const generation = state.generation + 1;
-            if (state._tag === "Idle" || state._tag === "Failed") {
+            if (
+              state._tag === "Idle" ||
+              state._tag === "WorkspaceStopped" ||
+              state._tag === "Failed"
+            ) {
               return [{ _tag: "Stopped" as const }, { _tag: "Idle", generation }];
             }
             return [
@@ -1093,7 +1103,20 @@ export function makeLocalCoderGateway(
               : workspacesByDeployment
                   .get(workspace.deploymentId)
                   ?.find((entry) => discoveredWorkspaceMatches(entry, workspace));
-          if (runtime?.status === "stopped" || runtime?.status === "starting") {
+          if (runtime?.status === "stopped") {
+            await runPromise(
+              SynchronizedRef.update(
+                portForwardLifecycle(portForward.id),
+                (state) =>
+                  ({
+                    _tag: "WorkspaceStopped",
+                    generation: state.generation,
+                  }) as const,
+              ),
+            );
+            return;
+          }
+          if (runtime?.status === "starting") {
             await runPromise(
               SynchronizedRef.update(
                 portForwardLifecycle(portForward.id),
@@ -1101,10 +1124,7 @@ export function makeLocalCoderGateway(
                   ({
                     _tag: "Failed",
                     generation: state.generation,
-                    error:
-                      runtime.status === "stopped"
-                        ? "Coder workspace is stopped."
-                        : "Coder workspace is starting.",
+                    error: "Coder workspace is starting.",
                   }) as const,
               ),
             );
@@ -1151,9 +1171,11 @@ export function makeLocalCoderGateway(
           const activeAction =
             claim.action === "start"
               ? "starting"
-              : claim.action === "restart"
-                ? "restarting"
-                : "updating";
+              : claim.action === "stop"
+                ? "stopping"
+                : claim.action === "restart"
+                  ? "restarting"
+                  : "updating";
           throw new WorkspaceActionConflictError(`Coder workspace is already ${activeAction}.`);
         }
         void (async () => {
@@ -1185,6 +1207,12 @@ export function makeLocalCoderGateway(
                 await runPromise(
                   runWorkspaceStart(
                     buildCoderStartWorkspaceInvocation(deployment, workspace, invocationOptions),
+                  ),
+                );
+              } else if (action === "stop") {
+                await runPromise(
+                  runWorkspaceStop(
+                    buildCoderStopWorkspaceInvocation(deployment, workspace, invocationOptions),
                   ),
                 );
               } else if (action === "restart") {
@@ -1220,9 +1248,26 @@ export function makeLocalCoderGateway(
             }
 
             if (gatewayClosed) throw new Error("Coder gateway is closed.");
-            await Promise.allSettled(
-              portForwardIds.map((portForwardId) => ensurePortForward(portForwardId)),
-            );
+            if (action === "stop") {
+              await Promise.all(
+                portForwardIds.map((portForwardId) =>
+                  runPromise(
+                    SynchronizedRef.update(
+                      portForwardLifecycle(portForwardId),
+                      (state) =>
+                        ({
+                          _tag: "WorkspaceStopped",
+                          generation: state.generation,
+                        }) as const,
+                    ),
+                  ),
+                ),
+              );
+            } else {
+              await Promise.allSettled(
+                portForwardIds.map((portForwardId) => ensurePortForward(portForwardId)),
+              );
+            }
             await runPromise(
               SynchronizedRef.update(lifecycle, (state) =>
                 state._tag === "Changing" && state.operation === deferred.promise
@@ -1301,9 +1346,11 @@ export function makeLocalCoderGateway(
                   status:
                     state._tag === "Running"
                       ? "running"
-                      : state._tag === "Failed"
-                        ? "error"
-                        : "starting",
+                      : state._tag === "WorkspaceStopped"
+                        ? "stopped"
+                        : state._tag === "Failed"
+                          ? "error"
+                          : "starting",
                   ...(state._tag === "Failed" ? { error: state.error } : {}),
                 };
               }),
@@ -1552,7 +1599,7 @@ export function makeLocalCoderGateway(
           }
         }
         const actionRoute = request.url?.match(
-          /^\/api\/workspaces\/([^/]+)\/(start|restart|update)$/,
+          /^\/api\/workspaces\/([^/]+)\/(start|stop|restart|update)$/,
         );
         if (request.method === "POST" && actionRoute !== null && actionRoute !== undefined) {
           if (request.headers.origin !== expectedOrigin) {
@@ -1579,7 +1626,13 @@ export function makeLocalCoderGateway(
               "application/json; charset=utf-8",
               JSON.stringify({
                 status:
-                  action === "start" ? "started" : action === "restart" ? "restarted" : "updated",
+                  action === "start"
+                    ? "started"
+                    : action === "stop"
+                      ? "stopped"
+                      : action === "restart"
+                        ? "restarted"
+                        : "updated",
               }),
             );
           } catch (cause) {
@@ -1878,6 +1931,7 @@ interface LocalCoderGatewayOptions {
     invocation: CoderInvocation,
   ) => Promise<CoderAuthenticationStatus>;
   readonly startWorkspace?: (invocation: CoderInvocation) => Promise<void>;
+  readonly stopWorkspace?: (invocation: CoderInvocation) => Promise<void>;
   readonly restartWorkspace?: (invocation: CoderInvocation) => Promise<void>;
   readonly updateWorkspace?: (invocation: CoderInvocation) => Promise<void>;
   readonly installHelper?: (
@@ -1926,6 +1980,9 @@ export async function startLocalCoderGateway(
     ...(options?.startWorkspace === undefined
       ? {}
       : { startWorkspace: (invocation) => fromPromise(() => options.startWorkspace!(invocation)) }),
+    ...(options?.stopWorkspace === undefined
+      ? {}
+      : { stopWorkspace: (invocation) => fromPromise(() => options.stopWorkspace!(invocation)) }),
     ...(options?.restartWorkspace === undefined
       ? {}
       : {

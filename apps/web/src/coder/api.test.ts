@@ -5,6 +5,7 @@ import {
   discoverCoderWorkspaces,
   restartCoderWorkspace,
   startCoderWorkspace,
+  stopCoderWorkspace,
   updateCoderWorkspace,
   uploadCoderClipboardImage,
 } from "./api";
@@ -92,6 +93,16 @@ describe("Coder workspace lifecycle API", () => {
 
     await expect(restartCoderWorkspace("workspace one")).resolves.toBeUndefined();
     expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/restart", {
+      method: "POST",
+    });
+  });
+
+  it("requests a stop for the selected workspace", async () => {
+    const fetchMock = vi.fn(async () => Response.json({ status: "stopped" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(stopCoderWorkspace("workspace one")).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/stop", {
       method: "POST",
     });
   });

@@ -35,4 +35,16 @@ describe("Coder port-forward status badge", () => {
 
     expect(markup).toContain(">Running<");
   });
+
+  it("shows stopped when its workspace was intentionally stopped", () => {
+    const markup = renderToStaticMarkup(
+      <PortForwardStatusBadge
+        status={{ id: "forward-one", status: "stopped" }}
+        unavailable={false}
+      />,
+    );
+
+    expect(markup).toContain(">Stopped<");
+    expect(markup).not.toContain("Error");
+  });
 });

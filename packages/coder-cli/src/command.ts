@@ -159,6 +159,19 @@ export function buildCoderStartWorkspaceInvocation(
   );
 }
 
+export function buildCoderStopWorkspaceInvocation(
+  deploymentInput: CoderDeploymentProfile,
+  workspaceInput: CoderWorkspaceProfile,
+  options?: CoderInvocationOptions,
+): CoderInvocation {
+  return buildCoderWorkspaceActionInvocation(
+    deploymentInput,
+    workspaceInput,
+    ["stop", "--yes"],
+    options,
+  );
+}
+
 export function buildCoderRestartWorkspaceInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,

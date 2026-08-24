@@ -18,6 +18,7 @@ import {
   buildCoderHelperInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
+  buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
   quotePosixShellArgument,
   REMOTE_WORKSPACE_PROBE_COMMAND,
@@ -352,7 +353,7 @@ describe("local Coder gateway", () => {
 
     strictEqual(portForwardStarts, 0);
     deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
-      portForwards: [{ id: "web", status: "error", error: "Coder workspace is stopped." }],
+      portForwards: [{ id: "web", status: "stopped" }],
     });
 
     const started = await request({
@@ -365,12 +366,15 @@ describe("local Coder gateway", () => {
     strictEqual(portForwardStarts, 1);
   });
 
-  it("disconnects the helper and restores saved port forwards around a workspace restart", async () => {
+  it("coordinates the helper and saved port forwards around restart and stop", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
     const configPath = NodePath.join(directory, "config.json");
     const lifecycle: string[] = [];
     let receivedRestartInvocation:
+      | { readonly executable: string; readonly args: readonly string[] }
+      | undefined;
+    let receivedStopInvocation:
       | { readonly executable: string; readonly args: readonly string[] }
       | undefined;
     let closeConnection:
@@ -422,6 +426,10 @@ describe("local Coder gateway", () => {
       restartWorkspace: async (invocation) => {
         lifecycle.push("restart");
         receivedRestartInvocation = invocation;
+      },
+      stopWorkspace: async (invocation) => {
+        lifecycle.push("stop");
+        receivedStopInvocation = invocation;
       },
     });
     closeGateway = gateway.close;
@@ -490,6 +498,32 @@ describe("local Coder gateway", () => {
     );
     const connections = await request({ url: `${gateway.url}/api/connections` });
     deepStrictEqual(JSON.parse(connections.body), []);
+
+    const stopped = await request({
+      url: `${gateway.url}/api/workspaces/project-one/stop`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(stopped.statusCode, 200);
+    strictEqual(stopped.body, '{"status":"stopped"}');
+    deepStrictEqual(lifecycle, [
+      "forward-start",
+      "close",
+      "forward-close",
+      "restart",
+      "forward-start",
+      "forward-close",
+      "stop",
+    ]);
+    deepStrictEqual(
+      receivedStopInvocation,
+      buildCoderStopWorkspaceInvocation(deployment, workspace, {
+        globalConfig: NodePath.join(directory, "coder-profiles", "goldman"),
+      }),
+    );
+    deepStrictEqual(JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body), {
+      portForwards: [{ id: "web", status: "stopped" }],
+    });
   });
 
   it("starts and updates a configured workspace through Coder", async () => {
