@@ -1209,6 +1209,122 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("updates the session cwd from Claude worktree tool results", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const configuredEventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "session.configured"),
+        Stream.take(3),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        cwd: "/workspace/repo",
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "work in an isolated checkout",
+      });
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-worktree",
+        uuid: "stream-enter-worktree",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 1,
+          content_block: {
+            type: "tool_use",
+            id: "tool-enter-worktree",
+            name: "EnterWorktree",
+            input: { name: "feature" },
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "user",
+        session_id: "sdk-session-worktree",
+        uuid: "user-enter-worktree-result",
+        parent_tool_use_id: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tool-enter-worktree",
+              content: "Entered worktree",
+            },
+          ],
+        },
+        tool_use_result: {
+          worktreePath: "/workspace/repo/.claude/worktrees/feature",
+          worktreeBranch: "worktree-feature",
+          message: "Entered worktree",
+        },
+      } as unknown as SDKMessage);
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-worktree",
+        uuid: "stream-exit-worktree",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 2,
+          content_block: {
+            type: "tool_use",
+            id: "tool-exit-worktree",
+            name: "ExitWorktree",
+            input: { action: "keep" },
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "user",
+        session_id: "sdk-session-worktree",
+        uuid: "user-exit-worktree-result",
+        parent_tool_use_id: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tool-exit-worktree",
+              content: "Exited worktree",
+            },
+          ],
+        },
+        tool_use_result: {
+          action: "keep",
+          originalCwd: "/workspace/repo",
+          worktreePath: "/workspace/repo/.claude/worktrees/feature",
+          worktreeBranch: "worktree-feature",
+          message: "Exited worktree",
+        },
+      } as unknown as SDKMessage);
+
+      const configuredEvents = Array.from(yield* Fiber.join(configuredEventsFiber));
+      assert.deepEqual(
+        configuredEvents.map((event) =>
+          event.type === "session.configured" ? event.payload.config.cwd : undefined,
+        ),
+        ["/workspace/repo", "/workspace/repo/.claude/worktrees/feature", "/workspace/repo"],
+      );
+
+      const sessions = yield* adapter.listSessions();
+      assert.equal(sessions[0]?.cwd, "/workspace/repo");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("falls back to a default plan step label for blank TodoWrite content", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

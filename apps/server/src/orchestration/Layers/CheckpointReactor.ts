@@ -75,6 +75,14 @@ function checkpointStatusFromRuntime(status: string | undefined): "ready" | "mis
   }
 }
 
+function configuredSessionCwd(event: ProviderRuntimeEvent): string | undefined {
+  if (event.type !== "session.configured") {
+    return undefined;
+  }
+  const cwd = event.payload.config.cwd;
+  return typeof cwd === "string" && cwd.trim().length > 0 ? cwd.trim() : undefined;
+}
+
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const randomUUID = crypto.randomUUIDv4;
@@ -529,6 +537,34 @@ const make = Effect.gen(function* () {
     },
   );
 
+  const refreshLocalGitStatus = Effect.fn("refreshLocalGitStatus")(function* (input: {
+    readonly event: Extract<
+      ProviderRuntimeEvent,
+      { type: "item.completed" | "session.configured" | "turn.completed" }
+    >;
+    readonly cwd: string;
+    readonly followWorktreePath: boolean;
+  }) {
+    const local = yield* vcsStatus.refresh(input.cwd).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("failed to refresh local git status after agent command", {
+          threadId: input.event.threadId,
+          turnId: input.event.turnId ?? null,
+          cwd: input.cwd,
+          detail: error.message,
+        }).pipe(Effect.as(null)),
+      ),
+    );
+    if (local !== null) {
+      yield* followSessionCheckoutDrift({
+        threadId: input.event.threadId,
+        cwd: input.cwd,
+        local,
+        followWorktreePath: input.followWorktreePath,
+      });
+    }
+  });
+
   const refreshLocalGitStatusAfterAgentCommand = Effect.fn(
     "refreshLocalGitStatusAfterAgentCommand",
   )(function* (
@@ -538,42 +574,24 @@ const make = Effect.gen(function* () {
     if (Option.isNone(sessionRuntime)) {
       return;
     }
-
-    const local = yield* vcsStatus.refresh(sessionRuntime.value.cwd).pipe(
-      Effect.catch((error) =>
-        Effect.logWarning("failed to refresh local git status after agent command", {
-          threadId: event.threadId,
-          turnId: event.turnId ?? null,
-          cwd: sessionRuntime.value.cwd,
-          detail: error.message,
-        }).pipe(Effect.as(null)),
-      ),
-    );
-    if (local !== null) {
-      yield* followWorktreeBranchDrift({
-        threadId: event.threadId,
-        cwd: sessionRuntime.value.cwd,
-        local,
-      });
-    }
+    yield* refreshLocalGitStatus({
+      event,
+      cwd: sessionRuntime.value.cwd,
+      followWorktreePath: false,
+    });
   });
 
-  // A `git checkout` run inside a thread's dedicated worktree (by an agent or
-  // the user) bypasses T3's commands, so the thread's recorded branch goes
-  // stale. Since #4460 the client only attributes PR state to a thread when
-  // the checked-out branch equals the recorded one, so stale metadata silently
-  // orphans the thread's PR. Follow the drift here: adopt the checked-out
-  // branch as the thread's branch, but only when the worktree belongs to
-  // exactly this thread — for shared cwds the strict matching is the point.
-  const followWorktreeBranchDrift = Effect.fn("followWorktreeBranchDrift")(function* (input: {
+  // Commands can change the branch within a checkout, while Claude's native
+  // EnterWorktree/ExitWorktree tools change the session checkout itself. Keep
+  // the thread projection aligned with either change so checkout-bound UI
+  // (branch, status, diff, and file views) rebinds to the session's real cwd.
+  const followSessionCheckoutDrift = Effect.fn("followSessionCheckoutDrift")(function* (input: {
     readonly threadId: ThreadId;
     readonly cwd: string;
     readonly local: VcsStatusLocalResult;
+    readonly followWorktreePath: boolean;
   }) {
-    // Detached HEAD has no branch to adopt; a temporary placeholder checkout
-    // means the first-turn auto-rename is still in flight — don't race it.
-    const checkedOutBranch = input.local.refName;
-    if (checkedOutBranch === null || isTemporaryWorktreeBranch(checkedOutBranch)) {
+    if (!input.local.isRepo) {
       return;
     }
 
@@ -581,46 +599,88 @@ const make = Effect.gen(function* () {
       const thread = yield* projectionSnapshotQuery
         .getThreadShellById(input.threadId)
         .pipe(Effect.map(Option.getOrUndefined));
-      if (
-        !thread ||
-        thread.branch === null ||
-        thread.branch === checkedOutBranch ||
-        thread.worktreePath === null ||
-        thread.worktreePath !== input.cwd ||
-        isTemporaryWorktreeBranch(thread.branch)
-      ) {
+      if (!thread) {
+        return;
+      }
+      const project = yield* projectionSnapshotQuery
+        .getProjectShellById(thread.projectId)
+        .pipe(Effect.map(Option.getOrUndefined));
+      if (!project) {
         return;
       }
 
-      const shell = yield* projectionSnapshotQuery.getShellSnapshot();
-      const worktreeIsShared = shell.threads.some(
-        (other) => other.id !== thread.id && other.worktreePath === thread.worktreePath,
-      );
-      if (worktreeIsShared) {
+      const recordedCwd = thread.worktreePath ?? project.workspaceRoot;
+      const worktreePathChanged = recordedCwd !== input.cwd;
+      if (worktreePathChanged && !input.followWorktreePath) {
         return;
       }
 
-      // expectedBranch makes this a compare-and-swap in the decider: if the
-      // recorded branch moved between our read and the dispatch (rename,
-      // concurrent drift-follow), the stale update is dropped.
+      const checkedOutBranch = input.local.refName;
+      if (!worktreePathChanged) {
+        // Detached HEAD has no branch to adopt; a temporary placeholder checkout
+        // means the first-turn auto-rename is still in flight — don't race it.
+        if (
+          checkedOutBranch === null ||
+          isTemporaryWorktreeBranch(checkedOutBranch) ||
+          thread.branch === null ||
+          thread.branch === checkedOutBranch ||
+          thread.worktreePath === null ||
+          isTemporaryWorktreeBranch(thread.branch)
+        ) {
+          return;
+        }
+
+        const shell = yield* projectionSnapshotQuery.getShellSnapshot();
+        const worktreeIsShared = shell.threads.some(
+          (other) => other.id !== thread.id && other.worktreePath === thread.worktreePath,
+        );
+        if (worktreeIsShared) {
+          return;
+        }
+
+        // expectedBranch makes this a compare-and-swap in the decider: if the
+        // recorded branch moved between our read and the dispatch (rename,
+        // concurrent drift-follow), the stale update is dropped.
+        yield* orchestrationEngine.dispatch({
+          type: "thread.meta.update",
+          commandId: yield* serverCommandId("worktree-branch-drift"),
+          threadId: thread.id,
+          branch: checkedOutBranch,
+          expectedBranch: thread.branch,
+        });
+        yield* Effect.logInfo("thread branch followed worktree checkout", {
+          threadId: thread.id,
+          previousBranch: thread.branch,
+          branch: checkedOutBranch,
+        });
+        return;
+      }
+
+      const nextWorktreePath = input.cwd === project.workspaceRoot ? null : input.cwd;
+      const nextBranch =
+        checkedOutBranch !== null && isTemporaryWorktreeBranch(checkedOutBranch)
+          ? undefined
+          : checkedOutBranch;
       yield* orchestrationEngine.dispatch({
         type: "thread.meta.update",
-        commandId: yield* serverCommandId("worktree-branch-drift"),
+        commandId: yield* serverCommandId("session-checkout-drift"),
         threadId: thread.id,
-        branch: checkedOutBranch,
-        expectedBranch: thread.branch,
+        ...(nextBranch !== undefined ? { branch: nextBranch, expectedBranch: thread.branch } : {}),
+        worktreePath: nextWorktreePath,
       });
-      yield* Effect.logInfo("thread branch followed worktree checkout", {
+      yield* Effect.logInfo("thread checkout followed provider session", {
         threadId: thread.id,
+        previousCwd: recordedCwd,
+        cwd: input.cwd,
         previousBranch: thread.branch,
-        branch: checkedOutBranch,
+        branch: nextBranch ?? thread.branch,
       });
     }).pipe(
       Effect.catchCause((cause) => {
         if (Cause.hasInterruptsOnly(cause)) {
           return Effect.failCause(cause);
         }
-        return Effect.logWarning("failed to follow worktree branch drift", {
+        return Effect.logWarning("failed to follow provider session checkout drift", {
           threadId: input.threadId,
           cause: Cause.pretty(cause),
         });
@@ -870,6 +930,18 @@ const make = Effect.gen(function* () {
       return;
     }
 
+    if (event.type === "session.configured") {
+      const cwd = configuredSessionCwd(event);
+      if (cwd) {
+        yield* refreshLocalGitStatus({
+          event,
+          cwd,
+          followWorktreePath: true,
+        });
+      }
+      return;
+    }
+
     if (event.type === "item.completed" && event.payload.itemType === "command_execution") {
       yield* refreshLocalGitStatusAfterAgentCommand(event);
       return;
@@ -938,6 +1010,7 @@ const make = Effect.gen(function* () {
       Stream.runForEach(providerService.streamEvents, (event) => {
         if (
           event.type !== "turn.started" &&
+          event.type !== "session.configured" &&
           event.type !== "turn.completed" &&
           !(event.type === "item.completed" && event.payload.itemType === "command_execution")
         ) {

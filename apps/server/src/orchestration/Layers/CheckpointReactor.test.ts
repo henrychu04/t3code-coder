@@ -655,6 +655,64 @@ describe("CheckpointReactor", () => {
     expect(thread?.branch).toBe("t3code/original-branch");
   });
 
+  it("follows a provider session into a different worktree", async () => {
+    const switchedCwd = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-switched-worktree-"),
+    );
+    tempDirs.push(switchedCwd);
+    const harness = await createHarness({
+      seedFilesystemCheckpoints: false,
+      providerSessionCwd: switchedCwd,
+      threadBranch: "main",
+      localStatusRefName: "claude-worktree-feature",
+    });
+
+    harness.provider.emit({
+      type: "session.configured",
+      eventId: EventId.make("evt-session-configured-enter-worktree"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: ThreadId.make("thread-1"),
+      payload: { config: { cwd: switchedCwd } },
+    });
+
+    await harness.drain();
+
+    const snapshot = await harness.readModel();
+    const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.worktreePath).toBe(switchedCwd);
+    expect(thread?.branch).toBe("claude-worktree-feature");
+  });
+
+  it("follows a provider session back to the project checkout", async () => {
+    const originalWorktree = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-checkpoint-original-worktree-"),
+    );
+    tempDirs.push(originalWorktree);
+    const harness = await createHarness({
+      seedFilesystemCheckpoints: false,
+      threadWorktreePath: originalWorktree,
+      threadBranch: "claude-worktree-feature",
+      localStatusRefName: "main",
+    });
+
+    harness.provider.emit({
+      type: "session.configured",
+      eventId: EventId.make("evt-session-configured-exit-worktree"),
+      provider: ProviderDriverKind.make("claudeAgent"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+      threadId: ThreadId.make("thread-1"),
+      payload: { config: { cwd: harness.cwd } },
+    });
+
+    await harness.drain();
+
+    const snapshot = await harness.readModel();
+    const thread = snapshot.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.worktreePath).toBeNull();
+    expect(thread?.branch).toBe("main");
+  });
+
   it("ignores auxiliary thread turn completion while primary turn is active", async () => {
     const harness = await createHarness({ seedFilesystemCheckpoints: false });
     const createdAt = "2026-01-01T00:00:00.000Z";
