@@ -4,6 +4,7 @@ import {
   type ProviderOptionSelection,
   type RuntimeMode,
   type ScopedThreadRef,
+  type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import {
@@ -70,6 +71,16 @@ export function resolveComposerRuntimeMode(
     : (supportedRuntimeModes[0] ?? "approval-required");
 }
 
+export function resolveAvailableRuntimeModes(
+  providerStatus: ServerProvider["status"] | null | undefined,
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
+  fallbackRuntimeModes: ReadonlyArray<RuntimeMode>,
+): ReadonlyArray<RuntimeMode> {
+  return providerStatus === "ready"
+    ? (supportedRuntimeModes ?? fallbackRuntimeModes)
+    : SAFE_RUNTIME_MODES;
+}
+
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
   const {
     provider,
@@ -90,14 +101,12 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
   const ultrathinkActive =
     (primarySelectDescriptor?.promptInjectedValues?.length ?? 0) > 0 &&
     promptInjectionState === "ultrathink";
-  const supportedRuntimeModes =
-    caps.supportedRuntimeModes ?? (models.length === 0 ? SAFE_RUNTIME_MODES : undefined);
 
   return {
     provider,
     promptEffort,
     modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
-    ...(supportedRuntimeModes ? { supportedRuntimeModes } : {}),
+    ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

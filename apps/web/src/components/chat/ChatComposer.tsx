@@ -84,6 +84,7 @@ import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
+  resolveAvailableRuntimeModes,
   resolveComposerRuntimeMode,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
@@ -865,7 +866,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const selectedPromptEffort = composerProviderState.promptEffort;
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
-  const availableRuntimeModes = composerProviderState.supportedRuntimeModes ?? runtimeModeOptions;
+  const availableRuntimeModes = resolveAvailableRuntimeModes(
+    selectedProviderStatus?.status,
+    composerProviderState.supportedRuntimeModes,
+    runtimeModeOptions,
+  );
   const effectiveRuntimeMode = resolveComposerRuntimeMode(runtimeMode, availableRuntimeModes);
   // Plan mode is a legacy feature behind Settings → Beta. With the flag off,
   // ChatView forces the effective mode to "default", so hiding the toggle

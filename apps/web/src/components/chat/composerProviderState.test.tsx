@@ -10,6 +10,7 @@ import {
   getComposerProviderState,
   renderProviderTraitsMenuContent,
   renderProviderTraitsPicker,
+  resolveAvailableRuntimeModes,
   resolveComposerRuntimeMode,
 } from "./composerProviderState";
 
@@ -120,16 +121,22 @@ describe("getComposerProviderState", () => {
     expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
   });
 
-  it("fails closed to safe runtime modes when capability discovery returns no models", () => {
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models: [],
-      modelOptions: undefined,
-      planModeEnabled: true,
-    });
-
-    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
+  it("fails closed when a warning provider retains cached model capabilities", () => {
+    expect(
+      resolveAvailableRuntimeModes(
+        "warning",
+        ["approval-required", "auto-accept-edits", "auto", "full-access"],
+        ["approval-required", "auto-accept-edits", "auto", "full-access"],
+      ),
+    ).toEqual(["approval-required", "auto-accept-edits"]);
+    expect(
+      resolveAvailableRuntimeModes("ready", undefined, [
+        "approval-required",
+        "auto-accept-edits",
+        "auto",
+        "full-access",
+      ]),
+    ).toEqual(["approval-required", "auto-accept-edits", "auto", "full-access"]);
   });
 
   it("lets selections override defaults and propagates them through dispatch", () => {
