@@ -12,7 +12,7 @@ import { useCoder } from "../coder/CoderBootstrap";
 import { loadCoderWorkspaceMetrics, type CoderWorkspaceMetrics } from "../coder/api";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
 import { useEnvironments } from "../state/environments";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 
 const RESOURCE_REFRESH_MS = 10_000;
 
@@ -147,8 +147,11 @@ export function CoderWorkspaceLatency({
       ? "border-destructive/25 bg-destructive/10 text-destructive"
       : "border-emerald-500/25 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
   return (
-    <Tooltip onOpenChange={setCardOpen}>
-      <TooltipTrigger
+    <Popover onOpenChange={setCardOpen}>
+      <PopoverTrigger
+        closeDelay={100}
+        delay={0}
+        openOnHover
         render={
           <button
             aria-label={`Coder workspace health and resource usage. Latest latency: ${latencyLabel}`}
@@ -160,12 +163,12 @@ export function CoderWorkspaceLatency({
           </button>
         }
       />
-      <TooltipPopup
+      <PopoverPopup
         align="end"
         className="w-72 text-left text-xs"
         side="bottom"
         sideOffset={6}
-        variant="glass"
+        tooltipStyle
       >
         <div className="px-1.5 pb-2 pt-1.5">
           <div className="flex items-start justify-between gap-4">
@@ -203,7 +206,7 @@ export function CoderWorkspaceLatency({
           <span aria-hidden className="size-1 rounded-full bg-current" />
           {resourceError && resourceUsage !== null ? "Could not refresh usage" : "Updated just now"}
         </div>
-      </TooltipPopup>
-    </Tooltip>
+      </PopoverPopup>
+    </Popover>
   );
 }
