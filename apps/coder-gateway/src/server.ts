@@ -2,10 +2,12 @@
 import * as NodeHttp from "node:http";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
-import * as NodeTimers from "node:timers";
-import { spawn } from "node:child_process";
 import type { Duplex } from "node:stream";
 
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as FiberSet from "effect/FiberSet";
+import * as Scope from "effect/Scope";
 import { WebSocket, WebSocketServer } from "ws";
 
 import {
@@ -26,12 +28,15 @@ import {
   type CoderInvocation,
 } from "@t3tools/coder-cli/command";
 import {
+  CoderHelperConnectionError,
   connectCoderHelper,
   type CoderHelperConnection,
+  type CoderHelperExit,
 } from "@t3tools/coder-cli/helperConnection";
 import {
   connectCoderPortForward,
   type CoderPortForwardConnection,
+  type CoderPortForwardExit,
 } from "@t3tools/coder-cli/portForward";
 import {
   installCoderHelperWithScp,
@@ -43,6 +48,7 @@ import {
   validateClipboardImage,
   withStagedClipboardImage,
 } from "./clipboardImage.ts";
+import { GatewayProcessError, runGatewayProcess } from "./process.ts";
 
 export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
@@ -54,6 +60,7 @@ const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
 const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
+const PROMISE_ADAPTER_CLOSE_TIMEOUT_MS = 5_000;
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -186,67 +193,69 @@ function rejectWebSocketUpgrade(socket: Duplex, statusCode: number, statusText: 
   );
 }
 
-function runCoderLogin(executable: string, args: readonly string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
-      shell: false,
-      stdio: "inherit",
-      windowsHide: false,
-    });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`Coder login exited with code ${String(code)} (${String(signal)}).`));
-    });
-  });
+function isServerNotRunningError(cause: unknown): boolean {
+  return (
+    typeof cause === "object" &&
+    cause !== null &&
+    "code" in cause &&
+    cause.code === "ERR_SERVER_NOT_RUNNING"
+  );
 }
 
+const runCoderLogin = Effect.fn("coderGateway.runCoderLogin")(function* (
+  executable: string,
+  args: readonly string[],
+) {
+  const result = yield* runGatewayProcess(
+    { executable, args },
+    {
+      label: "Coder login",
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+      windowsHide: false,
+    },
+  );
+  if (result.code !== 0) {
+    return yield* Effect.fail(
+      new GatewayProcessError(
+        `Coder login exited with code ${String(result.code)} (${String(result.signal)}).`,
+      ),
+    );
+  }
+});
+
 export type CoderAuthenticationStatus = "authenticated" | "unauthenticated" | "unavailable";
+
+function checkCoderAuthStatus(
+  invocation: CoderInvocation,
+  timeoutMs = DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS,
+  terminationGraceMs = DEFAULT_PROCESS_TERMINATION_GRACE_MS,
+): Effect.Effect<CoderAuthenticationStatus> {
+  return runGatewayProcess(invocation, {
+    label: "Coder authentication check",
+    timeoutMs,
+    terminationGraceMs,
+    stdout: "ignore",
+    stderrMode: "tail",
+    maxStderrBytes: MAX_CODER_AUTH_STATUS_BYTES,
+  }).pipe(
+    Effect.map((result): CoderAuthenticationStatus => {
+      if (result.code === 0) return "authenticated";
+      return /\bStatus code 401\b/.test(result.stderr.toString("utf8"))
+        ? "unauthenticated"
+        : "unavailable";
+    }),
+    Effect.catch(() => Effect.succeed("unavailable" as const)),
+  );
+}
 
 export function runCoderAuthStatus(
   invocation: CoderInvocation,
   timeoutMs = DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS,
   terminationGraceMs = DEFAULT_PROCESS_TERMINATION_GRACE_MS,
 ): Promise<CoderAuthenticationStatus> {
-  return new Promise((resolve) => {
-    let settled = false;
-    let sawUnauthorizedStatus = false;
-    let stderr = "";
-    let timeout: NodeJS.Timeout | undefined;
-    let forceKillTimeout: NodeJS.Timeout | undefined;
-    const child = spawn(invocation.executable, invocation.args, {
-      shell: false,
-      stdio: ["ignore", "ignore", "pipe"],
-      windowsHide: true,
-    });
-    const finish = (status: CoderAuthenticationStatus): void => {
-      if (settled) return;
-      settled = true;
-      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
-      if (forceKillTimeout !== undefined) NodeTimers.clearTimeout(forceKillTimeout);
-      resolve(status);
-    };
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr = `${stderr}${chunk.toString("utf8")}`.slice(-MAX_CODER_AUTH_STATUS_BYTES);
-      if (/\bStatus code 401\b/.test(stderr)) sawUnauthorizedStatus = true;
-    });
-    child.once("error", () => finish("unavailable"));
-    child.once("exit", (code) => {
-      if (code === 0) {
-        finish("authenticated");
-        return;
-      }
-      finish(sawUnauthorizedStatus ? "unauthenticated" : "unavailable");
-    });
-    timeout = NodeTimers.setTimeout(() => {
-      child.kill("SIGTERM");
-      forceKillTimeout = NodeTimers.setTimeout(() => {
-        if (!settled && child.exitCode === null && child.signalCode === null) {
-          child.kill("SIGKILL");
-        }
-      }, terminationGraceMs);
-    }, timeoutMs);
-  });
+  return Effect.runPromise(checkCoderAuthStatus(invocation, timeoutMs, terminationGraceMs));
 }
 
 export interface DiscoveredCoderWorkspace {
@@ -310,131 +319,988 @@ function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
 
 function runCoderWorkspaceList(
   invocation: CoderInvocation,
-): Promise<readonly DiscoveredCoderWorkspace[]> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(invocation.executable, invocation.args, {
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const stdout: Buffer[] = [];
-    const stderr: Buffer[] = [];
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdoutBytes += chunk.byteLength;
-      if (stdoutBytes > MAX_CODER_LIST_BYTES) {
-        child.kill();
-        reject(new Error("Coder workspace list is too large."));
-        return;
-      }
-      stdout.push(chunk);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderrBytes += chunk.byteLength;
-      if (stderrBytes <= MAX_CODER_LIST_BYTES) stderr.push(chunk);
-    });
-    child.once("error", reject);
-    child.once("exit", (code, signal) => {
-      if (code !== 0) {
-        const detail = Buffer.concat(stderr).toString("utf8").trim();
-        reject(
-          new Error(
-            `Coder workspace discovery exited with code ${String(code)} (${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
+): Effect.Effect<readonly DiscoveredCoderWorkspace[], GatewayProcessError, never> {
+  return runGatewayProcess(invocation, {
+    label: "Coder workspace discovery",
+    maxStdoutBytes: MAX_CODER_LIST_BYTES,
+    maxStderrBytes: MAX_CODER_LIST_BYTES,
+    stdoutMode: "error",
+  }).pipe(
+    Effect.flatMap((result) => {
+      if (result.code !== 0) {
+        const detail = result.stderr.toString("utf8").trim();
+        return Effect.fail(
+          new GatewayProcessError(
+            `Coder workspace discovery exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
           ),
         );
-        return;
       }
-      try {
-        const parsed = JSON.parse(Buffer.concat(stdout).toString("utf8")) as unknown;
-        if (!Array.isArray(parsed)) throw new Error("Coder returned a non-array workspace list.");
-        resolve(
-          parsed
+      return Effect.try({
+        try: () => {
+          const parsed = JSON.parse(result.stdout.toString("utf8")) as unknown;
+          if (!Array.isArray(parsed)) throw new Error("Coder returned a non-array workspace list.");
+          return parsed
             .map(discoveredWorkspace)
-            .filter((workspace): workspace is DiscoveredCoderWorkspace => workspace !== null),
-        );
-      } catch (cause) {
-        reject(cause);
-      }
-    });
-  });
+            .filter((workspace): workspace is DiscoveredCoderWorkspace => workspace !== null);
+        },
+        catch: (cause) =>
+          new GatewayProcessError(
+            cause instanceof Error ? cause.message : "Coder returned an invalid workspace list.",
+            { cause },
+          ),
+      });
+    }),
+  );
 }
 
 function runCoderWorkspaceProbe(
   invocation: CoderInvocation,
   timeoutMs = DEFAULT_CODER_PROBE_TIMEOUT_MS,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(invocation.executable, invocation.args, {
-      shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-    let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-    let settled = false;
-    let timeout: NodeJS.Timeout | undefined;
-    const rejectOnce = (cause: Error): void => {
-      if (settled) return;
-      settled = true;
-      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
-      child.kill();
-      reject(cause);
-    };
-    const appendOutput = (
-      current: Buffer<ArrayBufferLike>,
-      chunk: Buffer<ArrayBufferLike>,
-    ): Buffer<ArrayBufferLike> => {
-      if (chunk.byteLength >= MAX_CODER_PROBE_BYTES) {
-        return chunk.subarray(chunk.byteLength - MAX_CODER_PROBE_BYTES);
-      }
-      const overflow = current.byteLength + chunk.byteLength - MAX_CODER_PROBE_BYTES;
-      return Buffer.concat([overflow > 0 ? current.subarray(overflow) : current, chunk]);
-    };
-    child.stdout.on("data", (chunk: Buffer) => {
-      if (!settled) stdout = appendOutput(stdout, chunk);
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      if (!settled) stderr = appendOutput(stderr, chunk);
-    });
-    child.once("error", (cause) => rejectOnce(cause));
-    child.once("exit", (code, signal) => {
-      if (settled) return;
-      settled = true;
-      if (timeout !== undefined) NodeTimers.clearTimeout(timeout);
-      const stdoutDetail = stdout.toString("utf8").trim();
-      const stderrDetail = stderr.toString("utf8").trim();
-      if (code !== 0) {
+): Effect.Effect<void, GatewayProcessError> {
+  return runGatewayProcess(invocation, {
+    label: "Coder workspace preflight",
+    timeoutMs,
+    maxStdoutBytes: MAX_CODER_PROBE_BYTES,
+    maxStderrBytes: MAX_CODER_PROBE_BYTES,
+    stdoutMode: "tail",
+    stderrMode: "tail",
+  }).pipe(
+    Effect.catchTag("GatewayProcessError", (error) =>
+      error.message === "Coder workspace preflight timed out."
+        ? Effect.fail(
+            new GatewayProcessError(
+              "Coder workspace preflight timed out. Check that the workspace is running. On first connection, its configured nixpkgs and Nix substituters must be reachable.",
+              { cause: error },
+            ),
+          )
+        : Effect.fail(error),
+    ),
+    Effect.flatMap((result) => {
+      const stdoutDetail = result.stdout.toString("utf8").trim();
+      const stderrDetail = result.stderr.toString("utf8").trim();
+      if (result.code !== 0) {
         const detail = [stdoutDetail, stderrDetail].filter((value) => value.length > 0).join("\n");
-        reject(
-          new Error(
-            `Coder workspace preflight exited with code ${String(code)} (${String(signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
+        return Effect.fail(
+          new GatewayProcessError(
+            `Coder workspace preflight exited with code ${String(result.code)} (${String(result.signal)}).${detail.length === 0 ? "" : ` ${detail}`}`,
           ),
         );
-        return;
       }
-      const lines = stdout.toString("utf8").split(/\r?\n/u);
-      if (!lines.includes(CODER_PREFLIGHT_SENTINEL)) {
-        reject(new Error("Coder workspace preflight did not complete successfully."));
-        return;
-      }
-      resolve();
+      const lines = result.stdout.toString("utf8").split(/\r?\n/u);
+      return lines.includes(CODER_PREFLIGHT_SENTINEL)
+        ? Effect.void
+        : Effect.fail(
+            new GatewayProcessError("Coder workspace preflight did not complete successfully."),
+          );
+    }),
+  );
+}
+
+export interface LocalCoderGatewayEffectOptions {
+  readonly configPath?: string;
+  readonly connectHelper?: (
+    invocation: CoderInvocation,
+  ) => Effect.Effect<CoderHelperConnection, unknown, Scope.Scope>;
+  readonly helperBundlePath?: string;
+  readonly staticDir?: string;
+  readonly listWorkspaces?: (
+    invocation: CoderInvocation,
+  ) => Effect.Effect<readonly DiscoveredCoderWorkspace[], unknown>;
+  readonly probeWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
+  readonly workspaceProbeTimeoutMs?: number;
+  readonly coderAuthStatusTimeoutMs?: number;
+  readonly checkAuthentication?: (
+    invocation: CoderInvocation,
+  ) => Effect.Effect<CoderAuthenticationStatus, unknown>;
+  readonly installHelper?: (
+    input: Parameters<typeof installCoderHelperWithScp>[0],
+  ) => Effect.Effect<void, unknown>;
+  readonly uploadClipboardImage?: (
+    input: Parameters<typeof uploadCoderClipboardImageWithScp>[0],
+  ) => Effect.Effect<string, unknown>;
+  readonly connectPortForward?: (
+    invocation: CoderInvocation,
+  ) => Effect.Effect<CoderPortForwardConnection, unknown, Scope.Scope>;
+}
+
+export function makeLocalCoderGateway(
+  options?: LocalCoderGatewayEffectOptions,
+): Effect.Effect<{ readonly url: string }, unknown, Scope.Scope> {
+  return Effect.gen(function* () {
+    const gatewayScope = yield* Effect.scope;
+    let profileConfig: CoderProfileConfig = options?.configPath
+      ? yield* Effect.tryPromise({
+          try: () => loadCoderProfileConfig(options.configPath!),
+          catch: (cause) => cause,
+        })
+      : emptyCoderProfileConfig();
+    const fibers = yield* FiberSet.make();
+    const runPromise = yield* FiberSet.runtimePromise(fibers)();
+    const runFork = yield* FiberSet.runtime(fibers)();
+    const workspaceConnections = new Map<string, CoderHelperConnection>();
+    const workspaceConnectionScopes = new Map<string, Scope.Closeable>();
+    const workspaceConnectionStarts = new Map<string, Promise<CoderHelperConnection>>();
+    const workspaceConnectionGenerations = new Map<string, number>();
+    const workspaceSockets = new Map<string, WebSocket>();
+    const pendingWorkspaceUpgrades = new Set<string>();
+    const portForwardConnections = new Map<string, CoderPortForwardConnection>();
+    const portForwardConnectionScopes = new Map<string, Scope.Closeable>();
+    const portForwardStarts = new Map<string, Promise<CoderPortForwardConnection>>();
+    const portForwardGenerations = new Map<string, number>();
+    const portForwardErrors = new Map<string, string>();
+    let gatewayClosed = false;
+    const deploymentLoginStarts = new Map<string, Promise<void>>();
+    let configMutationQueue = Promise.resolve();
+    const serializeConfigMutation = <T>(mutation: () => Promise<T>): Promise<T> => {
+      const result = configMutationQueue.then(mutation);
+      configMutationQueue = result.then(
+        () => undefined,
+        () => undefined,
+      );
+      return result;
+    };
+    const loginToDeployment = (
+      deploymentId: string,
+      executable: string,
+      args: readonly string[],
+    ): Promise<void> => {
+      const existing = deploymentLoginStarts.get(deploymentId);
+      if (existing !== undefined) return existing;
+      const start = runPromise(runCoderLogin(executable, args));
+      deploymentLoginStarts.set(deploymentId, start);
+      const cleanup = () => {
+        if (deploymentLoginStarts.get(deploymentId) === start) {
+          deploymentLoginStarts.delete(deploymentId);
+        }
+      };
+      void start.then(cleanup, cleanup);
+      return start;
+    };
+    const openHelper =
+      options?.connectHelper ??
+      ((invocation: CoderInvocation) =>
+        connectCoderHelper(invocation, { readySentinel: REMOTE_HELPER_READY_SENTINEL }));
+    const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
+    const probeWorkspace =
+      options?.probeWorkspace ??
+      ((invocation: CoderInvocation) =>
+        runCoderWorkspaceProbe(invocation, options?.workspaceProbeTimeoutMs));
+    const checkAuthentication =
+      options?.checkAuthentication ??
+      ((invocation: CoderInvocation) =>
+        checkCoderAuthStatus(invocation, options?.coderAuthStatusTimeoutMs));
+    const installHelper = options?.installHelper ?? installCoderHelperWithScp;
+    const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
+    const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
+    const coderInvocationOptions = (deploymentId: string) => ({
+      globalConfig: NodePath.join(
+        NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
+        "coder-profiles",
+        deploymentId,
+      ),
     });
-    timeout = NodeTimers.setTimeout(
-      () =>
-        rejectOnce(
-          new Error(
-            "Coder workspace preflight timed out. Check that the workspace is running. On first connection, its configured nixpkgs and Nix substituters must be reachable.",
-          ),
-        ),
-      timeoutMs,
+    const closeWorkspaceConnection = (workspaceId: string): Promise<void> => {
+      workspaceConnections.delete(workspaceId);
+      const scope = workspaceConnectionScopes.get(workspaceId);
+      workspaceConnectionScopes.delete(workspaceId);
+      return scope === undefined
+        ? Promise.resolve()
+        : runPromise(Effect.uninterruptible(Scope.close(scope, Exit.void)));
+    };
+    const closePortForwardConnection = (portForwardId: string): Promise<void> => {
+      portForwardConnections.delete(portForwardId);
+      const scope = portForwardConnectionScopes.get(portForwardId);
+      portForwardConnectionScopes.delete(portForwardId);
+      return scope === undefined
+        ? Promise.resolve()
+        : runPromise(Effect.uninterruptible(Scope.close(scope, Exit.void)));
+    };
+    const webSocketServer = new WebSocketServer({
+      noServer: true,
+      maxPayload: MAX_RPC_MESSAGE_BYTES,
+      perMessageDeflate: false,
+    });
+
+    const ensureWorkspaceConnection = async (
+      workspaceId: string,
+    ): Promise<CoderHelperConnection> => {
+      if (gatewayClosed) throw new Error("Coder gateway is closed.");
+      const existing = workspaceConnections.get(workspaceId);
+      if (existing !== undefined) return existing;
+      const pending = workspaceConnectionStarts.get(workspaceId);
+      if (pending !== undefined) return pending;
+
+      const generation = workspaceConnectionGenerations.get(workspaceId) ?? 0;
+      const startIsCurrent = () =>
+        !gatewayClosed && (workspaceConnectionGenerations.get(workspaceId) ?? 0) === generation;
+      const assertStartIsCurrent = () => {
+        if (!startIsCurrent()) throw new Error("Coder workspace connection was cancelled.");
+      };
+      const start = runPromise(
+        Effect.gen(function* () {
+          const connectionConfig = profileConfig;
+          const workspace = connectionConfig.workspaces.find((entry) => entry.id === workspaceId);
+          const deployment =
+            workspace === undefined
+              ? undefined
+              : connectionConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+          if (workspace === undefined || deployment === undefined) {
+            return yield* Effect.fail(new Error("Unknown Coder workspace."));
+          }
+          const invocationOptions = coderInvocationOptions(deployment.id);
+          yield* probeWorkspace(
+            buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
+          );
+          yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
+          if (options?.helperBundlePath !== undefined) {
+            yield* installHelper({
+              deployment,
+              workspace,
+              helperBundlePath: options.helperBundlePath,
+              invocationOptions,
+            });
+            yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
+          }
+          const connectionScope = yield* Scope.fork(gatewayScope, "sequential");
+          return yield* Effect.gen(function* () {
+            const connection = yield* openHelper(
+              buildCoderHelperInvocation(deployment, workspace, invocationOptions),
+            ).pipe(Scope.provide(connectionScope));
+            if (!startIsCurrent()) {
+              return yield* Effect.fail(new Error("Coder workspace connection was cancelled."));
+            }
+            if (!workspaceConnectionIsCurrent(connectionConfig, profileConfig, workspaceId)) {
+              return yield* Effect.fail(
+                new Error("Coder workspace configuration changed while connecting."),
+              );
+            }
+            workspaceConnections.set(workspaceId, connection);
+            workspaceConnectionScopes.set(workspaceId, connectionScope);
+            runFork(
+              connection.closed.pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    if (workspaceConnections.get(workspaceId) === connection) {
+                      workspaceConnections.delete(workspaceId);
+                      workspaceConnectionScopes.delete(workspaceId);
+                    }
+                  }),
+                ),
+                Effect.ensuring(Scope.close(connectionScope, Exit.void)),
+              ),
+            );
+            return connection;
+          }).pipe(Effect.onError(() => Scope.close(connectionScope, Exit.void)));
+        }),
+      );
+      workspaceConnectionStarts.set(workspaceId, start);
+      try {
+        return await start;
+      } finally {
+        if (workspaceConnectionStarts.get(workspaceId) === start) {
+          workspaceConnectionStarts.delete(workspaceId);
+        }
+      }
+    };
+
+    const ensurePortForward = async (
+      portForwardId: string,
+    ): Promise<CoderPortForwardConnection> => {
+      if (gatewayClosed) throw new Error("Coder gateway is closed.");
+      const existing = portForwardConnections.get(portForwardId);
+      if (existing !== undefined) return existing;
+      const pending = portForwardStarts.get(portForwardId);
+      if (pending !== undefined) return pending;
+
+      const generation = portForwardGenerations.get(portForwardId) ?? 0;
+      const startIsCurrent = () =>
+        !gatewayClosed && (portForwardGenerations.get(portForwardId) ?? 0) === generation;
+      const start = runPromise(
+        Effect.gen(function* () {
+          const connectionConfig = profileConfig;
+          const portForward = connectionConfig.portForwards?.find(
+            (entry) => entry.id === portForwardId,
+          );
+          const workspace = connectionConfig.workspaces.find(
+            (entry) => entry.id === portForward?.workspaceId,
+          );
+          const deployment = connectionConfig.deployments.find(
+            (entry) => entry.id === workspace?.deploymentId,
+          );
+          if (portForward === undefined || workspace === undefined || deployment === undefined) {
+            return yield* Effect.fail(new Error("Unknown Coder port forward."));
+          }
+
+          const connectionScope = yield* Scope.fork(gatewayScope, "sequential");
+          portForwardConnectionScopes.set(portForwardId, connectionScope);
+          return yield* Effect.gen(function* () {
+            const connection = yield* openPortForward(
+              buildCoderPortForwardInvocation(
+                deployment,
+                workspace,
+                portForward,
+                coderInvocationOptions(deployment.id),
+              ),
+            ).pipe(Scope.provide(connectionScope));
+            if (
+              !startIsCurrent() ||
+              !portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
+            ) {
+              return yield* Effect.fail(new Error("Coder port forward was cancelled."));
+            }
+
+            portForwardConnections.set(portForwardId, connection);
+            portForwardErrors.delete(portForwardId);
+            runFork(
+              connection.closed.pipe(
+                Effect.tap((exit) =>
+                  Effect.sync(() => {
+                    if (portForwardConnections.get(portForwardId) === connection) {
+                      portForwardConnections.delete(portForwardId);
+                      portForwardConnectionScopes.delete(portForwardId);
+                    }
+                    if (
+                      !exit.expected &&
+                      !gatewayClosed &&
+                      portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
+                    ) {
+                      portForwardErrors.set(
+                        portForwardId,
+                        exit.reason ?? "Coder port forward stopped unexpectedly.",
+                      );
+                    }
+                  }),
+                ),
+                Effect.ensuring(Scope.close(connectionScope, Exit.void)),
+              ),
+            );
+            return connection;
+          }).pipe(
+            Effect.onError(() =>
+              Effect.gen(function* () {
+                if (portForwardConnectionScopes.get(portForwardId) === connectionScope) {
+                  portForwardConnectionScopes.delete(portForwardId);
+                }
+                yield* Scope.close(connectionScope, Exit.void);
+              }),
+            ),
+          );
+        }),
+      );
+      portForwardStarts.set(portForwardId, start);
+      try {
+        return await start;
+      } catch (cause) {
+        if (
+          startIsCurrent() &&
+          profileConfig.portForwards?.some((entry) => entry.id === portForwardId)
+        ) {
+          portForwardErrors.set(
+            portForwardId,
+            cause instanceof Error ? cause.message : "Coder port forward failed to start.",
+          );
+        }
+        throw cause;
+      } finally {
+        if (portForwardStarts.get(portForwardId) === start) {
+          portForwardStarts.delete(portForwardId);
+        }
+      }
+    };
+
+    const stopPortForward = async (portForwardId: string): Promise<void> => {
+      portForwardGenerations.set(
+        portForwardId,
+        (portForwardGenerations.get(portForwardId) ?? 0) + 1,
+      );
+      const pending = portForwardStarts.get(portForwardId);
+      await closePortForwardConnection(portForwardId);
+      if (pending !== undefined) await pending.catch(() => undefined);
+    };
+
+    const startConfiguredPortForwards = async (): Promise<void> => {
+      await Promise.allSettled(
+        (profileConfig.portForwards ?? []).map((portForward) => ensurePortForward(portForward.id)),
+      );
+    };
+
+    const server = NodeHttp.createServer((request, response) => {
+      void (async () => {
+        const address = server.address();
+        if (address === null || typeof address === "string") {
+          sendText(response, 503, "text/plain; charset=utf-8", "Gateway unavailable.");
+          return;
+        }
+        const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
+        const expectedOrigin = `http://${expectedHost}`;
+        if (request.headers.host !== expectedHost) {
+          sendText(response, 421, "text/plain; charset=utf-8", "Misdirected request.");
+          return;
+        }
+
+        const requestUrl = new URL(request.url ?? "/", expectedOrigin);
+        if (request.method === "GET" && request.url === "/healthz") {
+          sendText(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
+          return;
+        }
+        if (request.method === "GET" && request.url === "/api/config") {
+          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(profileConfig));
+          return;
+        }
+        if (request.method === "GET" && request.url === "/api/connections") {
+          sendText(
+            response,
+            200,
+            "application/json; charset=utf-8",
+            JSON.stringify(
+              [...workspaceConnections].map(([workspaceId, connection]) => ({
+                workspaceId,
+                info: connection.info,
+              })),
+            ),
+          );
+          return;
+        }
+        if (request.method === "GET" && request.url === "/api/port-forwards") {
+          sendText(
+            response,
+            200,
+            "application/json; charset=utf-8",
+            JSON.stringify({
+              portForwards: (profileConfig.portForwards ?? []).map((portForward) => {
+                const error = portForwardErrors.get(portForward.id);
+                return {
+                  id: portForward.id,
+                  status: portForwardStarts.has(portForward.id)
+                    ? "starting"
+                    : portForwardConnections.has(portForward.id)
+                      ? "running"
+                      : error === undefined
+                        ? "starting"
+                        : "error",
+                  ...(error === undefined ? {} : { error }),
+                };
+              }),
+            }),
+          );
+          return;
+        }
+        if (request.method === "POST" && request.url === "/api/config") {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          if (!request.headers["content-type"]?.startsWith("application/json")) {
+            sendText(response, 415, "text/plain; charset=utf-8", "JSON content required.");
+            return;
+          }
+          try {
+            const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
+            const savedConfig = await serializeConfigMutation(async () => {
+              if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
+              const previousConfig = profileConfig;
+              const stalePortForwardIds = new Set(
+                (previousConfig.portForwards ?? [])
+                  .filter(
+                    (portForward) =>
+                      !portForwardIsCurrent(previousConfig, nextConfig, portForward.id),
+                  )
+                  .map((portForward) => portForward.id),
+              );
+              for (const workspaceId of workspaceConnections.keys()) {
+                if (workspaceConnectionIsCurrent(previousConfig, nextConfig, workspaceId)) continue;
+                await closeWorkspaceConnection(workspaceId);
+                workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
+              }
+              profileConfig = nextConfig;
+              await Promise.allSettled(
+                [...stalePortForwardIds].map((portForwardId) => stopPortForward(portForwardId)),
+              );
+              for (const portForwardId of stalePortForwardIds) {
+                portForwardErrors.delete(portForwardId);
+              }
+              await startConfiguredPortForwards();
+              return profileConfig;
+            });
+            sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "Invalid configuration.";
+            sendText(response, 400, "text/plain; charset=utf-8", message);
+          }
+          return;
+        }
+        const portForwardRestartRoute = request.url?.match(
+          /^\/api\/port-forwards\/([^/]+)\/restart$/,
+        );
+        if (
+          request.method === "POST" &&
+          portForwardRestartRoute !== null &&
+          portForwardRestartRoute !== undefined
+        ) {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          let portForwardId: string;
+          try {
+            portForwardId = decodeURIComponent(portForwardRestartRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid port forward id.");
+            return;
+          }
+          if (!profileConfig.portForwards?.some((entry) => entry.id === portForwardId)) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder port forward.");
+            return;
+          }
+          try {
+            await stopPortForward(portForwardId);
+            portForwardErrors.delete(portForwardId);
+            await ensurePortForward(portForwardId);
+            sendText(response, 200, "application/json; charset=utf-8", '{"status":"running"}');
+          } catch (cause) {
+            sendText(
+              response,
+              502,
+              "text/plain; charset=utf-8",
+              cause instanceof Error ? cause.message : "Coder port forward failed to restart.",
+            );
+          }
+          return;
+        }
+        const loginRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/login$/);
+        if (request.method === "POST" && loginRoute !== null && loginRoute !== undefined) {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          let deploymentId: string;
+          try {
+            deploymentId = decodeURIComponent(loginRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
+            return;
+          }
+          const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
+          if (deployment === undefined) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
+            return;
+          }
+          try {
+            const login = buildCoderLoginInvocation(
+              deployment,
+              coderInvocationOptions(deployment.id),
+            );
+            await loginToDeployment(deploymentId, login.executable, login.args);
+            sendText(
+              response,
+              200,
+              "application/json; charset=utf-8",
+              '{"status":"authenticated"}',
+            );
+          } catch (cause) {
+            sendText(
+              response,
+              502,
+              "text/plain; charset=utf-8",
+              cause instanceof Error ? cause.message : "Coder login failed.",
+            );
+          }
+          return;
+        }
+
+        const authRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/auth-status$/);
+        if (request.method === "POST" && authRoute !== null && authRoute !== undefined) {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          let deploymentId: string;
+          try {
+            deploymentId = decodeURIComponent(authRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
+            return;
+          }
+          const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
+          if (deployment === undefined) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
+            return;
+          }
+          const status = await runPromise(
+            checkAuthentication(
+              buildCoderAuthStatusInvocation(deployment, coderInvocationOptions(deployment.id)),
+            ),
+          );
+          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ status }));
+          return;
+        }
+        const workspaceListRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/workspaces$/);
+        if (
+          request.method === "POST" &&
+          workspaceListRoute !== null &&
+          workspaceListRoute !== undefined
+        ) {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          let deploymentId: string;
+          try {
+            deploymentId = decodeURIComponent(workspaceListRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
+            return;
+          }
+          const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
+          if (deployment === undefined) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
+            return;
+          }
+          try {
+            const workspaces = await runPromise(
+              listWorkspaces(
+                buildCoderListWorkspacesInvocation(
+                  deployment,
+                  coderInvocationOptions(deployment.id),
+                ),
+              ),
+            );
+            sendText(
+              response,
+              200,
+              "application/json; charset=utf-8",
+              JSON.stringify({ workspaces }),
+            );
+          } catch (cause) {
+            sendText(
+              response,
+              502,
+              "text/plain; charset=utf-8",
+              cause instanceof Error ? cause.message : "Coder workspace discovery failed.",
+            );
+          }
+          return;
+        }
+        const connectionRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/connection$/);
+        if (connectionRoute !== null && connectionRoute !== undefined) {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          let workspaceId: string;
+          try {
+            workspaceId = decodeURIComponent(connectionRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+          const deployment =
+            workspace === undefined
+              ? undefined
+              : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+          if (workspace === undefined || deployment === undefined) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+            return;
+          }
+
+          if (request.method === "POST") {
+            try {
+              const connection = await ensureWorkspaceConnection(workspaceId);
+              sendText(
+                response,
+                200,
+                "application/json; charset=utf-8",
+                JSON.stringify({ workspaceId, info: connection.info }),
+              );
+            } catch (cause) {
+              const message = cause instanceof Error ? cause.message : "Coder connection failed.";
+              sendText(response, 502, "text/plain; charset=utf-8", message);
+            }
+            return;
+          }
+          if (request.method === "DELETE") {
+            workspaceConnectionGenerations.set(
+              workspaceId,
+              (workspaceConnectionGenerations.get(workspaceId) ?? 0) + 1,
+            );
+            const pendingStart = workspaceConnectionStarts.get(workspaceId);
+            await closeWorkspaceConnection(workspaceId);
+            if (pendingStart !== undefined) await pendingStart.catch(() => undefined);
+            sendText(response, 200, "application/json; charset=utf-8", '{"status":"closed"}');
+            return;
+          }
+        }
+        const imageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/clipboard-image$/);
+        if (request.method === "POST" && imageRoute !== null && imageRoute !== undefined) {
+          if (request.headers.origin !== expectedOrigin) {
+            sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
+            return;
+          }
+          let workspaceId: string;
+          try {
+            workspaceId = decodeURIComponent(imageRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
+          const deployment =
+            workspace === undefined
+              ? undefined
+              : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
+          if (workspace === undefined || deployment === undefined) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+            return;
+          }
+          if (!workspaceConnections.has(workspaceId)) {
+            sendText(
+              response,
+              409,
+              "text/plain; charset=utf-8",
+              "Coder workspace is not connected.",
+            );
+            return;
+          }
+          const contentType = request.headers["content-type"] ?? "";
+          try {
+            const bytes = await readBody(request, MAX_CLIPBOARD_IMAGE_BYTES);
+            const extension = validateClipboardImage(contentType, bytes);
+            const path = await withStagedClipboardImage(bytes, extension, (localPath) =>
+              runPromise(
+                uploadClipboardImage({
+                  deployment,
+                  workspace,
+                  localPath,
+                  extension,
+                  invocationOptions: coderInvocationOptions(deployment.id),
+                }),
+              ),
+            );
+            sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ path }));
+          } catch (cause) {
+            if (cause instanceof RequestBodyTooLargeError) {
+              sendText(
+                response,
+                413,
+                "text/plain; charset=utf-8",
+                "Clipboard image exceeds 20 MiB.",
+              );
+              return;
+            }
+            if (cause instanceof ClipboardImageValidationError) {
+              sendText(response, 415, "text/plain; charset=utf-8", cause.message);
+              return;
+            }
+            sendText(
+              response,
+              502,
+              "text/plain; charset=utf-8",
+              cause instanceof Error ? cause.message : "Clipboard image upload failed.",
+            );
+          }
+          return;
+        }
+        if (request.method === "GET" && options?.staticDir) {
+          if (await serveStaticFile(response, options.staticDir, requestUrl.pathname)) return;
+          if (await serveStaticFile(response, options.staticDir, "/")) return;
+        }
+        if (request.method === "GET" && requestUrl.pathname === "/") {
+          sendText(response, 200, "text/html; charset=utf-8", indexHtml);
+          return;
+        }
+        sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
+      })().catch(() => {
+        if (response.headersSent) {
+          response.destroy();
+        } else {
+          sendText(response, 500, "text/plain; charset=utf-8", "Internal server error.");
+        }
+      });
+    });
+
+    server.on("upgrade", (request, socket, head) => {
+      void (async () => {
+        const address = server.address();
+        if (address === null || typeof address === "string") {
+          rejectWebSocketUpgrade(socket, 503, "Service Unavailable");
+          return;
+        }
+        const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
+        const expectedOrigin = `http://${expectedHost}`;
+        if (request.headers.host !== expectedHost || request.headers.origin !== expectedOrigin) {
+          rejectWebSocketUpgrade(socket, 403, "Forbidden");
+          return;
+        }
+        const route = request.url?.match(/^\/api\/workspaces\/([^/]+)\/rpc$/);
+        if (route === null || route === undefined) {
+          rejectWebSocketUpgrade(socket, 404, "Not Found");
+          return;
+        }
+        let workspaceId: string;
+        try {
+          workspaceId = decodeURIComponent(route[1] ?? "");
+        } catch {
+          rejectWebSocketUpgrade(socket, 400, "Bad Request");
+          return;
+        }
+        if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
+          rejectWebSocketUpgrade(socket, 404, "Not Found");
+          return;
+        }
+        if (workspaceSockets.has(workspaceId) || pendingWorkspaceUpgrades.has(workspaceId)) {
+          rejectWebSocketUpgrade(socket, 409, "Conflict");
+          return;
+        }
+        pendingWorkspaceUpgrades.add(workspaceId);
+        let upgradePending = true;
+        const cleanupPendingUpgrade = () => {
+          if (!upgradePending) return;
+          upgradePending = false;
+          pendingWorkspaceUpgrades.delete(workspaceId);
+          socket.off("close", cleanupPendingUpgrade);
+          socket.off("error", cleanupPendingUpgrade);
+        };
+        socket.once("close", cleanupPendingUpgrade);
+        socket.once("error", cleanupPendingUpgrade);
+
+        let helper: CoderHelperConnection;
+        try {
+          helper = await ensureWorkspaceConnection(workspaceId);
+        } catch {
+          cleanupPendingUpgrade();
+          rejectWebSocketUpgrade(socket, 502, "Bad Gateway");
+          return;
+        }
+        if (socket.destroyed) {
+          cleanupPendingUpgrade();
+          return;
+        }
+
+        try {
+          webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
+            cleanupPendingUpgrade();
+            workspaceSockets.set(workspaceId, webSocket);
+            const unsubscribe = helper.onRpcMessage((message) => {
+              if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
+            });
+            webSocket.on("message", (data, isBinary) => {
+              if (isBinary) {
+                webSocket.close(1003, "Text RPC messages required.");
+                return;
+              }
+              let message: unknown;
+              try {
+                message = JSON.parse(data.toString("utf8")) as unknown;
+              } catch {
+                webSocket.close(1007, "Invalid RPC message.");
+                return;
+              }
+              void runPromise(helper.sendRpc(message)).catch(() => {
+                webSocket.close(1011, "Coder workspace disconnected.");
+              });
+            });
+            webSocket.once("close", () => {
+              unsubscribe();
+              if (workspaceSockets.get(workspaceId) === webSocket) {
+                workspaceSockets.delete(workspaceId);
+              }
+            });
+            void runPromise(helper.closed)
+              .then((exit) => {
+                if (webSocket.readyState === WebSocket.OPEN) {
+                  webSocket.close(
+                    exit.expected ? 1001 : 1011,
+                    exit.reason ?? "Coder workspace disconnected.",
+                  );
+                }
+              })
+              .catch(() => undefined);
+          });
+        } catch (cause) {
+          cleanupPendingUpgrade();
+          throw cause;
+        }
+      })().catch(() => {
+        if (!socket.destroyed) rejectWebSocketUpgrade(socket, 500, "Internal Server Error");
+      });
+    });
+
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        gatewayClosed = true;
+        for (const webSocket of workspaceSockets.values()) {
+          webSocket.close(1001, "Gateway stopped.");
+        }
+        workspaceSockets.clear();
+        pendingWorkspaceUpgrades.clear();
+        yield* FiberSet.clear(fibers);
+        const connectionScopes = [
+          ...workspaceConnectionScopes.values(),
+          ...portForwardConnectionScopes.values(),
+        ];
+        workspaceConnections.clear();
+        workspaceConnectionScopes.clear();
+        portForwardConnections.clear();
+        portForwardConnectionScopes.clear();
+        yield* Effect.forEach(connectionScopes, (scope) => Scope.close(scope, Exit.void), {
+          concurrency: "unbounded",
+          discard: true,
+        });
+        yield* Effect.callback<void, never>((resume) => {
+          try {
+            server.close((cause) =>
+              resume(
+                cause === undefined || isServerNotRunningError(cause)
+                  ? Effect.void
+                  : Effect.die(cause),
+              ),
+            );
+          } catch (cause) {
+            resume(isServerNotRunningError(cause) ? Effect.void : Effect.die(cause));
+          }
+        });
+        webSocketServer.close();
+      }),
     );
+
+    yield* Effect.callback<void, Error>((resume) => {
+      const onError = (cause: Error) => resume(Effect.fail(cause));
+      server.once("error", onError);
+      server.listen(0, CODER_GATEWAY_HOST, () => {
+        server.off("error", onError);
+        resume(Effect.void);
+      });
+      return Effect.sync(() => server.off("error", onError));
+    });
+
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      return yield* Effect.fail(new Error("Local gateway did not bind to a TCP port."));
+    }
+
+    yield* Effect.promise(startConfiguredPortForwards);
+
+    return { url: `http://${CODER_GATEWAY_HOST}:${address.port}` };
   });
 }
 
-export async function startLocalCoderGateway(options?: {
+export interface PromiseCoderHelperConnection {
+  readonly info: CoderHelperConnection["info"];
+  readonly closed: Promise<CoderHelperExit>;
+  readonly sendRpc: (message: unknown) => void;
+  readonly onRpcMessage: CoderHelperConnection["onRpcMessage"];
+  readonly close: () => void;
+}
+
+export interface PromiseCoderPortForwardConnection {
+  readonly closed: Promise<CoderPortForwardExit>;
+  readonly close: () => void;
+}
+
+interface LocalCoderGatewayOptions {
   readonly configPath?: string;
-  readonly connectHelper?: typeof connectCoderHelper;
+  readonly connectHelper?: (invocation: CoderInvocation) => Promise<PromiseCoderHelperConnection>;
   readonly helperBundlePath?: string;
   readonly staticDir?: string;
   readonly listWorkspaces?: (
@@ -446,785 +1312,198 @@ export async function startLocalCoderGateway(options?: {
   readonly checkAuthentication?: (
     invocation: CoderInvocation,
   ) => Promise<CoderAuthenticationStatus>;
-  readonly installHelper?: typeof installCoderHelperWithScp;
-  readonly uploadClipboardImage?: typeof uploadCoderClipboardImageWithScp;
-  readonly connectPortForward?: typeof connectCoderPortForward;
-}): Promise<LocalCoderGateway> {
-  let profileConfig: CoderProfileConfig = options?.configPath
-    ? await loadCoderProfileConfig(options.configPath)
-    : emptyCoderProfileConfig();
-  const workspaceConnections = new Map<string, CoderHelperConnection>();
-  const workspaceConnectionStarts = new Map<string, Promise<CoderHelperConnection>>();
-  const workspaceConnectionGenerations = new Map<string, number>();
-  const workspaceSockets = new Map<string, WebSocket>();
-  const pendingWorkspaceUpgrades = new Set<string>();
-  const portForwardConnections = new Map<string, CoderPortForwardConnection>();
-  const portForwardStarts = new Map<string, Promise<CoderPortForwardConnection>>();
-  const portForwardGenerations = new Map<string, number>();
-  const portForwardErrors = new Map<string, string>();
-  let gatewayClosed = false;
-  let gatewayClosePromise: Promise<void> | undefined;
-  const deploymentLoginStarts = new Map<string, Promise<void>>();
-  let configMutationQueue = Promise.resolve();
-  const serializeConfigMutation = <T>(mutation: () => Promise<T>): Promise<T> => {
-    const result = configMutationQueue.then(mutation);
-    configMutationQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+  readonly installHelper?: (
+    input: Parameters<typeof installCoderHelperWithScp>[0],
+  ) => Promise<void>;
+  readonly uploadClipboardImage?: (
+    input: Parameters<typeof uploadCoderClipboardImageWithScp>[0],
+  ) => Promise<string>;
+  readonly connectPortForward?: (
+    invocation: CoderInvocation,
+  ) => Promise<PromiseCoderPortForwardConnection>;
+}
+
+const fromPromise = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
+  Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
+
+/** Promise adapter for tests and embedders that cannot own an Effect scope. */
+export async function startLocalCoderGateway(
+  options?: LocalCoderGatewayOptions,
+): Promise<LocalCoderGateway> {
+  const scope = await Effect.runPromise(Scope.make("sequential"));
+  const effectOptions: LocalCoderGatewayEffectOptions = {
+    ...(options?.configPath === undefined ? {} : { configPath: options.configPath }),
+    ...(options?.helperBundlePath === undefined
+      ? {}
+      : { helperBundlePath: options.helperBundlePath }),
+    ...(options?.staticDir === undefined ? {} : { staticDir: options.staticDir }),
+    ...(options?.workspaceProbeTimeoutMs === undefined
+      ? {}
+      : { workspaceProbeTimeoutMs: options.workspaceProbeTimeoutMs }),
+    ...(options?.coderAuthStatusTimeoutMs === undefined
+      ? {}
+      : { coderAuthStatusTimeoutMs: options.coderAuthStatusTimeoutMs }),
+    ...(options?.listWorkspaces === undefined
+      ? {}
+      : { listWorkspaces: (invocation) => fromPromise(() => options.listWorkspaces!(invocation)) }),
+    ...(options?.probeWorkspace === undefined
+      ? {}
+      : { probeWorkspace: (invocation) => fromPromise(() => options.probeWorkspace!(invocation)) }),
+    ...(options?.checkAuthentication === undefined
+      ? {}
+      : {
+          checkAuthentication: (invocation) =>
+            fromPromise(() => options.checkAuthentication!(invocation)),
+        }),
+    ...(options?.installHelper === undefined
+      ? {}
+      : { installHelper: (input) => fromPromise(() => options.installHelper!(input)) }),
+    ...(options?.uploadClipboardImage === undefined
+      ? {}
+      : {
+          uploadClipboardImage: (input) => fromPromise(() => options.uploadClipboardImage!(input)),
+        }),
+    ...(options?.connectPortForward === undefined
+      ? {}
+      : {
+          connectPortForward: (invocation) =>
+            Effect.acquireRelease(
+              Effect.callback<CoderPortForwardConnection, unknown>((resume) => {
+                let interrupted = false;
+                let connecting: Promise<PromiseCoderPortForwardConnection>;
+                try {
+                  connecting = options.connectPortForward!(invocation);
+                } catch (cause) {
+                  resume(Effect.fail(cause));
+                  return;
+                }
+                void connecting.then(
+                  (connection) => {
+                    if (interrupted) {
+                      try {
+                        connection.close();
+                      } catch {
+                        // A late legacy connection is already detached from the gateway.
+                      }
+                      void connection.closed.catch(() => undefined);
+                      return;
+                    }
+                    let closed = false;
+                    void connection.closed.then(
+                      () => {
+                        closed = true;
+                      },
+                      () => {
+                        closed = true;
+                      },
+                    );
+                    resume(
+                      Effect.succeed({
+                        closed: fromPromise(() => connection.closed).pipe(Effect.orDie),
+                        close: Effect.suspend(() =>
+                          closed ? Effect.void : Effect.sync(() => connection.close()),
+                        ),
+                      }),
+                    );
+                  },
+                  (cause) => {
+                    if (!interrupted) resume(Effect.fail(cause));
+                  },
+                );
+                return Effect.sync(() => {
+                  interrupted = true;
+                });
+              }),
+              (connection) =>
+                connection.close.pipe(
+                  Effect.andThen(connection.closed),
+                  Effect.timeoutOrElse({
+                    duration: PROMISE_ADAPTER_CLOSE_TIMEOUT_MS,
+                    orElse: () => Effect.void,
+                  }),
+                  Effect.asVoid,
+                  Effect.catchCause(() => Effect.void),
+                ),
+              { interruptible: true },
+            ),
+        }),
+    ...(options?.connectHelper === undefined
+      ? {}
+      : {
+          connectHelper: (invocation) =>
+            Effect.acquireRelease(
+              Effect.callback<CoderHelperConnection, unknown>((resume) => {
+                let interrupted = false;
+                let connecting: Promise<PromiseCoderHelperConnection>;
+                try {
+                  connecting = options.connectHelper!(invocation);
+                } catch (cause) {
+                  resume(Effect.fail(cause));
+                  return;
+                }
+                void connecting.then(
+                  (connection) => {
+                    if (interrupted) {
+                      try {
+                        connection.close();
+                      } catch {
+                        // A late legacy connection is already detached from the gateway.
+                      }
+                      void connection.closed.catch(() => undefined);
+                      return;
+                    }
+                    resume(
+                      Effect.succeed({
+                        info: connection.info,
+                        closed: fromPromise(() => connection.closed).pipe(Effect.orDie),
+                        sendRpc: (message) =>
+                          Effect.try({
+                            try: () => connection.sendRpc(message),
+                            catch: (cause) =>
+                              new CoderHelperConnectionError(
+                                "Coder workspace helper RPC request failed.",
+                                { cause },
+                              ),
+                          }),
+                        onRpcMessage: (listener) => connection.onRpcMessage(listener),
+                        close: Effect.sync(() => connection.close()),
+                      }),
+                    );
+                  },
+                  (cause) => {
+                    if (!interrupted) resume(Effect.fail(cause));
+                  },
+                );
+                return Effect.sync(() => {
+                  interrupted = true;
+                });
+              }),
+              (connection) =>
+                connection.close.pipe(
+                  Effect.andThen(connection.closed),
+                  Effect.timeoutOrElse({
+                    duration: PROMISE_ADAPTER_CLOSE_TIMEOUT_MS,
+                    orElse: () => Effect.void,
+                  }),
+                  Effect.asVoid,
+                  Effect.catchCause(() => Effect.void),
+                ),
+              { interruptible: true },
+            ),
+        }),
   };
-  const loginToDeployment = (
-    deploymentId: string,
-    executable: string,
-    args: readonly string[],
-  ): Promise<void> => {
-    const existing = deploymentLoginStarts.get(deploymentId);
-    if (existing !== undefined) return existing;
-    const start = runCoderLogin(executable, args);
-    deploymentLoginStarts.set(deploymentId, start);
-    const cleanup = () => {
-      if (deploymentLoginStarts.get(deploymentId) === start) {
-        deploymentLoginStarts.delete(deploymentId);
-      }
+
+  try {
+    const gateway = await Effect.runPromise(
+      makeLocalCoderGateway(effectOptions).pipe(Scope.provide(scope)),
+    );
+    let closePromise: Promise<void> | undefined;
+    return {
+      ...gateway,
+      close: () => (closePromise ??= Effect.runPromise(Scope.close(scope, Exit.void))),
     };
-    void start.then(cleanup, cleanup);
-    return start;
-  };
-  const openHelper =
-    options?.connectHelper ??
-    ((invocation: CoderInvocation) =>
-      connectCoderHelper(invocation, { readySentinel: REMOTE_HELPER_READY_SENTINEL }));
-  const listWorkspaces = options?.listWorkspaces ?? runCoderWorkspaceList;
-  const probeWorkspace =
-    options?.probeWorkspace ??
-    ((invocation: CoderInvocation) =>
-      runCoderWorkspaceProbe(invocation, options?.workspaceProbeTimeoutMs));
-  const checkAuthentication =
-    options?.checkAuthentication ??
-    ((invocation: CoderInvocation) =>
-      runCoderAuthStatus(invocation, options?.coderAuthStatusTimeoutMs));
-  const installHelper = options?.installHelper ?? installCoderHelperWithScp;
-  const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
-  const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
-  const coderInvocationOptions = (deploymentId: string) => ({
-    globalConfig: NodePath.join(
-      NodePath.dirname(options?.configPath ?? NodePath.join(process.cwd(), "config.json")),
-      "coder-profiles",
-      deploymentId,
-    ),
-  });
-  const webSocketServer = new WebSocketServer({
-    noServer: true,
-    maxPayload: MAX_RPC_MESSAGE_BYTES,
-    perMessageDeflate: false,
-  });
-
-  const ensurePortForward = async (
-    portForwardId: string,
-  ): Promise<CoderPortForwardConnection> => {
-    if (gatewayClosed) throw new Error("Coder gateway is closed.");
-    const existing = portForwardConnections.get(portForwardId);
-    if (existing !== undefined) return existing;
-    const pending = portForwardStarts.get(portForwardId);
-    if (pending !== undefined) return pending;
-
-    const generation = portForwardGenerations.get(portForwardId) ?? 0;
-    const startIsCurrent = () =>
-      !gatewayClosed && (portForwardGenerations.get(portForwardId) ?? 0) === generation;
-    const start = (async () => {
-      const connectionConfig = profileConfig;
-      const portForward = connectionConfig.portForwards?.find(
-        (entry) => entry.id === portForwardId,
-      );
-      const workspace = connectionConfig.workspaces.find(
-        (entry) => entry.id === portForward?.workspaceId,
-      );
-      const deployment = connectionConfig.deployments.find(
-        (entry) => entry.id === workspace?.deploymentId,
-      );
-      if (portForward === undefined || workspace === undefined || deployment === undefined) {
-        throw new Error("Unknown Coder port forward.");
-      }
-      const connection = await openPortForward(
-        buildCoderPortForwardInvocation(
-          deployment,
-          workspace,
-          portForward,
-          coderInvocationOptions(deployment.id),
-        ),
-      );
-      if (
-        !startIsCurrent() ||
-        !portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
-      ) {
-        connection.close();
-        await connection.closed;
-        throw new Error("Coder port forward was cancelled.");
-      }
-      portForwardConnections.set(portForwardId, connection);
-      portForwardErrors.delete(portForwardId);
-      void connection.closed.then((exit) => {
-        if (portForwardConnections.get(portForwardId) === connection) {
-          portForwardConnections.delete(portForwardId);
-        }
-        if (
-          !exit.expected &&
-          !gatewayClosed &&
-          portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
-        ) {
-          portForwardErrors.set(
-            portForwardId,
-            exit.reason ?? "Coder port forward stopped unexpectedly.",
-          );
-        }
-      });
-      return connection;
-    })();
-    portForwardStarts.set(portForwardId, start);
-    try {
-      return await start;
-    } catch (cause) {
-      if (
-        startIsCurrent() &&
-        profileConfig.portForwards?.some((entry) => entry.id === portForwardId)
-      ) {
-        portForwardErrors.set(
-          portForwardId,
-          cause instanceof Error ? cause.message : "Coder port forward failed to start.",
-        );
-      }
-      throw cause;
-    } finally {
-      if (portForwardStarts.get(portForwardId) === start) {
-        portForwardStarts.delete(portForwardId);
-      }
-    }
-  };
-
-  const stopPortForward = async (portForwardId: string): Promise<void> => {
-    portForwardGenerations.set(
-      portForwardId,
-      (portForwardGenerations.get(portForwardId) ?? 0) + 1,
-    );
-    const pending = portForwardStarts.get(portForwardId);
-    const connection = portForwardConnections.get(portForwardId);
-    connection?.close();
-    portForwardConnections.delete(portForwardId);
-    await Promise.allSettled([
-      ...(pending === undefined ? [] : [pending]),
-      ...(connection === undefined ? [] : [connection.closed]),
-    ]);
-  };
-
-  const startConfiguredPortForwards = async (): Promise<void> => {
-    await Promise.allSettled(
-      (profileConfig.portForwards ?? []).map((portForward) =>
-        ensurePortForward(portForward.id),
-      ),
-    );
-  };
-
-  const ensureWorkspaceConnection = async (workspaceId: string): Promise<CoderHelperConnection> => {
-    if (gatewayClosed) throw new Error("Coder gateway is closed.");
-    const existing = workspaceConnections.get(workspaceId);
-    if (existing !== undefined) return existing;
-    const pending = workspaceConnectionStarts.get(workspaceId);
-    if (pending !== undefined) return pending;
-
-    const generation = workspaceConnectionGenerations.get(workspaceId) ?? 0;
-    const startIsCurrent = () =>
-      !gatewayClosed && (workspaceConnectionGenerations.get(workspaceId) ?? 0) === generation;
-    const assertStartIsCurrent = () => {
-      if (!startIsCurrent()) throw new Error("Coder workspace connection was cancelled.");
-    };
-    const start = (async () => {
-      const connectionConfig = profileConfig;
-      const workspace = connectionConfig.workspaces.find((entry) => entry.id === workspaceId);
-      const deployment =
-        workspace === undefined
-          ? undefined
-          : connectionConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-      if (workspace === undefined || deployment === undefined) {
-        throw new Error("Unknown Coder workspace.");
-      }
-      const invocationOptions = coderInvocationOptions(deployment.id);
-      await probeWorkspace(
-        buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
-      );
-      assertStartIsCurrent();
-      if (options?.helperBundlePath !== undefined) {
-        await installHelper({
-          deployment,
-          workspace,
-          helperBundlePath: options.helperBundlePath,
-          invocationOptions,
-        });
-        assertStartIsCurrent();
-      }
-      const connection = await openHelper(
-        buildCoderHelperInvocation(deployment, workspace, invocationOptions),
-      );
-      if (!startIsCurrent()) {
-        connection.close();
-        await connection.closed;
-        throw new Error("Coder workspace connection was cancelled.");
-      }
-      if (!workspaceConnectionIsCurrent(connectionConfig, profileConfig, workspaceId)) {
-        connection.close();
-        throw new Error("Coder workspace configuration changed while connecting.");
-      }
-      workspaceConnections.set(workspaceId, connection);
-      void connection.closed.then(() => {
-        if (workspaceConnections.get(workspaceId) === connection) {
-          workspaceConnections.delete(workspaceId);
-        }
-      });
-      return connection;
-    })();
-    workspaceConnectionStarts.set(workspaceId, start);
-    try {
-      return await start;
-    } finally {
-      if (workspaceConnectionStarts.get(workspaceId) === start) {
-        workspaceConnectionStarts.delete(workspaceId);
-      }
-    }
-  };
-
-  const server = NodeHttp.createServer((request, response) => {
-    void (async () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        sendText(response, 503, "text/plain; charset=utf-8", "Gateway unavailable.");
-        return;
-      }
-      const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
-      const expectedOrigin = `http://${expectedHost}`;
-      if (request.headers.host !== expectedHost) {
-        sendText(response, 421, "text/plain; charset=utf-8", "Misdirected request.");
-        return;
-      }
-
-      const requestUrl = new URL(request.url ?? "/", expectedOrigin);
-      if (request.method === "GET" && request.url === "/healthz") {
-        sendText(response, 200, "application/json; charset=utf-8", '{"status":"ok"}');
-        return;
-      }
-      if (request.method === "GET" && request.url === "/api/config") {
-        sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(profileConfig));
-        return;
-      }
-      if (request.method === "GET" && request.url === "/api/connections") {
-        sendText(
-          response,
-          200,
-          "application/json; charset=utf-8",
-          JSON.stringify(
-            [...workspaceConnections].map(([workspaceId, connection]) => ({
-              workspaceId,
-              info: connection.info,
-            })),
-          ),
-        );
-        return;
-      }
-      if (request.method === "GET" && request.url === "/api/port-forwards") {
-        sendText(
-          response,
-          200,
-          "application/json; charset=utf-8",
-          JSON.stringify({
-            portForwards: (profileConfig.portForwards ?? []).map((portForward) => {
-              const error = portForwardErrors.get(portForward.id);
-              return {
-                id: portForward.id,
-                status: portForwardStarts.has(portForward.id)
-                  ? "starting"
-                  : portForwardConnections.has(portForward.id)
-                    ? "running"
-                    : error === undefined
-                      ? "starting"
-                      : "error",
-                ...(error === undefined ? {} : { error }),
-              };
-            }),
-          }),
-        );
-        return;
-      }
-      if (request.method === "POST" && request.url === "/api/config") {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        if (!request.headers["content-type"]?.startsWith("application/json")) {
-          sendText(response, 415, "text/plain; charset=utf-8", "JSON content required.");
-          return;
-        }
-        try {
-          const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
-          const savedConfig = await serializeConfigMutation(async () => {
-            if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
-            const previousConfig = profileConfig;
-            const stalePortForwardIds = new Set(
-              (previousConfig.portForwards ?? [])
-                .filter(
-                  (portForward) =>
-                    !portForwardIsCurrent(previousConfig, nextConfig, portForward.id),
-                )
-                .map((portForward) => portForward.id),
-            );
-            for (const [workspaceId, connection] of workspaceConnections) {
-              if (workspaceConnectionIsCurrent(previousConfig, nextConfig, workspaceId)) continue;
-              connection.close();
-              workspaceConnections.delete(workspaceId);
-              workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
-            }
-            profileConfig = nextConfig;
-            await Promise.allSettled(
-              [...stalePortForwardIds].map((portForwardId) => stopPortForward(portForwardId)),
-            );
-            for (const portForwardId of stalePortForwardIds) {
-              portForwardErrors.delete(portForwardId);
-            }
-            await startConfiguredPortForwards();
-            return profileConfig;
-          });
-          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
-        } catch (cause) {
-          const message = cause instanceof Error ? cause.message : "Invalid configuration.";
-          sendText(response, 400, "text/plain; charset=utf-8", message);
-        }
-        return;
-      }
-      const portForwardRestartRoute = request.url?.match(
-        /^\/api\/port-forwards\/([^/]+)\/restart$/,
-      );
-      if (
-        request.method === "POST" &&
-        portForwardRestartRoute !== null &&
-        portForwardRestartRoute !== undefined
-      ) {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        let portForwardId: string;
-        try {
-          portForwardId = decodeURIComponent(portForwardRestartRoute[1] ?? "");
-        } catch {
-          sendText(response, 400, "text/plain; charset=utf-8", "Invalid port forward id.");
-          return;
-        }
-        if (!profileConfig.portForwards?.some((entry) => entry.id === portForwardId)) {
-          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder port forward.");
-          return;
-        }
-        try {
-          await stopPortForward(portForwardId);
-          portForwardErrors.delete(portForwardId);
-          await ensurePortForward(portForwardId);
-          sendText(response, 200, "application/json; charset=utf-8", '{"status":"running"}');
-        } catch (cause) {
-          sendText(
-            response,
-            502,
-            "text/plain; charset=utf-8",
-            cause instanceof Error ? cause.message : "Coder port forward failed to restart.",
-          );
-        }
-        return;
-      }
-      const loginRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/login$/);
-      if (request.method === "POST" && loginRoute !== null && loginRoute !== undefined) {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        let deploymentId: string;
-        try {
-          deploymentId = decodeURIComponent(loginRoute[1] ?? "");
-        } catch {
-          sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
-          return;
-        }
-        const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
-        if (deployment === undefined) {
-          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
-          return;
-        }
-        try {
-          const login = buildCoderLoginInvocation(
-            deployment,
-            coderInvocationOptions(deployment.id),
-          );
-          await loginToDeployment(deploymentId, login.executable, login.args);
-          sendText(response, 200, "application/json; charset=utf-8", '{"status":"authenticated"}');
-        } catch (cause) {
-          sendText(
-            response,
-            502,
-            "text/plain; charset=utf-8",
-            cause instanceof Error ? cause.message : "Coder login failed.",
-          );
-        }
-        return;
-      }
-
-      const authRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/auth-status$/);
-      if (request.method === "POST" && authRoute !== null && authRoute !== undefined) {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        let deploymentId: string;
-        try {
-          deploymentId = decodeURIComponent(authRoute[1] ?? "");
-        } catch {
-          sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
-          return;
-        }
-        const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
-        if (deployment === undefined) {
-          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
-          return;
-        }
-        const status = await checkAuthentication(
-          buildCoderAuthStatusInvocation(deployment, coderInvocationOptions(deployment.id)),
-        );
-        sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ status }));
-        return;
-      }
-      const workspaceListRoute = request.url?.match(/^\/api\/deployments\/([^/]+)\/workspaces$/);
-      if (
-        request.method === "POST" &&
-        workspaceListRoute !== null &&
-        workspaceListRoute !== undefined
-      ) {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        let deploymentId: string;
-        try {
-          deploymentId = decodeURIComponent(workspaceListRoute[1] ?? "");
-        } catch {
-          sendText(response, 400, "text/plain; charset=utf-8", "Invalid deployment id.");
-          return;
-        }
-        const deployment = profileConfig.deployments.find((entry) => entry.id === deploymentId);
-        if (deployment === undefined) {
-          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder deployment.");
-          return;
-        }
-        try {
-          const workspaces = await listWorkspaces(
-            buildCoderListWorkspacesInvocation(deployment, coderInvocationOptions(deployment.id)),
-          );
-          sendText(
-            response,
-            200,
-            "application/json; charset=utf-8",
-            JSON.stringify({ workspaces }),
-          );
-        } catch (cause) {
-          sendText(
-            response,
-            502,
-            "text/plain; charset=utf-8",
-            cause instanceof Error ? cause.message : "Coder workspace discovery failed.",
-          );
-        }
-        return;
-      }
-      const connectionRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/connection$/);
-      if (connectionRoute !== null && connectionRoute !== undefined) {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        let workspaceId: string;
-        try {
-          workspaceId = decodeURIComponent(connectionRoute[1] ?? "");
-        } catch {
-          sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
-          return;
-        }
-        const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
-        const deployment =
-          workspace === undefined
-            ? undefined
-            : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-        if (workspace === undefined || deployment === undefined) {
-          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
-          return;
-        }
-
-        if (request.method === "POST") {
-          try {
-            const connection = await ensureWorkspaceConnection(workspaceId);
-            sendText(
-              response,
-              200,
-              "application/json; charset=utf-8",
-              JSON.stringify({ workspaceId, info: connection.info }),
-            );
-          } catch (cause) {
-            const message = cause instanceof Error ? cause.message : "Coder connection failed.";
-            sendText(response, 502, "text/plain; charset=utf-8", message);
-          }
-          return;
-        }
-        if (request.method === "DELETE") {
-          workspaceConnectionGenerations.set(
-            workspaceId,
-            (workspaceConnectionGenerations.get(workspaceId) ?? 0) + 1,
-          );
-          const pendingStart = workspaceConnectionStarts.get(workspaceId);
-          const connection = workspaceConnections.get(workspaceId);
-          connection?.close();
-          workspaceConnections.delete(workspaceId);
-          if (pendingStart !== undefined) await pendingStart.catch(() => undefined);
-          sendText(response, 200, "application/json; charset=utf-8", '{"status":"closed"}');
-          return;
-        }
-      }
-      const imageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/clipboard-image$/);
-      if (request.method === "POST" && imageRoute !== null && imageRoute !== undefined) {
-        if (request.headers.origin !== expectedOrigin) {
-          sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
-          return;
-        }
-        let workspaceId: string;
-        try {
-          workspaceId = decodeURIComponent(imageRoute[1] ?? "");
-        } catch {
-          sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
-          return;
-        }
-        const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
-        const deployment =
-          workspace === undefined
-            ? undefined
-            : profileConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-        if (workspace === undefined || deployment === undefined) {
-          sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
-          return;
-        }
-        if (!workspaceConnections.has(workspaceId)) {
-          sendText(response, 409, "text/plain; charset=utf-8", "Coder workspace is not connected.");
-          return;
-        }
-        const contentType = request.headers["content-type"] ?? "";
-        try {
-          const bytes = await readBody(request, MAX_CLIPBOARD_IMAGE_BYTES);
-          const extension = validateClipboardImage(contentType, bytes);
-          const path = await withStagedClipboardImage(bytes, extension, (localPath) =>
-            uploadClipboardImage({
-              deployment,
-              workspace,
-              localPath,
-              extension,
-              invocationOptions: coderInvocationOptions(deployment.id),
-            }),
-          );
-          sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ path }));
-        } catch (cause) {
-          if (cause instanceof RequestBodyTooLargeError) {
-            sendText(response, 413, "text/plain; charset=utf-8", "Clipboard image exceeds 20 MiB.");
-            return;
-          }
-          if (cause instanceof ClipboardImageValidationError) {
-            sendText(response, 415, "text/plain; charset=utf-8", cause.message);
-            return;
-          }
-          sendText(
-            response,
-            502,
-            "text/plain; charset=utf-8",
-            cause instanceof Error ? cause.message : "Clipboard image upload failed.",
-          );
-        }
-        return;
-      }
-      if (request.method === "GET" && options?.staticDir) {
-        if (await serveStaticFile(response, options.staticDir, requestUrl.pathname)) return;
-        if (await serveStaticFile(response, options.staticDir, "/")) return;
-      }
-      if (request.method === "GET" && requestUrl.pathname === "/") {
-        sendText(response, 200, "text/html; charset=utf-8", indexHtml);
-        return;
-      }
-      sendText(response, 404, "text/plain; charset=utf-8", "Not found.");
-    })().catch(() => {
-      if (response.headersSent) {
-        response.destroy();
-      } else {
-        sendText(response, 500, "text/plain; charset=utf-8", "Internal server error.");
-      }
-    });
-  });
-
-  server.on("upgrade", (request, socket, head) => {
-    void (async () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        rejectWebSocketUpgrade(socket, 503, "Service Unavailable");
-        return;
-      }
-      const expectedHost = `${CODER_GATEWAY_HOST}:${address.port}`;
-      const expectedOrigin = `http://${expectedHost}`;
-      if (request.headers.host !== expectedHost || request.headers.origin !== expectedOrigin) {
-        rejectWebSocketUpgrade(socket, 403, "Forbidden");
-        return;
-      }
-      const route = request.url?.match(/^\/api\/workspaces\/([^/]+)\/rpc$/);
-      if (route === null || route === undefined) {
-        rejectWebSocketUpgrade(socket, 404, "Not Found");
-        return;
-      }
-      let workspaceId: string;
-      try {
-        workspaceId = decodeURIComponent(route[1] ?? "");
-      } catch {
-        rejectWebSocketUpgrade(socket, 400, "Bad Request");
-        return;
-      }
-      if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
-        rejectWebSocketUpgrade(socket, 404, "Not Found");
-        return;
-      }
-      if (workspaceSockets.has(workspaceId) || pendingWorkspaceUpgrades.has(workspaceId)) {
-        rejectWebSocketUpgrade(socket, 409, "Conflict");
-        return;
-      }
-      pendingWorkspaceUpgrades.add(workspaceId);
-      let upgradePending = true;
-      const cleanupPendingUpgrade = () => {
-        if (!upgradePending) return;
-        upgradePending = false;
-        pendingWorkspaceUpgrades.delete(workspaceId);
-        socket.off("close", cleanupPendingUpgrade);
-        socket.off("error", cleanupPendingUpgrade);
-      };
-      socket.once("close", cleanupPendingUpgrade);
-      socket.once("error", cleanupPendingUpgrade);
-
-      let helper: CoderHelperConnection;
-      try {
-        helper = await ensureWorkspaceConnection(workspaceId);
-      } catch {
-        cleanupPendingUpgrade();
-        rejectWebSocketUpgrade(socket, 502, "Bad Gateway");
-        return;
-      }
-      if (socket.destroyed) {
-        cleanupPendingUpgrade();
-        return;
-      }
-
-      try {
-        webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
-          cleanupPendingUpgrade();
-          workspaceSockets.set(workspaceId, webSocket);
-          const unsubscribe = helper.onRpcMessage((message) => {
-            if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
-          });
-          webSocket.on("message", (data, isBinary) => {
-            if (isBinary) {
-              webSocket.close(1003, "Text RPC messages required.");
-              return;
-            }
-            let message: unknown;
-            try {
-              message = JSON.parse(data.toString("utf8")) as unknown;
-            } catch {
-              webSocket.close(1007, "Invalid RPC message.");
-              return;
-            }
-            try {
-              helper.sendRpc(message);
-            } catch {
-              webSocket.close(1011, "Coder workspace disconnected.");
-            }
-          });
-          webSocket.once("close", () => {
-            unsubscribe();
-            if (workspaceSockets.get(workspaceId) === webSocket) {
-              workspaceSockets.delete(workspaceId);
-            }
-          });
-          void helper.closed.then((exit) => {
-            if (webSocket.readyState === WebSocket.OPEN) {
-              webSocket.close(
-                exit.expected ? 1001 : 1011,
-                exit.reason ?? "Coder workspace disconnected.",
-              );
-            }
-          });
-        });
-      } catch (cause) {
-        cleanupPendingUpgrade();
-        throw cause;
-      }
-    })().catch(() => {
-      if (!socket.destroyed) rejectWebSocketUpgrade(socket, 500, "Internal Server Error");
-    });
-  });
-
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, CODER_GATEWAY_HOST, () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
-
-  const address = server.address();
-  if (address === null || typeof address === "string") {
-    server.close();
-    throw new Error("Local gateway did not bind to a TCP port.");
+  } catch (cause) {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+    throw cause;
   }
-
-  await startConfiguredPortForwards();
-
-  return {
-    url: `http://${CODER_GATEWAY_HOST}:${address.port}`,
-    close: () => {
-      gatewayClosePromise ??= (async () => {
-        gatewayClosed = true;
-        for (const webSocket of workspaceSockets.values()) {
-          webSocket.close(1001, "Gateway stopped.");
-        }
-        workspaceSockets.clear();
-        pendingWorkspaceUpgrades.clear();
-        for (const portForwardId of profileConfig.portForwards?.map((entry) => entry.id) ?? []) {
-          portForwardGenerations.set(
-            portForwardId,
-            (portForwardGenerations.get(portForwardId) ?? 0) + 1,
-          );
-        }
-        const connectionClosures = [...workspaceConnections.values()].map((connection) => {
-          connection.close();
-          return connection.closed;
-        });
-        workspaceConnections.clear();
-        const portForwardClosures = [...portForwardConnections.values()].map((connection) => {
-          connection.close();
-          return connection.closed;
-        });
-        portForwardConnections.clear();
-        await Promise.allSettled([...workspaceConnectionStarts.values()]);
-        await Promise.allSettled([...portForwardStarts.values()]);
-        await new Promise<void>((resolve, reject) => {
-          server.close((error) => (error ? reject(error) : resolve()));
-        });
-        await Promise.all(connectionClosures);
-        await Promise.all(portForwardClosures);
-        webSocketServer.close();
-      })();
-      return gatewayClosePromise;
-    },
-  };
 }

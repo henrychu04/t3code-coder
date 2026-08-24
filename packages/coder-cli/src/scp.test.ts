@@ -1,8 +1,20 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { deepStrictEqual, match, rejects, strictEqual, throws } from "node:assert";
+import * as NodeFS from "node:fs/promises";
 import { describe, it } from "node:test";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 
-import { buildCoderScpInvocation, runProcess, scopeCoderScpConfig } from "./scp.ts";
+import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+
+import {
+  buildCoderScpInvocation,
+  installCoderHelperWithScp,
+  runProcess,
+  scopeCoderScpConfig,
+} from "./scp.ts";
 
 describe("Coder SCP", () => {
   it("keeps only the randomized Coder host and hardens its ProxyCommand", () => {
@@ -67,21 +79,76 @@ describe("Coder SCP", () => {
     const startedAt = Date.now();
 
     await rejects(
-      runProcess(
-        {
-          executable: process.execPath,
-          args: [
-            "-e",
-            'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
-          ],
-        },
-        "Test process",
-        200,
-        50,
+      Effect.runPromise(
+        runProcess(
+          {
+            executable: process.execPath,
+            args: [
+              "-e",
+              'process.on("SIGTERM", () => undefined); setInterval(() => undefined, 1_000);',
+            ],
+          },
+          "Test process",
+          200,
+          50,
+        ),
       ),
       /Test process timed out/u,
     );
 
     strictEqual(Date.now() - startedAt >= 240, true);
+  });
+
+  it("removes its temporary SSH configuration when interrupted", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-scp-test-"));
+    const executable = NodePath.join(directory, "coder");
+    const marker = NodePath.join(directory, "config-path");
+    await NodeFS.writeFile(
+      executable,
+      [
+        "#!/usr/bin/env node",
+        'const NodeFS = require("node:fs");',
+        'const index = process.argv.indexOf("--ssh-config-file");',
+        `if (index >= 0) { NodeFS.writeFileSync(${JSON.stringify(marker)}, process.argv[index + 1]); setInterval(() => undefined, 1_000); }`,
+      ].join("\n"),
+      { mode: 0o700 },
+    );
+
+    const fiber = Effect.runFork(
+      installCoderHelperWithScp({
+        deployment: {
+          id: "deployment",
+          name: "Deployment",
+          url: "https://coder.example.com",
+          executable,
+        },
+        workspace: {
+          id: "workspace",
+          name: "Workspace",
+          deploymentId: "deployment",
+          workspace: "owner/workspace",
+        },
+        helperBundlePath: NodePath.join(directory, "workspace-helper"),
+      }),
+    );
+
+    try {
+      let configPath: string | undefined;
+      for (let attempt = 0; attempt < 500; attempt += 1) {
+        try {
+          configPath = await NodeFS.readFile(marker, "utf8");
+          break;
+        } catch {
+          await delay(10);
+        }
+      }
+      if (configPath === undefined) throw new Error("Fake Coder process did not start.");
+
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      await rejects(NodeFS.access(NodePath.dirname(configPath)), { code: "ENOENT" });
+    } finally {
+      await Effect.runPromise(Fiber.interrupt(fiber));
+      await NodeFS.rm(directory, { recursive: true, force: true });
+    }
   });
 });

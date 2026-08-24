@@ -3,39 +3,41 @@ import { spawn } from "node:child_process";
 import * as NodeOS from "node:os";
 import { fileURLToPath } from "node:url";
 
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as Effect from "effect/Effect";
 import { buildBrowserOpenInvocation } from "@t3tools/coder-cli/command";
 import { resolveCoderConfigPath } from "@t3tools/coder-cli/configPath";
-import { startLocalCoderGateway } from "./server.ts";
+import { makeLocalCoderGateway } from "./server.ts";
 
-const gateway = await startLocalCoderGateway({
-  configPath: resolveCoderConfigPath({
-    platform: process.platform,
-    homeDirectory: NodeOS.homedir(),
-    environment: process.env,
-  }),
-  staticDir: fileURLToPath(new URL("../../web/dist", import.meta.url)),
-  helperBundlePath: fileURLToPath(
-    new URL("../../coder-helper/dist/workspace-helper", import.meta.url),
-  ),
-});
-process.stdout.write(`T3 Coder listening on ${gateway.url}\n`);
-
-if (process.argv.includes("--open-browser")) {
-  const browser = buildBrowserOpenInvocation(process.platform, gateway.url);
-  const browserProcess = spawn(browser.executable, browser.args, {
-    shell: false,
-    stdio: "ignore",
-    windowsHide: true,
-    detached: true,
+const main = Effect.gen(function* () {
+  const gateway = yield* makeLocalCoderGateway({
+    configPath: resolveCoderConfigPath({
+      platform: process.platform,
+      homeDirectory: NodeOS.homedir(),
+      environment: process.env,
+    }),
+    staticDir: fileURLToPath(new URL("../../web/dist", import.meta.url)),
+    helperBundlePath: fileURLToPath(
+      new URL("../../coder-helper/dist/workspace-helper", import.meta.url),
+    ),
   });
-  browserProcess.once("error", () => undefined);
-  browserProcess.unref();
-}
+  yield* Effect.sync(() => process.stdout.write(`T3 Coder listening on ${gateway.url}\n`));
 
-async function shutdown(): Promise<void> {
-  await gateway.close();
-  process.exit(0);
-}
+  if (process.argv.includes("--open-browser")) {
+    yield* Effect.sync(() => {
+      const browser = buildBrowserOpenInvocation(process.platform, gateway.url);
+      const browserProcess = spawn(browser.executable, browser.args, {
+        shell: false,
+        stdio: "ignore",
+        windowsHide: true,
+        detached: true,
+      });
+      browserProcess.once("error", () => undefined);
+      browserProcess.unref();
+    });
+  }
 
-process.once("SIGINT", () => void shutdown());
-process.once("SIGTERM", () => void shutdown());
+  return yield* Effect.never;
+}).pipe(Effect.scoped);
+
+NodeRuntime.runMain(main);
