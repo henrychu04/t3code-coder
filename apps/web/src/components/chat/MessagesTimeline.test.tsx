@@ -1,4 +1,10 @@
-import { CheckpointRef, EnvironmentId, MessageId, TurnId } from "@t3tools/contracts";
+import {
+  CheckpointRef,
+  EnvironmentId,
+  MessageId,
+  ScreenshotArtifactId,
+  TurnId,
+} from "@t3tools/contracts";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
@@ -811,6 +817,54 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Context compacted");
     expect(markup).toContain("Work Log");
+  });
+
+  it("renders screenshot artifacts collapsed without loading image bytes", () => {
+    const turnId = TurnId.make("turn-with-artifacts");
+    const assistantEntry = buildAssistantTimelineEntry("Verification passed.");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        latestTurn={{
+          turnId,
+          state: "completed",
+          startedAt: "2026-03-17T19:12:20.000Z",
+          completedAt: "2026-03-17T19:12:28.000Z",
+        }}
+        timelineEntries={[
+          {
+            ...assistantEntry,
+            message: { ...assistantEntry.message, turnId },
+          },
+          {
+            id: "entry-artifacts",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-artifacts",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              turnId,
+              label: "Visual artifacts",
+              tone: "tool",
+              itemType: "image_view",
+              artifacts: [
+                {
+                  id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
+                  name: "home.png",
+                  mimeType: "image/png",
+                  sizeBytes: 128,
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Visual artifacts · 1");
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("<img");
+    expect(markup).not.toContain("home.png");
   });
 
   it("summarizes changed files in one line", () => {

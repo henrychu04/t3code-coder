@@ -39,6 +39,9 @@ responses, Claude sessions, terminals, checkpoints, project records, project roo
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
 connection and loopback WebSocket but is not durably cached by the gateway. A validated pasted image
 may be staged in an OS temporary directory for one SCP attempt; the gateway removes it afterward.
+Turn-scoped screenshot artifacts remain beneath `$HOME/.t3-coder/artifacts` in the workspace. Their
+bytes traverse the existing stdio and loopback path only after the user expands the collapsed
+artifact row, and exist in the browser only as revocable, memory-only object URLs.
 
 Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selects a separate opaque
 `--global-config` directory per domain so two file-backed Coder sessions can coexist. Coder 2.25.3
@@ -55,8 +58,10 @@ installed Claude Code CLI.
   and background workspace daemons; the structured foreground `coder port-forward` feature is the
   sole forwarding exception;
 - arbitrary uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer, and
-  background file synchronization; pasted PNG, JPEG, and WebP images up to 20 MiB are the sole
-  user-facing transfer exception;
+  background file synchronization; pasted images and turn-scoped visual artifact display are the
+  only user-facing transfer exceptions. Both accept signature-validated PNG, JPEG, and WebP images
+  up to 20 MiB. Artifact capture is limited to 10 images per turn, and artifact reads accept only
+  generated opaque IDs in bounded chunks after explicit UI expansion;
 - Git fetch, pull, push, pull requests, and hosted source-control integrations;
 - MCP servers, Claude browser integration, free-form Claude launch flags, and the packaged Anthropic
   Agent SDK;
@@ -65,6 +70,8 @@ installed Claude Code CLI.
 
 The versioned helper bootstrap through helper-scoped SCP is the sole control-plane transfer
 exception. Both helper and clipboard-image SCP use `coder ssh --stdio` as their ProxyCommand.
+Screenshot artifact display uses the already-running helper RPC and does not spawn SCP or another
+connection.
 
 ## Source ZIP and installation review
 

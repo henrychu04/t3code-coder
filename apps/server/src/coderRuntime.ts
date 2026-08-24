@@ -42,6 +42,7 @@ import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderWs from "./coderWs.ts";
@@ -61,6 +62,7 @@ const CoderProviderSessionDirectoryLive = ProviderSessionDirectoryLive.pipe(
 const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(CoderBackgroundPolicy.layer),
+  Layer.provideMerge(ScreenshotArtifacts.layer),
 );
 
 const CoderProviderLive = ProviderServiceLive.pipe(
@@ -117,6 +119,7 @@ const CoderRuntimeCoreLive = Layer.empty.pipe(
   Layer.provideMerge(CoderTerminalLive),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(CoderWorkspaceEntriesLive),
+  Layer.provideMerge(ScreenshotArtifacts.layer),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(CoderEnvironment.layer),
   Layer.provideMerge(CoderProviderRuntimeLive),

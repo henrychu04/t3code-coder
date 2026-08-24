@@ -9,8 +9,10 @@ browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> Claude Co
 ```
 
 This fork intentionally removes the upstream Electron, mobile, hosted-web, relay, OAuth, telemetry,
-third-party source-control, and non-Claude provider implementations. It has no file upload or
-download features and does not expose a remote HTTP or WebSocket listener.
+third-party source-control, and non-Claude provider implementations. It has no general file upload
+or download features and does not expose a remote HTTP or WebSocket listener. It can display
+signature-validated screenshots produced during a Claude turn through its existing workspace-helper
+connection; this requires neither MCP nor changes to a project's verification skill.
 
 ## Requirements
 

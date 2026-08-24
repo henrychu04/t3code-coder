@@ -101,7 +101,7 @@ function sendText(
     "Cache-Control": "no-store",
     "Content-Type": contentType,
     "Content-Security-Policy":
-      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:*; img-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'",
+      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:*; img-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; frame-src 'none'",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Cross-Origin-Resource-Policy": "same-origin",

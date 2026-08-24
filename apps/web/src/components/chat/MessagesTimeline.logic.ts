@@ -30,6 +30,10 @@ export function workEntryIsVisibleInGroup(
   );
 }
 
+function workEntryHasScreenshotArtifacts(entry: WorkLogEntry): boolean {
+  return (entry.artifacts?.length ?? 0) > 0;
+}
+
 export interface TimelineEndState {
   readonly isAtEnd?: boolean;
   readonly contentLength?: number;
@@ -601,10 +605,14 @@ function deriveTurnFolds(input: {
       if (entry.id === firstAssistantEntry?.id || entry.id === group.terminalEntry?.id) {
         continue;
       }
-      // Agent-spawn CTA rows never fold: workflows outlive their launching
-      // turn (dynamic spawns, background execution), and folding the CTA
-      // when the turn settles makes a still-running fleet invisible.
-      if (entry.kind === "work" && entry.entry.agentSpawn !== undefined) {
+      // Agent-spawn CTAs and screenshot galleries never fold. Workflows can
+      // outlive their launching turn, and visual verification would otherwise
+      // disappear behind the generic "Worked for" summary as soon as the
+      // provider emits its terminal assistant message.
+      if (
+        entry.kind === "work" &&
+        (entry.entry.agentSpawn !== undefined || workEntryHasScreenshotArtifacts(entry.entry))
+      ) {
         continue;
       }
       hiddenEntryIds.add(entry.id);
@@ -714,7 +722,9 @@ export function deriveMessagesTimelineRows(input: {
     entry.toolLifecycleStatus === "inProgress" &&
     entry.turnId === unsettledTurnId;
   const isVisibleActiveToolEntry = (entry: WorkLogEntry) =>
-    workLogEntryIsToolLike(entry) && workEntryIsVisibleInGroup(entry, true);
+    !workEntryHasScreenshotArtifacts(entry) &&
+    workLogEntryIsToolLike(entry) &&
+    workEntryIsVisibleInGroup(entry, true);
   const activeEntries = input.isWorking
     ? input.timelineEntries.filter((entry, index) => entryBelongsToActiveTurn(entry, index))
     : [];
@@ -739,6 +749,7 @@ export function deriveMessagesTimelineRows(input: {
     if (
       !entryBelongsToActiveTurn(entry, index) ||
       entry.kind !== "work" ||
+      workEntryHasScreenshotArtifacts(entry.entry) ||
       entry.entry.agentSpawn !== undefined ||
       entry.entry.tone === "error" ||
       !workLogEntryIsToolLike(entry.entry)
@@ -829,6 +840,17 @@ export function deriveMessagesTimelineRows(input: {
     }
 
     if (timelineEntry.kind === "work") {
+      if (workEntryHasScreenshotArtifacts(timelineEntry.entry)) {
+        nextRows.push({
+          kind: "work",
+          id: timelineEntry.id,
+          createdAt: timelineEntry.createdAt,
+          groupedEntries: [timelineEntry.entry],
+          isExpandedToolGroupEntry: false,
+          isLastExpandedToolGroupEntry: false,
+        });
+        continue;
+      }
       const groupedEntries = [timelineEntry.entry];
       let cursor = index + 1;
       while (cursor < input.timelineEntries.length) {
@@ -836,6 +858,7 @@ export function deriveMessagesTimelineRows(input: {
         if (
           !nextEntry ||
           nextEntry.kind !== "work" ||
+          workEntryHasScreenshotArtifacts(nextEntry.entry) ||
           activeWorkEntryIds.has(nextEntry.id) ||
           collapsedEntryIds.has(nextEntry.id) ||
           foldsByAnchorEntryId.has(nextEntry.id)

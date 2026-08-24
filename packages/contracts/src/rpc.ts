@@ -73,10 +73,16 @@ import {
   TerminalWriteInput,
 } from "./terminal.ts";
 import { VcsError } from "./vcs.ts";
+import {
+  ScreenshotArtifactChunk,
+  ScreenshotArtifactReadError,
+  ScreenshotArtifactReadInput,
+} from "./screenshotArtifact.ts";
 
 export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
   workspaceListDirectories: "workspace.listDirectories",
+  workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   providerListSlashCommands: "provider.listSlashCommands",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
@@ -139,6 +145,12 @@ const WsWorkspaceListDirectoriesRpc = Rpc.make(WS_METHODS.workspaceListDirectori
   payload: WorkspaceListDirectoriesInput,
   success: WorkspaceListDirectoriesResult,
   error: WorkspaceListDirectoriesError,
+});
+
+const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadScreenshotArtifact, {
+  payload: ScreenshotArtifactReadInput,
+  success: ScreenshotArtifactChunk,
+  error: ScreenshotArtifactReadError,
 });
 
 const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashCommands, {
@@ -329,6 +341,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerUpdateSettingsRpc,
   WsProjectsSearchEntriesRpc,
   WsWorkspaceListDirectoriesRpc,
+  WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
   WsSubscribeVcsStatusRpc,
   WsVcsRefreshStatusRpc,

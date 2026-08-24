@@ -43,6 +43,8 @@ import {
   RuntimeTaskId,
   type RuntimeTaskStatus,
   type RuntimeTaskUsage,
+  MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
+  type ScreenshotArtifactReference,
   type TaskAgentLinkage,
   type TaskRunHandles,
   ThreadId,
@@ -136,6 +138,11 @@ interface ClaudeTurnState {
   readonly assistantTextBlocks: Map<number, AssistantTextBlockState>;
   readonly assistantTextBlockOrder: Array<AssistantTextBlockState>;
   readonly capturedProposedPlanKeys: Set<string>;
+  readonly capturedScreenshotArtifacts: Array<ScreenshotArtifactReference>;
+  readonly capturedScreenshotDigests: Set<string>;
+  readonly screenshotObservation?: {
+    readonly close: () => ReadonlyArray<string>;
+  };
   nextSyntheticAssistantBlockIndex: number;
 }
 
@@ -294,6 +301,22 @@ export interface ClaudeAdapterLiveOptions {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
+  readonly captureScreenshotFile?: (input: {
+    readonly cwd: string;
+    readonly filePath: string;
+  }) => Effect.Effect<
+    { readonly reference: ScreenshotArtifactReference; readonly digest: string } | undefined
+  >;
+  readonly captureScreenshotBase64?: (input: {
+    readonly dataBase64: string;
+    readonly mimeType: string;
+    readonly name?: string;
+  }) => Effect.Effect<
+    { readonly reference: ScreenshotArtifactReference; readonly digest: string } | undefined
+  >;
+  readonly observeScreenshots?: (
+    cwd: string,
+  ) => Effect.Effect<{ readonly close: () => ReadonlyArray<string> }>;
 }
 
 function isUuid(value: string): boolean {
@@ -1338,6 +1361,67 @@ function extractTextContent(value: unknown): string {
   return extractTextContent(record.content);
 }
 
+interface ClaudeToolResultImage {
+  readonly dataBase64: string;
+  readonly mimeType: string;
+}
+
+function extractToolResultImages(value: unknown): Array<ClaudeToolResultImage> {
+  if (!Array.isArray(value)) return [];
+  const images: Array<ClaudeToolResultImage> = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") continue;
+    const block = entry as Record<string, unknown>;
+    if (block.type !== "image" || !block.source || typeof block.source !== "object") continue;
+    const source = block.source as Record<string, unknown>;
+    const mimeType =
+      typeof source.media_type === "string"
+        ? source.media_type
+        : typeof source.mediaType === "string"
+          ? source.mediaType
+          : undefined;
+    if (source.type === "base64" && mimeType && typeof source.data === "string") {
+      images.push({ dataBase64: source.data, mimeType });
+    }
+  }
+  return images;
+}
+
+function sanitizedToolResultBlock(
+  block: Record<string, unknown>,
+  images: ReadonlyArray<ClaudeToolResultImage>,
+): Record<string, unknown> {
+  if (images.length === 0) return block;
+  return {
+    type: "tool_result",
+    tool_use_id: block.tool_use_id,
+    ...(block.is_error === true ? { is_error: true } : {}),
+    content: "[image content stored as a T3 screenshot artifact]",
+  };
+}
+
+function sanitizedUserMessageForTurnHistory(message: SDKUserMessage): unknown {
+  const content = message.message.content;
+  if (!Array.isArray(content)) return message.message;
+  return {
+    ...message.message,
+    content: content.map((entry) => {
+      if (!entry || typeof entry !== "object" || entry.type !== "tool_result") return entry;
+      const block = entry as Record<string, unknown>;
+      const images = extractToolResultImages(block.content);
+      return sanitizedToolResultBlock(block, images);
+    }),
+  };
+}
+
+function screenshotNameFromTool(tool: ToolInFlight): string | undefined {
+  for (const key of ["file_path", "filePath", "path"]) {
+    const value = tool.input[key];
+    if (typeof value === "string" && value.trim().length > 0) return value;
+  }
+  return undefined;
+}
+
 function extractExitPlanModePlan(value: unknown): string | undefined {
   if (!value || typeof value !== "object") {
     return undefined;
@@ -1391,6 +1475,7 @@ function toolResultBlocksFromUserMessage(message: SDKMessage): Array<{
   readonly block: Record<string, unknown>;
   readonly text: string;
   readonly isError: boolean;
+  readonly images: ReadonlyArray<ClaudeToolResultImage>;
 }> {
   if (message.type !== "user") {
     return [];
@@ -1406,6 +1491,7 @@ function toolResultBlocksFromUserMessage(message: SDKMessage): Array<{
     readonly block: Record<string, unknown>;
     readonly text: string;
     readonly isError: boolean;
+    readonly images: ReadonlyArray<ClaudeToolResultImage>;
   }> = [];
 
   for (const entry of content) {
@@ -1423,11 +1509,13 @@ function toolResultBlocksFromUserMessage(message: SDKMessage): Array<{
       continue;
     }
 
+    const images = extractToolResultImages(block.content);
     blocks.push({
       toolUseId,
-      block,
+      block: sanitizedToolResultBlock(block, images),
       text: extractTextContent(block.content),
       isError: block.is_error === true,
+      images,
     });
   }
 
@@ -1624,11 +1712,70 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
 
+  function appendCapturedScreenshot(
+    turnState: ClaudeTurnState,
+    captured:
+      | { readonly reference: ScreenshotArtifactReference; readonly digest: string }
+      | undefined,
+  ): void {
+    if (
+      !captured ||
+      turnState.capturedScreenshotArtifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN ||
+      turnState.capturedScreenshotDigests.has(captured.digest)
+    ) {
+      return;
+    }
+    turnState.capturedScreenshotDigests.add(captured.digest);
+    turnState.capturedScreenshotArtifacts.push(captured.reference);
+  }
+
+  const captureObservedScreenshots = Effect.fn("captureObservedScreenshots")(function* (
+    context: ClaudeSessionContext,
+    turnState: ClaudeTurnState,
+  ) {
+    const observedPaths = turnState.screenshotObservation?.close() ?? [];
+    if (!options?.captureScreenshotFile || !context.session.cwd) return;
+    for (const filePath of observedPaths) {
+      if (turnState.capturedScreenshotArtifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN) break;
+      const captured = yield* options.captureScreenshotFile({
+        cwd: context.session.cwd,
+        filePath,
+      });
+      appendCapturedScreenshot(turnState, captured);
+    }
+  });
+
+  const emitCapturedScreenshots = Effect.fn("emitCapturedScreenshots")(function* (
+    context: ClaudeSessionContext,
+    turnState: ClaudeTurnState,
+  ) {
+    if (turnState.capturedScreenshotArtifacts.length === 0) return;
+    const count = turnState.capturedScreenshotArtifacts.length;
+    const stamp = yield* makeEventStamp();
+    yield* offerRuntimeEvent({
+      type: "item.completed",
+      eventId: stamp.eventId,
+      provider: PROVIDER,
+      createdAt: stamp.createdAt,
+      threadId: context.session.threadId,
+      turnId: turnState.turnId,
+      itemId: RuntimeItemId.make(yield* randomUUIDv4),
+      payload: {
+        itemType: "image_view",
+        status: "completed",
+        title: "Visual artifacts",
+        detail: `${count} screenshot${count === 1 ? "" : "s"}`,
+        artifacts: [...turnState.capturedScreenshotArtifacts],
+      },
+      providerRefs: nativeProviderRefs(context),
+    });
+  });
+
   const updateSessionCwdFromWorktreeTool = Effect.fn("updateSessionCwdFromWorktreeTool")(function* (
     context: ClaudeSessionContext,
     tool: ToolInFlight,
     result: Record<string, unknown> | undefined,
-    rawMessage: SDKMessage,
+    rawMessage: unknown,
   ) {
     const cwd = cwdFromClaudeWorktreeToolResult(tool.toolName, result);
     if (!cwd || cwd === context.session.cwd) {
@@ -2213,6 +2360,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
+    yield* captureObservedScreenshots(context, turnState);
+    yield* emitCapturedScreenshots(context, turnState);
+
     for (const [index, tool] of context.inFlightTools.entries()) {
       const toolStamp = yield* makeEventStamp();
       yield* offerRuntimeEvent({
@@ -2608,9 +2758,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    if (context.turnState) {
-      context.turnState.items.push(message.message);
-    }
+    const sanitizedMessage = sanitizedUserMessageForTurnHistory(message);
+    if (context.turnState) context.turnState.items.push(sanitizedMessage);
 
     for (const toolResult of toolResultBlocksFromUserMessage(message)) {
       const toolEntry = Array.from(context.inFlightTools.entries()).find(
@@ -2624,7 +2773,28 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const itemStatus = toolResult.isError ? "failed" : "completed";
       const toolUseResult = readClaudeToolUseResult(message);
       if (!toolResult.isError) {
-        yield* updateSessionCwdFromWorktreeTool(context, tool, toolUseResult, message);
+        yield* updateSessionCwdFromWorktreeTool(context, tool, toolUseResult, sanitizedMessage);
+      }
+      if (
+        !toolResult.isError &&
+        context.turnState &&
+        options?.captureScreenshotBase64 &&
+        toolResult.images.length > 0
+      ) {
+        const name = screenshotNameFromTool(tool);
+        for (const image of toolResult.images) {
+          if (
+            context.turnState.capturedScreenshotArtifacts.length >=
+            MAX_SCREENSHOT_ARTIFACTS_PER_TURN
+          ) {
+            break;
+          }
+          const captured = yield* options.captureScreenshotBase64({
+            ...image,
+            ...(name ? { name } : {}),
+          });
+          appendCapturedScreenshot(context.turnState, captured);
+        }
       }
       const toolData = {
         toolName: tool.toolName,
@@ -2656,7 +2826,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         raw: {
           source: "claude.sdk.message",
           method: "claude/user",
-          payload: message,
+          payload: sanitizedMessage,
         },
       });
 
@@ -2681,7 +2851,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           raw: {
             source: "claude.sdk.message",
             method: "claude/user",
-            payload: message,
+            payload: sanitizedMessage,
           },
         });
       }
@@ -2710,7 +2880,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         raw: {
           source: "claude.sdk.message",
           method: "claude/user",
-          payload: message,
+          payload: sanitizedMessage,
         },
       });
 
@@ -2807,6 +2977,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         assistantTextBlocks: new Map(),
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
+        capturedScreenshotArtifacts: [],
+        capturedScreenshotDigests: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
       };
       context.session = {
@@ -4295,6 +4467,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
     const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
     if (steeringTurnState === null) {
+      const screenshotCwd = context.session.cwd;
+      const screenshotObservation =
+        screenshotCwd && options?.observeScreenshots
+          ? yield* options.observeScreenshots(screenshotCwd)
+          : undefined;
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,
@@ -4302,6 +4479,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         assistantTextBlocks: new Map(),
         assistantTextBlockOrder: [],
         capturedProposedPlanKeys: new Set(),
+        capturedScreenshotArtifacts: [],
+        capturedScreenshotDigests: new Set(),
+        ...(screenshotObservation ? { screenshotObservation } : {}),
         nextSyntheticAssistantBlockIndex: -1,
       };
 

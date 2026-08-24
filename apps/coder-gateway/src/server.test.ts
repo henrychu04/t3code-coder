@@ -145,6 +145,10 @@ describe("local Coder gateway", () => {
       response.headers["content-security-policy"]?.includes("script-src 'self' 'unsafe-eval'"),
       false,
     );
+    strictEqual(
+      response.headers["content-security-policy"]?.includes("img-src 'self' data: blob:"),
+      true,
+    );
   });
 
   it("rejects an unexpected Host header", async () => {

@@ -66,6 +66,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { TextGeneration } from "./textGeneration/TextGeneration.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -214,6 +215,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const settings = yield* ServerSettings.ServerSettingsService;
     const textGeneration = yield* TextGeneration;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+    const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -659,6 +661,7 @@ export const layer = CoderWsRpcGroup.toLayer(
               }),
           ),
         ),
+      [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
       [WS_METHODS.providerListSlashCommands]: ({ instanceId, cwd }) =>
         providerInstances.getInstance(instanceId).pipe(
           Effect.flatMap((instance) => {

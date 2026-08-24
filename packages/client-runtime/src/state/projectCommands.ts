@@ -5,6 +5,7 @@ import { Atom } from "effect/unstable/reactivity";
 import {
   createAtomCommandScheduler,
   createEnvironmentCommand,
+  createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
 } from "./runtime.ts";
 import {
@@ -42,6 +43,11 @@ export function createProjectEnvironmentAtoms<R, E>(
       label: "environment-data:workspace:list-directories",
       tag: WS_METHODS.workspaceListDirectories,
       staleTimeMs: 5_000,
+    }),
+    readScreenshotArtifact: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:workspace:read-screenshot-artifact",
+      tag: WS_METHODS.workspaceReadScreenshotArtifact,
+      concurrency: { mode: "parallel" },
     }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:create",

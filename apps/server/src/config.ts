@@ -14,6 +14,7 @@ export interface ServerDerivedPaths {
   readonly logsDir: string;
   readonly terminalLogsDir: string;
   readonly environmentIdPath: string;
+  readonly screenshotArtifactsDir: string;
 }
 
 export class ServerConfig extends Context.Service<
@@ -43,6 +44,7 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
     logsDir,
     terminalLogsDir: path.join(logsDir, "terminals"),
     environmentIdPath: path.join(stateDir, "environment-id"),
+    screenshotArtifactsDir: path.join(baseDir, "artifacts"),
   } satisfies ServerDerivedPaths;
 });
 
@@ -55,6 +57,7 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
       paths.terminalLogsDir,
       paths.providerStatusCacheDir,
       paths.worktreesDir,
+      paths.screenshotArtifactsDir,
     ].map((directory) => fileSystem.makeDirectory(directory, { recursive: true })),
     { concurrency: "unbounded" },
   );

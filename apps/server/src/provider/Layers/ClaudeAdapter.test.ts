@@ -17,6 +17,7 @@ import {
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
+  ScreenshotArtifactId,
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
@@ -158,6 +159,7 @@ function makeHarness(config?: {
   readonly baseDir?: string;
   readonly claudeConfig?: Partial<ClaudeSettings>;
   readonly instanceId?: ProviderInstanceId;
+  readonly adapterOptions?: Omit<ClaudeAdapterLiveOptions, "createQuery" | "instanceId">;
 }) {
   const query = new FakeClaudeQuery();
   let createInput:
@@ -169,6 +171,7 @@ function makeHarness(config?: {
 
   const adapterOptions: ClaudeAdapterLiveOptions = {
     ...(config?.instanceId ? { instanceId: config.instanceId } : {}),
+    ...config?.adapterOptions,
     createQuery: (input) => {
       createInput = input;
       return query;
@@ -1203,6 +1206,154 @@ describe("ClaudeAdapterLive", () => {
           "src/example.ts:1:foo",
         );
       }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("captures tool-result and observed screenshots without retaining base64", () => {
+    const capturedInputs: Array<{ dataBase64: string; mimeType: string; name?: string }> = [];
+    const capturedFiles: Array<{ cwd: string; filePath: string }> = [];
+    const harness = makeHarness({
+      adapterOptions: {
+        observeScreenshots: (cwd) => {
+          assert.equal(cwd, "/workspace/repo");
+          return Effect.succeed({
+            close: () => ["/workspace/repo/test-results/final.webp"],
+          });
+        },
+        captureScreenshotFile: (input) => {
+          capturedFiles.push(input);
+          return Effect.succeed({
+            reference: {
+              id: ScreenshotArtifactId.make("5e2df9f0-9e4e-4a68-a812-3024f8f2d4e1"),
+              name: "final.webp",
+              mimeType: "image/webp",
+              sizeBytes: 256,
+            },
+            digest: "filesystem-screenshot-digest",
+          });
+        },
+        captureScreenshotBase64: (input) => {
+          capturedInputs.push(input);
+          return Effect.succeed({
+            reference: {
+              id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
+              name: "home.png",
+              mimeType: "image/png",
+              sizeBytes: 128,
+            },
+            digest: "screenshot-digest",
+          });
+        },
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        cwd: "/workspace/repo",
+        runtimeMode: "full-access",
+      });
+      yield* adapter.sendTurn({ threadId: session.threadId, input: "verify the frontend" });
+
+      harness.query.emit({
+        type: "stream_event",
+        session_id: "sdk-session-screenshot",
+        uuid: "stream-screenshot-start",
+        parent_tool_use_id: null,
+        event: {
+          type: "content_block_start",
+          index: 0,
+          content_block: {
+            type: "tool_use",
+            id: "tool-screenshot-1",
+            name: "Screenshot",
+            input: { path: "test-results/home.png" },
+          },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "user",
+        session_id: "sdk-session-screenshot",
+        uuid: "user-screenshot-result",
+        parent_tool_use_id: null,
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "tool-screenshot-1",
+              content: [
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: "secret-image-base64",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "sdk-session-screenshot",
+        uuid: "result-screenshot",
+      } as unknown as SDKMessage);
+
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      const artifactEvent = runtimeEvents.find(
+        (event) => event.type === "item.completed" && event.payload.artifacts !== undefined,
+      );
+      assert.equal(artifactEvent?.type, "item.completed");
+      if (artifactEvent?.type === "item.completed") {
+        assert.equal(artifactEvent.payload.itemType, "image_view");
+        assert.deepEqual(artifactEvent.payload.artifacts, [
+          {
+            id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
+            name: "home.png",
+            mimeType: "image/png",
+            sizeBytes: 128,
+          },
+          {
+            id: ScreenshotArtifactId.make("5e2df9f0-9e4e-4a68-a812-3024f8f2d4e1"),
+            name: "final.webp",
+            mimeType: "image/webp",
+            sizeBytes: 256,
+          },
+        ]);
+      }
+      assert.deepEqual(capturedInputs, [
+        {
+          dataBase64: "secret-image-base64",
+          mimeType: "image/png",
+          name: "test-results/home.png",
+        },
+      ]);
+      assert.deepEqual(capturedFiles, [
+        {
+          cwd: "/workspace/repo",
+          filePath: "/workspace/repo/test-results/final.webp",
+        },
+      ]);
+      assert.notMatch(JSON.stringify(runtimeEvents), /secret-image-base64/u);
+      assert.notMatch(
+        JSON.stringify(yield* adapter.readThread(session.threadId)),
+        /secret-image-base64/u,
+      );
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),

@@ -35,11 +35,17 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
-  transfer, or background file synchronization. The only user-facing transfer exception is an image
-  pasted directly into the message composer. Accept PNG, JPEG, and WebP images only, validate their
-  signatures rather than trusting browser metadata, and reject images larger than 20 MiB. Generate
-  filenames internally and copy images only into `$HOME/.t3-coder/attachments`; never accept a
-  user-controlled local or remote path. The versioned helper bootstrap is the other transfer
+  transfer, or background file synchronization. The user-facing transfer exceptions are an image
+  pasted directly into the message composer and the display of turn-scoped screenshot artifacts.
+  Accept PNG, JPEG, and WebP images only, validate their signatures rather than trusting metadata,
+  and reject images larger than 20 MiB. For pasted images, generate filenames internally and copy
+  only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path. For
+  screenshot artifacts, capture at most 10 images that were created or modified inside the active
+  project during a Claude turn, or returned as image content by that turn's tool results. Copy them
+  to generated paths beneath `$HOME/.t3-coder/artifacts`, expose only opaque IDs and metadata in
+  durable activity, and return bytes in bounded chunks over the existing helper stdio RPC only
+  after explicit UI expansion. Do not expose arbitrary paths, download/export actions, local
+  persistence, or a general file-reading API. The versioned helper bootstrap is the other transfer
   exception.
 - Git is repository-local in the workspace. Do not add fetch, pull, push, pull-request, or hosted
   source-control integrations.

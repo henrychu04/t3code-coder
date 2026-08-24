@@ -8,6 +8,7 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
   ProviderDriverKind,
+  type ScreenshotArtifactReference,
   type ToolLifecycleItemType,
   type UserInputQuestion,
   type ThreadId,
@@ -54,6 +55,7 @@ export interface WorkLogEntry {
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
   toolData?: unknown;
+  artifacts?: ReadonlyArray<ScreenshotArtifactReference>;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -878,6 +880,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
+  const artifacts = extractScreenshotArtifacts(payload);
   const title = extractToolTitle(payload);
   const isTaskActivity =
     activity.kind === "task.started" ||
@@ -930,6 +933,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
+  }
+  if (artifacts.length > 0) {
+    entry.artifacts = artifacts;
   }
   if (title) {
     entry.toolTitle = title;
@@ -1144,6 +1150,7 @@ function mergeDerivedWorkLogEntries(
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
+  const artifacts = next.artifacts ?? previous.artifacts;
   return {
     ...previous,
     ...next,
@@ -1158,6 +1165,7 @@ function mergeDerivedWorkLogEntries(
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
+    ...(artifacts !== undefined ? { artifacts } : {}),
   };
 }
 
@@ -1640,6 +1648,26 @@ function extractWorkLogItemType(
     return payload.itemType;
   }
   return undefined;
+}
+
+function extractScreenshotArtifacts(
+  payload: Record<string, unknown> | null,
+): ReadonlyArray<ScreenshotArtifactReference> {
+  if (!Array.isArray(payload?.artifacts)) return [];
+  return payload.artifacts.filter((value): value is ScreenshotArtifactReference => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const artifact = value as Record<string, unknown>;
+    return (
+      typeof artifact.id === "string" &&
+      typeof artifact.name === "string" &&
+      (artifact.mimeType === "image/png" ||
+        artifact.mimeType === "image/jpeg" ||
+        artifact.mimeType === "image/webp") &&
+      typeof artifact.sizeBytes === "number" &&
+      Number.isInteger(artifact.sizeBytes) &&
+      artifact.sizeBytes > 0
+    );
+  });
 }
 
 function extractWorkLogRequestKind(

@@ -12,7 +12,7 @@ targets, structured port-forward rules, and an optional Coder executable path. A
 be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
 copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
-and provider sessions are memory-only.
+provider sessions, and screenshot artifact object URLs are memory-only.
 Each active workspace gets one loopback WebSocket that translates frame-delimited browser RPC into
 newline-delimited helper RPC; the gateway does not persist those application messages.
 
@@ -68,7 +68,8 @@ local client -> 127.0.0.1:configured port -> coder port-forward -> workspace ser
 
 The workspace helper owns the existing T3 orchestration store, project records, threads, Claude
 sessions, repository-local Git and filesystem operations, terminals, and checkpoints. Its durable
-state remains in the workspace. The local gateway does not open or mirror its SQLite file.
+state remains in the workspace. Validated screenshot artifacts are also stored in the workspace;
+the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts the workspace-installed `claude` executable directly with argument-array spawning
 and streaming JSON over stdin/stdout. No Anthropic Agent SDK package or Claude executable is bundled.
@@ -115,13 +116,37 @@ bootstrap and validated clipboard-image uploads only, with `coder ssh --stdio` a
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
 no network listener; Claude and user-initiated terminal commands remain subject to workspace policy.
 
-General user-facing file transfer remains disabled. The sole user-facing exception is an image
-pasted into the message composer. The browser sends the image only to the loopback gateway. The
-gateway accepts signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS
-temporary directory, and copies it through helper-scoped SCP to a generated path beneath
+General user-facing file transfer remains disabled. One exception is an image pasted into the
+message composer. The browser sends the image only to the loopback gateway. The gateway accepts
+signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS temporary directory,
+and copies it through helper-scoped SCP to a generated path beneath
 `$HOME/.t3-coder/attachments`. It then deletes the local staging file and inserts the remote path
-into the draft. User-controlled filesystem paths, arbitrary files, downloads, exports,
-drag-and-drop, and background synchronization remain prohibited.
+into the draft.
+
+The other user-facing exception displays screenshots produced while Claude verifies a frontend.
+This does not require MCP or a project-specific T3 skill. While a Claude turn is active, the helper
+observes image paths created or modified inside that turn's active project and accepts image content
+returned directly by tool results. Tool-result images are captured as they arrive; observed paths
+are captured when the turn completes. Both paths signature-validate PNG, JPEG, and WebP content,
+reject files larger than 20 MiB, deduplicate by content, cap capture at 10 images, and copy accepted
+bytes to generated paths beneath `$HOME/.t3-coder/artifacts`. The durable activity event contains
+only an opaque artifact ID, display name, MIME type, and byte count; tool-result base64 is removed
+before activity and turn history are persisted.
+
+```text
+project verification skill -> screenshot in active project --+
+Claude image tool result -> in-memory image content -----------+-> validate/dedupe/copy in workspace
+                                                                -> metadata-only activity row
+user expands Visual artifacts -> opaque-ID chunk RPC -> browser Blob URL -> thumbnail/lightbox
+```
+
+The browser initially renders only a collapsed artifact count. Explicitly expanding it requests
+bounded 512 KiB chunks by opaque ID over the existing browser-to-helper RPC path. The browser joins
+those chunks into memory-only object URLs and revokes them when the view unmounts. The RPC accepts
+no filesystem path, the gateway does not persist the bytes, and the UI exposes no download or
+export action. The observer ends with the turn and performs no scan or background synchronization.
+User-controlled filesystem paths, arbitrary files, downloads, exports, and drag-and-drop remain
+prohibited.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be
