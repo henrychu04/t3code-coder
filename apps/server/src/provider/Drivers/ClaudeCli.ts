@@ -539,7 +539,14 @@ function stringifyError(cause: unknown): string {
 }
 
 export function buildClaudeCliArgs(options: Options): Array<string> {
-  const args = ["--output-format", "stream-json", "--verbose", "--input-format", "stream-json"];
+  const args = [
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--input-format",
+    "stream-json",
+    "--print",
+  ];
 
   if (options.effort) args.push("--effort", options.effort);
   if (options.model) args.push("--model", options.model);
@@ -731,8 +738,13 @@ class ClaudeCliQuery implements Query {
           try {
             this.handleWireMessage(JSON.parse(line) as unknown);
           } catch (cause) {
-            this.fail(cause);
-            return;
+            // Workspace-managed Claude launchers may print a short status
+            // preamble before exec'ing the stream-json CLI. Ignore plain text,
+            // but retain strict handling for malformed JSON protocol frames.
+            if (line.startsWith("{") || line.startsWith("[")) {
+              this.fail(cause);
+              return;
+            }
           }
         }
         newline = buffered.indexOf(0x0a);

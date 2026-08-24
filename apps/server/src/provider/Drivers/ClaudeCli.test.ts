@@ -17,12 +17,13 @@ describe("ClaudeCli", () => {
       sessionId: "session-id",
     });
 
-    assert.deepEqual(args.slice(0, 5), [
+    assert.deepEqual(args.slice(0, 6), [
       "--output-format",
       "stream-json",
       "--verbose",
       "--input-format",
       "stream-json",
+      "--print",
     ]);
     assert.ok(args.includes("--strict-mcp-config"));
     assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
@@ -39,6 +40,7 @@ describe("ClaudeCli", () => {
       executablePath,
       `#!/usr/bin/env node
 import * as readline from "node:readline";
+process.stdout.write("Claude Startup Script\\nAuthentication verified\\n");
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 for await (const line of lines) {
   const message = JSON.parse(line);
