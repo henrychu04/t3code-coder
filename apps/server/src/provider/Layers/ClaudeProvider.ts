@@ -564,6 +564,10 @@ function apiProviderAuthMetadata(
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
+// `get_settings` is optional capability metadata. Older Claude Code versions
+// may ignore the request instead of rejecting it, so it must not consume the
+// entire probe budget and discard a valid authentication-bearing init result.
+const CAPABILITIES_SETTINGS_TIMEOUT_MS = 1_000;
 
 /**
  * Keep workspace-scoped command discovery intact while isolating the periodic
@@ -813,7 +817,7 @@ const probeClaudeCapabilities = (
         }),
       });
       const init = await q.initializationResult();
-      const settings = await q.getSettings().catch(() => undefined);
+      const settings = await q.getSettings(CAPABILITIES_SETTINGS_TIMEOUT_MS).catch(() => undefined);
       const account = init.account as
         | {
             readonly email?: string;

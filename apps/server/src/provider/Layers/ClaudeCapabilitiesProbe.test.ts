@@ -249,4 +249,52 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       assert.equal(flagSettings.disableAllHooks, true);
     }).pipe(Effect.scoped),
   );
+
+  it.effect("keeps a valid init result when an older CLI ignores get_settings", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-probe-old-cli-" });
+      const executablePath = path.join(tempDir, "fake-claude.mjs");
+
+      yield* fs.writeFileString(
+        executablePath,
+        [
+          "#!/usr/bin/env node",
+          'import { createInterface } from "node:readline";',
+          "const lines = createInterface({ input: process.stdin });",
+          'lines.on("line", (line) => {',
+          "  const message = JSON.parse(line);",
+          '  if (message.type !== "control_request" || message.request?.subtype !== "initialize") return;',
+          "  process.stdout.write(JSON.stringify({",
+          '    type: "control_response",',
+          "    response: {",
+          '      subtype: "success",',
+          "      request_id: message.request_id,",
+          "      response: {",
+          "        commands: [],",
+          "        models: [],",
+          '        account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },',
+          "      },",
+          "    },",
+          '  }) + "\\n");',
+          "});",
+          "setInterval(() => {}, 1_000);",
+          "",
+        ].join("\n"),
+      );
+      yield* fs.chmod(executablePath, 0o755);
+
+      const capabilities = yield* probeClaudeCapabilities(
+        decodeClaudeSettings({ binaryPath: executablePath }),
+        process.env,
+        tempDir,
+      );
+
+      assert.equal(capabilities?.email, "dev@example.com");
+      assert.equal(capabilities?.subscriptionType, "pro");
+      assert.equal(capabilities?.autoModeDisabled, true);
+      assert.equal(capabilities?.bypassPermissionsDisabled, true);
+    }).pipe(Effect.scoped),
+  );
 });

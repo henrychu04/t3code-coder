@@ -525,7 +525,7 @@ export interface Query extends AsyncIterable<SDKMessage> {
   setPermissionMode(mode: PermissionMode): Promise<void>;
   setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void>;
   getContextUsage(): Promise<SDKControlGetContextUsageResponse>;
-  getSettings(): Promise<Record<string, unknown>>;
+  getSettings(timeoutMs?: number): Promise<Record<string, unknown>>;
   initializationResult(): Promise<SDKControlInitializeResponse>;
   close(): void;
 }
@@ -666,8 +666,8 @@ class ClaudeCliQuery implements Query {
     );
   }
 
-  getSettings(): Promise<Record<string, unknown>> {
-    return this.request({ subtype: "get_settings" }).then(
+  getSettings(timeoutMs?: number): Promise<Record<string, unknown>> {
+    return this.request({ subtype: "get_settings" }, timeoutMs).then(
       (response) => response as Record<string, unknown>,
     );
   }
@@ -818,10 +818,13 @@ class ClaudeCliQuery implements Query {
     }
   }
 
-  private request(request: Record<string, unknown>): Promise<Record<string, unknown>> {
+  private request(
+    request: Record<string, unknown>,
+    timeoutMs = CONTROL_REQUEST_TIMEOUT_MS,
+  ): Promise<Record<string, unknown>> {
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
-      const timeoutSignal = AbortSignal.timeout(CONTROL_REQUEST_TIMEOUT_MS);
+      const timeoutSignal = AbortSignal.timeout(timeoutMs);
       timeoutSignal.addEventListener("abort", () => {
         const pending = this.pendingResponses.get(requestId);
         if (!pending) return;
