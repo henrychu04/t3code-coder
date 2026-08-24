@@ -9,6 +9,9 @@ import {
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
   buildCoderPortForwardInvocation,
+  buildCoderRestartWorkspaceInvocation,
+  buildCoderStartWorkspaceInvocation,
+  buildCoderUpdateWorkspaceInvocation,
   buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceProbeInvocation,
@@ -134,6 +137,33 @@ describe("Coder CLI command construction", () => {
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/attachments/u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");
+  });
+
+  it("builds non-interactive workspace lifecycle invocations", () => {
+    const options = {
+      globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+    };
+    const commonArgs = [
+      "--global-config",
+      String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
+      "--disable-network-telemetry",
+      "--disable-direct-connections",
+      "--no-version-warning",
+      "--url",
+      "https://coder.example.gs.com",
+    ];
+    deepStrictEqual(buildCoderStartWorkspaceInvocation(deployment, workspace, options), {
+      executable: String.raw`C:\Program Files\Coder\coder.exe`,
+      args: [...commonArgs, "start", "--yes", "equities-dev"],
+    });
+    deepStrictEqual(buildCoderRestartWorkspaceInvocation(deployment, workspace, options), {
+      executable: String.raw`C:\Program Files\Coder\coder.exe`,
+      args: [...commonArgs, "restart", "--yes", "equities-dev"],
+    });
+    deepStrictEqual(buildCoderUpdateWorkspaceInvocation(deployment, workspace, options), {
+      executable: String.raw`C:\Program Files\Coder\coder.exe`,
+      args: [...commonArgs, "update", "equities-dev"],
+    });
   });
 
   it("builds temporary SCP configuration and remote commands through Coder", () => {

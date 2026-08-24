@@ -37,6 +37,18 @@ interface ManagedGatewayProcess {
   readonly cleanupListeners: () => void;
 }
 
+function processLaunchError(
+  label: string,
+  executable: string,
+  cause: unknown,
+): GatewayProcessError {
+  const message =
+    typeof cause === "object" && cause !== null && "code" in cause && cause.code === "ENOENT"
+      ? `Coder executable does not exist: ${executable}.`
+      : `${label} could not start.`;
+  return new GatewayProcessError(message, { cause });
+}
+
 function appendOutput(
   current: Buffer<ArrayBufferLike>,
   chunk: Buffer<ArrayBufferLike>,
@@ -123,7 +135,7 @@ export function runGatewayProcess(
                       : "pipe",
                 ],
               }),
-            catch: (cause) => new GatewayProcessError(`${input.label} could not start.`, { cause }),
+            catch: (cause) => processLaunchError(input.label, invocation.executable, cause),
           });
           const onStdout = (chunk: Buffer) => {
             const next = appendOutput(
@@ -161,7 +173,7 @@ export function runGatewayProcess(
             if (child.pid === undefined) Deferred.doneUnsafe(exited, Effect.void);
             Deferred.doneUnsafe(
               completion,
-              Effect.fail(new GatewayProcessError(`${input.label} could not start.`, { cause })),
+              Effect.fail(processLaunchError(input.label, invocation.executable, cause)),
             );
           };
           const onExit = (code: number | null, signal: NodeJS.Signals | null) => {

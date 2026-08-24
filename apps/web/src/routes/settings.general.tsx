@@ -9,11 +9,17 @@ import {
   type CoderDeploymentProfile,
 } from "../coder/api";
 import { useCoder } from "../coder/CoderBootstrap";
+import {
+  CoderWorkspaceIssueList,
+  summarizeCoderWorkspaceError,
+  type CoderWorkspaceIssue,
+} from "../components/CoderWorkspaceIssues";
 import { PortForwardSettings } from "../components/settings/PortForwardSettings";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
+import { readLocalApi } from "../localApi";
 import { randomUUID } from "../lib/utils";
 
 type AuthStatus = "checking" | CoderDeploymentAuthenticationStatus;
@@ -23,12 +29,26 @@ function newDeploymentId(): string {
 }
 
 function CoderSettingsView() {
-  const { config, connectionErrors, connectWorkspace, disconnectWorkspace, saveConfig } =
-    useCoder();
+  const {
+    config,
+    connectionErrors,
+    connectWorkspace,
+    disconnectWorkspace,
+    refreshWorkspaceRuntime,
+    restartWorkspace,
+    saveConfig,
+    startWorkspace,
+    updateWorkspace,
+    workspaceRuntime,
+  } = useCoder();
   const [authByDeployment, setAuthByDeployment] = useState<Readonly<Record<string, AuthStatus>>>(
     {},
   );
   const [authenticating, setAuthenticating] = useState<string | null>(null);
+  const [workspaceAction, setWorkspaceAction] = useState<{
+    readonly id: string;
+    readonly kind: "start" | "restart" | "update";
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const refreshAuth = async (deploymentId: string): Promise<void> => {
@@ -48,6 +68,12 @@ function CoderSettingsView() {
     }
   }, [config.deployments]);
 
+  useEffect(() => {
+    void refreshWorkspaceRuntime();
+    const interval = window.setInterval(() => void refreshWorkspaceRuntime(), 5_000);
+    return () => window.clearInterval(interval);
+  }, [refreshWorkspaceRuntime]);
+
   const login = async (deploymentId: string): Promise<void> => {
     setAuthenticating(deploymentId);
     setError(null);
@@ -58,6 +84,40 @@ function CoderSettingsView() {
       setError(cause instanceof Error ? cause.message : "Coder login failed.");
     } finally {
       setAuthenticating(null);
+    }
+  };
+
+  const runWorkspaceAction = async (
+    workspaceId: string,
+    workspaceName: string,
+    kind: "start" | "restart" | "update",
+  ): Promise<void> => {
+    if (kind !== "start") {
+      const localApi = readLocalApi();
+      if (localApi === undefined) return;
+      const label = kind === "restart" ? "Restart" : "Update";
+      const confirmed = await localApi.dialogs.confirm(
+        [
+          `${label} ${workspaceName}?`,
+          "All ongoing sessions in this workspace will be stopped.",
+          `T3 Coder will reconnect after the ${kind} completes.`,
+        ].join("\n"),
+        { variant: "destructive" },
+      );
+      if (!confirmed) return;
+    }
+
+    setWorkspaceAction({ id: workspaceId, kind });
+    setError(null);
+    try {
+      if (kind === "start") await startWorkspace(workspaceId);
+      else if (kind === "restart") await restartWorkspace(workspaceId);
+      else await updateWorkspace(workspaceId);
+      await refreshWorkspaceRuntime();
+    } catch {
+      // CoderBootstrap records the current workspace-scoped failure.
+    } finally {
+      setWorkspaceAction(null);
     }
   };
 
@@ -157,58 +217,158 @@ function CoderSettingsView() {
               const deployment = config.deployments.find(
                 (entry) => entry.id === workspace.deploymentId,
               );
+              const runtime = workspaceRuntime[workspace.id];
+              const action = workspaceAction?.id === workspace.id ? workspaceAction.kind : null;
+              const checking = runtime === undefined;
+              const starting = runtime?.status === "starting" || action !== null;
+              const statusUnavailable = runtime?.status === "unavailable";
+              const workspaceIssues: CoderWorkspaceIssue[] = [];
+              if (statusUnavailable && runtime.error !== undefined) {
+                workspaceIssues.push({
+                  id: "status",
+                  title: "Workspace status unavailable",
+                  summary: summarizeCoderWorkspaceError(runtime.error),
+                  details: runtime.error,
+                });
+              }
+              const connectionError = connectionErrors[workspace.id];
+              if (
+                connectionError !== undefined &&
+                !checking &&
+                !starting &&
+                !statusUnavailable &&
+                runtime.status !== "stopped"
+              ) {
+                workspaceIssues.push({
+                  id: "connection",
+                  title: "T3 connection failed",
+                  summary: summarizeCoderWorkspaceError(connectionError),
+                  details: connectionError,
+                });
+              }
               return (
-                <div
-                  className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4"
-                  key={workspace.id}
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{workspace.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {deployment?.name ?? workspace.deploymentId} · {workspace.workspace}
-                    </p>
-                    {connectionErrors[workspace.id] ? (
-                      <p className="mt-2 text-xs text-destructive-foreground">
-                        {connectionErrors[workspace.id]}
+                <div className="rounded-xl border bg-card p-4" key={workspace.id}>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{workspace.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {deployment?.name ?? workspace.deploymentId} · {workspace.workspace}
                       </p>
-                    ) : null}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Badge variant="outline">
+                          {runtime === undefined
+                            ? "Checking…"
+                            : runtime.status === "running"
+                              ? "Running"
+                              : runtime.status === "starting"
+                                ? "Starting"
+                                : runtime.status === "stopped"
+                                  ? "Stopped"
+                                  : runtime.status === "unavailable"
+                                    ? "Status unavailable"
+                                    : "Unknown"}
+                        </Badge>
+                        {runtime?.updateAvailable ? (
+                          <Badge variant="outline">Update available</Badge>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      {runtime?.status === "stopped" ? (
+                        <Button
+                          disabled={workspaceAction !== null}
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void runWorkspaceAction(workspace.id, workspace.name, "start")
+                          }
+                        >
+                          {action === "start" ? "Starting…" : "Start"}
+                        </Button>
+                      ) : (
+                        <Button
+                          disabled={checking || starting || statusUnavailable}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void connectWorkspace(workspace.id).catch(() => undefined)}
+                        >
+                          {runtime?.status === "starting" ? "Starting…" : "Reconnect"}
+                        </Button>
+                      )}
+                      {statusUnavailable ? (
+                        <Button
+                          disabled={workspaceAction !== null}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void refreshWorkspaceRuntime()}
+                        >
+                          Retry status
+                        </Button>
+                      ) : null}
+                      {runtime?.updateAvailable ? (
+                        <Button
+                          disabled={workspaceAction !== null || runtime.status === "starting"}
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void runWorkspaceAction(workspace.id, workspace.name, "update")
+                          }
+                        >
+                          {action === "update" ? "Updating…" : "Update"}
+                        </Button>
+                      ) : null}
+                      {runtime?.status === "stopped" ? null : (
+                        <Button
+                          disabled={
+                            workspaceAction !== null ||
+                            checking ||
+                            runtime?.status === "starting" ||
+                            statusUnavailable
+                          }
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            void runWorkspaceAction(workspace.id, workspace.name, "restart")
+                          }
+                        >
+                          {action === "restart" ? "Restarting…" : "Restart"}
+                        </Button>
+                      )}
+                      <Button
+                        disabled={action !== null}
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          setError(null);
+                          try {
+                            await disconnectWorkspace(workspace.id);
+                            await saveConfig({
+                              ...config,
+                              workspaces: config.workspaces.filter(
+                                (entry) => entry.id !== workspace.id,
+                              ),
+                              ...(config.portForwards === undefined
+                                ? {}
+                                : {
+                                    portForwards: config.portForwards.filter(
+                                      (entry) => entry.workspaceId !== workspace.id,
+                                    ),
+                                  }),
+                            });
+                          } catch (cause) {
+                            setError(
+                              cause instanceof Error
+                                ? cause.message
+                                : "Could not remove workspace.",
+                            );
+                          }
+                        }}
+                      >
+                        Remove
+                      </Button>
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void connectWorkspace(workspace.id).catch(() => undefined)}
-                  >
-                    Reconnect
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={async () => {
-                      setError(null);
-                      try {
-                        await disconnectWorkspace(workspace.id);
-                        await saveConfig({
-                          ...config,
-                          workspaces: config.workspaces.filter(
-                            (entry) => entry.id !== workspace.id,
-                          ),
-                          ...(config.portForwards === undefined
-                            ? {}
-                            : {
-                                portForwards: config.portForwards.filter(
-                                  (entry) => entry.workspaceId !== workspace.id,
-                                ),
-                              }),
-                        });
-                      } catch (cause) {
-                        setError(
-                          cause instanceof Error ? cause.message : "Could not remove workspace.",
-                        );
-                      }
-                    }}
-                  >
-                    Remove
-                  </Button>
+                  <CoderWorkspaceIssueList issues={workspaceIssues} />
                 </div>
               );
             })
@@ -217,6 +377,7 @@ function CoderSettingsView() {
 
         <PortForwardSettings
           config={config}
+          workspaceRuntime={workspaceRuntime}
           onError={setError}
           onSaveConfig={saveConfig}
         />
