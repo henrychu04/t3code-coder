@@ -38,11 +38,7 @@ import {
   WS_METHODS,
 } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import {
-  buildGeneratedWorktreeBranchName,
-  isTemporaryWorktreeBranch,
-  sanitizeBranchFragment,
-} from "@t3tools/shared/git";
+import { sanitizeBranchFragment } from "@t3tools/shared/git";
 
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
@@ -63,7 +59,6 @@ import { ProviderService } from "./provider/Services/ProviderService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
-import { TextGeneration } from "./textGeneration/TextGeneration.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
@@ -213,7 +208,6 @@ export const layer = CoderWsRpcGroup.toLayer(
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const providerService = yield* ProviderService;
     const settings = yield* ServerSettings.ServerSettingsService;
-    const textGeneration = yield* TextGeneration;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
@@ -514,56 +508,10 @@ export const layer = CoderWsRpcGroup.toLayer(
           }
           if (bootstrap?.prepareWorktree) {
             const prepareWorktree = bootstrap.prepareWorktree;
-            const temporaryBranch = prepareWorktree.branch;
-            const generatedBranch = temporaryBranch
-              ? yield* Effect.gen(function* () {
-                  if (!isTemporaryWorktreeBranch(temporaryBranch)) {
-                    return undefined;
-                  }
-                  const serverSettings = yield* settings.getSettings;
-                  const generated = yield* textGeneration.generateBranchName({
-                    cwd: prepareWorktree.projectCwd,
-                    message: turnStart.message.text,
-                    modelSelection: serverSettings.textGenerationModelSelection,
-                  });
-                  const baseBranch = buildGeneratedWorktreeBranchName(generated.branch);
-                  const matchingRefs = yield* git.listRefs({
-                    cwd: prepareWorktree.projectCwd,
-                    query: baseBranch,
-                    refKind: "local",
-                    limit: 200,
-                  });
-                  const existingBranches = new Set(matchingRefs.refs.map((ref) => ref.name));
-                  const repoWorktreesDir = path.join(
-                    config.worktreesDir,
-                    path.basename(prepareWorktree.projectCwd),
-                  );
-                  for (let suffix = 1; suffix <= 1_000; suffix += 1) {
-                    const branch = suffix === 1 ? baseBranch : `${baseBranch}-${suffix}`;
-                    const worktreePath = path.join(repoWorktreesDir, branch.replaceAll("/", "-"));
-                    if (
-                      !existingBranches.has(branch) &&
-                      !(yield* fileSystem.exists(worktreePath))
-                    ) {
-                      return branch;
-                    }
-                  }
-                  return yield* Effect.fail(
-                    new Error(`Could not find an available worktree name for '${baseBranch}'.`),
-                  );
-                }).pipe(
-                  Effect.catchCause((cause) =>
-                    Effect.logWarning("failed to generate initial branch and worktree name", {
-                      threadId: command.threadId,
-                      cause: Cause.pretty(cause),
-                    }).pipe(Effect.as(undefined)),
-                  ),
-                )
-              : undefined;
             const worktree = yield* git.createWorktree({
               cwd: prepareWorktree.projectCwd,
               refName: prepareWorktree.baseBranch,
-              newRefName: generatedBranch ?? temporaryBranch,
+              newRefName: prepareWorktree.branch,
               baseRefName: prepareWorktree.baseBranch,
               path: null,
             });

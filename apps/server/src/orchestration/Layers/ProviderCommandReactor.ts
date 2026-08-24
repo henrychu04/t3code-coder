@@ -14,7 +14,6 @@ import {
 import {
   buildGeneratedWorktreeBranchName,
   isTemporaryWorktreeBranch,
-  sanitizeBranchFragment,
 } from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
@@ -22,16 +21,13 @@ import * as Crypto from "effect/Crypto";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 
 import { resolveThreadWorkspaceCwd } from "../../checkpointing/Utils.ts";
-import { ServerConfig } from "../../config.ts";
 import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import type { ProviderServiceError } from "../../provider/Errors.ts";
 import { TextGeneration } from "../../textGeneration/TextGeneration.ts";
@@ -242,9 +238,6 @@ function stalePendingRequestDetail(
 
 const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const config = yield* ServerConfig;
   const orchestrationEngine = yield* OrchestrationEngineService;
   const projectionSnapshotQuery = yield* ProjectionSnapshotQuery;
   const providerService = yield* ProviderService;
@@ -729,20 +722,18 @@ const make = Effect.gen(function* () {
     readonly threadId: ThreadId;
     readonly branch: string | null;
     readonly worktreePath: string | null;
-    readonly projectRoot: string | null;
     readonly messageText: string;
   }) {
-    if (!input.branch || !input.worktreePath || !input.projectRoot) {
-      return input.worktreePath ?? undefined;
+    if (!input.branch || !input.worktreePath) {
+      return;
     }
     if (!isTemporaryWorktreeBranch(input.branch)) {
-      return input.worktreePath;
+      return;
     }
 
     const oldBranch = input.branch;
     const cwd = input.worktreePath;
-    const projectRoot = input.projectRoot;
-    return yield* Effect.gen(function* () {
+    yield* Effect.gen(function* () {
       const settings = yield* serverSettingsService.getSettings;
       const modelSelection = settings.textGenerationModelSelection;
 
@@ -751,89 +742,20 @@ const make = Effect.gen(function* () {
         message: input.messageText,
         modelSelection,
       });
-      if (!generated) return cwd;
+      if (!generated) return;
 
       const targetBranch = buildGeneratedWorktreeBranchName(generated.branch);
-      if (targetBranch === oldBranch) return cwd;
+      if (targetBranch === oldBranch) return;
 
-      const worktreesRoot = path.resolve(config.worktreesDir);
-      const resolvedCwd = path.resolve(cwd);
-      const currentParent = path.dirname(resolvedCwd);
-      if (currentParent !== worktreesRoot && path.dirname(currentParent) !== worktreesRoot) {
-        return yield* Effect.fail(
-          new Error(`Refusing to rename unmanaged worktree folder '${resolvedCwd}'.`),
-        );
-      }
-
-      const baseName = sanitizeBranchFragment(targetBranch).replaceAll("/", "-");
-      let targetWorktreePath: string | undefined;
-      for (let suffix = 1; suffix <= 1_000; suffix += 1) {
-        const name = suffix === 1 ? baseName : `${baseName}-${suffix}`;
-        const candidate = path.join(currentParent, name);
-        if (candidate === resolvedCwd || !(yield* fileSystem.exists(candidate))) {
-          targetWorktreePath = candidate;
-          break;
-        }
-      }
-      if (!targetWorktreePath) {
-        return yield* Effect.fail(
-          new Error(`Could not find an available worktree folder for '${targetBranch}'.`),
-        );
-      }
-
-      let branchRenamed = false;
-      let worktreeMoved = false;
-      yield* Effect.gen(function* () {
-        const renamed = yield* gitWorkflow.renameBranch({
-          cwd,
-          oldBranch,
-          newBranch: targetBranch,
-        });
-        branchRenamed = true;
-        if (targetWorktreePath !== resolvedCwd) {
-          yield* gitWorkflow.moveWorktree({
-            cwd: projectRoot,
-            oldPath: resolvedCwd,
-            newPath: targetWorktreePath,
-          });
-          worktreeMoved = true;
-        }
-        yield* orchestrationEngine.dispatch({
-          type: "thread.meta.update",
-          commandId: yield* serverCommandId("worktree-branch-rename"),
-          threadId: input.threadId,
-          branch: renamed.branch,
-          worktreePath: targetWorktreePath,
-        });
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.uninterruptible(
-            Effect.gen(function* () {
-              if (worktreeMoved) {
-                yield* gitWorkflow
-                  .moveWorktree({
-                    cwd: projectRoot,
-                    oldPath: targetWorktreePath,
-                    newPath: resolvedCwd,
-                  })
-                  .pipe(Effect.ignore);
-              }
-              if (branchRenamed) {
-                yield* gitWorkflow
-                  .renameBranch({
-                    cwd: resolvedCwd,
-                    oldBranch: targetBranch,
-                    newBranch: oldBranch,
-                  })
-                  .pipe(Effect.ignore);
-              }
-              return yield* Effect.failCause(cause);
-            }),
-          ),
-        ),
-      );
-      yield* vcsStatus.refresh(targetWorktreePath).pipe(Effect.ignoreCause({ log: true }));
-      return targetWorktreePath;
+      const renamed = yield* gitWorkflow.renameBranch({ cwd, oldBranch, newBranch: targetBranch });
+      yield* orchestrationEngine.dispatch({
+        type: "thread.meta.update",
+        commandId: yield* serverCommandId("worktree-branch-rename"),
+        threadId: input.threadId,
+        branch: renamed.branch,
+        worktreePath: cwd,
+      });
+      yield* vcsStatus.refresh(cwd).pipe(Effect.ignoreCause({ log: true }));
     }).pipe(
       Effect.catchCause((cause) =>
         Effect.logWarning("provider command reactor failed to generate or rename worktree branch", {
@@ -841,7 +763,7 @@ const make = Effect.gen(function* () {
           cwd,
           oldBranch,
           cause: Cause.pretty(cause),
-        }).pipe(Effect.as(cwd)),
+        }),
       ),
     );
   });
@@ -1097,18 +1019,17 @@ const make = Effect.gen(function* () {
         ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
       };
 
-      const namedWorktreePath = yield* maybeGenerateAndRenameWorktreeBranchForFirstTurn({
+      yield* maybeGenerateAndRenameWorktreeBranchForFirstTurn({
         threadId: event.payload.threadId,
         branch: thread.branch,
         worktreePath: thread.worktreePath,
-        projectRoot: project?.workspaceRoot ?? null,
         ...generationInput,
-      });
+      }).pipe(Effect.forkScoped);
 
       if (canReplaceThreadTitle(thread.title, event.payload.titleSeed)) {
         yield* maybeGenerateThreadTitleForFirstTurn({
           threadId: event.payload.threadId,
-          cwd: namedWorktreePath ?? generationCwd,
+          cwd: generationCwd,
           ...generationInput,
         }).pipe(Effect.forkScoped);
       }
