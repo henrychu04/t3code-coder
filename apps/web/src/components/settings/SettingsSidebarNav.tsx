@@ -27,7 +27,7 @@ export function SettingsSidebarNav({ pathname }: { readonly pathname: string }) 
       if (isMobile) {
         setOpenMobile(false);
       }
-      void navigate({ to });
+      void navigate({ to, replace: true });
     },
     [isMobile, navigate, setOpenMobile],
   );
