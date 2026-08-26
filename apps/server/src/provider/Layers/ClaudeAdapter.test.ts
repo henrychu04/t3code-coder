@@ -1963,7 +1963,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: firstSession.threadId,
         input: "hello",
-        attachments: [],
       });
 
       const interruptFiber = yield* adapter
@@ -2198,7 +2197,6 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "spawn an agent",
-        attachments: [],
       });
 
       // The subagent streams its first assistant snapshot before the task is

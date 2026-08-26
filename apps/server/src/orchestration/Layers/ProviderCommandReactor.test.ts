@@ -1351,7 +1351,6 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-missing-worktree"),
           role: "user",
           text: "continue",
-          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
