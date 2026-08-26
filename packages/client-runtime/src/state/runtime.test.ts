@@ -59,8 +59,8 @@ const OFFLINE_QUERY_FAILURE = new ConnectionTransientError({
 });
 
 const BLOCKED_QUERY_FAILURE = new ConnectionBlockedError({
-  reason: "permission",
-  detail: "Access denied.",
+  reason: "configuration",
+  detail: "Connection is blocked by configuration.",
 });
 
 function queryConnectionState(
