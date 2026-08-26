@@ -33,6 +33,9 @@ export class GitWorkflowService extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
+    readonly pruneWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<void, GitCommandError>;
     readonly createRef: (
       input: VcsCreateRefInput,
     ) => Effect.Effect<VcsCreateRefResult, GitCommandError>;
@@ -70,6 +73,7 @@ export const layer = Layer.effect(
       listRefs: git.listRefs,
       createWorktree: git.createWorktree,
       removeWorktree: git.removeWorktree,
+      pruneWorktrees: git.pruneWorktrees,
       createRef: git.createRef,
       switchRef: (input) => Effect.scoped(git.switchRef(input)),
       renameBranch: git.renameBranch,
