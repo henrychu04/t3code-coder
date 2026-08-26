@@ -18,6 +18,7 @@ import {
   type ReviewDiffFileContentsInput,
   type ReviewDiffFileContentsResult,
   type ReviewDiffFileError,
+  type ReviewDiffFileSnapshotError,
   type ReviewDiffFileSnapshotResult,
   type ReviewDiffPreviewError,
   type ReviewDiffPreviewInput,
@@ -39,10 +40,10 @@ export class ReviewService extends Context.Service<
     ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffFileError>;
     readonly openDiffFileContents: (
       input: ReviewDiffFileContentsInput,
-    ) => Effect.Effect<ReviewDiffFileSnapshotResult, ReviewDiffFileError>;
+    ) => Effect.Effect<ReviewDiffFileSnapshotResult, ReviewDiffFileSnapshotError>;
     readonly readDiffFileChunk: (
       input: ReviewDiffFileChunkInput,
-    ) => Effect.Effect<ReviewDiffFileChunkResult, ReviewDiffFileError>;
+    ) => Effect.Effect<ReviewDiffFileChunkResult, ReviewDiffFileSnapshotError>;
   }
 >()("t3/review/ReviewService") {}
 
@@ -194,37 +195,44 @@ export const make = Effect.gen(function* () {
   const openDiffFileContents: ReviewService["Service"]["openDiffFileContents"] = Effect.fn(
     "ReviewService.openDiffFileContents",
   )(function* (input) {
-    const contents = yield* getDiffFileContents(input);
-    return yield* Effect.try({
-      try: () => {
-        const oldFile =
-          input.changeType === "new" || input.changeType === "rename-pure"
-            ? null
-            : cacheSnapshot(contents.oldContents, input.oldPath);
-        try {
-          return {
-            oldFile,
-            newFile:
-              input.changeType === "deleted"
-                ? null
-                : cacheSnapshot(contents.newContents, input.newPath),
-          };
-        } catch (cause) {
-          if (oldFile !== null) removeSnapshot(oldFile.snapshotId);
-          throw cause;
-        }
-      },
-      catch: (cause) =>
-        cause instanceof GitCommandError || cause instanceof ReviewDiffFileTooLargeError
-          ? cause
-          : new GitCommandError({
-              operation: "ReviewService.openDiffFileContents",
-              command: "snapshot review file",
-              cwd: input.cwd,
-              detail: "Could not create a review file snapshot.",
-              cause,
-            }),
-    });
+    return yield* Effect.gen(function* () {
+      const contents = yield* getDiffFileContents(input);
+      return yield* Effect.try({
+        try: () => {
+          const oldFile =
+            input.changeType === "new" || input.changeType === "rename-pure"
+              ? null
+              : cacheSnapshot(contents.oldContents, input.oldPath);
+          try {
+            return {
+              _tag: "opened" as const,
+              oldFile,
+              newFile:
+                input.changeType === "deleted"
+                  ? null
+                  : cacheSnapshot(contents.newContents, input.newPath),
+            };
+          } catch (cause) {
+            if (oldFile !== null) removeSnapshot(oldFile.snapshotId);
+            throw cause;
+          }
+        },
+        catch: (cause) =>
+          cause instanceof GitCommandError || cause instanceof ReviewDiffFileTooLargeError
+            ? cause
+            : new GitCommandError({
+                operation: "ReviewService.openDiffFileContents",
+                command: "snapshot review file",
+                cwd: input.cwd,
+                detail: "Could not create a review file snapshot.",
+                cause,
+              }),
+      });
+    }).pipe(
+      Effect.catchTag("ReviewDiffFileTooLargeError", ({ path: filePath, maxBytes }) =>
+        Effect.succeed({ _tag: "tooLarge" as const, path: filePath, maxBytes }),
+      ),
+    );
   });
 
   const readDiffFileChunk: ReviewService["Service"]["readDiffFileChunk"] = Effect.fn(

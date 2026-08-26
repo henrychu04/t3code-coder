@@ -65,10 +65,16 @@ export const ReviewDiffFileSnapshotReference = Schema.Struct({
 });
 export type ReviewDiffFileSnapshotReference = typeof ReviewDiffFileSnapshotReference.Type;
 
-export const ReviewDiffFileSnapshotResult = Schema.Struct({
-  oldFile: Schema.NullOr(ReviewDiffFileSnapshotReference),
-  newFile: Schema.NullOr(ReviewDiffFileSnapshotReference),
-});
+export const ReviewDiffFileSnapshotResult = Schema.Union([
+  Schema.TaggedStruct("opened", {
+    oldFile: Schema.NullOr(ReviewDiffFileSnapshotReference),
+    newFile: Schema.NullOr(ReviewDiffFileSnapshotReference),
+  }),
+  Schema.TaggedStruct("tooLarge", {
+    path: TrimmedNonEmptyString,
+    maxBytes: PositiveInt,
+  }),
+]);
 export type ReviewDiffFileSnapshotResult = typeof ReviewDiffFileSnapshotResult.Type;
 
 export const ReviewDiffFileChunkInput = Schema.Struct({
@@ -105,3 +111,6 @@ export const ReviewDiffFileError = Schema.Union([
   ReviewDiffFileTooLargeError,
 ]);
 export type ReviewDiffFileError = typeof ReviewDiffFileError.Type;
+
+export const ReviewDiffFileSnapshotError = Schema.Union([VcsError, GitCommandError]);
+export type ReviewDiffFileSnapshotError = typeof ReviewDiffFileSnapshotError.Type;

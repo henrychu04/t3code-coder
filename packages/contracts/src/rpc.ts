@@ -50,6 +50,7 @@ import {
   ReviewDiffFileChunkInput,
   ReviewDiffFileChunkResult,
   ReviewDiffFileError,
+  ReviewDiffFileSnapshotError,
   ReviewDiffFileSnapshotResult,
   ReviewDiffPreviewError,
   ReviewDiffPreviewInput,
@@ -241,13 +242,13 @@ const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffFileCont
 const WsReviewOpenDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewOpenDiffFileContents, {
   payload: ReviewDiffFileContentsInput,
   success: ReviewDiffFileSnapshotResult,
-  error: ReviewDiffFileError,
+  error: ReviewDiffFileSnapshotError,
 });
 
 const WsReviewReadDiffFileChunkRpc = Rpc.make(WS_METHODS.reviewReadDiffFileChunk, {
   payload: ReviewDiffFileChunkInput,
   success: ReviewDiffFileChunkResult,
-  error: ReviewDiffFileError,
+  error: ReviewDiffFileSnapshotError,
 });
 
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {

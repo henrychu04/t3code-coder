@@ -64,7 +64,7 @@ describe("getDiffFileTooLargeMaxBytes", () => {
 });
 
 describe("withDiffFileTooLargeReporting", () => {
-  it("reports the typed limit and preserves the loader failure", async () => {
+  it("reports the typed limit and declines hydration without rejecting", async () => {
     const failure = {
       _tag: "ReviewDiffFileTooLargeError",
       path: "src/new-name.ts",
@@ -77,7 +77,7 @@ describe("withDiffFileTooLargeReporting", () => {
     );
     const diff = fileDiff();
 
-    await expect(load(diff)).rejects.toBe(failure);
+    await expect(load(diff)).resolves.toBeNull();
     expect(report).toHaveBeenCalledWith(diff, 32 * 1024 * 1024);
   });
 
@@ -151,11 +151,37 @@ describe("createGitDiffFileContentsLoader", () => {
 });
 
 describe("createChunkedGitDiffFileContentsLoader", () => {
+  it("reports an oversized open outcome without reading chunks", async () => {
+    const maxBytes = 32 * 1024 * 1024;
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        _tag: "tooLarge" as const,
+        path: "src/new-name.ts",
+        maxBytes,
+      }),
+    );
+    const read = vi.fn();
+    const report = vi.fn();
+    const diff = fileDiff("new");
+    const load = withDiffFileTooLargeReporting(
+      createChunkedGitDiffFileContentsLoader(open, read, {
+        ...SOURCE,
+        cacheKey: "oversized-comparison",
+      }),
+      report,
+    );
+
+    await expect(load(diff)).resolves.toBeNull();
+    expect(report).toHaveBeenCalledWith(diff, maxBytes);
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("assembles bounded snapshots and reuses the in-memory file cache", async () => {
     const oldContents = "before\n";
     const newContents = "after\n";
     const open = vi.fn(async () =>
       AsyncResult.success({
+        _tag: "opened" as const,
         oldFile: { snapshotId: "old-snapshot", totalBytes: 7, contentHash: sha256(oldContents) },
         newFile: { snapshotId: "new-snapshot", totalBytes: 6, contentHash: sha256(newContents) },
       }),
@@ -198,6 +224,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     ).arrayBuffer();
     const open = vi.fn(async () =>
       AsyncResult.success({
+        _tag: "opened" as const,
         oldFile: null,
         newFile: {
           snapshotId: "gzip-snapshot",
@@ -233,6 +260,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     const bytes = new TextEncoder().encode(contents);
     const open = vi.fn(async () =>
       AsyncResult.success({
+        _tag: "opened" as const,
         oldFile: null,
         newFile: {
           snapshotId: "utf8-snapshot",
@@ -275,6 +303,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     const contents = "abc";
     const open = vi.fn(async () =>
       AsyncResult.success({
+        _tag: "opened" as const,
         oldFile: null,
         newFile: {
           snapshotId: "invalid-frame-snapshot",
@@ -336,6 +365,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     for (const testCase of cases) {
       const open = vi.fn(async () =>
         AsyncResult.success({
+          _tag: "opened" as const,
           oldFile: null,
           newFile: {
             snapshotId: `${testCase.cacheKey}-snapshot`,
@@ -363,6 +393,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
 
     const open = vi.fn(async () =>
       AsyncResult.success({
+        _tag: "opened" as const,
         oldFile: null,
         newFile: {
           snapshotId: "corrupt-gzip-snapshot",
@@ -395,6 +426,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
       const bytes = Buffer.from(contents);
       const open = vi.fn(async () =>
         AsyncResult.success({
+          _tag: "opened" as const,
           oldFile: null,
           newFile: {
             snapshotId: `${environmentId}-snapshot`,
@@ -442,6 +474,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
       const snapshotId = `empty-snapshot-${index}`;
       const open = vi.fn(async () =>
         AsyncResult.success({
+          _tag: "opened" as const,
           oldFile: null,
           newFile: { snapshotId, totalBytes: 0, contentHash: sha256("") },
         }),

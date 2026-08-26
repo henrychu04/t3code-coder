@@ -11,10 +11,12 @@ import type {
   ReviewDiffFileContentsResult,
   ReviewDiffFileSnapshotReference,
   ReviewDiffFileSnapshotResult,
-  ReviewDiffFileTooLargeError,
   ReviewDiffPreviewSourceKind,
 } from "@t3tools/contracts";
-import { MAX_REVIEW_DIFF_FILE_CHUNK_BYTES } from "@t3tools/contracts";
+import {
+  MAX_REVIEW_DIFF_FILE_CHUNK_BYTES,
+  ReviewDiffFileTooLargeError,
+} from "@t3tools/contracts";
 
 import { resolveFileDiffPath } from "./diffRendering";
 
@@ -81,7 +83,10 @@ export function withDiffFileTooLargeReporting(
       return await load(fileDiff);
     } catch (error) {
       const maxBytes = getDiffFileTooLargeMaxBytes(error);
-      if (maxBytes !== null) report(fileDiff, maxBytes);
+      if (maxBytes !== null) {
+        report(fileDiff, maxBytes);
+        return null;
+      }
       throw error;
     }
   };
@@ -286,6 +291,12 @@ export function createChunkedGitDiffFileContentsLoader<E>(
       },
     });
     if (opened._tag !== "Success") throw squashAtomCommandFailure(opened);
+    if (opened.value._tag === "tooLarge") {
+      throw new ReviewDiffFileTooLargeError({
+        path: opened.value.path,
+        maxBytes: opened.value.maxBytes,
+      });
+    }
     const [oldContents, newContents] = await Promise.all([
       readSnapshot(opened.value.oldFile),
       readSnapshot(opened.value.newFile),

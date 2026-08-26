@@ -144,6 +144,8 @@ describe("ReviewService", () => {
           oldPath: "file.ts",
           newPath: "file.ts",
         });
+        assert.strictEqual(opened._tag, "opened");
+        if (opened._tag !== "opened") return "";
         assert.notStrictEqual(opened.oldFile, null);
         if (opened.oldFile === null) return "";
         const first = yield* review.readDiffFileChunk({
@@ -204,6 +206,8 @@ describe("ReviewService", () => {
           oldPath: "file.ts",
           newPath: "file.ts",
         });
+        assert.strictEqual(opened._tag, "opened");
+        if (opened._tag !== "opened") return null;
         assert.notStrictEqual(opened.oldFile, null);
         if (opened.oldFile === null) return null;
         return yield* review.readDiffFileChunk({
@@ -253,6 +257,8 @@ describe("ReviewService", () => {
           oldPath: "file.ts",
           newPath: "file.ts",
         });
+        assert.strictEqual(opened._tag, "opened");
+        if (opened._tag !== "opened") return;
         assert.notStrictEqual(opened.oldFile, null);
         if (opened.oldFile === null) return;
 
@@ -325,6 +331,8 @@ describe("ReviewService", () => {
             oldPath: "file.ts",
             newPath: `file-${index}.ts`,
           });
+          assert.strictEqual(opened._tag, "opened");
+          if (opened._tag !== "opened") continue;
           assert.notStrictEqual(opened.newFile, null);
           firstSnapshotId ??= opened.newFile?.snapshotId ?? null;
         }
@@ -393,16 +401,17 @@ describe("ReviewService", () => {
           ...input,
           changeType: "new",
         });
+        assert.strictEqual(anchor._tag, "opened");
+        if (anchor._tag !== "opened") return;
         assert.notStrictEqual(anchor.newFile, null);
         if (anchor.newFile === null) return;
 
-        const failure = yield* review
-          .openDiffFileContents({ ...input, changeType: "change" })
-          .pipe(Effect.flip);
-        assert.strictEqual(failure._tag, "ReviewDiffFileTooLargeError");
-        if (failure._tag !== "ReviewDiffFileTooLargeError") return;
-        assert.strictEqual(failure.path, "file.ts");
-        assert.strictEqual(failure.maxBytes, MAX_REVIEW_DIFF_FILE_BYTES);
+        const tooLarge = yield* review.openDiffFileContents({ ...input, changeType: "change" });
+        assert.deepStrictEqual(tooLarge, {
+          _tag: "tooLarge",
+          path: "file.ts",
+          maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
+        });
 
         yield* review.openDiffFileContents({ ...input, changeType: "new" });
         const chunk = yield* review.readDiffFileChunk({

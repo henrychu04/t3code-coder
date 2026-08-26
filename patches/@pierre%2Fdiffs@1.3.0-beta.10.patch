@@ -60,6 +60,31 @@ index e9f62f5..af82a46 100644
  	};
  	return merged;
  }
+diff --git a/dist/components/FileDiff.d.ts b/dist/components/FileDiff.d.ts
+index 093a673..2350238 100644
+--- a/dist/components/FileDiff.d.ts
++++ b/dist/components/FileDiff.d.ts
+@@ -7 +7 @@
+-type LoadedPartialDiffContents = Awaited<ReturnType<NonNullable<BaseDiffOptions['loadDiffFiles']>>>;
++type LoadedPartialDiffContents = NonNullable<Awaited<ReturnType<NonNullable<BaseDiffOptions['loadDiffFiles']>>>>;
+diff --git a/dist/components/FileDiff.js b/dist/components/FileDiff.js
+index bc8fced..2615f6a 100644
+--- a/dist/components/FileDiff.js
++++ b/dist/components/FileDiff.js
+@@ -406 +406 @@
+-			if (!this.enabled || this.fileDiff !== fileDiff) return;
++			if (files == null || !this.enabled || this.fileDiff !== fileDiff) return;
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+index e93b9fb..61e3915 100644
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -52 +52,5 @@
+-type FileDiffContentsLoader = (fileDiff: FileDiffMetadata) => Promise<FileDiffLoadedFiles>;
++/**
++ * Loads complete contents for a partial diff. Return `null` when the contents
++ * are intentionally unavailable and the partial diff should remain unchanged.
++ */
++type FileDiffContentsLoader = (fileDiff: FileDiffMetadata) => Promise<FileDiffLoadedFiles | null>;
 diff --git a/package.json b/package.json
 index ff61c90..1e170e5 100644
 --- a/package.json

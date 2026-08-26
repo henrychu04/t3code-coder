@@ -57,6 +57,8 @@ the newest requested turn is always retained, even when that one turn exceeds th
 pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
 and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
 renderer asks to expand omitted context; completed contents stay in a bounded browser cache.
+Opening a file above the expansion limit returns a typed `tooLarge` outcome, not an RPC failure, so
+the browser can keep the diff usable and render the limit notice without error-level diagnostics.
 
 T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
 report whether a template update is available. It does not implicitly connect to a stopped
