@@ -33,7 +33,6 @@ interface RightPanelTabsProps {
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
   readonly onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
   readonly onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
-  readonly onCloseAllSurfaces: () => void;
   readonly onAddTerminal: () => void;
   readonly onAddDiff: () => void;
   readonly onAddFiles: () => void;
@@ -202,15 +201,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             </MenuItem>
           </MenuPopup>
         </Menu>
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          aria-label="Close all panel tabs"
-          onClick={props.onCloseAllSurfaces}
-          disabled={noSurfaces}
-        >
-          <X className="size-3.5" />
-        </Button>
         {props.layoutControls}
       </header>
 
@@ -221,7 +211,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button
                 variant="outline"
-                className="justify-start"
+                className="h-auto justify-start py-3"
                 disabled={!props.terminalAvailable}
                 onClick={props.onAddTerminal}
               >
@@ -253,7 +243,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
               </Button>
               <Button
                 variant="outline"
-                className="justify-start"
+                className="h-auto justify-start py-3"
                 disabled={!props.diffAvailable}
                 onClick={props.onAddDiff}
               >
@@ -268,7 +258,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
               </Button>
               <Button
                 variant="outline"
-                className="justify-start"
+                className="h-auto justify-start py-3"
                 disabled={!props.agentsAvailable}
                 onClick={props.onAddAgents}
               >

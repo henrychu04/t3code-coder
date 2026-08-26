@@ -12,7 +12,6 @@ const sharedProps = {
   onCloseSurface: () => {},
   onCloseOtherSurfaces: () => {},
   onCloseSurfacesToRight: () => {},
-  onCloseAllSurfaces: () => {},
   onAddTerminal: () => {},
   onAddDiff: () => {},
   onAddFiles: () => {},
@@ -60,5 +59,17 @@ describe("RightPanelTabs", () => {
     );
 
     expect(markup).toContain("Available after the thread starts.");
+  });
+
+  it("uses tab close controls without a redundant pane-level close-all button", () => {
+    const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
+
+    expect(markup).not.toContain('aria-label="Close all panel tabs"');
+  });
+
+  it("gives every two-line launcher card an automatic height", () => {
+    const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
+
+    expect(markup.match(/h-auto justify-start py-3/g)).toHaveLength(4);
   });
 });
