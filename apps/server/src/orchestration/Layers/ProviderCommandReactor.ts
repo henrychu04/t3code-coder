@@ -215,19 +215,19 @@ function isUnknownPendingApprovalRequestError(cause: Cause.Cause<ProviderService
 }
 
 function isUnknownPendingUserInputRequestError(cause: Cause.Cause<ProviderServiceError>): boolean {
+  const isUnknownPendingUserInputDetail = (detail: string) => {
+    const normalized = detail.toLowerCase();
+    return (
+      normalized.includes("unknown pending user-input request") ||
+      normalized.includes("unknown pending user input request") ||
+      /unknown pending \S+ user[- ]input request/.test(normalized)
+    );
+  };
   const error = findProviderAdapterRequestError(cause);
   if (error) {
-    const detail = error.detail.toLowerCase();
-    return (
-      detail.includes("unknown pending user-input request") ||
-      detail.includes("unknown pending user input request")
-    );
+    return isUnknownPendingUserInputDetail(error.detail);
   }
-  const message = Cause.pretty(cause).toLowerCase();
-  return (
-    message.includes("unknown pending user-input request") ||
-    message.includes("unknown pending user input request")
-  );
+  return isUnknownPendingUserInputDetail(Cause.pretty(cause));
 }
 
 function stalePendingRequestDetail(

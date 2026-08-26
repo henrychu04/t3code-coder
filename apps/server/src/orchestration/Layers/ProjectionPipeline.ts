@@ -110,6 +110,18 @@ function isStalePendingApprovalFailureDetail(detail: string | null): boolean {
   );
 }
 
+function isStalePendingUserInputFailureDetail(detail: string | null): boolean {
+  if (detail === null) {
+    return false;
+  }
+  return (
+    detail.includes("stale pending user-input request") ||
+    detail.includes("unknown pending user-input request") ||
+    detail.includes("unknown pending user input request") ||
+    /unknown pending \S+ user[- ]input request/.test(detail)
+  );
+}
+
 // A full refresh loads all thread history, so skip events that cannot change the summary.
 function shouldRefreshThreadShellSummary(event: OrchestrationEvent): boolean {
   if (event.type === "thread.message-sent") {
@@ -166,10 +178,7 @@ function derivePendingUserInputCountFromActivities(
 
     if (
       activity.kind === "provider.user-input.respond.failed" &&
-      detail !== null &&
-      (detail.includes("stale pending user-input request") ||
-        detail.includes("unknown pending user-input request") ||
-        detail.includes("unknown pending user input request"))
+      isStalePendingUserInputFailureDetail(detail)
     ) {
       openRequestIds.delete(requestId);
     }
