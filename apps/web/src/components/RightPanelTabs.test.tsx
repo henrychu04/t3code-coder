@@ -67,9 +67,15 @@ describe("RightPanelTabs", () => {
     expect(markup).not.toContain('aria-label="Close all panel tabs"');
   });
 
-  it("gives every two-line launcher card an automatic height", () => {
+  it("sizes and wraps every launcher card from the available pane width", () => {
     const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
 
-    expect(markup.match(/h-auto justify-start py-3/g)).toHaveLength(4);
+    expect(markup).toContain(
+      "grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))]",
+    );
+    expect(
+      markup.match(/h-auto min-w-0 items-start justify-start py-3 sm:h-auto/g),
+    ).toHaveLength(4);
+    expect(markup.match(/min-w-0 whitespace-normal text-left leading-tight/g)).toHaveLength(4);
   });
 });

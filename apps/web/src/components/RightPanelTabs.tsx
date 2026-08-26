@@ -208,33 +208,31 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         <div className="grid flex-1 place-items-center p-6">
           <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5">
             <h2 className="text-sm font-semibold">Open a workspace surface</h2>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-2">
               <Button
                 variant="outline"
-                className="h-auto justify-start py-3"
+                className="h-auto min-w-0 items-start justify-start py-3 sm:h-auto"
                 disabled={!props.terminalAvailable}
                 onClick={props.onAddTerminal}
               >
-                <TerminalSquare className="size-4" />
-                <span className="text-left">
+                <TerminalSquare className="mt-0.5 size-4" />
+                <span className="min-w-0 whitespace-normal text-left leading-tight">
                   Terminal
-                  <br />
-                  <span className="text-xs font-normal text-muted-foreground">
+                  <span className="mt-1 block text-xs leading-snug font-normal text-muted-foreground">
                     Run workspace commands.
                   </span>
                 </span>
               </Button>
               <Button
                 variant="outline"
-                className="h-auto justify-start py-3"
+                className="h-auto min-w-0 items-start justify-start py-3 sm:h-auto"
                 disabled={!props.filesAvailable}
                 onClick={props.onAddFiles}
               >
-                <Files className="size-4" />
-                <span className="text-left">
+                <Files className="mt-0.5 size-4" />
+                <span className="min-w-0 whitespace-normal text-left leading-tight">
                   Files
-                  <br />
-                  <span className="text-xs font-normal text-muted-foreground">
+                  <span className="mt-1 block text-xs leading-snug font-normal text-muted-foreground">
                     {props.filesAvailable
                       ? "Browse and edit project text."
                       : "Available after the thread starts."}
@@ -243,30 +241,28 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
               </Button>
               <Button
                 variant="outline"
-                className="h-auto justify-start py-3"
+                className="h-auto min-w-0 items-start justify-start py-3 sm:h-auto"
                 disabled={!props.diffAvailable}
                 onClick={props.onAddDiff}
               >
-                <FileDiff className="size-4" />
-                <span className="text-left">
+                <FileDiff className="mt-0.5 size-4" />
+                <span className="min-w-0 whitespace-normal text-left leading-tight">
                   Diff
-                  <br />
-                  <span className="text-xs font-normal text-muted-foreground">
+                  <span className="mt-1 block text-xs leading-snug font-normal text-muted-foreground">
                     Review working changes.
                   </span>
                 </span>
               </Button>
               <Button
                 variant="outline"
-                className="h-auto justify-start py-3"
+                className="h-auto min-w-0 items-start justify-start py-3 sm:h-auto"
                 disabled={!props.agentsAvailable}
                 onClick={props.onAddAgents}
               >
-                <Bot className="size-4" />
-                <span className="text-left">
+                <Bot className="mt-0.5 size-4" />
+                <span className="min-w-0 whitespace-normal text-left leading-tight">
                   Agents{props.liveAgentCount > 0 ? ` (${props.liveAgentCount})` : ""}
-                  <br />
-                  <span className="text-xs font-normal text-muted-foreground">
+                  <span className="mt-1 block text-xs leading-snug font-normal text-muted-foreground">
                     Inspect agent workflows.
                   </span>
                 </span>
