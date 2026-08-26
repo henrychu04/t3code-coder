@@ -11,6 +11,8 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
   GitCommandError,
+  MAX_REVIEW_DIFF_FILE_BYTES,
+  ReviewDiffFileTooLargeError,
   VcsProcessExitError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
@@ -22,10 +24,12 @@ import {
   type ReviewDiffPreviewResult,
   type ReviewDiffFileContentsInput,
   type ReviewDiffFileContentsResult,
+  type ReviewDiffFileError,
   type VcsInitInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
   type VcsRef,
+  type VcsRefStatusResult,
   type VcsRemoveWorktreeInput,
   type VcsStatusInput,
   type VcsStatusResult,
@@ -95,12 +99,13 @@ export class GitVcsDriver extends Context.Service<
   {
     readonly execute: (input: ExecuteGitInput) => Effect.Effect<ExecuteGitResult, GitCommandError>;
     readonly statusDetailsLocal: (cwd: string) => Effect.Effect<GitStatusDetails, GitCommandError>;
+    readonly refStatusLocal: (cwd: string) => Effect.Effect<VcsRefStatusResult, GitCommandError>;
     readonly getReviewDiffPreview: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
     readonly getReviewDiffFileContents: (
       input: ReviewDiffFileContentsInput,
-    ) => Effect.Effect<ReviewDiffFileContentsResult, GitCommandError>;
+    ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffFileError>;
     readonly listRefs: (
       input: VcsListRefsInput,
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
@@ -806,16 +811,18 @@ const makeLocalGitService = Effect.gen(function* () {
   )(function* (input) {
     const whitespace = input.ignoreWhitespace ? ["--ignore-all-space"] : [];
     const sources = [];
-    const working = yield* diffSource(input.cwd, "working-tree", "Working tree", "HEAD", [
-      "diff",
-      "--patch",
-      "--no-color",
-      "--no-ext-diff",
-      ...whitespace,
-      "HEAD",
-    ]);
-    if (working) sources.push(working);
-    if (input.baseRef) {
+    if (input.sourceKind !== "branch-range") {
+      const working = yield* diffSource(input.cwd, "working-tree", "Working tree", "HEAD", [
+        "diff",
+        "--patch",
+        "--no-color",
+        "--no-ext-diff",
+        ...whitespace,
+        "HEAD",
+      ]);
+      if (working) sources.push(working);
+    }
+    if (input.baseRef && input.sourceKind !== "working-tree") {
       const branch = yield* diffSource(
         input.cwd,
         "branch-range",
@@ -838,8 +845,19 @@ const makeLocalGitService = Effect.gen(function* () {
   const readRevision = (cwd: string, revision: string, filePath: string) =>
     run("GitVcsDriver.readRevision", cwd, ["show", `${revision}:${filePath}`], {
       allowNonZeroExit: true,
-      maxOutputBytes: 1024 * 1024,
-    }).pipe(Effect.map((result) => (result.exitCode === 0 ? result.stdout : "")));
+      maxOutputBytes: MAX_REVIEW_DIFF_FILE_BYTES,
+    }).pipe(
+      Effect.flatMap((result) =>
+        result.stdoutTruncated
+          ? Effect.fail(
+              new ReviewDiffFileTooLargeError({
+                path: filePath,
+                maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
+              }),
+            )
+          : Effect.succeed(result.exitCode === 0 ? result.stdout : ""),
+      ),
+    );
 
   const readWorkspaceFile = (cwd: string, filePath: string) => {
     const candidate = path.resolve(cwd, filePath);
@@ -854,9 +872,24 @@ const makeLocalGitService = Effect.gen(function* () {
         }),
       );
     }
-    return fileSystem
-      .readFileString(candidate)
-      .pipe(Effect.catchTags({ PlatformError: () => Effect.succeed("") }));
+    return Effect.gen(function* () {
+      const stat = yield* fileSystem.stat(candidate);
+      if (stat.type !== "File" || stat.size > MAX_REVIEW_DIFF_FILE_BYTES) {
+        if (stat.type !== "File") {
+          return yield* new GitCommandError({
+            operation: "GitVcsDriver.readWorkspaceFile",
+            command: "read workspace file",
+            cwd,
+            detail: "Diff path is not a regular file.",
+          });
+        }
+        return yield* new ReviewDiffFileTooLargeError({
+          path: filePath,
+          maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
+        });
+      }
+      return yield* fileSystem.readFileString(candidate);
+    }).pipe(Effect.catchTags({ PlatformError: () => Effect.succeed("") }));
   };
 
   const getReviewDiffFileContents: GitVcsDriver["Service"]["getReviewDiffFileContents"] = Effect.fn(
@@ -955,6 +988,21 @@ const makeLocalGitService = Effect.gen(function* () {
     },
   );
 
+  const refStatusLocal: GitVcsDriver["Service"]["refStatusLocal"] = Effect.fn(
+    "GitVcsDriver.refStatusLocal",
+  )(function* (cwd) {
+    const inside = yield* run(
+      "GitVcsDriver.refStatus.inside",
+      cwd,
+      ["rev-parse", "--is-inside-work-tree"],
+      { allowNonZeroExit: true },
+    );
+    if (inside.exitCode !== 0 || inside.stdout.trim() !== "true") {
+      return { isRepo: false, refName: null };
+    }
+    return { isRepo: true, refName: yield* currentBranch(cwd) };
+  });
+
   const createWorktree: GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "GitVcsDriver.createWorktree",
   )(function* (input) {
@@ -1024,6 +1072,7 @@ const makeLocalGitService = Effect.gen(function* () {
   return GitVcsDriver.of({
     execute,
     statusDetailsLocal,
+    refStatusLocal,
     getReviewDiffPreview,
     getReviewDiffFileContents,
     listRefs,

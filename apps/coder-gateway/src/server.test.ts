@@ -1606,19 +1606,58 @@ process.on("SIGTERM", () => {
       origin: gateway.url,
     });
     await once(webSocket, "open");
-    const requestMessage = { _tag: "Ping" };
+    const requestMessage = { _tag: "Request", id: 7, tag: "test.method", payload: {}, headers: [] };
     webSocket.send(JSON.stringify(requestMessage));
-    deepStrictEqual(await helperMessage, requestMessage);
+    const forwardedRequest = (await helperMessage) as typeof requestMessage;
+    strictEqual(forwardedRequest._tag, "Request");
+    strictEqual(forwardedRequest.tag, requestMessage.tag);
+    strictEqual(typeof forwardedRequest.id, "string");
+    strictEqual(String(forwardedRequest.id).startsWith("browser:"), true);
 
     const browserMessage = once(webSocket, "message");
-    const responseMessage = { _tag: "Pong" };
-    rpcListener?.(responseMessage);
+    const helperResponseMessage = {
+      _tag: "Exit",
+      requestId: forwardedRequest.id,
+      exit: { _tag: "Success", value: {} },
+    };
+    rpcListener?.(helperResponseMessage);
     const [data] = await browserMessage;
+    const responseMessage = { ...helperResponseMessage, requestId: requestMessage.id };
     deepStrictEqual(JSON.parse(data.toString()), responseMessage);
 
+    const firstStreamMessage = new Promise<unknown>((resolve) => {
+      receiveHelperMessage = resolve;
+    });
+    const reusedRequestMessage = {
+      _tag: "Request",
+      id: 8,
+      tag: "test.stream",
+      payload: {},
+      headers: [],
+    };
+    webSocket.send(JSON.stringify(reusedRequestMessage));
+    const firstForwardedStream = (await firstStreamMessage) as typeof reusedRequestMessage;
+    strictEqual(typeof firstForwardedStream.id, "string");
+
+    const interruptMessage = new Promise<unknown>((resolve) => {
+      receiveHelperMessage = resolve;
+    });
     const socketClosed = once(webSocket, "close");
     webSocket.close();
     await socketClosed;
+    const forwardedInterrupt = (await interruptMessage) as {
+      readonly _tag: string;
+      readonly requestId: string;
+    };
+    deepStrictEqual(forwardedInterrupt, {
+      _tag: "Interrupt",
+      requestId: firstForwardedStream.id,
+    });
+    rpcListener?.({
+      _tag: "Exit",
+      requestId: forwardedInterrupt.requestId,
+      exit: { _tag: "Failure", cause: { _tag: "Interrupt" } },
+    });
     strictEqual(closeCount, 0);
 
     const nextHelperMessage = new Promise<unknown>((resolve) => {
@@ -1628,9 +1667,23 @@ process.on("SIGTERM", () => {
       origin: gateway.url,
     });
     await once(reconnectedWebSocket, "open");
-    const nextRequestMessage = { _tag: "ReconnectPing" };
-    reconnectedWebSocket.send(JSON.stringify(nextRequestMessage));
-    deepStrictEqual(await nextHelperMessage, nextRequestMessage);
+    reconnectedWebSocket.send(JSON.stringify(reusedRequestMessage));
+    const secondForwardedStream = (await nextHelperMessage) as typeof reusedRequestMessage;
+    strictEqual(typeof secondForwardedStream.id, "string");
+    strictEqual(secondForwardedStream.id === firstForwardedStream.id, false);
+
+    const reconnectedBrowserMessage = once(reconnectedWebSocket, "message");
+    rpcListener?.({
+      _tag: "Exit",
+      requestId: secondForwardedStream.id,
+      exit: { _tag: "Success", value: {} },
+    });
+    const [reconnectedData] = await reconnectedBrowserMessage;
+    deepStrictEqual(JSON.parse(reconnectedData.toString()), {
+      _tag: "Exit",
+      requestId: reusedRequestMessage.id,
+      exit: { _tag: "Success", value: {} },
+    });
     const reconnectedSocketClosed = once(reconnectedWebSocket, "close");
     reconnectedWebSocket.close();
     await reconnectedSocketClosed;

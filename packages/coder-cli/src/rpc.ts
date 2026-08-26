@@ -2,7 +2,9 @@ import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
-export const CODER_HELPER_PROTOCOL_VERSION = 1;
+// Version 2 makes browser-session request isolation and synchronization
+// completion part of the required gateway/helper contract.
+export const CODER_HELPER_PROTOCOL_VERSION = 2;
 export const CODER_HELPER_INFO_METHOD = "coder.helper.info";
 
 export class CoderHelperProtocolError extends Schema.TaggedErrorClass<CoderHelperProtocolError>()(

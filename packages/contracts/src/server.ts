@@ -135,9 +135,6 @@ export const ServerConfig = Schema.Struct({
   issues: ServerConfigIssues,
   providers: ServerProviders,
   settings: ServerSettings,
-  shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
-  threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
-  threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 
@@ -169,8 +166,10 @@ export const ServerConfigKeybindingsUpdatedPayload = Schema.Struct({
 });
 export type ServerConfigKeybindingsUpdatedPayload =
   typeof ServerConfigKeybindingsUpdatedPayload.Type;
-export const ServerConfigProviderStatusesPayload = Schema.Struct({ providers: ServerProviders });
-export type ServerConfigProviderStatusesPayload = typeof ServerConfigProviderStatusesPayload.Type;
+export const ServerConfigProviderUpdatedPayload = Schema.Struct({ provider: ServerProvider });
+export type ServerConfigProviderUpdatedPayload = typeof ServerConfigProviderUpdatedPayload.Type;
+export const ServerConfigProviderRemovedPayload = Schema.Struct({ instanceId: ProviderInstanceId });
+export type ServerConfigProviderRemovedPayload = typeof ServerConfigProviderRemovedPayload.Type;
 export const ServerConfigSettingsUpdatedPayload = Schema.Struct({ settings: ServerSettings });
 export type ServerConfigSettingsUpdatedPayload = typeof ServerConfigSettingsUpdatedPayload.Type;
 
@@ -187,13 +186,20 @@ export const ServerConfigStreamKeybindingsUpdatedEvent = Schema.Struct({
 });
 export type ServerConfigStreamKeybindingsUpdatedEvent =
   typeof ServerConfigStreamKeybindingsUpdatedEvent.Type;
-export const ServerConfigStreamProviderStatusesEvent = Schema.Struct({
+export const ServerConfigStreamProviderUpdatedEvent = Schema.Struct({
   version: Schema.Literal(1),
-  type: Schema.Literal("providerStatuses"),
-  payload: ServerConfigProviderStatusesPayload,
+  type: Schema.Literal("providerUpdated"),
+  payload: ServerConfigProviderUpdatedPayload,
 });
-export type ServerConfigStreamProviderStatusesEvent =
-  typeof ServerConfigStreamProviderStatusesEvent.Type;
+export type ServerConfigStreamProviderUpdatedEvent =
+  typeof ServerConfigStreamProviderUpdatedEvent.Type;
+export const ServerConfigStreamProviderRemovedEvent = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("providerRemoved"),
+  payload: ServerConfigProviderRemovedPayload,
+});
+export type ServerConfigStreamProviderRemovedEvent =
+  typeof ServerConfigStreamProviderRemovedEvent.Type;
 export const ServerConfigStreamSettingsUpdatedEvent = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("settingsUpdated"),
@@ -204,7 +210,8 @@ export type ServerConfigStreamSettingsUpdatedEvent =
 export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
-  ServerConfigStreamProviderStatusesEvent,
+  ServerConfigStreamProviderUpdatedEvent,
+  ServerConfigStreamProviderRemovedEvent,
   ServerConfigStreamSettingsUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;

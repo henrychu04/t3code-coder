@@ -202,7 +202,7 @@ function buildProps() {
     onAnchorReady: () => {},
     contentInsetEndAdjustment: 0,
     liveFollowEnabled: true,
-    onIsAtEndChange: () => {},
+    onScrollStateChange: () => {},
     onManualNavigation: () => {},
   };
 }

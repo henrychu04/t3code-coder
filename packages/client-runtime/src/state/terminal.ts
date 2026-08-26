@@ -1,4 +1,5 @@
 import { type TerminalSummary, WS_METHODS } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import { Atom } from "effect/unstable/reactivity";
 
@@ -13,8 +14,10 @@ import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
-  EMPTY_TERMINAL_BUFFER_STATE,
 } from "./terminalSession.ts";
+import { TerminalBufferCache } from "./terminalBufferCache.ts";
+
+const terminalBufferCache = new TerminalBufferCache();
 
 export function createTerminalEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
@@ -36,14 +39,26 @@ export function createTerminalEnvironmentAtoms<R, E>(
     readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
   }) => JSON.stringify([environmentId, input.threadId, input.terminalId ?? null]);
   const lifecycleConcurrency = { mode: "serial" as const, key: terminalThreadKey };
+  const attach = createEnvironmentSubscriptionAtomFamily(runtime, {
+    label: "environment-data:terminal:attach",
+    subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>, environmentId) =>
+      Stream.suspend(() => {
+        const cached = terminalBufferCache.read(environmentId, input);
+        return subscribe(WS_METHODS.terminalAttach, {
+          ...input,
+          ...(cached.sequence === null ? {} : { afterSequence: cached.sequence }),
+        }).pipe(
+          Stream.scan(cached, applyTerminalAttachStreamEvent),
+          Stream.tap((state) =>
+            Effect.sync(() => {
+              terminalBufferCache.write(environmentId, input, state);
+            }),
+          ),
+        );
+      }),
+  });
   return {
-    attach: createEnvironmentSubscriptionAtomFamily(runtime, {
-      label: "environment-data:terminal:attach",
-      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>) =>
-        subscribe(WS_METHODS.terminalAttach, input).pipe(
-          Stream.scan(EMPTY_TERMINAL_BUFFER_STATE, applyTerminalAttachStreamEvent),
-        ),
-    }),
+    attach,
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:events",
       tag: WS_METHODS.subscribeTerminalEvents,

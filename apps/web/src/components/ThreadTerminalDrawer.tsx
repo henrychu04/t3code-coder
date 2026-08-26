@@ -321,6 +321,7 @@ interface TerminalViewportProps {
   resizeEpoch: number;
   drawerHeight: number;
   keybindings: ResolvedKeybindingsConfig;
+  streamOutput: boolean;
 }
 
 interface TerminalLaunchLocation {
@@ -345,6 +346,7 @@ export function TerminalViewport({
   resizeEpoch,
   drawerHeight,
   keybindings,
+  streamOutput,
 }: TerminalViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
@@ -388,16 +390,23 @@ export function TerminalViewport({
     }),
   );
   const terminalFontRef = useRef({ family: terminalFontFamily, size: terminalFontSize });
-  const terminalSession = useAttachedTerminalSession({
-    environmentId,
-    terminal: {
-      threadId,
-      terminalId,
-      cwd,
-      ...(worktreePath !== undefined ? { worktreePath } : {}),
-      ...(runtimeEnv ? { env: runtimeEnv } : {}),
-    },
+  const attachedTerminalSession = useAttachedTerminalSession({
+    environmentId: streamOutput ? environmentId : null,
+    terminal: streamOutput
+      ? {
+          threadId,
+          terminalId,
+          cwd,
+          ...(worktreePath !== undefined ? { worktreePath } : {}),
+          ...(runtimeEnv ? { env: runtimeEnv } : {}),
+        }
+      : null,
   });
+  const retainedTerminalSessionRef = useRef(attachedTerminalSession);
+  if (streamOutput) retainedTerminalSessionRef.current = attachedTerminalSession;
+  const terminalSession = streamOutput
+    ? attachedTerminalSession
+    : retainedTerminalSessionRef.current;
   const writeTerminal = useEffectEvent((data: string) =>
     runTerminalWrite({
       environmentId,
@@ -1496,6 +1505,7 @@ export default function ThreadTerminalDrawer({
                           resizeEpoch={resizeEpoch}
                           drawerHeight={drawerHeight}
                           keybindings={keybindings}
+                          streamOutput={visible}
                         />
                       </div>
                     </div>
@@ -1525,6 +1535,7 @@ export default function ThreadTerminalDrawer({
                   resizeEpoch={resizeEpoch}
                   drawerHeight={drawerHeight}
                   keybindings={keybindings}
+                  streamOutput={visible}
                 />
               </div>
             )}

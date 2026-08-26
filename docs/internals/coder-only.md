@@ -13,8 +13,14 @@ be staged temporarily in an OS temporary directory while it is copied to the wor
 copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
 provider sessions, and screenshot artifact object URLs are memory-only.
-Each active workspace gets one loopback WebSocket that translates frame-delimited browser RPC into
-newline-delimited helper RPC; the gateway does not persist those application messages.
+Each active workspace accepts one loopback WebSocket at a time. The workspace helper can outlive
+that browser connection, so the gateway treats every accepted WebSocket as a distinct RPC session:
+it translates browser-local request IDs to helper-lifetime unique IDs, restores the browser IDs on
+responses, and interrupts every still-active request when the session detaches. A browser `Eof`
+ends only that logical session and is not forwarded to the helper. If interrupted requests do not
+terminate within five seconds, the gateway closes the helper instead of retaining unowned work.
+The gateway translates frame-delimited browser RPC into newline-delimited helper RPC and does not
+persist those application messages.
 
 After the browser requests latency for a connected workspace, the gateway starts one additional
 foreground `coder ping` process for that workspace. It parses each pong into an in-memory latest
@@ -36,6 +42,24 @@ WebSocket server, or other listening socket. Closing the Coder connection stops 
 active turn. Reloading or temporarily disconnecting the browser does not stop the helper; the
 gateway keeps it attached and reconnects the loopback WebSocket. If the helper or Coder SSH process
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
+Shell and thread subscriptions always emit a `synchronized` item between their initial
+snapshot/replay and live events. The browser does not negotiate this guarantee: it keeps restored
+data in `synchronizing` state until the item arrives and requests a clean connection retry if it is
+missing for 15 seconds. These guarantees define helper protocol version 2; older helpers are not
+accepted or adapted.
+
+The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
+from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
+receive a complete capped snapshot. Shell subscriptions coalesce filtered high-frequency activity
+into cursor-only watermarks so reconnect cursors advance without reprojecting sidebar rows. Initial
+thread snapshots target 512 KiB and older pages target 1 MiB by reducing the requested turn window;
+the newest requested turn is always retained, even when that one turn exceeds the target. Older
+pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
+and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
+renderer asks to expand omitted context; completed contents stay in a bounded browser cache.
+Opening a file above the expansion limit returns a typed `tooLarge` outcome, not an RPC failure, so
+the browser can keep the diff usable and render the limit notice without error-level diagnostics.
+
 T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
 report whether a template update is available. It does not implicitly connect to a stopped
 workspace because Coder SSH would start it without an explicit user action. Starting, stopping,

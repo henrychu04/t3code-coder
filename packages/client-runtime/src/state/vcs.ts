@@ -286,6 +286,11 @@ export function createVcsEnvironmentAtoms<R, E>(
           ),
         ),
     }),
+    refStatus: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:vcs:ref-status",
+      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.subscribeVcsRefStatus>) =>
+        subscribe(WS_METHODS.subscribeVcsRefStatus, input).pipe(Stream.map((event) => event.local)),
+    }),
     refreshStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:refresh-status",
       tag: WS_METHODS.vcsRefreshStatus,

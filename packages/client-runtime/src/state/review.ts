@@ -18,24 +18,18 @@ export function createReviewEnvironmentAtoms<R, E>(
       tag: WS_METHODS.reviewGetDiffPreview,
       staleTimeMs: 5_000,
     }),
-    diffFileContents: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:review:diff-file-contents",
-      tag: WS_METHODS.reviewGetDiffFileContents,
+    openDiffFileContents: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:review:open-diff-file-contents",
+      tag: WS_METHODS.reviewOpenDiffFileContents,
       scheduler: diffFileScheduler,
       concurrency: {
         mode: "singleFlight",
-        key: ({ environmentId, input }) =>
-          JSON.stringify([
-            environmentId,
-            input.cwd,
-            input.sourceKind,
-            input.baseRef,
-            input.headRef,
-            input.oldPath,
-            input.newPath,
-            input.changeType,
-          ]),
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
       },
+    }),
+    readDiffFileChunk: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:review:read-diff-file-chunk",
+      tag: WS_METHODS.reviewReadDiffFileChunk,
     }),
   };
 }

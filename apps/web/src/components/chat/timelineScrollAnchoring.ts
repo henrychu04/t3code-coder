@@ -1,5 +1,72 @@
 export type TimelineScrollMode = "following-end" | "anchoring-new-turn" | "free-scrolling";
 
+export type TimelineScrollRestoration =
+  | { readonly kind: "following-end" }
+  | { readonly kind: "row"; readonly rowId: string; readonly viewOffset: number };
+
+export interface TimelineScrollRestorationState {
+  readonly data: readonly { readonly id: string }[];
+  readonly scroll: number;
+  readonly scrollLength: number;
+  readonly positionAtIndex: (index: number) => number | undefined;
+  readonly sizeAtIndex: (index: number) => number | undefined;
+}
+
+export interface TimelineScrollRestorationViewport {
+  readonly scroll?: number;
+  readonly viewOffsetForRow?: (rowId: string) => number | undefined;
+}
+
+export function captureTimelineScrollRestoration(
+  state: TimelineScrollRestorationState | undefined,
+  isAtEnd: boolean,
+  viewport?: TimelineScrollRestorationViewport,
+): TimelineScrollRestoration | undefined {
+  if (isAtEnd) {
+    return { kind: "following-end" };
+  }
+  const scroll = viewport?.scroll ?? state?.scroll;
+  if (
+    !state ||
+    typeof scroll !== "number" ||
+    !Number.isFinite(scroll) ||
+    !Number.isFinite(state.scrollLength)
+  ) {
+    return undefined;
+  }
+
+  const viewportBottom = scroll + state.scrollLength;
+  for (let index = 0; index < state.data.length; index += 1) {
+    const row = state.data[index];
+    const top = state.positionAtIndex(index);
+    const height = state.sizeAtIndex(index);
+    if (
+      !row ||
+      typeof top !== "number" ||
+      typeof height !== "number" ||
+      !Number.isFinite(top) ||
+      !Number.isFinite(height)
+    ) {
+      continue;
+    }
+
+    const bottom = top + Math.max(1, height);
+    if (bottom > scroll && top < viewportBottom) {
+      const measuredViewOffset = viewport?.viewOffsetForRow?.(row.id);
+      return {
+        kind: "row",
+        rowId: row.id,
+        viewOffset:
+          typeof measuredViewOffset === "number" && Number.isFinite(measuredViewOffset)
+            ? measuredViewOffset
+            : top - scroll,
+      };
+    }
+  }
+
+  return undefined;
+}
+
 export interface TimelineListMeasurementState {
   readonly data: readonly unknown[];
   readonly scroll: number;

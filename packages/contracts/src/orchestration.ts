@@ -30,6 +30,7 @@ export const ORCHESTRATION_WS_METHODS = {
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
+  getThreadSnapshot: "orchestration.getThreadSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -480,6 +481,10 @@ export const OrchestrationShellStreamItem = Schema.Union([
     kind: Schema.Literal("synchronized"),
   }),
   Schema.Struct({
+    kind: Schema.Literal("cursor"),
+    sequence: NonNegativeInt,
+  }),
+  Schema.Struct({
     kind: Schema.Literal("snapshot"),
     snapshot: OrchestrationShellSnapshot,
   }),
@@ -495,13 +500,10 @@ export const OrchestrationSubscribeShellInput = Schema.Struct({
    * sequence here so the subscription resumes without re-sending the entire
    * projects/threads list (overlapping events are deduped by sequence on the
    * client).
+   * Cursor-only stream items may advance this resume position without changing
+   * the material shell snapshot.
    */
   afterSequence: Schema.optionalKey(NonNegativeInt),
-  /**
-   * Requests an explicit marker after the subscription has emitted its initial
-   * snapshot or catch-up replay and before it begins emitting live events.
-   */
-  requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
 });
 export type OrchestrationSubscribeShellInput = typeof OrchestrationSubscribeShellInput.Type;
 
@@ -516,18 +518,14 @@ export const OrchestrationSubscribeThreadInput = Schema.Struct({
    */
   afterSequence: Schema.optionalKey(NonNegativeInt),
   /**
-   * Requests an explicit marker after the subscription has emitted its initial
-   * snapshot or catch-up replay and before it begins emitting live events.
+   * The fallback snapshot frame (sent when `afterSequence` is missing or the
+   * catch-up gap is too large) is windowed to the last `turnLimit`
+   * user-anchored turns and carries `page` metadata. Live events are
+   * unaffected.
    */
-  requestCompletionMarker: Schema.optionalKey(Schema.Boolean),
-  /**
-   * When provided, the fallback snapshot frame (sent when `afterSequence` is
-   * missing or the catch-up gap is too large) is windowed to the last
-   * `turnLimit` user-anchored turns and carries `page` metadata. Absent means
-   * the fallback snapshot is the full thread, preserving pre-pagination client
-   * behavior. Live events are unaffected either way.
-   */
-  turnLimit: Schema.optionalKey(PositiveInt),
+  turnLimit: PositiveInt,
+  /** Target encoded size for fallback snapshots. The newest turn is always retained. */
+  targetBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(4 * 1024 * 1024)),
 });
 export type OrchestrationSubscribeThreadInput = typeof OrchestrationSubscribeThreadInput.Type;
 
@@ -545,6 +543,15 @@ export const OrchestrationThreadDetailWindow = Schema.Struct({
   beforeCursor: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type OrchestrationThreadDetailWindow = typeof OrchestrationThreadDetailWindow.Type;
+
+export const OrchestrationGetThreadSnapshotInput = Schema.Struct({
+  threadId: ThreadId,
+  turnLimit: PositiveInt,
+  beforeCursor: Schema.optionalKey(TrimmedNonEmptyString),
+  /** Target encoded size for this page. The newest requested turn is always retained. */
+  targetBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(4 * 1024 * 1024)),
+});
+export type OrchestrationGetThreadSnapshotInput = typeof OrchestrationGetThreadSnapshotInput.Type;
 
 /**
  * Page metadata for a windowed thread detail read. `beforeCursor` is opaque and
@@ -1630,6 +1637,10 @@ export const OrchestrationRpcSchemas = {
   getArchivedShellSnapshot: {
     input: Schema.Struct({}),
     output: OrchestrationShellSnapshot,
+  },
+  getThreadSnapshot: {
+    input: OrchestrationGetThreadSnapshotInput,
+    output: OrchestrationThreadDetailSnapshot,
   },
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,

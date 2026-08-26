@@ -7,6 +7,7 @@ import type {
   VcsListRefsInput,
   VcsListRefsResult,
   VcsRemoveWorktreeInput,
+  VcsRefStatusResult,
   VcsStatusInput,
   VcsStatusLocalResult,
   VcsSwitchRefInput,
@@ -24,6 +25,9 @@ export class GitWorkflowService extends Context.Service<
     readonly localStatus: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusLocalResult, GitCommandError>;
+    readonly localRefStatus: (
+      input: VcsStatusInput,
+    ) => Effect.Effect<VcsRefStatusResult, GitCommandError>;
     readonly listRefs: (
       input: VcsListRefsInput,
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
@@ -70,6 +74,7 @@ export const layer = Layer.effect(
             workingTree: details.workingTree,
           })),
         ),
+      localRefStatus: ({ cwd }) => git.refStatusLocal(cwd),
       listRefs: git.listRefs,
       createWorktree: git.createWorktree,
       removeWorktree: git.removeWorktree,

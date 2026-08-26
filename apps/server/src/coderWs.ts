@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
@@ -19,6 +20,8 @@ import {
   type OrchestrationEvent,
   type OrchestrationProjectShell,
   type OrchestrationShellStreamEvent,
+  type OrchestrationShellStreamItem,
+  type OrchestrationThreadDetailSnapshot,
   type OrchestrationThreadShell,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
@@ -66,6 +69,54 @@ import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const RESUME_MAX_GAP = 1_000;
+const SHELL_CURSOR_MAX_EVENT_GAP = 250;
+
+interface ThreadSnapshotProjectionQueries {
+  readonly getThreadDetailSnapshot: ProjectionSnapshotQuery.ProjectionSnapshotQueryShape["getThreadDetailSnapshot"];
+}
+
+export const getProjectedThreadSnapshotWithinBudget = Effect.fn(
+  "CoderWs.getProjectedThreadSnapshotWithinBudget",
+)(function* (
+  projections: ThreadSnapshotProjectionQueries,
+  input: {
+    readonly threadId: ThreadId;
+    readonly turnLimit: number;
+    readonly beforeCursor?: string;
+    readonly targetBytes: number;
+  },
+) {
+  const load = (turnLimit: number) =>
+    projections
+      .getThreadDetailSnapshot(input.threadId, {
+        turnLimit,
+        ...(input.beforeCursor === undefined ? {} : { beforeCursor: input.beforeCursor }),
+      })
+      .pipe(Effect.map(Option.map(projectThreadDetailSnapshot)));
+  const requested = yield* load(input.turnLimit);
+  if (Option.isNone(requested)) return requested;
+  if (Buffer.byteLength(JSON.stringify(requested.value), "utf8") <= input.targetBytes) {
+    return requested;
+  }
+
+  let low = 1;
+  let high = input.turnLimit - 1;
+  let best: Option.Option<OrchestrationThreadDetailSnapshot> = Option.none();
+  let smallest = requested;
+  while (low <= high) {
+    const turnLimit = Math.floor((low + high) / 2);
+    const candidate = yield* load(turnLimit);
+    if (Option.isNone(candidate)) return candidate;
+    smallest = candidate;
+    if (Buffer.byteLength(JSON.stringify(candidate.value), "utf8") <= input.targetBytes) {
+      best = candidate;
+      low = turnLimit + 1;
+    } else {
+      high = turnLimit - 1;
+    }
+  }
+  return Option.isSome(best) ? best : smallest;
+});
 
 function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesError): {
   readonly failure: ProjectEntriesFailure;
@@ -112,6 +163,27 @@ function isThreadDetailEvent(event: OrchestrationEvent): boolean {
   );
 }
 
+const SHELL_IMMATERIAL_ACTIVITY_KINDS = new Set([
+  "tool.started",
+  "tool.updated",
+  "tool.progress",
+  "tool.completed",
+  "tool.denied",
+  "context-window.updated",
+]);
+
+/** Events whose projection can change fields rendered by the project/thread sidebar. */
+export function isShellMaterialEvent(event: OrchestrationEvent): boolean {
+  if (event.aggregateKind === "project") return true;
+  if (event.type === "thread.message-sent") {
+    return event.payload.role === "user" || !event.payload.streaming;
+  }
+  if (event.type === "thread.activity-appended") {
+    return !SHELL_IMMATERIAL_ACTIVITY_KINDS.has(event.payload.activity.kind);
+  }
+  return true;
+}
+
 interface ShellProjectionQueries {
   readonly getProjectShellById: (
     projectId: ProjectId,
@@ -119,6 +191,39 @@ interface ShellProjectionQueries {
   readonly getThreadShellById: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThreadShell>, unknown>;
+}
+
+export function projectLiveShellEvents<E, R>(
+  events: Stream.Stream<OrchestrationEvent, E, R>,
+  afterSequence: number,
+  projections: ShellProjectionQueries,
+): Stream.Stream<OrchestrationShellStreamItem, E | OrchestrationGetSnapshotError, R> {
+  return events.pipe(
+    Stream.filter((event) => event.sequence > afterSequence),
+    Stream.mapAccumEffect(
+      () => afterSequence,
+      (lastEmittedSequence, event) => {
+        if (isShellMaterialEvent(event)) {
+          return projectShellEvent(event, projections).pipe(
+            Effect.map((item): readonly [number, ReadonlyArray<OrchestrationShellStreamItem>] => [
+              event.sequence,
+              [item],
+            ]),
+          );
+        }
+        if (event.sequence - lastEmittedSequence >= SHELL_CURSOR_MAX_EVENT_GAP) {
+          return Effect.succeed<readonly [number, ReadonlyArray<OrchestrationShellStreamItem>]>([
+            event.sequence,
+            [{ kind: "cursor", sequence: event.sequence }],
+          ]);
+        }
+        return Effect.succeed<readonly [number, ReadonlyArray<OrchestrationShellStreamItem>]>([
+          lastEmittedSequence,
+          [],
+        ]);
+      },
+    ),
+  );
 }
 
 export function projectShellEvent(
@@ -570,9 +675,6 @@ export const layer = CoderWsRpcGroup.toLayer(
         issues: [],
         providers: providerSnapshots,
         settings: serverSettings,
-        shellResumeCompletionMarker: true,
-        threadResumeCompletionMarker: true,
-        threadSnapshotPagination: true,
       };
     });
 
@@ -622,6 +724,7 @@ export const layer = CoderWsRpcGroup.toLayer(
           }),
         ),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
+      [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.refStream(cwd),
       [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),
       [WS_METHODS.vcsListRefs]: (input) => git.listRefs(input),
       [WS_METHODS.vcsCreateWorktree]: (input) =>
@@ -664,7 +767,8 @@ export const layer = CoderWsRpcGroup.toLayer(
           Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
         ),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
-      [WS_METHODS.reviewGetDiffFileContents]: (input) => review.getDiffFileContents(input),
+      [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
+      [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),
       [WS_METHODS.terminalOpen]: (input) => terminals.open(input),
       [WS_METHODS.terminalAttach]: (input) =>
         Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
@@ -696,13 +800,41 @@ export const layer = CoderWsRpcGroup.toLayer(
         Stream.unwrap(
           Effect.gen(function* () {
             yield* providers.refresh().pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
+            const initialConfig = yield* loadServerConfig;
+            const previousProviders = yield* Ref.make(initialConfig.providers);
             const providerChanges = providers.streamChanges.pipe(
-              Stream.map((nextProviders) => ({
-                version: 1 as const,
-                type: "providerStatuses" as const,
-                payload: { providers: nextProviders },
-              })),
               Stream.debounce(Duration.millis(200)),
+              Stream.mapEffect((nextProviders) =>
+                Ref.modify(previousProviders, (previous) => {
+                  const previousById = new Map(
+                    previous.map((provider) => [provider.instanceId, provider] as const),
+                  );
+                  const nextIds = new Set(nextProviders.map((provider) => provider.instanceId));
+                  const events = [
+                    ...nextProviders.flatMap((provider) => {
+                      const prior = previousById.get(provider.instanceId);
+                      return prior && JSON.stringify(prior) === JSON.stringify(provider)
+                        ? []
+                        : [
+                            {
+                              version: 1 as const,
+                              type: "providerUpdated" as const,
+                              payload: { provider },
+                            },
+                          ];
+                    }),
+                    ...previous
+                      .filter((provider) => !nextIds.has(provider.instanceId))
+                      .map((provider) => ({
+                        version: 1 as const,
+                        type: "providerRemoved" as const,
+                        payload: { instanceId: provider.instanceId },
+                      })),
+                  ];
+                  return [events, nextProviders] as const;
+                }),
+              ),
+              Stream.flatMap(Stream.fromIterable),
             );
             const settingChanges = settings.streamChanges.pipe(
               Stream.map(ServerSettings.redactServerSettingsForClient),
@@ -716,7 +848,7 @@ export const layer = CoderWsRpcGroup.toLayer(
               Stream.make({
                 version: 1 as const,
                 type: "snapshot" as const,
-                config: yield* loadServerConfig,
+                config: initialConfig,
               }),
               Stream.merge(providerChanges, settingChanges),
             );
@@ -799,6 +931,28 @@ export const layer = CoderWsRpcGroup.toLayer(
               }),
           ),
         ),
+      [ORCHESTRATION_WS_METHODS.getThreadSnapshot]: (input) =>
+        getProjectedThreadSnapshotWithinBudget(projections, input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationGetSnapshotError({
+                message: `Failed to load thread ${input.threadId}`,
+                cause,
+              }),
+          ),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(
+                  new OrchestrationGetSnapshotError({
+                    message: `Thread ${input.threadId} was not found`,
+                    cause: input.threadId,
+                  }),
+                ),
+              onSome: Effect.succeed,
+            }),
+          ),
+        ),
       [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
         Stream.unwrap(
           orchestration.subscribeDomainEvents.pipe(
@@ -809,6 +963,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                   const gap = head - input.afterSequence;
                   if (gap >= 0 && gap <= RESUME_MAX_GAP) {
                     const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
+                      Stream.filter(isShellMaterialEvent),
                       Stream.mapEffect((event) => projectShellEvent(event, projections)),
                       Stream.mapError(
                         (cause) =>
@@ -818,15 +973,17 @@ export const layer = CoderWsRpcGroup.toLayer(
                           }),
                       ),
                     );
-                    const live = subscribedEvents.pipe(
-                      Stream.filter((event) => event.sequence > head),
-                      Stream.mapEffect((event) => projectShellEvent(event, projections)),
-                    );
+                    const replayCursor =
+                      head > input.afterSequence
+                        ? Stream.make({ kind: "cursor" as const, sequence: head })
+                        : Stream.empty;
+                    const live = projectLiveShellEvents(subscribedEvents, head, projections);
                     return Stream.concat(
                       replay,
-                      input.requestCompletionMarker
-                        ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                        : live,
+                      Stream.concat(
+                        replayCursor,
+                        Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
+                      ),
                     );
                   }
                 }
@@ -839,15 +996,14 @@ export const layer = CoderWsRpcGroup.toLayer(
                       }),
                   ),
                 );
-                const live = subscribedEvents.pipe(
-                  Stream.filter((event) => event.sequence > snapshot.snapshotSequence),
-                  Stream.mapEffect((event) => projectShellEvent(event, projections)),
+                const live = projectLiveShellEvents(
+                  subscribedEvents,
+                  snapshot.snapshotSequence,
+                  projections,
                 );
                 return Stream.concat(
                   Stream.make({ kind: "snapshot" as const, snapshot }),
-                  input.requestCompletionMarker
-                    ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                    : live,
+                  Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                 );
               }),
             ),
@@ -891,26 +1047,22 @@ export const layer = CoderWsRpcGroup.toLayer(
                     const live = liveAfter(head);
                     return Stream.concat(
                       replay,
-                      input.requestCompletionMarker
-                        ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                        : live,
+                      Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                     );
                   }
                 }
-                const snapshot = yield* projections
-                  .getThreadDetailSnapshot(
-                    input.threadId,
-                    input.turnLimit === undefined ? undefined : { turnLimit: input.turnLimit },
-                  )
-                  .pipe(
-                    Effect.mapError(
-                      (cause) =>
-                        new OrchestrationGetSnapshotError({
-                          message: `Failed to load thread ${input.threadId}`,
-                          cause,
-                        }),
-                    ),
-                  );
+                const snapshot = yield* getProjectedThreadSnapshotWithinBudget(
+                  projections,
+                  input,
+                ).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationGetSnapshotError({
+                        message: `Failed to load thread ${input.threadId}`,
+                        cause,
+                      }),
+                  ),
+                );
                 if (Option.isNone(snapshot)) {
                   return yield* new OrchestrationGetSnapshotError({
                     message: `Thread ${input.threadId} was not found`,
@@ -921,11 +1073,9 @@ export const layer = CoderWsRpcGroup.toLayer(
                 return Stream.concat(
                   Stream.make({
                     kind: "snapshot" as const,
-                    snapshot: projectThreadDetailSnapshot(snapshot.value),
+                    snapshot: snapshot.value,
                   }),
-                  input.requestCompletionMarker
-                    ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                    : live,
+                  Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                 );
               }),
             ),

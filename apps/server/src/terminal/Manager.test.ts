@@ -213,6 +213,7 @@ interface CreateManagerOptions {
   subprocessPollIntervalMs?: number;
   processKillGraceMs?: number;
   maxRetainedInactiveSessions?: number;
+  attachReplayByteLimit?: number;
   ptyAdapter?: FakePtyAdapter;
 }
 
@@ -254,6 +255,9 @@ const createManager = (
         processKillGraceMs: options.processKillGraceMs ?? 1,
         ...(options.maxRetainedInactiveSessions !== undefined
           ? { maxRetainedInactiveSessions: options.maxRetainedInactiveSessions }
+          : {}),
+        ...(options.attachReplayByteLimit !== undefined
+          ? { attachReplayByteLimit: options.attachReplayByteLimit }
           : {}),
       });
       const eventsRef = yield* Ref.make<ReadonlyArray<TerminalEvent>>([]);
@@ -1090,6 +1094,24 @@ it.layer(
     }),
   );
 
+  it.effect("caps a single terminal history line by UTF-8 bytes", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitData(`prefix-${"x".repeat(600 * 1024)}`);
+      yield* manager.close({ threadId: "thread-1" });
+
+      const reopened = yield* manager.open(openInput());
+      expect(Buffer.byteLength(reopened.history, "utf8")).toBeLessThanOrEqual(512 * 1024);
+      expect(reopened.history.endsWith("x".repeat(128))).toBe(true);
+      expect(reopened.history.startsWith("prefix-")).toBe(false);
+    }),
+  );
+
   it.effect("strips replay-unsafe terminal query and reply sequences from persisted history", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();
@@ -1808,6 +1830,140 @@ it.layer(
       expect(yield* Ref.get(attachEvents)).toMatchObject([
         { type: "snapshot" },
         { type: "output", data: "during snapshot\n" },
+      ]);
+    }),
+  );
+
+  it.effect("resumes attach streams from the last delivered sequence", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, getEvents } = yield* createManager();
+      const initialEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribeInitial = yield* manager.attachStream(openInput(), (event) =>
+        Ref.update(initialEvents, (events) => [...events, event]),
+      );
+
+      const initialSnapshot = (yield* Ref.get(initialEvents))[0];
+      expect(initialSnapshot?.type).toBe("snapshot");
+      if (!initialSnapshot || initialSnapshot.type !== "snapshot") return;
+      const initialSequence = initialSnapshot.snapshot.sequence;
+      expect(initialSequence).toBeDefined();
+      if (initialSequence === undefined) return;
+      yield* Effect.sync(unsubscribeInitial);
+
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+      process.emitData("missed one\n");
+      process.emitData("missed two\n");
+      yield* waitFor(
+        Effect.map(
+          getEvents,
+          (events) => events.filter((event) => event.type === "output").length === 2,
+        ),
+        "1200 millis",
+      );
+
+      const resumedEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribeResumed = yield* manager.attachStream(
+        {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          afterSequence: initialSequence,
+        },
+        (event) => Ref.update(resumedEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeResumed));
+
+      const events = yield* Ref.get(resumedEvents);
+      expect(events).toMatchObject([
+        { type: "output", data: "missed one\n", sequence: initialSequence + 1 },
+        { type: "output", data: "missed two\n", sequence: initialSequence + 2 },
+        { type: "resumed", sequence: initialSequence + 2 },
+      ]);
+      expect(events.some((event) => event.type === "snapshot")).toBe(false);
+    }),
+  );
+
+  it.effect("acknowledges an attach cursor already at the live head", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager();
+      const opened = yield* manager.open(openInput());
+      expect(opened.sequence).toBeDefined();
+      if (opened.sequence === undefined) return;
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          afterSequence: opened.sequence,
+        },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      expect(yield* Ref.get(attachEvents)).toEqual([
+        { type: "resumed", sequence: opened.sequence },
+      ]);
+    }),
+  );
+
+  it.effect("falls back to a snapshot when the attach cursor is ahead of the live head", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager();
+      const opened = yield* manager.open(openInput());
+      expect(opened.sequence).toBeDefined();
+      if (opened.sequence === undefined) return;
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          afterSequence: opened.sequence + 1,
+        },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      expect(yield* Ref.get(attachEvents)).toMatchObject([
+        { type: "snapshot", snapshot: { sequence: opened.sequence } },
+      ]);
+      expect((yield* Ref.get(attachEvents)).some((event) => event.type === "resumed")).toBe(false);
+    }),
+  );
+
+  it.effect("falls back to a snapshot when the attach replay window was evicted", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter, getEvents } = yield* createManager(5, {
+        attachReplayByteLimit: 1,
+      });
+      const opened = yield* manager.open(openInput());
+      expect(opened.sequence).toBeDefined();
+      if (opened.sequence === undefined) return;
+
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+      process.emitData("not retained\n");
+      yield* waitFor(
+        Effect.map(getEvents, (events) => events.some((event) => event.type === "output")),
+        "1200 millis",
+      );
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          afterSequence: opened.sequence,
+        },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      expect(yield* Ref.get(attachEvents)).toMatchObject([
+        { type: "snapshot", snapshot: { history: "not retained\n" } },
       ]);
     }),
   );

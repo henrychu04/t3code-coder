@@ -39,6 +39,10 @@ import { formatShortTimestamp } from "../timestampFormat";
 import { DiffPanelLoadingState, DiffPanelShell, type DiffPanelMode } from "./DiffPanelShell";
 import { DiffStatLabel } from "./chat/DiffStatLabel";
 import { AnnotatableCodeView, type AnnotatableCodeViewHandle } from "./diffs/AnnotatableCodeView";
+import {
+  DiffFileExpansionErrorNotice,
+  type DiffFileExpansionError,
+} from "./diffs/DiffFileExpansionErrorNotice";
 import { Button } from "./ui/button";
 import { ToggleGroup, Toggle } from "./ui/toggle-group";
 import { Switch } from "./ui/switch";
@@ -67,7 +71,7 @@ import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
-import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
+import { createChunkedGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
@@ -75,6 +79,11 @@ const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
 interface CollapsedDiffFilesState {
   readonly scopeKey: string | null;
   readonly fileKeys: ReadonlySet<string>;
+}
+
+interface DiffFileExpansionErrorsState {
+  readonly scopeKey: string | null;
+  readonly errorsByFileKey: ReadonlyMap<string, DiffFileExpansionError>;
 }
 
 const EMPTY_COLLAPSED_DIFF_FILE_KEYS: ReadonlySet<string> = new Set();
@@ -105,6 +114,11 @@ export default function DiffPanel({
     fileKeys: EMPTY_COLLAPSED_DIFF_FILE_KEYS,
   }));
   const [codeViewRevision, setCodeViewRevision] = useState(0);
+  const [diffFileExpansionErrors, setDiffFileExpansionErrors] =
+    useState<DiffFileExpansionErrorsState>({
+      scopeKey: null,
+      errorsByFileKey: new Map(),
+    });
   const codeViewRef = useRef<AnnotatableCodeViewHandle>(null);
   const lastCompletedTurnRefreshRef = useRef<{
     readonly threadKey: string | null;
@@ -130,7 +144,8 @@ export default function DiffPanel({
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );
-  const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
+  const openDiffFileContents = useAtomCommand(reviewEnvironment.openDiffFileContents);
+  const readDiffFileChunk = useAtomCommand(reviewEnvironment.readDiffFileChunk);
   const gitStatusQuery = useEnvironmentQuery(
     activeThread !== null && activeThread !== undefined && activeCwd != null
       ? vcsEnvironment.status({
@@ -238,6 +253,7 @@ export default function DiffPanel({
             cwd: activeCwd,
             ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
             ignoreWhitespace: diffIgnoreWhitespace,
+            sourceKind: selectedGitScope === "unstaged" ? "working-tree" : "branch-range",
           },
         })
       : null,
@@ -255,6 +271,7 @@ export default function DiffPanel({
             cwd: serverConfig.cwd,
             ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
             ignoreWhitespace: diffIgnoreWhitespace,
+            sourceKind: selectedGitScope === "unstaged" ? "working-tree" : "branch-range",
           },
         })
       : null,
@@ -297,27 +314,61 @@ export default function DiffPanel({
   const selectedGitSource = branchDiffPreview.data?.sources.find(
     (source) => source.kind === (selectedGitScope === "unstaged" ? "working-tree" : "branch-range"),
   );
+  const diffFileContentsScopeKey =
+    collapseScopeKey && selectedGitSource
+      ? `${collapseScopeKey}:${selectedGitSource.id}:${selectedGitSource.diffHash}`
+      : null;
   const loadDiffFiles = useMemo<FileDiffContentsLoader | undefined>(() => {
     const preview = branchDiffPreview.data;
-    if (selectedTurnId !== null || !activeThread || !preview || !selectedGitSource) {
+    if (
+      selectedTurnId !== null ||
+      !activeThread ||
+      !preview ||
+      !selectedGitSource ||
+      !diffFileContentsScopeKey
+    ) {
       return undefined;
     }
 
-    return createGitDiffFileContentsLoader(getDiffFileContents, {
-      environmentId: activeThread.environmentId,
-      cwd: preview.cwd,
-      sourceKind: selectedGitSource.kind,
-      baseRef: selectedGitSource.baseRef,
-      headRef: selectedGitSource.headRef,
-      cacheKey: selectedGitSource.diffHash,
-    });
+    return createChunkedGitDiffFileContentsLoader(
+      openDiffFileContents,
+      readDiffFileChunk,
+      {
+        environmentId: activeThread.environmentId,
+        cwd: preview.cwd,
+        sourceKind: selectedGitSource.kind,
+        baseRef: selectedGitSource.baseRef,
+        headRef: selectedGitSource.headRef,
+        cacheKey: selectedGitSource.diffHash,
+      },
+      (fileDiff, maxBytes) => {
+        const fileKey = buildFileDiffRenderKey(fileDiff);
+        setDiffFileExpansionErrors((current) => {
+          const errorsByFileKey = new Map(
+            current.scopeKey === diffFileContentsScopeKey ? current.errorsByFileKey : [],
+          );
+          errorsByFileKey.set(fileKey, {
+            fileKey,
+            filePath: resolveFileDiffPath(fileDiff),
+            maxBytes,
+          });
+          return { scopeKey: diffFileContentsScopeKey, errorsByFileKey };
+        });
+      },
+    );
   }, [
     activeThread,
     branchDiffPreview.data,
-    getDiffFileContents,
+    diffFileContentsScopeKey,
+    openDiffFileContents,
+    readDiffFileChunk,
     selectedGitSource,
     selectedTurnId,
   ]);
+  const visibleDiffFileExpansionErrors =
+    diffFileExpansionErrors.scopeKey === diffFileContentsScopeKey
+      ? [...diffFileExpansionErrors.errorsByFileKey.values()]
+      : [];
   const localBranchRefs = useEnvironmentQuery(
     selectedTurnId === null &&
       selectedGitScope === "branch" &&
@@ -837,7 +888,7 @@ export default function DiffPanel({
               )
             ) : renderablePatch.kind === "files" ? (
               <div
-                className="min-h-0 flex-1"
+                className="flex min-h-0 flex-1 flex-col"
                 onClickCapture={(event) => {
                   const composedPath = event.nativeEvent.composedPath?.() ?? [];
                   for (const node of composedPath) {
@@ -870,11 +921,12 @@ export default function DiffPanel({
                   if (file) toggleDiffFileCollapsed(file.fileKey);
                 }}
               >
+                <DiffFileExpansionErrorNotice errors={visibleDiffFileExpansionErrors} />
                 <AnnotatableCodeView
                   key={collapseScopeKey ?? reviewSectionId}
                   viewerRef={codeViewRef}
                   codeViewKey={codeViewMountKey}
-                  className="h-full min-h-0 overflow-auto"
+                  className="min-h-0 flex-1 overflow-auto"
                   files={codeViewFiles}
                   sectionId={reviewSectionId}
                   sectionTitle={reviewSectionTitle}

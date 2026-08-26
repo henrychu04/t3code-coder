@@ -121,6 +121,23 @@ describe("TerminalAttachInput", () => {
 
     expect(parsed.restartIfNotRunning).toBe(true);
   });
+
+  it("accepts a non-negative resume cursor", () => {
+    const parsed = decodeSync(TerminalAttachInput, {
+      threadId: "thread-1",
+      terminalId: DEFAULT_TERMINAL_ID,
+      afterSequence: 42,
+    });
+
+    expect(parsed.afterSequence).toBe(42);
+    expect(
+      decodes(TerminalAttachInput, {
+        threadId: "thread-1",
+        terminalId: DEFAULT_TERMINAL_ID,
+        afterSequence: -1,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe("TerminalWriteInput", () => {

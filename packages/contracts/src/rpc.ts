@@ -13,6 +13,7 @@ import {
   VcsListRefsInput,
   VcsListRefsResult,
   VcsRemoveWorktreeInput,
+  VcsRefStatusStreamEvent,
   VcsRenameThreadBranchError,
   VcsRenameThreadBranchInput,
   VcsRenameThreadBranchResult,
@@ -45,7 +46,10 @@ import {
 } from "./project.ts";
 import {
   ReviewDiffFileContentsInput,
-  ReviewDiffFileContentsResult,
+  ReviewDiffFileChunkInput,
+  ReviewDiffFileChunkResult,
+  ReviewDiffFileSnapshotError,
+  ReviewDiffFileSnapshotResult,
   ReviewDiffPreviewError,
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
@@ -93,7 +97,8 @@ export const WS_METHODS = {
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   vcsInit: "vcs.init",
   reviewGetDiffPreview: "review.getDiffPreview",
-  reviewGetDiffFileContents: "review.getDiffFileContents",
+  reviewOpenDiffFileContents: "review.openDiffFileContents",
+  reviewReadDiffFileChunk: "review.readDiffFileChunk",
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
   terminalWrite: "terminal.write",
@@ -106,6 +111,7 @@ export const WS_METHODS = {
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   subscribeVcsStatus: "subscribeVcsStatus",
+  subscribeVcsRefStatus: "subscribeVcsRefStatus",
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribeServerConfig: "subscribeServerConfig",
@@ -165,6 +171,13 @@ const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   stream: true,
 });
 
+const WsSubscribeVcsRefStatusRpc = Rpc.make(WS_METHODS.subscribeVcsRefStatus, {
+  payload: VcsStatusInput,
+  success: VcsRefStatusStreamEvent,
+  error: GitManagerServiceError,
+  stream: true,
+});
+
 const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   payload: VcsStatusInput,
   success: VcsStatusResult,
@@ -217,10 +230,16 @@ const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   error: ReviewDiffPreviewError,
 });
 
-const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffFileContents, {
+const WsReviewOpenDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewOpenDiffFileContents, {
   payload: ReviewDiffFileContentsInput,
-  success: ReviewDiffFileContentsResult,
-  error: ReviewDiffPreviewError,
+  success: ReviewDiffFileSnapshotResult,
+  error: ReviewDiffFileSnapshotError,
+});
+
+const WsReviewReadDiffFileChunkRpc = Rpc.make(WS_METHODS.reviewReadDiffFileChunk, {
+  payload: ReviewDiffFileChunkInput,
+  success: ReviewDiffFileChunkResult,
+  error: ReviewDiffFileSnapshotError,
 });
 
 const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
@@ -320,6 +339,12 @@ const WsOrchestrationGetArchivedShellSnapshotRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationGetThreadSnapshotRpc = Rpc.make(ORCHESTRATION_WS_METHODS.getThreadSnapshot, {
+  payload: OrchestrationRpcSchemas.getThreadSnapshot.input,
+  success: OrchestrationRpcSchemas.getThreadSnapshot.output,
+  error: OrchestrationGetSnapshotError,
+});
+
 const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -344,6 +369,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
   WsSubscribeVcsStatusRpc,
+  WsSubscribeVcsRefStatusRpc,
   WsVcsRefreshStatusRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
@@ -353,7 +379,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsVcsRenameThreadBranchRpc,
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
-  WsReviewGetDiffFileContentsRpc,
+  WsReviewOpenDiffFileContentsRpc,
+  WsReviewReadDiffFileChunkRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalWriteRpc,
@@ -370,6 +397,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
+  WsOrchestrationGetThreadSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );
