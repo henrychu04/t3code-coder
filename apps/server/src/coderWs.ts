@@ -767,7 +767,6 @@ export const layer = CoderWsRpcGroup.toLayer(
           Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
         ),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
-      [WS_METHODS.reviewGetDiffFileContents]: (input) => review.getDiffFileContents(input),
       [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
       [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),
       [WS_METHODS.terminalOpen]: (input) => terminals.open(input),

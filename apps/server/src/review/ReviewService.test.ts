@@ -71,7 +71,7 @@ describe("ReviewService", () => {
       const error = yield* Effect.gen(function* () {
         const review = yield* ReviewService.ReviewService;
         return yield* review
-          .getDiffFileContents({
+          .openDiffFileContents({
             cwd: outsideRoot,
             sourceKind: "working-tree",
             changeType: "change",

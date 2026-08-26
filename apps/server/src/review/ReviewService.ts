@@ -35,9 +35,6 @@ export class ReviewService extends Context.Service<
     readonly getDiffPreview: (
       input: ReviewDiffPreviewInput,
     ) => Effect.Effect<ReviewDiffPreviewResult, ReviewDiffPreviewError>;
-    readonly getDiffFileContents: (
-      input: ReviewDiffFileContentsInput,
-    ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffFileError>;
     readonly openDiffFileContents: (
       input: ReviewDiffFileContentsInput,
     ) => Effect.Effect<ReviewDiffFileSnapshotResult, ReviewDiffFileSnapshotError>;
@@ -175,7 +172,9 @@ export const make = Effect.gen(function* () {
     return yield* getDriverDiffPreview(input);
   });
 
-  const getDiffFileContents: ReviewService["Service"]["getDiffFileContents"] = Effect.fn(
+  const getDiffFileContents: (
+    input: ReviewDiffFileContentsInput,
+  ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffFileError> = Effect.fn(
     "ReviewService.getDiffFileContents",
   )(function* (input) {
     yield* assertWorkspaceBoundCwd("ReviewService.getDiffFileContents", input.cwd);
@@ -293,7 +292,6 @@ export const make = Effect.gen(function* () {
 
   return ReviewService.of({
     getDiffPreview,
-    getDiffFileContents,
     openDiffFileContents,
     readDiffFileChunk,
   });

@@ -8,15 +8,11 @@ import type {
   ReviewDiffFileChunkInput,
   ReviewDiffFileChunkResult,
   ReviewDiffFileContentsInput,
-  ReviewDiffFileContentsResult,
   ReviewDiffFileSnapshotReference,
   ReviewDiffFileSnapshotResult,
   ReviewDiffPreviewSourceKind,
 } from "@t3tools/contracts";
-import {
-  MAX_REVIEW_DIFF_FILE_CHUNK_BYTES,
-  ReviewDiffFileTooLargeError,
-} from "@t3tools/contracts";
+import { MAX_REVIEW_DIFF_FILE_CHUNK_BYTES } from "@t3tools/contracts";
 
 import { resolveFileDiffPath } from "./diffRendering";
 
@@ -29,11 +25,6 @@ interface GitDiffFileContentsSource {
   /** The comparison identity Pierre carries into its hydrated render cache. */
   readonly cacheKey: string;
 }
-
-type GetDiffFileContents<E> = (request: {
-  readonly environmentId: EnvironmentId;
-  readonly input: ReviewDiffFileContentsInput;
-}) => Promise<AtomCommandResult<ReviewDiffFileContentsResult, E>>;
 
 type OpenDiffFileContents<E> = (request: {
   readonly environmentId: EnvironmentId;
@@ -57,40 +48,6 @@ const diffFileContentsCache = new Map<
   }
 >();
 let diffFileContentsCacheBytes = 0;
-
-export function getDiffFileTooLargeMaxBytes(error: unknown): number | null {
-  if (
-    typeof error !== "object" ||
-    error === null ||
-    !("_tag" in error) ||
-    error._tag !== "ReviewDiffFileTooLargeError" ||
-    !("maxBytes" in error) ||
-    typeof error.maxBytes !== "number" ||
-    !Number.isSafeInteger(error.maxBytes) ||
-    error.maxBytes <= 0
-  ) {
-    return null;
-  }
-  return (error as ReviewDiffFileTooLargeError).maxBytes;
-}
-
-export function withDiffFileTooLargeReporting(
-  load: FileDiffContentsLoader,
-  report: (fileDiff: Parameters<FileDiffContentsLoader>[0], maxBytes: number) => void,
-): FileDiffContentsLoader {
-  return async (fileDiff) => {
-    try {
-      return await load(fileDiff);
-    } catch (error) {
-      const maxBytes = getDiffFileTooLargeMaxBytes(error);
-      if (maxBytes !== null) {
-        report(fileDiff, maxBytes);
-        return null;
-      }
-      throw error;
-    }
-  };
-}
 
 function readCachedDiffFileContents(key: string) {
   const cached = diffFileContentsCache.get(key);
@@ -155,68 +112,9 @@ async function decodeDiffFileChunk(result: ReviewDiffFileChunkResult): Promise<U
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function createDiffFileContentsLoader(
-  load: (input: {
-    readonly changeType: ReviewDiffFileContentsInput["changeType"];
-    readonly oldPath: string;
-    readonly newPath: string;
-  }) => Promise<{ readonly oldContents: string; readonly newContents: string }>,
-  cacheKey: string,
-): FileDiffContentsLoader {
-  return async (fileDiff) => {
-    const newPath = resolveFileDiffPath(fileDiff);
-    const oldPath = fileDiff.prevName
-      ? resolveFileDiffPath({ ...fileDiff, name: fileDiff.prevName })
-      : newPath;
-    const contents = await load({ changeType: fileDiff.type, oldPath, newPath });
-    const newFile = {
-      name: newPath,
-      contents: contents.newContents,
-      cacheKey: `${cacheKey}:new:${newPath}`,
-    };
-    if (fileDiff.type === "rename-pure") {
-      return { oldFile: null, newFile };
-    }
-    return {
-      oldFile: {
-        name: oldPath,
-        contents: contents.oldContents,
-        cacheKey: `${cacheKey}:old:${oldPath}`,
-      },
-      newFile,
-    };
-  };
-}
-
-/** Turns the host's Git file-content RPC into the full-file loader Pierre uses for hunk expansion. */
-export function createGitDiffFileContentsLoader<E>(
-  getDiffFileContents: GetDiffFileContents<E>,
-  source: GitDiffFileContentsSource,
-): FileDiffContentsLoader {
-  const cacheNamespace = diffFileContentsCacheNamespace(source);
-  return createDiffFileContentsLoader(async ({ changeType, oldPath, newPath }) => {
-    const result = await getDiffFileContents({
-      environmentId: source.environmentId,
-      input: {
-        cwd: source.cwd,
-        sourceKind: source.sourceKind,
-        changeType,
-        baseRef: source.baseRef,
-        headRef: source.headRef,
-        oldPath,
-        newPath,
-      },
-    });
-    if (result._tag !== "Success") {
-      throw squashAtomCommandFailure(result);
-    }
-    return result.value;
-  }, cacheNamespace);
 }
 
 /** Loads immutable workspace file snapshots in bounded RPC chunks and retains completed files in memory. */
@@ -224,14 +122,14 @@ export function createChunkedGitDiffFileContentsLoader<E>(
   openDiffFileContents: OpenDiffFileContents<E>,
   readDiffFileChunk: ReadDiffFileChunk<E>,
   source: GitDiffFileContentsSource,
+  reportTooLarge: (fileDiff: Parameters<FileDiffContentsLoader>[0], maxBytes: number) => void,
 ): FileDiffContentsLoader {
   const cacheNamespace = diffFileContentsCacheNamespace(source);
   const readSnapshot = async (
     snapshot: ReviewDiffFileSnapshotReference | null,
   ): Promise<string> => {
     if (snapshot === null || snapshot.totalBytes === 0) return "";
-    const chunks: Uint8Array[] = [];
-    let receivedBytes = 0;
+    const combined = new Uint8Array(snapshot.totalBytes);
     let offset = 0;
     while (offset < snapshot.totalBytes) {
       const result = await readDiffFileChunk({
@@ -256,53 +154,65 @@ export function createChunkedGitDiffFileContentsLoader<E>(
       ) {
         throw new Error("Invalid review file chunk.");
       }
-      chunks.push(chunk);
-      receivedBytes += chunk.byteLength;
+      combined.set(chunk, offset);
+      offset = nextOffset;
       if (result.value.nextOffset === null) break;
-      offset = result.value.nextOffset;
     }
-    if (receivedBytes !== snapshot.totalBytes) throw new Error("Incomplete review file snapshot.");
-    const combined = new Uint8Array(receivedBytes);
-    let writeOffset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, writeOffset);
-      writeOffset += chunk.byteLength;
-    }
+    if (offset !== snapshot.totalBytes) throw new Error("Incomplete review file snapshot.");
     if ((await sha256Hex(combined)) !== snapshot.contentHash) {
       throw new Error("Invalid review file snapshot hash.");
     }
     return textDecoder.decode(combined);
   };
 
-  return createDiffFileContentsLoader(async ({ changeType, oldPath, newPath }) => {
+  return async (fileDiff) => {
+    const newPath = resolveFileDiffPath(fileDiff);
+    const oldPath = fileDiff.prevName
+      ? resolveFileDiffPath({ ...fileDiff, name: fileDiff.prevName })
+      : newPath;
+    const changeType = fileDiff.type;
     const cacheKey = JSON.stringify([cacheNamespace, changeType, oldPath, newPath]);
     const cached = readCachedDiffFileContents(cacheKey);
-    if (cached) return cached;
-    const opened = await openDiffFileContents({
-      environmentId: source.environmentId,
-      input: {
-        cwd: source.cwd,
-        sourceKind: source.sourceKind,
-        changeType,
-        baseRef: source.baseRef,
-        headRef: source.headRef,
-        oldPath,
-        newPath,
-      },
-    });
-    if (opened._tag !== "Success") throw squashAtomCommandFailure(opened);
-    if (opened.value._tag === "tooLarge") {
-      throw new ReviewDiffFileTooLargeError({
-        path: opened.value.path,
-        maxBytes: opened.value.maxBytes,
+    let contents = cached;
+    if (contents === null) {
+      const opened = await openDiffFileContents({
+        environmentId: source.environmentId,
+        input: {
+          cwd: source.cwd,
+          sourceKind: source.sourceKind,
+          changeType,
+          baseRef: source.baseRef,
+          headRef: source.headRef,
+          oldPath,
+          newPath,
+        },
       });
+      if (opened._tag !== "Success") throw squashAtomCommandFailure(opened);
+      if (opened.value._tag === "tooLarge") {
+        reportTooLarge(fileDiff, opened.value.maxBytes);
+        return null;
+      }
+      const [oldContents, newContents] = await Promise.all([
+        readSnapshot(opened.value.oldFile),
+        readSnapshot(opened.value.newFile),
+      ]);
+      contents = { oldContents, newContents };
+      cacheDiffFileContents(cacheKey, contents);
     }
-    const [oldContents, newContents] = await Promise.all([
-      readSnapshot(opened.value.oldFile),
-      readSnapshot(opened.value.newFile),
-    ]);
-    const contents = { oldContents, newContents };
-    cacheDiffFileContents(cacheKey, contents);
-    return contents;
-  }, cacheNamespace);
+
+    const newFile = {
+      name: newPath,
+      contents: contents.newContents,
+      cacheKey: `${cacheNamespace}:new:${newPath}`,
+    };
+    if (fileDiff.type === "rename-pure") return { oldFile: null, newFile };
+    return {
+      oldFile: {
+        name: oldPath,
+        contents: contents.oldContents,
+        cacheKey: `${cacheNamespace}:old:${oldPath}`,
+      },
+      newFile,
+    };
+  };
 }

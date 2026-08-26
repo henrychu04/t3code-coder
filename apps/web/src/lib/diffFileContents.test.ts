@@ -1,16 +1,11 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
-import { EnvironmentId, type ReviewDiffFileContentsResult } from "@t3tools/contracts";
+import { EnvironmentId, type ReviewDiffFileSnapshotResult } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  createChunkedGitDiffFileContentsLoader,
-  createGitDiffFileContentsLoader,
-  getDiffFileTooLargeMaxBytes,
-  withDiffFileTooLargeReporting,
-} from "./diffFileContents";
+import { createChunkedGitDiffFileContentsLoader } from "./diffFileContents";
 
 const SOURCE = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -22,6 +17,7 @@ const SOURCE = {
 };
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+const ignoreTooLarge = () => undefined;
 const sourceCacheNamespace = (source: typeof SOURCE) =>
   JSON.stringify([
     source.environmentId,
@@ -40,116 +36,6 @@ function fileDiff(type: FileDiffMetadata["type"] = "rename-changed"): FileDiffMe
   } as FileDiffMetadata;
 }
 
-describe("getDiffFileTooLargeMaxBytes", () => {
-  it("recognizes the typed RPC error without depending on its message", () => {
-    expect(
-      getDiffFileTooLargeMaxBytes({
-        _tag: "ReviewDiffFileTooLargeError",
-        path: "large.ts",
-        maxBytes: 32 * 1024 * 1024,
-        message: "wording may change",
-      }),
-    ).toBe(32 * 1024 * 1024);
-  });
-
-  it("ignores unrelated and malformed failures", () => {
-    expect(getDiffFileTooLargeMaxBytes(new Error("network unavailable"))).toBeNull();
-    expect(
-      getDiffFileTooLargeMaxBytes({
-        _tag: "ReviewDiffFileTooLargeError",
-        maxBytes: 0,
-      }),
-    ).toBeNull();
-  });
-});
-
-describe("withDiffFileTooLargeReporting", () => {
-  it("reports the typed limit and declines hydration without rejecting", async () => {
-    const failure = {
-      _tag: "ReviewDiffFileTooLargeError",
-      path: "src/new-name.ts",
-      maxBytes: 32 * 1024 * 1024,
-    };
-    const report = vi.fn();
-    const load = withDiffFileTooLargeReporting(
-      vi.fn(async () => Promise.reject(failure)),
-      report,
-    );
-    const diff = fileDiff();
-
-    await expect(load(diff)).resolves.toBeNull();
-    expect(report).toHaveBeenCalledWith(diff, 32 * 1024 * 1024);
-  });
-
-  it("does not classify unrelated loader failures as oversized files", async () => {
-    const failure = new Error("snapshot expired");
-    const report = vi.fn();
-    const load = withDiffFileTooLargeReporting(
-      vi.fn(async () => Promise.reject(failure)),
-      report,
-    );
-
-    await expect(load(fileDiff())).rejects.toBe(failure);
-    expect(report).not.toHaveBeenCalled();
-  });
-});
-
-describe("createGitDiffFileContentsLoader", () => {
-  it("loads both sides with normalized paths and comparison-scoped cache keys", async () => {
-    const getDiffFileContents = vi.fn(async () =>
-      AsyncResult.success({ oldContents: "before\n", newContents: "after\n" }),
-    );
-    const load = createGitDiffFileContentsLoader(getDiffFileContents, SOURCE);
-
-    await expect(load(fileDiff())).resolves.toEqual({
-      oldFile: {
-        name: "src/old-name.ts",
-        contents: "before\n",
-        cacheKey: `${sourceCacheNamespace(SOURCE)}:old:src/old-name.ts`,
-      },
-      newFile: {
-        name: "src/new-name.ts",
-        contents: "after\n",
-        cacheKey: `${sourceCacheNamespace(SOURCE)}:new:src/new-name.ts`,
-      },
-    });
-    expect(getDiffFileContents).toHaveBeenCalledWith({
-      environmentId: "environment-1",
-      input: {
-        cwd: "/workspace",
-        sourceKind: "branch-range",
-        changeType: "rename-changed",
-        baseRef: "main",
-        headRef: "feature",
-        oldPath: "src/old-name.ts",
-        newPath: "src/new-name.ts",
-      },
-    });
-  });
-
-  it("loads a pure rename from its one shared file", async () => {
-    const getDiffFileContents = vi.fn(async () =>
-      AsyncResult.success({ oldContents: "same\n", newContents: "same\n" }),
-    );
-    const load = createGitDiffFileContentsLoader(getDiffFileContents, SOURCE);
-
-    await expect(load(fileDiff("rename-pure"))).resolves.toMatchObject({
-      oldFile: null,
-      newFile: { name: "src/new-name.ts", contents: "same\n" },
-    });
-  });
-
-  it("passes command failures through to Pierre's expansion handling", async () => {
-    const failure = new Error("revision is not available locally");
-    const getDiffFileContents = vi.fn(async () =>
-      AsyncResult.failure<ReviewDiffFileContentsResult, Error>(Cause.fail(failure)),
-    );
-    const load = createGitDiffFileContentsLoader(getDiffFileContents, SOURCE);
-
-    await expect(load(fileDiff())).rejects.toBe(failure);
-  });
-});
-
 describe("createChunkedGitDiffFileContentsLoader", () => {
   it("reports an oversized open outcome without reading chunks", async () => {
     const maxBytes = 32 * 1024 * 1024;
@@ -163,17 +49,31 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     const read = vi.fn();
     const report = vi.fn();
     const diff = fileDiff("new");
-    const load = withDiffFileTooLargeReporting(
-      createChunkedGitDiffFileContentsLoader(open, read, {
+    const load = createChunkedGitDiffFileContentsLoader(
+      open,
+      read,
+      {
         ...SOURCE,
         cacheKey: "oversized-comparison",
-      }),
+      },
       report,
     );
 
     await expect(load(diff)).resolves.toBeNull();
     expect(report).toHaveBeenCalledWith(diff, maxBytes);
     expect(read).not.toHaveBeenCalled();
+  });
+
+  it("passes unrelated command failures through to Pierre", async () => {
+    const failure = new Error("snapshot expired");
+    const open = vi.fn(async () =>
+      AsyncResult.failure<ReviewDiffFileSnapshotResult, Error>(Cause.fail(failure)),
+    );
+    const report = vi.fn();
+    const load = createChunkedGitDiffFileContentsLoader(open, vi.fn(), SOURCE, report);
+
+    await expect(load(fileDiff())).rejects.toBe(failure);
+    expect(report).not.toHaveBeenCalled();
   });
 
   it("assembles bounded snapshots and reuses the in-memory file cache", async () => {
@@ -199,14 +99,20 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         nextOffset: null,
       });
     });
-    const load = createChunkedGitDiffFileContentsLoader(open, read, {
-      ...SOURCE,
-      cacheKey: "chunked-comparison",
-    });
+    const chunkedSource = { ...SOURCE, cacheKey: "chunked-comparison" };
+    const load = createChunkedGitDiffFileContentsLoader(open, read, chunkedSource, ignoreTooLarge);
 
-    await expect(load(fileDiff())).resolves.toMatchObject({
-      oldFile: { contents: oldContents },
-      newFile: { contents: newContents },
+    await expect(load(fileDiff())).resolves.toEqual({
+      oldFile: {
+        name: "src/old-name.ts",
+        contents: oldContents,
+        cacheKey: `${sourceCacheNamespace(chunkedSource)}:old:src/old-name.ts`,
+      },
+      newFile: {
+        name: "src/new-name.ts",
+        contents: newContents,
+        cacheKey: `${sourceCacheNamespace(chunkedSource)}:new:src/new-name.ts`,
+      },
     });
     await expect(load(fileDiff())).resolves.toMatchObject({
       oldFile: { contents: oldContents },
@@ -214,6 +120,39 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     });
     expect(open).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("hydrates a pure rename from its one shared snapshot", async () => {
+    const contents = "unchanged\n";
+    const bytes = Buffer.from(contents);
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        _tag: "opened" as const,
+        oldFile: null,
+        newFile: {
+          snapshotId: "rename-snapshot",
+          totalBytes: bytes.byteLength,
+          contentHash: sha256(contents),
+        },
+      }),
+    );
+    const read = vi.fn(async () =>
+      AsyncResult.success({
+        snapshotId: "rename-snapshot",
+        offset: 0,
+        totalBytes: bytes.byteLength,
+        encoding: "base64" as const,
+        decodedBytes: bytes.byteLength,
+        dataBase64: bytes.toString("base64"),
+        nextOffset: null,
+      }),
+    );
+    const load = createChunkedGitDiffFileContentsLoader(open, read, SOURCE, ignoreTooLarge);
+
+    await expect(load(fileDiff("rename-pure"))).resolves.toMatchObject({
+      oldFile: null,
+      newFile: { name: "src/new-name.ts", contents },
+    });
   });
 
   it("decompresses gzip chunks before assembling file contents", async () => {
@@ -244,10 +183,15 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         nextOffset: null,
       }),
     );
-    const load = createChunkedGitDiffFileContentsLoader(open, read, {
-      ...SOURCE,
-      cacheKey: "gzip-comparison",
-    });
+    const load = createChunkedGitDiffFileContentsLoader(
+      open,
+      read,
+      {
+        ...SOURCE,
+        cacheKey: "gzip-comparison",
+      },
+      ignoreTooLarge,
+    );
 
     await expect(load(fileDiff("new"))).resolves.toMatchObject({
       oldFile: { contents: "" },
@@ -282,10 +226,15 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         nextOffset: nextOffset < bytes.byteLength ? nextOffset : null,
       });
     });
-    const load = createChunkedGitDiffFileContentsLoader(open, read, {
-      ...SOURCE,
-      cacheKey: "utf8-comparison",
-    });
+    const load = createChunkedGitDiffFileContentsLoader(
+      open,
+      read,
+      {
+        ...SOURCE,
+        cacheKey: "utf8-comparison",
+      },
+      ignoreTooLarge,
+    );
 
     await expect(load(fileDiff("new"))).resolves.toMatchObject({
       newFile: { contents },
@@ -324,10 +273,15 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         ...override,
       }),
     );
-    const load = createChunkedGitDiffFileContentsLoader(open, read, {
-      ...SOURCE,
-      cacheKey: `invalid-frame-${_label}`,
-    });
+    const load = createChunkedGitDiffFileContentsLoader(
+      open,
+      read,
+      {
+        ...SOURCE,
+        cacheKey: `invalid-frame-${_label}`,
+      },
+      ignoreTooLarge,
+    );
 
     await expect(load(fileDiff("new"))).rejects.toThrow("Invalid review file chunk.");
   });
@@ -383,10 +337,15 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
           ...testCase.chunk,
         }),
       );
-      const load = createChunkedGitDiffFileContentsLoader(open, read, {
-        ...SOURCE,
-        cacheKey: testCase.cacheKey,
-      });
+      const load = createChunkedGitDiffFileContentsLoader(
+        open,
+        read,
+        {
+          ...SOURCE,
+          cacheKey: testCase.cacheKey,
+        },
+        ignoreTooLarge,
+      );
 
       await expect(load(fileDiff("new"))).rejects.toThrow(testCase.message);
     }
@@ -413,10 +372,15 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         nextOffset: null,
       }),
     );
-    const load = createChunkedGitDiffFileContentsLoader(open, read, {
-      ...SOURCE,
-      cacheKey: "corrupt-gzip",
-    });
+    const load = createChunkedGitDiffFileContentsLoader(
+      open,
+      read,
+      {
+        ...SOURCE,
+        cacheKey: "corrupt-gzip",
+      },
+      ignoreTooLarge,
+    );
 
     await expect(load(fileDiff("new"))).rejects.toThrow();
   });
@@ -447,12 +411,17 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         }),
       );
       return {
-        load: createChunkedGitDiffFileContentsLoader(open, read, {
-          ...SOURCE,
-          environmentId: EnvironmentId.make(environmentId),
-          cwd,
-          cacheKey: "shared-diff-hash",
-        }),
+        load: createChunkedGitDiffFileContentsLoader(
+          open,
+          read,
+          {
+            ...SOURCE,
+            environmentId: EnvironmentId.make(environmentId),
+            cwd,
+            cacheKey: "shared-diff-hash",
+          },
+          ignoreTooLarge,
+        ),
         open,
       };
     };
@@ -487,6 +456,7 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
             throw new Error("empty snapshots should not request chunks");
           }),
           { ...SOURCE, cacheKey: `empty-cache-${index}` },
+          ignoreTooLarge,
         ),
       };
     });

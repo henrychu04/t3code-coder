@@ -49,12 +49,6 @@ export function applyServerConfigProjection(
         latestEvent: event,
         source: "live",
       }));
-    case "providerStatuses":
-      return Option.map(current, (projection) => ({
-        config: { ...projection.config, providers: event.payload.providers },
-        latestEvent: event,
-        source: "live",
-      }));
     case "providerUpdated":
       return Option.map(current, (projection) => ({
         config: {

@@ -71,10 +71,7 @@ import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
-import {
-  createChunkedGitDiffFileContentsLoader,
-  withDiffFileTooLargeReporting,
-} from "../lib/diffFileContents";
+import { createChunkedGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
@@ -333,15 +330,17 @@ export default function DiffPanel({
       return undefined;
     }
 
-    return withDiffFileTooLargeReporting(
-      createChunkedGitDiffFileContentsLoader(openDiffFileContents, readDiffFileChunk, {
+    return createChunkedGitDiffFileContentsLoader(
+      openDiffFileContents,
+      readDiffFileChunk,
+      {
         environmentId: activeThread.environmentId,
         cwd: preview.cwd,
         sourceKind: selectedGitSource.kind,
         baseRef: selectedGitSource.baseRef,
         headRef: selectedGitSource.headRef,
         cacheKey: selectedGitSource.diffHash,
-      }),
+      },
       (fileDiff, maxBytes) => {
         const fileKey = buildFileDiffRenderKey(fileDiff);
         setDiffFileExpansionErrors((current) => {

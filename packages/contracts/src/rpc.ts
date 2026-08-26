@@ -46,10 +46,8 @@ import {
 } from "./project.ts";
 import {
   ReviewDiffFileContentsInput,
-  ReviewDiffFileContentsResult,
   ReviewDiffFileChunkInput,
   ReviewDiffFileChunkResult,
-  ReviewDiffFileError,
   ReviewDiffFileSnapshotError,
   ReviewDiffFileSnapshotResult,
   ReviewDiffPreviewError,
@@ -99,7 +97,6 @@ export const WS_METHODS = {
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   vcsInit: "vcs.init",
   reviewGetDiffPreview: "review.getDiffPreview",
-  reviewGetDiffFileContents: "review.getDiffFileContents",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
   reviewReadDiffFileChunk: "review.readDiffFileChunk",
   terminalOpen: "terminal.open",
@@ -231,12 +228,6 @@ const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   payload: ReviewDiffPreviewInput,
   success: ReviewDiffPreviewResult,
   error: ReviewDiffPreviewError,
-});
-
-const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffFileContents, {
-  payload: ReviewDiffFileContentsInput,
-  success: ReviewDiffFileContentsResult,
-  error: ReviewDiffFileError,
 });
 
 const WsReviewOpenDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewOpenDiffFileContents, {
@@ -388,7 +379,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsVcsRenameThreadBranchRpc,
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
-  WsReviewGetDiffFileContentsRpc,
   WsReviewOpenDiffFileContentsRpc,
   WsReviewReadDiffFileChunkRpc,
   WsTerminalOpenRpc,
