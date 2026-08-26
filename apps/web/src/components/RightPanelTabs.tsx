@@ -1,4 +1,4 @@
-import { Bot, FileDiff, Plus, TerminalSquare, X } from "lucide-react";
+import { Bot, FileDiff, Files, Plus, TerminalSquare, X } from "lucide-react";
 import {
   type ReactNode,
   type RefObject,
@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { useResizableWidth } from "../hooks/useResizableWidth";
+import { useTheme } from "../hooks/useTheme";
 import type { RightPanelSurface } from "../rightPanelStore";
 import {
   resolveRightPanelWidths,
@@ -17,6 +18,8 @@ import {
 } from "../rightPanelLayout";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "./ui/menu";
+import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
   readonly mode: "inline" | "sheet";
@@ -24,6 +27,7 @@ interface RightPanelTabsProps {
   readonly layoutControls?: ReactNode;
   readonly surfaces: readonly RightPanelSurface[];
   readonly activeSurfaceId: string | null;
+  readonly pendingSurfaceIds: ReadonlySet<string>;
   readonly terminalLabelsById: ReadonlyMap<string, string>;
   readonly onActivate: (surface: RightPanelSurface) => void;
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
@@ -32,9 +36,11 @@ interface RightPanelTabsProps {
   readonly onCloseAllSurfaces: () => void;
   readonly onAddTerminal: () => void;
   readonly onAddDiff: () => void;
+  readonly onAddFiles: () => void;
   readonly onAddAgents: () => void;
   readonly terminalAvailable: boolean;
   readonly diffAvailable: boolean;
+  readonly filesAvailable: boolean;
   readonly agentsAvailable: boolean;
   readonly liveAgentCount: number;
   readonly children: ReactNode;
@@ -45,20 +51,42 @@ function surfaceLabel(
   terminalLabels: ReadonlyMap<string, string>,
 ): string {
   if (surface.kind === "diff") return "Diff";
+  if (surface.kind === "files") return "Files";
+  if (surface.kind === "file")
+    return surface.relativePath.split("/").at(-1) ?? surface.relativePath;
   if (surface.kind === "agents") return "Agents";
   return terminalLabels.get(surface.activeTerminalId) ?? "Terminal";
 }
 
-function SurfaceIcon({ surface }: { readonly surface: RightPanelSurface }) {
+function SurfaceIcon({
+  surface,
+  theme,
+}: {
+  readonly surface: RightPanelSurface;
+  readonly theme: "light" | "dark";
+}) {
   if (surface.kind === "diff") return <FileDiff className="size-3.5" />;
+  if (surface.kind === "files") return <Files className="size-3.5" />;
+  if (surface.kind === "file") {
+    return (
+      <PierreEntryIcon
+        pathValue={surface.relativePath}
+        kind="file"
+        theme={theme}
+        className="size-3.5"
+      />
+    );
+  }
   if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const { resolvedTheme } = useTheme();
   const noSurfaces = props.surfaces.length === 0;
   const resizable = props.mode === "inline" && !props.maximized;
   const hostRef = useRef<HTMLElement | null>(null);
+  const tabsRef = useRef<HTMLDivElement | null>(null);
   const { defaultWidth, maxWidth } = useClampedRightPanelWidths(hostRef, resizable);
   const { width, handlers } = useResizableWidth({
     storageKey: RIGHT_PANEL_WIDTH_STORAGE_KEY,
@@ -67,6 +95,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     maxWidth,
     edge: "left",
   });
+
+  useEffect(() => {
+    const active = tabsRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
+    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [props.activeSurfaceId]);
 
   return (
     <section
@@ -96,11 +129,17 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           />
         </div>
       ) : null}
-      <header className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+      <header
+        className={cn(
+          "flex h-11 shrink-0 items-center gap-1 border-b border-border pl-2",
+          props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-2",
+        )}
+      >
+        <div ref={tabsRef} className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {props.surfaces.map((surface) => (
             <div
               key={surface.id}
+              data-active-tab={surface.id === props.activeSurfaceId}
               className={cn(
                 "flex shrink-0 items-center rounded-md",
                 surface.id === props.activeSurfaceId ? "bg-accent" : "hover:bg-muted",
@@ -110,10 +149,19 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 type="button"
                 className="flex min-w-0 items-center gap-1.5 px-2 py-1.5 text-xs"
                 onClick={() => props.onActivate(surface)}
+                onAuxClick={(event) => {
+                  if (event.button === 1) {
+                    event.preventDefault();
+                    props.onCloseSurface(surface);
+                  }
+                }}
                 onDoubleClick={() => props.onCloseOtherSurfaces(surface)}
                 title="Double-click to close other tabs"
               >
-                <SurfaceIcon surface={surface} />
+                <SurfaceIcon surface={surface} theme={resolvedTheme} />
+                {props.pendingSurfaceIds.has(surface.id) ? (
+                  <span className="size-1.5 shrink-0 rounded-full bg-info" aria-label="Saving" />
+                ) : null}
                 <span className="max-w-32 truncate">
                   {surfaceLabel(surface, props.terminalLabelsById)}
                 </span>
@@ -133,6 +181,27 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             </div>
           ))}
         </div>
+        <Menu>
+          <MenuTrigger
+            render={<Button size="icon-xs" variant="ghost" aria-label="Add panel tab" />}
+          >
+            <Plus className="size-3.5" />
+          </MenuTrigger>
+          <MenuPopup align="end" className="w-40">
+            <MenuItem disabled={!props.terminalAvailable} onClick={props.onAddTerminal}>
+              <TerminalSquare /> Terminal
+            </MenuItem>
+            <MenuItem disabled={!props.filesAvailable} onClick={props.onAddFiles}>
+              <Files /> Files
+            </MenuItem>
+            <MenuItem disabled={!props.diffAvailable} onClick={props.onAddDiff}>
+              <FileDiff /> Diff
+            </MenuItem>
+            <MenuItem disabled={!props.agentsAvailable} onClick={props.onAddAgents}>
+              <Bot /> Agents
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
         <Button
           size="icon-xs"
           variant="ghost"
@@ -147,16 +216,40 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
       {noSurfaces ? (
         <div className="grid flex-1 place-items-center p-6">
-          <div className="w-full max-w-sm rounded-xl border border-border bg-card p-5">
+          <div className="w-full max-w-lg rounded-xl border border-border bg-card p-5">
             <h2 className="text-sm font-semibold">Open a workspace surface</h2>
-            <div className="mt-4 grid gap-2">
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
               <Button
                 variant="outline"
                 className="justify-start"
                 disabled={!props.terminalAvailable}
                 onClick={props.onAddTerminal}
               >
-                <TerminalSquare className="size-4" /> Terminal
+                <TerminalSquare className="size-4" />
+                <span className="text-left">
+                  Terminal
+                  <br />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Run workspace commands.
+                  </span>
+                </span>
+              </Button>
+              <Button
+                variant="outline"
+                className="h-auto justify-start py-3"
+                disabled={!props.filesAvailable}
+                onClick={props.onAddFiles}
+              >
+                <Files className="size-4" />
+                <span className="text-left">
+                  Files
+                  <br />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {props.filesAvailable
+                      ? "Browse and edit project text."
+                      : "Available after the thread starts."}
+                  </span>
+                </span>
               </Button>
               <Button
                 variant="outline"
@@ -164,7 +257,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 disabled={!props.diffAvailable}
                 onClick={props.onAddDiff}
               >
-                <FileDiff className="size-4" /> Diff
+                <FileDiff className="size-4" />
+                <span className="text-left">
+                  Diff
+                  <br />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Review working changes.
+                  </span>
+                </span>
               </Button>
               <Button
                 variant="outline"
@@ -172,14 +272,20 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                 disabled={!props.agentsAvailable}
                 onClick={props.onAddAgents}
               >
-                <Bot className="size-4" /> Agents
-                {props.liveAgentCount > 0 ? ` (${props.liveAgentCount})` : ""}
+                <Bot className="size-4" />
+                <span className="text-left">
+                  Agents{props.liveAgentCount > 0 ? ` (${props.liveAgentCount})` : ""}
+                  <br />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    Inspect agent workflows.
+                  </span>
+                </span>
               </Button>
             </div>
           </div>
         </div>
       ) : (
-        <div className="min-h-0 flex-1">{props.children}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{props.children}</div>
       )}
     </section>
   );

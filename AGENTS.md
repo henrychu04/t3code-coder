@@ -35,8 +35,14 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
-  transfer, or background file synchronization. The user-facing transfer exceptions are an image
-  pasted directly into the message composer and the display of turn-scoped screenshot artifacts.
+  transfer, or background file synchronization. The Files surface is the only text-file exception:
+  it may list, read, and edit bounded UTF-8 text files inside the active project through the existing
+  helper stdio RPC. Accept only validated project-relative paths, verify the project root belongs to
+  the requesting thread, reject path and symlink escapes and binary files, detect stale writes, and
+  keep open-file and editor state in browser memory only. Its explicit Copy path action may place
+  only that project-relative path—not file contents or an absolute path—on the local clipboard. The
+  other user-facing transfer exceptions are an image pasted directly into the message composer and
+  the display of turn-scoped screenshot artifacts.
   Accept PNG, JPEG, and WebP images only, validate their signatures rather than trusting metadata,
   and reject images larger than 20 MiB. For pasted images, generate filenames internally and copy
   only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path. For

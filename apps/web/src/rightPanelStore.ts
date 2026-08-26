@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { createMemoryStorage } from "./lib/storage";
 
-export const RIGHT_PANEL_KINDS = ["diff", "terminal", "agents"] as const;
+export const RIGHT_PANEL_KINDS = ["diff", "files", "file", "terminal", "agents"] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
 export type RightPanelSurface =
@@ -18,6 +18,14 @@ export type RightPanelSurface =
       splitDirection?: "horizontal" | "vertical";
     }
   | { id: "diff"; kind: "diff" }
+  | { id: "files"; kind: "files" }
+  | {
+      id: `file:${string}`;
+      kind: "file";
+      relativePath: string;
+      revealLine: number | null;
+      revealRequestId: number;
+    }
   | { id: "agents"; kind: "agents" };
 
 export interface ThreadRightPanelState {
@@ -28,7 +36,8 @@ export interface ThreadRightPanelState {
 
 interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
-  open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "terminal">) => void;
+  open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
+  openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -45,7 +54,7 @@ interface RightPanelStoreState {
   closeAllSurfaces: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
-  toggle: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "terminal">) => void;
+  toggle: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -64,8 +73,33 @@ const updateThread = (
   return { ...byThreadKey, [key]: update(byThreadKey[key] ?? EMPTY_THREAD_STATE) };
 };
 
-const singletonSurface = (kind: "diff" | "agents"): RightPanelSurface =>
-  kind === "diff" ? { id: "diff", kind } : { id: "agents", kind };
+const singletonSurface = (kind: "diff" | "files" | "agents"): RightPanelSurface => {
+  switch (kind) {
+    case "diff":
+      return { id: "diff", kind };
+    case "files":
+      return { id: "files", kind };
+    case "agents":
+      return { id: "agents", kind };
+  }
+};
+
+const fileSurface = (
+  relativePath: string,
+  revealLine: number | null,
+  revealRequestId: number,
+): RightPanelSurface => ({
+  id: `file:${relativePath}`,
+  kind: "file",
+  relativePath,
+  revealLine,
+  revealRequestId,
+});
+
+function normalizeRevealLine(line: number | undefined): number | null {
+  if (line === undefined || !Number.isFinite(line)) return null;
+  return Math.max(1, Math.trunc(line));
+}
 
 const terminalSurface = (terminalId: string): RightPanelSurface => ({
   id: `terminal:${terminalId}`,
@@ -105,6 +139,33 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
           byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
             upsert(current, singletonSurface(kind)),
           ),
+        })),
+      openFile: (ref, relativePath, line) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
+            const withoutStandaloneExplorer = current.surfaces.filter(
+              (surface) => surface.kind !== "files",
+            );
+            const surfaceId = `file:${relativePath}` as const;
+            const existing = withoutStandaloneExplorer.find(
+              (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
+                surface.id === surfaceId && surface.kind === "file",
+            );
+            const surface = fileSurface(
+              relativePath,
+              normalizeRevealLine(line),
+              (existing?.revealRequestId ?? 0) + 1,
+            );
+            return {
+              isOpen: true,
+              activeSurfaceId: surface.id,
+              surfaces: existing
+                ? withoutStandaloneExplorer.map((entry) =>
+                    entry.id === surface.id ? surface : entry,
+                  )
+                : [...withoutStandaloneExplorer, surface],
+            };
+          }),
         })),
       openTerminal: (ref, terminalId) =>
         set((state) => ({

@@ -12,7 +12,8 @@ targets, structured port-forward rules, and an optional Coder executable path. A
 be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
 copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
-provider sessions, and screenshot artifact object URLs are memory-only.
+open Files tabs and editor state, provider sessions, and screenshot artifact object URLs are
+memory-only.
 Each active workspace accepts one loopback WebSocket at a time. The workspace helper can outlive
 that browser connection, so the gateway treats every accepted WebSocket as a distinct RPC session:
 it translates browser-local request IDs to helper-lifetime unique IDs, restores the browser IDs on
@@ -147,6 +148,17 @@ and copies it through helper-scoped SCP to a generated path beneath
 `$HOME/.t3-coder/attachments`. It then deletes the local staging file and inserts the remote path
 into the draft.
 
+The Files surface is a contained text-editing capability, not a transfer mechanism or general
+filesystem API. The browser supplies the active project root plus a project-relative path to the
+workspace helper over the existing RPC stream. The helper first verifies that the root is the
+requesting thread's project checkout or managed worktree. Reads are capped at 1 MiB; binary files
+are rejected, larger text files are truncated and read-only, and both lexical traversal and symlinks
+resolving outside the project are rejected. Writes apply only to an existing, non-truncated text file, use the
+revision returned by the read to reject stale edits, and replace the file atomically. The UI exposes
+no upload, download, export, drag-and-drop, absolute path, or local file access. An explicit Copy
+path action may copy only the project-relative path to the browser clipboard. Open tabs, explorer
+state, Markdown source/render mode, and editor state are not persisted locally.
+
 The other user-facing exception displays screenshots produced while Claude verifies a frontend.
 This does not require MCP or a project-specific T3 skill. While a Claude turn is active, the helper
 observes image paths created or modified inside that turn's active project and accepts image content
@@ -169,8 +181,8 @@ bounded 512 KiB chunks by opaque ID over the existing browser-to-helper RPC path
 those chunks into memory-only object URLs and revokes them when the view unmounts. The RPC accepts
 no filesystem path, the gateway does not persist the bytes, and the UI exposes no download or
 export action. The observer ends with the turn and performs no scan or background synchronization.
-User-controlled filesystem paths, arbitrary files, downloads, exports, and drag-and-drop remain
-prohibited.
+Filesystem paths outside the contained Files RPC, arbitrary files, downloads, exports, and
+drag-and-drop remain prohibited.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 
 import ChatMarkdown, { orderedListGutterStyle } from "./ChatMarkdown";
 
@@ -87,5 +89,19 @@ describe("ChatMarkdown", () => {
     expect(markup).toContain("example.ts");
     expect(markup).toContain('aria-label="Copy code"');
     expect(markup).toContain("const answer = 42;");
+  });
+
+  it("makes only project-contained file links interactive", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        threadRef={scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"))}
+        text="[source](src/index.ts#L42) [outside](/tmp/secret.txt)"
+      />,
+    );
+
+    expect(markup).toContain('type="button"');
+    expect(markup.match(/<button/g)).toHaveLength(1);
+    expect(markup).not.toContain('href="/tmp/secret.txt"');
   });
 });

@@ -25,11 +25,17 @@ import {
   type OrchestrationThreadShell,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
+  OrchestrationGetWorkflowScriptError,
   OrchestrationGetTurnDiffError,
   OrchestrationSearchThreadsError,
   ORCHESTRATION_WS_METHODS,
   type ProjectEntriesFailure,
+  type ProjectFileFailure,
+  type ProjectFileOperation,
+  ProjectListEntriesError,
+  ProjectReadFileError,
   ProjectSearchEntriesError,
+  ProjectWriteFileError,
   ProjectId,
   type TerminalAttachStreamEvent,
   type TerminalError,
@@ -54,6 +60,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
@@ -64,6 +71,8 @@ import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
+import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
@@ -149,6 +158,42 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
         normalizedCwd: error.cwd,
         detail: error.reason,
       };
+  }
+}
+
+function projectFileFailureContext(
+  error:
+    | WorkspaceFileSystem.WorkspaceFileSystemError
+    | WorkspacePaths.WorkspacePathOutsideRootError,
+): {
+  readonly failure: ProjectFileFailure;
+  readonly resolvedPath?: string;
+  readonly resolvedWorkspaceRoot?: string;
+  readonly operation?: ProjectFileOperation;
+  readonly operationPath?: string;
+} {
+  switch (error._tag) {
+    case "WorkspacePathOutsideRootError":
+      return { failure: "workspace_path_outside_root" };
+    case "WorkspaceFileSystemOperationError":
+      return {
+        failure: "operation_failed",
+        resolvedPath: error.resolvedPath,
+        operation: error.operation,
+        operationPath: error.operationPath,
+      };
+    case "WorkspaceFilePathEscapeError":
+      return {
+        failure: "resolved_path_outside_root",
+        resolvedPath: error.resolvedPath,
+        resolvedWorkspaceRoot: error.resolvedWorkspaceRoot,
+      };
+    case "WorkspacePathNotFileError":
+      return { failure: "path_not_file", resolvedPath: error.resolvedPath };
+    case "WorkspaceBinaryFileError":
+      return { failure: "binary_file", resolvedPath: error.resolvedPath };
+    case "WorkspaceFileStaleError":
+      return { failure: "stale_file", resolvedPath: error.resolvedPath };
   }
 }
 
@@ -314,6 +359,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const providerService = yield* ProviderService;
     const settings = yield* ServerSettings.ServerSettingsService;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+    const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
@@ -341,6 +387,17 @@ export const layer = CoderWsRpcGroup.toLayer(
         detail,
         ...(cause === undefined ? {} : { cause }),
       });
+    const workspaceOwnedByThread = Effect.fn("coderWs.workspaceOwnedByThread")(function* (input: {
+      readonly threadId: ThreadId;
+      readonly cwd: string;
+    }) {
+      const thread = yield* projections.getThreadShellById(input.threadId);
+      if (Option.isNone(thread)) return false;
+      const project = yield* projections.getProjectShellById(thread.value.projectId);
+      if (Option.isNone(project)) return false;
+      const ownedRoot = thread.value.worktreePath ?? project.value.workspaceRoot;
+      return path.resolve(input.cwd) === path.resolve(ownedRoot);
+    });
 
     const nextManagedWorktreePathForBranch = Effect.fn("nextManagedWorktreePathForBranch")(
       function* (branch: string, currentPath?: string) {
@@ -700,6 +757,76 @@ export const layer = CoderWsRpcGroup.toLayer(
               }),
           ),
         ),
+      [WS_METHODS.projectsListEntries]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned) {
+            return yield* new ProjectListEntriesError({
+              cwd: input.cwd,
+              failure: "workspace_not_owned_by_thread",
+            });
+          }
+          return yield* workspaceEntries.list(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectListEntriesError({
+                  cwd: input.cwd,
+                  ...projectEntriesFailureContext(cause),
+                  cause,
+                }),
+            ),
+          );
+        }),
+      [WS_METHODS.projectsReadFile]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned) {
+            return yield* new ProjectReadFileError({
+              cwd: input.cwd,
+              relativePath: input.relativePath,
+              failure: "workspace_not_owned_by_thread",
+            });
+          }
+          return yield* workspaceFileSystem.readFile(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectReadFileError({
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          );
+        }),
+      [WS_METHODS.projectsWriteFile]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned) {
+            return yield* new ProjectWriteFileError({
+              cwd: input.cwd,
+              relativePath: input.relativePath,
+              failure: "workspace_not_owned_by_thread",
+            });
+          }
+          return yield* workspaceFileSystem.writeFile(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectWriteFileError({
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          );
+        }),
       [WS_METHODS.workspaceListDirectories]: (input) =>
         workspaceEntries.listDirectories(input).pipe(
           Effect.mapError(
@@ -910,6 +1037,18 @@ export const layer = CoderWsRpcGroup.toLayer(
                 message: "Failed to load thread diff",
                 cause,
               }),
+          ),
+        ),
+      [ORCHESTRATION_WS_METHODS.getWorkflowScript]: (input) =>
+        readWorkflowScript(input).pipe(
+          Effect.mapError((cause) =>
+            cause instanceof OrchestrationGetWorkflowScriptError
+              ? cause
+              : new OrchestrationGetWorkflowScriptError({
+                  reason: "read-failed",
+                  scriptPath: input.scriptPath,
+                  cause,
+                }),
           ),
         ),
       [ORCHESTRATION_WS_METHODS.searchThreads]: (input) =>

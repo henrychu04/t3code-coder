@@ -4,6 +4,11 @@
   "type": "module",
   "scripts": {
     "build": "pnpm --filter @t3tools/coder-helper build && pnpm --filter @t3tools/web build",
+    "coder:live:serve": "pnpm build && node scripts/coder-live-test.mjs serve",
+    "coder:live:setup": "node scripts/coder-live-test.mjs setup",
+    "coder:live:status": "node scripts/coder-live-test.mjs status",
+    "coder:live:stop": "node scripts/coder-live-test.mjs stop",
+    "coder:live:test": "node scripts/coder-live-test.mjs test",
     "start": "pnpm build && node apps/coder-gateway/src/bin.ts",
     "start:open": "pnpm build && node apps/coder-gateway/src/bin.ts --open-browser",
     "generate:sbom": "pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --lockfile-only --prod --out docs/sbom.cdx.json",

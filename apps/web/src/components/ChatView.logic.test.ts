@@ -16,6 +16,7 @@ import {
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
+  canUseOwnedFilesSurface,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -43,6 +44,25 @@ const environmentId = EnvironmentId.make("environment-local");
 const projectId = ProjectId.make("project-1");
 const threadId = ThreadId.make("thread-1");
 const now = "2026-03-29T00:00:00.000Z";
+
+describe("Files surface ownership", () => {
+  it("is unavailable until the draft has become a server-owned thread", () => {
+    expect(
+      canUseOwnedFilesSurface({
+        isServerThread: false,
+        hasProject: true,
+        hasWorkspaceRoot: true,
+      }),
+    ).toBe(false);
+    expect(
+      canUseOwnedFilesSurface({
+        isServerThread: true,
+        hasProject: true,
+        hasWorkspaceRoot: true,
+      }),
+    ).toBe(true);
+  });
+});
 
 describe("draft hero submission transition", () => {
   it("does not dock the composer before a background submission", () => {
