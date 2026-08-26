@@ -71,7 +71,11 @@ import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
-import { keepTimelineEndVisibleAfterOverlayGrowth } from "./timelineScrollAnchoring";
+import {
+  captureTimelineScrollRestoration,
+  keepTimelineEndVisibleAfterOverlayGrowth,
+  type TimelineScrollRestoration,
+} from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
@@ -231,7 +235,10 @@ interface MessagesTimelineProps {
    * scroll-mode refs whenever the user drifts near the bottom.
    */
   liveFollowEnabled: boolean;
-  onIsAtEndChange: (isAtEnd: boolean) => void;
+  onScrollStateChange: (
+    isAtEnd: boolean,
+    restoration: TimelineScrollRestoration | undefined,
+  ) => void;
   onManualNavigation: () => void;
   hideEmptyPlaceholder?: boolean;
   topFadeEnabled?: boolean;
@@ -269,7 +276,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onAnchorReady,
   contentInsetEndAdjustment,
   liveFollowEnabled,
-  onIsAtEndChange,
+  onScrollStateChange,
   onManualNavigation,
   hideEmptyPlaceholder = false,
   topFadeEnabled = false,
@@ -457,10 +464,28 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   }, [anchorMessageId, handleAnchorReady, rows]);
 
   const handleScroll = useCallback(() => {
-    const state = listRef.current?.getState?.();
+    const list = listRef.current;
+    const state = list?.getState?.();
+    const scrollNode = list?.getScrollableNode();
     const isAtEnd = resolveTimelineIsAtEnd(state, contentInsetEndAdjustment);
     if (isAtEnd !== undefined) {
-      onIsAtEndChange(isAtEnd);
+      onScrollStateChange(
+        isAtEnd,
+        captureTimelineScrollRestoration(state, isAtEnd, {
+          ...(scrollNode ? { scroll: scrollNode.scrollTop } : {}),
+          viewOffsetForRow: (rowId) => {
+            if (!scrollNode) {
+              return undefined;
+            }
+            const row = scrollNode.querySelector<HTMLElement>(
+              `[data-timeline-row-id="${CSS.escape(rowId)}"]`,
+            );
+            return row
+              ? row.getBoundingClientRect().top - scrollNode.getBoundingClientRect().top
+              : undefined;
+          },
+        }),
+      );
     }
     if (!state || minimapItems.length === 0) {
       return;
@@ -484,7 +509,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
       strip.dataset.inView = inView ? "true" : "false";
     }
-  }, [contentInsetEndAdjustment, listRef, minimapItems, minimapStripMap, onIsAtEndChange]);
+  }, [contentInsetEndAdjustment, listRef, minimapItems, minimapStripMap, onScrollStateChange]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(handleScroll);
@@ -563,7 +588,11 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // from TimelineRowCtx, which propagates through LegendList's memo.
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
-      <div className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip" data-timeline-root="true">
+      <div
+        className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip"
+        data-timeline-root="true"
+        data-timeline-row-id={item.id}
+      >
         <TimelineRowContent row={item} />
       </div>
     ),
