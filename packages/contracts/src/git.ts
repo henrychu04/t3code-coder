@@ -94,6 +94,18 @@ export type VcsStatusLocalResult = typeof VcsStatusLocalResult.Type;
 export const VcsStatusResult = Schema.Struct(VcsStatusShape);
 export type VcsStatusResult = typeof VcsStatusResult.Type;
 
+export const VcsRefStatusResult = Schema.Struct({
+  isRepo: Schema.Boolean,
+  refName: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type VcsRefStatusResult = typeof VcsRefStatusResult.Type;
+
+export const VcsRefStatusStreamEvent = Schema.Union([
+  Schema.TaggedStruct("snapshot", { local: VcsRefStatusResult }),
+  Schema.TaggedStruct("localUpdated", { local: VcsRefStatusResult }),
+]);
+export type VcsRefStatusStreamEvent = typeof VcsRefStatusStreamEvent.Type;
+
 export const VcsStatusStreamEvent = Schema.Union([
   Schema.TaggedStruct("snapshot", { local: VcsStatusLocalResult }),
   Schema.TaggedStruct("localUpdated", { local: VcsStatusLocalResult }),

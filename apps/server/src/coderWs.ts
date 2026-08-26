@@ -8,6 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
@@ -110,6 +111,27 @@ function isThreadDetailEvent(event: OrchestrationEvent): boolean {
     event.type === "thread.reverted" ||
     event.type === "thread.session-set"
   );
+}
+
+const SHELL_IMMATERIAL_ACTIVITY_KINDS = new Set([
+  "tool.started",
+  "tool.updated",
+  "tool.progress",
+  "tool.completed",
+  "tool.denied",
+  "context-window.updated",
+]);
+
+/** Events whose projection can change fields rendered by the project/thread sidebar. */
+export function isShellMaterialEvent(event: OrchestrationEvent): boolean {
+  if (event.aggregateKind === "project") return true;
+  if (event.type === "thread.message-sent") {
+    return event.payload.role === "user" || !event.payload.streaming;
+  }
+  if (event.type === "thread.activity-appended") {
+    return !SHELL_IMMATERIAL_ACTIVITY_KINDS.has(event.payload.activity.kind);
+  }
+  return true;
 }
 
 interface ShellProjectionQueries {
@@ -570,9 +592,6 @@ export const layer = CoderWsRpcGroup.toLayer(
         issues: [],
         providers: providerSnapshots,
         settings: serverSettings,
-        shellResumeCompletionMarker: true,
-        threadResumeCompletionMarker: true,
-        threadSnapshotPagination: true,
       };
     });
 
@@ -622,6 +641,7 @@ export const layer = CoderWsRpcGroup.toLayer(
           }),
         ),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
+      [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.refStream(cwd),
       [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),
       [WS_METHODS.vcsListRefs]: (input) => git.listRefs(input),
       [WS_METHODS.vcsCreateWorktree]: (input) =>
@@ -665,6 +685,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
       [WS_METHODS.reviewGetDiffFileContents]: (input) => review.getDiffFileContents(input),
+      [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
+      [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),
       [WS_METHODS.terminalOpen]: (input) => terminals.open(input),
       [WS_METHODS.terminalAttach]: (input) =>
         Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
@@ -696,13 +718,41 @@ export const layer = CoderWsRpcGroup.toLayer(
         Stream.unwrap(
           Effect.gen(function* () {
             yield* providers.refresh().pipe(Effect.ignoreCause({ log: true }), Effect.forkScoped);
+            const initialConfig = yield* loadServerConfig;
+            const previousProviders = yield* Ref.make(initialConfig.providers);
             const providerChanges = providers.streamChanges.pipe(
-              Stream.map((nextProviders) => ({
-                version: 1 as const,
-                type: "providerStatuses" as const,
-                payload: { providers: nextProviders },
-              })),
               Stream.debounce(Duration.millis(200)),
+              Stream.mapEffect((nextProviders) =>
+                Ref.modify(previousProviders, (previous) => {
+                  const previousById = new Map(
+                    previous.map((provider) => [provider.instanceId, provider] as const),
+                  );
+                  const nextIds = new Set(nextProviders.map((provider) => provider.instanceId));
+                  const events = [
+                    ...nextProviders.flatMap((provider) => {
+                      const prior = previousById.get(provider.instanceId);
+                      return prior && JSON.stringify(prior) === JSON.stringify(provider)
+                        ? []
+                        : [
+                            {
+                              version: 1 as const,
+                              type: "providerUpdated" as const,
+                              payload: { provider },
+                            },
+                          ];
+                    }),
+                    ...previous
+                      .filter((provider) => !nextIds.has(provider.instanceId))
+                      .map((provider) => ({
+                        version: 1 as const,
+                        type: "providerRemoved" as const,
+                        payload: { instanceId: provider.instanceId },
+                      })),
+                  ];
+                  return [events, nextProviders] as const;
+                }),
+              ),
+              Stream.flatMap(Stream.fromIterable),
             );
             const settingChanges = settings.streamChanges.pipe(
               Stream.map(ServerSettings.redactServerSettingsForClient),
@@ -716,7 +766,7 @@ export const layer = CoderWsRpcGroup.toLayer(
               Stream.make({
                 version: 1 as const,
                 type: "snapshot" as const,
-                config: yield* loadServerConfig,
+                config: initialConfig,
               }),
               Stream.merge(providerChanges, settingChanges),
             );
@@ -809,6 +859,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                   const gap = head - input.afterSequence;
                   if (gap >= 0 && gap <= RESUME_MAX_GAP) {
                     const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
+                      Stream.filter(isShellMaterialEvent),
                       Stream.mapEffect((event) => projectShellEvent(event, projections)),
                       Stream.mapError(
                         (cause) =>
@@ -819,14 +870,14 @@ export const layer = CoderWsRpcGroup.toLayer(
                       ),
                     );
                     const live = subscribedEvents.pipe(
-                      Stream.filter((event) => event.sequence > head),
+                      Stream.filter(
+                        (event) => event.sequence > head && isShellMaterialEvent(event),
+                      ),
                       Stream.mapEffect((event) => projectShellEvent(event, projections)),
                     );
                     return Stream.concat(
                       replay,
-                      input.requestCompletionMarker
-                        ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                        : live,
+                      Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                     );
                   }
                 }
@@ -840,14 +891,15 @@ export const layer = CoderWsRpcGroup.toLayer(
                   ),
                 );
                 const live = subscribedEvents.pipe(
-                  Stream.filter((event) => event.sequence > snapshot.snapshotSequence),
+                  Stream.filter(
+                    (event) =>
+                      event.sequence > snapshot.snapshotSequence && isShellMaterialEvent(event),
+                  ),
                   Stream.mapEffect((event) => projectShellEvent(event, projections)),
                 );
                 return Stream.concat(
                   Stream.make({ kind: "snapshot" as const, snapshot }),
-                  input.requestCompletionMarker
-                    ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                    : live,
+                  Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                 );
               }),
             ),
@@ -891,9 +943,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                     const live = liveAfter(head);
                     return Stream.concat(
                       replay,
-                      input.requestCompletionMarker
-                        ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                        : live,
+                      Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                     );
                   }
                 }
@@ -923,9 +973,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                     kind: "snapshot" as const,
                     snapshot: projectThreadDetailSnapshot(snapshot.value),
                   }),
-                  input.requestCompletionMarker
-                    ? Stream.concat(Stream.make({ kind: "synchronized" as const }), live)
-                    : live,
+                  Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                 );
               }),
             ),

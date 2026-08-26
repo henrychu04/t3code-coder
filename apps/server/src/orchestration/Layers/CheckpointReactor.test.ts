@@ -329,6 +329,7 @@ describe("CheckpointReactor", () => {
           }),
         ),
       stream: () => Stream.empty,
+      refStream: () => Stream.empty,
     });
 
     const layer = CheckpointReactorLive.pipe(

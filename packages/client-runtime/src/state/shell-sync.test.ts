@@ -11,6 +11,7 @@ import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as TestClock from "effect/testing/TestClock";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -48,7 +49,7 @@ const LIVE_SHELL_SNAPSHOT: OrchestrationShellSnapshot = {
 function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
   return {
     client,
-    initialConfig: Effect.succeed({ shellResumeCompletionMarker: true } as never),
+    initialConfig: Effect.succeed({} as never),
     ready: Effect.void,
     probe: Effect.void,
     closed: Effect.never,
@@ -63,6 +64,7 @@ describe("environment shell synchronization", () => {
         [ORCHESTRATION_WS_METHODS.subscribeShell]: () => Stream.fromQueue(events),
       } as unknown as WsRpcProtocolClient;
       const supervisorState = yield* SubscriptionRef.make(AVAILABLE_CONNECTION_STATE);
+      const retryCount = yield* Ref.make(0);
       const activeSession = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(
         Option.some(session(client)),
       );
@@ -73,7 +75,7 @@ describe("environment shell synchronization", () => {
         prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
         connect: Effect.void,
         disconnect: Effect.void,
-        retryNow: Effect.void,
+        retryNow: Ref.update(retryCount, (count) => count + 1),
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const cache = Persistence.EnvironmentCacheStore.of({
         loadShell: () => Effect.succeed(Option.none()),
@@ -145,6 +147,9 @@ describe("environment shell synchronization", () => {
       const state = yield* SubscriptionRef.get(shellState);
       expect(state.status).toBe("live");
       expect(Option.getOrThrow(state.snapshot)).toEqual(LIVE_SHELL_SNAPSHOT);
+      yield* TestClock.adjust("15 seconds");
+      yield* Effect.yieldNow;
+      expect(yield* Ref.get(retryCount)).toBe(0);
     }),
   );
 
@@ -166,14 +171,11 @@ describe("environment shell synchronization", () => {
       const wakeups = yield* Queue.unbounded<ConnectionWakeups.ConnectionWakeup>();
       const subscribeInputs = yield* Queue.unbounded<{
         readonly afterSequence?: number;
-        readonly requestCompletionMarker?: boolean;
       }>();
       const loaderCalls = yield* Ref.make(0);
+      const retryCount = yield* Ref.make(0);
       const client = {
-        [ORCHESTRATION_WS_METHODS.subscribeShell]: (input: {
-          readonly afterSequence?: number;
-          readonly requestCompletionMarker?: boolean;
-        }) =>
+        [ORCHESTRATION_WS_METHODS.subscribeShell]: (input: { readonly afterSequence?: number }) =>
           Stream.unwrap(
             Queue.offer(subscribeInputs, input).pipe(Effect.as(Stream.fromQueue(events))),
           ),
@@ -189,7 +191,7 @@ describe("environment shell synchronization", () => {
         prepared: yield* SubscriptionRef.make(Option.some(PREPARED)),
         connect: Effect.void,
         disconnect: Effect.void,
-        retryNow: Effect.void,
+        retryNow: Ref.update(retryCount, (count) => count + 1),
       } satisfies EnvironmentSupervisor.EnvironmentSupervisor["Service"]);
       const cache = Persistence.EnvironmentCacheStore.of({
         loadShell: () => Effect.succeed(Option.some(cachedSnapshot)),
@@ -220,11 +222,13 @@ describe("environment shell synchronization", () => {
 
       const subscribeInput = yield* Queue.take(subscribeInputs);
       expect(subscribeInput.afterSequence).toBeUndefined();
-      expect(subscribeInput.requestCompletionMarker).toBe(true);
       expect(yield* Ref.get(loaderCalls)).toBe(1);
       const synchronizing = yield* SubscriptionRef.get(shellState);
       expect(synchronizing.status).toBe("synchronizing");
       expect(Option.getOrThrow(synchronizing.snapshot)).toEqual(cachedSnapshot);
+      yield* TestClock.adjust("15 seconds");
+      yield* Effect.yieldNow;
+      expect(yield* Ref.get(retryCount)).toBe(1);
 
       yield* Queue.offer(events, { kind: "snapshot", snapshot: resetSnapshot });
       yield* Queue.offer(events, { kind: "synchronized" });
@@ -240,7 +244,6 @@ describe("environment shell synchronization", () => {
       yield* Queue.offer(wakeups, "application-active");
       const resumedInput = yield* Queue.take(subscribeInputs);
       expect(resumedInput.afterSequence).toBe(resetSnapshot.snapshotSequence);
-      expect(resumedInput.requestCompletionMarker).toBe(true);
       expect(yield* Ref.get(loaderCalls)).toBe(1);
     }),
   );

@@ -1090,6 +1090,24 @@ it.layer(
     }),
   );
 
+  it.effect("caps a single terminal history line by UTF-8 bytes", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitData(`prefix-${"x".repeat(600 * 1024)}`);
+      yield* manager.close({ threadId: "thread-1" });
+
+      const reopened = yield* manager.open(openInput());
+      expect(Buffer.byteLength(reopened.history, "utf8")).toBeLessThanOrEqual(512 * 1024);
+      expect(reopened.history.endsWith("x".repeat(128))).toBe(true);
+      expect(reopened.history.startsWith("prefix-")).toBe(false);
+    }),
+  );
+
   it.effect("strips replay-unsafe terminal query and reply sequences from persisted history", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter } = yield* createManager();

@@ -4,7 +4,10 @@ import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createGitDiffFileContentsLoader } from "./diffFileContents";
+import {
+  createChunkedGitDiffFileContentsLoader,
+  createGitDiffFileContentsLoader,
+} from "./diffFileContents";
 
 const SOURCE = {
   environmentId: EnvironmentId.make("environment-1"),
@@ -76,5 +79,44 @@ describe("createGitDiffFileContentsLoader", () => {
     const load = createGitDiffFileContentsLoader(getDiffFileContents, SOURCE);
 
     await expect(load(fileDiff())).rejects.toBe(failure);
+  });
+});
+
+describe("createChunkedGitDiffFileContentsLoader", () => {
+  it("assembles bounded snapshots and reuses the in-memory file cache", async () => {
+    const oldContents = "before\n";
+    const newContents = "after\n";
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        oldFile: { snapshotId: "old-snapshot", totalBytes: 7, contentHash: "old-hash" },
+        newFile: { snapshotId: "new-snapshot", totalBytes: 6, contentHash: "new-hash" },
+      }),
+    );
+    const read = vi.fn(async ({ input }: { input: { snapshotId: string; offset: number } }) => {
+      const contents = input.snapshotId === "old-snapshot" ? oldContents : newContents;
+      const data = Buffer.from(contents, "utf8");
+      return AsyncResult.success({
+        snapshotId: input.snapshotId,
+        offset: input.offset,
+        totalBytes: data.byteLength,
+        dataBase64: data.subarray(input.offset).toString("base64"),
+        nextOffset: null,
+      });
+    });
+    const load = createChunkedGitDiffFileContentsLoader(open, read, {
+      ...SOURCE,
+      cacheKey: "chunked-comparison",
+    });
+
+    await expect(load(fileDiff())).resolves.toMatchObject({
+      oldFile: { contents: oldContents },
+      newFile: { contents: newContents },
+    });
+    await expect(load(fileDiff())).resolves.toMatchObject({
+      oldFile: { contents: oldContents },
+      newFile: { contents: newContents },
+    });
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });

@@ -26,6 +26,7 @@ import { ShellSnapshotLoader } from "./snapshotLoaders.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
+import { makeSynchronizationCompletion } from "./synchronizationCompletion.ts";
 
 export type EnvironmentShellStatus = "empty" | "cached" | "synchronizing" | "live";
 
@@ -71,7 +72,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     status: shellStatusForSnapshot(cachedSnapshot),
     error: Option.none(),
   });
-  const awaitingCompletion = yield* Ref.make(false);
   const lastAuthoritativeSession = yield* Ref.make<RpcSession | null>(null);
   const activeSubscriptionSession = yield* Ref.make<RpcSession | null>(null);
   const persistence = yield* Queue.sliding<OrchestrationShellSnapshot>(1);
@@ -97,7 +97,13 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     Effect.forkScoped,
   );
 
-  const setDisconnected = Ref.set(awaitingCompletion, false).pipe(
+  const synchronizationCompletion = yield* makeSynchronizationCompletion({
+    onTimeout: Effect.logWarning(
+      "Shell synchronization did not complete before its deadline.",
+    ).pipe(Effect.annotateLogs({ environmentId }), Effect.andThen(supervisor.retryNow)),
+  });
+
+  const setDisconnected = synchronizationCompletion.stop.pipe(
     Effect.andThen(
       SubscriptionRef.update(state, (current) => ({
         ...current,
@@ -120,7 +126,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         },
   );
   const setStreamError = (error: unknown) =>
-    Ref.set(awaitingCompletion, false).pipe(
+    synchronizationCompletion.stop.pipe(
       Effect.andThen(Effect.logWarning("Could not synchronize the environment shell.")),
       Effect.annotateLogs({
         environmentId,
@@ -139,7 +145,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     item: OrchestrationShellStreamItem,
   ) {
     if (item.kind === "synchronized") {
-      yield* Ref.set(awaitingCompletion, false);
+      yield* synchronizationCompletion.stop;
       yield* SubscriptionRef.update(state, (current) =>
         Option.isSome(current.snapshot)
           ? { ...current, status: "live" as const, error: Option.none() }
@@ -163,7 +169,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       return;
     }
 
-    const waiting = yield* Ref.get(awaitingCompletion);
+    const waiting = yield* synchronizationCompletion.isWaiting;
     yield* SubscriptionRef.set(state, {
       snapshot: Option.some(nextSnapshot),
       status: waiting ? "synchronizing" : "live",
@@ -190,11 +196,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ORCHESTRATION_WS_METHODS.subscribeShell,
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
         yield* Ref.set(activeSubscriptionSession, session);
-        const supportsCompletionMarker = yield* session.initialConfig.pipe(
-          Effect.map((config) => config.shellResumeCompletionMarker === true),
-          Effect.orElseSucceed(() => false),
-        );
-        yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
+        yield* synchronizationCompletion.startWaiting;
         yield* setSynchronizing;
 
         // Foreground resubscriptions on the same live session can resume from
@@ -228,21 +230,10 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
 
         // If the authoritative refresh failed, omit the cached cursor so the
         // socket fallback sends a complete snapshot for this new session.
-        if (!canResume || Option.isNone(current.snapshot)) {
-          return supportsCompletionMarker ? { requestCompletionMarker: true as const } : {};
-        }
-        if (!supportsCompletionMarker) {
-          // Without a completion marker there is no synchronized signal for a
-          // resumed subscription, so report live immediately, like threads.
-          yield* SubscriptionRef.update(state, (value) => ({
-            ...value,
-            status: "live" as const,
-            error: Option.none(),
-          }));
-        }
+        yield* synchronizationCompletion.arm;
+        if (!canResume || Option.isNone(current.snapshot)) return {};
         return {
           afterSequence: current.snapshot.value.snapshotSequence,
-          ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
         };
       }),
       {

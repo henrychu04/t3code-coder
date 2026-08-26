@@ -132,7 +132,7 @@ describe("Coder foreground helper", () => {
         _tag: "Request",
         id: "shell-snapshot",
         tag: ORCHESTRATION_WS_METHODS.subscribeShell,
-        payload: { requestCompletionMarker: true },
+        payload: {},
         headers: [],
       })}\n`,
     );
@@ -152,6 +152,16 @@ describe("Coder foreground helper", () => {
     strictEqual(shellEnvelope.values?.[0]?.kind, "snapshot");
     deepStrictEqual(shellEnvelope.values?.[0]?.snapshot?.projects, []);
     deepStrictEqual(shellEnvelope.values?.[0]?.snapshot?.threads, []);
+
+    helper.stdin.write(`${JSON.stringify({ _tag: "Ack", requestId: "shell-snapshot" })}\n`);
+    const synchronizedEnvelope = (await readResponse()) as {
+      readonly _tag?: string;
+      readonly requestId?: string;
+      readonly values?: ReadonlyArray<{ readonly kind?: string }>;
+    };
+    strictEqual(synchronizedEnvelope._tag, "Chunk");
+    strictEqual(synchronizedEnvelope.requestId, "shell-snapshot");
+    strictEqual(synchronizedEnvelope.values?.[0]?.kind, "synchronized");
 
     helper.stdin.end();
     const [exitCode] = await once(helper, "exit");

@@ -47,6 +47,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeTerminalEvents
   | typeof WS_METHODS.subscribeTerminalMetadata
   | typeof WS_METHODS.subscribeVcsStatus
+  | typeof WS_METHODS.subscribeVcsRefStatus
   | typeof WS_METHODS.terminalAttach;
 
 export type EnvironmentStreamCommandRpcTag = never;

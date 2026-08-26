@@ -37,5 +37,18 @@ export function createReviewEnvironmentAtoms<R, E>(
           ]),
       },
     }),
+    openDiffFileContents: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:review:open-diff-file-contents",
+      tag: WS_METHODS.reviewOpenDiffFileContents,
+      scheduler: diffFileScheduler,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input]),
+      },
+    }),
+    readDiffFileChunk: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:review:read-diff-file-chunk",
+      tag: WS_METHODS.reviewReadDiffFileChunk,
+    }),
   };
 }

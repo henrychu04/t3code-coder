@@ -417,6 +417,7 @@ describe("ProviderCommandReactor", () => {
         Layer.succeed(CoderVcsStatus, {
           refresh: refreshStatus,
           stream: () => Stream.die("stream should not be called in this test"),
+          refStream: () => Stream.die("refStream should not be called in this test"),
         }),
       ),
       Layer.provideMerge(

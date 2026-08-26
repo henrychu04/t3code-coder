@@ -1,4 +1,9 @@
-import type { GitCommandError, VcsStatusResult, VcsStatusStreamEvent } from "@t3tools/contracts";
+import type {
+  GitCommandError,
+  VcsRefStatusStreamEvent,
+  VcsStatusResult,
+  VcsStatusStreamEvent,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -17,6 +22,7 @@ export class CoderVcsStatus extends Context.Service<
   {
     readonly refresh: (cwd: string) => Effect.Effect<VcsStatusResult, GitCommandError>;
     readonly stream: (cwd: string) => Stream.Stream<VcsStatusStreamEvent, GitCommandError>;
+    readonly refStream: (cwd: string) => Stream.Stream<VcsRefStatusStreamEvent, GitCommandError>;
   }
 >()("t3/coderVcsStatus") {}
 
@@ -50,6 +56,31 @@ export const layer = Layer.effect(
               Stream.fromSubscription(subscription).pipe(
                 Stream.filter((change) => change.cwd === cwd),
                 Stream.map((change) => change.event),
+              ),
+            );
+          }),
+        ),
+      refStream: (cwd) =>
+        Stream.unwrap(
+          Effect.gen(function* () {
+            const subscription = yield* PubSub.subscribe(changes);
+            const latest = yield* workflow.localRefStatus({ cwd });
+            return Stream.concat(
+              Stream.make({ _tag: "snapshot" as const, local: latest }),
+              Stream.fromSubscription(subscription).pipe(
+                Stream.filter((change) => change.cwd === cwd),
+                Stream.map((change) => ({
+                  _tag: "localUpdated" as const,
+                  local: {
+                    isRepo: change.event.local.isRepo,
+                    refName: change.event.local.refName,
+                  },
+                })),
+                Stream.changesWith(
+                  (left, right) =>
+                    left.local.isRepo === right.local.isRepo &&
+                    left.local.refName === right.local.refName,
+                ),
               ),
             );
           }),

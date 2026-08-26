@@ -60,6 +60,12 @@ import {
   withStagedClipboardImage,
 } from "./clipboardImage.ts";
 import { GatewayProcessError, runGatewayProcess } from "./process.ts";
+import {
+  makeWorkspaceRpcBridge,
+  RpcBridgeSessionError,
+  type RpcBridgeSession,
+  type WorkspaceRpcBridge,
+} from "./rpcBridge.ts";
 
 export const CODER_GATEWAY_HOST = "127.0.0.1";
 const MAX_CONFIG_BODY_BYTES = 64 * 1024;
@@ -576,12 +582,13 @@ type WorkspaceLifecycleState =
   | {
       readonly _tag: "Connecting";
       readonly generation: number;
-      readonly operation: Promise<CoderHelperConnection>;
+      readonly operation: Promise<WorkspaceConnection>;
     }
   | {
       readonly _tag: "Connected";
       readonly generation: number;
       readonly connection: CoderHelperConnection;
+      readonly rpcBridge: WorkspaceRpcBridge;
       readonly scope: Scope.Closeable;
     }
   | {
@@ -613,8 +620,8 @@ type PortForwardLifecycleState =
   | { readonly _tag: "Failed"; readonly generation: number; readonly error: string };
 
 type WorkspaceConnectionClaim =
-  | { readonly _tag: "Existing"; readonly connection: CoderHelperConnection }
-  | { readonly _tag: "Pending"; readonly operation: Promise<CoderHelperConnection> }
+  | { readonly _tag: "Existing"; readonly connection: WorkspaceConnection }
+  | { readonly _tag: "Pending"; readonly operation: Promise<WorkspaceConnection> }
   | { readonly _tag: "Changing"; readonly operation: Promise<void> }
   | { readonly _tag: "Start"; readonly generation: number };
 
@@ -623,7 +630,7 @@ type WorkspaceCloseClaim =
   | { readonly _tag: "Changing"; readonly operation: Promise<void> }
   | {
       readonly _tag: "Close";
-      readonly pending: Promise<CoderHelperConnection> | undefined;
+      readonly pending: Promise<WorkspaceConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
     };
 
@@ -647,9 +654,14 @@ type WorkspaceActionClaim =
   | { readonly _tag: "Conflict"; readonly action: WorkspaceAction }
   | {
       readonly _tag: "Start";
-      readonly pending: Promise<CoderHelperConnection> | undefined;
+      readonly pending: Promise<WorkspaceConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
     };
+
+interface WorkspaceConnection {
+  readonly connection: CoderHelperConnection;
+  readonly rpcBridge: WorkspaceRpcBridge;
+}
 
 export interface LocalCoderGatewayEffectOptions {
   readonly configPath?: string;
@@ -811,19 +823,23 @@ export function makeLocalCoderGateway(
       perMessageDeflate: false,
     });
 
-    const ensureWorkspaceConnection = async (
-      workspaceId: string,
-    ): Promise<CoderHelperConnection> => {
+    const ensureWorkspaceConnection = async (workspaceId: string): Promise<WorkspaceConnection> => {
       if (gatewayClosed) throw new Error("Coder gateway is closed.");
       const lifecycle = workspaceLifecycle(workspaceId);
-      const deferred = makeDeferredPromise<CoderHelperConnection>();
+      const deferred = makeDeferredPromise<WorkspaceConnection>();
       const claim = await runPromise(
         SynchronizedRef.modify<WorkspaceLifecycleState, WorkspaceConnectionClaim>(
           lifecycle,
           (state) => {
             switch (state._tag) {
               case "Connected":
-                return [{ _tag: "Existing" as const, connection: state.connection }, state];
+                return [
+                  {
+                    _tag: "Existing" as const,
+                    connection: { connection: state.connection, rpcBridge: state.rpcBridge },
+                  },
+                  state,
+                ];
               case "Connecting":
                 return [{ _tag: "Pending" as const, operation: state.operation }, state];
               case "Changing":
@@ -899,6 +915,9 @@ export function makeLocalCoderGateway(
                 new Error("Coder workspace configuration changed while connecting."),
               );
             }
+            const rpcBridge = yield* makeWorkspaceRpcBridge(connection).pipe(
+              Scope.provide(connectionScope),
+            );
             const connected = yield* SynchronizedRef.modify(lifecycle, (state) => {
               if (
                 state._tag !== "Connecting" ||
@@ -913,6 +932,7 @@ export function makeLocalCoderGateway(
                   _tag: "Connected" as const,
                   generation,
                   connection,
+                  rpcBridge,
                   scope: connectionScope,
                 },
               ];
@@ -932,7 +952,7 @@ export function makeLocalCoderGateway(
                 Effect.ensuring(Scope.close(connectionScope, Exit.void)),
               ),
             );
-            return connection;
+            return { connection, rpcBridge } satisfies WorkspaceConnection;
           }).pipe(Effect.onError(() => Scope.close(connectionScope, Exit.void)));
         }),
       ).then(deferred.resolve, (cause) => {
@@ -1874,12 +1894,12 @@ export function makeLocalCoderGateway(
 
           if (request.method === "POST") {
             try {
-              const connection = await ensureWorkspaceConnection(workspaceId);
+              const workspaceConnection = await ensureWorkspaceConnection(workspaceId);
               sendText(
                 response,
                 200,
                 "application/json; charset=utf-8",
-                JSON.stringify({ workspaceId, info: connection.info }),
+                JSON.stringify({ workspaceId, info: workspaceConnection.connection.info }),
               );
             } catch (cause) {
               const message = cause instanceof Error ? cause.message : "Coder connection failed.";
@@ -2073,9 +2093,9 @@ export function makeLocalCoderGateway(
         socket.once("close", cleanupPendingUpgrade);
         socket.once("error", cleanupPendingUpgrade);
 
-        let helper: CoderHelperConnection;
+        let workspaceConnection: WorkspaceConnection;
         try {
-          helper = await ensureWorkspaceConnection(workspaceId);
+          workspaceConnection = await ensureWorkspaceConnection(workspaceId);
         } catch {
           cleanupPendingUpgrade();
           rejectWebSocketUpgrade(socket, 502, "Bad Gateway");
@@ -2090,30 +2110,56 @@ export function makeLocalCoderGateway(
           webSocketServer.handleUpgrade(request, socket, head, (webSocket) => {
             cleanupPendingUpgrade();
             workspaceSockets.set(workspaceId, webSocket);
-            const unsubscribe = helper.onRpcMessage((message) => {
-              if (webSocket.readyState === WebSocket.OPEN) webSocket.send(JSON.stringify(message));
+            const { connection: helper, rpcBridge } = workspaceConnection;
+            const sessionPromise: Promise<RpcBridgeSession> = runPromise(
+              rpcBridge.attach({
+                isOpen: () => webSocket.readyState === WebSocket.OPEN,
+                send: (encoded) => webSocket.send(encoded),
+                close: (code, reason) => webSocket.close(code, reason),
+              }),
+            );
+            void sessionPromise.catch(() => {
+              if (webSocket.readyState === WebSocket.OPEN) {
+                webSocket.close(1013, "Workspace RPC session is unavailable.");
+              }
             });
             webSocket.on("message", (data, isBinary) => {
               if (isBinary) {
                 webSocket.close(1003, "Text RPC messages required.");
                 return;
               }
+              const encoded = data.toString("utf8");
               let message: unknown;
               try {
-                message = JSON.parse(data.toString("utf8")) as unknown;
+                message = JSON.parse(encoded) as unknown;
               } catch {
                 webSocket.close(1007, "Invalid RPC message.");
                 return;
               }
-              void runPromise(helper.sendRpc(message)).catch(() => {
-                webSocket.close(1011, "Coder workspace disconnected.");
-              });
+              void sessionPromise
+                .then((session) => runPromise(session.receive(message)))
+                .catch((cause) => {
+                  if (webSocket.readyState === WebSocket.OPEN) {
+                    const helperDisconnected =
+                      cause instanceof RpcBridgeSessionError && cause.kind === "helper";
+                    webSocket.close(
+                      helperDisconnected ? 1011 : 1002,
+                      helperDisconnected
+                        ? "Coder workspace disconnected."
+                        : "Invalid RPC protocol message.",
+                    );
+                  }
+                });
             });
             webSocket.once("close", () => {
-              unsubscribe();
-              if (workspaceSockets.get(workspaceId) === webSocket) {
-                workspaceSockets.delete(workspaceId);
-              }
+              void sessionPromise
+                .then((session) => runPromise(session.close))
+                .catch(() => undefined)
+                .finally(() => {
+                  if (workspaceSockets.get(workspaceId) === webSocket) {
+                    workspaceSockets.delete(workspaceId);
+                  }
+                });
             });
             void runPromise(helper.closed)
               .then((exit) => {

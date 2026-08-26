@@ -69,6 +69,7 @@ export {
 };
 
 const DEFAULT_HISTORY_LINE_LIMIT = 5_000;
+const DEFAULT_HISTORY_BYTE_LIMIT = 512 * 1024;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 40;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
@@ -778,16 +779,28 @@ const windowsProcessTableSnapshot = Effect.fn("terminal.windowsProcessTableSnaps
   },
 );
 
-function capHistory(history: string, maxLines: number): string {
+function capHistory(
+  history: string,
+  maxLines: number,
+  maxBytes = DEFAULT_HISTORY_BYTE_LIMIT,
+): string {
   if (history.length === 0) return history;
   const hasTrailingNewline = history.endsWith("\n");
   const lines = history.split("\n");
   if (hasTrailingNewline) {
     lines.pop();
   }
-  if (lines.length <= maxLines) return history;
-  const capped = lines.slice(lines.length - maxLines).join("\n");
-  return hasTrailingNewline ? `${capped}\n` : capped;
+  const lineCapped =
+    lines.length <= maxLines
+      ? history
+      : `${lines.slice(lines.length - maxLines).join("\n")}${hasTrailingNewline ? "\n" : ""}`;
+  const encoded = Buffer.from(lineCapped, "utf8");
+  if (encoded.byteLength <= maxBytes) return lineCapped;
+  let start = encoded.byteLength - maxBytes;
+  while (start < encoded.byteLength && (encoded[start]! & 0b1100_0000) === 0b1000_0000) {
+    start += 1;
+  }
+  return encoded.subarray(start).toString("utf8");
 }
 
 function isCsiFinalByte(codePoint: number): boolean {

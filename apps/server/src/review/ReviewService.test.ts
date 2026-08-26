@@ -5,6 +5,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
 
+import { MAX_REVIEW_DIFF_FILE_BYTES } from "@t3tools/contracts";
+
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
@@ -105,6 +107,132 @@ describe("ReviewService", () => {
       assert.strictEqual(result.cwd, workspaceRoot);
       assert.deepStrictEqual(result.sources, []);
       assert.deepStrictEqual(detectCalls, [{ cwd: workspaceRoot }]);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("serves immutable diff file snapshots in bounded chunks", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const contents = { oldContents: "before\n", newContents: "after\n" };
+      const layer = ReviewService.layer.pipe(
+        Layer.provide(
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+            detect: () => Effect.succeed({ kind: "git" } as never),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitVcsDriver.GitVcsDriver)({
+            getReviewDiffFileContents: () => Effect.succeed(contents),
+          }),
+        ),
+        Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
+        Layer.provideMerge(NodeServices.layer),
+      );
+
+      const result = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        const opened = yield* review.openDiffFileContents({
+          cwd: workspaceRoot,
+          sourceKind: "working-tree",
+          changeType: "change",
+          baseRef: "HEAD",
+          headRef: null,
+          oldPath: "file.ts",
+          newPath: "file.ts",
+        });
+        assert.notStrictEqual(opened.oldFile, null);
+        if (opened.oldFile === null) return "";
+        const first = yield* review.readDiffFileChunk({
+          snapshotId: opened.oldFile.snapshotId,
+          offset: 0,
+          limit: 3,
+        });
+        assert.strictEqual(first.nextOffset, 3);
+        const second = yield* review.readDiffFileChunk({
+          snapshotId: opened.oldFile.snapshotId,
+          offset: first.nextOffset ?? 0,
+          limit: 512 * 1024,
+        });
+        return Buffer.concat([
+          Buffer.from(first.dataBase64, "base64"),
+          Buffer.from(second.dataBase64, "base64"),
+        ]).toString("utf8");
+      }).pipe(Effect.provide(layer));
+
+      assert.strictEqual(result, contents.oldContents);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("removes a partially cached snapshot when its pair exceeds the limit", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      let readCount = 0;
+      const layer = ReviewService.layer.pipe(
+        Layer.provide(
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+            detect: () => Effect.succeed({ kind: "git" } as never),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitVcsDriver.GitVcsDriver)({
+            getReviewDiffFileContents: () =>
+              Effect.sync(() => {
+                readCount += 1;
+                switch (readCount) {
+                  case 1:
+                    return { oldContents: "", newContents: "anchor" };
+                  case 2:
+                    return {
+                      oldContents: "o".repeat(MAX_REVIEW_DIFF_FILE_BYTES),
+                      newContents: "n".repeat(MAX_REVIEW_DIFF_FILE_BYTES + 1),
+                    };
+                  default:
+                    return {
+                      oldContents: "",
+                      newContents: "f".repeat(MAX_REVIEW_DIFF_FILE_BYTES),
+                    };
+                }
+              }),
+          }),
+        ),
+        Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
+        Layer.provideMerge(NodeServices.layer),
+      );
+
+      yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        const input = {
+          cwd: workspaceRoot,
+          sourceKind: "working-tree" as const,
+          baseRef: "HEAD",
+          headRef: null,
+          oldPath: "file.ts",
+          newPath: "file.ts",
+        };
+        const anchor = yield* review.openDiffFileContents({
+          ...input,
+          changeType: "new",
+        });
+        assert.notStrictEqual(anchor.newFile, null);
+        if (anchor.newFile === null) return;
+
+        const failure = yield* review
+          .openDiffFileContents({ ...input, changeType: "change" })
+          .pipe(Effect.flip);
+        assert.strictEqual(failure._tag, "GitCommandError");
+
+        yield* review.openDiffFileContents({ ...input, changeType: "new" });
+        const chunk = yield* review.readDiffFileChunk({
+          snapshotId: anchor.newFile.snapshotId,
+          offset: 0,
+          limit: 512 * 1024,
+        });
+        assert.strictEqual(Buffer.from(chunk.dataBase64, "base64").toString("utf8"), "anchor");
+      }).pipe(Effect.provide(layer));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

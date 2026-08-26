@@ -13,6 +13,7 @@ import {
   VcsListRefsInput,
   VcsListRefsResult,
   VcsRemoveWorktreeInput,
+  VcsRefStatusStreamEvent,
   VcsRenameThreadBranchError,
   VcsRenameThreadBranchInput,
   VcsRenameThreadBranchResult,
@@ -46,6 +47,9 @@ import {
 import {
   ReviewDiffFileContentsInput,
   ReviewDiffFileContentsResult,
+  ReviewDiffFileChunkInput,
+  ReviewDiffFileChunkResult,
+  ReviewDiffFileSnapshotResult,
   ReviewDiffPreviewError,
   ReviewDiffPreviewInput,
   ReviewDiffPreviewResult,
@@ -94,6 +98,8 @@ export const WS_METHODS = {
   vcsInit: "vcs.init",
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewGetDiffFileContents: "review.getDiffFileContents",
+  reviewOpenDiffFileContents: "review.openDiffFileContents",
+  reviewReadDiffFileChunk: "review.readDiffFileChunk",
   terminalOpen: "terminal.open",
   terminalAttach: "terminal.attach",
   terminalWrite: "terminal.write",
@@ -106,6 +112,7 @@ export const WS_METHODS = {
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   subscribeVcsStatus: "subscribeVcsStatus",
+  subscribeVcsRefStatus: "subscribeVcsRefStatus",
   subscribeTerminalEvents: "subscribeTerminalEvents",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribeServerConfig: "subscribeServerConfig",
@@ -165,6 +172,13 @@ const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
   stream: true,
 });
 
+const WsSubscribeVcsRefStatusRpc = Rpc.make(WS_METHODS.subscribeVcsRefStatus, {
+  payload: VcsStatusInput,
+  success: VcsRefStatusStreamEvent,
+  error: GitManagerServiceError,
+  stream: true,
+});
+
 const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   payload: VcsStatusInput,
   success: VcsStatusResult,
@@ -220,6 +234,18 @@ const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
 const WsReviewGetDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewGetDiffFileContents, {
   payload: ReviewDiffFileContentsInput,
   success: ReviewDiffFileContentsResult,
+  error: ReviewDiffPreviewError,
+});
+
+const WsReviewOpenDiffFileContentsRpc = Rpc.make(WS_METHODS.reviewOpenDiffFileContents, {
+  payload: ReviewDiffFileContentsInput,
+  success: ReviewDiffFileSnapshotResult,
+  error: ReviewDiffPreviewError,
+});
+
+const WsReviewReadDiffFileChunkRpc = Rpc.make(WS_METHODS.reviewReadDiffFileChunk, {
+  payload: ReviewDiffFileChunkInput,
+  success: ReviewDiffFileChunkResult,
   error: ReviewDiffPreviewError,
 });
 
@@ -344,6 +370,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
   WsSubscribeVcsStatusRpc,
+  WsSubscribeVcsRefStatusRpc,
   WsVcsRefreshStatusRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
@@ -354,6 +381,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsVcsInitRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewGetDiffFileContentsRpc,
+  WsReviewOpenDiffFileContentsRpc,
+  WsReviewReadDiffFileChunkRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
   WsTerminalWriteRpc,

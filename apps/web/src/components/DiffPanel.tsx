@@ -67,7 +67,7 @@ import { serverEnvironment } from "../state/server";
 import { reviewEnvironment } from "../state/review";
 import { vcsEnvironment } from "../state/vcs";
 import { buildBaseRefChoices, filterBaseRefChoices } from "../lib/baseRefChoices";
-import { createGitDiffFileContentsLoader } from "../lib/diffFileContents";
+import { createChunkedGitDiffFileContentsLoader } from "../lib/diffFileContents";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
@@ -130,7 +130,8 @@ export default function DiffPanel({
   const serverConfig = useAtomValue(
     serverEnvironment.configValueAtom(activeThread?.environmentId ?? null),
   );
-  const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
+  const openDiffFileContents = useAtomCommand(reviewEnvironment.openDiffFileContents);
+  const readDiffFileChunk = useAtomCommand(reviewEnvironment.readDiffFileChunk);
   const gitStatusQuery = useEnvironmentQuery(
     activeThread !== null && activeThread !== undefined && activeCwd != null
       ? vcsEnvironment.status({
@@ -238,6 +239,7 @@ export default function DiffPanel({
             cwd: activeCwd,
             ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
             ignoreWhitespace: diffIgnoreWhitespace,
+            sourceKind: selectedGitScope === "unstaged" ? "working-tree" : "branch-range",
           },
         })
       : null,
@@ -255,6 +257,7 @@ export default function DiffPanel({
             cwd: serverConfig.cwd,
             ...(selectedBaseRef ? { baseRef: selectedBaseRef } : {}),
             ignoreWhitespace: diffIgnoreWhitespace,
+            sourceKind: selectedGitScope === "unstaged" ? "working-tree" : "branch-range",
           },
         })
       : null,
@@ -303,7 +306,7 @@ export default function DiffPanel({
       return undefined;
     }
 
-    return createGitDiffFileContentsLoader(getDiffFileContents, {
+    return createChunkedGitDiffFileContentsLoader(openDiffFileContents, readDiffFileChunk, {
       environmentId: activeThread.environmentId,
       cwd: preview.cwd,
       sourceKind: selectedGitSource.kind,
@@ -314,7 +317,8 @@ export default function DiffPanel({
   }, [
     activeThread,
     branchDiffPreview.data,
-    getDiffFileContents,
+    openDiffFileContents,
+    readDiffFileChunk,
     selectedGitSource,
     selectedTurnId,
   ]);

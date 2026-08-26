@@ -372,6 +372,17 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // An in-session interrupt leaves its turn expanded so the user keeps their
   // place; the next turn (or a reload, since this is local state) folds it.
   const previousLatestTurnRef = useRef(latestTurn);
+  const previousRouteThreadKeyRef = useRef(routeThreadKey);
+  useLayoutEffect(() => {
+    if (previousRouteThreadKeyRef.current === routeThreadKey) return;
+    previousRouteThreadKeyRef.current = routeThreadKey;
+    previousLatestTurnRef.current = latestTurn;
+    setExpandedTurnIds(new Set());
+    setExpandedWorkGroupIds(new Set());
+    minimapStripMap.clear();
+    disclosureAnchorKeyRef.current = null;
+    setDisclosureToggleSettling(false);
+  }, [latestTurn, minimapStripMap, routeThreadKey]);
   useEffect(() => {
     const previous = previousLatestTurnRef.current;
     previousLatestTurnRef.current = latestTurn;
