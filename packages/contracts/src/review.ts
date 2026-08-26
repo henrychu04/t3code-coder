@@ -70,6 +70,8 @@ export const ReviewDiffFileChunkResult = Schema.Struct({
   snapshotId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
   offset: NonNegativeInt,
   totalBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(MAX_REVIEW_DIFF_FILE_BYTES)),
+  encoding: Schema.Literals(["base64", "gzip-base64"]),
+  decodedBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(MAX_REVIEW_DIFF_FILE_CHUNK_BYTES)),
   dataBase64: Schema.String,
   nextOffset: Schema.NullOr(NonNegativeInt),
 });

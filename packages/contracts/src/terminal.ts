@@ -54,6 +54,7 @@ export const TerminalAttachInput = Schema.Struct({
   rows: Schema.optional(TerminalRowsSchema),
   env: Schema.optional(TerminalEnvSchema),
   restartIfNotRunning: Schema.optional(Schema.Boolean),
+  afterSequence: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
 });
 export type TerminalAttachInput = Schema.Codec.Encoded<typeof TerminalAttachInput>;
 
@@ -220,8 +221,14 @@ const TerminalAttachSnapshotEvent = Schema.Struct({
   snapshot: TerminalSessionSnapshot,
 });
 
+const TerminalAttachResumedEvent = Schema.Struct({
+  type: Schema.Literal("resumed"),
+  sequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+});
+
 export const TerminalAttachStreamEvent = Schema.Union([
   TerminalAttachSnapshotEvent,
+  TerminalAttachResumedEvent,
   TerminalOutputEvent,
   TerminalExitedEvent,
   TerminalClosedEvent,

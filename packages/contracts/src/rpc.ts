@@ -346,6 +346,12 @@ const WsOrchestrationGetArchivedShellSnapshotRpc = Rpc.make(
   },
 );
 
+const WsOrchestrationGetThreadSnapshotRpc = Rpc.make(ORCHESTRATION_WS_METHODS.getThreadSnapshot, {
+  payload: OrchestrationRpcSchemas.getThreadSnapshot.input,
+  success: OrchestrationRpcSchemas.getThreadSnapshot.output,
+  error: OrchestrationGetSnapshotError,
+});
+
 const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -399,6 +405,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsOrchestrationGetFullThreadDiffRpc,
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
+  WsOrchestrationGetThreadSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

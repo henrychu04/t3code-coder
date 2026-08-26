@@ -23,7 +23,7 @@ import { connectionProjectionPhase } from "../connection/model.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
-import { subscribeDynamic } from "../rpc/client.ts";
+import { request, subscribeDynamic } from "../rpc/client.ts";
 import { ThreadSnapshotLoader, type ThreadSnapshotWindow } from "./snapshotLoaders.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyThreadDetailEvent } from "./threadReducer.ts";
@@ -49,6 +49,8 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
  */
 export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
 export const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
+export const INITIAL_THREAD_TARGET_BYTES = 512 * 1024;
+export const OLDER_THREAD_PAGE_TARGET_BYTES = 1024 * 1024;
 
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
@@ -463,10 +465,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (page === null || page.loadingOlder || !page.hasMore || page.beforeCursor === null) {
       return;
     }
-    const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
-    if (prepared === null) {
-      return;
-    }
     const epochAtStart = yield* Ref.get(historyEpoch);
     yield* SubscriptionRef.update(state, (value) => ({
       ...value,
@@ -476,7 +474,19 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       turnLimit: OLDER_THREAD_PAGE_USER_TURN_LIMIT,
       beforeCursor: page.beforeCursor,
     };
-    const response = yield* snapshotLoader.load(prepared, threadId, window);
+    const response = yield* request(ORCHESTRATION_WS_METHODS.getThreadSnapshot, {
+      threadId,
+      ...window,
+      targetBytes: OLDER_THREAD_PAGE_TARGET_BYTES,
+    }).pipe(
+      Effect.map(Option.some),
+      Effect.catch((error) =>
+        Effect.logWarning("Could not load older thread turns.").pipe(
+          Effect.annotateLogs({ environmentId, threadId, error: String(error) }),
+          Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
+        ),
+      ),
+    );
     // Staleness check and merge run under the same lock as stream-item
     // application, so a revert/snapshot cannot land between them (TOCTOU
     // review finding) — anything that rewrites history bumps the epoch
@@ -586,6 +596,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           // the gap is too large) should be windowed the same as the HTTP
           // path; without this a resume failure re-downloads the full thread.
           turnLimit: INITIAL_THREAD_USER_TURN_LIMIT,
+          targetBytes: INITIAL_THREAD_TARGET_BYTES,
         };
       }),
       {

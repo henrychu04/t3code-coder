@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as PlatformError from "effect/PlatformError";
+import * as NodeZlib from "node:zlib";
 
 import { MAX_REVIEW_DIFF_FILE_BYTES } from "@t3tools/contracts";
 
@@ -155,13 +156,66 @@ describe("ReviewService", () => {
           offset: first.nextOffset ?? 0,
           limit: 512 * 1024,
         });
-        return Buffer.concat([
-          Buffer.from(first.dataBase64, "base64"),
-          Buffer.from(second.dataBase64, "base64"),
-        ]).toString("utf8");
+        const decode = (chunk: typeof first) => {
+          const encoded = Buffer.from(chunk.dataBase64, "base64");
+          const decoded = chunk.encoding === "gzip-base64" ? NodeZlib.gunzipSync(encoded) : encoded;
+          assert.strictEqual(decoded.byteLength, chunk.decodedBytes);
+          return decoded;
+        };
+        return Buffer.concat([decode(first), decode(second)]).toString("utf8");
       }).pipe(Effect.provide(layer));
 
       assert.strictEqual(result, contents.oldContents);
+    }).pipe(Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("compresses repetitive diff chunks when gzip is smaller", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const workspaceRoot = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-workspace-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-review-base-" });
+      const contents = "repeated source line\n".repeat(1_000);
+      const layer = ReviewService.layer.pipe(
+        Layer.provide(
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+            detect: () => Effect.succeed({ kind: "git" } as never),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitVcsDriver.GitVcsDriver)({
+            getReviewDiffFileContents: () =>
+              Effect.succeed({ oldContents: contents, newContents: contents }),
+          }),
+        ),
+        Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
+        Layer.provideMerge(NodeServices.layer),
+      );
+
+      const chunk = yield* Effect.gen(function* () {
+        const review = yield* ReviewService.ReviewService;
+        const opened = yield* review.openDiffFileContents({
+          cwd: workspaceRoot,
+          sourceKind: "working-tree",
+          changeType: "change",
+          baseRef: "HEAD",
+          headRef: null,
+          oldPath: "file.ts",
+          newPath: "file.ts",
+        });
+        assert.notStrictEqual(opened.oldFile, null);
+        if (opened.oldFile === null) return null;
+        return yield* review.readDiffFileChunk({
+          snapshotId: opened.oldFile.snapshotId,
+          offset: 0,
+          limit: 512 * 1024,
+        });
+      }).pipe(Effect.provide(layer));
+
+      assert.notStrictEqual(chunk, null);
+      if (chunk === null) return;
+      assert.strictEqual(chunk.encoding, "gzip-base64");
+      assert.strictEqual(chunk.decodedBytes, Buffer.byteLength(contents));
+      assert.ok(Buffer.from(chunk.dataBase64, "base64").byteLength < chunk.decodedBytes);
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 

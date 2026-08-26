@@ -47,6 +47,17 @@ snapshot/replay and live events. The browser does not negotiate this guarantee: 
 data in `synchronizing` state until the item arrives and requests a clean connection retry if it is
 missing for 15 seconds. These guarantees define helper protocol version 2; older helpers are not
 accepted or adapted.
+
+The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
+from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
+receive a complete capped snapshot. Shell subscriptions coalesce filtered high-frequency activity
+into cursor-only watermarks so reconnect cursors advance without reprojecting sidebar rows. Initial
+thread snapshots target 512 KiB and older pages target 1 MiB by reducing the requested turn window;
+the newest requested turn is always retained, even when that one turn exceeds the target. Older
+pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
+and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
+renderer asks to expand omitted context; completed contents stay in a bounded browser cache.
+
 T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
 report whether a template update is available. It does not implicitly connect to a stopped
 workspace because Coder SSH would start it without an explicit user action. Starting, stopping,

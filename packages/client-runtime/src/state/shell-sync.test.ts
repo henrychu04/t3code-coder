@@ -330,12 +330,21 @@ describe("environment shell synchronization", () => {
         Stream.runHead,
       );
 
+      // Cursor watermarks advance resume position without reprojecting or
+      // persisting the material sidebar snapshot.
+      yield* Queue.offer(events, { kind: "cursor", sequence: 275 });
+      yield* Effect.yieldNow;
+      expect(Option.getOrThrow((yield* SubscriptionRef.get(shellState)).snapshot)).toEqual({
+        ...LIVE_SHELL_SNAPSHOT,
+        snapshotSequence: 40,
+      });
+
       yield* Queue.offer(wakeups, "application-active");
       for (let attempt = 0; attempt < 100; attempt += 1) {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 2) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40]);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 275]);
       yield* Queue.offer(events, { kind: "synchronized" });
 
       yield* Queue.offer(wakeups, "application-active-probe");
@@ -343,7 +352,7 @@ describe("environment shell synchronization", () => {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 3) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40, 40]);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 275, 275]);
 
       yield* Queue.offer(wakeups, "application-active-reconnect");
       for (let attempt = 0; attempt < 10; attempt += 1) {
@@ -358,7 +367,7 @@ describe("environment shell synchronization", () => {
         if ((yield* Ref.get(capturedAfterSequences)).length >= 4) break;
         yield* Effect.yieldNow;
       }
-      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 40, 40, 20]);
+      expect(yield* Ref.get(capturedAfterSequences)).toEqual([10, 275, 275, 20]);
       expect(yield* Ref.get(loaderCalls)).toBe(2);
     }),
   );

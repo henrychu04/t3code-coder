@@ -70,6 +70,8 @@ export {
 
 const DEFAULT_HISTORY_LINE_LIMIT = 5_000;
 const DEFAULT_HISTORY_BYTE_LIMIT = 512 * 1024;
+const DEFAULT_ATTACH_REPLAY_BYTE_LIMIT = 512 * 1024;
+const DEFAULT_ATTACH_REPLAY_TOTAL_BYTE_LIMIT = 64 * 1024 * 1024;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 40;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
@@ -1118,6 +1120,7 @@ function normalizedRuntimeEnv(
 interface TerminalManagerOptions {
   logsDir: string;
   historyLineLimit?: number;
+  attachReplayByteLimit?: number;
   ptyAdapter: PtyAdapter.PtyAdapter["Service"];
   shellResolver?: () => string;
   env?: NodeJS.ProcessEnv;
@@ -1155,6 +1158,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
 
   const logsDir = options.logsDir;
   const historyLineLimit = options.historyLineLimit ?? DEFAULT_HISTORY_LINE_LIMIT;
+  const attachReplayByteLimit = options.attachReplayByteLimit ?? DEFAULT_ATTACH_REPLAY_BYTE_LIMIT;
   const platform = yield* HostProcessPlatform;
   // Terminals must inherit the user's full environment (minus the blocklist
   // applied in createTerminalSpawnEnv) — an allowlist here silently strips
@@ -1200,13 +1204,66 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   });
   const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
   const terminalEventListeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
+  const attachReplay = new Map<
+    string,
+    {
+      entries: Array<{
+        readonly sequence: number;
+        readonly event: TerminalAttachStreamEvent;
+        readonly bytes: number;
+      }>;
+      bytes: number;
+    }
+  >();
+  let attachReplayTotalBytes = 0;
   const workerScope = yield* Scope.make("sequential");
   yield* Effect.addFinalizer(() => Scope.close(workerScope, Exit.void));
 
   const publishEvent = (event: TerminalEvent) =>
     Effect.gen(function* () {
+      const attachEvent = terminalEventToAttachEvent(event);
+      const sequence = event.sequence;
+      if (attachEvent !== null && sequence !== undefined) {
+        const key = toSessionKey(event.threadId, event.terminalId);
+        const encodedBytes = Buffer.byteLength(JSON.stringify(attachEvent), "utf8");
+        let replay = attachReplay.get(key);
+        if (
+          replay === undefined ||
+          (replay.entries.at(-1)?.sequence ?? Number.NEGATIVE_INFINITY) >= sequence
+        ) {
+          attachReplayTotalBytes -= replay?.bytes ?? 0;
+          replay = { entries: [], bytes: 0 };
+        } else {
+          attachReplay.delete(key);
+        }
+        attachReplay.set(key, replay);
+        replay.entries.push({ sequence, event: attachEvent, bytes: encodedBytes });
+        replay.bytes += encodedBytes;
+        attachReplayTotalBytes += encodedBytes;
+        while (replay.entries.length > 0 && replay.bytes > attachReplayByteLimit) {
+          const removedBytes = replay.entries.shift()!.bytes;
+          replay.bytes -= removedBytes;
+          attachReplayTotalBytes -= removedBytes;
+        }
+        while (
+          attachReplay.size > 0 &&
+          attachReplayTotalBytes > DEFAULT_ATTACH_REPLAY_TOTAL_BYTE_LIMIT
+        ) {
+          const oldestKey = attachReplay.keys().next().value as string | undefined;
+          if (oldestKey === undefined) break;
+          const oldest = attachReplay.get(oldestKey);
+          attachReplay.delete(oldestKey);
+          attachReplayTotalBytes -= oldest?.bytes ?? 0;
+        }
+      }
       for (const listener of terminalEventListeners) {
         yield* listener(event).pipe(Effect.ignoreCause({ log: true }));
+      }
+      if (event.type === "closed") {
+        const key = toSessionKey(event.threadId, event.terminalId);
+        const replay = attachReplay.get(key);
+        attachReplay.delete(key);
+        attachReplayTotalBytes -= replay?.bytes ?? 0;
       }
     });
 
@@ -2348,6 +2405,29 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       };
     });
 
+  const replayAttachEvents = (
+    input: TerminalAttachInput,
+    initialSnapshot: TerminalSessionSnapshot,
+  ): ReadonlyArray<TerminalAttachStreamEvent> | null => {
+    const afterSequence = input.afterSequence;
+    const snapshotSequence = initialSnapshot.sequence;
+    if (afterSequence === undefined || snapshotSequence === undefined) return null;
+    if (afterSequence > snapshotSequence) return null;
+    if (afterSequence === snapshotSequence) return [];
+    const replay = attachReplay.get(toSessionKey(input.threadId, input.terminalId));
+    if (!replay) return null;
+    const entries = replay.entries.filter(
+      (entry) => entry.sequence > afterSequence && entry.sequence <= snapshotSequence,
+    );
+    if (
+      entries[0]?.sequence !== afterSequence + 1 ||
+      entries.at(-1)?.sequence !== snapshotSequence
+    ) {
+      return null;
+    }
+    return entries.map((entry) => entry.event);
+  };
+
   const attachStream: TerminalManager["Service"]["attachStream"] = (input, listener) => {
     let unsubscribe: (() => void) | null = null;
 
@@ -2370,14 +2450,31 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       });
 
       const initialSnapshot = yield* openOrAttachForStream(input);
+      const replay = replayAttachEvents(input, initialSnapshot);
+      if (replay === null) {
+        yield* listener({
+          type: "snapshot",
+          snapshot: initialSnapshot,
+        });
+      } else {
+        yield* Effect.forEach(replay, listener, { discard: true });
+        yield* listener({ type: "resumed", sequence: initialSnapshot.sequence ?? 0 });
+      }
 
-      yield* listener({
-        type: "snapshot",
-        snapshot: initialSnapshot,
-      });
-
+      let receivedNewSnapshot = false;
       for (const event of bufferedEvents) {
         if (isDuplicateAttachSnapshotEvent(event, initialSnapshot)) {
+          continue;
+        }
+
+        if (event.type === "started" || event.type === "restarted") {
+          receivedNewSnapshot = true;
+        } else if (
+          !receivedNewSnapshot &&
+          event.sequence !== undefined &&
+          initialSnapshot.sequence !== undefined &&
+          event.sequence <= initialSnapshot.sequence
+        ) {
           continue;
         }
 

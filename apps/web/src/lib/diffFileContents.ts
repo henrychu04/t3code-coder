@@ -96,6 +96,20 @@ function decodeBase64Chunk(value: string): Uint8Array {
   return bytes;
 }
 
+async function decodeDiffFileChunk(result: ReviewDiffFileChunkResult): Promise<Uint8Array> {
+  const encoded = decodeBase64Chunk(result.dataBase64);
+  if (result.encoding === "base64") return encoded;
+  const stream = new Blob([encoded.slice().buffer])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes.slice().buffer);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function createDiffFileContentsLoader(
   load: (input: {
     readonly changeType: ReviewDiffFileContentsInput["changeType"];
@@ -177,12 +191,13 @@ export function createChunkedGitDiffFileContentsLoader<E>(
         },
       });
       if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-      const chunk = decodeBase64Chunk(result.value.dataBase64);
+      const chunk = await decodeDiffFileChunk(result.value);
       const nextOffset = offset + chunk.byteLength;
       if (
         result.value.snapshotId !== snapshot.snapshotId ||
         result.value.offset !== offset ||
         result.value.totalBytes !== snapshot.totalBytes ||
+        result.value.decodedBytes !== chunk.byteLength ||
         chunk.byteLength === 0 ||
         nextOffset > snapshot.totalBytes ||
         (result.value.nextOffset !== null && result.value.nextOffset !== nextOffset)
@@ -200,6 +215,9 @@ export function createChunkedGitDiffFileContentsLoader<E>(
     for (const chunk of chunks) {
       combined.set(chunk, writeOffset);
       writeOffset += chunk.byteLength;
+    }
+    if ((await sha256Hex(combined)) !== snapshot.contentHash) {
+      throw new Error("Invalid review file snapshot hash.");
     }
     return textDecoder.decode(combined);
   };

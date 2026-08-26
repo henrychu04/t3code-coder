@@ -72,6 +72,12 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     status: shellStatusForSnapshot(cachedSnapshot),
     error: Option.none(),
   });
+  const resumeSequence = yield* Ref.make(
+    Option.match(cachedSnapshot, {
+      onNone: () => 0,
+      onSome: (snapshot) => snapshot.snapshotSequence,
+    }),
+  );
   const lastAuthoritativeSession = yield* Ref.make<RpcSession | null>(null);
   const activeSubscriptionSession = yield* Ref.make<RpcSession | null>(null);
   const persistence = yield* Queue.sliding<OrchestrationShellSnapshot>(1);
@@ -154,6 +160,11 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       return;
     }
 
+    if (item.kind === "cursor") {
+      yield* Ref.update(resumeSequence, (current) => Math.max(current, item.sequence));
+      return;
+    }
+
     const current = yield* SubscriptionRef.get(state);
     const nextSnapshot =
       item.kind === "snapshot"
@@ -167,6 +178,11 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
           });
     if (nextSnapshot === null) {
       return;
+    }
+    if (item.kind === "snapshot") {
+      yield* Ref.set(resumeSequence, item.snapshot.snapshotSequence);
+    } else {
+      yield* Ref.update(resumeSequence, (current) => Math.max(current, item.sequence));
     }
 
     const waiting = yield* synchronizationCompletion.isWaiting;
@@ -233,7 +249,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         yield* synchronizationCompletion.arm;
         if (!canResume || Option.isNone(current.snapshot)) return {};
         return {
-          afterSequence: current.snapshot.value.snapshotSequence,
+          afterSequence: yield* Ref.get(resumeSequence),
         };
       }),
       {

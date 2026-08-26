@@ -20,6 +20,8 @@ import {
   type OrchestrationEvent,
   type OrchestrationProjectShell,
   type OrchestrationShellStreamEvent,
+  type OrchestrationShellStreamItem,
+  type OrchestrationThreadDetailSnapshot,
   type OrchestrationThreadShell,
   OrchestrationGetFullThreadDiffError,
   OrchestrationGetSnapshotError,
@@ -67,6 +69,54 @@ import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const RESUME_MAX_GAP = 1_000;
+const SHELL_CURSOR_MAX_EVENT_GAP = 250;
+
+interface ThreadSnapshotProjectionQueries {
+  readonly getThreadDetailSnapshot: ProjectionSnapshotQuery.ProjectionSnapshotQueryShape["getThreadDetailSnapshot"];
+}
+
+export const getProjectedThreadSnapshotWithinBudget = Effect.fn(
+  "CoderWs.getProjectedThreadSnapshotWithinBudget",
+)(function* (
+  projections: ThreadSnapshotProjectionQueries,
+  input: {
+    readonly threadId: ThreadId;
+    readonly turnLimit: number;
+    readonly beforeCursor?: string;
+    readonly targetBytes: number;
+  },
+) {
+  const load = (turnLimit: number) =>
+    projections
+      .getThreadDetailSnapshot(input.threadId, {
+        turnLimit,
+        ...(input.beforeCursor === undefined ? {} : { beforeCursor: input.beforeCursor }),
+      })
+      .pipe(Effect.map(Option.map(projectThreadDetailSnapshot)));
+  const requested = yield* load(input.turnLimit);
+  if (Option.isNone(requested)) return requested;
+  if (Buffer.byteLength(JSON.stringify(requested.value), "utf8") <= input.targetBytes) {
+    return requested;
+  }
+
+  let low = 1;
+  let high = input.turnLimit - 1;
+  let best: Option.Option<OrchestrationThreadDetailSnapshot> = Option.none();
+  let smallest = requested;
+  while (low <= high) {
+    const turnLimit = Math.floor((low + high) / 2);
+    const candidate = yield* load(turnLimit);
+    if (Option.isNone(candidate)) return candidate;
+    smallest = candidate;
+    if (Buffer.byteLength(JSON.stringify(candidate.value), "utf8") <= input.targetBytes) {
+      best = candidate;
+      low = turnLimit + 1;
+    } else {
+      high = turnLimit - 1;
+    }
+  }
+  return Option.isSome(best) ? best : smallest;
+});
 
 function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesError): {
   readonly failure: ProjectEntriesFailure;
@@ -141,6 +191,39 @@ interface ShellProjectionQueries {
   readonly getThreadShellById: (
     threadId: ThreadId,
   ) => Effect.Effect<Option.Option<OrchestrationThreadShell>, unknown>;
+}
+
+export function projectLiveShellEvents<E, R>(
+  events: Stream.Stream<OrchestrationEvent, E, R>,
+  afterSequence: number,
+  projections: ShellProjectionQueries,
+): Stream.Stream<OrchestrationShellStreamItem, E | OrchestrationGetSnapshotError, R> {
+  return events.pipe(
+    Stream.filter((event) => event.sequence > afterSequence),
+    Stream.mapAccumEffect(
+      () => afterSequence,
+      (lastEmittedSequence, event) => {
+        if (isShellMaterialEvent(event)) {
+          return projectShellEvent(event, projections).pipe(
+            Effect.map((item): readonly [number, ReadonlyArray<OrchestrationShellStreamItem>] => [
+              event.sequence,
+              [item],
+            ]),
+          );
+        }
+        if (event.sequence - lastEmittedSequence >= SHELL_CURSOR_MAX_EVENT_GAP) {
+          return Effect.succeed<readonly [number, ReadonlyArray<OrchestrationShellStreamItem>]>([
+            event.sequence,
+            [{ kind: "cursor", sequence: event.sequence }],
+          ]);
+        }
+        return Effect.succeed<readonly [number, ReadonlyArray<OrchestrationShellStreamItem>]>([
+          lastEmittedSequence,
+          [],
+        ]);
+      },
+    ),
+  );
 }
 
 export function projectShellEvent(
@@ -849,6 +932,28 @@ export const layer = CoderWsRpcGroup.toLayer(
               }),
           ),
         ),
+      [ORCHESTRATION_WS_METHODS.getThreadSnapshot]: (input) =>
+        getProjectedThreadSnapshotWithinBudget(projections, input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationGetSnapshotError({
+                message: `Failed to load thread ${input.threadId}`,
+                cause,
+              }),
+          ),
+          Effect.flatMap(
+            Option.match({
+              onNone: () =>
+                Effect.fail(
+                  new OrchestrationGetSnapshotError({
+                    message: `Thread ${input.threadId} was not found`,
+                    cause: input.threadId,
+                  }),
+                ),
+              onSome: Effect.succeed,
+            }),
+          ),
+        ),
       [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
         Stream.unwrap(
           orchestration.subscribeDomainEvents.pipe(
@@ -869,15 +974,17 @@ export const layer = CoderWsRpcGroup.toLayer(
                           }),
                       ),
                     );
-                    const live = subscribedEvents.pipe(
-                      Stream.filter(
-                        (event) => event.sequence > head && isShellMaterialEvent(event),
-                      ),
-                      Stream.mapEffect((event) => projectShellEvent(event, projections)),
-                    );
+                    const replayCursor =
+                      head > input.afterSequence
+                        ? Stream.make({ kind: "cursor" as const, sequence: head })
+                        : Stream.empty;
+                    const live = projectLiveShellEvents(subscribedEvents, head, projections);
                     return Stream.concat(
                       replay,
-                      Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
+                      Stream.concat(
+                        replayCursor,
+                        Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
+                      ),
                     );
                   }
                 }
@@ -890,12 +997,10 @@ export const layer = CoderWsRpcGroup.toLayer(
                       }),
                   ),
                 );
-                const live = subscribedEvents.pipe(
-                  Stream.filter(
-                    (event) =>
-                      event.sequence > snapshot.snapshotSequence && isShellMaterialEvent(event),
-                  ),
-                  Stream.mapEffect((event) => projectShellEvent(event, projections)),
+                const live = projectLiveShellEvents(
+                  subscribedEvents,
+                  snapshot.snapshotSequence,
+                  projections,
                 );
                 return Stream.concat(
                   Stream.make({ kind: "snapshot" as const, snapshot }),
@@ -947,20 +1052,18 @@ export const layer = CoderWsRpcGroup.toLayer(
                     );
                   }
                 }
-                const snapshot = yield* projections
-                  .getThreadDetailSnapshot(
-                    input.threadId,
-                    input.turnLimit === undefined ? undefined : { turnLimit: input.turnLimit },
-                  )
-                  .pipe(
-                    Effect.mapError(
-                      (cause) =>
-                        new OrchestrationGetSnapshotError({
-                          message: `Failed to load thread ${input.threadId}`,
-                          cause,
-                        }),
-                    ),
-                  );
+                const snapshot = yield* getProjectedThreadSnapshotWithinBudget(
+                  projections,
+                  input,
+                ).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new OrchestrationGetSnapshotError({
+                        message: `Failed to load thread ${input.threadId}`,
+                        cause,
+                      }),
+                  ),
+                );
                 if (Option.isNone(snapshot)) {
                   return yield* new OrchestrationGetSnapshotError({
                     message: `Thread ${input.threadId} was not found`,
@@ -971,7 +1074,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                 return Stream.concat(
                   Stream.make({
                     kind: "snapshot" as const,
-                    snapshot: projectThreadDetailSnapshot(snapshot.value),
+                    snapshot: snapshot.value,
                   }),
                   Stream.concat(Stream.make({ kind: "synchronized" as const }), live),
                 );

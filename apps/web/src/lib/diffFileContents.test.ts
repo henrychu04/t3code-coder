@@ -2,6 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { EnvironmentId, type ReviewDiffFileContentsResult } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/unstable/reactivity";
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -17,6 +18,8 @@ const SOURCE = {
   headRef: "feature",
   cacheKey: "comparison-1",
 };
+
+const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
 
 function fileDiff(type: FileDiffMetadata["type"] = "rename-changed"): FileDiffMetadata {
   return {
@@ -88,8 +91,8 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     const newContents = "after\n";
     const open = vi.fn(async () =>
       AsyncResult.success({
-        oldFile: { snapshotId: "old-snapshot", totalBytes: 7, contentHash: "old-hash" },
-        newFile: { snapshotId: "new-snapshot", totalBytes: 6, contentHash: "new-hash" },
+        oldFile: { snapshotId: "old-snapshot", totalBytes: 7, contentHash: sha256(oldContents) },
+        newFile: { snapshotId: "new-snapshot", totalBytes: 6, contentHash: sha256(newContents) },
       }),
     );
     const read = vi.fn(async ({ input }: { input: { snapshotId: string; offset: number } }) => {
@@ -99,6 +102,8 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
         snapshotId: input.snapshotId,
         offset: input.offset,
         totalBytes: data.byteLength,
+        encoding: "base64" as const,
+        decodedBytes: data.byteLength - input.offset,
         dataBase64: data.subarray(input.offset).toString("base64"),
         nextOffset: null,
       });
@@ -118,5 +123,43 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
     });
     expect(open).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it("decompresses gzip chunks before assembling file contents", async () => {
+    const contents = "repeated source line\n".repeat(100);
+    const bytes = new TextEncoder().encode(contents);
+    const compressed = await new Response(
+      new Blob([bytes.slice().buffer]).stream().pipeThrough(new CompressionStream("gzip")),
+    ).arrayBuffer();
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        oldFile: null,
+        newFile: {
+          snapshotId: "gzip-snapshot",
+          totalBytes: bytes.byteLength,
+          contentHash: sha256(contents),
+        },
+      }),
+    );
+    const read = vi.fn(async () =>
+      AsyncResult.success({
+        snapshotId: "gzip-snapshot",
+        offset: 0,
+        totalBytes: bytes.byteLength,
+        encoding: "gzip-base64" as const,
+        decodedBytes: bytes.byteLength,
+        dataBase64: Buffer.from(compressed).toString("base64"),
+        nextOffset: null,
+      }),
+    );
+    const load = createChunkedGitDiffFileContentsLoader(open, read, {
+      ...SOURCE,
+      cacheKey: "gzip-comparison",
+    });
+
+    await expect(load(fileDiff("new"))).resolves.toMatchObject({
+      oldFile: { contents: "" },
+      newFile: { contents },
+    });
   });
 });

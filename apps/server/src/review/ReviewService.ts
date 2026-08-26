@@ -5,6 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as NodeCrypto from "node:crypto";
+import * as NodeZlib from "node:zlib";
 
 import {
   GitCommandError,
@@ -251,11 +252,16 @@ export const make = Effect.gen(function* () {
           expiresAt: now + snapshotCacheTtlMs,
         });
         const end = Math.min(snapshot.data.byteLength, input.offset + input.limit);
+        const chunk = snapshot.data.subarray(input.offset, end);
+        const compressed = NodeZlib.gzipSync(chunk);
+        const useCompressed = compressed.byteLength < chunk.byteLength;
         return {
           snapshotId: input.snapshotId,
           offset: input.offset,
           totalBytes: snapshot.data.byteLength,
-          dataBase64: snapshot.data.subarray(input.offset, end).toString("base64"),
+          encoding: useCompressed ? ("gzip-base64" as const) : ("base64" as const),
+          decodedBytes: chunk.byteLength,
+          dataBase64: (useCompressed ? compressed : chunk).toString("base64"),
           nextOffset: end < snapshot.data.byteLength ? end : null,
         };
       },
