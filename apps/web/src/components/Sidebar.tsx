@@ -137,6 +137,7 @@ import {
   sortPinnedThreadsForSidebar,
   sortSettledThreadsForSidebar,
   sortThreadsForSidebar,
+  useThreadJumpHintVisibility,
 } from "./Sidebar.logic";
 import { resolveCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
@@ -2138,7 +2139,7 @@ export default function Sidebar() {
     }
     return mapping;
   }, [keybindings, orderedThreadKeys]);
-  const [showJumpHints, setShowJumpHints] = useState(false);
+  const { showThreadJumpHints, updateThreadJumpHintsVisibility } = useThreadJumpHintVisibility();
 
   // Settled threads are live shells, so opening one is plain navigation:
   // history stays readable without un-settling, and sending a message or
@@ -3172,8 +3173,8 @@ export default function Sidebar() {
     },
   );
   useEffect(() => {
-    setShowJumpHints(shouldShowJumpHintsNow);
-  }, [shouldShowJumpHintsNow]);
+    updateThreadJumpHintsVisibility(shouldShowJumpHintsNow);
+  }, [shouldShowJumpHintsNow, updateThreadJumpHintsVisibility]);
 
   const attachListAutoAnimateRef = useCallback((node: HTMLUListElement | null) => {
     if (!node) return;
@@ -3536,7 +3537,9 @@ export default function Sidebar() {
                         // rows resolve to null on their own.
                         wokeAt={threadWokeAt(thread, { now: snoozeNow })}
                         isActive={routeThreadKey === threadKey}
-                        jumpLabel={showJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null}
+                        jumpLabel={
+                          showThreadJumpHints ? (jumpLabelByKey.get(threadKey) ?? null) : null
+                        }
                         currentEnvironmentId={primaryEnvironmentId}
                         environmentLabel={environmentLabelById.get(thread.environmentId) ?? null}
                         projectCwd={
