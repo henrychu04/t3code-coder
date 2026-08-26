@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 import type {
   ProjectEntry,
+  ProjectListEntriesInput,
+  ProjectListEntriesResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   WorkspaceListDirectoriesInput,
@@ -22,6 +24,7 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 const execFileAsync = promisify(execFile);
 const MAX_SCANNED_PATHS = 25_000;
 const MAX_LISTED_DIRECTORIES = 500;
+type WorkspaceListEntriesInput = Pick<ProjectListEntriesInput, "cwd">;
 
 export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexSearchFailed>()(
   "WorkspaceSearchIndexSearchFailed",
@@ -49,6 +52,9 @@ export class WorkspaceEntries extends Context.Service<
     readonly search: (
       input: ProjectSearchEntriesInput,
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceEntriesError>;
+    readonly list: (
+      input: WorkspaceListEntriesInput,
+    ) => Effect.Effect<ProjectListEntriesResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
     readonly listDirectories: (
       input: WorkspaceListDirectoriesInput,
@@ -78,12 +84,23 @@ export const make = Effect.gen(function* () {
     Effect.tryPromise({
       try: async () => {
         try {
-          const { stdout } = await execFileAsync(
-            "git",
-            ["ls-files", "--cached", "--others", "--exclude-standard"],
-            { cwd, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
-          );
-          return stdout.split("\n").filter(Boolean).slice(0, MAX_SCANNED_PATHS);
+          const [{ stdout }, { stdout: deletedStdout }] = await Promise.all([
+            execFileAsync(
+              "git",
+              ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z"],
+              { cwd, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
+            ),
+            execFileAsync("git", ["ls-files", "--deleted", "-z"], {
+              cwd,
+              maxBuffer: 8 * 1024 * 1024,
+              windowsHide: true,
+            }),
+          ]);
+          const deletedPaths = new Set(deletedStdout.split("\0").filter(Boolean));
+          return stdout
+            .split("\0")
+            .filter((entry) => entry.length > 0 && !deletedPaths.has(entry))
+            .slice(0, MAX_SCANNED_PATHS);
         } catch {
           const entries = await NodeFS.readdir(cwd, { recursive: true, withFileTypes: true });
           return entries
@@ -104,6 +121,21 @@ export const make = Effect.gen(function* () {
         }),
     });
 
+  const entriesForPaths = (paths: readonly string[]): ProjectEntry[] => {
+    const directories = new Set<string>();
+    for (const file of paths) {
+      let directory = normalizePath(file).split("/").slice(0, -1).join("/");
+      while (directory.length > 0) {
+        directories.add(directory);
+        directory = directory.split("/").slice(0, -1).join("/");
+      }
+    }
+    return [
+      ...paths.map((entry) => ({ path: normalizePath(entry), kind: "file" as const })),
+      ...[...directories].map((entry) => ({ path: entry, kind: "directory" as const })),
+    ];
+  };
+
   const search: WorkspaceEntries["Service"]["search"] = Effect.fn("WorkspaceEntries.search")(
     function* (input) {
       const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
@@ -121,18 +153,7 @@ export const make = Effect.gen(function* () {
             }),
         ),
       );
-      const directories = new Set<string>();
-      for (const file of paths) {
-        let directory = normalizePath(file).split("/").slice(0, -1).join("/");
-        while (directory.length > 0) {
-          directories.add(directory);
-          directory = directory.split("/").slice(0, -1).join("/");
-        }
-      }
-      const candidates: ProjectEntry[] = [
-        ...paths.map((entry) => ({ path: normalizePath(entry), kind: "file" as const })),
-        ...[...directories].map((entry) => ({ path: entry, kind: "directory" as const })),
-      ];
+      const candidates = entriesForPaths(paths);
       const matching = candidates.filter(
         (entry) =>
           (input.kind === undefined || entry.kind === input.kind) &&
@@ -140,6 +161,17 @@ export const make = Effect.gen(function* () {
           (query.length === 0 || entry.path.toLocaleLowerCase().includes(query)),
       );
       return { entries: matching.slice(0, input.limit), truncated: matching.length > input.limit };
+    },
+  );
+
+  const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
+    function* (input) {
+      const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
+      const paths = yield* readPaths(cwd);
+      return {
+        entries: entriesForPaths(paths),
+        truncated: paths.length >= MAX_SCANNED_PATHS,
+      };
     },
   );
 
@@ -172,7 +204,9 @@ export const make = Effect.gen(function* () {
           }),
         );
         return candidates
-          .filter((entry): entry is { readonly name: string; readonly path: string } => entry !== null)
+          .filter(
+            (entry): entry is { readonly name: string; readonly path: string } => entry !== null,
+          )
           .sort((left, right) => left.name.localeCompare(right.name));
       },
       catch: (cause) => new WorkspaceDirectoryListFailed({ path: directory, cause }),
@@ -186,7 +220,7 @@ export const make = Effect.gen(function* () {
     };
   });
 
-  return WorkspaceEntries.of({ search, listDirectories, refresh: () => Effect.void });
+  return WorkspaceEntries.of({ search, list, listDirectories, refresh: () => Effect.void });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make);

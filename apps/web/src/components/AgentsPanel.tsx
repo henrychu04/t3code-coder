@@ -11,21 +11,24 @@
  *   it settles; older collapsed runs can still be opened at run granularity.
  * - Static status dots, DOM-write elapsed timers, plain token counters.
  */
+import { useAtomValue } from "@effect/atom-react";
 import type {
   AgentPanelModel,
   AgentPanelWorkflowGroup,
   RuntimeSubagent,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { Bot, Check, ChevronDown, ChevronRight } from "lucide-react";
+import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Button } from "~/components/ui/button";
+import { orchestrationEnvironment } from "~/state/orchestration";
 
 /**
  * In-flight states all present as Working (one steady state, per the
@@ -255,6 +258,54 @@ function PhaseRail({ group }: { group: AgentPanelWorkflowGroup }) {
   );
 }
 
+/** Read-only workflow script viewer through the contained RPC. */
+function WorkflowScriptView({
+  environmentId,
+  threadId,
+  scriptPath,
+  onClose,
+}: {
+  environmentId: EnvironmentId;
+  threadId: ThreadId;
+  scriptPath: string;
+  onClose: () => void;
+}) {
+  const result = useAtomValue(
+    orchestrationEnvironment.workflowScript({ environmentId, input: { threadId, scriptPath } }),
+  );
+  return (
+    <div className="mx-1.5 mb-1 rounded-md border border-border/60 bg-background/60">
+      <div className="flex items-center gap-2 border-b border-border/50 px-2 py-1">
+        <Braces aria-hidden className="size-3 text-muted-foreground" />
+        <span className="truncate font-mono text-[.65rem] text-muted-foreground">
+          {scriptPath.split("/").at(-1)}
+        </span>
+        <Button
+          size="icon-micro"
+          variant="ghost-muted"
+          onClick={onClose}
+          aria-label="Close script"
+          className="ml-auto"
+        >
+          <X aria-hidden className="size-3" />
+        </Button>
+      </div>
+      <div className="max-h-72 overflow-auto p-2">
+        {result._tag === "Success" ? (
+          <pre className="whitespace-pre-wrap break-words font-mono text-[.7rem] leading-relaxed text-foreground/90">
+            {result.value.contents}
+            {result.value.truncated ? "\n… (truncated)" : ""}
+          </pre>
+        ) : result._tag === "Failure" ? (
+          <p className="text-xs text-destructive-foreground">Could not load the script.</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">Loading…</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Collapsible phase section. A phase opens when it becomes active, then keeps
  * that shape as it settles so completion never yanks rows out from under the
@@ -322,11 +373,16 @@ function PhaseSection({
 /** Expanded workflow: phase rail + full phase tree. */
 function ExpandedWorkflowSection({
   group,
+  environmentId,
+  threadId,
   onCollapse,
 }: {
   group: AgentPanelWorkflowGroup;
+  environmentId: EnvironmentId | null;
+  threadId: ThreadId | null;
   onCollapse: () => void;
 }) {
+  const [scriptOpen, setScriptOpen] = useState(false);
   const members = workflowMembers(group);
   const settled = members.filter(
     (member) =>
@@ -335,6 +391,8 @@ function ExpandedWorkflowSection({
       member.status === "cancelled" ||
       member.status === "interrupted",
   ).length;
+  const scriptPath = group.workflow.runHandles?.scriptPath;
+  const canShowScript = scriptPath !== undefined && environmentId !== null && threadId !== null;
   return (
     <section className="rounded-lg border border-border/50 bg-card/30 p-1.5">
       <div className="flex items-center gap-2 px-1.5 pt-0.5 text-[.65rem] font-medium uppercase tracking-wider text-muted-foreground">
@@ -342,6 +400,19 @@ function ExpandedWorkflowSection({
         <span className="min-w-0 truncate">
           {group.workflow.workflowName ?? group.workflow.title}
         </span>
+        {canShowScript ? (
+          <button
+            type="button"
+            onClick={() => setScriptOpen((value) => !value)}
+            className={cn(
+              "rounded-sm border border-border/60 px-1 font-mono normal-case hover:text-foreground",
+              scriptOpen && "text-foreground",
+            )}
+            aria-expanded={scriptOpen}
+          >
+            {"{}"} script
+          </button>
+        ) : null}
         <span className="ml-auto font-mono normal-case text-muted-foreground/80">
           {settled}/{members.length} settled
         </span>
@@ -355,6 +426,14 @@ function ExpandedWorkflowSection({
         </Button>
       </div>
       <PhaseRail group={group} />
+      {scriptOpen && canShowScript ? (
+        <WorkflowScriptView
+          environmentId={environmentId}
+          threadId={threadId}
+          scriptPath={scriptPath}
+          onClose={() => setScriptOpen(false)}
+        />
+      ) : null}
       {group.phases.map((phase) => (
         <PhaseSection key={phase.index} phase={phase} defaultOpen={!workflowIsLive(group)} />
       ))}
@@ -416,16 +495,37 @@ function CollapsedWorkflowSection({
 }
 
 /** A workflow's open state is presentation state, not a status derivative. */
-function WorkflowSection({ group }: { group: AgentPanelWorkflowGroup }) {
+function WorkflowSection({
+  group,
+  environmentId,
+  threadId,
+}: {
+  group: AgentPanelWorkflowGroup;
+  environmentId: EnvironmentId | null;
+  threadId: ThreadId | null;
+}) {
   const [open, setOpen] = useState(() => workflowIsLive(group));
   return open ? (
-    <ExpandedWorkflowSection group={group} onCollapse={() => setOpen(false)} />
+    <ExpandedWorkflowSection
+      group={group}
+      environmentId={environmentId}
+      threadId={threadId}
+      onCollapse={() => setOpen(false)}
+    />
   ) : (
     <CollapsedWorkflowSection group={group} onExpand={() => setOpen(true)} />
   );
 }
 
-export function AgentsPanel({ model }: { model: AgentPanelModel }) {
+export function AgentsPanel({
+  model,
+  environmentId = null,
+  threadId = null,
+}: {
+  model: AgentPanelModel;
+  environmentId?: EnvironmentId | null;
+  threadId?: ThreadId | null;
+}) {
   if (!model.hasAgents) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -444,7 +544,12 @@ export function AgentsPanel({ model }: { model: AgentPanelModel }) {
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-2 p-2">
           {model.workflows.map((group) => (
-            <WorkflowSection key={group.workflow.id} group={group} />
+            <WorkflowSection
+              key={group.workflow.id}
+              group={group}
+              environmentId={environmentId}
+              threadId={threadId}
+            />
           ))}
           {model.directAgents.length > 0 ? (
             <section>

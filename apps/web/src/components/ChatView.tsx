@@ -249,6 +249,7 @@ import {
   buildLocalDraftThread,
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
+  canUseOwnedFilesSurface,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -368,6 +369,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
   return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
 }
 const DiffPanel = lazy(() => import("./DiffPanel"));
+const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
   "textarea",
@@ -1525,6 +1527,10 @@ function ChatViewContent(props: ChatViewProps) {
   const activeRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
+  const [pendingFileSurfaceIds, setPendingFileSurfaceIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  useEffect(() => setPendingFileSurfaceIds(new Set()), [activeThreadKey]);
   const panelTerminalIds = useMemo(
     () =>
       new Set(
@@ -2003,6 +2009,11 @@ function ChatViewContent(props: ChatViewProps) {
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const activeThreadWorktreePath = activeThread?.worktreePath ?? null;
   const activeWorkspaceRoot = activeThreadWorktreePath ?? activeProjectCwd ?? undefined;
+  const filesAvailable = canUseOwnedFilesSurface({
+    isServerThread,
+    hasProject: activeProject !== null,
+    hasWorkspaceRoot: activeWorkspaceRoot !== undefined,
+  });
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
@@ -2348,6 +2359,28 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addFilesSurface = useCallback(() => {
+    if (!activeThreadRef || !filesAvailable) return;
+    useRightPanelStore.getState().open(activeThreadRef, "files");
+  }, [activeThreadRef, filesAvailable]);
+  const openFileSurface = useCallback(
+    (relativePath: string) => {
+      if (!activeThreadRef) return;
+      useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
+    },
+    [activeThreadRef],
+  );
+  const updateFilePending = useCallback((relativePath: string, pending: boolean) => {
+    const surfaceId = `file:${relativePath}`;
+    setPendingFileSurfaceIds((current) => {
+      const hasSurface = current.has(surfaceId);
+      if (hasSurface === pending) return current;
+      const next = new Set(current);
+      if (pending) next.add(surfaceId);
+      else next.delete(surfaceId);
+      return next;
+    });
+  }, []);
   const closeRightPanel = useCallback(() => {
     if (activeThreadRef) {
       setMaximizedRightPanelThreadKey(null);
@@ -2559,11 +2592,6 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces],
   );
-  const closeAllRightPanelSurfaces = useCallback(() => {
-    if (!activeThreadRef) return;
-    cleanupRightPanelSurfaces(rightPanelState.surfaces);
-    useRightPanelStore.getState().closeAllSurfaces(activeThreadRef);
-  }, [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces]);
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
       threadId: ThreadId;
@@ -5142,7 +5170,36 @@ function ChatViewContent(props: ChatViewProps) {
         />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "agents" ? (
-      <AgentsPanel model={agentPanelModel} />
+      <AgentsPanel
+        model={agentPanelModel}
+        environmentId={activeThreadRef.environmentId}
+        threadId={activeThreadRef.threadId}
+      />
+    ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
+      filesAvailable &&
+      activeProject &&
+      activeWorkspaceRoot ? (
+      <Suspense fallback={null}>
+        <FilePreviewPanel
+          key={activeThreadKey}
+          environmentId={activeProject.environmentId}
+          cwd={activeWorkspaceRoot}
+          projectName={activeProject.title}
+          relativePath={
+            activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.relativePath : null
+          }
+          threadRef={activeThreadRef}
+          composerDraftTarget={composerDraftTarget}
+          revealLine={
+            activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.revealLine : null
+          }
+          revealRequestId={
+            activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.revealRequestId : 0
+          }
+          onOpenFile={openFileSurface}
+          onPendingChange={updateFilePending}
+        />
+      </Suspense>
     ) : null
   ) : null;
   const externalComposerDrawerAttached =
@@ -5484,17 +5541,19 @@ function ChatViewContent(props: ChatViewProps) {
           maximized={rightPanelMaximized}
           surfaces={rightPanelState.surfaces}
           activeSurfaceId={activeRightPanelSurface?.id ?? null}
+          pendingSurfaceIds={pendingFileSurfaceIds}
           terminalLabelsById={activeTerminalLabelsById}
           onActivate={activateRightPanelSurface}
           onCloseSurface={closeRightPanelSurface}
           onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
           onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
-          onCloseAllSurfaces={closeAllRightPanelSurfaces}
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
+          onAddFiles={addFilesSurface}
           onAddAgents={addAgentsSurface}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
+          filesAvailable={filesAvailable}
           agentsAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -5512,17 +5571,19 @@ function ChatViewContent(props: ChatViewProps) {
             layoutControls={<div className="mr-px flex items-center">{panelToggleControls}</div>}
             surfaces={rightPanelState.surfaces}
             activeSurfaceId={activeRightPanelSurface?.id ?? null}
+            pendingSurfaceIds={pendingFileSurfaceIds}
             terminalLabelsById={activeTerminalLabelsById}
             onActivate={activateRightPanelSurface}
             onCloseSurface={closeRightPanelSurface}
             onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
             onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
-            onCloseAllSurfaces={closeAllRightPanelSurfaces}
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
+            onAddFiles={addFilesSurface}
             onAddAgents={addAgentsSurface}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
+            filesAvailable={filesAvailable}
             agentsAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >

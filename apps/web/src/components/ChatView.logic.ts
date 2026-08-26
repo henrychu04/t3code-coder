@@ -120,6 +120,14 @@ export function startNewThreadForProject(
   return true;
 }
 
+export function canUseOwnedFilesSurface(input: {
+  isServerThread: boolean;
+  hasProject: boolean;
+  hasWorkspaceRoot: boolean;
+}): boolean {
+  return input.isServerThread && input.hasProject && input.hasWorkspaceRoot;
+}
+
 export function resolveThreadMetadataUpdateForNextTurn(input: {
   currentModelSelection: ModelSelection;
   nextModelSelection?: ModelSelection;

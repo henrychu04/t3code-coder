@@ -41,6 +41,8 @@ import { fnv1a32, resolveDiffThemeName, type DiffThemeName } from "../lib/diffRe
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
+import { resolveMarkdownFileLinkMeta } from "../markdown-links";
+import { useRightPanelStore } from "../rightPanelStore";
 import {
   chatMarkdownClipboardPayload,
   serializeTableElementToCsv,
@@ -56,9 +58,9 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 
 interface ChatMarkdownProps {
   readonly text: string;
-  /** Kept for call-site compatibility. Workspace links stay inert in Coder. */
+  /** Used only to resolve contained project-relative Files links. */
   readonly cwd: string | undefined;
-  /** Kept for call-site compatibility. Markdown cannot initiate workspace transfers. */
+  /** Opens contained project file links in the in-browser Files surface. */
   readonly threadRef?: ScopedThreadRef | undefined;
   readonly onTaskListChange?: (input: { markerOffset: number; checked: boolean }) => void;
   readonly isStreaming?: boolean;
@@ -509,6 +511,8 @@ function InertMarkdownImage({ alt }: { alt: string }) {
 
 function ChatMarkdown({
   text,
+  cwd,
+  threadRef,
   onTaskListChange,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
@@ -602,6 +606,22 @@ function ChatMarkdown({
             </a>
           );
         }
+        const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
+        if (threadRef && fileLink?.workspaceRelativePath) {
+          return (
+            <button
+              type="button"
+              className={cn(props.className, "cursor-pointer text-primary underline")}
+              onClick={() =>
+                useRightPanelStore
+                  .getState()
+                  .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
+              }
+            >
+              {children}
+            </button>
+          );
+        }
         return <span className={cn(props.className, "text-primary underline")}>{children}</span>;
       },
       img({ node: _node, title: _title, src: _src, alt }) {
@@ -641,7 +661,7 @@ function ChatMarkdown({
         );
       },
     }),
-    [diffThemeName, isStreaming, onTaskListChange, skills, text],
+    [cwd, diffThemeName, isStreaming, onTaskListChange, skills, text, threadRef],
   );
 
   return (

@@ -41,6 +41,7 @@ import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
+import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 import * as ProcessRunner from "./processRunner.ts";
@@ -108,6 +109,10 @@ const CoderTerminalLive = TerminalManager.layer.pipe(
 );
 
 const CoderWorkspaceEntriesLive = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
+const CoderWorkspaceFileSystemLive = WorkspaceFileSystem.layer.pipe(
+  Layer.provide(WorkspacePaths.layer),
+  Layer.provide(CoderWorkspaceEntriesLive),
+);
 
 const CoderRuntimeCoreLive = Layer.empty.pipe(
   Layer.provideMerge(SqlitePersistenceLayerLive),
@@ -119,6 +124,7 @@ const CoderRuntimeCoreLive = Layer.empty.pipe(
   Layer.provideMerge(CoderTerminalLive),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(CoderWorkspaceEntriesLive),
+  Layer.provideMerge(CoderWorkspaceFileSystemLive),
   Layer.provideMerge(ScreenshotArtifacts.layer),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(CoderEnvironment.layer),
