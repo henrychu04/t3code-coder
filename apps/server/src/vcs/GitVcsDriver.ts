@@ -110,6 +110,10 @@ export class GitVcsDriver extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
+    /** Drops worktree admin entries whose directory is already gone (`git worktree prune`). */
+    readonly pruneWorktrees: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<void, GitCommandError>;
     readonly renameBranch: (
       input: GitRenameBranchInput,
     ) => Effect.Effect<GitRenameBranchResult, GitCommandError>;
@@ -962,6 +966,11 @@ const makeLocalGitService = Effect.gen(function* () {
       { timeoutMs: 300_000 },
     ).pipe(Effect.asVoid);
 
+  const pruneWorktrees: GitVcsDriver["Service"]["pruneWorktrees"] = (input) =>
+    run("GitVcsDriver.pruneWorktrees", input.cwd, ["worktree", "prune"], {
+      timeoutMs: 15_000,
+    }).pipe(Effect.asVoid);
+
   const switchRef: GitVcsDriver["Service"]["switchRef"] = Effect.fn("GitVcsDriver.switchRef")(
     function* (input) {
       yield* run("GitVcsDriver.switchRef", input.cwd, ["switch", input.refName], {
@@ -979,6 +988,7 @@ const makeLocalGitService = Effect.gen(function* () {
     listRefs,
     createWorktree,
     removeWorktree,
+    pruneWorktrees,
     renameBranch: (input) =>
       input.oldBranch === input.newBranch
         ? Effect.succeed({ branch: input.newBranch })
