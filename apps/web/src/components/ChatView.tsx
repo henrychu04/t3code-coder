@@ -2996,19 +2996,11 @@ function ChatViewContent(props: ChatViewProps) {
     };
   }, [activeThread?.id, timelineEntries, getActiveTimelineTurnMetrics]);
 
-  useEffect(() => {
-    isAtEndRef.current = true;
-    timelineScrollModeRef.current = "following-end";
-    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-    setTimelineLiveFollowEnabled(true);
-    pendingTimelineAnchorRef.current = null;
-    positionedTimelineAnchorRef.current = null;
-    settledTimelineAnchorRef.current = null;
-    activeTimelineAnchorIndexRef.current = null;
-    showScrollDebouncer.current.cancel();
-    setShowScrollToBottom(false);
-    // activeThreadRef resets transitively with the active thread.
-  }, [activeThread?.id]);
+  useLayoutEffect(() => {
+    // The timeline intentionally survives thread switches, so LegendList's
+    // mount-only initialScrollAtEnd no longer runs for the new thread.
+    scrollToEnd();
+  }, [activeThread?.id, scrollToEnd]);
 
   useEffect(() => {
     setIsRevertingCheckpoint(false);
