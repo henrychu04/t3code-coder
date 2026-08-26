@@ -12,6 +12,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import {
   GitCommandError,
   MAX_REVIEW_DIFF_FILE_BYTES,
+  ReviewDiffFileTooLargeError,
   VcsProcessExitError,
   type VcsSwitchRefInput,
   type VcsSwitchRefResult,
@@ -23,6 +24,7 @@ import {
   type ReviewDiffPreviewResult,
   type ReviewDiffFileContentsInput,
   type ReviewDiffFileContentsResult,
+  type ReviewDiffFileError,
   type VcsInitInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
@@ -103,7 +105,7 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<ReviewDiffPreviewResult, GitCommandError>;
     readonly getReviewDiffFileContents: (
       input: ReviewDiffFileContentsInput,
-    ) => Effect.Effect<ReviewDiffFileContentsResult, GitCommandError>;
+    ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffFileError>;
     readonly listRefs: (
       input: VcsListRefsInput,
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
@@ -848,11 +850,9 @@ const makeLocalGitService = Effect.gen(function* () {
       Effect.flatMap((result) =>
         result.stdoutTruncated
           ? Effect.fail(
-              new GitCommandError({
-                operation: "GitVcsDriver.readRevision",
-                command: "git show",
-                cwd,
-                detail: `Review file exceeds the ${MAX_REVIEW_DIFF_FILE_BYTES}-byte snapshot limit.`,
+              new ReviewDiffFileTooLargeError({
+                path: filePath,
+                maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
               }),
             )
           : Effect.succeed(result.exitCode === 0 ? result.stdout : ""),
@@ -875,14 +875,17 @@ const makeLocalGitService = Effect.gen(function* () {
     return Effect.gen(function* () {
       const stat = yield* fileSystem.stat(candidate);
       if (stat.type !== "File" || stat.size > MAX_REVIEW_DIFF_FILE_BYTES) {
-        return yield* new GitCommandError({
-          operation: "GitVcsDriver.readWorkspaceFile",
-          command: "read workspace file",
-          cwd,
-          detail:
-            stat.type !== "File"
-              ? "Diff path is not a regular file."
-              : `Review file exceeds the ${MAX_REVIEW_DIFF_FILE_BYTES}-byte snapshot limit.`,
+        if (stat.type !== "File") {
+          return yield* new GitCommandError({
+            operation: "GitVcsDriver.readWorkspaceFile",
+            command: "read workspace file",
+            cwd,
+            detail: "Diff path is not a regular file.",
+          });
+        }
+        return yield* new ReviewDiffFileTooLargeError({
+          path: filePath,
+          maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
         });
       }
       return yield* fileSystem.readFileString(candidate);

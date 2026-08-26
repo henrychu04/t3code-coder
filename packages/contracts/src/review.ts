@@ -46,6 +46,18 @@ export type ReviewDiffFileContentsResult = typeof ReviewDiffFileContentsResult.T
 export const MAX_REVIEW_DIFF_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_REVIEW_DIFF_FILE_CHUNK_BYTES = 512 * 1024;
 
+export class ReviewDiffFileTooLargeError extends Schema.TaggedErrorClass<ReviewDiffFileTooLargeError>()(
+  "ReviewDiffFileTooLargeError",
+  {
+    path: TrimmedNonEmptyString,
+    maxBytes: PositiveInt,
+  },
+) {
+  override get message(): string {
+    return `Review file ${this.path} exceeds the ${this.maxBytes}-byte expansion limit.`;
+  }
+}
+
 export const ReviewDiffFileSnapshotReference = Schema.Struct({
   snapshotId: TrimmedNonEmptyString.check(Schema.isMaxLength(64)),
   totalBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(MAX_REVIEW_DIFF_FILE_BYTES)),
@@ -86,3 +98,10 @@ export type ReviewDiffPreviewResult = typeof ReviewDiffPreviewResult.Type;
 
 export const ReviewDiffPreviewError = Schema.Union([VcsError, GitCommandError]);
 export type ReviewDiffPreviewError = typeof ReviewDiffPreviewError.Type;
+
+export const ReviewDiffFileError = Schema.Union([
+  VcsError,
+  GitCommandError,
+  ReviewDiffFileTooLargeError,
+]);
+export type ReviewDiffFileError = typeof ReviewDiffFileError.Type;

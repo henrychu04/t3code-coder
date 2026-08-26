@@ -11,6 +11,7 @@ import type {
   ReviewDiffFileContentsResult,
   ReviewDiffFileSnapshotReference,
   ReviewDiffFileSnapshotResult,
+  ReviewDiffFileTooLargeError,
   ReviewDiffPreviewSourceKind,
 } from "@t3tools/contracts";
 import { MAX_REVIEW_DIFF_FILE_CHUNK_BYTES } from "@t3tools/contracts";
@@ -54,6 +55,37 @@ const diffFileContentsCache = new Map<
   }
 >();
 let diffFileContentsCacheBytes = 0;
+
+export function getDiffFileTooLargeMaxBytes(error: unknown): number | null {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("_tag" in error) ||
+    error._tag !== "ReviewDiffFileTooLargeError" ||
+    !("maxBytes" in error) ||
+    typeof error.maxBytes !== "number" ||
+    !Number.isSafeInteger(error.maxBytes) ||
+    error.maxBytes <= 0
+  ) {
+    return null;
+  }
+  return (error as ReviewDiffFileTooLargeError).maxBytes;
+}
+
+export function withDiffFileTooLargeReporting(
+  load: FileDiffContentsLoader,
+  report: (fileDiff: Parameters<FileDiffContentsLoader>[0], maxBytes: number) => void,
+): FileDiffContentsLoader {
+  return async (fileDiff) => {
+    try {
+      return await load(fileDiff);
+    } catch (error) {
+      const maxBytes = getDiffFileTooLargeMaxBytes(error);
+      if (maxBytes !== null) report(fileDiff, maxBytes);
+      throw error;
+    }
+  };
+}
 
 function readCachedDiffFileContents(key: string) {
   const cached = diffFileContentsCache.get(key);

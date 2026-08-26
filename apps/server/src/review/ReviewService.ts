@@ -10,12 +10,14 @@ import * as NodeZlib from "node:zlib";
 import {
   GitCommandError,
   MAX_REVIEW_DIFF_FILE_BYTES,
+  ReviewDiffFileTooLargeError,
   type ReviewDiffFileChunkInput,
   type ReviewDiffFileChunkResult,
   VcsRepositoryDetectionError,
   VcsUnsupportedOperationError,
   type ReviewDiffFileContentsInput,
   type ReviewDiffFileContentsResult,
+  type ReviewDiffFileError,
   type ReviewDiffFileSnapshotResult,
   type ReviewDiffPreviewError,
   type ReviewDiffPreviewInput,
@@ -34,13 +36,13 @@ export class ReviewService extends Context.Service<
     ) => Effect.Effect<ReviewDiffPreviewResult, ReviewDiffPreviewError>;
     readonly getDiffFileContents: (
       input: ReviewDiffFileContentsInput,
-    ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffPreviewError>;
+    ) => Effect.Effect<ReviewDiffFileContentsResult, ReviewDiffFileError>;
     readonly openDiffFileContents: (
       input: ReviewDiffFileContentsInput,
-    ) => Effect.Effect<ReviewDiffFileSnapshotResult, ReviewDiffPreviewError>;
+    ) => Effect.Effect<ReviewDiffFileSnapshotResult, ReviewDiffFileError>;
     readonly readDiffFileChunk: (
       input: ReviewDiffFileChunkInput,
-    ) => Effect.Effect<ReviewDiffFileChunkResult, ReviewDiffPreviewError>;
+    ) => Effect.Effect<ReviewDiffFileChunkResult, ReviewDiffFileError>;
   }
 >()("t3/review/ReviewService") {}
 
@@ -69,16 +71,14 @@ export const make = Effect.gen(function* () {
     }
   };
 
-  const cacheSnapshot = (contents: string) => {
+  const cacheSnapshot = (contents: string, filePath: string) => {
     const now = Date.now();
     pruneExpiredSnapshots(now);
     const data = Buffer.from(contents, "utf8");
     if (data.byteLength > MAX_REVIEW_DIFF_FILE_BYTES) {
-      throw new GitCommandError({
-        operation: "ReviewService.openDiffFileContents",
-        command: "snapshot review file",
-        cwd: config.cwd,
-        detail: `Review file exceeds the ${MAX_REVIEW_DIFF_FILE_BYTES}-byte snapshot limit.`,
+      throw new ReviewDiffFileTooLargeError({
+        path: filePath,
+        maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
       });
     }
     while (
@@ -200,11 +200,14 @@ export const make = Effect.gen(function* () {
         const oldFile =
           input.changeType === "new" || input.changeType === "rename-pure"
             ? null
-            : cacheSnapshot(contents.oldContents);
+            : cacheSnapshot(contents.oldContents, input.oldPath);
         try {
           return {
             oldFile,
-            newFile: input.changeType === "deleted" ? null : cacheSnapshot(contents.newContents),
+            newFile:
+              input.changeType === "deleted"
+                ? null
+                : cacheSnapshot(contents.newContents, input.newPath),
           };
         } catch (cause) {
           if (oldFile !== null) removeSnapshot(oldFile.snapshotId);
@@ -212,7 +215,7 @@ export const make = Effect.gen(function* () {
         }
       },
       catch: (cause) =>
-        cause instanceof GitCommandError
+        cause instanceof GitCommandError || cause instanceof ReviewDiffFileTooLargeError
           ? cause
           : new GitCommandError({
               operation: "ReviewService.openDiffFileContents",

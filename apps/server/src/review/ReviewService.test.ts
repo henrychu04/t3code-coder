@@ -84,6 +84,7 @@ describe("ReviewService", () => {
       }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, detectCalls })));
 
       assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
+      if (error._tag !== "VcsRepositoryDetectionError") return;
       assert.strictEqual(error.operation, "ReviewService.getDiffFileContents");
       assert.match(
         "detail" in error ? error.detail : "",
@@ -398,7 +399,10 @@ describe("ReviewService", () => {
         const failure = yield* review
           .openDiffFileContents({ ...input, changeType: "change" })
           .pipe(Effect.flip);
-        assert.strictEqual(failure._tag, "GitCommandError");
+        assert.strictEqual(failure._tag, "ReviewDiffFileTooLargeError");
+        if (failure._tag !== "ReviewDiffFileTooLargeError") return;
+        assert.strictEqual(failure.path, "file.ts");
+        assert.strictEqual(failure.maxBytes, MAX_REVIEW_DIFF_FILE_BYTES);
 
         yield* review.openDiffFileContents({ ...input, changeType: "new" });
         const chunk = yield* review.readDiffFileChunk({

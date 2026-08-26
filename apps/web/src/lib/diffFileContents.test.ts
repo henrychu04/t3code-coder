@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import {
   createChunkedGitDiffFileContentsLoader,
   createGitDiffFileContentsLoader,
+  getDiffFileTooLargeMaxBytes,
+  withDiffFileTooLargeReporting,
 } from "./diffFileContents";
 
 const SOURCE = {
@@ -37,6 +39,60 @@ function fileDiff(type: FileDiffMetadata["type"] = "rename-changed"): FileDiffMe
     name: "b/src/new-name.ts",
   } as FileDiffMetadata;
 }
+
+describe("getDiffFileTooLargeMaxBytes", () => {
+  it("recognizes the typed RPC error without depending on its message", () => {
+    expect(
+      getDiffFileTooLargeMaxBytes({
+        _tag: "ReviewDiffFileTooLargeError",
+        path: "large.ts",
+        maxBytes: 32 * 1024 * 1024,
+        message: "wording may change",
+      }),
+    ).toBe(32 * 1024 * 1024);
+  });
+
+  it("ignores unrelated and malformed failures", () => {
+    expect(getDiffFileTooLargeMaxBytes(new Error("network unavailable"))).toBeNull();
+    expect(
+      getDiffFileTooLargeMaxBytes({
+        _tag: "ReviewDiffFileTooLargeError",
+        maxBytes: 0,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("withDiffFileTooLargeReporting", () => {
+  it("reports the typed limit and preserves the loader failure", async () => {
+    const failure = {
+      _tag: "ReviewDiffFileTooLargeError",
+      path: "src/new-name.ts",
+      maxBytes: 32 * 1024 * 1024,
+    };
+    const report = vi.fn();
+    const load = withDiffFileTooLargeReporting(
+      vi.fn(async () => Promise.reject(failure)),
+      report,
+    );
+    const diff = fileDiff();
+
+    await expect(load(diff)).rejects.toBe(failure);
+    expect(report).toHaveBeenCalledWith(diff, 32 * 1024 * 1024);
+  });
+
+  it("does not classify unrelated loader failures as oversized files", async () => {
+    const failure = new Error("snapshot expired");
+    const report = vi.fn();
+    const load = withDiffFileTooLargeReporting(
+      vi.fn(async () => Promise.reject(failure)),
+      report,
+    );
+
+    await expect(load(fileDiff())).rejects.toBe(failure);
+    expect(report).not.toHaveBeenCalled();
+  });
+});
 
 describe("createGitDiffFileContentsLoader", () => {
   it("loads both sides with normalized paths and comparison-scoped cache keys", async () => {
