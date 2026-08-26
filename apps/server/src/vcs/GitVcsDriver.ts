@@ -138,6 +138,17 @@ const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "core.untrackedCache=false",
 ] as const;
 
+// Matches `git worktree remove` on a path git no longer tracks: "is not a
+// working tree" when the registration is gone, "cannot remove working tree"
+// when older Git versions fail validation on a registered-but-deleted directory.
+function isMissingWorktreeStderr(stderr: string): boolean {
+  const normalized = stderr.toLowerCase();
+  return (
+    normalized.includes("is not a working tree") ||
+    normalized.includes("cannot remove working tree")
+  );
+}
+
 const nowFreshness = Effect.fn("GitVcsDriver.nowFreshness")(function* () {
   const now = yield* DateTime.now;
   return {
@@ -958,18 +969,48 @@ const makeLocalGitService = Effect.gen(function* () {
     return { worktree: { path: targetPath, refName: input.newRefName ?? input.refName } };
   });
 
-  const removeWorktree: GitVcsDriver["Service"]["removeWorktree"] = (input) =>
-    run(
-      "GitVcsDriver.removeWorktree",
-      input.cwd,
-      ["worktree", "remove", ...(input.force ? ["--force"] : []), input.path],
-      { timeoutMs: 300_000 },
-    ).pipe(Effect.asVoid);
-
   const pruneWorktrees: GitVcsDriver["Service"]["pruneWorktrees"] = (input) =>
     run("GitVcsDriver.pruneWorktrees", input.cwd, ["worktree", "prune"], {
       timeoutMs: 15_000,
     }).pipe(Effect.asVoid);
+
+  const removeWorktree: GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
+    "GitVcsDriver.removeWorktree",
+  )(function* (input) {
+    const args = ["worktree", "remove", ...(input.force ? ["--force"] : []), input.path];
+    const result = yield* run("GitVcsDriver.removeWorktree", input.cwd, args, {
+      timeoutMs: 15_000,
+      allowNonZeroExit: true,
+    });
+    if (result.exitCode === 0) {
+      return;
+    }
+    // Threads can share a worktree path, and worktrees get removed or pruned
+    // outside the app, so an already-gone worktree is a no-op. Prune any stale
+    // registration so a later `worktree add` can reuse the path.
+    const alreadyGone =
+      isMissingWorktreeStderr(result.stderr) &&
+      !(yield* fileSystem.exists(input.path).pipe(Effect.orElseSucceed(() => false)));
+    if (alreadyGone) {
+      yield* pruneWorktrees({ cwd: input.cwd });
+      return;
+    }
+    // Raw stderr stays out of both the wire error and logs because it can carry
+    // secrets; retain only bounded diagnostics for genuine failures.
+    yield* Effect.logWarning(
+      `GitVcsDriver.removeWorktree: git worktree remove exited with code ${result.exitCode} for ${input.path} (stderr length ${result.stderr.length}).`,
+    );
+    return yield* new GitCommandError({
+      operation: "GitVcsDriver.removeWorktree",
+      command: "git worktree",
+      cwd: input.cwd,
+      argumentCount: args.length,
+      ...(result.exitCode === null ? {} : { exitCode: result.exitCode }),
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+      detail: "git worktree remove failed",
+    });
+  });
 
   const switchRef: GitVcsDriver["Service"]["switchRef"] = Effect.fn("GitVcsDriver.switchRef")(
     function* (input) {

@@ -143,6 +143,90 @@ it.effect("GitVcsDriver derives the default worktree path from the repo and bran
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
 
+it.effect("GitVcsDriver treats an already-gone worktree as a no-op", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-missing-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+
+    yield* driver.removeWorktree({
+      cwd: repo,
+      path: path.join(fixtureRoot, "missing-worktree"),
+    });
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver rejects an existing directory that is not a worktree", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-invalid-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const notAWorktree = path.join(fixtureRoot, "not-a-worktree");
+    yield* fileSystem.makeDirectory(repo);
+    yield* fileSystem.makeDirectory(notAWorktree);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+
+    const error = yield* driver
+      .removeWorktree({ cwd: repo, path: notAWorktree })
+      .pipe(Effect.flip);
+    assert.strictEqual(error.detail, "git worktree remove failed");
+    assert.notProperty(error, "cause");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver removes the same worktree twice and prunes stale registrations", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-repeat-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const sharedPath = path.join(fixtureRoot, "shared");
+    const stalePath = path.join(fixtureRoot, "stale");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+
+    yield* driver.createWorktree({
+      cwd: repo,
+      refName: "main",
+      newRefName: "feature/shared",
+      path: sharedPath,
+    });
+    yield* driver.removeWorktree({ cwd: repo, path: sharedPath });
+    yield* driver.removeWorktree({ cwd: repo, path: sharedPath });
+
+    yield* driver.createWorktree({
+      cwd: repo,
+      refName: "main",
+      newRefName: "feature/stale",
+      path: stalePath,
+    });
+    yield* fileSystem.remove(stalePath, { recursive: true });
+    yield* driver.removeWorktree({
+      cwd: repo,
+      path: path.join(fixtureRoot, "never-registered"),
+    });
+
+    const registered = yield* driver.execute({
+      operation: "GitVcsDriver.test.worktreeList",
+      cwd: repo,
+      args: ["worktree", "list", "--porcelain"],
+    });
+    assert.notInclude(registered.stdout, "feature/stale");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
 it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
