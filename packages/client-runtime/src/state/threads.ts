@@ -70,12 +70,12 @@ interface ThreadOlderTurnRequestRegistry {
    * cleanup; registration lives exactly as long as the machine's scope, and a
    * successor machine for the same thread simply replaces the entry.
    */
-  readonly register: (key: string, handler: () => void) => () => void;
+  readonly register: (key: string, handler: () => boolean) => () => void;
   readonly request: (key: string) => boolean;
 }
 
 function makeThreadOlderTurnRequestRegistry(): ThreadOlderTurnRequestRegistry {
-  const handlers = new Map<string, () => void>();
+  const handlers = new Map<string, () => boolean>();
   return {
     register: (key, handler) => {
       handlers.set(key, handler);
@@ -90,8 +90,7 @@ function makeThreadOlderTurnRequestRegistry(): ThreadOlderTurnRequestRegistry {
       if (handler === undefined) {
         return false;
       }
-      handler();
-      return true;
+      return handler();
     },
   };
 }
@@ -111,9 +110,8 @@ export class ThreadOlderTurnRequests extends Context.Reference<ThreadOlderTurnRe
 
 /**
  * Asks the live state machine for `threadId` to fetch the next older page.
- * Returns false when no machine is live or no fetch was started (no cursor,
- * already loading); callers render from `EnvironmentThreadState.page` and can
- * treat false as "nothing to do".
+ * Returns false when no machine is live or another request is already pending;
+ * callers render eligibility from `EnvironmentThreadState.page`.
  */
 export function requestOlderThreadTurns(
   environmentId: EnvironmentIdType,
@@ -613,14 +611,28 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // in flight).
   const olderTurnRequestRegistry = yield* ThreadOlderTurnRequests;
   const olderTurnRequests = yield* Queue.sliding<void>(1);
+  let olderTurnRequestPending = false;
   yield* Stream.fromQueue(olderTurnRequests).pipe(
-    Stream.runForEach(() => loadOlderTurns()),
+    Stream.runForEach(() =>
+      loadOlderTurns().pipe(
+        Effect.ensuring(
+          Effect.sync(() => {
+            olderTurnRequestPending = false;
+          }),
+        ),
+      ),
+    ),
     Effect.forkScoped,
   );
   const deregister = olderTurnRequestRegistry.register(
     threadKey({ environmentId, threadId }),
     () => {
+      if (olderTurnRequestPending) {
+        return false;
+      }
+      olderTurnRequestPending = true;
       Queue.offerUnsafe(olderTurnRequests, undefined);
+      return true;
     },
   );
   yield* Effect.addFinalizer(() => Effect.sync(deregister));

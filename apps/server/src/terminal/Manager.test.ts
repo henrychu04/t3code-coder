@@ -1908,6 +1908,31 @@ it.layer(
     }),
   );
 
+  it.effect("falls back to a snapshot when the attach cursor is ahead of the live head", () =>
+    Effect.gen(function* () {
+      const { manager } = yield* createManager();
+      const opened = yield* manager.open(openInput());
+      expect(opened.sequence).toBeDefined();
+      if (opened.sequence === undefined) return;
+
+      const attachEvents = yield* Ref.make<ReadonlyArray<TerminalAttachStreamEvent>>([]);
+      const unsubscribe = yield* manager.attachStream(
+        {
+          threadId: "thread-1",
+          terminalId: DEFAULT_TERMINAL_ID,
+          afterSequence: opened.sequence + 1,
+        },
+        (event) => Ref.update(attachEvents, (events) => [...events, event]),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+
+      expect(yield* Ref.get(attachEvents)).toMatchObject([
+        { type: "snapshot", snapshot: { sequence: opened.sequence } },
+      ]);
+      expect((yield* Ref.get(attachEvents)).some((event) => event.type === "resumed")).toBe(false);
+    }),
+  );
+
   it.effect("falls back to a snapshot when the attach replay window was evicted", () =>
     Effect.gen(function* () {
       const { manager, ptyAdapter, getEvents } = yield* createManager(5, {

@@ -43,6 +43,7 @@ type ReadDiffFileChunk<E> = (request: {
 }) => Promise<AtomCommandResult<ReviewDiffFileChunkResult, E>>;
 
 const DIFF_FILE_CONTENTS_CACHE_BYTES = 64 * 1024 * 1024;
+const DIFF_FILE_CONTENTS_CACHE_ENTRIES = 128;
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const diffFileContentsCache = new Map<
@@ -76,7 +77,8 @@ function cacheDiffFileContents(
     textEncoder.encode(contents.newContents).byteLength;
   while (
     diffFileContentsCache.size > 0 &&
-    diffFileContentsCacheBytes + bytes > DIFF_FILE_CONTENTS_CACHE_BYTES
+    (diffFileContentsCache.size >= DIFF_FILE_CONTENTS_CACHE_ENTRIES ||
+      diffFileContentsCacheBytes + bytes > DIFF_FILE_CONTENTS_CACHE_BYTES)
   ) {
     const oldestKey = diffFileContentsCache.keys().next().value as string | undefined;
     if (oldestKey === undefined) break;
@@ -87,6 +89,17 @@ function cacheDiffFileContents(
   if (bytes > DIFF_FILE_CONTENTS_CACHE_BYTES) return;
   diffFileContentsCache.set(key, { contents, bytes });
   diffFileContentsCacheBytes += bytes;
+}
+
+function diffFileContentsCacheNamespace(source: GitDiffFileContentsSource): string {
+  return JSON.stringify([
+    source.environmentId,
+    source.cwd,
+    source.sourceKind,
+    source.baseRef,
+    source.headRef,
+    source.cacheKey,
+  ]);
 }
 
 function decodeBase64Chunk(value: string): Uint8Array {
@@ -148,6 +161,7 @@ export function createGitDiffFileContentsLoader<E>(
   getDiffFileContents: GetDiffFileContents<E>,
   source: GitDiffFileContentsSource,
 ): FileDiffContentsLoader {
+  const cacheNamespace = diffFileContentsCacheNamespace(source);
   return createDiffFileContentsLoader(async ({ changeType, oldPath, newPath }) => {
     const result = await getDiffFileContents({
       environmentId: source.environmentId,
@@ -165,7 +179,7 @@ export function createGitDiffFileContentsLoader<E>(
       throw squashAtomCommandFailure(result);
     }
     return result.value;
-  }, source.cacheKey);
+  }, cacheNamespace);
 }
 
 /** Loads immutable workspace file snapshots in bounded RPC chunks and retains completed files in memory. */
@@ -174,6 +188,7 @@ export function createChunkedGitDiffFileContentsLoader<E>(
   readDiffFileChunk: ReadDiffFileChunk<E>,
   source: GitDiffFileContentsSource,
 ): FileDiffContentsLoader {
+  const cacheNamespace = diffFileContentsCacheNamespace(source);
   const readSnapshot = async (
     snapshot: ReviewDiffFileSnapshotReference | null,
   ): Promise<string> => {
@@ -223,7 +238,7 @@ export function createChunkedGitDiffFileContentsLoader<E>(
   };
 
   return createDiffFileContentsLoader(async ({ changeType, oldPath, newPath }) => {
-    const cacheKey = `${source.cacheKey}:${changeType}:${oldPath}:${newPath}`;
+    const cacheKey = JSON.stringify([cacheNamespace, changeType, oldPath, newPath]);
     const cached = readCachedDiffFileContents(cacheKey);
     if (cached) return cached;
     const opened = await openDiffFileContents({
@@ -246,5 +261,5 @@ export function createChunkedGitDiffFileContentsLoader<E>(
     const contents = { oldContents, newContents };
     cacheDiffFileContents(cacheKey, contents);
     return contents;
-  }, source.cacheKey);
+  }, cacheNamespace);
 }

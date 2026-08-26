@@ -20,6 +20,15 @@ const SOURCE = {
 };
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest("hex");
+const sourceCacheNamespace = (source: typeof SOURCE) =>
+  JSON.stringify([
+    source.environmentId,
+    source.cwd,
+    source.sourceKind,
+    source.baseRef,
+    source.headRef,
+    source.cacheKey,
+  ]);
 
 function fileDiff(type: FileDiffMetadata["type"] = "rename-changed"): FileDiffMetadata {
   return {
@@ -40,12 +49,12 @@ describe("createGitDiffFileContentsLoader", () => {
       oldFile: {
         name: "src/old-name.ts",
         contents: "before\n",
-        cacheKey: "comparison-1:old:src/old-name.ts",
+        cacheKey: `${sourceCacheNamespace(SOURCE)}:old:src/old-name.ts`,
       },
       newFile: {
         name: "src/new-name.ts",
         contents: "after\n",
-        cacheKey: "comparison-1:new:src/new-name.ts",
+        cacheKey: `${sourceCacheNamespace(SOURCE)}:new:src/new-name.ts`,
       },
     });
     expect(getDiffFileContents).toHaveBeenCalledWith({
@@ -161,5 +170,244 @@ describe("createChunkedGitDiffFileContentsLoader", () => {
       oldFile: { contents: "" },
       newFile: { contents },
     });
+  });
+
+  it("assembles UTF-8 characters split across chunk boundaries", async () => {
+    const contents = "a🙂b";
+    const bytes = new TextEncoder().encode(contents);
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        oldFile: null,
+        newFile: {
+          snapshotId: "utf8-snapshot",
+          totalBytes: bytes.byteLength,
+          contentHash: sha256(contents),
+        },
+      }),
+    );
+    const read = vi.fn(async ({ input }: { input: { snapshotId: string; offset: number } }) => {
+      const nextOffset = Math.min(input.offset + 2, bytes.byteLength);
+      const chunk = bytes.subarray(input.offset, nextOffset);
+      return AsyncResult.success({
+        snapshotId: input.snapshotId,
+        offset: input.offset,
+        totalBytes: bytes.byteLength,
+        encoding: "base64" as const,
+        decodedBytes: chunk.byteLength,
+        dataBase64: Buffer.from(chunk).toString("base64"),
+        nextOffset: nextOffset < bytes.byteLength ? nextOffset : null,
+      });
+    });
+    const load = createChunkedGitDiffFileContentsLoader(open, read, {
+      ...SOURCE,
+      cacheKey: "utf8-comparison",
+    });
+
+    await expect(load(fileDiff("new"))).resolves.toMatchObject({
+      newFile: { contents },
+    });
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ["snapshot id", { snapshotId: "wrong-snapshot" }],
+    ["offset", { offset: 1 }],
+    ["total byte count", { totalBytes: 4 }],
+    ["decoded byte count", { decodedBytes: 2 }],
+    ["next offset", { nextOffset: 2 }],
+  ] as const)("rejects a chunk with a mismatched %s", async (_label, override) => {
+    const contents = "abc";
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        oldFile: null,
+        newFile: {
+          snapshotId: "invalid-frame-snapshot",
+          totalBytes: 3,
+          contentHash: sha256(contents),
+        },
+      }),
+    );
+    const read = vi.fn(async () =>
+      AsyncResult.success({
+        snapshotId: "invalid-frame-snapshot",
+        offset: 0,
+        totalBytes: 3,
+        encoding: "base64" as const,
+        decodedBytes: 3,
+        dataBase64: Buffer.from(contents).toString("base64"),
+        nextOffset: null,
+        ...override,
+      }),
+    );
+    const load = createChunkedGitDiffFileContentsLoader(open, read, {
+      ...SOURCE,
+      cacheKey: `invalid-frame-${_label}`,
+    });
+
+    await expect(load(fileDiff("new"))).rejects.toThrow("Invalid review file chunk.");
+  });
+
+  it("rejects empty, incomplete, corrupted, and hash-mismatched snapshots", async () => {
+    const cases = [
+      {
+        cacheKey: "empty-chunk",
+        contentHash: sha256("abc"),
+        chunk: { dataBase64: "", decodedBytes: 0, nextOffset: null },
+        message: "Invalid review file chunk.",
+      },
+      {
+        cacheKey: "incomplete-chunk",
+        contentHash: sha256("abc"),
+        chunk: {
+          dataBase64: Buffer.from("ab").toString("base64"),
+          decodedBytes: 2,
+          nextOffset: null,
+        },
+        message: "Incomplete review file snapshot.",
+      },
+      {
+        cacheKey: "hash-mismatch",
+        contentHash: sha256("abd"),
+        chunk: {
+          dataBase64: Buffer.from("abc").toString("base64"),
+          decodedBytes: 3,
+          nextOffset: null,
+        },
+        message: "Invalid review file snapshot hash.",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const open = vi.fn(async () =>
+        AsyncResult.success({
+          oldFile: null,
+          newFile: {
+            snapshotId: `${testCase.cacheKey}-snapshot`,
+            totalBytes: 3,
+            contentHash: testCase.contentHash,
+          },
+        }),
+      );
+      const read = vi.fn(async () =>
+        AsyncResult.success({
+          snapshotId: `${testCase.cacheKey}-snapshot`,
+          offset: 0,
+          totalBytes: 3,
+          encoding: "base64" as const,
+          ...testCase.chunk,
+        }),
+      );
+      const load = createChunkedGitDiffFileContentsLoader(open, read, {
+        ...SOURCE,
+        cacheKey: testCase.cacheKey,
+      });
+
+      await expect(load(fileDiff("new"))).rejects.toThrow(testCase.message);
+    }
+
+    const open = vi.fn(async () =>
+      AsyncResult.success({
+        oldFile: null,
+        newFile: {
+          snapshotId: "corrupt-gzip-snapshot",
+          totalBytes: 3,
+          contentHash: sha256("abc"),
+        },
+      }),
+    );
+    const read = vi.fn(async () =>
+      AsyncResult.success({
+        snapshotId: "corrupt-gzip-snapshot",
+        offset: 0,
+        totalBytes: 3,
+        encoding: "gzip-base64" as const,
+        decodedBytes: 3,
+        dataBase64: Buffer.from("not gzip").toString("base64"),
+        nextOffset: null,
+      }),
+    );
+    const load = createChunkedGitDiffFileContentsLoader(open, read, {
+      ...SOURCE,
+      cacheKey: "corrupt-gzip",
+    });
+
+    await expect(load(fileDiff("new"))).rejects.toThrow();
+  });
+
+  it("isolates completed file caches by environment and repository", async () => {
+    const makeLoader = (environmentId: string, cwd: string, contents: string) => {
+      const bytes = Buffer.from(contents);
+      const open = vi.fn(async () =>
+        AsyncResult.success({
+          oldFile: null,
+          newFile: {
+            snapshotId: `${environmentId}-snapshot`,
+            totalBytes: bytes.byteLength,
+            contentHash: sha256(contents),
+          },
+        }),
+      );
+      const read = vi.fn(async () =>
+        AsyncResult.success({
+          snapshotId: `${environmentId}-snapshot`,
+          offset: 0,
+          totalBytes: bytes.byteLength,
+          encoding: "base64" as const,
+          decodedBytes: bytes.byteLength,
+          dataBase64: bytes.toString("base64"),
+          nextOffset: null,
+        }),
+      );
+      return {
+        load: createChunkedGitDiffFileContentsLoader(open, read, {
+          ...SOURCE,
+          environmentId: EnvironmentId.make(environmentId),
+          cwd,
+          cacheKey: "shared-diff-hash",
+        }),
+        open,
+      };
+    };
+    const first = makeLoader("environment-cache-a", "/workspace/a", "first repo\n");
+    const second = makeLoader("environment-cache-b", "/workspace/b", "second repo\n");
+
+    await expect(first.load(fileDiff("new"))).resolves.toMatchObject({
+      newFile: { contents: "first repo\n" },
+    });
+    await expect(second.load(fileDiff("new"))).resolves.toMatchObject({
+      newFile: { contents: "second repo\n" },
+    });
+    expect(first.open).toHaveBeenCalledTimes(1);
+    expect(second.open).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds cached empty files by entry count", async () => {
+    const loaders = Array.from({ length: 129 }, (_, index) => {
+      const snapshotId = `empty-snapshot-${index}`;
+      const open = vi.fn(async () =>
+        AsyncResult.success({
+          oldFile: null,
+          newFile: { snapshotId, totalBytes: 0, contentHash: sha256("") },
+        }),
+      );
+      return {
+        open,
+        load: createChunkedGitDiffFileContentsLoader(
+          open,
+          vi.fn(async () => {
+            throw new Error("empty snapshots should not request chunks");
+          }),
+          { ...SOURCE, cacheKey: `empty-cache-${index}` },
+        ),
+      };
+    });
+
+    for (const loader of loaders) {
+      await loader.load(fileDiff("new"));
+    }
+    await loaders[0]!.load(fileDiff("new"));
+
+    expect(loaders[0]!.open).toHaveBeenCalledTimes(2);
+    expect(loaders.at(-1)!.open).toHaveBeenCalledTimes(1);
   });
 });

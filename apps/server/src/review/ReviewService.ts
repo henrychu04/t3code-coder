@@ -53,6 +53,7 @@ export const make = Effect.gen(function* () {
   const snapshotCache = new Map<string, { readonly data: Buffer; readonly expiresAt: number }>();
   let snapshotCacheBytes = 0;
   const snapshotCacheByteLimit = 64 * 1024 * 1024;
+  const snapshotCacheEntryLimit = 256;
   const snapshotCacheTtlMs = 2 * 60_000;
 
   const removeSnapshot = (snapshotId: string) => {
@@ -82,7 +83,8 @@ export const make = Effect.gen(function* () {
     }
     while (
       snapshotCache.size > 0 &&
-      snapshotCacheBytes + data.byteLength > snapshotCacheByteLimit
+      (snapshotCache.size >= snapshotCacheEntryLimit ||
+        snapshotCacheBytes + data.byteLength > snapshotCacheByteLimit)
     ) {
       const oldestId = snapshotCache.keys().next().value as string | undefined;
       if (oldestId === undefined) break;

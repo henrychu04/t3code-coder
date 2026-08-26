@@ -93,6 +93,43 @@ describe("Coder WebSocket boundary", () => {
     }),
   );
 
+  it.effect(
+    "emits cursor watermarks only at the gap boundary and resets after material events",
+    () =>
+      Effect.gen(function* () {
+        const immaterial = (sequence: number) =>
+          ({
+            type: "thread.activity-appended",
+            aggregateKind: "thread",
+            aggregateId: "thread-one",
+            sequence,
+            payload: { activity: { kind: "tool.progress" } },
+          }) as unknown as OrchestrationEvent;
+        const material = {
+          type: "thread.deleted",
+          aggregateKind: "thread",
+          aggregateId: "thread-one",
+          sequence: 250,
+          payload: { threadId: "thread-one" },
+        } as unknown as OrchestrationEvent;
+        const events = [
+          ...Array.from({ length: 249 }, (_, index) => immaterial(index + 1)),
+          material,
+          ...Array.from({ length: 250 }, (_, index) => immaterial(index + 251)),
+        ];
+
+        const items = yield* projectLiveShellEvents(Stream.fromIterable(events), 0, {
+          getProjectShellById: () => Effect.die("project lookup should not run"),
+          getThreadShellById: () => Effect.die("thread lookup should not run"),
+        }).pipe(Stream.runCollect);
+
+        expect(items).toEqual([
+          { kind: "thread-removed", sequence: 250, threadId: "thread-one" },
+          { kind: "cursor", sequence: 500 },
+        ]);
+      }),
+  );
+
   it.effect("selects the largest recent-turn window within the snapshot byte target", () =>
     Effect.gen(function* () {
       const calls: Array<{ readonly turnLimit?: number; readonly beforeCursor?: string }> = [];

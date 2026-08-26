@@ -24,7 +24,7 @@ const threadCache = new Map<
 let threadCacheBytes = 0;
 
 const threadCacheKey = (environmentId: EnvironmentId, threadId: ThreadId) =>
-  `${environmentId}\0${threadId}`;
+  JSON.stringify([environmentId, threadId]);
 
 function removeThreadCacheEntry(key: string): void {
   const existing = threadCache.get(key);
@@ -38,9 +38,9 @@ function saveThreadCache(
   snapshot: OrchestrationThreadDetailSnapshot,
 ): void {
   const key = threadCacheKey(environmentId, snapshot.thread.id);
-  removeThreadCacheEntry(key);
   const bytes = textEncoder.encode(JSON.stringify(snapshot)).byteLength;
   if (bytes > THREAD_CACHE_MAX_BYTES) return;
+  removeThreadCacheEntry(key);
   while (
     threadCache.size > 0 &&
     (threadCache.size >= THREAD_CACHE_MAX_ENTRIES ||

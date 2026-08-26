@@ -126,6 +126,8 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   readonly cached?: OrchestrationThread;
   readonly httpSnapshot?: Option.Option<OrchestrationThreadDetailSnapshot>;
   readonly olderSnapshot?: OrchestrationThreadDetailSnapshot;
+  readonly olderSnapshotError?: Error;
+  readonly olderSnapshotNever?: boolean;
 }) {
   const inputs = yield* Queue.unbounded<TestThreadInput>();
   const observed = yield* Queue.unbounded<EnvironmentThreadState>();
@@ -158,9 +160,13 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
     [ORCHESTRATION_WS_METHODS.getThreadSnapshot]: (input: unknown) =>
       Ref.update(olderSnapshotInputs, (inputs) => [...inputs, input]).pipe(
         Effect.flatMap(() =>
-          options?.olderSnapshot === undefined
-            ? Effect.die("unexpected older snapshot request")
-            : Effect.succeed(options.olderSnapshot),
+          options?.olderSnapshotNever
+            ? Effect.never
+            : options?.olderSnapshotError !== undefined
+              ? Effect.fail(options.olderSnapshotError)
+              : options?.olderSnapshot === undefined
+                ? Effect.die("unexpected older snapshot request")
+                : Effect.succeed(options.olderSnapshot),
         ),
       ),
   } as unknown as WsRpcProtocolClient;
@@ -475,6 +481,237 @@ describe("EnvironmentThreads", () => {
           beforeCursor: "older-cursor",
           targetBytes: 1024 * 1024,
         },
+      ]);
+    }),
+  );
+
+  it.effect("coalesces repeated older-page requests while a fetch is in flight", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ olderSnapshotNever: true });
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshot: {
+          snapshotSequence: 1,
+          thread: BASE_THREAD,
+          page: {
+            beforeCursor: "older-cursor",
+            hasMore: true,
+            snapshotSequence: 1,
+            threadSequence: 1,
+          },
+        },
+      });
+      yield* Queue.offer(harness.inputs, synchronized());
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live" && Option.isSome(value.page),
+      );
+
+      expect(requestOlderThreadTurns(TARGET.environmentId, THREAD_ID)).toBe(true);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.olderSnapshotInputs)).length === 1) break;
+        yield* Effect.yieldNow;
+      }
+      expect(requestOlderThreadTurns(TARGET.environmentId, THREAD_ID)).toBe(false);
+      yield* Effect.yieldNow;
+      expect(yield* Ref.get(harness.olderSnapshotInputs)).toHaveLength(1);
+    }),
+  );
+
+  it.effect("clears older-page loading state after an RPC failure and permits retry", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({
+        olderSnapshotError: new Error("snapshot expired"),
+      });
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshot: {
+          snapshotSequence: 1,
+          thread: BASE_THREAD,
+          page: {
+            beforeCursor: "older-cursor",
+            hasMore: true,
+            snapshotSequence: 1,
+            threadSequence: 1,
+          },
+        },
+      });
+      yield* Queue.offer(harness.inputs, synchronized());
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live" && Option.isSome(value.page),
+      );
+
+      expect(requestOlderThreadTurns(TARGET.environmentId, THREAD_ID)).toBe(true);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        const inputs = yield* Ref.get(harness.olderSnapshotInputs);
+        const latest = yield* Ref.get(harness.latest);
+        if (inputs.length === 1 && Option.isSome(latest.page) && !latest.page.value.loadingOlder) {
+          break;
+        }
+        yield* Effect.yieldNow;
+      }
+      expect(requestOlderThreadTurns(TARGET.environmentId, THREAD_ID)).toBe(true);
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        if ((yield* Ref.get(harness.olderSnapshotInputs)).length === 2) break;
+        yield* Effect.yieldNow;
+      }
+      expect(yield* Ref.get(harness.olderSnapshotInputs)).toHaveLength(2);
+    }),
+  );
+
+  it.effect("parks an ahead older page, then merges it once live events reach its watermark", () =>
+    Effect.gen(function* () {
+      const recentMessage = {
+        id: MessageId.make("message-recent-watermark"),
+        role: "assistant" as const,
+        text: "recent",
+        turnId: TurnId.make("turn-recent-watermark"),
+        streaming: false,
+        createdAt: "2026-04-01T02:00:00.000Z",
+        updatedAt: "2026-04-01T02:00:00.000Z",
+      };
+      const olderMessage = {
+        ...recentMessage,
+        id: MessageId.make("message-older-watermark"),
+        text: "older",
+        turnId: TurnId.make("turn-older-watermark"),
+        createdAt: "2026-04-01T01:00:00.000Z",
+        updatedAt: "2026-04-01T01:00:00.000Z",
+      };
+      const harness = yield* makeHarness({
+        olderSnapshot: {
+          snapshotSequence: 1,
+          thread: { ...BASE_THREAD, messages: [olderMessage, recentMessage] },
+          page: {
+            beforeCursor: null,
+            hasMore: false,
+            snapshotSequence: 1,
+            threadSequence: 3,
+          },
+        },
+      });
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshot: {
+          snapshotSequence: 1,
+          thread: { ...BASE_THREAD, messages: [recentMessage] },
+          page: {
+            beforeCursor: "older-cursor",
+            hasMore: true,
+            snapshotSequence: 1,
+            threadSequence: 1,
+          },
+        },
+      });
+      yield* Queue.offer(harness.inputs, synchronized());
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live" && Option.isSome(value.page),
+      );
+
+      expect(requestOlderThreadTurns(TARGET.environmentId, THREAD_ID)).toBe(true);
+      const parked = yield* awaitThreadState(
+        harness.observed,
+        (value) => Option.isSome(value.page) && value.page.value.loadingOlder,
+      );
+      expect(Option.getOrThrow(parked.data).messages).toHaveLength(1);
+
+      yield* Queue.offer(harness.inputs, titleUpdated("Sequence two", 2));
+      yield* Effect.yieldNow;
+      expect(Option.getOrThrow((yield* Ref.get(harness.latest)).data).messages).toHaveLength(1);
+
+      yield* Queue.offer(harness.inputs, titleUpdated("Sequence three", 3));
+      const merged = yield* awaitThreadState(
+        harness.observed,
+        (value) =>
+          Option.isSome(value.data) &&
+          value.data.value.messages.length === 2 &&
+          Option.isSome(value.page) &&
+          !value.page.value.loadingOlder,
+      );
+      expect(Option.getOrThrow(merged.data).messages.map((message) => message.text)).toEqual([
+        "older",
+        "recent",
+      ]);
+    }),
+  );
+
+  it.effect("discards a parked older page after an authoritative snapshot rewrites history", () =>
+    Effect.gen(function* () {
+      const recentMessage = {
+        id: MessageId.make("message-recent-rewrite"),
+        role: "assistant" as const,
+        text: "recent",
+        turnId: TurnId.make("turn-recent-rewrite"),
+        streaming: false,
+        createdAt: "2026-04-01T02:00:00.000Z",
+        updatedAt: "2026-04-01T02:00:00.000Z",
+      };
+      const olderMessage = {
+        ...recentMessage,
+        id: MessageId.make("message-older-rewrite"),
+        text: "must stay discarded",
+        turnId: TurnId.make("turn-older-rewrite"),
+      };
+      const harness = yield* makeHarness({
+        olderSnapshot: {
+          snapshotSequence: 1,
+          thread: { ...BASE_THREAD, messages: [olderMessage] },
+          page: {
+            beforeCursor: null,
+            hasMore: false,
+            snapshotSequence: 1,
+            threadSequence: 3,
+          },
+        },
+      });
+      const page = {
+        beforeCursor: "older-cursor",
+        hasMore: true,
+        snapshotSequence: 1,
+        threadSequence: 1,
+      };
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshot: {
+          snapshotSequence: 1,
+          thread: { ...BASE_THREAD, messages: [recentMessage] },
+          page,
+        },
+      });
+      yield* Queue.offer(harness.inputs, synchronized());
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => value.status === "live" && Option.isSome(value.page),
+      );
+
+      expect(requestOlderThreadTurns(TARGET.environmentId, THREAD_ID)).toBe(true);
+      yield* awaitThreadState(
+        harness.observed,
+        (value) => Option.isSome(value.page) && value.page.value.loadingOlder,
+      );
+
+      yield* Queue.offer(harness.inputs, {
+        kind: "snapshot",
+        snapshot: {
+          snapshotSequence: 4,
+          thread: { ...BASE_THREAD, messages: [recentMessage] },
+          page: { ...page, snapshotSequence: 4, threadSequence: 4 },
+        },
+      });
+      yield* Queue.offer(harness.inputs, titleUpdated("After rewrite", 5));
+      const rewritten = yield* awaitThreadState(
+        harness.observed,
+        (value) =>
+          Option.isSome(value.data) &&
+          value.data.value.title === "After rewrite" &&
+          Option.isSome(value.page) &&
+          !value.page.value.loadingOlder,
+      );
+
+      expect(Option.getOrThrow(rewritten.data).messages.map((message) => message.text)).toEqual([
+        "recent",
       ]);
     }),
   );
