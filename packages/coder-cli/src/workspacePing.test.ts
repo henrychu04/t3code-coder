@@ -9,7 +9,11 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 
-import { connectCoderWorkspacePing, parseCoderPingLatencyMs } from "./workspacePing.ts";
+import {
+  connectCoderWorkspacePing,
+  parseCoderPingLatencyMs,
+  parseCoderPingSample,
+} from "./workspacePing.ts";
 
 function fakeChild() {
   const child = new EventEmitter() as EventEmitter & {
@@ -45,6 +49,14 @@ describe("Coder workspace ping process", () => {
       0.85,
     );
     strictEqual(parseCoderPingLatencyMs('ping to "dev" timed out'), null);
+    deepStrictEqual(parseCoderPingSample("pong from dev p2p via 10.0.0.2:49152 in 3ms", 123), {
+      latencyMs: 3,
+      sampledAt: 123,
+    });
+    deepStrictEqual(parseCoderPingSample("pong from dev proxied via DERP(New York) in 42ms", 456), {
+      latencyMs: 42,
+      sampledAt: 456,
+    });
   });
 
   it("streams the latest pong and stops the exact child with its scope", async () => {
@@ -74,9 +86,12 @@ describe("Coder workspace ping process", () => {
     });
 
     child.stdout.write("diagnostic output\npong from workspace proxied via DERP(test) in ");
-    strictEqual(connection.latestLatencyMs(), null);
+    strictEqual(connection.latestSample(), null);
+    const sampledAfter = Date.now();
     child.stdout.write("31ms\npong from workspace proxied via DERP(test) in 29ms\n");
-    strictEqual(connection.latestLatencyMs(), 29);
+    const latestSample = connection.latestSample();
+    strictEqual(latestSample?.latencyMs, 29);
+    strictEqual((latestSample?.sampledAt ?? 0) >= sampledAfter, true);
 
     await Effect.runPromise(Scope.close(scope, Exit.void));
     deepStrictEqual(await Effect.runPromise(connection.closed), {

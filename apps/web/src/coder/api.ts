@@ -42,13 +42,36 @@ export interface DiscoveredCoderWorkspace {
   readonly status: "running" | "starting" | "stopped" | "unknown";
   readonly updateAvailable: boolean;
   readonly healthy: boolean | null;
+  readonly autostopAt: string | null;
 }
 
 export interface CoderWorkspaceRuntimeStatus {
   readonly status: DiscoveredCoderWorkspace["status"] | "unavailable";
   readonly updateAvailable: boolean;
   readonly healthy: boolean | null;
+  readonly autostopAt: string | null;
   readonly error?: string;
+}
+
+export interface CoderWorkspaceNetworkSample {
+  readonly latencyMs: number;
+  readonly sampledAt: number;
+}
+
+export type WorkspaceDiagnosticPhase =
+  | "preflight"
+  | "installing_helper"
+  | "negotiating_helper"
+  | "connected"
+  | "disconnected";
+
+export interface WorkspaceDiagnosticEvent {
+  readonly id: number;
+  readonly attempt: number;
+  readonly phase: WorkspaceDiagnosticPhase;
+  readonly status: "running" | "completed" | "failed";
+  readonly startedAt: number;
+  readonly durationMs?: number;
 }
 
 export interface CoderWorkspaceResourceUsage {
@@ -149,14 +172,67 @@ export async function disconnectCoderWorkspace(workspaceId: string): Promise<voi
   }).then(readResponse);
 }
 
-export async function loadCoderWorkspaceLatency(workspaceId: string): Promise<number | null> {
+export async function loadCoderWorkspaceNetworkSample(
+  workspaceId: string,
+): Promise<CoderWorkspaceNetworkSample | null> {
   const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/latency`, {
     cache: "no-store",
   }).then(readResponse);
-  const latencyMs = ((await response.json()) as { readonly latencyMs?: unknown }).latencyMs;
-  return typeof latencyMs === "number" && Number.isFinite(latencyMs) && latencyMs >= 0
-    ? latencyMs
-    : null;
+  const sample = ((await response.json()) as { readonly sample?: unknown }).sample;
+  if (sample === null || sample === undefined) return null;
+  if (typeof sample !== "object" || Array.isArray(sample)) return null;
+  const record = sample as Record<string, unknown>;
+  if (
+    typeof record.latencyMs !== "number" ||
+    !Number.isFinite(record.latencyMs) ||
+    record.latencyMs < 0 ||
+    typeof record.sampledAt !== "number" ||
+    !Number.isFinite(record.sampledAt)
+  ) {
+    return null;
+  }
+  return sample as CoderWorkspaceNetworkSample;
+}
+
+export async function loadCoderWorkspaceDiagnostics(
+  workspaceId: string,
+): Promise<readonly WorkspaceDiagnosticEvent[]> {
+  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`, {
+    cache: "no-store",
+  }).then(readResponse);
+  const events = ((await response.json()) as { readonly events?: unknown }).events;
+  if (!Array.isArray(events) || !events.every(isWorkspaceDiagnosticEvent)) {
+    throw new Error("Coder returned invalid connection diagnostics.");
+  }
+  return events;
+}
+
+const WORKSPACE_DIAGNOSTIC_PHASES = new Set<WorkspaceDiagnosticPhase>([
+  "preflight",
+  "installing_helper",
+  "negotiating_helper",
+  "connected",
+  "disconnected",
+]);
+
+function isWorkspaceDiagnosticEvent(value: unknown): value is WorkspaceDiagnosticEvent {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.id === "number" &&
+    Number.isInteger(record.id) &&
+    typeof record.attempt === "number" &&
+    Number.isInteger(record.attempt) &&
+    typeof record.phase === "string" &&
+    WORKSPACE_DIAGNOSTIC_PHASES.has(record.phase as WorkspaceDiagnosticPhase) &&
+    (record.status === "running" || record.status === "completed" || record.status === "failed") &&
+    typeof record.startedAt === "number" &&
+    Number.isFinite(record.startedAt) &&
+    (record.durationMs === undefined ||
+      (typeof record.durationMs === "number" &&
+        Number.isFinite(record.durationMs) &&
+        record.durationMs >= 0))
+  );
 }
 
 function isResourceMeasurement(

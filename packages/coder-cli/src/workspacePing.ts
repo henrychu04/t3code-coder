@@ -15,7 +15,7 @@ const ANSI_ESCAPE_SEQUENCE = new RegExp(
   String.raw`\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007]*(?:\u0007|\u001B\\))`,
   "gu",
 );
-const PONG_LATENCY = /\bpong from .+ in (\d+(?:\.\d+)?)(ns|µs|us|ms|s)\s*$/u;
+const PONG_SAMPLE = /\bpong from .+ in (\d+(?:\.\d+)?)(ns|µs|us|ms|s)\s*$/u;
 
 export class CoderWorkspacePingError extends Error {
   readonly _tag = "CoderWorkspacePingError";
@@ -36,7 +36,12 @@ export interface CoderWorkspacePingExit {
 export interface CoderWorkspacePingConnection {
   readonly closed: Effect.Effect<CoderWorkspacePingExit>;
   readonly close: Effect.Effect<void>;
-  readonly latestLatencyMs: () => number | null;
+  readonly latestSample: () => CoderWorkspacePingSample | null;
+}
+
+export interface CoderWorkspacePingSample {
+  readonly latencyMs: number;
+  readonly sampledAt: number;
 }
 
 type SpawnCoderProcess = (
@@ -51,27 +56,40 @@ interface ManagedWorkspacePingProcess {
   readonly exit: Deferred.Deferred<CoderWorkspacePingExit>;
   readonly cleanupListeners: () => void;
   closeRequested: boolean;
-  latestLatencyMs: number | null;
+  latestSample: CoderWorkspacePingSample | null;
 }
 
-export function parseCoderPingLatencyMs(line: string): number | null {
-  const match = ANSI_ESCAPE_SEQUENCE[Symbol.replace](line, "").match(PONG_LATENCY);
+export function parseCoderPingSample(
+  line: string,
+  sampledAt = Date.now(),
+): CoderWorkspacePingSample | null {
+  const match = ANSI_ESCAPE_SEQUENCE[Symbol.replace](line, "").match(PONG_SAMPLE);
   if (match === null) return null;
   const value = Number(match[1]);
   if (!Number.isFinite(value)) return null;
+  let latencyMs: number;
   switch (match[2]) {
     case "ns":
-      return value / 1_000_000;
+      latencyMs = value / 1_000_000;
+      break;
     case "µs":
     case "us":
-      return value / 1_000;
+      latencyMs = value / 1_000;
+      break;
     case "ms":
-      return value;
+      latencyMs = value;
+      break;
     case "s":
-      return value * 1_000;
+      latencyMs = value * 1_000;
+      break;
     default:
       return null;
   }
+  return { latencyMs, sampledAt };
+}
+
+export function parseCoderPingLatencyMs(line: string): number | null {
+  return parseCoderPingSample(line)?.latencyMs ?? null;
 }
 
 const terminateWorkspacePingProcess = (
@@ -130,7 +148,7 @@ export function connectCoderWorkspacePing(
           spawned,
           exit,
           closeRequested: false,
-          latestLatencyMs: null,
+          latestSample: null,
           cleanupListeners: () => {
             child.stdout?.off("data", onStdout);
             child.stderr?.off("data", onStderr);
@@ -160,8 +178,8 @@ export function connectCoderWorkspacePing(
           );
         };
         const readLine = (line: string) => {
-          const latencyMs = parseCoderPingLatencyMs(line);
-          if (latencyMs !== null) process.latestLatencyMs = latencyMs;
+          const sample = parseCoderPingSample(line);
+          if (sample !== null) process.latestSample = sample;
         };
         const onStdout = (chunk: Buffer) => {
           stdoutRemainder += chunk.toString("utf8");
@@ -210,7 +228,7 @@ export function connectCoderWorkspacePing(
     return {
       closed: Deferred.await(process.exit),
       close: terminateWorkspacePingProcess(process, terminationGraceMs),
-      latestLatencyMs: () => process.latestLatencyMs,
+      latestSample: () => process.latestSample,
     };
   });
 }

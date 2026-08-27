@@ -75,6 +75,7 @@ const MAX_CODER_PROBE_BYTES = 32 * 1024;
 const MAX_CODER_AUTH_STATUS_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_ACTION_BYTES = 64 * 1024;
 const MAX_CODER_WORKSPACE_STATS_BYTES = 64 * 1024;
+const MAX_WORKSPACE_DIAGNOSTIC_EVENTS = 24;
 const CODER_PREFLIGHT_SENTINEL = "T3_CODER_PREFLIGHT_OK";
 const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
@@ -284,6 +285,7 @@ export interface DiscoveredCoderWorkspace {
   readonly status: "running" | "starting" | "stopped" | "unknown";
   readonly updateAvailable: boolean;
   readonly healthy: boolean | null;
+  readonly autostopAt: string | null;
 }
 
 export interface CoderWorkspaceResourceUsage {
@@ -358,12 +360,15 @@ function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
     typeof record.health === "object" && record.health !== null && !Array.isArray(record.health)
       ? (record.health as Record<string, unknown>)
       : undefined;
+  const rawDeadline = latestBuild?.deadline;
+  const deadlineMs = typeof rawDeadline === "string" ? Date.parse(rawDeadline) : Number.NaN;
   return {
     name,
     target: owner.length === 0 ? name : `${owner}/${name}`,
     status,
     updateAvailable: record.outdated === true,
     healthy: typeof health?.healthy === "boolean" ? health.healthy : null,
+    autostopAt: Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null,
   };
 }
 
@@ -559,6 +564,22 @@ function runCoderWorkspaceResourceUsage(
 
 type WorkspaceAction = "start" | "stop" | "restart" | "update";
 
+export type WorkspaceDiagnosticPhase =
+  | "preflight"
+  | "installing_helper"
+  | "negotiating_helper"
+  | "connected"
+  | "disconnected";
+
+export interface WorkspaceDiagnosticEvent {
+  readonly id: number;
+  readonly attempt: number;
+  readonly phase: WorkspaceDiagnosticPhase;
+  readonly status: "running" | "completed" | "failed";
+  readonly startedAt: number;
+  readonly durationMs?: number;
+}
+
 class WorkspaceActionConflictError extends Error {}
 
 interface DeferredPromise<A> {
@@ -719,6 +740,9 @@ export function makeLocalCoderGateway(
       string,
       SynchronizedRef.SynchronizedRef<WorkspaceLifecycleState>
     >();
+    const workspaceDiagnosticEvents = new Map<string, WorkspaceDiagnosticEvent[]>();
+    const workspaceAttemptCounters = new Map<string, number>();
+    let workspaceDiagnosticEventId = 0;
     const workspaceSockets = new Map<string, WebSocket>();
     const workspacePings = new Map<
       string,
@@ -797,6 +821,57 @@ export function makeLocalCoderGateway(
         deploymentId,
       ),
     });
+    const diagnosticEventsFor = (workspaceId: string): WorkspaceDiagnosticEvent[] => {
+      const existing = workspaceDiagnosticEvents.get(workspaceId);
+      if (existing !== undefined) return existing;
+      const created: WorkspaceDiagnosticEvent[] = [];
+      workspaceDiagnosticEvents.set(workspaceId, created);
+      return created;
+    };
+    const beginDiagnosticPhase = (
+      workspaceId: string,
+      attempt: number,
+      phase: WorkspaceDiagnosticPhase,
+    ) => {
+      const startedAt = Date.now();
+      const id = ++workspaceDiagnosticEventId;
+      const events = diagnosticEventsFor(workspaceId);
+      events.push({ id, attempt, phase, status: "running", startedAt });
+      if (events.length > MAX_WORKSPACE_DIAGNOSTIC_EVENTS) {
+        events.splice(0, events.length - MAX_WORKSPACE_DIAGNOSTIC_EVENTS);
+      }
+      return (status: "completed" | "failed") => {
+        const index = events.findIndex((event) => event.id === id);
+        if (index === -1) return;
+        events[index] = {
+          id,
+          attempt,
+          phase,
+          status,
+          startedAt,
+          durationMs: Math.max(0, Date.now() - startedAt),
+        };
+      };
+    };
+    const instrumentDiagnosticPhase = <A, E, R>(
+      workspaceId: string,
+      attempt: number,
+      phase: WorkspaceDiagnosticPhase,
+      effect: Effect.Effect<A, E, R>,
+    ): Effect.Effect<A, E, R> =>
+      Effect.suspend(() => {
+        const finish = beginDiagnosticPhase(workspaceId, attempt, phase);
+        return effect.pipe(
+          Effect.onExit((exit) =>
+            Effect.sync(() => finish(Exit.isSuccess(exit) ? "completed" : "failed")),
+          ),
+        );
+      });
+    const recordDiagnosticEvent = (
+      workspaceId: string,
+      attempt: number,
+      phase: WorkspaceDiagnosticPhase,
+    ) => beginDiagnosticPhase(workspaceId, attempt, phase)("completed");
     const workspaceLifecycle = (workspaceId: string) => {
       const existing = workspaceLifecycles.get(workspaceId);
       if (existing !== undefined) return existing;
@@ -865,6 +940,8 @@ export function makeLocalCoderGateway(
       }
 
       const generation = claim.generation;
+      const attempt = (workspaceAttemptCounters.get(workspaceId) ?? 0) + 1;
+      workspaceAttemptCounters.set(workspaceId, attempt);
       const startIsCurrent = () => {
         const state = SynchronizedRef.getUnsafe(lifecycle);
         return (
@@ -889,24 +966,39 @@ export function makeLocalCoderGateway(
             return yield* Effect.fail(new Error("Unknown Coder workspace."));
           }
           const invocationOptions = coderInvocationOptions(deployment.id);
-          yield* probeWorkspace(
-            buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
+          yield* instrumentDiagnosticPhase(
+            workspaceId,
+            attempt,
+            "preflight",
+            probeWorkspace(
+              buildCoderWorkspaceProbeInvocation(deployment, workspace, invocationOptions),
+            ),
           );
           yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
           if (options?.helperBundlePath !== undefined) {
-            yield* installHelper({
-              deployment,
-              workspace,
-              helperBundlePath: options.helperBundlePath,
-              invocationOptions,
-            });
+            yield* instrumentDiagnosticPhase(
+              workspaceId,
+              attempt,
+              "installing_helper",
+              installHelper({
+                deployment,
+                workspace,
+                helperBundlePath: options.helperBundlePath,
+                invocationOptions,
+              }),
+            );
             yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
           }
           const connectionScope = yield* Scope.fork(gatewayScope, "sequential");
           return yield* Effect.gen(function* () {
-            const connection = yield* openHelper(
-              buildCoderHelperInvocation(deployment, workspace, invocationOptions),
-            ).pipe(Scope.provide(connectionScope));
+            const connection = yield* instrumentDiagnosticPhase(
+              workspaceId,
+              attempt,
+              "negotiating_helper",
+              openHelper(buildCoderHelperInvocation(deployment, workspace, invocationOptions)).pipe(
+                Scope.provide(connectionScope),
+              ),
+            );
             if (!startIsCurrent()) {
               return yield* Effect.fail(new Error("Coder workspace connection was cancelled."));
             }
@@ -940,8 +1032,17 @@ export function makeLocalCoderGateway(
             if (!connected) {
               return yield* Effect.fail(new Error("Coder workspace connection was cancelled."));
             }
+            recordDiagnosticEvent(workspaceId, attempt, "connected");
             runFork(
               connection.closed.pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    const state = SynchronizedRef.getUnsafe(lifecycle);
+                    if (state._tag === "Connected" && state.connection === connection) {
+                      recordDiagnosticEvent(workspaceId, attempt, "disconnected");
+                    }
+                  }),
+                ),
                 Effect.tap(() =>
                   SynchronizedRef.update(lifecycle, (state) =>
                     state._tag === "Connected" && state.connection === connection
@@ -1002,6 +1103,11 @@ export function makeLocalCoderGateway(
         await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
       }
       if (claim.pending !== undefined) await claim.pending.catch(() => undefined);
+      recordDiagnosticEvent(
+        workspaceId,
+        workspaceAttemptCounters.get(workspaceId) ?? 1,
+        "disconnected",
+      );
     };
 
     const ensureWorkspacePing = (workspaceId: string): Promise<CoderWorkspacePingConnection> => {
@@ -1540,6 +1646,31 @@ export function makeLocalCoderGateway(
           );
           return;
         }
+        const diagnosticsRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/diagnostics$/);
+        if (
+          request.method === "GET" &&
+          diagnosticsRoute !== null &&
+          diagnosticsRoute !== undefined
+        ) {
+          let workspaceId: string;
+          try {
+            workspaceId = decodeURIComponent(diagnosticsRoute[1] ?? "");
+          } catch {
+            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
+            return;
+          }
+          if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
+            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
+            return;
+          }
+          sendText(
+            response,
+            200,
+            "application/json; charset=utf-8",
+            JSON.stringify({ events: [...diagnosticEventsFor(workspaceId)] }),
+          );
+          return;
+        }
         const latencyRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/latency$/);
         if (request.method === "GET" && latencyRoute !== null && latencyRoute !== undefined) {
           let workspaceId: string;
@@ -1559,7 +1690,7 @@ export function makeLocalCoderGateway(
               response,
               200,
               "application/json; charset=utf-8",
-              JSON.stringify({ latencyMs: ping.latestLatencyMs() }),
+              JSON.stringify({ sample: ping.latestSample() }),
             );
           } catch (cause) {
             const message = cause instanceof Error ? cause.message : "Coder workspace ping failed.";
@@ -2190,6 +2321,8 @@ export function makeLocalCoderGateway(
         workspaceSockets.clear();
         workspacePings.clear();
         workspacePingStarts.clear();
+        workspaceDiagnosticEvents.clear();
+        workspaceAttemptCounters.clear();
         pendingWorkspaceUpgrades.clear();
         yield* FiberSet.clear(fibers);
         const connectionScopes = [
