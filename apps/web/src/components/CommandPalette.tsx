@@ -14,6 +14,7 @@ import {
   FolderPlusIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
+  SearchIcon,
   SettingsIcon,
   SquarePenIcon,
 } from "lucide-react";
@@ -308,6 +309,14 @@ function CoderCommandPaletteDialog(props: {
     });
   const preferredProject =
     projectPickerEntries.find((entry) => entry.isPreferred) ?? projectPickerEntries[0];
+  const projectSearchAvailable =
+    activeThread !== null &&
+    projects.some(
+      (project) =>
+        project.environmentId === activeThread.environmentId &&
+        project.id === activeThread.projectId,
+    );
+  const projectSearchUnavailableDescription = "Open a project to search its files.";
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
   if (preferredProject) {
     actionItems.push({
@@ -347,9 +356,22 @@ function CoderCommandPaletteDialog(props: {
       value: "action:find-files",
       searchTerms: ["find files", "search files", "project files"],
       title: "Search project files",
+      description: projectSearchAvailable ? undefined : projectSearchUnavailableDescription,
       icon: <FileIcon className="size-4 text-icon-muted" />,
+      disabled: !projectSearchAvailable,
       shortcutCommand: "filePicker.toggle",
       run: async () => openFileViewerCommand("filePicker.toggle"),
+    },
+    {
+      kind: "action",
+      value: "action:find-project-contents",
+      searchTerms: ["find text", "search project contents", "find in files"],
+      title: "Search project contents",
+      description: projectSearchAvailable ? undefined : projectSearchUnavailableDescription,
+      icon: <SearchIcon className="size-4 text-icon-muted" />,
+      disabled: !projectSearchAvailable,
+      shortcutCommand: "projectSearch.toggle",
+      run: async () => openFileViewerCommand("projectSearch.toggle"),
     },
     {
       kind: "action",

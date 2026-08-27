@@ -120,8 +120,21 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
+    shortcut: modShortcut("f"),
+    command: "fileViewer.find",
+    whenAst: whenAnd(
+      whenAnd(whenIdentifier("fileOpen"), whenIdentifier("fileViewerFocus")),
+      whenNot(whenIdentifier("terminalFocus")),
+    ),
+  },
+  {
     shortcut: modShortcut("f", { shiftKey: true }),
     command: "projectSearch.toggle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
+    shortcut: modShortcut("p"),
+    command: "filePicker.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
@@ -135,6 +148,14 @@ const DEFAULT_BINDINGS = compile([
     },
     command: "filePicker.toggle",
     whenAst: whenAnd(whenIdentifier("projectOpen"), whenNot(whenIdentifier("terminalFocus"))),
+  },
+  {
+    shortcut: modShortcut("g"),
+    command: "fileViewer.goToLine",
+    whenAst: whenAnd(
+      whenAnd(whenIdentifier("fileOpen"), whenIdentifier("fileViewerFocus")),
+      whenNot(whenIdentifier("terminalFocus")),
+    ),
   },
   {
     shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
@@ -604,13 +625,54 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("leaves mod+p unassigned by default", () => {
+  it("matches filePicker.toggle with mod+p outside terminal focus", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "p", metaKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { terminalFocus: false },
       }),
-      null,
+      "filePicker.toggle",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(event({ key: "p", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "filePicker.toggle",
+    );
+  });
+
+  it("scopes current-file shortcuts to file viewer focus", () => {
+    const focusedFileContext = {
+      fileOpen: true,
+      fileViewerFocus: true,
+      terminalFocus: false,
+    };
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "f", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: focusedFileContext,
+      }),
+      "fileViewer.find",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "g", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: focusedFileContext,
+      }),
+      "fileViewer.goToLine",
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "f", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { ...focusedFileContext, fileViewerFocus: false },
+      }),
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "g", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { ...focusedFileContext, fileViewerFocus: false },
+      }),
     );
   });
 

@@ -33,6 +33,8 @@ export interface ShortcutMatchContext {
   [key: string]: boolean;
 }
 
+export const DOUBLE_SHIFT_MAX_INTERVAL_MS = 500;
+
 interface ShortcutMatchOptions {
   platform?: string;
   context?: Partial<ShortcutMatchContext>;

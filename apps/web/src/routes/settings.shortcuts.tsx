@@ -10,10 +10,11 @@ import {
 } from "@t3tools/shared/keybindings";
 import { createFileRoute } from "@tanstack/react-router";
 import { PlusIcon, RotateCcwIcon, SearchIcon, Trash2Icon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { KEYBINDING_ACTIONS } from "../keybindingCatalog";
 import {
+  DOUBLE_SHIFT_MAX_INTERVAL_MS,
   formatShortcutLabel,
   keybindingKeyForShortcut,
   keybindingWhenForNode,
@@ -83,19 +84,6 @@ function ShortcutsSettingsView() {
   const [busy, setBusy] = useState<KeybindingCommand | null>(null);
   const [error, setError] = useState<string | null>(null);
   const firstShiftAt = useRef<number | null>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const modKey = isMacPlatform(navigator.platform) ? event.metaKey : event.ctrlKey;
-      if (!modKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== "f") return;
-      event.preventDefault();
-      searchInputRef.current?.focus();
-      searchInputRef.current?.select();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
 
   const bindingsByCommand = useMemo(() => {
     const result = new Map<KeybindingCommand, ResolvedKeybindingRule[]>();
@@ -220,12 +208,10 @@ function ShortcutsSettingsView() {
           Search Everywhere gesture.
         </p>
         <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
-          Some shortcuts are reserved by the browser and may not reach T3 Coder. Ctrl/Cmd+F focuses
-          this settings search while this page is open.
+          Some shortcuts are reserved by the browser and may not reach T3 Coder.
         </p>
         <div className="max-w-md pt-2">
           <Input
-            ref={searchInputRef}
             aria-label="Search keyboard shortcuts"
             nativeInput
             placeholder="Search actions…"
@@ -262,6 +248,10 @@ function ShortcutsSettingsView() {
                       ),
                   )
                 : null;
+              const conflictLabel = conflict
+                ? (actions.find((candidateAction) => candidateAction.command === conflict.command)
+                    ?.label ?? conflict.command)
+                : null;
               const targets: ReadonlyArray<ResolvedKeybindingRule | null> =
                 current.length > 0 ? current : [null];
               return (
@@ -272,9 +262,9 @@ function ShortcutsSettingsView() {
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium">{action.label}</div>
                     <code className="text-[11px] text-muted-foreground">{action.command}</code>
-                    {conflict ? (
+                    {conflictLabel ? (
                       <p className="mt-1 text-xs text-warning-foreground">
-                        Also assigned to {conflict.command}; the later binding takes precedence.
+                        Also assigned to {conflictLabel}; the later binding takes precedence.
                       </p>
                     ) : null}
                   </div>
@@ -334,7 +324,7 @@ function ShortcutsSettingsView() {
                                 const now = performance.now();
                                 if (
                                   firstShiftAt.current !== null &&
-                                  now - firstShiftAt.current < 700
+                                  now - firstShiftAt.current < DOUBLE_SHIFT_MAX_INTERVAL_MS
                                 ) {
                                   if (action.command !== "filePicker.toggle") {
                                     setError(

@@ -63,7 +63,6 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "projectSearch.toggle",
   "fileViewer.find",
   "fileViewer.goToLine",
-  "fileViewer.searchFiles",
   "themeEditor.toggle",
   "composer.stash",
   "chat.new",

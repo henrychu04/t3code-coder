@@ -15,7 +15,7 @@ export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
   { command: "projectSearch.toggle", label: "Find text in project", category: "Files" },
   { command: "filePicker.toggle", label: "Search project files", category: "Files" },
   { command: "fileViewer.goToLine", label: "Go to line and column", category: "Files" },
-  { command: "commandPalette.toggle", label: "Find action", category: "Navigation" },
+  { command: "commandPalette.toggle", label: "Command palette", category: "Navigation" },
   { command: "thread.previous", label: "Previous thread", category: "Navigation" },
   { command: "thread.next", label: "Next thread", category: "Navigation" },
   { command: "thread.settle", label: "Settle or un-settle current thread", category: "Chat" },

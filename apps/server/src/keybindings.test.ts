@@ -49,6 +49,14 @@ const writeKeybindingsConfig = (configPath: string, rules: readonly KeybindingRu
     yield* fileSystem.writeFileString(configPath, encoded);
   });
 
+const writeRawKeybindingsConfig = (configPath: string, entries: readonly unknown[]) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    yield* fileSystem.makeDirectory(path.dirname(configPath), { recursive: true });
+    yield* fileSystem.writeFileString(configPath, JSON.stringify(entries));
+  });
+
 const readKeybindingsConfig = (configPath: string) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -208,11 +216,16 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.equal(defaultsByCommand.get("thread.jump.9"), "mod+9");
       assert.equal(defaultsByCommand.get("modelPicker.toggle"), "mod+shift+m");
       assert.equal(defaultsByCommand.get("filePicker.toggle"), "shift shift");
+      assert.deepEqual(
+        Keybindings.DEFAULT_KEYBINDINGS.filter(
+          (binding) => binding.command === "filePicker.toggle",
+        ).map((binding) => binding.key),
+        ["mod+p", "shift shift"],
+      );
       assert.isFalse(defaultsByCommand.has("themeEditor.toggle"));
       assert.equal(defaultsByCommand.get("projectSearch.toggle"), "mod+shift+f");
       assert.equal(defaultsByCommand.get("fileViewer.find"), "mod+f");
       assert.equal(defaultsByCommand.get("fileViewer.goToLine"), "mod+g");
-      assert.isFalse(defaultsByCommand.has("fileViewer.searchFiles"));
       assert.isFalse(defaultsByCommand.has("editor.openFavorite"));
       assert.equal(
         Keybindings.DEFAULT_KEYBINDINGS.find(
@@ -220,10 +233,25 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         )?.when,
         "!terminalFocus",
       );
+      assert.deepInclude(Keybindings.DEFAULT_KEYBINDINGS, {
+        key: "mod+p",
+        command: "filePicker.toggle",
+        when: "!terminalFocus",
+      });
+      assert.deepInclude(Keybindings.DEFAULT_KEYBINDINGS, {
+        key: "shift shift",
+        command: "filePicker.toggle",
+        when: "projectOpen && !terminalFocus",
+      });
       assert.equal(
-        Keybindings.DEFAULT_KEYBINDINGS.find((binding) => binding.command === "filePicker.toggle")
+        Keybindings.DEFAULT_KEYBINDINGS.find((binding) => binding.command === "fileViewer.find")
           ?.when,
-        "projectOpen && !terminalFocus",
+        "fileOpen && fileViewerFocus && !terminalFocus",
+      );
+      assert.equal(
+        Keybindings.DEFAULT_KEYBINDINGS.find((binding) => binding.command === "fileViewer.goToLine")
+          ?.when,
+        "fileOpen && fileViewerFocus && !terminalFocus",
       );
       assert.equal(defaultsByCommand.get("sidebar.toggle"), "mod+b");
       assert.equal(defaultsByCommand.get("rightPanel.toggle"), "mod+alt+b");
@@ -332,7 +360,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
   it.effect("removes retired Coder defaults without deleting active or customized rules", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+      yield* writeRawKeybindingsConfig(keybindingsConfigPath, [
         { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
         { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
         { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
@@ -358,7 +386,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         ),
       );
       assert.isFalse(persisted.some((entry) => entry.command === "themeEditor.toggle"));
-      assert.isFalse(
+      assert.isTrue(
         persisted.some((entry) => entry.command === "filePicker.toggle" && entry.key === "mod+p"),
       );
       assert.isFalse(persisted.some((entry) => entry.command === "editor.openFavorite"));
@@ -367,7 +395,6 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           (entry) => entry.command === "filePicker.toggle" && entry.key === "mod+alt+p",
         ),
       );
-      assert.isFalse(persisted.some((entry) => entry.command === "fileViewer.searchFiles"));
       assert.isTrue(
         persisted.some(
           (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+g",
@@ -379,7 +406,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
   it.effect("migrates file-panel search defaults to project-wide defaults", () =>
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [
+      yield* writeRawKeybindingsConfig(keybindingsConfigPath, [
         {
           key: "mod+shift+f",
           command: "projectSearch.toggle",
@@ -415,6 +442,11 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         key: "shift shift",
         command: "filePicker.toggle",
         when: "projectOpen && !terminalFocus",
+      });
+      assert.deepInclude(persisted, {
+        key: "mod+p",
+        command: "filePicker.toggle",
+        when: "!terminalFocus",
       });
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );

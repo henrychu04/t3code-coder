@@ -123,7 +123,7 @@ interface FilePreviewPanelProps {
   revealRequestId: number;
   commandRequest: {
     readonly id: number;
-    readonly command: "projectSearch.toggle" | "fileViewer.searchFiles";
+    readonly command: "filePicker.toggle" | "projectSearch.toggle";
   } | null;
   onCommandRequestHandled: (id: number) => void;
   onOpenFile: (relativePath: string, line?: number) => void;
@@ -184,11 +184,11 @@ function GoToLineDialog(props: {
           }}
         >
           <DialogHeader className="pb-5">
-            <DialogTitle className="text-lg">Go to Line:Column</DialogTitle>
+            <DialogTitle className="text-lg">Go to line</DialogTitle>
           </DialogHeader>
           <div className="flex items-center gap-3 px-6 pb-5">
             <label htmlFor="file-go-to-line" className="shrink-0 text-sm text-muted-foreground">
-              [Line] [:Column]:
+              Line and column
             </label>
             <Input
               id="file-go-to-line"
@@ -712,7 +712,6 @@ function FileSearchDialog(props: {
                 )}
               </div>
               <SearchFilePreview
-                key={selected?.path ?? "empty"}
                 environmentId={props.environmentId}
                 threadRef={props.threadRef}
                 cwd={props.cwd}
@@ -984,7 +983,6 @@ function ProjectTextSearchDialog(props: {
                 )}
               </div>
               <SearchFilePreview
-                key={selected ? `${selected.path}:${selected.lineNumber}` : "empty"}
                 environmentId={props.environmentId}
                 threadRef={props.threadRef}
                 cwd={props.cwd}
@@ -1589,6 +1587,11 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
       const context = {
         terminalFocus: isTerminalFocused(),
         fileViewerOpen: true,
+        fileViewerFocus: event
+          .composedPath()
+          .some(
+            (target) => target instanceof Element && target.closest("[data-file-viewer]") !== null,
+          ),
         fileOpen: props.relativePath !== null,
       };
       const command = resolveShortcutCommand(event, keybindings, { context });
@@ -1693,7 +1696,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background" data-file-viewer="">
       <ProjectTextSearchDialog
         open={projectSearchOpen}
         onOpenChange={setProjectSearchOpen}

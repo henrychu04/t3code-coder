@@ -141,6 +141,7 @@ import {
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
 import {
+  DOUBLE_SHIFT_MAX_INTERVAL_MS,
   resolveDoubleShiftShortcutCommand,
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -380,7 +381,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 }
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
-type FileViewerGlobalCommand = "projectSearch.toggle" | "fileViewer.searchFiles";
+type FileViewerGlobalCommand = "filePicker.toggle" | "projectSearch.toggle";
 interface FileViewerCommandRequest {
   readonly id: number;
   readonly threadKey: string;
@@ -2421,9 +2422,7 @@ function ChatViewContent(props: ChatViewProps) {
   useEffect(
     () =>
       onOpenFileViewerCommand((command) => {
-        requestFileViewerCommand(
-          command === "projectSearch.toggle" ? "projectSearch.toggle" : "fileViewer.searchFiles",
-        );
+        requestFileViewerCommand(command);
       }),
     [requestFileViewerCommand],
   );
@@ -3988,6 +3987,7 @@ function ChatViewContent(props: ChatViewProps) {
         fileViewerOpen:
           rightPanelOpen &&
           (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file"),
+        fileViewerFocus: eventPathContainsSelector(event, "[data-file-viewer]"),
         fileOpen: rightPanelOpen && activeRightPanelSurface?.kind === "file",
       };
 
@@ -3999,15 +3999,18 @@ function ChatViewContent(props: ChatViewProps) {
         !event.altKey
       ) {
         const now = performance.now();
-        if (lastShiftAtRef.current !== null && now - lastShiftAtRef.current < 500) {
+        if (
+          lastShiftAtRef.current !== null &&
+          now - lastShiftAtRef.current < DOUBLE_SHIFT_MAX_INTERVAL_MS
+        ) {
           lastShiftAtRef.current = null;
           const command = resolveDoubleShiftShortcutCommand(keybindings, {
             context: shortcutContext,
           });
-          if (command === "filePicker.toggle" || command === "fileViewer.searchFiles") {
+          if (command === "filePicker.toggle") {
             event.preventDefault();
             event.stopPropagation();
-            requestFileViewerCommand("fileViewer.searchFiles");
+            requestFileViewerCommand("filePicker.toggle");
           }
         } else {
           lastShiftAtRef.current = now;
@@ -4055,16 +4058,10 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
 
-      if (
-        command === "projectSearch.toggle" ||
-        command === "filePicker.toggle" ||
-        command === "fileViewer.searchFiles"
-      ) {
+      if (command === "projectSearch.toggle" || command === "filePicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        requestFileViewerCommand(
-          command === "projectSearch.toggle" ? "projectSearch.toggle" : "fileViewer.searchFiles",
-        );
+        requestFileViewerCommand(command);
         return;
       }
 

@@ -2,7 +2,7 @@ import type { KeybindingCommand } from "@t3tools/contracts";
 
 export type FileViewerCommand = Extract<
   KeybindingCommand,
-  "filePicker.toggle" | "fileViewer.searchFiles" | "projectSearch.toggle"
+  "filePicker.toggle" | "projectSearch.toggle"
 >;
 
 const FILE_VIEWER_COMMAND_EVENT = "t3code:file-viewer-command";
