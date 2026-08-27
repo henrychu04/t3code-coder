@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { discardInactiveWorkspaceConnectionErrors, readWorkspaceRuntime } from "./CoderBootstrap";
+import {
+  discardInactiveWorkspaceConnectionErrors,
+  nextCoderSlowSampleCount,
+  readWorkspaceRuntime,
+  workspaceRuntimeRetryDelayMs,
+} from "./CoderBootstrap";
 import type { CoderProfileConfig } from "./api";
 
 const config: CoderProfileConfig = {
@@ -32,6 +37,7 @@ describe("Coder workspace runtime discovery", () => {
         status: "unavailable",
         updateAvailable: false,
         healthy: null,
+        autostopAt: null,
         error: "Could not fetch workspace status. Failed to fetch",
       },
     });
@@ -44,7 +50,12 @@ describe("Coder workspace runtime discovery", () => {
     );
 
     await expect(readWorkspaceRuntime(config)).resolves.toEqual({
-      "workspace-one": { status: "unknown", updateAvailable: false, healthy: null },
+      "workspace-one": {
+        status: "unknown",
+        updateAvailable: false,
+        healthy: null,
+        autostopAt: null,
+      },
     });
   });
 });
@@ -61,6 +72,7 @@ describe("Coder workspace connection errors", () => {
               status,
               updateAvailable: false,
               healthy: null,
+              autostopAt: null,
               ...(status === "unavailable" ? { error: "Status request failed" } : {}),
             },
           },
@@ -74,8 +86,29 @@ describe("Coder workspace connection errors", () => {
 
     expect(
       discardInactiveWorkspaceConnectionErrors(errors, {
-        "workspace-one": { status: "running", updateAvailable: false, healthy: true },
+        "workspace-one": {
+          status: "running",
+          updateAvailable: false,
+          healthy: true,
+          autostopAt: null,
+        },
       }),
     ).toBe(errors);
+  });
+});
+
+describe("Coder adaptive status and network thresholds", () => {
+  it("backs off status retries to a thirty-second ceiling", () => {
+    expect([0, 1, 2, 3, 4, 9].map(workspaceRuntimeRetryDelayMs)).toEqual([
+      2_000, 4_000, 8_000, 16_000, 30_000, 30_000,
+    ]);
+  });
+
+  it("requires two slow samples and recovers without flicker", () => {
+    const firstSlow = nextCoderSlowSampleCount(0, 300);
+    const secondSlow = nextCoderSlowSampleCount(firstSlow, 300);
+    expect(firstSlow).toBe(1);
+    expect(secondSlow).toBe(2);
+    expect(nextCoderSlowSampleCount(secondSlow, 20)).toBe(1);
   });
 });

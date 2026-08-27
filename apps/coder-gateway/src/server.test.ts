@@ -376,6 +376,7 @@ describe("local Coder gateway", () => {
           status: "stopped",
           updateAvailable: false,
           healthy: null,
+          autostopAt: null,
         },
       ],
       startWorkspace: async () => {
@@ -452,6 +453,7 @@ describe("local Coder gateway", () => {
           status: "running",
           updateAvailable: false,
           healthy: true,
+          autostopAt: null,
         },
       ],
       connectPortForward: async () => {
@@ -722,6 +724,7 @@ describe("local Coder gateway", () => {
             status: "running",
             updateAvailable: true,
             healthy: true,
+            autostopAt: null,
           },
         ];
       },
@@ -759,6 +762,7 @@ describe("local Coder gateway", () => {
           status: "running",
           updateAvailable: true,
           healthy: true,
+          autostopAt: null,
         },
       ],
     });
@@ -786,7 +790,7 @@ describe("local Coder gateway", () => {
       executablePath,
       `#!/usr/bin/env node
 process.stdout.write(JSON.stringify([
-  { name: "starting-workspace", owner_name: "henry", latest_build: { status: "starting" }, outdated: true, health: { healthy: true } },
+  { name: "starting-workspace", owner_name: "henry", latest_build: { status: "starting", deadline: "2026-08-25T18:30:00Z" }, outdated: true, health: { healthy: true } },
   { name: "stopped-workspace", latest_build: { status: "stopped" }, outdated: false },
   { name: "unknown-workspace", latest_build: { status: "failed" }, outdated: false }
 ]));
@@ -828,6 +832,7 @@ process.stdout.write(JSON.stringify([
           status: "starting",
           updateAvailable: true,
           healthy: true,
+          autostopAt: "2026-08-25T18:30:00.000Z",
         },
         {
           name: "stopped-workspace",
@@ -835,6 +840,7 @@ process.stdout.write(JSON.stringify([
           status: "stopped",
           updateAvailable: false,
           healthy: null,
+          autostopAt: null,
         },
         {
           name: "unknown-workspace",
@@ -842,6 +848,7 @@ process.stdout.write(JSON.stringify([
           status: "unknown",
           updateAvailable: false,
           healthy: null,
+          autostopAt: null,
         },
       ],
     });
@@ -1074,16 +1081,21 @@ process.on("SIGTERM", () => {
       200,
     );
 
-    let latencyMs: number | null = null;
-    for (let attempt = 0; attempt < 50 && latencyMs === null; attempt += 1) {
+    let sample: { readonly latencyMs: number; readonly sampledAt: number } | null = null;
+    for (let attempt = 0; attempt < 50 && sample === null; attempt += 1) {
       const response = await request({
         url: `${gateway.url}/api/workspaces/project-one/latency`,
       });
       strictEqual(response.statusCode, 200);
-      latencyMs = (JSON.parse(response.body) as { latencyMs: number | null }).latencyMs;
-      if (latencyMs === null) await new Promise((resolve) => setTimeout(resolve, 10));
+      sample = (
+        JSON.parse(response.body) as {
+          sample: { readonly latencyMs: number; readonly sampledAt: number } | null;
+        }
+      ).sample;
+      if (sample === null) await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    strictEqual(latencyMs === 37 || latencyMs === 35, true);
+    strictEqual(sample?.latencyMs === 37 || sample?.latencyMs === 35, true);
+    strictEqual(typeof sample?.sampledAt, "number");
     strictEqual(
       (
         await request({
@@ -1106,6 +1118,21 @@ process.on("SIGTERM", () => {
       "ping",
       "henry/project-one",
     ]);
+    const connectedDiagnostics = JSON.parse(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/diagnostics`,
+        })
+      ).body,
+    ) as { events: Array<{ phase: string; status: string }> };
+    deepStrictEqual(
+      connectedDiagnostics.events.map(({ phase, status }) => ({ phase, status })),
+      [
+        { phase: "preflight", status: "completed" },
+        { phase: "negotiating_helper", status: "completed" },
+        { phase: "connected", status: "completed" },
+      ],
+    );
 
     strictEqual(
       (
@@ -1121,6 +1148,14 @@ process.on("SIGTERM", () => {
       (await NodeFS.readFile(lifecycleLogPath, "utf8")).trim().split("\n").at(-1),
       "stopped",
     );
+    const disconnectedDiagnostics = JSON.parse(
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/diagnostics`,
+        })
+      ).body,
+    ) as { events: Array<{ phase: string }> };
+    strictEqual(disconnectedDiagnostics.events.at(-1)?.phase, "disconnected");
   });
 
   it("samples workspace resource usage only while the helper is connected", async () => {
@@ -1158,6 +1193,7 @@ process.on("SIGTERM", () => {
           status: "running",
           updateAvailable: false,
           healthy: true,
+          autostopAt: null,
         },
       ],
     });

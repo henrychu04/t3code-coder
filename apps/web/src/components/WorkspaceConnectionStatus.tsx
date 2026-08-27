@@ -11,13 +11,16 @@ import { useEffect, useState } from "react";
 
 import {
   checkCoderDeploymentAuthentication,
+  loadCoderWorkspaceDiagnostics,
   loginToCoderDeployment,
   type CoderDeploymentAuthenticationStatus,
+  type WorkspaceDiagnosticPhase,
 } from "../coder/api";
 import { useCoder } from "../coder/CoderBootstrap";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
 import { useEnvironments } from "../state/environments";
 import { summarizeCoderWorkspaceError } from "./CoderWorkspaceIssues";
+import { coderDiagnosticPhaseLabel } from "./CoderWorkspaceDiagnostics";
 import { Button } from "./ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "./ui/empty";
 import { SidebarInset } from "./ui/sidebar";
@@ -114,6 +117,7 @@ export function WorkspaceConnectionStatus({
     readonly deploymentId: string;
     readonly message: string;
   } | null>(null);
+  const [diagnosticPhase, setDiagnosticPhase] = useState<WorkspaceDiagnosticPhase | null>(null);
   const environment =
     environmentId === null
       ? (environments.find(
@@ -157,7 +161,7 @@ export function WorkspaceConnectionStatus({
   const workspaceStopped = runtime?.status === "stopped";
   const workspaceStarting = runtime?.status === "starting" || startingWorkspace;
   const workspaceUnavailable = runtime?.status === "unavailable";
-  const status = workspaceStopped
+  const baseStatus = workspaceStopped
     ? {
         title: `${workspaceLabel} is stopped`,
         description: "Start the workspace when you’re ready to reconnect.",
@@ -187,6 +191,44 @@ export function WorkspaceConnectionStatus({
                 workspaceLabel,
                 connectionError === null ? null : summarizeCoderWorkspaceError(connectionError),
               );
+  const status =
+    diagnosticPhase !== null &&
+    !workspaceStopped &&
+    !workspaceStarting &&
+    !workspaceUnavailable &&
+    phase !== "error"
+      ? { ...baseStatus, description: coderDiagnosticPhaseLabel(diagnosticPhase) }
+      : baseStatus;
+
+  useEffect(() => {
+    if (
+      workspace === undefined ||
+      workspaceStopped ||
+      workspaceStarting ||
+      workspaceUnavailable ||
+      phase === "error"
+    ) {
+      setDiagnosticPhase(null);
+      return;
+    }
+    let cancelled = false;
+    let timer: number | undefined;
+    const refresh = async (): Promise<void> => {
+      try {
+        const events = await loadCoderWorkspaceDiagnostics(workspace.id);
+        const running = [...events].reverse().find((event) => event.status === "running");
+        if (!cancelled) setDiagnosticPhase(running?.phase ?? null);
+      } catch {
+        if (!cancelled) setDiagnosticPhase(null);
+      }
+      if (!cancelled) timer = window.setTimeout(() => void refresh(), 750);
+    };
+    void refresh();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [phase, workspace, workspaceStarting, workspaceStopped, workspaceUnavailable]);
 
   useEffect(() => {
     if (phase !== "error" || deployment === undefined) return;
