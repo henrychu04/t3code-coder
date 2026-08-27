@@ -51,6 +51,7 @@ import {
   BotIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
@@ -2575,8 +2576,19 @@ const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props: {
     }
   }, [activeThreadEnvironmentId, artifacts, expanded, readArtifact]);
 
-  const selectedArtifact = artifacts.find((artifact) => artifact.id === selectedArtifactId);
+  const selectedArtifactIndex = artifacts.findIndex(
+    (artifact) => artifact.id === selectedArtifactId,
+  );
+  const selectedArtifact = artifacts[selectedArtifactIndex];
   const selectedImage = selectedArtifact ? images[selectedArtifact.id] : undefined;
+  const canSelectPrevious = selectedArtifactIndex > 0;
+  const canSelectNext =
+    selectedArtifactIndex >= 0 && selectedArtifactIndex < artifacts.length - 1;
+
+  const selectAdjacentArtifact = (offset: -1 | 1) => {
+    const artifact = artifacts[selectedArtifactIndex + offset];
+    if (artifact) setSelectedArtifactId(artifact.id);
+  };
 
   return (
     <div className="rounded-md px-0.5 py-0.5">
@@ -2633,24 +2645,76 @@ const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props: {
         </div>
       ) : null}
       <Dialog
-        open={selectedImage?.status === "loaded"}
+        open={selectedArtifact !== undefined}
         onOpenChange={(open) => {
           if (!open) setSelectedArtifactId(null);
         }}
       >
         <DialogContent
           className="max-h-[94vh] max-w-[94vw] overflow-hidden bg-background p-3"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft" && canSelectPrevious) {
+              event.preventDefault();
+              selectAdjacentArtifact(-1);
+            } else if (event.key === "ArrowRight" && canSelectNext) {
+              event.preventDefault();
+              selectAdjacentArtifact(1);
+            }
+          }}
           showCloseButton
         >
           <DialogTitle className="sr-only">{selectedArtifact?.name ?? "Screenshot"}</DialogTitle>
-          {selectedImage?.status === "loaded" ? (
-            <img
-              alt={selectedArtifact?.name ?? "Screenshot"}
-              className="max-h-[88vh] w-full object-contain"
-              draggable={false}
-              src={selectedImage.url}
-            />
-          ) : null}
+          <div className="flex min-h-0 flex-col gap-1">
+            <div className="relative flex min-h-48 min-w-64 items-center justify-center overflow-hidden">
+              {selectedImage?.status === "loaded" ? (
+                <img
+                  alt={selectedArtifact?.name ?? "Screenshot"}
+                  className="max-h-[calc(88vh-2.25rem)] w-full object-contain"
+                  draggable={false}
+                  src={selectedImage.url}
+                />
+              ) : (
+                <span className="text-muted-foreground text-sm">
+                  {selectedImage?.status === "error" ? "Screenshot unavailable" : "Loading…"}
+                </span>
+              )}
+              {artifacts.length > 1 ? (
+                <>
+                  <Button
+                    aria-label="Previous screenshot"
+                    className="absolute start-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
+                    disabled={!canSelectPrevious}
+                    onClick={() => selectAdjacentArtifact(-1)}
+                    size="icon-sm"
+                    variant="outline"
+                  >
+                    <ChevronLeftIcon />
+                  </Button>
+                  <Button
+                    aria-label="Next screenshot"
+                    className="absolute end-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
+                    disabled={!canSelectNext}
+                    onClick={() => selectAdjacentArtifact(1)}
+                    size="icon-sm"
+                    variant="outline"
+                  >
+                    <ChevronRightIcon />
+                  </Button>
+                </>
+              ) : null}
+            </div>
+            {artifacts.length > 1 ? (
+              <div
+                aria-live="polite"
+                className="flex min-w-0 items-center justify-center gap-1.5 text-center text-muted-foreground text-xs"
+              >
+                <span className="min-w-0 truncate">{selectedArtifact?.name}</span>
+                <span className="shrink-0">
+                  · {selectedArtifactIndex + 1} of {artifacts.length}
+                </span>
+              </div>
+            ) : null}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
