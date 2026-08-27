@@ -33,6 +33,18 @@ const runGit = (cwd: string, args: ReadonlyArray<string>) =>
     });
   });
 
+const readGit = (cwd: string, args: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const result = yield* driver.execute({
+      operation: "GitVcsDriver.test.readGit",
+      cwd,
+      args,
+      timeoutMs: 10_000,
+    });
+    return result.stdout.trim();
+  });
+
 type GitContractError = GitCommandError | PlatformError.PlatformError;
 
 runVcsDriverContractSuite<GitVcsDriver.GitVcsDriver, GitContractError>({
@@ -172,9 +184,7 @@ it.effect("GitVcsDriver rejects an existing directory that is not a worktree", (
     yield* fileSystem.makeDirectory(notAWorktree);
     yield* runGit(repo, ["init", "--initial-branch=main"]);
 
-    const error = yield* driver
-      .removeWorktree({ cwd: repo, path: notAWorktree })
-      .pipe(Effect.flip);
+    const error = yield* driver.removeWorktree({ cwd: repo, path: notAWorktree }).pipe(Effect.flip);
     assert.strictEqual(error.detail, "git worktree remove failed");
     assert.notProperty(error, "cause");
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
@@ -266,5 +276,319 @@ it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", ()
     assert.strictEqual(status.branch, "feature/new-name");
     assert.strictEqual(yield* fileSystem.exists(oldWorktreePath), false);
     assert.strictEqual(yield* fileSystem.exists(newWorktreePath), true);
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver resolves the automatic review base from local remote refs", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-review-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "base\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    const baseCommit = yield* driver.execute({
+      operation: "GitVcsDriver.test.baseCommit",
+      cwd: repo,
+      args: ["rev-parse", "HEAD"],
+    });
+    yield* runGit(repo, ["remote", "add", "origin", repo]);
+    yield* runGit(repo, ["update-ref", "refs/remotes/origin/main", baseCommit.stdout.trim()]);
+    yield* runGit(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+    yield* runGit(repo, ["switch", "-c", "feature/review"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "base\nfeature\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Feature"]);
+
+    const preview = yield* driver.getReviewDiffPreview({
+      cwd: repo,
+      sourceKind: "branch-range",
+    });
+
+    assert.lengthOf(preview.sources, 1);
+    assert.strictEqual(preview.sources[0]?.kind, "branch-range");
+    assert.strictEqual(preview.sources[0]?.baseRef, "origin/main");
+    assert.include(preview.sources[0]?.diff ?? "", "+feature");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver preserves empty review sources and includes untracked files", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-preview-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "base\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, ["switch", "-c", "feature/preview"]);
+
+    const cleanBranch = yield* driver.getReviewDiffPreview({
+      cwd: repo,
+      sourceKind: "branch-range",
+    });
+    assert.lengthOf(cleanBranch.sources, 1);
+    assert.deepInclude(cleanBranch.sources[0], {
+      kind: "branch-range",
+      baseRef: "main",
+      headRef: "feature/preview",
+      diff: "",
+    });
+
+    yield* fileSystem.writeFileString(path.join(repo, "untracked.txt"), "untracked\n");
+    const workingTree = yield* driver.getReviewDiffPreview({
+      cwd: repo,
+      sourceKind: "working-tree",
+    });
+    assert.lengthOf(workingTree.sources, 1);
+    assert.strictEqual(workingTree.sources[0]?.kind, "working-tree");
+    assert.include(workingTree.sources[0]?.diff ?? "", "untracked.txt");
+    assert.include(workingTree.sources[0]?.diff ?? "", "+untracked");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver bypasses textconv filters in review previews", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-textconv-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* runGit(repo, ["config", "diff.review.textconv", "false"]);
+    yield* fileSystem.writeFileString(path.join(repo, ".gitattributes"), "*.txt diff=review\n");
+    yield* fileSystem.writeFileString(path.join(repo, "tracked.txt"), "base\n");
+    yield* runGit(repo, ["add", ".gitattributes", "tracked.txt"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* fileSystem.writeFileString(path.join(repo, "tracked.txt"), "changed\n");
+
+    const preview = yield* driver.getReviewDiffPreview({
+      cwd: repo,
+      sourceKind: "working-tree",
+    });
+
+    assert.include(preview.sources[0]?.diff ?? "", "+changed");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver expands branch files from the merge base", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-merge-base-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "common base\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, ["switch", "-c", "feature/context"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "feature contents\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Feature"]);
+    yield* runGit(repo, ["switch", "main"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "advanced main\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Advance main"]);
+    yield* runGit(repo, ["switch", "feature/context"]);
+
+    const contents = yield* driver.getReviewDiffFileContents({
+      cwd: repo,
+      sourceKind: "branch-range",
+      changeType: "change",
+      baseRef: "main",
+      headRef: "feature/context",
+      oldPath: "README.md",
+      newPath: "README.md",
+    });
+
+    assert.deepStrictEqual(contents, {
+      oldContents: "common base\n",
+      newContents: "feature contents\n",
+    });
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver contains working-tree expansion and rejects binary files", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-safe-diff-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const outsideFile = path.join(fixtureRoot, "secret.txt");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "base\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* fileSystem.writeFileString(outsideFile, "secret\n");
+    yield* fileSystem.symlink(outsideFile, path.join(repo, "linked.txt"));
+
+    const escaped = yield* driver
+      .getReviewDiffFileContents({
+        cwd: repo,
+        sourceKind: "working-tree",
+        changeType: "new",
+        baseRef: "HEAD",
+        headRef: null,
+        oldPath: "linked.txt",
+        newPath: "linked.txt",
+      })
+      .pipe(Effect.flip);
+    assert.strictEqual(escaped._tag, "GitCommandError");
+    assert.include(escaped.message, "escapes the workspace");
+
+    const missing = yield* driver
+      .getReviewDiffFileContents({
+        cwd: repo,
+        sourceKind: "working-tree",
+        changeType: "new",
+        baseRef: "HEAD",
+        headRef: null,
+        oldPath: "missing.txt",
+        newPath: "missing.txt",
+      })
+      .pipe(Effect.flip);
+    assert.strictEqual(missing._tag, "GitCommandError");
+    assert.include(missing.message, "Could not resolve diff file 'missing.txt'");
+
+    yield* fileSystem.writeFile(path.join(repo, "binary.dat"), Uint8Array.from([0, 1, 2]));
+    const binary = yield* driver
+      .getReviewDiffFileContents({
+        cwd: repo,
+        sourceKind: "working-tree",
+        changeType: "new",
+        baseRef: "HEAD",
+        headRef: null,
+        oldPath: "binary.dat",
+        newPath: "binary.dat",
+      })
+      .pipe(Effect.flip);
+    assert.strictEqual(binary._tag, "GitCommandError");
+    assert.include(binary.message, "Cannot expand binary file 'binary.dat'");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver lists local and remote refs with upstream metadata", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-refs-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "base\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, ["remote", "add", "origin", repo]);
+    yield* runGit(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    yield* runGit(repo, ["update-ref", "refs/remotes/origin/release", "HEAD"]);
+    yield* runGit(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"]);
+    yield* runGit(repo, ["switch", "-c", "feature/refs"]);
+
+    const local = yield* driver.listRefs({
+      cwd: repo,
+      refKind: "local",
+      includeMatchingRemoteRefs: true,
+    });
+    assert.strictEqual(
+      local.refs.every((ref) => ref.isRemote !== true),
+      true,
+    );
+    assert.strictEqual(local.refs.find((ref) => ref.name === "feature/refs")?.current, true);
+
+    const remote = yield* driver.listRefs({
+      cwd: repo,
+      refKind: "remote",
+      includeMatchingRemoteRefs: true,
+    });
+    assert.strictEqual(remote.hasPrimaryRemote, true);
+    assert.deepInclude(
+      remote.refs.find((ref) => ref.name === "origin/main"),
+      {
+        name: "origin/main",
+        isRemote: true,
+        remoteName: "origin",
+        isDefault: true,
+      },
+    );
+    assert.strictEqual(
+      remote.refs.some((ref) => ref.name === "origin/release"),
+      true,
+    );
+
+    const deduplicated = yield* driver.listRefs({ cwd: repo });
+    assert.strictEqual(
+      deduplicated.refs.some((ref) => ref.name === "origin/main"),
+      false,
+    );
+    assert.strictEqual(
+      deduplicated.refs.some((ref) => ref.name === "origin/release"),
+      true,
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver checks out the requested commit and records the worktree base", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-git-worktree-base-",
+    });
+    const repo = path.join(fixtureRoot, "repo");
+    const worktreePath = path.join(fixtureRoot, "worktree");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "base\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    const requestedCommit = yield* readGit(repo, ["rev-parse", "HEAD"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "advanced\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Advance"]);
+    yield* runGit(repo, ["remote", "add", "origin", repo]);
+    yield* runGit(repo, ["update-ref", "refs/remotes/origin/main", "HEAD"]);
+
+    yield* driver.createWorktree({
+      cwd: repo,
+      path: worktreePath,
+      refName: requestedCommit,
+      newRefName: "feature/from-base",
+      baseRefName: "origin/main",
+    });
+
+    assert.strictEqual(yield* readGit(worktreePath, ["rev-parse", "HEAD"]), requestedCommit);
+    assert.strictEqual(
+      yield* readGit(worktreePath, ["config", "--get", "branch.feature/from-base.gh-merge-base"]),
+      "main",
+    );
+    yield* driver.removeWorktree({ cwd: repo, path: worktreePath, force: true });
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
