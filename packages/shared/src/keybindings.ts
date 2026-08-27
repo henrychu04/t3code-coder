@@ -29,6 +29,22 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
   { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+  { key: "mod+f", command: "fileViewer.find", when: "fileOpen && !terminalFocus" },
+  {
+    key: "mod+shift+f",
+    command: "projectSearch.toggle",
+    when: "projectOpen && !terminalFocus",
+  },
+  {
+    key: "shift shift",
+    command: "fileViewer.searchFiles",
+    when: "projectOpen && !terminalFocus",
+  },
+  {
+    key: "mod+g",
+    command: "fileViewer.goToLine",
+    when: "fileOpen && !terminalFocus",
+  },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
@@ -55,6 +71,16 @@ function normalizeKeyToken(token: string): string {
 }
 
 export function parseKeybindingShortcut(value: string): KeybindingShortcut | null {
+  if (value.trim().toLowerCase().replace(/\s+/g, " ") === "shift shift") {
+    return {
+      key: "double-shift",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    };
+  }
   const rawTokens = value
     .toLowerCase()
     .split("+")

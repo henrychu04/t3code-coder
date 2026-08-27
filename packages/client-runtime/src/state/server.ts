@@ -296,5 +296,21 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
+    upsertKeybinding: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:upsert-keybinding",
+      tag: WS_METHODS.serverUpsertKeybinding,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
+    removeKeybinding: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:remove-keybinding",
+      tag: WS_METHODS.serverRemoveKeybinding,
+      concurrency: {
+        mode: "serial",
+        key: ({ environmentId }) => environmentId,
+      },
+    }),
   };
 }

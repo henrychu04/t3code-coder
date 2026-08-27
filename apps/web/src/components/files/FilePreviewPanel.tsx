@@ -5,13 +5,52 @@ import {
   VirtualizedFile,
 } from "@pierre/diffs";
 import { EditContext, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
-import type { EnvironmentId, ProjectWriteFileResult, ScopedThreadRef } from "@t3tools/contracts";
-import { Check, ChevronRight, Code2, Copy, Eye, FolderTree, LoaderCircle } from "lucide-react";
+import { useAtomValue } from "@effect/atom-react";
+import type {
+  EnvironmentId,
+  ProjectEntry,
+  ProjectTextSearchMatch,
+  ProjectWriteFileResult,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
+import { matchesFileMask } from "@t3tools/shared/fileMask";
+import {
+  ArrowDown,
+  ArrowUp,
+  CaseSensitive,
+  Check,
+  ChevronRight,
+  Code2,
+  Copy,
+  Eye,
+  FileIcon,
+  Filter,
+  FolderTree,
+  LoaderCircle,
+  Search,
+  WholeWord,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
 import { Button } from "~/components/ui/button";
+import { CommandDialog, CommandDialogPopup } from "~/components/ui/command";
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogPopup,
+  DialogTitle,
+} from "~/components/ui/dialog";
+import { Input } from "~/components/ui/input";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "~/components/ui/input-group";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Toggle } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
@@ -19,10 +58,14 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
+import { resolveShortcutCommand } from "~/keybindings";
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
+import { isTerminalFocused } from "~/lib/terminalFocus";
 import { cn } from "~/lib/utils";
 import { buildFileReviewComment } from "~/reviewCommentContext";
 import { projectEnvironment } from "~/state/projects";
+import { useProjectTextSearch } from "~/state/queries";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import FileBrowserPanel from "./FileBrowserPanel";
@@ -57,6 +100,7 @@ import {
   discardProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
+  useProjectEntriesQuery,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
 
@@ -69,7 +113,12 @@ interface FilePreviewPanelProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   revealLine: number | null;
   revealRequestId: number;
-  onOpenFile: (relativePath: string) => void;
+  commandRequest: {
+    readonly id: number;
+    readonly command: "projectSearch.toggle" | "fileViewer.searchFiles";
+  } | null;
+  onCommandRequestHandled: (id: number) => void;
+  onOpenFile: (relativePath: string, line?: number) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
 }
 
@@ -90,6 +139,240 @@ const FILE_LINK_REVEAL_UNSAFE_CSS = `
   }
 `;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
+
+function parseLineColumn(value: string): { line: number; column: number } | null {
+  const match = /^\s*(\d+)(?:\s*:\s*(\d+))?\s*$/.exec(value);
+  if (!match?.[1]) return null;
+  return {
+    line: Math.max(1, Number.parseInt(match[1], 10)),
+    column: Math.max(1, Number.parseInt(match[2] ?? "1", 10)),
+  };
+}
+
+function GoToLineDialog(props: {
+  open: boolean;
+  initialValue: string;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: (line: number, column: number) => void;
+}) {
+  const [value, setValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const parsed = parseLineColumn(value);
+  useEffect(() => {
+    if (!props.open) return;
+    setValue(props.initialValue);
+    requestAnimationFrame(() => inputRef.current?.select());
+  }, [props.initialValue, props.open]);
+  return (
+    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+      <DialogPopup className="max-w-md" showCloseButton={false}>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!parsed) return;
+            props.onSubmit(parsed.line, parsed.column);
+            props.onOpenChange(false);
+            setValue("");
+          }}
+        >
+          <DialogHeader className="pb-5">
+            <DialogTitle className="text-lg">Go to Line:Column</DialogTitle>
+          </DialogHeader>
+          <div className="flex items-center gap-3 px-6 pb-5">
+            <label htmlFor="file-go-to-line" className="shrink-0 text-sm text-muted-foreground">
+              [Line] [:Column]:
+            </label>
+            <Input
+              id="file-go-to-line"
+              ref={inputRef}
+              autoFocus
+              nativeInput
+              aria-label="Line and column"
+              placeholder="12:4"
+              value={value}
+              onChange={(event) => setValue(event.currentTarget.value)}
+            />
+          </div>
+          <DialogFooter className="py-3">
+            <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!parsed}>
+              OK
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogPopup>
+    </Dialog>
+  );
+}
+
+interface FileTextMatch {
+  readonly start: { line: number; character: number };
+  readonly end: { line: number; character: number };
+}
+
+function isWordCharacter(character: string | undefined): boolean {
+  return character !== undefined && /[\p{L}\p{N}_]/u.test(character);
+}
+
+function findTextMatches(
+  contents: string,
+  query: string,
+  caseSensitive: boolean,
+  wholeWord: boolean,
+): FileTextMatch[] {
+  if (!query) return [];
+  const haystack = caseSensitive ? contents : contents.toLocaleLowerCase();
+  const needle = caseSensitive ? query : query.toLocaleLowerCase();
+  const lineStarts = [0];
+  for (let index = 0; index < contents.length; index += 1) {
+    if (contents[index] === "\n") lineStarts.push(index + 1);
+  }
+  const positionAt = (offset: number) => {
+    let low = 0;
+    let high = lineStarts.length;
+    while (low + 1 < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (lineStarts[middle]! <= offset) low = middle;
+      else high = middle;
+    }
+    return { line: low, character: offset - lineStarts[low]! };
+  };
+  const matches: FileTextMatch[] = [];
+  let from = 0;
+  while (from <= haystack.length - needle.length && matches.length < 10_000) {
+    const offset = haystack.indexOf(needle, from);
+    if (offset < 0) break;
+    const endOffset = offset + needle.length;
+    if (
+      !wholeWord ||
+      (!isWordCharacter(contents[offset - 1]) && !isWordCharacter(contents[endOffset]))
+    ) {
+      matches.push({ start: positionAt(offset), end: positionAt(endOffset) });
+    }
+    from = offset + Math.max(1, needle.length);
+  }
+  return matches;
+}
+
+function FileFindBar(props: {
+  open: boolean;
+  requestId: number;
+  contents: string;
+  onClose: () => void;
+  onMatchChange: (match: FileTextMatch | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const matches = useMemo(
+    () => findTextMatches(props.contents, query, caseSensitive, wholeWord),
+    [caseSensitive, props.contents, query, wholeWord],
+  );
+  const resolvedIndex = matches.length === 0 ? 0 : Math.min(selectedIndex, matches.length - 1);
+
+  useEffect(() => setSelectedIndex(0), [caseSensitive, query, wholeWord]);
+  useEffect(() => {
+    if (!props.open) return;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [props.open, props.requestId]);
+  useEffect(() => {
+    if (!props.open) return;
+    props.onMatchChange(matches[resolvedIndex] ?? null);
+  }, [matches, props.onMatchChange, props.open, resolvedIndex]);
+
+  if (!props.open) return null;
+
+  const navigate = (direction: -1 | 1) => {
+    if (matches.length === 0) return;
+    setSelectedIndex((current) => (current + direction + matches.length) % matches.length);
+  };
+
+  return (
+    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/25 px-2">
+      <InputGroup className="h-8 min-w-0 flex-1 max-w-xl bg-background">
+        <InputGroupAddon>
+          <Search className="size-3.5 text-icon-muted" />
+        </InputGroupAddon>
+        <InputGroupInput
+          ref={inputRef}
+          aria-label="Find in file"
+          placeholder="Find in file"
+          spellCheck={false}
+          value={query}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              props.onClose();
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              navigate(event.shiftKey ? -1 : 1);
+            }
+          }}
+        />
+        <InputGroupAddon align="inline-end" className="gap-0.5 pe-1">
+          <Toggle
+            pressed={caseSensitive}
+            onPressedChange={setCaseSensitive}
+            aria-label="Match case"
+            size="sm"
+            variant="ghost"
+          >
+            <CaseSensitive className="size-3.5" />
+          </Toggle>
+          <Toggle
+            pressed={wholeWord}
+            onPressedChange={setWholeWord}
+            aria-label="Match whole word"
+            size="sm"
+            variant="ghost"
+          >
+            <WholeWord className="size-3.5" />
+          </Toggle>
+        </InputGroupAddon>
+      </InputGroup>
+      <span className="w-16 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground">
+        {query
+          ? matches.length > 0
+            ? `${resolvedIndex + 1} of ${matches.length}`
+            : "0 results"
+          : ""}
+      </span>
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="ghost"
+        aria-label="Previous match"
+        onClick={() => navigate(-1)}
+      >
+        <ArrowUp />
+      </Button>
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="ghost"
+        aria-label="Next match"
+        onClick={() => navigate(1)}
+      >
+        <ArrowDown />
+      </Button>
+      <Button
+        type="button"
+        size="icon-xs"
+        variant="ghost"
+        aria-label="Close find"
+        onClick={props.onClose}
+      >
+        <X />
+      </Button>
+    </div>
+  );
+}
 
 function clampFileLine(contents: string, requestedLine: number): number {
   const count = contents.split(/\r\n|\r|\n/).length;
@@ -174,6 +457,405 @@ function useFileLineReveal(
   );
 }
 
+function fileName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
+}
+
+function rankFilePath(path: string, query: string): number | null {
+  const normalizedPath = path.toLocaleLowerCase();
+  const normalizedName = fileName(path).toLocaleLowerCase();
+  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.every((term) => normalizedPath.includes(term))) return null;
+  if (terms.length === 0) return 3;
+  const joined = terms.join("");
+  if (normalizedName === joined) return 0;
+  if (normalizedName.startsWith(joined)) return 1;
+  if (normalizedName.includes(joined)) return 2;
+  return 3;
+}
+
+function SearchFilePreview(props: {
+  environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef;
+  cwd: string;
+  relativePath: string | null;
+  line: number | null;
+  revealRequestId: number;
+}) {
+  const { resolvedTheme } = useTheme();
+  const file = useProjectFileQuery(
+    props.environmentId,
+    props.threadRef.threadId,
+    props.cwd,
+    props.relativePath,
+  );
+  const onPostRender = useFileLineReveal(props.relativePath, props.line, props.revealRequestId);
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-code-background">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-background px-3 text-xs">
+        <FileIcon className="size-3.5 text-icon-muted" />
+        <span className="min-w-0 flex-1 truncate font-medium">
+          {props.relativePath ?? "File preview"}
+        </span>
+        {props.line ? <span className="text-muted-foreground">Line {props.line}</span> : null}
+      </div>
+      {!props.relativePath ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
+          Select a result to preview it.
+        </div>
+      ) : file.data === null ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center">
+          {file.error ? (
+            <span className="px-4 text-center text-xs text-destructive">{file.error}</span>
+          ) : (
+            <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
+          )}
+        </div>
+      ) : (
+        <Virtualizer className="file-preview-virtualizer min-h-0 flex-1 overflow-auto">
+          <File
+            file={{
+              name: props.relativePath,
+              contents: file.data.contents,
+              cacheKey: projectFileCacheKey(props.cwd, props.relativePath, file.data.contents),
+            }}
+            options={{
+              disableFileHeader: true,
+              overflow: "scroll",
+              theme: resolveDiffThemeName(resolvedTheme),
+              themeType: resolvedTheme,
+              unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
+              onPostRender,
+            }}
+            className="min-h-full"
+          />
+        </Virtualizer>
+      )}
+    </div>
+  );
+}
+
+function SearchDialogHeader(props: {
+  title: string;
+  summary: string;
+  query: string;
+  fileMask: string;
+  queryPlaceholder: string;
+  queryTestId?: string;
+  onQueryChange: (value: string) => void;
+  onFileMaskChange: (value: string) => void;
+}) {
+  return (
+    <div className="shrink-0 border-b border-border/60 bg-background">
+      <div className="flex h-11 items-center gap-3 px-4">
+        <h2 className="font-heading font-semibold text-sm">{props.title}</h2>
+        <span className="text-xs text-muted-foreground">{props.summary}</span>
+        <InputGroup className="ms-auto h-7 w-52" variant="ghost">
+          <InputGroupAddon>
+            <InputGroupText>
+              <Filter className="size-3.5" />
+              <span className="text-[11px]">File mask:</span>
+            </InputGroupText>
+          </InputGroupAddon>
+          <InputGroupInput
+            aria-label="File mask"
+            placeholder="*.ts, src/**/*.tsx"
+            size="sm"
+            spellCheck={false}
+            value={props.fileMask}
+            onChange={(event) => props.onFileMaskChange(event.currentTarget.value)}
+          />
+        </InputGroup>
+      </div>
+      <div className="px-3 pb-3">
+        <InputGroup className="h-10 border-ring ring-[3px] ring-ring/20">
+          <InputGroupAddon>
+            <Search className="size-4 text-icon-muted" />
+          </InputGroupAddon>
+          <InputGroupInput
+            autoFocus
+            data-testid={props.queryTestId}
+            aria-label={props.title}
+            placeholder={props.queryPlaceholder}
+            spellCheck={false}
+            value={props.query}
+            onChange={(event) => props.onQueryChange(event.currentTarget.value)}
+          />
+        </InputGroup>
+      </div>
+    </div>
+  );
+}
+
+function SearchDialogFooter() {
+  return (
+    <div className="flex h-9 shrink-0 items-center justify-end gap-4 border-t border-border/60 bg-muted/30 px-4 text-[11px] text-muted-foreground">
+      <span>↑↓ Navigate</span>
+      <span>Enter Open</span>
+      <span>Esc Close</span>
+    </div>
+  );
+}
+
+function FileSearchDialog(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef;
+  cwd: string;
+  projectName: string;
+  onOpenFile: (relativePath: string) => void;
+}) {
+  const entries = useProjectEntriesQuery(props.environmentId, props.threadRef.threadId, props.cwd);
+  const [query, setQuery] = useState("");
+  const [fileMask, setFileMask] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const files = useMemo(
+    () =>
+      (entries.data?.entries ?? [])
+        .filter((entry): entry is ProjectEntry & { kind: "file" } => entry.kind === "file")
+        .flatMap((entry) => {
+          if (!matchesFileMask(entry.path, fileMask)) return [];
+          const rank = rankFilePath(entry.path, query);
+          return rank === null ? [] : [{ entry, rank }];
+        })
+        .sort(
+          (left, right) =>
+            left.rank - right.rank || left.entry.path.localeCompare(right.entry.path),
+        )
+        .slice(0, 200)
+        .map(({ entry }) => entry),
+    [entries.data?.entries, fileMask, query],
+  );
+  const selected = files[Math.min(selectedIndex, Math.max(0, files.length - 1))] ?? null;
+
+  useEffect(() => setSelectedIndex(0), [fileMask, query]);
+  useEffect(() => {
+    if (props.open) return;
+    setQuery("");
+    setFileMask("");
+    setSelectedIndex(0);
+  }, [props.open]);
+
+  const openSelected = () => {
+    if (!selected) return;
+    props.onOpenFile(selected.path);
+    props.onOpenChange(false);
+  };
+
+  return (
+    <CommandDialog open={props.open} onOpenChange={props.onOpenChange}>
+      {props.open ? (
+        <CommandDialogPopup
+          aria-label="Search files"
+          className="h-[min(46rem,82vh)] w-[min(64rem,calc(100vw-2rem))] max-h-[82vh] max-w-none overflow-hidden p-0"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSelectedIndex((current) => Math.min(files.length - 1, current + 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedIndex((current) => Math.max(0, current - 1));
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              openSelected();
+            }
+          }}
+        >
+          <div className="flex size-full min-h-0 flex-col" data-testid="file-search-dialog">
+            <SearchDialogHeader
+              title="Search Files"
+              summary={`${files.length}${files.length === 200 ? "+" : ""} files in ${props.projectName}`}
+              query={query}
+              fileMask={fileMask}
+              queryPlaceholder="Search by file name or path…"
+              onQueryChange={setQuery}
+              onFileMaskChange={setFileMask}
+            />
+            <div className="grid min-h-0 flex-1 grid-rows-[minmax(9rem,42%)_minmax(0,1fr)]">
+              <div className="min-h-0 overflow-auto border-b border-border/60 p-2">
+                {entries.isPending && entries.data === null ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    Loading project files…
+                  </div>
+                ) : files.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    No files match this search.
+                  </div>
+                ) : (
+                  files.map((entry, index) => (
+                    <button
+                      key={entry.path}
+                      type="button"
+                      className={cn(
+                        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+                        index === selectedIndex
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted/60",
+                      )}
+                      onMouseEnter={() => setSelectedIndex(index)}
+                      onClick={() => setSelectedIndex(index)}
+                      onDoubleClick={() => {
+                        props.onOpenFile(entry.path);
+                        props.onOpenChange(false);
+                      }}
+                    >
+                      <FileIcon className="size-3.5 shrink-0 opacity-75" />
+                      <span className="shrink-0 font-medium">{fileName(entry.path)}</span>
+                      <span className="min-w-0 flex-1 truncate opacity-65">{entry.path}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <SearchFilePreview
+                key={selected?.path ?? "empty"}
+                environmentId={props.environmentId}
+                threadRef={props.threadRef}
+                cwd={props.cwd}
+                relativePath={selected?.path ?? null}
+                line={null}
+                revealRequestId={selectedIndex + 1}
+              />
+            </div>
+            <SearchDialogFooter />
+          </div>
+        </CommandDialogPopup>
+      ) : null}
+    </CommandDialog>
+  );
+}
+
+function ProjectTextSearchDialog(props: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef;
+  cwd: string;
+  projectName: string;
+  onOpenFile: (relativePath: string, line?: number) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [fileMask, setFileMask] = useState("");
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const result = useProjectTextSearch({
+    environmentId: props.open ? props.environmentId : null,
+    threadId: props.open ? props.threadRef.threadId : null,
+    cwd: props.open ? props.cwd : null,
+    query,
+    fileMask,
+  });
+  const selected =
+    result.matches[Math.min(selectedIndex, Math.max(0, result.matches.length - 1))] ?? null;
+
+  useEffect(() => setSelectedIndex(0), [fileMask, query]);
+  useEffect(() => {
+    if (props.open) return;
+    setQuery("");
+    setFileMask("");
+    setSelectedIndex(0);
+  }, [props.open]);
+
+  const openSelected = () => {
+    if (!selected) return;
+    props.onOpenFile(selected.path, selected.line);
+    props.onOpenChange(false);
+  };
+
+  return (
+    <CommandDialog open={props.open} onOpenChange={props.onOpenChange}>
+      {props.open ? (
+        <CommandDialogPopup
+          aria-label="Find text in project"
+          className="h-[min(46rem,82vh)] w-[min(64rem,calc(100vw-2rem))] max-h-[82vh] max-w-none overflow-hidden p-0"
+          onKeyDown={(event) => {
+            if (event.key === "ArrowDown") {
+              event.preventDefault();
+              setSelectedIndex((current) => Math.min(result.matches.length - 1, current + 1));
+            } else if (event.key === "ArrowUp") {
+              event.preventDefault();
+              setSelectedIndex((current) => Math.max(0, current - 1));
+            } else if (event.key === "Enter") {
+              event.preventDefault();
+              openSelected();
+            }
+          }}
+        >
+          <div className="flex size-full min-h-0 flex-col" data-testid="project-text-search">
+            <SearchDialogHeader
+              title="Find in Files"
+              summary={
+                query.trim().length === 0
+                  ? `Search ${props.projectName}`
+                  : result.isPending
+                    ? "Searching…"
+                    : `${result.matches.length}${result.truncated ? "+" : ""} matches`
+              }
+              query={query}
+              fileMask={fileMask}
+              queryPlaceholder={`Find text in ${props.projectName}…`}
+              queryTestId="project-text-search-input"
+              onQueryChange={setQuery}
+              onFileMaskChange={setFileMask}
+            />
+            <div className="grid min-h-0 flex-1 grid-rows-[minmax(10rem,46%)_minmax(0,1fr)]">
+              <div className="min-h-0 overflow-auto border-b border-border/60 p-2">
+                {query.trim().length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    Type to search project text.
+                  </div>
+                ) : result.error ? (
+                  <div className="flex h-full items-center justify-center text-xs text-destructive">
+                    Project search failed.
+                  </div>
+                ) : !result.isPending && result.matches.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                    No matches found.
+                  </div>
+                ) : (
+                  result.matches.map((match: ProjectTextSearchMatch, index) => (
+                    <button
+                      key={`${match.path}:${match.line}:${match.column}:${index}`}
+                      type="button"
+                      className={cn(
+                        "flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs",
+                        index === selectedIndex
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted/60",
+                      )}
+                      onMouseEnter={() => setSelectedIndex(index)}
+                      onClick={() => setSelectedIndex(index)}
+                      onDoubleClick={() => {
+                        props.onOpenFile(match.path, match.line);
+                        props.onOpenChange(false);
+                      }}
+                    >
+                      <span className="min-w-0 flex-1 truncate font-mono">{match.preview}</span>
+                      <span className="max-w-[42%] shrink-0 truncate opacity-70">
+                        {match.path}:{match.line}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              <SearchFilePreview
+                key={selected ? `${selected.path}:${selected.line}` : "empty"}
+                environmentId={props.environmentId}
+                threadRef={props.threadRef}
+                cwd={props.cwd}
+                relativePath={selected?.path ?? null}
+                line={selected?.line ?? null}
+                revealRequestId={selectedIndex + 1}
+              />
+            </div>
+            <SearchDialogFooter />
+          </div>
+        </CommandDialogPopup>
+      ) : null}
+    </CommandDialog>
+  );
+}
+
 function captureFileViewAnchor(
   fileContainer: HTMLElement,
   instance: VirtualizedFile<unknown>,
@@ -241,9 +923,7 @@ function useRetainedFileViewAnchor(
             attemptRestore(attempt + 1);
             return;
           }
-          const scrollContainer = fileContainer.closest<HTMLElement>(
-            ".file-preview-virtualizer",
-          );
+          const scrollContainer = fileContainer.closest<HTMLElement>(".file-preview-virtualizer");
           const linePosition = instance.getLinePosition(anchor.lineNumber);
           if (!scrollContainer || !linePosition || !fileContainer.isConnected) {
             if (attempt < 30) attemptRestore(attempt + 1);
@@ -647,6 +1327,7 @@ function RenderedMarkdownSurface(props: {
 
 export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const file = useProjectFileQuery(
     props.environmentId,
@@ -657,7 +1338,18 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [renderMarkdown, setRenderMarkdown] = useState(false);
   const [saveFailedPath, setSaveFailedPath] = useState<string | null>(null);
+  const [projectSearchOpen, setProjectSearchOpen] = useState(false);
+  const [fileSearchOpen, setFileSearchOpen] = useState(false);
+  const [goToLineOpen, setGoToLineOpen] = useState(false);
+  const [goToLineInitialValue, setGoToLineInitialValue] = useState("1:1");
+  const [findOpen, setFindOpen] = useState(false);
+  const [findRequestId, setFindRequestId] = useState(0);
+  const [findRevealLine, setFindRevealLine] = useState<number | null>(null);
+  const [findRevealRequestId, setFindRevealRequestId] = useState(0);
+  const lastFindMatchKeyRef = useRef<string | null>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
+  const editorFindAvailable =
+    props.relativePath !== null && file.data !== null && !file.data.truncated;
   const isMarkdown = props.relativePath ? isMarkdownPreviewFile(props.relativePath) : false;
   const breadcrumbs = useMemo(
     () => (props.relativePath ? fileBreadcrumbs(props.projectName, props.relativePath) : []),
@@ -665,8 +1357,8 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   );
   const onPostRender = useFileLineReveal(
     props.relativePath,
-    props.revealLine,
-    props.revealRequestId,
+    findOpen ? findRevealLine : props.revealLine,
+    findOpen ? findRevealRequestId : props.revealRequestId,
   );
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "project-relative path" });
   const handlePendingChange = useCallback(
@@ -699,8 +1391,188 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
       ?.scrollIntoView({ block: "nearest", inline: "end" });
   }, [props.relativePath]);
 
+  const openFileSearch = useCallback(() => {
+    setFileSearchOpen(true);
+  }, []);
+
+  useEffect(() => {
+    const request = props.commandRequest;
+    if (!request) return;
+    if (request.command === "projectSearch.toggle") {
+      setProjectSearchOpen(true);
+    } else {
+      openFileSearch();
+    }
+    props.onCommandRequestHandled(request.id);
+  }, [openFileSearch, props.commandRequest, props.onCommandRequestHandled]);
+
+  const openEditorFind = useCallback(() => {
+    if (!props.relativePath || !file.data || file.data.truncated) return;
+    if (renderMarkdown) setRenderMarkdown(false);
+    setFindOpen(true);
+    setFindRequestId((current) => current + 1);
+  }, [file.data, props.relativePath, renderMarkdown]);
+
+  const openGoToLine = useCallback(() => {
+    let initialValue = "1:1";
+    if (props.relativePath && file.data && !file.data.truncated) {
+      const session = getFileEditorSession(
+        {
+          threadRef: props.threadRef,
+          cwd: props.cwd,
+          relativePath: props.relativePath,
+        },
+        file.data.contents,
+        file.data.revision,
+      );
+      const position = session.editor.getState().selections?.[0]?.end;
+      if (position) initialValue = `${position.line + 1}:${position.character + 1}`;
+    }
+    setGoToLineInitialValue(initialValue);
+    setGoToLineOpen(true);
+  }, [file.data, props.cwd, props.relativePath, props.threadRef]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (!event.isTrusted || event.defaultPrevented) return;
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-keybinding-capture], [role='dialog']")
+      ) {
+        return;
+      }
+      const context = {
+        terminalFocus: isTerminalFocused(),
+        fileViewerOpen: true,
+        fileOpen: props.relativePath !== null,
+      };
+      const command = resolveShortcutCommand(event, keybindings, { context });
+      if (command !== "fileViewer.find" && command !== "fileViewer.goToLine") {
+        return;
+      }
+      if (command === "fileViewer.find" && !editorFindAvailable) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (command === "fileViewer.find") openEditorFind();
+      else openGoToLine();
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [editorFindAvailable, keybindings, openEditorFind, openGoToLine, props.relativePath]);
+
+  useEffect(() => {
+    setFindOpen(false);
+    setFindRevealLine(null);
+    lastFindMatchKeyRef.current = null;
+  }, [props.relativePath]);
+
+  const revealFindMatch = useCallback(
+    (match: FileTextMatch | null) => {
+      if (!props.relativePath || !file.data || file.data.truncated) return;
+      const matchKey = match
+        ? `${match.start.line}:${match.start.character}:${match.end.line}:${match.end.character}`
+        : null;
+      if (lastFindMatchKeyRef.current === matchKey) return;
+      lastFindMatchKeyRef.current = matchKey;
+      const session = getFileEditorSession(
+        {
+          threadRef: props.threadRef,
+          cwd: props.cwd,
+          relativePath: props.relativePath,
+        },
+        file.data.contents,
+        file.data.revision,
+      );
+      if (!match) {
+        if (session.editor.getFile()) session.editor.setSelections([]);
+        setFindRevealLine(null);
+        return;
+      }
+      setFindRevealLine(match.start.line + 1);
+      setFindRevealRequestId((current) => current + 1);
+      const selectMatch = (attempt: number) => {
+        requestAnimationFrame(() => {
+          if (!session.editor.getFile()) {
+            if (attempt < 10) selectMatch(attempt + 1);
+            return;
+          }
+          session.editor.setSelections([{ ...match, direction: "none" }]);
+        });
+      };
+      selectMatch(0);
+    },
+    [file.data, props.cwd, props.relativePath, props.threadRef],
+  );
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false);
+    lastFindMatchKeyRef.current = null;
+    if (!props.relativePath || !file.data || file.data.truncated) return;
+    requestAnimationFrame(() => {
+      getFileEditorSession(
+        {
+          threadRef: props.threadRef,
+          cwd: props.cwd,
+          relativePath: props.relativePath!,
+        },
+        file.data!.contents,
+        file.data!.revision,
+      ).editor.focus();
+    });
+  }, [file.data, props.cwd, props.relativePath, props.threadRef]);
+
+  const goToLine = useCallback(
+    (line: number, column: number) => {
+      if (!props.relativePath || !file.data) return;
+      const resolvedLine = clampFileLine(file.data.contents, line);
+      props.onOpenFile(props.relativePath, resolvedLine);
+      if (file.data.truncated) return;
+      const lineText = file.data.contents.split(/\r\n|\r|\n/)[resolvedLine - 1] ?? "";
+      const resolvedColumn = Math.min(Math.max(1, column), lineText.length + 1);
+      requestAnimationFrame(() => {
+        const session = getFileEditorSession(
+          {
+            threadRef: props.threadRef,
+            cwd: props.cwd,
+            relativePath: props.relativePath!,
+          },
+          file.data!.contents,
+          file.data!.revision,
+        );
+        const position = { line: resolvedLine - 1, character: resolvedColumn - 1 };
+        session.editor.setSelections([{ start: position, end: position, direction: "none" }]);
+        session.editor.focus();
+      });
+    },
+    [file.data, props.cwd, props.onOpenFile, props.relativePath, props.threadRef],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      <ProjectTextSearchDialog
+        open={projectSearchOpen}
+        onOpenChange={setProjectSearchOpen}
+        environmentId={props.environmentId}
+        threadRef={props.threadRef}
+        cwd={props.cwd}
+        projectName={props.projectName}
+        onOpenFile={props.onOpenFile}
+      />
+      <FileSearchDialog
+        open={fileSearchOpen}
+        onOpenChange={setFileSearchOpen}
+        environmentId={props.environmentId}
+        threadRef={props.threadRef}
+        cwd={props.cwd}
+        projectName={props.projectName}
+        onOpenFile={props.onOpenFile}
+      />
+      <GoToLineDialog
+        open={goToLineOpen}
+        initialValue={goToLineInitialValue}
+        onOpenChange={setGoToLineOpen}
+        onSubmit={goToLine}
+      />
       {props.relativePath ? (
         <div className="flex h-10 min-h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
           <ScrollArea
@@ -794,6 +1666,15 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             <TooltipPopup>{explorerOpen ? "Hide explorer" : "Show explorer"}</TooltipPopup>
           </Tooltip>
         </div>
+      ) : null}
+      {props.relativePath && file.data && !file.data.truncated ? (
+        <FileFindBar
+          open={findOpen}
+          requestId={findRequestId}
+          contents={file.data.contents}
+          onClose={closeFind}
+          onMatchChange={revealFindMatch}
+        />
       ) : null}
       {props.relativePath && file.data?.truncated ? (
         <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-[11px] text-warning-foreground">

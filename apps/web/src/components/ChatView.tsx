@@ -138,7 +138,11 @@ import {
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { BranchToolbar } from "./BranchToolbar";
-import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import {
+  resolveDoubleShiftShortcutCommand,
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+} from "../keybindings";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -370,6 +374,12 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 }
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+type FileViewerGlobalCommand = "projectSearch.toggle" | "fileViewer.searchFiles";
+interface FileViewerCommandRequest {
+  readonly id: number;
+  readonly threadKey: string;
+  readonly command: FileViewerGlobalCommand;
+}
 const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
   "textarea",
@@ -1527,6 +1537,10 @@ function ChatViewContent(props: ChatViewProps) {
   const activeRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
+  const fileViewerCommandRequestIdRef = useRef(0);
+  const lastShiftAtRef = useRef<number | null>(null);
+  const [fileViewerCommandRequest, setFileViewerCommandRequest] =
+    useState<FileViewerCommandRequest | null>(null);
   const [pendingFileSurfaceIds, setPendingFileSurfaceIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -2363,10 +2377,40 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef || !filesAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
   }, [activeThreadRef, filesAvailable]);
+  const requestFileViewerCommand = useCallback(
+    (command: FileViewerGlobalCommand) => {
+      if (!activeThreadRef || !activeThreadKey || !filesAvailable) return;
+      const fileViewerActive =
+        activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file";
+      if (fileViewerActive) {
+        if (!rightPanelOpen) {
+          useRightPanelStore.getState().toggleVisibility(activeThreadRef);
+        }
+      } else {
+        useRightPanelStore.getState().open(activeThreadRef, "files");
+      }
+      fileViewerCommandRequestIdRef.current += 1;
+      setFileViewerCommandRequest({
+        id: fileViewerCommandRequestIdRef.current,
+        threadKey: activeThreadKey,
+        command,
+      });
+    },
+    [
+      activeRightPanelSurface?.kind,
+      activeThreadKey,
+      activeThreadRef,
+      filesAvailable,
+      rightPanelOpen,
+    ],
+  );
+  const handleFileViewerCommandRequest = useCallback((id: number) => {
+    setFileViewerCommandRequest((current) => (current?.id === id ? null : current));
+  }, []);
   const openFileSurface = useCallback(
-    (relativePath: string) => {
+    (relativePath: string, line?: number) => {
       if (!activeThreadRef) return;
-      useRightPanelStore.getState().openFile(activeThreadRef, relativePath);
+      useRightPanelStore.getState().openFile(activeThreadRef, relativePath, line);
     },
     [activeThreadRef],
   );
@@ -3803,6 +3847,12 @@ function ChatViewContent(props: ChatViewProps) {
       if (!activeThreadId || isCommandPaletteOpen()) {
         return;
       }
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest("[data-keybinding-capture], [role='dialog']")
+      ) {
+        return;
+      }
       const terminalFocusOwner = getTerminalFocusOwner();
       if (event.defaultPrevented && terminalFocusOwner === null) {
         return;
@@ -3811,7 +3861,37 @@ function ChatViewContent(props: ChatViewProps) {
         terminalFocus: terminalFocusOwner !== null,
         terminalOpen: Boolean(terminalUiState.terminalOpen),
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+        projectOpen: filesAvailable,
+        fileViewerOpen:
+          rightPanelOpen &&
+          (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file"),
+        fileOpen: rightPanelOpen && activeRightPanelSurface?.kind === "file",
       };
+
+      if (
+        event.key === "Shift" &&
+        !event.repeat &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
+        const now = performance.now();
+        if (lastShiftAtRef.current !== null && now - lastShiftAtRef.current < 500) {
+          lastShiftAtRef.current = null;
+          if (
+            resolveDoubleShiftShortcutCommand(keybindings, { context: shortcutContext }) ===
+            "fileViewer.searchFiles"
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            requestFileViewerCommand("fileViewer.searchFiles");
+          }
+        } else {
+          lastShiftAtRef.current = now;
+        }
+        return;
+      }
+      lastShiftAtRef.current = null;
 
       if (
         !shortcutContext.terminalFocus &&
@@ -3829,6 +3909,13 @@ function ChatViewContent(props: ChatViewProps) {
         context: shortcutContext,
       });
       if (!command) return;
+
+      if (command === "projectSearch.toggle" || command === "fileViewer.searchFiles") {
+        event.preventDefault();
+        event.stopPropagation();
+        requestFileViewerCommand(command);
+        return;
+      }
 
       if (command === "terminal.toggle") {
         event.preventDefault();
@@ -3931,11 +4018,14 @@ function ChatViewContent(props: ChatViewProps) {
     requestCloseTerminal,
     requestClosePanelTerminal,
     createNewTerminal,
+    filesAvailable,
     setTerminalOpen,
     splitTerminal,
     splitPanelTerminal,
     keybindings,
     onToggleDiff,
+    requestFileViewerCommand,
+    rightPanelOpen,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -5196,6 +5286,12 @@ function ChatViewContent(props: ChatViewProps) {
           revealRequestId={
             activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.revealRequestId : 0
           }
+          commandRequest={
+            fileViewerCommandRequest?.threadKey === activeThreadKey
+              ? fileViewerCommandRequest
+              : null
+          }
+          onCommandRequestHandled={handleFileViewerCommandRequest}
           onOpenFile={openFileSurface}
           onPendingChange={updateFilePending}
         />

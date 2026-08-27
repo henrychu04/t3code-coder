@@ -153,7 +153,10 @@ filesystem API. The browser supplies the active project root plus a project-rela
 workspace helper over the existing RPC stream. The helper first verifies that the root is the
 requesting thread's project checkout or managed worktree. Reads are capped at 1 MiB; binary files
 are rejected, larger text files are truncated and read-only, and both lexical traversal and symlinks
-resolving outside the project are rejected. Writes apply only to an existing, non-truncated text file, use the
+resolving outside the project are rejected. Explicit project-text searches reuse those validated
+reads, support an optional bounded project-relative glob mask, scan at most 2,000 files or 32 MiB,
+and return at most 200 bounded line snippets. Writes apply
+only to an existing, non-truncated text file, use the
 revision returned by the read to reject stale edits, and replace the file atomically. The UI exposes
 no upload, download, export, drag-and-drop, absolute path, or local file access. An explicit Copy
 path action may copy only the project-relative path to the browser clipboard. Open tabs, explorer

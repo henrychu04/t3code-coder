@@ -59,8 +59,17 @@ export {
 };
 
 const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
   { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
+  {
+    key: "mod+shift+f",
+    command: "projectSearch.toggle",
+    when: "fileViewerOpen && !terminalFocus",
+  },
+  {
+    key: "shift shift",
+    command: "fileViewer.searchFiles",
+    when: "fileViewerOpen && !terminalFocus",
+  },
 ];
 
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
@@ -106,19 +115,25 @@ export const ResolvedKeybindingsFromConfig = Schema.Array(ResolvedKeybindingFrom
 );
 
 function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): boolean {
+  const leftResolved = compileResolvedKeybindingRule(left);
+  const rightResolved = compileResolvedKeybindingRule(right);
+  if (!leftResolved || !rightResolved || leftResolved.command !== rightResolved.command) {
+    return false;
+  }
   return (
-    left.command === right.command &&
-    left.key === right.key &&
-    (left.when ?? undefined) === (right.when ?? undefined)
+    encodeShortcut(leftResolved.shortcut) === encodeShortcut(rightResolved.shortcut) &&
+    (leftResolved.whenAst ? encodeWhenAst(leftResolved.whenAst) : undefined) ===
+      (rightResolved.whenAst ? encodeWhenAst(rightResolved.whenAst) : undefined)
   );
 }
 
 function keybindingShortcutContext(rule: KeybindingRule): string | null {
-  const parsed = parseKeybindingShortcut(rule.key);
-  if (!parsed) return null;
-  const encoded = encodeShortcut(parsed);
+  const resolved = compileResolvedKeybindingRule(rule);
+  if (!resolved) return null;
+  const encoded = encodeShortcut(resolved.shortcut);
   if (!encoded) return null;
-  return `${encoded}\u0000${rule.when ?? ""}`;
+  const when = resolved.whenAst ? encodeWhenAst(resolved.whenAst) : "";
+  return `${encoded}\u0000${when}`;
 }
 
 function hasSameShortcutContext(left: KeybindingRule, right: KeybindingRule): boolean {
@@ -148,6 +163,7 @@ function keybindingRuleFromRemoveInput(input: ServerRemoveKeybindingInput): Keyb
 }
 
 function encodeShortcut(shortcut: KeybindingShortcut): string | null {
+  if (shortcut.key === "double-shift") return "shift shift";
   const modifiers: string[] = [];
   if (shortcut.modKey) modifiers.push("mod");
   if (shortcut.metaKey) modifiers.push("meta");

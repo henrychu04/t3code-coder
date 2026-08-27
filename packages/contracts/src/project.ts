@@ -8,6 +8,7 @@ import {
 } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
+const PROJECT_TEXT_SEARCH_MAX_LIMIT = 200;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_FILE_CONTENT_MAX_LENGTH = 1024 * 1024;
@@ -37,6 +38,29 @@ export const ProjectSearchEntriesResult = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
+
+export const ProjectTextSearchInput = Schema.Struct({
+  threadId: ThreadId,
+  cwd: TrimmedNonEmptyString,
+  query: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  fileMask: Schema.optional(TrimmedString.check(Schema.isMaxLength(256))),
+  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_TEXT_SEARCH_MAX_LIMIT)),
+});
+export type ProjectTextSearchInput = typeof ProjectTextSearchInput.Type;
+
+export const ProjectTextSearchMatch = Schema.Struct({
+  path: TrimmedNonEmptyString,
+  line: PositiveInt,
+  column: PositiveInt,
+  preview: TrimmedString.check(Schema.isMaxLength(512)),
+});
+export type ProjectTextSearchMatch = typeof ProjectTextSearchMatch.Type;
+
+export const ProjectTextSearchResult = Schema.Struct({
+  matches: Schema.Array(ProjectTextSearchMatch),
+  truncated: Schema.Boolean,
+});
+export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
 
 export const ProjectListEntriesInput = Schema.Struct({
   threadId: ThreadId,
@@ -131,6 +155,33 @@ export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSe
       message:
         decodedProjectErrorMessage(props) ??
         `Failed to search workspace entries in '${props.cwd}'.`,
+    } as any);
+  }
+}
+
+export class ProjectTextSearchError extends Schema.TaggedErrorClass<ProjectTextSearchError>()(
+  "ProjectTextSearchError",
+  {
+    cwd: Schema.optional(TrimmedNonEmptyString),
+    queryLength: Schema.optional(NonNegativeInt),
+    limit: Schema.optional(PositiveInt),
+    failure: Schema.optional(ProjectEntriesFailure),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // Structured fields remain optional so older message-only errors can decode.
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: {
+    readonly cwd: string;
+    readonly queryLength: number;
+    readonly limit: number;
+    readonly failure: ProjectEntriesFailure;
+    readonly cause?: unknown;
+  }) {
+    super({
+      ...props,
+      message: `Failed to search text in '${props.cwd}'.`,
     } as any);
   }
 }

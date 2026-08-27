@@ -298,6 +298,45 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
 }
 
+export function useProjectTextSearch(target: {
+  readonly environmentId: EnvironmentId | null;
+  readonly threadId: ThreadId | null;
+  readonly cwd: string | null;
+  readonly query: string;
+  readonly fileMask?: string;
+}) {
+  const normalizedQuery = target.query.trim();
+  const normalizedFileMask = target.fileMask?.trim() ?? "";
+  const debouncedQuery = useDebouncedValue(normalizedQuery, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
+  const debouncedFileMask = useDebouncedValue(normalizedFileMask, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
+  const result = useEnvironmentQuery(
+    target.environmentId !== null &&
+      target.threadId !== null &&
+      target.cwd !== null &&
+      debouncedQuery.length > 0
+      ? projectEnvironment.searchText({
+          environmentId: target.environmentId,
+          input: {
+            threadId: target.threadId,
+            cwd: target.cwd,
+            query: debouncedQuery,
+            ...(debouncedFileMask ? { fileMask: debouncedFileMask } : {}),
+            limit: 200,
+          },
+        })
+      : null,
+  );
+  const isCurrentQuery =
+    normalizedQuery === debouncedQuery && normalizedFileMask === debouncedFileMask;
+
+  return {
+    matches: isCurrentQuery ? (result.data?.matches ?? []) : [],
+    truncated: isCurrentQuery ? (result.data?.truncated ?? false) : false,
+    error: isCurrentQuery ? result.error : null,
+    isPending: !isCurrentQuery || result.isPending,
+  };
+}
+
 export function useCheckpointDiff(
   target: CheckpointDiffTarget,
   options?: { readonly enabled?: boolean },

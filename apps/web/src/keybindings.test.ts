@@ -21,6 +21,7 @@ import {
   isTerminalSplitVerticalShortcut,
   isTerminalToggleShortcut,
   resolveShortcutCommand,
+  resolveDoubleShiftShortcutCommand,
   shouldShowModelPickerJumpHints,
   shouldShowThreadJumpHints,
   shortcutLabelForCommand,
@@ -126,7 +127,7 @@ const DEFAULT_BINDINGS = compile([
   {
     shortcut: modShortcut("f", { shiftKey: true }),
     command: "projectSearch.toggle",
-    whenAst: whenNot(whenIdentifier("terminalFocus")),
+    whenAst: whenAnd(whenIdentifier("projectOpen"), whenNot(whenIdentifier("terminalFocus"))),
   },
   {
     shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
@@ -346,7 +347,10 @@ describe("shortcutLabelForCommand", () => {
       "⌘P",
     );
     assert.strictEqual(
-      shortcutLabelForCommand(DEFAULT_BINDINGS, "projectSearch.toggle", "MacIntel"),
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "projectSearch.toggle", {
+        platform: "MacIntel",
+        context: { projectOpen: true, terminalFocus: false },
+      }),
       "⇧⌘F",
     );
     assert.strictEqual(
@@ -568,18 +572,25 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("matches projectSearch.toggle shortcut outside terminal focus", () => {
+  it("matches projectSearch.toggle while a project is open and outside terminal focus", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "f", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
-        context: { terminalFocus: false },
+        context: { projectOpen: true, terminalFocus: false },
       }),
       "projectSearch.toggle",
     );
     assert.notStrictEqual(
       resolveShortcutCommand(event({ key: "f", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
-        context: { terminalFocus: true },
+        context: { projectOpen: true, terminalFocus: true },
+      }),
+      "projectSearch.toggle",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(event({ key: "f", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { projectOpen: false, terminalFocus: false },
       }),
       "projectSearch.toggle",
     );
@@ -792,6 +803,58 @@ describe("formatShortcutLabel", () => {
   it("formats labels for plus key", () => {
     assert.strictEqual(formatShortcutLabel(modShortcut("+"), "MacIntel"), "⌘+");
     assert.strictEqual(formatShortcutLabel(modShortcut("+"), "Linux"), "Ctrl++");
+  });
+
+  it("formats the double-Shift gesture", () => {
+    assert.strictEqual(
+      formatShortcutLabel(
+        {
+          key: "double-shift",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          modKey: false,
+        },
+        "Linux",
+      ),
+      "Shift Shift",
+    );
+  });
+});
+
+describe("double-Shift shortcuts", () => {
+  it("resolves only when its context is active", () => {
+    const bindings = compile([
+      {
+        shortcut: {
+          key: "double-shift",
+          metaKey: false,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          modKey: false,
+        },
+        command: "fileViewer.searchFiles",
+        whenAst: whenAnd(whenIdentifier("projectOpen"), whenNot(whenIdentifier("terminalFocus"))),
+      },
+    ]);
+    assert.strictEqual(
+      resolveDoubleShiftShortcutCommand(bindings, {
+        context: { projectOpen: true, terminalFocus: false },
+      }),
+      "fileViewer.searchFiles",
+    );
+    assert.isNull(
+      resolveDoubleShiftShortcutCommand(bindings, {
+        context: { projectOpen: false, terminalFocus: false },
+      }),
+    );
+    assert.isNull(
+      resolveDoubleShiftShortcutCommand(bindings, {
+        context: { projectOpen: true, terminalFocus: true },
+      }),
+    );
   });
 });
 

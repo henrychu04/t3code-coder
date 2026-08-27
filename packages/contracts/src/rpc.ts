@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
+import { KeybindingsConfigError } from "./keybindings.ts";
 
 import {
   GitCommandError,
@@ -47,6 +48,9 @@ import {
   ProjectSearchEntriesError,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
+  ProjectTextSearchError,
+  ProjectTextSearchInput,
+  ProjectTextSearchResult,
   ProjectWriteFileError,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
@@ -68,6 +72,10 @@ import {
   ServerConfig,
   ServerConfigStreamEvent,
   ServerLifecycleStreamEvent,
+  ServerRemoveKeybindingInput,
+  ServerRemoveKeybindingResult,
+  ServerUpsertKeybindingInput,
+  ServerUpsertKeybindingResult,
   ServerProviderSlashCommands,
   ServerProviderSlashCommandsInput,
 } from "./server.ts";
@@ -95,6 +103,7 @@ import {
 
 export const WS_METHODS = {
   projectsSearchEntries: "projects.searchEntries",
+  projectsSearchText: "projects.searchText",
   projectsListEntries: "projects.listEntries",
   projectsReadFile: "projects.readFile",
   projectsWriteFile: "projects.writeFile",
@@ -123,6 +132,8 @@ export const WS_METHODS = {
   serverGetConfig: "server.getConfig",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverUpsertKeybinding: "server.upsertKeybinding",
+  serverRemoveKeybinding: "server.removeKeybinding",
   subscribeVcsStatus: "subscribeVcsStatus",
   subscribeVcsRefStatus: "subscribeVcsRefStatus",
   subscribeTerminalEvents: "subscribeTerminalEvents",
@@ -154,10 +165,28 @@ const WsServerUpdateSettingsRpc = Rpc.make(WS_METHODS.serverUpdateSettings, {
   error: ServerSettingsError,
 });
 
+const WsServerUpsertKeybindingRpc = Rpc.make(WS_METHODS.serverUpsertKeybinding, {
+  payload: ServerUpsertKeybindingInput,
+  success: ServerUpsertKeybindingResult,
+  error: KeybindingsConfigError,
+});
+
+const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, {
+  payload: ServerRemoveKeybindingInput,
+  success: ServerRemoveKeybindingResult,
+  error: KeybindingsConfigError,
+});
+
 const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
   payload: ProjectSearchEntriesInput,
   success: ProjectSearchEntriesResult,
   error: ProjectSearchEntriesError,
+});
+
+const WsProjectsSearchTextRpc = Rpc.make(WS_METHODS.projectsSearchText, {
+  payload: ProjectTextSearchInput,
+  success: ProjectTextSearchResult,
+  error: ProjectTextSearchError,
 });
 
 const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
@@ -401,7 +430,10 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerGetConfigRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
+  WsServerUpsertKeybindingRpc,
+  WsServerRemoveKeybindingRpc,
   WsProjectsSearchEntriesRpc,
+  WsProjectsSearchTextRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
   WsProjectsWriteFileRpc,

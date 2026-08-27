@@ -41,6 +41,65 @@ const writeTextFile = Effect.fn("writeTextFile")(function* (
 });
 
 it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
+  describe("searchText", () => {
+    it.effect("returns bounded line and column matches without following outside symlinks", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTempDir;
+        const outside = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/one.ts", "alpha\nNeedle here\nneedle again\n");
+        yield* writeTextFile(cwd, "src/two.ts", "no match\n");
+        yield* writeTextFile(outside, "secret.txt", "needle outside\n");
+        yield* fileSystem.symlink(path.join(outside, "secret.txt"), path.join(cwd, "outside.txt"));
+
+        const result = yield* files.searchText({ cwd, query: "needle", limit: 20 });
+
+        expect(result.matches).toEqual([
+          { path: "src/one.ts", line: 2, column: 1, preview: "Needle here" },
+          { path: "src/one.ts", line: 3, column: 1, preview: "needle again" },
+        ]);
+        expect(result.truncated).toBe(false);
+      }),
+    );
+
+    it.effect("marks a capped result set as truncated", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "many.txt", "match match\n");
+
+        const result = yield* files.searchText({ cwd, query: "match", limit: 1 });
+
+        expect(result.matches).toHaveLength(1);
+        expect(result.truncated).toBe(true);
+      }),
+    );
+
+    it.effect("filters candidates with a file mask before scanning", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "src/one.ts", "needle\n");
+        yield* writeTextFile(cwd, "src/two.test.ts", "needle\n");
+        yield* writeTextFile(cwd, "README.md", "needle\n");
+
+        const result = yield* files.searchText({
+          cwd,
+          query: "needle",
+          fileMask: "src/*.ts",
+          limit: 20,
+        });
+
+        expect(result.matches.map((match) => match.path)).toEqual([
+          "src/one.ts",
+          "src/two.test.ts",
+        ]);
+      }),
+    );
+  });
+
   describe("readFile", () => {
     it.effect("reads bounded UTF-8 files with a revision", () =>
       Effect.gen(function* () {
