@@ -26,6 +26,7 @@ describe("contextWindow", () => {
         usedTokens: 14_000,
         maxTokens: 258_000,
         compactsAutomatically: true,
+        autoCompactThreshold: 200_000,
       }),
     ]);
 
@@ -34,6 +35,7 @@ describe("contextWindow", () => {
     expect(snapshot?.totalProcessedTokens).toBeNull();
     expect(snapshot?.maxTokens).toBe(258_000);
     expect(snapshot?.compactsAutomatically).toBe(true);
+    expect(snapshot?.autoCompactThreshold).toBe(200_000);
   });
 
   it("ignores malformed payloads", () => {
@@ -42,6 +44,18 @@ describe("contextWindow", () => {
     ]);
 
     expect(snapshot).toBeNull();
+  });
+
+  it("ignores malformed automatic compaction thresholds", () => {
+    const snapshot = deriveLatestContextWindowSnapshot([
+      makeActivity("activity-1", "context-window.updated", {
+        usedTokens: 10_000,
+        maxTokens: 200_000,
+        autoCompactThreshold: -1,
+      }),
+    ]);
+
+    expect(snapshot?.autoCompactThreshold).toBeNull();
   });
 
   it("keeps valid zero-usage snapshots", () => {

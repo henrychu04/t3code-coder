@@ -451,6 +451,168 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("passes auto-compaction and the bounded attachment directory to Claude", () => {
+    const harness = makeHarness({
+      cwd: "/tmp/claude-project",
+      baseDir: "/tmp/t3-claude-state",
+      claudeConfig: { autoCompactWindow: "160000" },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        cwd: "/tmp/claude-project",
+        runtimeMode: "full-access",
+      });
+
+      const createInput = harness.getLastCreateQueryInput();
+      assert.deepEqual(createInput?.options.settings, { autoCompactWindow: 160_000 });
+      assert.deepEqual(createInput?.options.additionalDirectories, [
+        "/tmp/claude-project",
+        "/tmp/t3-claude-state/attachments",
+      ]);
+      assert.equal(
+        createInput?.options.additionalDirectories?.includes("/tmp/t3-claude-state"),
+        false,
+      );
+      assert.deepEqual(createInput?.options.supportedDialogKinds, ["resume_return"]);
+      assert.equal(typeof createInput?.options.onUserDialog, "function");
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("routes Claude resume compaction dialogs through user input", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const onUserDialog = harness.getLastCreateQueryInput()?.options.onUserDialog;
+      assert.equal(typeof onUserDialog, "function");
+      if (!onUserDialog) return;
+      const dialogPromise = onUserDialog(
+        {
+          dialogKind: "resume_return",
+          payload: { sessionAgeMinutes: 75, estimatedTokens: 120_000 },
+        },
+        { signal: new AbortController().signal },
+      );
+
+      const requested = yield* Stream.runHead(adapter.streamEvents);
+      if (requested._tag !== "Some" || requested.value.type !== "user-input.requested") {
+        assert.fail("Expected user-input.requested event");
+        return;
+      }
+      const question = requested.value.payload.questions[0]?.question;
+      assert.equal(
+        question,
+        "This session is 1h 15m old and uses 120,000 tokens. Compact it before continuing?",
+      );
+      if (!requested.value.requestId || !question) {
+        assert.fail("Expected a request id and question");
+        return;
+      }
+      yield* adapter.respondToUserInput(
+        session.threadId,
+        ApprovalRequestId.make(requested.value.requestId),
+        { [question]: "Compact and continue" },
+      );
+      yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+
+      assert.deepEqual(yield* Effect.promise(() => dialogPromise), {
+        behavior: "completed",
+        result: "compact",
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("maps keep, permanent-dismiss, and aborted resume dialogs", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+      const onUserDialog = harness.getLastCreateQueryInput()?.options.onUserDialog;
+      assert.equal(typeof onUserDialog, "function");
+      if (!onUserDialog) return;
+
+      for (const [answer, expectedResult] of [
+        ["Keep full history", "continue"],
+        ["Don't ask again", "never"],
+      ] as const) {
+        const dialogPromise = onUserDialog(
+          {
+            dialogKind: "resume_return",
+            payload: { sessionAgeMinutes: 60, estimatedTokens: 100_000 },
+          },
+          { signal: new AbortController().signal },
+        );
+        const requested = yield* Stream.runHead(adapter.streamEvents);
+        if (
+          requested._tag !== "Some" ||
+          requested.value.type !== "user-input.requested" ||
+          !requested.value.requestId
+        ) {
+          assert.fail("Expected resume user-input request");
+          return;
+        }
+        const question = requested.value.payload.questions[0]?.question;
+        if (!question) {
+          assert.fail("Expected resume question");
+          return;
+        }
+        yield* adapter.respondToUserInput(
+          session.threadId,
+          ApprovalRequestId.make(requested.value.requestId),
+          { [question]: answer },
+        );
+        yield* Stream.take(adapter.streamEvents, 1).pipe(Stream.runDrain);
+        assert.deepEqual(yield* Effect.promise(() => dialogPromise), {
+          behavior: "completed",
+          result: expectedResult,
+        });
+      }
+
+      const controller = new AbortController();
+      controller.abort();
+      const abortedDialog = onUserDialog(
+        {
+          dialogKind: "resume_return",
+          payload: { sessionAgeMinutes: 60, estimatedTokens: 100_000 },
+        },
+        { signal: controller.signal },
+      );
+      assert.deepEqual(
+        Array.from(
+          yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect),
+          (event) => event.type,
+        ),
+        ["user-input.requested", "user-input.resolved"],
+      );
+      assert.deepEqual(yield* Effect.promise(() => abortedDialog), {
+        behavior: "cancelled",
+      });
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("maps the Claude Opus 4.7 default effort to the SDK-supported max value", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -3764,6 +3926,48 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("cancels a generic approval whose signal was already aborted", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const canUseTool = harness.getLastCreateQueryInput()?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) return;
+      const controller = new AbortController();
+      controller.abort();
+      const permissionPromise = canUseTool(
+        "Bash",
+        { command: "pwd" },
+        { signal: controller.signal, toolUseID: "tool-pre-aborted" },
+      );
+
+      const events = Array.from(
+        yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect),
+      );
+      assert.deepEqual(
+        events.map((event) => event.type),
+        ["request.opened", "request.resolved"],
+      );
+      if (events[1]?.type === "request.resolved") {
+        assert.equal(events[1].payload.decision, "cancel");
+      }
+      assert.deepEqual(yield* Effect.promise(() => permissionPromise), {
+        behavior: "deny",
+        message: "User cancelled tool execution.",
+      } satisfies PermissionResult);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect("acceptForSession returns session-scoped permission updates", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -4828,6 +5032,52 @@ describe("ClaudeAdapterLive", () => {
 
       const permissionResult = yield* Effect.promise(() => permissionPromise);
       assert.deepEqual(permissionResult, {
+        behavior: "deny",
+        message: "User cancelled tool execution.",
+      } satisfies PermissionResult);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("denies AskUserQuestion when its signal was already aborted", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+      });
+      yield* Stream.take(adapter.streamEvents, 3).pipe(Stream.runDrain);
+
+      const canUseTool = harness.getLastCreateQueryInput()?.options.canUseTool;
+      assert.equal(typeof canUseTool, "function");
+      if (!canUseTool) return;
+      const controller = new AbortController();
+      controller.abort();
+      const permissionPromise = canUseTool(
+        "AskUserQuestion",
+        {
+          questions: [
+            {
+              question: "Continue?",
+              header: "Continue",
+              options: [{ label: "Yes", description: "Proceed" }],
+              multiSelect: false,
+            },
+          ],
+        },
+        { signal: controller.signal, toolUseID: "tool-ask-pre-abort" },
+      );
+
+      const events = yield* Stream.take(adapter.streamEvents, 2).pipe(Stream.runCollect);
+      assert.deepEqual(
+        Array.from(events, (event) => event.type),
+        ["user-input.requested", "user-input.resolved"],
+      );
+      assert.deepEqual(yield* Effect.promise(() => permissionPromise), {
         behavior: "deny",
         message: "User cancelled tool execution.",
       } satisfies PermissionResult);

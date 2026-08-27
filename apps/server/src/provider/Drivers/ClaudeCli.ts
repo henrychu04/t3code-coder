@@ -331,8 +331,19 @@ export type SDKControlGetContextUsageResponse = {
   readonly totalTokens: number;
   readonly maxTokens: number;
   readonly isAutoCompactEnabled: boolean;
+  readonly autoCompactThreshold?: number;
   readonly [key: string]: unknown;
 };
+
+export type UserDialogRequest = {
+  readonly dialogKind: string;
+  readonly payload: Record<string, unknown>;
+  readonly toolUseID?: string;
+};
+
+export type UserDialogResult =
+  | { readonly behavior: "completed"; readonly result: unknown }
+  | { readonly behavior: "cancelled" };
 
 export type Options = {
   readonly abortController?: AbortController;
@@ -344,6 +355,10 @@ export type Options = {
   readonly env?: NodeJS.ProcessEnv;
   readonly includePartialMessages?: boolean;
   readonly model?: string;
+  readonly onUserDialog?: (
+    request: UserDialogRequest,
+    options: { readonly signal: AbortSignal },
+  ) => Promise<UserDialogResult>;
   readonly pathToClaudeCodeExecutable: string;
   readonly permissionMode?: PermissionMode;
   readonly allowDangerouslySkipPermissions?: boolean;
@@ -353,6 +368,7 @@ export type Options = {
   readonly sessionId?: string;
   readonly settingSources?: ReadonlyArray<SettingSource>;
   readonly settings?: Record<string, unknown>;
+  readonly supportedDialogKinds?: ReadonlyArray<string>;
   readonly systemPrompt?: { readonly type: "preset"; readonly preset: "claude_code" };
   readonly stderr?: (data: string) => void;
 };
@@ -372,6 +388,8 @@ type ControlRequest = {
     readonly description?: string;
     readonly tool_use_id?: string;
     readonly agent_id?: string;
+    readonly dialog_kind?: string;
+    readonly payload?: Record<string, unknown>;
   };
 };
 
@@ -457,6 +475,8 @@ const ControlRequestSchema = Schema.Struct({
     description: Schema.optional(Schema.String),
     tool_use_id: Schema.optional(Schema.String),
     agent_id: Schema.optional(Schema.String),
+    dialog_kind: Schema.optional(Schema.String),
+    payload: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   }),
 });
 
@@ -634,9 +654,13 @@ class ClaudeCliQuery implements Query {
 
     this.readStdout();
     this.abortController.signal.addEventListener("abort", () => this.close(), { once: true });
-    this.initialization = this.request({ subtype: "initialize", hooks: {} }).then(
-      (response) => response as SDKControlInitializeResponse,
-    );
+    this.initialization = this.request({
+      subtype: "initialize",
+      hooks: {},
+      ...(options.supportedDialogKinds
+        ? { supportedDialogKinds: options.supportedDialogKinds }
+        : {}),
+    }).then((response) => response as SDKControlInitializeResponse);
     this.initialization.catch(() => undefined);
     this.pumpPrompt(prompt);
   }
@@ -789,6 +813,30 @@ class ClaudeCliQuery implements Query {
     const callbackController = new AbortController();
     this.callbackControllers.set(message.request_id, callbackController);
     try {
+      if (message.request.subtype === "request_user_dialog" && this.options.onUserDialog) {
+        const dialogKind = message.request.dialog_kind;
+        const payload = message.request.payload;
+        if (!dialogKind || !payload) {
+          throw new Error("Claude Code sent an invalid request_user_dialog request.");
+        }
+        const result = await this.options.onUserDialog(
+          {
+            dialogKind,
+            payload,
+            ...(message.request.tool_use_id ? { toolUseID: message.request.tool_use_id } : {}),
+          },
+          { signal: callbackController.signal },
+        );
+        await this.write({
+          type: "control_response",
+          response: {
+            subtype: "success",
+            request_id: message.request_id,
+            response: result,
+          },
+        });
+        return;
+      }
       if (message.request.subtype !== "can_use_tool" || !this.options.canUseTool) {
         throw new Error(`Unsupported Claude Code control request: ${message.request.subtype}`);
       }

@@ -231,6 +231,70 @@ function parseRemoteRef(
   return null;
 }
 
+function parsePorcelainV2Paths(stdout: string): ReadonlyArray<string> {
+  const pathAfterFields = (field: string, fieldCount: number): string | null => {
+    let separatorIndex = -1;
+    for (let count = 0; count < fieldCount; count += 1) {
+      separatorIndex = field.indexOf(" ", separatorIndex + 1);
+      if (separatorIndex < 0) return null;
+    }
+    const filePath = field.slice(separatorIndex + 1);
+    return filePath || null;
+  };
+  const fields = stdout.split("\0");
+  const paths: string[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? "";
+    if (field.startsWith("? ") || field.startsWith("! ")) {
+      const filePath = field.slice(2);
+      if (filePath) paths.push(filePath);
+      continue;
+    }
+    const filePath = field.startsWith("1 ")
+      ? pathAfterFields(field, 8)
+      : field.startsWith("2 ")
+        ? pathAfterFields(field, 9)
+        : field.startsWith("u ")
+          ? pathAfterFields(field, 10)
+          : null;
+    if (filePath) paths.push(filePath);
+    // Rename/copy records carry the original path as the next NUL field. The
+    // working-tree UI should report the destination path only.
+    if (field.startsWith("2 ")) index += 1;
+  }
+  return paths;
+}
+
+function parseNullSeparatedNumstat(
+  stdout: string,
+): ReadonlyArray<{ path: string; insertions: number; deletions: number }> {
+  const fields = stdout.split("\0");
+  const entries: Array<{ path: string; insertions: number; deletions: number }> = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? "";
+    if (!field) continue;
+    const firstTab = field.indexOf("\t");
+    const secondTab = firstTab < 0 ? -1 : field.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+    const added = field.slice(0, firstTab);
+    const deleted = field.slice(firstTab + 1, secondTab);
+    let filePath = field.slice(secondTab + 1);
+    if (!filePath) {
+      // With `--numstat -z`, renames are encoded as a header followed by the
+      // original and destination path. Keep the destination.
+      index += 2;
+      filePath = fields[index] ?? "";
+    }
+    if (!filePath) continue;
+    entries.push({
+      path: filePath,
+      insertions: added === "-" ? 0 : Number.parseInt(added, 10) || 0,
+      deletions: deleted === "-" ? 0 : Number.parseInt(deleted, 10) || 0,
+    });
+  }
+  return entries;
+}
+
 function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): string[][] {
   const chunks: string[][] = [];
   let chunk: string[] = [];
@@ -867,41 +931,55 @@ const makeLocalGitService = Effect.gen(function* () {
     }
 
     const branch = yield* currentBranch(cwd);
-    const [porcelain, numstat, hasMain, hasMaster] = yield* Effect.all([
+    const [porcelain, numstat, remotesResult, hasMain, hasMaster] = yield* Effect.all([
       run("GitVcsDriver.status.porcelain", cwd, [
         "status",
-        "--porcelain=v1",
+        "--porcelain=v2",
         "-z",
         "--untracked-files=all",
       ]),
-      run("GitVcsDriver.status.numstat", cwd, ["diff", "--numstat", "HEAD"], {
+      run("GitVcsDriver.status.numstat", cwd, ["diff", "--numstat", "-z", "HEAD", "--"], {
         allowNonZeroExit: true,
       }),
+      run("GitVcsDriver.status.remotes", cwd, ["remote"], { allowNonZeroExit: true }),
       localBranchExists(cwd, "main"),
       localBranchExists(cwd, "master"),
     ]);
 
-    const changedPaths = porcelain.stdout
-      .split("\0")
-      .filter(Boolean)
-      .map((entry) => entry.slice(3))
-      .filter(Boolean);
+    const changedPaths = parsePorcelainV2Paths(porcelain.stdout);
     const stats = new Map<string, { insertions: number; deletions: number }>();
-    for (const line of numstat.stdout.split("\n")) {
-      const [added, deleted, filePath] = line.split("\t");
-      if (!filePath) continue;
-      stats.set(filePath, {
-        insertions: added === "-" ? 0 : Number.parseInt(added ?? "0", 10) || 0,
-        deletions: deleted === "-" ? 0 : Number.parseInt(deleted ?? "0", 10) || 0,
+    for (const entry of parseNullSeparatedNumstat(numstat.stdout)) {
+      const existing = stats.get(entry.path) ?? { insertions: 0, deletions: 0 };
+      stats.set(entry.path, {
+        insertions: existing.insertions + entry.insertions,
+        deletions: existing.deletions + entry.deletions,
       });
     }
+    const remoteNames = remotesResult.exitCode === 0 ? parseRemoteNames(remotesResult.stdout) : [];
+    const primaryRemote = remoteNames.includes("origin") ? "origin" : (remoteNames[0] ?? null);
+    const remoteDefaultBranch = primaryRemote
+      ? yield* run(
+          "GitVcsDriver.status.remoteDefault",
+          cwd,
+          ["symbolic-ref", `refs/remotes/${primaryRemote}/HEAD`],
+          { allowNonZeroExit: true },
+        ).pipe(
+          Effect.map((result) => {
+            const prefix = `refs/remotes/${primaryRemote}/`;
+            const ref = result.stdout.trim();
+            return result.exitCode === 0 && ref.startsWith(prefix)
+              ? ref.slice(prefix.length)
+              : null;
+          }),
+        )
+      : null;
     const allPaths = [...new Set([...changedPaths, ...stats.keys()])].toSorted();
     const files = allPaths.map((filePath) => ({
       path: filePath,
       insertions: stats.get(filePath)?.insertions ?? 0,
       deletions: stats.get(filePath)?.deletions ?? 0,
     }));
-    const defaultBranch = hasMain ? "main" : hasMaster ? "master" : branch;
+    const defaultBranch = remoteDefaultBranch ?? (hasMain ? "main" : hasMaster ? "master" : branch);
     return {
       isRepo: true,
       isDefaultBranch: branch !== null && branch === defaultBranch,
@@ -1417,6 +1495,30 @@ const makeLocalGitService = Effect.gen(function* () {
     if (input.newRefName) args.push("-b", input.newRefName);
     args.push(targetPath, input.refName);
     yield* run("GitVcsDriver.createWorktree", input.cwd, args, { timeoutMs: 300_000 });
+    const hasSubmodules = yield* fileSystem
+      .exists(path.join(targetPath, ".gitmodules"))
+      .pipe(Effect.orElseSucceed(() => false));
+    if (hasSubmodules) {
+      // Populate already-cached or local submodules without allowing Git to
+      // open a non-loopback connection outside the Coder CLI boundary.
+      yield* run("GitVcsDriver.createWorktree.updateSubmodules", targetPath, [
+        "-c",
+        "protocol.allow=never",
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "update",
+        "--init",
+        "--recursive",
+        "--no-fetch",
+      ]).pipe(
+        Effect.catch(() =>
+          Effect.logWarning(
+            "Worktree submodule checkout failed; the worktree was created with empty submodule paths.",
+          ),
+        ),
+      );
+    }
     if (input.newRefName && input.baseRefName) {
       const remotes = yield* run("GitVcsDriver.createWorktree.remotes", input.cwd, ["remote"], {
         allowNonZeroExit: true,

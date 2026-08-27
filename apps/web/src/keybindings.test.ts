@@ -142,6 +142,11 @@ const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
   { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
   { shortcut: modShortcut("]", { shiftKey: true }), command: "thread.next" },
+  {
+    shortcut: modShortcut("s", { shiftKey: true }),
+    command: "thread.settle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
   { shortcut: modShortcut("1"), command: "thread.jump.1" },
   { shortcut: modShortcut("2"), command: "thread.jump.2" },
   { shortcut: modShortcut("3"), command: "thread.jump.3" },
@@ -161,6 +166,41 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenIdentifier("modelPickerOpen"),
   },
 ]);
+
+describe("settle thread shortcut", () => {
+  it("resolves outside the terminal and stays out of terminal input", () => {
+    assert.equal(
+      resolveShortcutCommand(event({ key: "s", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "thread.settle",
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "s", ctrlKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "Win32",
+        context: { terminalFocus: true },
+      }),
+    );
+  });
+
+  it("matches the physical S key on a non-Latin layout and rejects wrong modifiers", () => {
+    assert.equal(
+      resolveShortcutCommand(
+        event({ key: "ы", code: "KeyS", metaKey: true, shiftKey: true }),
+        DEFAULT_BINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: false } },
+      ),
+      "thread.settle",
+    );
+    assert.isNull(
+      resolveShortcutCommand(event({ key: "s", metaKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+    );
+  });
+});
 
 describe("isTerminalToggleShortcut", () => {
   it("matches Cmd+J on macOS", () => {

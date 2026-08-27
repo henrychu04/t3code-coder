@@ -104,4 +104,24 @@ describe("ChatMarkdown", () => {
     expect(markup.match(/<button/g)).toHaveLength(1);
     expect(markup).not.toContain('href="/tmp/secret.txt"');
   });
+
+  it("makes spaced markdown links and path-like inline code interactive", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        threadRef={scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"))}
+        text={[
+          "[release notes](<docs/Release notes.md#L7>)",
+          "`src/index.ts:42`",
+          "`pnpm run test`",
+        ].join(" ")}
+      />,
+    );
+
+    expect(markup.match(/<button/g)).toHaveLength(2);
+    expect(markup).toContain("release notes");
+    expect(markup).toContain("src/index.ts:42");
+    expect(markup).toContain("pnpm run test");
+    expect(markup).not.toContain("href=");
+  });
 });

@@ -8,6 +8,11 @@ function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function asPositiveFiniteNumber(value: unknown): number | null {
+  const parsed = asFiniteNumber(value);
+  return parsed !== null && parsed > 0 ? parsed : null;
+}
+
 function asBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
@@ -82,6 +87,7 @@ export function deriveLatestContextWindowSnapshot(
       toolUses: asFiniteNumber(payload?.toolUses),
       durationMs: asFiniteNumber(payload?.durationMs),
       compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,
+      autoCompactThreshold: asPositiveFiniteNumber(payload?.autoCompactThreshold),
       updatedAt: activity.createdAt,
     };
   }

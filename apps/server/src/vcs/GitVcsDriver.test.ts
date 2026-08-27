@@ -279,6 +279,201 @@ it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", ()
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
 
+it.effect("GitVcsDriver uses the remote HEAD when determining the default branch", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-default-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=trunk"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, ["branch", "main"]);
+    yield* runGit(repo, ["remote", "add", "origin", repo]);
+    yield* runGit(repo, ["update-ref", "refs/remotes/origin/trunk", "HEAD"]);
+    yield* runGit(repo, ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"]);
+
+    const status = yield* driver.statusDetailsLocal(repo);
+    assert.strictEqual(status.branch, "trunk");
+    assert.strictEqual(status.isDefaultBranch, true);
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver uses a non-origin remote HEAD as the default branch", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-upstream-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=develop"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, ["branch", "main"]);
+    yield* runGit(repo, ["remote", "add", "upstream", repo]);
+    yield* runGit(repo, ["update-ref", "refs/remotes/upstream/develop", "HEAD"]);
+    yield* runGit(repo, [
+      "symbolic-ref",
+      "refs/remotes/upstream/HEAD",
+      "refs/remotes/upstream/develop",
+    ]);
+
+    const status = yield* driver.statusDetailsLocal(repo);
+    assert.strictEqual(status.branch, "develop");
+    assert.strictEqual(status.isDefaultBranch, true);
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver reports the destination of a rename with spaces", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-status-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(path.join(repo, "old dir"), { recursive: true });
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "old dir", "old name.txt"), "fixture\n");
+    yield* runGit(repo, ["add", "."]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* fileSystem.makeDirectory(path.join(repo, "new dir"));
+    yield* runGit(repo, ["mv", "old dir/old name.txt", "new dir/new name.txt"]);
+
+    const status = yield* driver.statusDetailsLocal(repo);
+    assert.deepEqual(
+      status.workingTree.files.map((file) => file.path),
+      ["new dir/new name.txt"],
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver preserves tabs in renamed paths", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-tab-path-" });
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "old\tname.txt"), "fixture\n");
+    yield* runGit(repo, ["add", "."]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, ["mv", "old\tname.txt", "new\tname.txt"]);
+
+    const status = yield* driver.statusDetailsLocal(repo);
+    assert.deepEqual(
+      status.workingTree.files.map((file) => file.path),
+      ["new\tname.txt"],
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver checks out cached submodules in a new worktree", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-submodule-" });
+    const submoduleRepo = path.join(fixtureRoot, "shared-source");
+    const repo = path.join(fixtureRoot, "repo");
+    const worktree = path.join(fixtureRoot, "worktree");
+    yield* fileSystem.makeDirectory(submoduleRepo);
+    yield* runGit(submoduleRepo, ["init", "--initial-branch=main"]);
+    yield* runGit(submoduleRepo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(submoduleRepo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(submoduleRepo, "SHARED.md"), "shared\n");
+    yield* runGit(submoduleRepo, ["add", "."]);
+    yield* runGit(submoduleRepo, ["commit", "-m", "Initial"]);
+
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "."]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(repo, [
+      "-c",
+      "protocol.file.allow=always",
+      "submodule",
+      "add",
+      submoduleRepo,
+      "shared",
+    ]);
+    yield* runGit(repo, ["commit", "-am", "Add submodule"]);
+
+    yield* driver.createWorktree({
+      cwd: repo,
+      path: worktree,
+      refName: "main",
+      newRefName: "feature/submodule",
+    });
+
+    assert.strictEqual(yield* fileSystem.exists(path.join(worktree, "shared", "SHARED.md")), true);
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver keeps a worktree when an uncached network submodule is blocked", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-broken-sub-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const worktree = path.join(fixtureRoot, "worktree");
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    const gitlinkCommit = yield* readGit(repo, ["rev-parse", "HEAD"]);
+    yield* fileSystem.writeFileString(
+      path.join(repo, ".gitmodules"),
+      '[submodule "missing"]\n\tpath = missing\n\turl = https://example.invalid/missing.git\n',
+    );
+    yield* runGit(repo, ["add", ".gitmodules"]);
+    yield* runGit(repo, [
+      "update-index",
+      "--add",
+      "--cacheinfo",
+      "160000",
+      gitlinkCommit,
+      "missing",
+    ]);
+    yield* runGit(repo, ["commit", "-m", "Add unavailable submodule"]);
+
+    const created = yield* driver.createWorktree({
+      cwd: repo,
+      path: worktree,
+      refName: "main",
+      newRefName: "feature/broken-submodule",
+    });
+
+    assert.strictEqual(created.worktree.path, worktree);
+    assert.strictEqual(yield* fileSystem.exists(worktree), true);
+    assert.strictEqual(
+      yield* fileSystem.exists(path.join(worktree, "missing", "README.md")),
+      false,
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
 it.effect("GitVcsDriver resolves the automatic review base from local remote refs", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

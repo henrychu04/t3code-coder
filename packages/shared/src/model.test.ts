@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
 
 import {
+  applyClaudePromptEffortPrefix,
   buildProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
@@ -153,5 +154,31 @@ describe("model slug normalization", () => {
 
     expect(normalizeModelSlug("opus", claude)).toBe("claude-opus-5");
     expect(normalizeCustomModelSlug(" opus ")).toBe("opus");
+  });
+});
+
+describe("applyClaudePromptEffortPrefix", () => {
+  it("does not corrupt Claude slash commands in ultrathink mode", () => {
+    expect(applyClaudePromptEffortPrefix("/compact", "ultrathink")).toBe("/compact");
+    expect(applyClaudePromptEffortPrefix("/review current changes", "ultrathink")).toBe(
+      "/review current changes",
+    );
+    expect(applyClaudePromptEffortPrefix("  /plugin:review --staged  ", "ultrathink")).toBe(
+      "/plugin:review --staged",
+    );
+  });
+
+  it("still prefixes ordinary prompts and absolute paths", () => {
+    expect(applyClaudePromptEffortPrefix("Fix the tests", "ultrathink")).toBe(
+      "Ultrathink:\nFix the tests",
+    );
+    expect(applyClaudePromptEffortPrefix("/home/dev/project/file.ts", "ultrathink")).toBe(
+      "Ultrathink:\n/home/dev/project/file.ts",
+    );
+    expect(applyClaudePromptEffortPrefix("//server/share/file.ts", "ultrathink")).toBe(
+      "Ultrathink:\n//server/share/file.ts",
+    );
+    expect(applyClaudePromptEffortPrefix("/", "ultrathink")).toBe("Ultrathink:\n/");
+    expect(applyClaudePromptEffortPrefix("/compact", "high")).toBe("/compact");
   });
 });
