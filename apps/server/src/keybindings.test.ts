@@ -207,12 +207,12 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.equal(defaultsByCommand.get("thread.jump.1"), "mod+1");
       assert.equal(defaultsByCommand.get("thread.jump.9"), "mod+9");
       assert.equal(defaultsByCommand.get("modelPicker.toggle"), "mod+shift+m");
-      assert.equal(defaultsByCommand.get("filePicker.toggle"), "mod+p");
+      assert.equal(defaultsByCommand.get("filePicker.toggle"), "shift shift");
       assert.isFalse(defaultsByCommand.has("themeEditor.toggle"));
       assert.equal(defaultsByCommand.get("projectSearch.toggle"), "mod+shift+f");
       assert.equal(defaultsByCommand.get("fileViewer.find"), "mod+f");
       assert.equal(defaultsByCommand.get("fileViewer.goToLine"), "mod+g");
-      assert.equal(defaultsByCommand.get("fileViewer.searchFiles"), "shift shift");
+      assert.isFalse(defaultsByCommand.has("fileViewer.searchFiles"));
       assert.equal(
         Keybindings.DEFAULT_KEYBINDINGS.find(
           (binding) => binding.command === "projectSearch.toggle",
@@ -220,9 +220,8 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         "!terminalFocus",
       );
       assert.equal(
-        Keybindings.DEFAULT_KEYBINDINGS.find(
-          (binding) => binding.command === "fileViewer.searchFiles",
-        )?.when,
+        Keybindings.DEFAULT_KEYBINDINGS.find((binding) => binding.command === "filePicker.toggle")
+          ?.when,
         "projectOpen && !terminalFocus",
       );
       assert.equal(defaultsByCommand.get("sidebar.toggle"), "mod+b");
@@ -335,6 +334,13 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
         { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
         { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
+        { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+        { key: "mod+alt+p", command: "filePicker.toggle", when: "!terminalFocus" },
+        {
+          key: "shift shift",
+          command: "fileViewer.searchFiles",
+          when: "projectOpen && !terminalFocus",
+        },
         { key: "mod+shift+g", command: "projectSearch.toggle", when: "!terminalFocus" },
       ]);
 
@@ -350,6 +356,15 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         ),
       );
       assert.isFalse(persisted.some((entry) => entry.command === "themeEditor.toggle"));
+      assert.isFalse(
+        persisted.some((entry) => entry.command === "filePicker.toggle" && entry.key === "mod+p"),
+      );
+      assert.isTrue(
+        persisted.some(
+          (entry) => entry.command === "filePicker.toggle" && entry.key === "mod+alt+p",
+        ),
+      );
+      assert.isFalse(persisted.some((entry) => entry.command === "fileViewer.searchFiles"));
       assert.isTrue(
         persisted.some(
           (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+g",
@@ -395,7 +410,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       });
       assert.deepInclude(persisted, {
         key: "shift shift",
-        command: "fileViewer.searchFiles",
+        command: "filePicker.toggle",
         when: "projectOpen && !terminalFocus",
       });
     }).pipe(Effect.provide(makeKeybindingsLayer())),

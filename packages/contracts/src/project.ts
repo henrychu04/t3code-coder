@@ -8,7 +8,7 @@ import {
 } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
-const PROJECT_TEXT_SEARCH_MAX_LIMIT = 200;
+const PROJECT_TEXT_SEARCH_MAX_LIMIT = 500;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_FILE_CONTENT_MAX_LENGTH = 1024 * 1024;
@@ -43,23 +43,34 @@ export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 export const ProjectTextSearchInput = Schema.Struct({
   threadId: ThreadId,
   cwd: TrimmedNonEmptyString,
-  query: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  // Leading and trailing whitespace are meaningful in content queries.
+  query: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
   fileMask: Schema.optional(TrimmedString.check(Schema.isMaxLength(256))),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_TEXT_SEARCH_MAX_LIMIT)),
+  caseSensitive: Schema.Boolean,
+  wholeWord: Schema.Boolean,
+  useRegex: Schema.Boolean,
 });
 export type ProjectTextSearchInput = typeof ProjectTextSearchInput.Type;
 
+export const ProjectTextSearchMatchRange = Schema.Struct({
+  start: NonNegativeInt,
+  end: NonNegativeInt,
+});
+export type ProjectTextSearchMatchRange = typeof ProjectTextSearchMatchRange.Type;
+
 export const ProjectTextSearchMatch = Schema.Struct({
-  path: TrimmedNonEmptyString,
-  line: PositiveInt,
-  column: PositiveInt,
-  preview: TrimmedString.check(Schema.isMaxLength(512)),
+  path: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+  lineNumber: PositiveInt,
+  lineContent: Schema.String.check(Schema.isMaxLength(4096)),
+  matchRanges: Schema.Array(ProjectTextSearchMatchRange).check(Schema.isMaxLength(100)),
 });
 export type ProjectTextSearchMatch = typeof ProjectTextSearchMatch.Type;
 
 export const ProjectTextSearchResult = Schema.Struct({
   matches: Schema.Array(ProjectTextSearchMatch),
   truncated: Schema.Boolean,
+  regexFallbackError: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
 });
 export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
 
@@ -174,15 +185,14 @@ export class ProjectTextSearchError extends Schema.TaggedErrorClass<ProjectTextS
   // Structured fields remain optional so older message-only errors can decode.
   // @effect-diagnostics-next-line overriddenSchemaConstructor:off
   constructor(props: {
-    readonly cwd: string;
     readonly queryLength: number;
     readonly limit: number;
     readonly failure: ProjectEntriesFailure;
-    readonly cause?: unknown;
+    readonly detail?: string;
   }) {
     super({
       ...props,
-      message: `Failed to search text in '${props.cwd}'.`,
+      message: "Failed to search project contents.",
     } as any);
   }
 }

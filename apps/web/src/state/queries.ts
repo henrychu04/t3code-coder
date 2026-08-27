@@ -294,12 +294,12 @@ export function useProjectPathSearch(
         })
       : null,
   );
+  const isCurrentSearch = areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget);
 
   return {
-    entries: result.data?.entries ?? [],
-    error: result.error,
-    isPending:
-      !areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget) || result.isPending,
+    entries: isCurrentSearch ? (result.data?.entries ?? []) : [],
+    error: isCurrentSearch ? result.error : null,
+    isPending: !isCurrentSearch || result.isPending,
     searchedQuery: debouncedTarget.query ?? "",
     refresh: result.refresh,
   };
@@ -315,36 +315,55 @@ export function useProjectTextSearch(target: {
   readonly cwd: string | null;
   readonly query: string;
   readonly fileMask?: string;
+  readonly caseSensitive: boolean;
+  readonly wholeWord: boolean;
+  readonly useRegex: boolean;
 }) {
-  const normalizedQuery = target.query.trim();
-  const normalizedFileMask = target.fileMask?.trim() ?? "";
-  const debouncedQuery = useDebouncedValue(normalizedQuery, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
-  const debouncedFileMask = useDebouncedValue(normalizedFileMask, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
+  const normalizedTarget = useMemo(
+    () => ({
+      query: target.query,
+      fileMask: target.fileMask?.trim() ?? "",
+      caseSensitive: target.caseSensitive,
+      wholeWord: target.wholeWord,
+      useRegex: target.useRegex,
+    }),
+    [target.caseSensitive, target.fileMask, target.query, target.useRegex, target.wholeWord],
+  );
+  const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(
     target.environmentId !== null &&
       target.threadId !== null &&
       target.cwd !== null &&
-      debouncedQuery.length > 0
+      debouncedTarget.query.length > 0
       ? projectEnvironment.searchText({
           environmentId: target.environmentId,
           input: {
             threadId: target.threadId,
             cwd: target.cwd,
-            query: debouncedQuery,
-            ...(debouncedFileMask ? { fileMask: debouncedFileMask } : {}),
-            limit: 200,
+            query: debouncedTarget.query,
+            ...(debouncedTarget.fileMask ? { fileMask: debouncedTarget.fileMask } : {}),
+            limit: 500,
+            caseSensitive: debouncedTarget.caseSensitive,
+            wholeWord: debouncedTarget.wholeWord,
+            useRegex: debouncedTarget.useRegex,
           },
         })
       : null,
   );
   const isCurrentQuery =
-    normalizedQuery === debouncedQuery && normalizedFileMask === debouncedFileMask;
+    normalizedTarget.query === debouncedTarget.query &&
+    normalizedTarget.fileMask === debouncedTarget.fileMask &&
+    normalizedTarget.caseSensitive === debouncedTarget.caseSensitive &&
+    normalizedTarget.wholeWord === debouncedTarget.wholeWord &&
+    normalizedTarget.useRegex === debouncedTarget.useRegex;
 
   return {
     matches: isCurrentQuery ? (result.data?.matches ?? []) : [],
     truncated: isCurrentQuery ? (result.data?.truncated ?? false) : false,
+    regexFallbackError: isCurrentQuery ? (result.data?.regexFallbackError ?? null) : null,
     error: isCurrentQuery ? result.error : null,
     isPending: !isCurrentQuery || result.isPending,
+    searchedQuery: debouncedTarget.query,
   };
 }
 

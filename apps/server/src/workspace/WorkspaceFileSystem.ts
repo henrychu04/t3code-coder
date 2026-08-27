@@ -6,8 +6,6 @@ import * as NodePath from "node:path";
 import type {
   ProjectReadFileInput,
   ProjectReadFileResult,
-  ProjectTextSearchInput,
-  ProjectTextSearchResult,
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "@t3tools/contracts";
@@ -20,10 +18,7 @@ import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 
 const PROJECT_FILE_MAX_BYTES = 1024 * 1024;
-const PROJECT_TEXT_SEARCH_MAX_FILES = 2_000;
-const PROJECT_TEXT_SEARCH_MAX_BYTES = 32 * 1024 * 1024;
 type WorkspaceReadFileInput = Omit<ProjectReadFileInput, "threadId">;
-type WorkspaceTextSearchInput = Omit<ProjectTextSearchInput, "threadId">;
 type WorkspaceWriteFileInput = Omit<ProjectWriteFileInput, "threadId">;
 
 function revisionOf(bytes: Uint8Array): string {
@@ -112,14 +107,6 @@ export class WorkspaceFileSystem extends Context.Service<
     ) => Effect.Effect<
       ProjectWriteFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
-    >;
-    readonly searchText: (
-      input: WorkspaceTextSearchInput,
-    ) => Effect.Effect<
-      ProjectTextSearchResult,
-      | WorkspaceFileSystemError
-      | WorkspacePaths.WorkspacePathOutsideRootError
-      | WorkspaceEntries.WorkspaceEntriesError
     >;
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
@@ -291,68 +278,7 @@ export const make = Effect.gen(function* () {
     return { relativePath: target.relativePath, revision: revisionOf(bytes) };
   });
 
-  const searchText: WorkspaceFileSystem["Service"]["searchText"] = Effect.fn(
-    "WorkspaceFileSystem.searchText",
-  )(function* (input) {
-    const fileMask = input.fileMask?.trim() ?? "";
-    const listed = fileMask
-      ? yield* workspaceEntries.search({
-          cwd: input.cwd,
-          query: "",
-          limit: PROJECT_TEXT_SEARCH_MAX_FILES + 1,
-          kind: "file",
-          fileMask,
-        })
-      : yield* workspaceEntries.list({ cwd: input.cwd });
-    const fileEntries = listed.entries.filter((entry) => entry.kind === "file");
-    const candidates = fileEntries.slice(0, PROJECT_TEXT_SEARCH_MAX_FILES);
-    const needle = input.query.toLocaleLowerCase();
-    const matches: Array<ProjectTextSearchResult["matches"][number]> = [];
-    let scannedBytes = 0;
-    let truncated = listed.truncated || fileEntries.length > candidates.length;
-
-    for (const entry of candidates) {
-      if (matches.length >= input.limit || scannedBytes >= PROJECT_TEXT_SEARCH_MAX_BYTES) {
-        truncated = true;
-        break;
-      }
-      const file = yield* readFile({ cwd: input.cwd, relativePath: entry.path }).pipe(
-        Effect.option,
-      );
-      if (file._tag === "None") continue;
-      const fileBytes = Math.min(file.value.byteLength, PROJECT_FILE_MAX_BYTES);
-      if (scannedBytes + fileBytes > PROJECT_TEXT_SEARCH_MAX_BYTES) {
-        truncated = true;
-        break;
-      }
-      scannedBytes += fileBytes;
-      const lines = file.value.contents.split(/\r\n|\r|\n/);
-      for (const [lineIndex, line] of lines.entries()) {
-        let from = 0;
-        const normalizedLine = line.toLocaleLowerCase();
-        while (from <= normalizedLine.length) {
-          const columnIndex = normalizedLine.indexOf(needle, from);
-          if (columnIndex < 0) break;
-          matches.push({
-            path: entry.path,
-            line: lineIndex + 1,
-            column: columnIndex + 1,
-            preview: line.trim().slice(0, 512),
-          });
-          if (matches.length >= input.limit) {
-            truncated = true;
-            break;
-          }
-          from = columnIndex + Math.max(1, needle.length);
-        }
-        if (matches.length >= input.limit) break;
-      }
-    }
-
-    return { matches, truncated };
-  });
-
-  return WorkspaceFileSystem.of({ readFile, writeFile, searchText });
+  return WorkspaceFileSystem.of({ readFile, writeFile });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

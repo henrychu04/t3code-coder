@@ -22,17 +22,15 @@ describe("reduceCommandPaletteUiState", () => {
     });
   });
 
-  it("toggles command and file modes without stacking them", () => {
-    const files = reduceCommandPaletteUiState(closed, { _tag: "ToggleMode", mode: "files" });
-    expect(files).toEqual({ open: true, mode: "files", openIntent: null });
-    expect(reduceCommandPaletteUiState(files, { _tag: "ToggleMode", mode: "command" })).toEqual({
-      open: true,
+  it("toggles command mode", () => {
+    const command = reduceCommandPaletteUiState(closed, {
+      _tag: "ToggleMode",
       mode: "command",
-      openIntent: null,
     });
-    expect(reduceCommandPaletteUiState(files, { _tag: "ToggleMode", mode: "files" })).toEqual({
+    expect(command).toEqual({ open: true, mode: "command", openIntent: null });
+    expect(reduceCommandPaletteUiState(command, { _tag: "ToggleMode", mode: "command" })).toEqual({
       open: false,
-      mode: "files",
+      mode: "command",
       openIntent: null,
     });
   });

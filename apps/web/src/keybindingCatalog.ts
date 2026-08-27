@@ -13,9 +13,8 @@ export interface KeybindingActionDefinition {
 export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
   { command: "fileViewer.find", label: "Find in current file", category: "Files" },
   { command: "projectSearch.toggle", label: "Find text in project", category: "Files" },
-  { command: "fileViewer.searchFiles", label: "Search project files", category: "Files" },
+  { command: "filePicker.toggle", label: "Search project files", category: "Files" },
   { command: "fileViewer.goToLine", label: "Go to line and column", category: "Files" },
-  { command: "filePicker.toggle", label: "Add a project file to prompt", category: "Files" },
   { command: "editor.openFavorite", label: "Open favorite editor", category: "Files" },
   { command: "commandPalette.toggle", label: "Find action", category: "Navigation" },
   { command: "thread.previous", label: "Previous thread", category: "Navigation" },

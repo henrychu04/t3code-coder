@@ -133,14 +133,74 @@ it.layer(TestLayer)("WorkspaceEntries", (it) => {
           fileMask: "*.ts,*.tsx,!*.test.ts",
         });
 
-        expect(fileSearch).toHaveBeenCalledWith(
-          "{**/*.ts,**/*.tsx} !**/*.test.ts",
-          { pageSize: 25_002 },
-        );
+        expect(fileSearch).toHaveBeenCalledWith("{**/*.ts,**/*.tsx} !**/*.test.ts", {
+          pageSize: 25_002,
+        });
         expect(result.entries).toEqual([
           { path: "src/App.ts", kind: "file" },
           { path: "src/App.tsx", kind: "file" },
         ]);
+      }),
+    );
+  });
+
+  describe("searchText", () => {
+    it.effect("returns native content matches with exact ranges", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-coder-content-search-",
+        });
+        yield* fileSystem.makeDirectory(path.join(root, "src"));
+        yield* fileSystem.writeFileString(
+          path.join(root, "src", "one.ts"),
+          "alpha\nNeedle here\nneedle again\n",
+        );
+
+        const result = yield* entries.searchText({
+          cwd: root,
+          query: "needle",
+          limit: 20,
+          caseSensitive: false,
+          wholeWord: false,
+          useRegex: false,
+        });
+
+        expect(result.matches.map((match) => [match.path, match.lineNumber])).toEqual([
+          ["src/one.ts", 2],
+          ["src/one.ts", 3],
+        ]);
+        expect(result.matches[0]?.matchRanges).toEqual([{ start: 0, end: 6 }]);
+        expect(result.truncated).toBe(false);
+      }),
+    );
+
+    it.effect("applies IntelliJ masks to native content search", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-coder-content-mask-",
+        });
+        yield* fileSystem.makeDirectory(path.join(root, "src"));
+        yield* fileSystem.writeFileString(path.join(root, "src", "one.ts"), "needle\n");
+        yield* fileSystem.writeFileString(path.join(root, "src", "one.test.ts"), "needle\n");
+        yield* fileSystem.writeFileString(path.join(root, "README.md"), "needle\n");
+
+        const result = yield* entries.searchText({
+          cwd: root,
+          query: "needle",
+          fileMask: "*.ts,!*.test.ts",
+          limit: 20,
+          caseSensitive: false,
+          wholeWord: false,
+          useRegex: false,
+        });
+
+        expect(result.matches.map((match) => match.path)).toEqual(["src/one.ts"]);
       }),
     );
   });

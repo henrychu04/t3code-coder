@@ -29,7 +29,15 @@ import {
   WholeWord,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
@@ -77,6 +85,9 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
+import { HighlightedSearchLine } from "./HighlightedSearchLine";
+import { findTextMatches, type FileTextMatch } from "./fileFind";
+import { getFileSearchMatches } from "./fileSearchMatches";
 import {
   type FileEditorViewAnchor,
   bindFileEditorSession,
@@ -204,55 +215,6 @@ function GoToLineDialog(props: {
   );
 }
 
-interface FileTextMatch {
-  readonly start: { line: number; character: number };
-  readonly end: { line: number; character: number };
-}
-
-function isWordCharacter(character: string | undefined): boolean {
-  return character !== undefined && /[\p{L}\p{N}_]/u.test(character);
-}
-
-function findTextMatches(
-  contents: string,
-  query: string,
-  caseSensitive: boolean,
-  wholeWord: boolean,
-): FileTextMatch[] {
-  if (!query) return [];
-  const haystack = caseSensitive ? contents : contents.toLocaleLowerCase();
-  const needle = caseSensitive ? query : query.toLocaleLowerCase();
-  const lineStarts = [0];
-  for (let index = 0; index < contents.length; index += 1) {
-    if (contents[index] === "\n") lineStarts.push(index + 1);
-  }
-  const positionAt = (offset: number) => {
-    let low = 0;
-    let high = lineStarts.length;
-    while (low + 1 < high) {
-      const middle = Math.floor((low + high) / 2);
-      if (lineStarts[middle]! <= offset) low = middle;
-      else high = middle;
-    }
-    return { line: low, character: offset - lineStarts[low]! };
-  };
-  const matches: FileTextMatch[] = [];
-  let from = 0;
-  while (from <= haystack.length - needle.length && matches.length < 10_000) {
-    const offset = haystack.indexOf(needle, from);
-    if (offset < 0) break;
-    const endOffset = offset + needle.length;
-    if (
-      !wholeWord ||
-      (!isWordCharacter(contents[offset - 1]) && !isWordCharacter(contents[endOffset]))
-    ) {
-      matches.push({ start: positionAt(offset), end: positionAt(endOffset) });
-    }
-    from = offset + Math.max(1, needle.length);
-  }
-  return matches;
-}
-
 function FileFindBar(props: {
   open: boolean;
   requestId: number;
@@ -263,15 +225,24 @@ function FileFindBar(props: {
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
-  const matches = useMemo(
-    () => findTextMatches(props.contents, query, caseSensitive, wholeWord),
-    [caseSensitive, props.contents, query, wholeWord],
+  const matchResult = useMemo(
+    () =>
+      findTextMatches({
+        contents: props.contents,
+        query,
+        caseSensitive,
+        wholeWord,
+        useRegex,
+      }),
+    [caseSensitive, props.contents, query, useRegex, wholeWord],
   );
+  const matches = matchResult.matches;
   const resolvedIndex = matches.length === 0 ? 0 : Math.min(selectedIndex, matches.length - 1);
 
-  useEffect(() => setSelectedIndex(0), [caseSensitive, query, wholeWord]);
+  useEffect(() => setSelectedIndex(0), [caseSensitive, query, useRegex, wholeWord]);
   useEffect(() => {
     if (!props.open) return;
     inputRef.current?.focus();
@@ -331,13 +302,24 @@ function FileFindBar(props: {
           >
             <WholeWord className="size-3.5" />
           </Toggle>
+          <Toggle
+            pressed={useRegex}
+            onPressedChange={setUseRegex}
+            aria-label="Use regular expression"
+            size="sm"
+            variant="ghost"
+          >
+            <span className="font-mono text-xs">.*</span>
+          </Toggle>
         </InputGroupAddon>
       </InputGroup>
       <span className="w-16 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground">
         {query
-          ? matches.length > 0
-            ? `${resolvedIndex + 1} of ${matches.length}`
-            : "0 results"
+          ? matchResult.regexError
+            ? "Invalid regex"
+            : matches.length > 0
+              ? `${resolvedIndex + 1} of ${matches.length}${matchResult.truncated ? "+" : ""}`
+              : "0 results"
           : ""}
       </span>
       <Button
@@ -527,6 +509,7 @@ function SearchDialogHeader(props: {
   fileMask: string;
   queryPlaceholder: string;
   queryTestId?: string;
+  queryOptions?: ReactNode;
   onQueryChange: (value: string) => void;
   onFileMaskChange: (value: string) => void;
 }) {
@@ -566,6 +549,11 @@ function SearchDialogHeader(props: {
             value={props.query}
             onChange={(event) => props.onQueryChange(event.currentTarget.value)}
           />
+          {props.queryOptions ? (
+            <InputGroupAddon align="inline-end" className="gap-0.5 pe-1">
+              {props.queryOptions}
+            </InputGroupAddon>
+          ) : null}
         </InputGroup>
       </div>
     </div>
@@ -580,6 +568,27 @@ function SearchDialogFooter() {
       <span>Esc Close</span>
     </div>
   );
+}
+
+function HighlightedFuzzyText(props: {
+  readonly active: boolean;
+  readonly indices: ReadonlyArray<number>;
+  readonly value: string;
+}) {
+  if (!props.active) return props.value;
+  const parts: ReactNode[] = [];
+  let start = 0;
+  for (const index of props.indices) {
+    if (start < index) parts.push(props.value.slice(start, index));
+    parts.push(
+      <strong className="font-semibold text-current" key={index}>
+        {props.value[index]}
+      </strong>,
+    );
+    start = index + 1;
+  }
+  if (start < props.value.length) parts.push(props.value.slice(start));
+  return <>{parts}</>;
 }
 
 function FileSearchDialog(props: {
@@ -605,7 +614,11 @@ function FileSearchDialog(props: {
     200,
     { allowEmptyQuery: true },
   );
-  const files = result.entries;
+  const files = useMemo(
+    () => getFileSearchMatches(result.entries, result.searchedQuery),
+    [result.entries, result.searchedQuery],
+  );
+  const hasSearchedQuery = /\S/u.test(result.searchedQuery);
   const selected = files[Math.min(selectedIndex, Math.max(0, files.length - 1))] ?? null;
 
   useEffect(() => setSelectedIndex(0), [fileMask, query]);
@@ -680,8 +693,20 @@ function FileSearchDialog(props: {
                       }}
                     >
                       <FileIcon className="size-3.5 shrink-0 opacity-75" />
-                      <span className="shrink-0 font-medium">{fileName(entry.path)}</span>
-                      <span className="min-w-0 flex-1 truncate opacity-65">{entry.path}</span>
+                      <span className="shrink-0 font-medium">
+                        <HighlightedFuzzyText
+                          active={hasSearchedQuery}
+                          indices={entry.nameMatchIndices}
+                          value={entry.name}
+                        />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate opacity-65">
+                        <HighlightedFuzzyText
+                          active={hasSearchedQuery}
+                          indices={entry.pathMatchIndices}
+                          value={entry.path}
+                        />
+                      </span>
                     </button>
                   ))
                 )}
@@ -704,6 +729,37 @@ function FileSearchDialog(props: {
   );
 }
 
+const CONTENT_SEARCH_VISIBLE_WINDOW = 100;
+
+interface ContentSearchGroup {
+  readonly path: string;
+  readonly totalCount: number;
+  readonly matches: ReadonlyArray<ProjectTextSearchMatch & { readonly resultIndex: number }>;
+}
+
+function groupContentMatches(
+  matches: ReadonlyArray<ProjectTextSearchMatch>,
+  visibleCount: number,
+): ContentSearchGroup[] {
+  const totals = new Map<string, number>();
+  for (const match of matches) totals.set(match.path, (totals.get(match.path) ?? 0) + 1);
+  const groups = new Map<
+    string,
+    Array<ProjectTextSearchMatch & { readonly resultIndex: number }>
+  >();
+  matches.slice(0, visibleCount).forEach((match, resultIndex) => {
+    const indexed = { ...match, resultIndex };
+    const group = groups.get(match.path);
+    if (group) group.push(indexed);
+    else groups.set(match.path, [indexed]);
+  });
+  return [...groups].map(([path, groupedMatches]) => ({
+    path,
+    totalCount: totals.get(path) ?? groupedMatches.length,
+    matches: groupedMatches,
+  }));
+}
+
 function ProjectTextSearchDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -715,28 +771,72 @@ function ProjectTextSearchDialog(props: {
 }) {
   const [query, setQuery] = useState("");
   const [fileMask, setFileMask] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(CONTENT_SEARCH_VISIBLE_WINDOW);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const { resolvedTheme } = useTheme();
   const result = useProjectTextSearch({
     environmentId: props.open ? props.environmentId : null,
     threadId: props.open ? props.threadRef.threadId : null,
     cwd: props.open ? props.cwd : null,
     query,
     fileMask,
+    caseSensitive,
+    wholeWord,
+    useRegex,
   });
+  const groups = useMemo(
+    () => groupContentMatches(result.matches, visibleCount),
+    [result.matches, visibleCount],
+  );
+  const fileCount = useMemo(
+    () => new Set(result.matches.map((match) => match.path)).size,
+    [result.matches],
+  );
   const selected =
     result.matches[Math.min(selectedIndex, Math.max(0, result.matches.length - 1))] ?? null;
+  const canOpenSelected = !result.isPending && !result.error && !result.regexFallbackError;
 
-  useEffect(() => setSelectedIndex(0), [fileMask, query]);
+  useEffect(() => {
+    setSelectedIndex(0);
+    setVisibleCount(CONTENT_SEARCH_VISIBLE_WINDOW);
+  }, [caseSensitive, fileMask, query, useRegex, wholeWord]);
+  useEffect(() => {
+    if (selectedIndex >= visibleCount) {
+      setVisibleCount(selectedIndex + CONTENT_SEARCH_VISIBLE_WINDOW);
+      return;
+    }
+    document
+      .querySelector<HTMLElement>(`[data-content-search-result="${selectedIndex}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedIndex, visibleCount]);
+  useEffect(() => {
+    const sentinel = loadMoreRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisibleCount((current) => current + CONTENT_SEARCH_VISIBLE_WINDOW);
+      }
+    });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [groups]);
   useEffect(() => {
     if (props.open) return;
     setQuery("");
     setFileMask("");
+    setCaseSensitive(false);
+    setWholeWord(false);
+    setUseRegex(false);
     setSelectedIndex(0);
   }, [props.open]);
 
   const openSelected = () => {
-    if (!selected) return;
-    props.onOpenFile(selected.path, selected.line);
+    if (!selected || !canOpenSelected) return;
+    props.onOpenFile(selected.path, selected.lineNumber);
     props.onOpenChange(false);
   };
 
@@ -749,10 +849,16 @@ function ProjectTextSearchDialog(props: {
           onKeyDown={(event) => {
             if (event.key === "ArrowDown") {
               event.preventDefault();
-              setSelectedIndex((current) => Math.min(result.matches.length - 1, current + 1));
+              if (result.matches.length > 0) {
+                setSelectedIndex((current) => (current + 1) % result.matches.length);
+              }
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
-              setSelectedIndex((current) => Math.max(0, current - 1));
+              if (result.matches.length > 0) {
+                setSelectedIndex(
+                  (current) => (current - 1 + result.matches.length) % result.matches.length,
+                );
+              }
             } else if (event.key === "Enter") {
               event.preventDefault();
               openSelected();
@@ -767,12 +873,45 @@ function ProjectTextSearchDialog(props: {
                   ? `Search ${props.projectName}`
                   : result.isPending
                     ? "Searching…"
-                    : `${result.matches.length}${result.truncated ? "+" : ""} matches`
+                    : result.regexFallbackError
+                      ? "Invalid regular expression"
+                      : `${result.matches.length}${result.truncated ? "+" : ""} matches in ${fileCount} files`
               }
               query={query}
               fileMask={fileMask}
               queryPlaceholder={`Find text in ${props.projectName}…`}
               queryTestId="project-text-search-input"
+              queryOptions={
+                <>
+                  <Toggle
+                    aria-label="Match case"
+                    pressed={caseSensitive}
+                    size="sm"
+                    variant="ghost"
+                    onPressedChange={setCaseSensitive}
+                  >
+                    <CaseSensitive className="size-3.5" />
+                  </Toggle>
+                  <Toggle
+                    aria-label="Match whole word"
+                    pressed={wholeWord}
+                    size="sm"
+                    variant="ghost"
+                    onPressedChange={setWholeWord}
+                  >
+                    <WholeWord className="size-3.5" />
+                  </Toggle>
+                  <Toggle
+                    aria-label="Use regular expression"
+                    pressed={useRegex}
+                    size="sm"
+                    variant="ghost"
+                    onPressedChange={setUseRegex}
+                  >
+                    <span className="font-mono text-xs">.*</span>
+                  </Toggle>
+                </>
+              }
               onQueryChange={setQuery}
               onFileMaskChange={setFileMask}
             />
@@ -786,43 +925,71 @@ function ProjectTextSearchDialog(props: {
                   <div className="flex h-full items-center justify-center text-xs text-destructive">
                     Project search failed.
                   </div>
+                ) : result.regexFallbackError ? (
+                  <div className="flex h-full items-center justify-center text-xs text-destructive">
+                    Invalid regular expression.
+                  </div>
                 ) : !result.isPending && result.matches.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                     No matches found.
                   </div>
                 ) : (
-                  result.matches.map((match: ProjectTextSearchMatch, index) => (
-                    <button
-                      key={`${match.path}:${match.line}:${match.column}:${index}`}
-                      type="button"
-                      className={cn(
-                        "flex min-h-8 w-full items-center gap-2 rounded-md px-2 py-1 text-left text-xs",
-                        index === selectedIndex
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-muted/60",
-                      )}
-                      onMouseEnter={() => setSelectedIndex(index)}
-                      onClick={() => setSelectedIndex(index)}
-                      onDoubleClick={() => {
-                        props.onOpenFile(match.path, match.line);
-                        props.onOpenChange(false);
-                      }}
-                    >
-                      <span className="min-w-0 flex-1 truncate font-mono">{match.preview}</span>
-                      <span className="max-w-[42%] shrink-0 truncate opacity-70">
-                        {match.path}:{match.line}
-                      </span>
-                    </button>
-                  ))
+                  <div>
+                    {groups.map((group) => (
+                      <section className="pb-2" key={group.path}>
+                        <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-background/95 px-2 text-xs backdrop-blur-sm">
+                          <FileIcon className="size-3.5 shrink-0 opacity-75" />
+                          <span className="min-w-0 flex-1 truncate font-medium">{group.path}</span>
+                          <span className="rounded-full bg-muted px-1.5 py-0.5 tabular-nums text-[10px] text-muted-foreground">
+                            {group.totalCount}
+                          </span>
+                        </div>
+                        {group.matches.map((match) => (
+                          <button
+                            key={`${match.path}:${match.lineNumber}:${match.resultIndex}`}
+                            type="button"
+                            data-content-search-result={match.resultIndex}
+                            disabled={!canOpenSelected}
+                            className={cn(
+                              "flex h-7 w-full min-w-0 items-center gap-3 rounded-md px-2 text-left font-mono text-xs hover:bg-muted/60 disabled:pointer-events-none",
+                              match.resultIndex === selectedIndex &&
+                                "bg-primary text-primary-foreground",
+                            )}
+                            onMouseEnter={() => setSelectedIndex(match.resultIndex)}
+                            onClick={() => setSelectedIndex(match.resultIndex)}
+                            onDoubleClick={() => {
+                              if (!canOpenSelected) return;
+                              props.onOpenFile(match.path, match.lineNumber);
+                              props.onOpenChange(false);
+                            }}
+                          >
+                            <span className="w-10 shrink-0 text-right tabular-nums opacity-65">
+                              {match.lineNumber}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate whitespace-pre">
+                              <HighlightedSearchLine
+                                match={match}
+                                path={group.path}
+                                theme={resolvedTheme}
+                              />
+                            </span>
+                          </button>
+                        ))}
+                      </section>
+                    ))}
+                    {result.matches.length > visibleCount ? (
+                      <div ref={loadMoreRef} className="h-8" aria-hidden="true" />
+                    ) : null}
+                  </div>
                 )}
               </div>
               <SearchFilePreview
-                key={selected ? `${selected.path}:${selected.line}` : "empty"}
+                key={selected ? `${selected.path}:${selected.lineNumber}` : "empty"}
                 environmentId={props.environmentId}
                 threadRef={props.threadRef}
                 cwd={props.cwd}
                 relativePath={selected?.path ?? null}
-                line={selected?.line ?? null}
+                line={selected?.lineNumber ?? null}
                 revealRequestId={selectedIndex + 1}
               />
             </div>

@@ -7,6 +7,8 @@ import type {
   ProjectListEntriesResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
+  ProjectTextSearchInput,
+  ProjectTextSearchResult,
   WorkspaceListDirectoriesInput,
   WorkspaceListDirectoriesResult,
 } from "@t3tools/contracts";
@@ -45,6 +47,9 @@ export class WorkspaceEntries extends Context.Service<
       input: WorkspaceListEntriesInput,
     ) => Effect.Effect<ProjectListEntriesResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
+    readonly searchText: (
+      input: Omit<ProjectTextSearchInput, "threadId">,
+    ) => Effect.Effect<ProjectTextSearchResult, WorkspaceEntriesError>;
     readonly listDirectories: (
       input: WorkspaceListDirectoriesInput,
     ) => Effect.Effect<WorkspaceListDirectoriesResult, WorkspaceDirectoryListFailed>;
@@ -68,53 +73,82 @@ export const make = Effect.gen(function* () {
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const searchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
 
+  const normalizeRealWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeRealWorkspaceRoot")(
+    function* (cwd: string) {
+      const normalized = yield* workspacePaths.normalizeWorkspaceRoot(cwd);
+      return yield* Effect.tryPromise({
+        try: () => NodeFS.realpath(normalized),
+        catch: () =>
+          new WorkspaceSearchIndex.WorkspaceSearchIndexCreateFailed({
+            reason: "Failed to resolve the verified project root.",
+          }),
+      });
+    },
+  );
+
   const search: WorkspaceEntries["Service"]["search"] = Effect.fn("WorkspaceEntries.search")(
     function* (input) {
-      const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
+      const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
       const query = normalizeSearchQuery(input.query, { trimLeadingPattern: /^[@./]+/u });
       return yield* Effect.gen(function* () {
         const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* index.search(query, input.limit, input.kind, input.imageOnly, input.fileMask);
-      }).pipe(Effect.provide(searchIndexes.get(cwd)));
+      }).pipe(
+        Effect.provide(
+          searchIndexes.get(WorkspaceSearchIndex.workspaceSearchIndexKey(cwd, "paths")),
+        ),
+      );
     },
   );
 
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
-      const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
+      const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
       return yield* Effect.gen(function* () {
         const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* index.list();
-      }).pipe(Effect.provide(searchIndexes.get(cwd)));
+      }).pipe(
+        Effect.provide(
+          searchIndexes.get(WorkspaceSearchIndex.workspaceSearchIndexKey(cwd, "paths")),
+        ),
+      );
     },
   );
 
+  const searchText: WorkspaceEntries["Service"]["searchText"] = Effect.fn(
+    "WorkspaceEntries.searchText",
+  )(function* (input) {
+    const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
+    return yield* Effect.gen(function* () {
+      const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
+      return yield* index.searchText(input);
+    }).pipe(
+      Effect.provide(
+        searchIndexes.get(WorkspaceSearchIndex.workspaceSearchIndexKey(cwd, "content")),
+      ),
+    );
+  });
+
   const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(
     function* (cwd) {
-      const normalizedCwd = yield* workspacePaths
-        .normalizeWorkspaceRoot(cwd)
-        .pipe(Effect.orElseSucceed(() => cwd));
-      if (!(yield* RcMap.has(searchIndexes.rcMap, normalizedCwd))) return;
-      yield* Effect.gen(function* () {
-        const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
-        yield* index.refresh();
-      }).pipe(
-        Effect.provide(searchIndexes.get(normalizedCwd)),
-        Effect.catchTags({
-          WorkspaceSearchIndexCreateFailed: (cause) =>
-            Effect.logWarning("Failed to refresh workspace search index", { cwd, cause }).pipe(
-              Effect.andThen(searchIndexes.invalidate(normalizedCwd)),
-            ),
-          WorkspaceSearchIndexScanTimedOut: (cause) =>
-            Effect.logWarning("Failed to refresh workspace search index", { cwd, cause }).pipe(
-              Effect.andThen(searchIndexes.invalidate(normalizedCwd)),
-            ),
-          WorkspaceSearchIndexRefreshFailed: (cause) =>
-            Effect.logWarning("Failed to refresh workspace search index", { cwd, cause }).pipe(
-              Effect.andThen(searchIndexes.invalidate(normalizedCwd)),
-            ),
-        }),
+      const normalizedCwd = yield* normalizeRealWorkspaceRoot(cwd).pipe(
+        Effect.orElseSucceed(() => cwd),
       );
+      for (const variant of WorkspaceSearchIndex.WORKSPACE_SEARCH_INDEX_VARIANTS) {
+        const key = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, variant);
+        if (!(yield* RcMap.has(searchIndexes.rcMap, key))) continue;
+        yield* Effect.gen(function* () {
+          const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
+          yield* index.refresh();
+        }).pipe(
+          Effect.provide(searchIndexes.get(key)),
+          Effect.catchTags({
+            WorkspaceSearchIndexCreateFailed: () => searchIndexes.invalidate(key),
+            WorkspaceSearchIndexScanTimedOut: () => searchIndexes.invalidate(key),
+            WorkspaceSearchIndexRefreshFailed: () => searchIndexes.invalidate(key),
+          }),
+        );
+      }
     },
   );
 
@@ -163,7 +197,7 @@ export const make = Effect.gen(function* () {
     };
   });
 
-  return WorkspaceEntries.of({ search, list, listDirectories, refresh });
+  return WorkspaceEntries.of({ search, searchText, list, listDirectories, refresh });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(

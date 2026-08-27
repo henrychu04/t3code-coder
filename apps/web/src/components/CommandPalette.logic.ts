@@ -1,7 +1,7 @@
 import type { KeybindingCommand } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 
-export type SearchOverlayMode = "command" | "files";
+export type SearchOverlayMode = "command";
 
 export interface CommandPaletteOpenIntent {
   readonly kind: "add-project" | "new-thread-in";
@@ -20,9 +20,8 @@ export type CommandPaletteUiAction =
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "ClearOpenIntent" };
 
-// Kept aligned with upstream's shared overlay reducer. The Coder fork has no
-// project-content-search surface, so its mode union intentionally stops at
-// the command and remote-file views.
+// The Coder fork opens project file and content search in the right-panel
+// viewer, so this overlay owns only command discovery.
 export function reduceCommandPaletteUiState(
   state: CommandPaletteUiState,
   action: CommandPaletteUiAction,

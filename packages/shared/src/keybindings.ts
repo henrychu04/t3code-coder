@@ -28,12 +28,11 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
-  { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
   { key: "mod+f", command: "fileViewer.find", when: "fileOpen && !terminalFocus" },
   { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
   {
     key: "shift shift",
-    command: "fileViewer.searchFiles",
+    command: "filePicker.toggle",
     when: "projectOpen && !terminalFocus",
   },
   {

@@ -120,14 +120,21 @@ const DEFAULT_BINDINGS = compile([
     whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
-    shortcut: modShortcut("p"),
-    command: "filePicker.toggle",
-    whenAst: whenNot(whenIdentifier("terminalFocus")),
-  },
-  {
     shortcut: modShortcut("f", { shiftKey: true }),
     command: "projectSearch.toggle",
     whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
+  {
+    shortcut: {
+      key: "double-shift",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    },
+    command: "filePicker.toggle",
+    whenAst: whenAnd(whenIdentifier("projectOpen"), whenNot(whenIdentifier("terminalFocus"))),
   },
   {
     shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
@@ -383,8 +390,11 @@ describe("shortcutLabelForCommand", () => {
       "⌘K",
     );
     assert.strictEqual(
-      shortcutLabelForCommand(DEFAULT_BINDINGS, "filePicker.toggle", "MacIntel"),
-      "⌘P",
+      shortcutLabelForCommand(DEFAULT_BINDINGS, "filePicker.toggle", {
+        platform: "MacIntel",
+        context: { projectOpen: true, terminalFocus: false },
+      }),
+      "Shift Shift",
     );
     assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "projectSearch.toggle", {
@@ -595,20 +605,13 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("matches filePicker.toggle shortcut outside terminal focus", () => {
+  it("leaves mod+p unassigned by default", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "p", metaKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { terminalFocus: false },
       }),
-      "filePicker.toggle",
-    );
-    assert.notStrictEqual(
-      resolveShortcutCommand(event({ key: "p", metaKey: true }), DEFAULT_BINDINGS, {
-        platform: "MacIntel",
-        context: { terminalFocus: true },
-      }),
-      "filePicker.toggle",
+      null,
     );
   });
 
@@ -892,7 +895,7 @@ describe("double-Shift shortcuts", () => {
           altKey: false,
           modKey: false,
         },
-        command: "fileViewer.searchFiles",
+        command: "filePicker.toggle",
         whenAst: whenAnd(whenIdentifier("projectOpen"), whenNot(whenIdentifier("terminalFocus"))),
       },
     ]);
@@ -900,7 +903,7 @@ describe("double-Shift shortcuts", () => {
       resolveDoubleShiftShortcutCommand(bindings, {
         context: { projectOpen: true, terminalFocus: false },
       }),
-      "fileViewer.searchFiles",
+      "filePicker.toggle",
     );
     assert.isNull(
       resolveDoubleShiftShortcutCommand(bindings, {

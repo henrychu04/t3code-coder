@@ -121,6 +121,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { onOpenFileViewerCommand } from "../fileViewerCommandBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
@@ -2417,6 +2418,15 @@ function ChatViewContent(props: ChatViewProps) {
   const handleFileViewerCommandRequest = useCallback((id: number) => {
     setFileViewerCommandRequest((current) => (current?.id === id ? null : current));
   }, []);
+  useEffect(
+    () =>
+      onOpenFileViewerCommand((command) => {
+        requestFileViewerCommand(
+          command === "projectSearch.toggle" ? "projectSearch.toggle" : "fileViewer.searchFiles",
+        );
+      }),
+    [requestFileViewerCommand],
+  );
   const openFileSurface = useCallback(
     (relativePath: string, line?: number) => {
       if (!activeThreadRef) return;
@@ -3991,10 +4001,10 @@ function ChatViewContent(props: ChatViewProps) {
         const now = performance.now();
         if (lastShiftAtRef.current !== null && now - lastShiftAtRef.current < 500) {
           lastShiftAtRef.current = null;
-          if (
-            resolveDoubleShiftShortcutCommand(keybindings, { context: shortcutContext }) ===
-            "fileViewer.searchFiles"
-          ) {
+          const command = resolveDoubleShiftShortcutCommand(keybindings, {
+            context: shortcutContext,
+          });
+          if (command === "filePicker.toggle" || command === "fileViewer.searchFiles") {
             event.preventDefault();
             event.stopPropagation();
             requestFileViewerCommand("fileViewer.searchFiles");
@@ -4045,10 +4055,16 @@ function ChatViewContent(props: ChatViewProps) {
         return;
       }
 
-      if (command === "projectSearch.toggle" || command === "fileViewer.searchFiles") {
+      if (
+        command === "projectSearch.toggle" ||
+        command === "filePicker.toggle" ||
+        command === "fileViewer.searchFiles"
+      ) {
         event.preventDefault();
         event.stopPropagation();
-        requestFileViewerCommand(command);
+        requestFileViewerCommand(
+          command === "projectSearch.toggle" ? "projectSearch.toggle" : "fileViewer.searchFiles",
+        );
         return;
       }
 

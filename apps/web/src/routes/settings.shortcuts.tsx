@@ -4,10 +4,13 @@ import type {
   KeybindingShortcut,
   ResolvedKeybindingRule,
 } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import {
+  DEFAULT_RESOLVED_KEYBINDINGS,
+  parseKeybindingWhenExpression,
+} from "@t3tools/shared/keybindings";
 import { createFileRoute } from "@tanstack/react-router";
-import { RotateCcwIcon, SearchIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { PlusIcon, RotateCcwIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { KEYBINDING_ACTIONS } from "../keybindingCatalog";
 import {
@@ -16,7 +19,9 @@ import {
   keybindingWhenForNode,
 } from "../keybindings";
 import { isMacPlatform } from "../lib/utils";
+import { keybindingWhenExpressionsOverlap } from "../keybindingOverlap";
 import { SettingsPage, SettingsSection } from "../components/settings/SettingsPage";
+import { KeybindingWhenEditor } from "../components/settings/KeybindingWhenEditor";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Kbd } from "../components/ui/kbd";
@@ -73,10 +78,24 @@ function ShortcutsSettingsView() {
     readonly command: KeybindingCommand;
     readonly replace: ResolvedKeybindingRule | null;
     readonly shortcut: KeybindingShortcut;
+    readonly when: string;
   } | null>(null);
   const [busy, setBusy] = useState<KeybindingCommand | null>(null);
   const [error, setError] = useState<string | null>(null);
   const firstShiftAt = useRef<number | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const modKey = isMacPlatform(navigator.platform) ? event.metaKey : event.ctrlKey;
+      if (!modKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== "f") return;
+      event.preventDefault();
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const bindingsByCommand = useMemo(() => {
     const result = new Map<KeybindingCommand, ResolvedKeybindingRule[]>();
@@ -121,19 +140,22 @@ function ShortcutsSettingsView() {
     command: KeybindingCommand,
     shortcut: KeybindingShortcut,
     replace: ResolvedKeybindingRule | null,
+    when: string,
   ) => {
     if (environmentId === null) return;
+    const normalizedWhen = when.trim();
+    if (normalizedWhen && !parseKeybindingWhenExpression(normalizedWhen)) {
+      setError("Invalid when expression. Use variables with !, &&, ||, and parentheses.");
+      return;
+    }
     setBusy(command);
     setError(null);
-    const defaultRule = defaultsByCommand.get(command)?.at(-1);
-    const contextRule = replace ?? defaultRule;
-    const when = keybindingWhenForNode(contextRule?.whenAst);
     const result = await upsertKeybinding({
       environmentId,
       input: {
         key: keybindingKeyForShortcut(shortcut),
         command,
-        ...(when ? { when } : {}),
+        ...(normalizedWhen ? { when: normalizedWhen } : {}),
         ...(replace ? { replace: ruleInput(replace) } : {}),
       },
     });
@@ -146,6 +168,17 @@ function ShortcutsSettingsView() {
     setCapturing(null);
   };
 
+  const remove = async (binding: ResolvedKeybindingRule) => {
+    if (environmentId === null) return;
+    setBusy(binding.command);
+    setError(null);
+    const result = await removeKeybinding({ environmentId, input: ruleInput(binding) });
+    setBusy(null);
+    if (result._tag === "Failure") {
+      setError("Could not remove that shortcut. Check the workspace connection and try again.");
+    }
+  };
+
   const reset = async (command: KeybindingCommand) => {
     if (environmentId === null) return;
     setBusy(command);
@@ -155,6 +188,19 @@ function ShortcutsSettingsView() {
       const result = await removeKeybinding({ environmentId, input: ruleInput(binding) });
       if (result._tag === "Failure") {
         setError("Could not reset that shortcut. Check the workspace connection and try again.");
+        setBusy(null);
+        return;
+      }
+    }
+    for (const defaultBinding of defaultsByCommand.get(command) ?? []) {
+      const result = await upsertKeybinding({
+        environmentId,
+        input: {
+          ...ruleInput(defaultBinding),
+        },
+      });
+      if (result._tag === "Failure") {
+        setError("Could not restore the default shortcut because it conflicts with another rule.");
         setBusy(null);
         return;
       }
@@ -173,8 +219,13 @@ function ShortcutsSettingsView() {
           then press the replacement. For Search project files, press Shift twice to assign the
           Search Everywhere gesture.
         </p>
+        <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
+          Some shortcuts are reserved by the browser and may not reach T3 Coder. Ctrl/Cmd+F focuses
+          this settings search while this page is open.
+        </p>
         <div className="max-w-md pt-2">
           <Input
+            ref={searchInputRef}
             aria-label="Search keyboard shortcuts"
             nativeInput
             placeholder="Search actions…"
@@ -198,13 +249,17 @@ function ShortcutsSettingsView() {
               const candidate = pending?.command === action.command ? pending.shortcut : null;
               const candidateKey = candidate ? keybindingKeyForShortcut(candidate) : null;
               const contextRule = pending?.replace ?? defaultsByCommand.get(action.command)?.at(-1);
-              const candidateWhen = keybindingWhenForNode(contextRule?.whenAst);
+              const candidateWhen =
+                pending?.when ?? keybindingWhenForNode(contextRule?.whenAst) ?? "";
               const conflict = candidateKey
                 ? keybindings.find(
                     (binding) =>
                       binding.command !== action.command &&
                       keybindingKeyForShortcut(binding.shortcut) === candidateKey &&
-                      keybindingWhenForNode(binding.whenAst) === candidateWhen,
+                      keybindingWhenExpressionsOverlap(
+                        keybindingWhenForNode(binding.whenAst),
+                        candidateWhen,
+                      ),
                   )
                 : null;
               const targets: ReadonlyArray<ResolvedKeybindingRule | null> =
@@ -232,83 +287,135 @@ function ShortcutsSettingsView() {
                       const isCapturing =
                         capturing?.command === action.command &&
                         sameRule(capturing.replace, target);
+                      const pendingForTarget =
+                        pending?.command === action.command && sameRule(pending.replace, target)
+                          ? pending
+                          : null;
+                      const defaultRule = defaultsByCommand.get(action.command)?.at(-1);
+                      const editableShortcut =
+                        pendingForTarget?.shortcut ?? target?.shortcut ?? defaultRule?.shortcut;
+                      const targetWhen =
+                        pendingForTarget?.when ??
+                        keybindingWhenForNode((target ?? defaultRule)?.whenAst) ??
+                        "";
+                      const isDefault =
+                        target !== null &&
+                        DEFAULT_RESOLVED_KEYBINDINGS.some((binding) => sameRule(binding, target));
                       return (
-                        <Button
+                        <div
                           key={target ? JSON.stringify(ruleInput(target)) : `unassigned:${index}`}
-                          type="button"
-                          variant="outline"
-                          className="min-w-28"
-                          data-keybinding-capture=""
-                          disabled={environmentId === null || busy !== null}
-                          onClick={() => {
-                            setPending(null);
-                            setCapturing({ command: action.command, replace: target });
-                            firstShiftAt.current = null;
-                          }}
-                          onBlur={() => {
-                            firstShiftAt.current = null;
-                            if (isCapturing) setCapturing(null);
-                          }}
-                          onKeyDown={(event) => {
-                            if (!isCapturing) return;
-                            event.preventDefault();
-                            event.stopPropagation();
-                            if (event.key === "Escape") {
-                              setCapturing(null);
+                          className="flex flex-wrap items-center gap-2"
+                        >
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="min-w-28"
+                            data-keybinding-capture=""
+                            disabled={environmentId === null || busy !== null}
+                            onClick={() => {
                               setPending(null);
-                              return;
-                            }
-                            if (event.key === "Shift") {
-                              const now = performance.now();
-                              if (
-                                firstShiftAt.current !== null &&
-                                now - firstShiftAt.current < 700
-                              ) {
-                                if (action.command !== "fileViewer.searchFiles") {
-                                  setError(
-                                    "Shift Shift is currently supported only for Search project files.",
-                                  );
+                              setCapturing({ command: action.command, replace: target });
+                              firstShiftAt.current = null;
+                            }}
+                            onBlur={() => {
+                              firstShiftAt.current = null;
+                              if (isCapturing) setCapturing(null);
+                            }}
+                            onKeyDown={(event) => {
+                              if (!isCapturing) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              if (event.key === "Escape") {
+                                setCapturing(null);
+                                setPending(null);
+                                return;
+                              }
+                              if (event.key === "Shift") {
+                                const now = performance.now();
+                                if (
+                                  firstShiftAt.current !== null &&
+                                  now - firstShiftAt.current < 700
+                                ) {
+                                  if (action.command !== "filePicker.toggle") {
+                                    setError(
+                                      "Shift Shift is currently supported only for Search project files.",
+                                    );
+                                    setCapturing(null);
+                                    firstShiftAt.current = null;
+                                    return;
+                                  }
+                                  const shortcut: KeybindingShortcut = {
+                                    key: "double-shift",
+                                    metaKey: false,
+                                    ctrlKey: false,
+                                    shiftKey: false,
+                                    altKey: false,
+                                    modKey: false,
+                                  };
+                                  setPending({
+                                    command: action.command,
+                                    replace: target,
+                                    shortcut,
+                                    when: targetWhen,
+                                  });
                                   setCapturing(null);
                                   firstShiftAt.current = null;
-                                  return;
+                                } else {
+                                  firstShiftAt.current = now;
                                 }
-                                const shortcut: KeybindingShortcut = {
-                                  key: "double-shift",
-                                  metaKey: false,
-                                  ctrlKey: false,
-                                  shiftKey: false,
-                                  altKey: false,
-                                  modKey: false,
-                                };
-                                setPending({
-                                  command: action.command,
-                                  replace: target,
-                                  shortcut,
-                                });
-                                setCapturing(null);
-                                firstShiftAt.current = null;
-                              } else {
-                                firstShiftAt.current = now;
+                                return;
                               }
-                              return;
-                            }
-                            firstShiftAt.current = null;
-                            const shortcut = shortcutFromEvent(event);
-                            if (!shortcut) return;
-                            setPending({ command: action.command, replace: target, shortcut });
-                            setCapturing(null);
-                          }}
-                        >
-                          {isCapturing ? (
-                            "Press shortcut…"
-                          ) : targetPending ? (
-                            <Kbd>{formatShortcutLabel(targetPending)}</Kbd>
-                          ) : target ? (
-                            <Kbd>{formatShortcutLabel(target.shortcut)}</Kbd>
-                          ) : (
-                            "Unassigned"
-                          )}
-                        </Button>
+                              firstShiftAt.current = null;
+                              const shortcut = shortcutFromEvent(event);
+                              if (!shortcut) return;
+                              setPending({
+                                command: action.command,
+                                replace: target,
+                                shortcut,
+                                when: targetWhen,
+                              });
+                              setCapturing(null);
+                            }}
+                          >
+                            {isCapturing ? (
+                              "Press shortcut…"
+                            ) : targetPending ? (
+                              <Kbd>{formatShortcutLabel(targetPending)}</Kbd>
+                            ) : target ? (
+                              <Kbd>{formatShortcutLabel(target.shortcut)}</Kbd>
+                            ) : (
+                              "Unassigned"
+                            )}
+                          </Button>
+                          <KeybindingWhenEditor
+                            disabled={!editableShortcut || environmentId === null || busy !== null}
+                            value={targetWhen}
+                            onChange={(when) => {
+                              if (!editableShortcut) return;
+                              setPending({
+                                command: action.command,
+                                replace: target,
+                                shortcut: editableShortcut,
+                                when,
+                              });
+                            }}
+                          />
+                          <span className="w-14 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {target ? (isDefault ? "Default" : "Custom") : "None"}
+                          </span>
+                          {target && !isDefault ? (
+                            <Button
+                              type="button"
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label={`Remove ${action.label} binding`}
+                              disabled={environmentId === null || busy !== null}
+                              onClick={() => void remove(target)}
+                            >
+                              <Trash2Icon />
+                            </Button>
+                          ) : null}
+                        </div>
                       );
                     })}
                     {candidate ? (
@@ -316,10 +423,31 @@ function ShortcutsSettingsView() {
                         size="sm"
                         disabled={busy !== null}
                         onClick={() =>
-                          void save(action.command, candidate, pending?.replace ?? null)
+                          void save(
+                            action.command,
+                            candidate,
+                            pending?.replace ?? null,
+                            pending?.when ?? candidateWhen,
+                          )
                         }
                       >
                         Save
+                      </Button>
+                    ) : null}
+                    {current.length > 0 ? (
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={`Add another ${action.label} binding`}
+                        disabled={environmentId === null || busy !== null}
+                        onClick={() => {
+                          setPending(null);
+                          setCapturing({ command: action.command, replace: null });
+                          firstShiftAt.current = null;
+                        }}
+                      >
+                        <PlusIcon />
                       </Button>
                     ) : null}
                     <Button

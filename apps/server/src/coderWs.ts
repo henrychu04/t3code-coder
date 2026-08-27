@@ -157,19 +157,16 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
     case "WorkspaceSearchIndexCreateFailed":
       return {
         failure: "search_index_create_failed",
-        normalizedCwd: error.cwd,
         detail: error.reason,
       };
     case "WorkspaceSearchIndexScanTimedOut":
       return {
         failure: "search_index_scan_timed_out",
-        normalizedCwd: error.cwd,
         timeout: error.timeout,
       };
     case "WorkspaceSearchIndexSearchFailed":
       return {
         failure: "search_index_search_failed",
-        normalizedCwd: error.cwd,
         detail: error.reason,
       };
   }
@@ -790,21 +787,18 @@ export const layer = CoderWsRpcGroup.toLayer(
           );
           if (!owned) {
             return yield* new ProjectTextSearchError({
-              cwd: input.cwd,
               queryLength: input.query.length,
               limit: input.limit,
               failure: "workspace_not_owned_by_thread",
             });
           }
-          return yield* workspaceFileSystem.searchText(input).pipe(
+          return yield* workspaceEntries.searchText(input).pipe(
             Effect.mapError(
-              (cause) =>
+              () =>
                 new ProjectTextSearchError({
-                  cwd: input.cwd,
                   queryLength: input.query.length,
                   limit: input.limit,
                   failure: "search_index_search_failed",
-                  cause,
                 }),
             ),
           );

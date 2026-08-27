@@ -1,7 +1,8 @@
 import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
+import type { ContextMenuItem, ContextMenuOpenContext } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { RotateCw } from "lucide-react";
-import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -30,16 +31,23 @@ function treePath(entry: ProjectEntry): string {
   return entry.kind === "directory" ? `${entry.path}/` : entry.path;
 }
 
-export function filePathFromTreeContextMenu(
-  eventPath: readonly EventTarget[],
+export function contextMenuFilePath(
+  item: Pick<ContextMenuItem, "kind" | "path">,
   entryKinds: ReadonlyMap<string, ProjectEntry["kind"]>,
 ): string | null {
-  const row = eventPath.find(
-    (target): target is HTMLElement =>
-      target instanceof HTMLElement && target.dataset.itemPath !== undefined,
-  );
-  const relativePath = row?.dataset.itemPath?.replace(/\/$/, "");
-  return relativePath && entryKinds.get(relativePath) === "file" ? relativePath : null;
+  const path = item.path.replace(/\/$/, "");
+  if (
+    item.kind !== "file" ||
+    entryKinds.get(path) !== "file" ||
+    !path ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.includes("\0") ||
+    path.split("/").some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+  return path;
 }
 
 export default function FileBrowserPanel(props: {
@@ -65,8 +73,50 @@ export default function FileBrowserPanel(props: {
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
   const handledRevealRef = useRef<{ path: string; revealId: number } | null>(null);
+  const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  useEffect(() => {
+    const capturePointer = (event: MouseEvent) => {
+      contextMenuPointerRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        at: event.timeStamp,
+      };
+    };
+    document.addEventListener("contextmenu", capturePointer, true);
+    return () => document.removeEventListener("contextmenu", capturePointer, true);
+  }, []);
+  const showEntryContextMenu = useCallback(
+    (item: ContextMenuItem, context: ContextMenuOpenContext) => {
+      const relativePath = contextMenuFilePath(item, entryKindsRef.current);
+      const localApi = readLocalApi();
+      if (!relativePath || !localApi) {
+        context.close();
+        return;
+      }
+      const pointer = contextMenuPointerRef.current;
+      const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1_000;
+      const anchorRect = context.anchorElement.getBoundingClientRect();
+      const position = pointerIsFresh
+        ? { x: pointer.x, y: pointer.y }
+        : { x: anchorRect.left, y: anchorRect.bottom };
+      void localApi.contextMenu
+        .show([{ id: "copy-path", label: "Copy path", icon: "copy" }], position)
+        .then((action) => {
+          if (action === "copy-path") copyToClipboard(relativePath, undefined);
+        })
+        .catch(() => undefined)
+        .finally(() => context.close());
+    },
+    [copyToClipboard],
+  );
 
   const { model } = useFileTree({
+    composition: {
+      contextMenu: {
+        triggerMode: "right-click",
+        onOpen: showEntryContextMenu,
+      },
+    },
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
@@ -133,30 +183,6 @@ export default function FileBrowserPanel(props: {
     props.onRefreshSelectedFile?.();
   };
 
-  const handleContextMenu = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
-      const relativePath = filePathFromTreeContextMenu(
-        event.nativeEvent.composedPath(),
-        entryKindsRef.current,
-      );
-      if (!relativePath) return;
-
-      const localApi = readLocalApi();
-      if (!localApi) return;
-      event.preventDefault();
-      event.stopPropagation();
-      void localApi.contextMenu
-        .show([{ id: "copy-path", label: "Copy path", icon: "copy" }], {
-          x: event.clientX,
-          y: event.clientY,
-        })
-        .then((action) => {
-          if (action === "copy-path") copyToClipboard(relativePath, undefined);
-        });
-    },
-    [copyToClipboard],
-  );
-
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 px-2">
@@ -207,7 +233,6 @@ export default function FileBrowserPanel(props: {
             aria-label={`${props.projectName} files`}
             aria-hidden={hasNoSearchMatches || undefined}
             className={cn("size-full overflow-hidden", hasNoSearchMatches && "invisible")}
-            onContextMenu={handleContextMenu}
             style={{
               colorScheme: resolvedTheme,
               ["--trees-fg-override" as string]: "var(--contrast-foreground)",
