@@ -226,11 +226,11 @@ function ShortcutsSettingsView() {
       </div>
 
       {CATEGORIES.map((category) => {
-        const actions = visibleActions.filter((action) => action.category === category);
-        if (actions.length === 0) return null;
+        const categoryActions = visibleActions.filter((action) => action.category === category);
+        if (categoryActions.length === 0) return null;
         return (
           <SettingsSection key={category} title={category}>
-            {actions.map((action) => {
+            {categoryActions.map((action) => {
               const current = bindingsByCommand.get(action.command) ?? [];
               const candidate = pending?.command === action.command ? pending.shortcut : null;
               const candidateKey = candidate ? keybindingKeyForShortcut(candidate) : null;
