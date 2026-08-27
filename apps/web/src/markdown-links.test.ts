@@ -60,6 +60,32 @@ describe("resolveMarkdownFileLinkTarget", () => {
     );
   });
 
+  it("resolves relative file paths containing spaces", () => {
+    expect(
+      resolveMarkdownFileLinkMeta("docs/Release%20checklist.md:7", "/Users/julius/project"),
+    ).toMatchObject({
+      targetPath: "/Users/julius/project/docs/Release checklist.md:7",
+      workspaceRelativePath: "docs/Release checklist.md",
+      line: 7,
+    });
+    expect(
+      resolveMarkdownFileLinkMeta("Updated%20cutover%20checklist.md", "/Users/julius/project"),
+    ).toMatchObject({
+      workspaceRelativePath: "Updated cutover checklist.md",
+    });
+  });
+
+  it("rejects malformed and external spaced destinations", () => {
+    expect(resolveMarkdownFileLinkTarget("%20leading-name.md", "/Users/julius/project")).toBeNull();
+    expect(
+      resolveMarkdownFileLinkTarget("trailing-name.md%20", "/Users/julius/project"),
+    ).toBeNull();
+    expect(
+      resolveMarkdownFileLinkTarget("docs/Release%0Achecklist.md", "/Users/julius/project"),
+    ).toBeNull();
+    expect(resolveMarkdownFileLinkTarget("https://example.com/Release%20notes.md")).toBeNull();
+  });
+
   it("maps #L line anchors to editor line suffixes", () => {
     expect(resolveMarkdownFileLinkTarget("/Users/julius/project/src/main.ts#L42C7")).toBe(
       "/Users/julius/project/src/main.ts:42:7",
@@ -258,6 +284,9 @@ describe("resolveInlineCodeFileLinkMeta", () => {
     expect(resolveInlineCodeFileLinkMeta("node.meta", "/Users/julius/project")).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("pnpm install", "/Users/julius/project")).toBeNull();
     expect(resolveInlineCodeFileLinkMeta("src/**/*.ts", "/Users/julius/project")).toBeNull();
+    expect(
+      resolveInlineCodeFileLinkMeta("src/file with spaces.ts", "/Users/julius/project"),
+    ).toBeNull();
   });
 
   it("ignores extension-less relative segments like git refs and directories", () => {

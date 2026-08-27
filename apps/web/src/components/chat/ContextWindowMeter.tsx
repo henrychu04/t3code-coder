@@ -16,6 +16,9 @@ function formatPercentage(value: number | null): string | null {
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   modelDisplayName?: string | null;
+  onCompact?: (() => void) | undefined;
+  compactDisabled?: boolean | undefined;
+  compactDisabledReason?: string | null | undefined;
 }) {
   const { usage, modelDisplayName } = props;
   const usedPercentage = formatPercentage(usage.usedPercentage);
@@ -126,9 +129,29 @@ export function ContextWindowMeter(props: {
               </span>
             </div>
           ) : null}
-          {usage.compactsAutomatically ? (
-            <div className="mt-1 text-pretty text-secondary-label text-[11px] font-medium">
-              {formatContextWindowCompactionMessage(modelDisplayName)}
+          {usage.compactsAutomatically || props.onCompact ? (
+            <div className="mt-1 flex items-center justify-between gap-3">
+              {usage.compactsAutomatically ? (
+                <div className="text-pretty text-secondary-label text-[11px] font-medium">
+                  {formatContextWindowCompactionMessage(
+                    modelDisplayName,
+                    usage.autoCompactThreshold,
+                  )}
+                </div>
+              ) : (
+                <span />
+              )}
+              {props.onCompact ? (
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={props.compactDisabled}
+                  title={props.compactDisabledReason ?? undefined}
+                  onClick={props.onCompact}
+                >
+                  Compact
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

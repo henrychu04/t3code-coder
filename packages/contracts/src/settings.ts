@@ -272,6 +272,10 @@ export function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fi
   );
 }
 
+// Empty, or an integer from 100,000 to 1,000,000. Reuse this at the patch
+// boundary so an invalid value fails on the update that introduced it.
+const CLAUDE_AUTO_COMPACT_WINDOW_PATTERN = /^(?:|[1-9]\d{5}|1000000)$/;
+
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
     enabled: Schema.Boolean.pipe(
@@ -298,9 +302,23 @@ export const ClaudeSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
+    autoCompactWindow: TrimmedString.check(
+      Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN),
+    ).pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Auto-compact after",
+        description:
+          "Compact after 100,000 to 1,000,000 tokens. Leave empty to use Claude's default.",
+        providerSettingsForm: {
+          placeholder: "e.g. 300000",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
   },
   {
-    order: ["binaryPath", "homePath"],
+    order: ["binaryPath", "homePath", "autoCompactWindow"],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
@@ -429,6 +447,9 @@ const ClaudeSettingsPatch = Schema.Struct({
   binaryPath: Schema.optionalKey(TrimmedString),
   homePath: Schema.optionalKey(TrimmedString),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  autoCompactWindow: Schema.optionalKey(
+    TrimmedString.check(Schema.isPattern(CLAUDE_AUTO_COMPACT_WINDOW_PATTERN)),
+  ),
 });
 
 export const ServerSettingsPatch = Schema.Struct({

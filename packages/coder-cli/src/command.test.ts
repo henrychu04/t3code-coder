@@ -101,6 +101,7 @@ describe("Coder CLI command construction", () => {
       "equities-dev",
       "--",
       "sh",
+      "-l",
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);
@@ -112,6 +113,7 @@ describe("Coder CLI command construction", () => {
       "equities-dev",
       "--",
       "sh",
+      "-l",
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_STATS_COMMAND),
     ]);
@@ -126,6 +128,7 @@ describe("Coder CLI command construction", () => {
       "equities-dev",
       "--",
       "sh",
+      "-l",
       "-c",
       quotePosixShellArgument(
         [
@@ -225,10 +228,28 @@ describe("Coder CLI command construction", () => {
         "equities-dev",
         "--",
         "sh",
+        "-l",
         "-c",
         quotePosixShellArgument('printf "%s\\n" "$HOME"'),
       ],
     );
+
+    const commandWithShellSyntax = `printf "%s\\n" "$PATH"; echo 'still one argument'`;
+    const shellInvocation = buildCoderWorkspaceShellInvocation(
+      deployment,
+      workspace,
+      commandWithShellSyntax,
+      options,
+    );
+    deepStrictEqual(shellInvocation.args.slice(-4), [
+      "sh",
+      "-l",
+      "-c",
+      quotePosixShellArgument(commandWithShellSyntax),
+    ]);
+    strictEqual(shellInvocation.args.filter((argument) => argument === "-l").length, 1);
+    throws(() => buildCoderWorkspaceShellInvocation(deployment, workspace, "", options));
+    throws(() => buildCoderWorkspaceShellInvocation(deployment, workspace, "printf ok\0", options));
   });
 
   it("builds loopback-only port forwards through the selected Coder deployment", () => {

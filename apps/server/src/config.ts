@@ -14,6 +14,7 @@ export interface ServerDerivedPaths {
   readonly logsDir: string;
   readonly terminalLogsDir: string;
   readonly environmentIdPath: string;
+  readonly attachmentsDir: string;
   readonly screenshotArtifactsDir: string;
 }
 
@@ -44,6 +45,7 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
     logsDir,
     terminalLogsDir: path.join(logsDir, "terminals"),
     environmentIdPath: path.join(stateDir, "environment-id"),
+    attachmentsDir: path.join(baseDir, "attachments"),
     screenshotArtifactsDir: path.join(baseDir, "artifacts"),
   } satisfies ServerDerivedPaths;
 });
@@ -57,6 +59,7 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
       paths.terminalLogsDir,
       paths.providerStatusCacheDir,
       paths.worktreesDir,
+      paths.attachmentsDir,
       paths.screenshotArtifactsDir,
     ].map((directory) => fileSystem.makeDirectory(directory, { recursive: true })),
     { concurrency: "unbounded" },

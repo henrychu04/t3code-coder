@@ -55,4 +55,10 @@ describe("formatContextWindowCompactionMessage", () => {
       "Context compacts automatically when needed.",
     );
   });
+
+  it("shows the provider's concrete automatic compaction threshold", () => {
+    expect(formatContextWindowCompactionMessage("Claude Opus", 160_000)).toBe(
+      "Compacts automatically at 160,000 tokens.",
+    );
+  });
 });

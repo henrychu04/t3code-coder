@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { deepStrictEqual, strictEqual, throws } from "node:assert";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
@@ -147,6 +148,19 @@ describe("local Coder gateway", () => {
     );
     strictEqual(
       response.headers["content-security-policy"]?.includes("img-src 'self' data: blob:"),
+      true,
+    );
+    const webIndex = await NodeFS.readFile(
+      new URL("../../web/index.html", import.meta.url),
+      "utf8",
+    );
+    const bootScript = webIndex.match(/<script>([\s\S]*?)<\/script>/u)?.[1];
+    strictEqual(typeof bootScript, "string");
+    const bootScriptHash = createHash("sha256")
+      .update(bootScript ?? "")
+      .digest("base64");
+    strictEqual(
+      response.headers["content-security-policy"]?.includes(`'sha256-${bootScriptHash}'`),
       true,
     );
   });
@@ -955,6 +969,7 @@ setTimeout(() => process.exit(0), 100);
       "henry/project-one",
       "--",
       "sh",
+      "-l",
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_PROBE_COMMAND),
     ]);

@@ -18,7 +18,11 @@ export function resolveContextWindowModelDisplayName(
 
 export function formatContextWindowCompactionMessage(
   modelDisplayName: string | null | undefined,
+  autoCompactThreshold?: number | null,
 ): string {
+  if (typeof autoCompactThreshold === "number" && autoCompactThreshold > 0) {
+    return `Compacts automatically at ${autoCompactThreshold.toLocaleString("en-US")} tokens.`;
+  }
   return modelDisplayName
     ? `Context for ${modelDisplayName} compacts automatically when needed.`
     : "Context compacts automatically when needed.";

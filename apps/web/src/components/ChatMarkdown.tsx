@@ -41,7 +41,7 @@ import { fnv1a32, resolveDiffThemeName, type DiffThemeName } from "../lib/diffRe
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
-import { resolveMarkdownFileLinkMeta } from "../markdown-links";
+import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "../markdown-links";
 import { useRightPanelStore } from "../rightPanelStore";
 import {
   chatMarkdownClipboardPayload,
@@ -627,7 +627,28 @@ function ChatMarkdown({
       img({ node: _node, title: _title, src: _src, alt }) {
         return <InertMarkdownImage alt={alt ?? ""} />;
       },
-      code({ node: _node, children, className: codeClassName, ...props }) {
+      code({ node, children, className: codeClassName, ...props }) {
+        const codeText = nodeToPlainText(children);
+        const fileLink =
+          node?.properties?.dataInlineCode != null
+            ? resolveInlineCodeFileLinkMeta(codeText, cwd)
+            : null;
+        if (threadRef && fileLink?.workspaceRelativePath) {
+          return (
+            <button
+              type="button"
+              className={cn(codeClassName, "cursor-pointer font-mono")}
+              title={fileLink.displayPath}
+              onClick={() =>
+                useRightPanelStore
+                  .getState()
+                  .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
+              }
+            >
+              <code>{children}</code>
+            </button>
+          );
+        }
         return (
           <code {...props} className={cn(codeClassName, "font-mono")}>
             {children}
