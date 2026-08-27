@@ -34,6 +34,7 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
 } from "@t3tools/contracts";
+import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as ServerConfig from "../config.ts";
@@ -136,6 +137,10 @@ export class GitVcsDriver extends Context.Service<
 const WORKSPACE_FILES_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 const GIT_CHECK_IGNORE_MAX_STDIN_BYTES = 256 * 1024;
 const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
+const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
+const REVIEW_UNTRACKED_PATHS_MAX_OUTPUT_BYTES = 120_000;
+const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+const DEFAULT_BASE_BRANCH_CANDIDATES = ["main", "master"] as const;
 const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "-c",
   "core.fsmonitor=false",
@@ -172,6 +177,122 @@ function splitNullSeparatedPaths(input: string, truncated: boolean): string[] {
   }
 
   return parts.filter((value) => value.length > 0);
+}
+
+function parseWorktreeBranchPaths(stdout: string): ReadonlyMap<string, string> {
+  const worktreePaths = new Map<string, string>();
+  let currentPath: string | null = null;
+  let currentBranch: string | null = null;
+  let currentPrunable = false;
+
+  const flush = () => {
+    if (currentPath !== null && currentBranch !== null && !currentPrunable) {
+      worktreePaths.set(currentBranch, currentPath);
+    }
+    currentPath = null;
+    currentBranch = null;
+    currentPrunable = false;
+  };
+
+  for (const field of stdout.split("\0")) {
+    if (field === "") {
+      flush();
+    } else if (field.startsWith("worktree ")) {
+      currentPath = field.slice("worktree ".length);
+    } else if (field.startsWith("branch refs/heads/")) {
+      currentBranch = field.slice("branch refs/heads/".length);
+    } else if (field === "prunable" || field.startsWith("prunable ")) {
+      currentPrunable = true;
+    }
+  }
+  flush();
+
+  return worktreePaths;
+}
+
+function parseRemoteNames(stdout: string): ReadonlyArray<string> {
+  return stdout
+    .split("\n")
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .toSorted((left, right) => right.length - left.length);
+}
+
+function parseRemoteRef(
+  ref: string,
+  remoteNames: ReadonlyArray<string>,
+): { remoteName: string; branchName: string } | null {
+  for (const remoteName of remoteNames) {
+    const prefix = `${remoteName}/`;
+    if (!ref.startsWith(prefix)) continue;
+    const branchName = ref.slice(prefix.length);
+    return branchName.length > 0 ? { remoteName, branchName } : null;
+  }
+  return null;
+}
+
+function parsePorcelainV2Paths(stdout: string): ReadonlyArray<string> {
+  const pathAfterFields = (field: string, fieldCount: number): string | null => {
+    let separatorIndex = -1;
+    for (let count = 0; count < fieldCount; count += 1) {
+      separatorIndex = field.indexOf(" ", separatorIndex + 1);
+      if (separatorIndex < 0) return null;
+    }
+    const filePath = field.slice(separatorIndex + 1);
+    return filePath || null;
+  };
+  const fields = stdout.split("\0");
+  const paths: string[] = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? "";
+    if (field.startsWith("? ") || field.startsWith("! ")) {
+      const filePath = field.slice(2);
+      if (filePath) paths.push(filePath);
+      continue;
+    }
+    const filePath = field.startsWith("1 ")
+      ? pathAfterFields(field, 8)
+      : field.startsWith("2 ")
+        ? pathAfterFields(field, 9)
+        : field.startsWith("u ")
+          ? pathAfterFields(field, 10)
+          : null;
+    if (filePath) paths.push(filePath);
+    // Rename/copy records carry the original path as the next NUL field. The
+    // working-tree UI should report the destination path only.
+    if (field.startsWith("2 ")) index += 1;
+  }
+  return paths;
+}
+
+function parseNullSeparatedNumstat(
+  stdout: string,
+): ReadonlyArray<{ path: string; insertions: number; deletions: number }> {
+  const fields = stdout.split("\0");
+  const entries: Array<{ path: string; insertions: number; deletions: number }> = [];
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index] ?? "";
+    if (!field) continue;
+    const firstTab = field.indexOf("\t");
+    const secondTab = firstTab < 0 ? -1 : field.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+    const added = field.slice(0, firstTab);
+    const deleted = field.slice(firstTab + 1, secondTab);
+    let filePath = field.slice(secondTab + 1);
+    if (!filePath) {
+      // With `--numstat -z`, renames are encoded as a header followed by the
+      // original and destination path. Keep the destination.
+      index += 2;
+      filePath = fields[index] ?? "";
+    }
+    if (!filePath) continue;
+    entries.push({
+      path: filePath,
+      insertions: added === "-" ? 0 : Number.parseInt(added, 10) || 0,
+      deletions: deleted === "-" ? 0 : Number.parseInt(deleted, 10) || 0,
+    });
+  }
+  return entries;
 }
 
 function chunkPathsForGitCheckIgnore(relativePaths: ReadonlyArray<string>): string[][] {
@@ -679,6 +800,7 @@ const makeLocalGitService = Effect.gen(function* () {
       readonly allowNonZeroExit?: boolean;
       readonly timeoutMs?: number;
       readonly maxOutputBytes?: number;
+      readonly appendTruncationMarker?: boolean;
     } = {},
   ) =>
     gitCommand(vcsProcess, operation, cwd, args, options).pipe(
@@ -699,6 +821,9 @@ const makeLocalGitService = Effect.gen(function* () {
       ...(input.allowNonZeroExit !== undefined ? { allowNonZeroExit: input.allowNonZeroExit } : {}),
       ...(input.timeoutMs != null ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
+      ...(input.appendTruncationMarker !== undefined
+        ? { appendTruncationMarker: input.appendTruncationMarker }
+        : {}),
     });
 
   const currentBranch = (cwd: string) =>
@@ -713,6 +838,78 @@ const makeLocalGitService = Effect.gen(function* () {
       ["show-ref", "--verify", "--quiet", `refs/heads/${branch}`],
       { allowNonZeroExit: true },
     ).pipe(Effect.map((result) => result.exitCode === 0));
+
+  const resolveAutomaticBaseRef = Effect.fn("GitVcsDriver.resolveAutomaticBaseRef")(function* (
+    cwd: string,
+    branch: string,
+  ) {
+    const [configuredBaseResult, remotesResult] = yield* Effect.all([
+      run(
+        "GitVcsDriver.resolveAutomaticBaseRef.config",
+        cwd,
+        ["config", "--get", `branch.${branch}.gh-merge-base`],
+        { allowNonZeroExit: true },
+      ),
+      run("GitVcsDriver.resolveAutomaticBaseRef.remotes", cwd, ["remote"], {
+        allowNonZeroExit: true,
+      }),
+    ]);
+    const remotes = remotesResult.stdout
+      .split("\n")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const primaryRemote = remotes.includes("origin") ? "origin" : (remotes[0] ?? null);
+    const remoteDefaultBranch = primaryRemote
+      ? yield* run(
+          "GitVcsDriver.resolveAutomaticBaseRef.remoteDefault",
+          cwd,
+          ["symbolic-ref", `refs/remotes/${primaryRemote}/HEAD`],
+          { allowNonZeroExit: true },
+        ).pipe(
+          Effect.map((result) => {
+            const prefix = `refs/remotes/${primaryRemote}/`;
+            const ref = result.stdout.trim();
+            return result.exitCode === 0 && ref.startsWith(prefix)
+              ? ref.slice(prefix.length)
+              : null;
+          }),
+        )
+      : null;
+    const candidates = [
+      configuredBaseResult.stdout.trim() || null,
+      remoteDefaultBranch,
+      ...DEFAULT_BASE_BRANCH_CANDIDATES,
+    ];
+
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const remotePrefix = primaryRemote ? `${primaryRemote}/` : null;
+      const normalizedCandidate = candidate.startsWith("origin/")
+        ? candidate.slice("origin/".length)
+        : remotePrefix && candidate.startsWith(remotePrefix)
+          ? candidate.slice(remotePrefix.length)
+          : candidate;
+      if (normalizedCandidate.length === 0 || normalizedCandidate === branch) continue;
+
+      if (primaryRemote) {
+        const remoteBranch = yield* run(
+          "GitVcsDriver.resolveAutomaticBaseRef.remoteBranch",
+          cwd,
+          [
+            "show-ref",
+            "--verify",
+            "--quiet",
+            `refs/remotes/${primaryRemote}/${normalizedCandidate}`,
+          ],
+          { allowNonZeroExit: true },
+        );
+        if (remoteBranch.exitCode === 0) return `${primaryRemote}/${normalizedCandidate}`;
+      }
+      if (yield* localBranchExists(cwd, normalizedCandidate)) return normalizedCandidate;
+    }
+
+    return null;
+  });
 
   const statusDetailsLocal: GitVcsDriver["Service"]["statusDetailsLocal"] = Effect.fn(
     "GitVcsDriver.statusDetailsLocal",
@@ -734,41 +931,55 @@ const makeLocalGitService = Effect.gen(function* () {
     }
 
     const branch = yield* currentBranch(cwd);
-    const [porcelain, numstat, hasMain, hasMaster] = yield* Effect.all([
+    const [porcelain, numstat, remotesResult, hasMain, hasMaster] = yield* Effect.all([
       run("GitVcsDriver.status.porcelain", cwd, [
         "status",
-        "--porcelain=v1",
+        "--porcelain=v2",
         "-z",
         "--untracked-files=all",
       ]),
-      run("GitVcsDriver.status.numstat", cwd, ["diff", "--numstat", "HEAD"], {
+      run("GitVcsDriver.status.numstat", cwd, ["diff", "--numstat", "-z", "HEAD", "--"], {
         allowNonZeroExit: true,
       }),
+      run("GitVcsDriver.status.remotes", cwd, ["remote"], { allowNonZeroExit: true }),
       localBranchExists(cwd, "main"),
       localBranchExists(cwd, "master"),
     ]);
 
-    const changedPaths = porcelain.stdout
-      .split("\0")
-      .filter(Boolean)
-      .map((entry) => entry.slice(3))
-      .filter(Boolean);
+    const changedPaths = parsePorcelainV2Paths(porcelain.stdout);
     const stats = new Map<string, { insertions: number; deletions: number }>();
-    for (const line of numstat.stdout.split("\n")) {
-      const [added, deleted, filePath] = line.split("\t");
-      if (!filePath) continue;
-      stats.set(filePath, {
-        insertions: added === "-" ? 0 : Number.parseInt(added ?? "0", 10) || 0,
-        deletions: deleted === "-" ? 0 : Number.parseInt(deleted ?? "0", 10) || 0,
+    for (const entry of parseNullSeparatedNumstat(numstat.stdout)) {
+      const existing = stats.get(entry.path) ?? { insertions: 0, deletions: 0 };
+      stats.set(entry.path, {
+        insertions: existing.insertions + entry.insertions,
+        deletions: existing.deletions + entry.deletions,
       });
     }
+    const remoteNames = remotesResult.exitCode === 0 ? parseRemoteNames(remotesResult.stdout) : [];
+    const primaryRemote = remoteNames.includes("origin") ? "origin" : (remoteNames[0] ?? null);
+    const remoteDefaultBranch = primaryRemote
+      ? yield* run(
+          "GitVcsDriver.status.remoteDefault",
+          cwd,
+          ["symbolic-ref", `refs/remotes/${primaryRemote}/HEAD`],
+          { allowNonZeroExit: true },
+        ).pipe(
+          Effect.map((result) => {
+            const prefix = `refs/remotes/${primaryRemote}/`;
+            const ref = result.stdout.trim();
+            return result.exitCode === 0 && ref.startsWith(prefix)
+              ? ref.slice(prefix.length)
+              : null;
+          }),
+        )
+      : null;
     const allPaths = [...new Set([...changedPaths, ...stats.keys()])].toSorted();
     const files = allPaths.map((filePath) => ({
       path: filePath,
       insertions: stats.get(filePath)?.insertions ?? 0,
       deletions: stats.get(filePath)?.deletions ?? 0,
     }));
-    const defaultBranch = hasMain ? "main" : hasMaster ? "master" : branch;
+    const defaultBranch = remoteDefaultBranch ?? (hasMain ? "main" : hasMaster ? "master" : branch);
     return {
       isRepo: true,
       isDefaultBranch: branch !== null && branch === defaultBranch,
@@ -787,82 +998,192 @@ const makeLocalGitService = Effect.gen(function* () {
     kind: "working-tree" | "branch-range",
     title: string,
     baseRef: string | null,
+    headRef: string | null,
     args: ReadonlyArray<string>,
   ) {
     const result = yield* run("GitVcsDriver.diff", cwd, args, {
-      allowNonZeroExit: true,
-      maxOutputBytes: 120_000,
-    });
-    if (result.exitCode !== 0 || result.stdout.length === 0) return null;
+      maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+      appendTruncationMarker: true,
+    }).pipe(
+      Effect.orElseSucceed(() => ({
+        stdout: "",
+        stdoutTruncated: false,
+      })),
+    );
     return {
       id: kind,
       kind,
       title,
       baseRef,
-      headRef: kind === "branch-range" ? "HEAD" : null,
+      headRef,
       diff: result.stdout,
       diffHash: NodeCrypto.createHash("sha256").update(result.stdout).digest("hex"),
       truncated: result.stdoutTruncated,
     } as const;
   });
 
+  const readUntrackedReviewDiffs = Effect.fn("GitVcsDriver.readUntrackedReviewDiffs")(function* (
+    cwd: string,
+  ) {
+    const untrackedResult = yield* run(
+      "GitVcsDriver.readUntrackedReviewDiffs.list",
+      cwd,
+      ["ls-files", "--others", "--exclude-standard", "-z"],
+      {
+        maxOutputBytes: REVIEW_UNTRACKED_PATHS_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
+      },
+    );
+    const untrackedPaths = splitNullSeparatedPaths(
+      untrackedResult.stdout,
+      untrackedResult.stdoutTruncated,
+    );
+    const diffs = yield* Effect.forEach(
+      untrackedPaths,
+      (relativePath) =>
+        run(
+          "GitVcsDriver.readUntrackedReviewDiffs.diff",
+          cwd,
+          [
+            "diff",
+            "--no-index",
+            "--patch",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--minimal",
+            "--",
+            "/dev/null",
+            relativePath,
+          ],
+          {
+            allowNonZeroExit: true,
+            maxOutputBytes: REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES,
+            appendTruncationMarker: true,
+          },
+        ),
+      { concurrency: 4 },
+    );
+    return {
+      diff: diffs
+        .map((result) => result.stdout.trimEnd())
+        .filter(Boolean)
+        .join("\n"),
+      truncated: untrackedResult.stdoutTruncated || diffs.some((result) => result.stdoutTruncated),
+    };
+  });
+
   const getReviewDiffPreview: GitVcsDriver["Service"]["getReviewDiffPreview"] = Effect.fn(
     "GitVcsDriver.getReviewDiffPreview",
   )(function* (input) {
+    const details = yield* statusDetailsLocal(input.cwd);
+    if (!details.isRepo) {
+      return { cwd: input.cwd, generatedAt: yield* DateTime.now, sources: [] };
+    }
     const whitespace = input.ignoreWhitespace ? ["--ignore-all-space"] : [];
     const sources = [];
     if (input.sourceKind !== "branch-range") {
-      const working = yield* diffSource(input.cwd, "working-tree", "Working tree", "HEAD", [
+      const tracked = yield* diffSource(input.cwd, "working-tree", "Dirty worktree", "HEAD", null, [
         "diff",
         "--patch",
         "--no-color",
         "--no-ext-diff",
+        "--no-textconv",
+        "--minimal",
         ...whitespace,
         "HEAD",
+        "--",
       ]);
-      if (working) sources.push(working);
-    }
-    if (input.baseRef && input.sourceKind !== "working-tree") {
-      const branch = yield* diffSource(
-        input.cwd,
-        "branch-range",
-        `Changes from ${input.baseRef}`,
-        input.baseRef,
-        [
-          "diff",
-          "--patch",
-          "--no-color",
-          "--no-ext-diff",
-          ...whitespace,
-          `${input.baseRef}...HEAD`,
-        ],
+      const untracked = yield* readUntrackedReviewDiffs(input.cwd).pipe(
+        Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
       );
-      if (branch) sources.push(branch);
+      const diff = [tracked.diff.trimEnd(), untracked.diff.trimEnd()].filter(Boolean).join("\n");
+      sources.push({
+        ...tracked,
+        diff,
+        diffHash: NodeCrypto.createHash("sha256").update(diff).digest("hex"),
+        truncated: tracked.truncated || untracked.truncated,
+      });
+    }
+    const automaticBranch =
+      input.baseRef || input.sourceKind === "working-tree" ? null : details.branch;
+    const baseRef =
+      input.baseRef ??
+      (automaticBranch ? yield* resolveAutomaticBaseRef(input.cwd, automaticBranch) : null);
+    if (input.sourceKind !== "working-tree") {
+      const headRef = details.branch ?? "HEAD";
+      const branch = baseRef
+        ? yield* diffSource(input.cwd, "branch-range", `Against ${baseRef}`, baseRef, headRef, [
+            "diff",
+            "--patch",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--minimal",
+            ...whitespace,
+            `${baseRef}...HEAD`,
+            "--",
+          ])
+        : {
+            id: "branch-range" as const,
+            kind: "branch-range" as const,
+            title: "Against base branch",
+            baseRef: null,
+            headRef,
+            diff: "",
+            diffHash: NodeCrypto.createHash("sha256").update("").digest("hex"),
+            truncated: false,
+          };
+      sources.push(branch);
     }
     return { cwd: input.cwd, generatedAt: yield* DateTime.now, sources };
   });
 
-  const readRevision = (cwd: string, revision: string, filePath: string) =>
-    run("GitVcsDriver.readRevision", cwd, ["show", `${revision}:${filePath}`], {
-      allowNonZeroExit: true,
-      maxOutputBytes: MAX_REVIEW_DIFF_FILE_BYTES,
-    }).pipe(
-      Effect.flatMap((result) =>
-        result.stdoutTruncated
-          ? Effect.fail(
-              new ReviewDiffFileTooLargeError({
-                path: filePath,
-                maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
-              }),
-            )
-          : Effect.succeed(result.exitCode === 0 ? result.stdout : ""),
-      ),
+  const readRevision = Effect.fn("GitVcsDriver.readRevision")(function* (
+    cwd: string,
+    revision: string,
+    filePath: string,
+  ) {
+    const result = yield* run(
+      "GitVcsDriver.readRevision",
+      cwd,
+      ["show", `${revision}:${filePath}`],
+      {
+        maxOutputBytes: MAX_REVIEW_DIFF_FILE_BYTES,
+      },
     );
+    if (result.stdoutTruncated) {
+      return yield* new ReviewDiffFileTooLargeError({
+        path: filePath,
+        maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
+      });
+    }
+    if (result.stdoutInvalidUtf8 || result.stdout.includes("\0")) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.readRevision",
+        command: "git show",
+        cwd,
+        detail: `Cannot expand binary file '${filePath}'.`,
+      });
+    }
+    return result.stdout;
+  });
 
-  const readWorkspaceFile = (cwd: string, filePath: string) => {
-    const candidate = path.resolve(cwd, filePath);
-    const relative = path.relative(cwd, candidate);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) {
+  const isPathWithinRoot = (root: string, candidate: string) => {
+    const relative = path.relative(root, candidate);
+    return (
+      relative === "" ||
+      (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+    );
+  };
+
+  const readWorkspaceFile = (
+    cwd: string,
+    repositoryRoot: string,
+    filePath: string,
+  ): Effect.Effect<string, ReviewDiffFileError> => {
+    const candidate = path.resolve(repositoryRoot, filePath);
+    if (!isPathWithinRoot(repositoryRoot, candidate)) {
       return Effect.fail(
         new GitCommandError({
           operation: "GitVcsDriver.readWorkspaceFile",
@@ -873,7 +1194,41 @@ const makeLocalGitService = Effect.gen(function* () {
       );
     }
     return Effect.gen(function* () {
-      const stat = yield* fileSystem.stat(candidate);
+      const [realRepositoryRoot, realCandidate] = yield* Effect.all([
+        fileSystem.realPath(repositoryRoot),
+        fileSystem.realPath(candidate),
+      ]).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.readWorkspaceFile.realPath",
+              command: "fs.realPath",
+              cwd,
+              detail: `Could not resolve diff file '${filePath}'.`,
+              cause,
+            }),
+        ),
+      );
+      if (!isPathWithinRoot(realRepositoryRoot, realCandidate)) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.readWorkspaceFile.realPath",
+          command: "fs.realPath",
+          cwd,
+          detail: "Diff path escapes the workspace.",
+        });
+      }
+      const stat = yield* fileSystem.stat(realCandidate).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.readWorkspaceFile.stat",
+              command: "fs.stat",
+              cwd,
+              detail: `Could not inspect diff file '${filePath}'.`,
+              cause,
+            }),
+        ),
+      );
       if (stat.type !== "File" || stat.size > MAX_REVIEW_DIFF_FILE_BYTES) {
         if (stat.type !== "File") {
           return yield* new GitCommandError({
@@ -888,30 +1243,96 @@ const makeLocalGitService = Effect.gen(function* () {
           maxBytes: MAX_REVIEW_DIFF_FILE_BYTES,
         });
       }
-      return yield* fileSystem.readFileString(candidate);
-    }).pipe(Effect.catchTags({ PlatformError: () => Effect.succeed("") }));
+      const bytes = yield* fileSystem.readFile(realCandidate).pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitCommandError({
+              operation: "GitVcsDriver.readWorkspaceFile.readFile",
+              command: "fs.readFile",
+              cwd,
+              detail: `Could not read diff file '${filePath}'.`,
+              cause,
+            }),
+        ),
+      );
+      if (bytes.includes(0)) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.readWorkspaceFile.readFile",
+          command: "fs.readFile",
+          cwd,
+          detail: `Cannot expand binary file '${filePath}'.`,
+        });
+      }
+      return yield* Effect.try({
+        try: () => new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+        catch: (cause) =>
+          new GitCommandError({
+            operation: "GitVcsDriver.readWorkspaceFile.readFile",
+            command: "fs.readFile",
+            cwd,
+            detail: `Cannot expand binary file '${filePath}'.`,
+            cause,
+          }),
+      });
+    });
   };
 
   const getReviewDiffFileContents: GitVcsDriver["Service"]["getReviewDiffFileContents"] = Effect.fn(
     "GitVcsDriver.getReviewDiffFileContents",
   )(function* (input) {
     if (input.sourceKind === "working-tree") {
+      const repositoryRoot = yield* run(
+        "GitVcsDriver.getReviewDiffFileContents.repositoryRoot",
+        input.cwd,
+        ["rev-parse", "--show-toplevel"],
+      ).pipe(Effect.map((result) => result.stdout.trim()));
+      if (repositoryRoot.length === 0) {
+        return yield* new GitCommandError({
+          operation: "GitVcsDriver.getReviewDiffFileContents.repositoryRoot",
+          command: "git rev-parse",
+          cwd: input.cwd,
+          detail: "Could not resolve the Git repository root.",
+        });
+      }
       return {
         oldContents:
-          input.changeType === "new" ? "" : yield* readRevision(input.cwd, "HEAD", input.oldPath),
+          input.changeType === "new"
+            ? ""
+            : yield* readRevision(input.cwd, input.baseRef ?? "HEAD", input.oldPath),
         newContents:
-          input.changeType === "deleted" ? "" : yield* readWorkspaceFile(input.cwd, input.newPath),
+          input.changeType === "deleted"
+            ? ""
+            : yield* readWorkspaceFile(input.cwd, repositoryRoot, input.newPath),
       };
     }
-    const baseRef = input.baseRef ?? "HEAD";
-    const headRef = input.headRef ?? "HEAD";
+    if (!input.baseRef || !input.headRef) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.getReviewDiffFileContents",
+        command: "git merge-base",
+        cwd: input.cwd,
+        detail: "Branch diff file expansion requires both base and head refs.",
+      });
+    }
+    const mergeBase = yield* run("GitVcsDriver.getReviewDiffFileContents.mergeBase", input.cwd, [
+      "merge-base",
+      input.baseRef,
+      input.headRef,
+    ]).pipe(Effect.map((result) => result.stdout.trim()));
+    if (mergeBase.length === 0) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.getReviewDiffFileContents.mergeBase",
+        command: "git merge-base",
+        cwd: input.cwd,
+        detail: "Could not resolve the branch comparison base.",
+      });
+    }
     return {
       oldContents:
-        input.changeType === "new" ? "" : yield* readRevision(input.cwd, baseRef, input.oldPath),
+        input.changeType === "new" ? "" : yield* readRevision(input.cwd, mergeBase, input.oldPath),
       newContents:
         input.changeType === "deleted"
           ? ""
-          : yield* readRevision(input.cwd, headRef, input.newPath),
+          : yield* readRevision(input.cwd, input.headRef, input.newPath),
     };
   });
 
@@ -932,58 +1353,118 @@ const makeLocalGitService = Effect.gen(function* () {
           totalCount: 0,
         };
       }
-      const [branches, worktrees, activeBranch, hasMain, hasMaster] = yield* Effect.all([
+      const [branches, worktrees, activeBranch, defaultRef, remotesResult] = yield* Effect.all([
         run("GitVcsDriver.listRefs.branches", input.cwd, [
           "for-each-ref",
-          "--format=%(refname:short)%09%(committerdate:unix)",
+          "--format=%(refname)%09%(committerdate:unix)%09%(symref)",
           "refs/heads",
+          "refs/remotes",
         ]),
-        run("GitVcsDriver.listRefs.worktrees", input.cwd, ["worktree", "list", "--porcelain"]),
+        run("GitVcsDriver.listRefs.worktrees", input.cwd, [
+          "worktree",
+          "list",
+          "--porcelain",
+          "-z",
+        ]),
         currentBranch(input.cwd),
-        localBranchExists(input.cwd, "main"),
-        localBranchExists(input.cwd, "master"),
+        run(
+          "GitVcsDriver.listRefs.defaultRef",
+          input.cwd,
+          ["symbolic-ref", "refs/remotes/origin/HEAD"],
+          { allowNonZeroExit: true },
+        ),
+        run("GitVcsDriver.listRefs.remotes", input.cwd, ["remote"], {
+          allowNonZeroExit: true,
+        }),
       ]);
-      const worktreeByBranch = new Map<string, string>();
-      let worktreePath: string | null = null;
-      for (const line of worktrees.stdout.split("\n")) {
-        if (line.startsWith("worktree ")) worktreePath = line.slice("worktree ".length);
-        if (line.startsWith("branch refs/heads/") && worktreePath) {
-          worktreeByBranch.set(line.slice("branch refs/heads/".length), worktreePath);
-        }
-        if (line.length === 0) worktreePath = null;
-      }
-      const defaultBranch = hasMain ? "main" : hasMaster ? "master" : activeBranch;
+      const parsedWorktrees = [...parseWorktreeBranchPaths(worktrees.stdout)].map(
+        ([branch, worktreePath]) => [branch, path.normalize(path.resolve(worktreePath))] as const,
+      );
+      const existingWorktrees = yield* Effect.filter(
+        parsedWorktrees,
+        ([, worktreePath]) =>
+          fileSystem.stat(worktreePath).pipe(
+            Effect.as(true),
+            Effect.orElseSucceed(() => false),
+          ),
+        { concurrency: 16 },
+      );
+      const worktreeByBranch = new Map(existingWorktrees);
+      const remoteNames =
+        remotesResult.exitCode === 0 ? parseRemoteNames(remotesResult.stdout) : [];
+      const defaultBranch =
+        defaultRef.exitCode === 0
+          ? defaultRef.stdout.trim().replace(/^refs\/remotes\/origin\//, "")
+          : null;
       const query = input.query?.toLocaleLowerCase() ?? "";
-      const refsWithDates = branches.stdout
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => {
-          const [name = "", timestamp = "0"] = line.split("\t");
-          return {
+      const refsWithDates: Array<{ timestamp: number; ref: VcsRef }> = [];
+      for (const line of branches.stdout.split("\n")) {
+        if (line.length === 0) continue;
+        const [fullName = "", timestamp = "0", symbolicTarget = ""] = line.split("\t");
+        if (symbolicTarget) continue;
+        if (fullName.startsWith("refs/heads/")) {
+          const name = fullName.slice("refs/heads/".length);
+          refsWithDates.push({
             timestamp: Number.parseInt(timestamp, 10) || 0,
             ref: {
               name,
               current: name === activeBranch,
+              isRemote: false,
               isDefault: name === defaultBranch,
               worktreePath: worktreeByBranch.get(name) ?? null,
-            } satisfies VcsRef,
-          };
-        })
-        .filter(({ ref }) => query.length === 0 || ref.name.toLocaleLowerCase().includes(query))
-        .toSorted(
-          (left, right) =>
-            right.timestamp - left.timestamp || left.ref.name.localeCompare(right.ref.name),
-        );
+            },
+          });
+          continue;
+        }
+        if (!fullName.startsWith("refs/remotes/")) continue;
+        const name = fullName.slice("refs/remotes/".length);
+        const remoteRef = parseRemoteRef(name, remoteNames);
+        refsWithDates.push({
+          timestamp: Number.parseInt(timestamp, 10) || 0,
+          ref: {
+            name,
+            current: false,
+            isRemote: true,
+            isDefault:
+              defaultBranch !== null &&
+              remoteRef?.remoteName === "origin" &&
+              remoteRef.branchName === defaultBranch,
+            worktreePath: null,
+            ...(remoteRef ? { remoteName: remoteRef.remoteName } : {}),
+          },
+        });
+      }
+      const sortedRefsWithDates = refsWithDates.toSorted(
+        (left, right) =>
+          right.timestamp - left.timestamp || left.ref.name.localeCompare(right.ref.name),
+      );
+      const allRefs = input.includeMatchingRemoteRefs
+        ? sortedRefsWithDates.map(({ ref }) => ref)
+        : dedupeRemoteBranchesWithLocalMatches(sortedRefsWithDates.map(({ ref }) => ref));
+      const prioritizedRefs = allRefs.toSorted((left, right) => {
+        const leftPriority = left.current ? 0 : left.isDefault ? 1 : 2;
+        const rightPriority = right.current ? 0 : right.isDefault ? 1 : 2;
+        return leftPriority - rightPriority;
+      });
+      const refsForKind =
+        input.refKind === "local"
+          ? prioritizedRefs.filter((ref) => !ref.isRemote)
+          : input.refKind === "remote"
+            ? prioritizedRefs.filter((ref) => ref.isRemote)
+            : prioritizedRefs;
+      const matchingRefs = refsForKind.filter(
+        (ref) => query.length === 0 || ref.name.toLocaleLowerCase().includes(query),
+      );
       const offset = input.cursor ?? 0;
       const limit = input.limit ?? 100;
-      const refs = refsWithDates.slice(offset, offset + limit).map(({ ref }) => ref);
+      const refs = matchingRefs.slice(offset, offset + limit);
       const nextOffset = offset + refs.length;
       return {
         refs,
         isRepo: true,
-        hasPrimaryRemote: false,
-        nextCursor: nextOffset < refsWithDates.length ? nextOffset : null,
-        totalCount: refsWithDates.length,
+        hasPrimaryRemote: remoteNames.includes("origin"),
+        nextCursor: nextOffset < matchingRefs.length ? nextOffset : null,
+        totalCount: matchingRefs.length,
       };
     },
   );
@@ -1012,8 +1493,43 @@ const makeLocalGitService = Effect.gen(function* () {
     const targetPath = input.path ?? path.join(worktreesDir, repoName, sanitizedBranch);
     const args = ["worktree", "add"];
     if (input.newRefName) args.push("-b", input.newRefName);
-    args.push(targetPath, input.baseRefName ?? input.refName);
+    args.push(targetPath, input.refName);
     yield* run("GitVcsDriver.createWorktree", input.cwd, args, { timeoutMs: 300_000 });
+    const hasSubmodules = yield* fileSystem
+      .exists(path.join(targetPath, ".gitmodules"))
+      .pipe(Effect.orElseSucceed(() => false));
+    if (hasSubmodules) {
+      // Populate already-cached or local submodules without allowing Git to
+      // open a non-loopback connection outside the Coder CLI boundary.
+      yield* run("GitVcsDriver.createWorktree.updateSubmodules", targetPath, [
+        "-c",
+        "protocol.allow=never",
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "update",
+        "--init",
+        "--recursive",
+        "--no-fetch",
+      ]).pipe(
+        Effect.catch(() =>
+          Effect.logWarning(
+            "Worktree submodule checkout failed; the worktree was created with empty submodule paths.",
+          ),
+        ),
+      );
+    }
+    if (input.newRefName && input.baseRefName) {
+      const remotes = yield* run("GitVcsDriver.createWorktree.remotes", input.cwd, ["remote"], {
+        allowNonZeroExit: true,
+      });
+      const parsedBaseRef = parseRemoteRef(input.baseRefName, parseRemoteNames(remotes.stdout));
+      yield* run("GitVcsDriver.createWorktree.configureBaseRef", input.cwd, [
+        "config",
+        `branch.${input.newRefName}.gh-merge-base`,
+        parsedBaseRef?.branchName ?? input.baseRefName,
+      ]);
+    }
     return { worktree: { path: targetPath, refName: input.newRefName ?? input.refName } };
   });
 

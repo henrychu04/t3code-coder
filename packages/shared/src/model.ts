@@ -362,7 +362,10 @@ export function applyClaudePromptEffortPrefix(
   if (!trimmed) {
     return trimmed;
   }
-  if (effort !== "ultrathink") {
+  // Prefixing a slash command turns it into prose, so Claude never runs it.
+  // Command names may contain punctuation (for example `/plugin:skill`), but
+  // an absolute path still contains another slash and should keep the prefix.
+  if (effort !== "ultrathink" || /^\/[^\s/]+(?:\s|$)/u.test(trimmed)) {
     return trimmed;
   }
   if (trimmed.startsWith("Ultrathink:")) {

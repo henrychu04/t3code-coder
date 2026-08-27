@@ -2,6 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   formatProviderSkillDisplayName,
+  getProviderSlashCommandsForSlashMenu,
+  getProviderSkillsForSlashMenu,
   resolveProviderSkillSourceKind,
 } from "./providerSkills.ts";
 
@@ -21,6 +23,48 @@ describe("formatProviderSkillDisplayName", () => {
         name: "review-follow-up",
       }),
     ).toBe("Review Follow Up");
+  });
+});
+
+describe("provider slash menu collisions", () => {
+  const skills = [
+    { name: "review", path: "/home/dev/.claude/skills/review/SKILL.md", enabled: true },
+  ];
+
+  it("lets the enabled skill alias win over a same-named provider command", () => {
+    const visibleSkills = getProviderSkillsForSlashMenu(skills);
+    expect(
+      getProviderSlashCommandsForSlashMenu(
+        [
+          { name: "review", description: "Review changes" },
+          { name: "compact", description: "Compact context" },
+        ],
+        visibleSkills,
+      ).map((command) => command.name),
+    ).toEqual(["compact"]);
+  });
+
+  it("matches names case-insensitively after trimming", () => {
+    expect(
+      getProviderSlashCommandsForSlashMenu(
+        [
+          { name: " REVIEW ", description: "Review changes" },
+          { name: "compact", description: "Compact context" },
+        ],
+        getProviderSkillsForSlashMenu(skills),
+      ).map((command) => command.name),
+    ).toEqual(["compact"]);
+  });
+
+  it("keeps the provider command when the colliding skill is disabled", () => {
+    const disabledSkills = skills.map((skill) => ({ ...skill, enabled: false }));
+    expect(getProviderSkillsForSlashMenu(disabledSkills)).toEqual([]);
+    expect(
+      getProviderSlashCommandsForSlashMenu(
+        [{ name: "review", description: "Review changes" }],
+        getProviderSkillsForSlashMenu(disabledSkills),
+      ).map((command) => command.name),
+    ).toEqual(["review"]);
   });
 });
 

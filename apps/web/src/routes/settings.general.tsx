@@ -14,6 +14,8 @@ import {
   summarizeCoderWorkspaceError,
   type CoderWorkspaceIssue,
 } from "../components/CoderWorkspaceIssues";
+import { CoderWorkspaceDiagnostics } from "../components/CoderWorkspaceDiagnostics";
+import { formatCoderAutostop } from "../components/CoderWorkspaceLatency";
 import { PortForwardSettings } from "../components/settings/PortForwardSettings";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -282,6 +284,11 @@ function CoderSettingsView() {
                         {runtime?.updateAvailable ? (
                           <Badge variant="outline">Update available</Badge>
                         ) : null}
+                        {runtime?.autostopAt ? (
+                          <Badge variant="outline">
+                            {formatCoderAutostop(runtime.autostopAt) ?? "Autostop scheduled"}
+                          </Badge>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center justify-end gap-3">
@@ -397,6 +404,7 @@ function CoderSettingsView() {
                     </div>
                   </div>
                   <CoderWorkspaceIssueList issues={workspaceIssues} />
+                  <CoderWorkspaceDiagnostics workspaceId={workspace.id} />
                 </div>
               );
             })

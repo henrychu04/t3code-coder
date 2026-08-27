@@ -14,13 +14,14 @@ import {
   discoverCoderWorkspaces,
   disconnectCoderWorkspace,
   loadCoderConfig,
-  loadCoderWorkspaceLatency,
+  loadCoderWorkspaceNetworkSample,
   restartCoderWorkspace,
   saveCoderConfig,
   startCoderWorkspace,
   stopCoderWorkspace,
   updateCoderWorkspace,
   type CoderProfileConfig,
+  type CoderWorkspaceNetworkSample,
   type CoderWorkspaceRuntimeStatus,
 } from "./api";
 import {
@@ -34,7 +35,7 @@ interface CoderContextValue {
   readonly config: CoderProfileConfig;
   readonly connectionErrors: Readonly<Record<string, string>>;
   readonly workspaceRuntime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>;
-  readonly workspaceLatencyMs: Readonly<Record<string, number>>;
+  readonly workspaceNetwork: Readonly<Record<string, CoderWorkspaceNetworkState>>;
   readonly saveConfig: (config: CoderProfileConfig) => Promise<CoderProfileConfig>;
   readonly connectWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly disconnectWorkspace: (workspaceId: string) => Promise<void>;
@@ -45,6 +46,23 @@ interface CoderContextValue {
   readonly stopWorkspace: (workspaceId: string) => Promise<void>;
   readonly restartWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly updateWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
+}
+
+export interface CoderWorkspaceNetworkState extends CoderWorkspaceNetworkSample {
+  readonly stale: boolean;
+  readonly slow: boolean;
+}
+
+const SLOW_NETWORK_LATENCY_MS = 250;
+const STALE_NETWORK_SAMPLE_MS = 5_000;
+const STABLE_RUNTIME_REFRESH_MS = 60_000;
+
+export function nextCoderSlowSampleCount(current: number, latencyMs: number): number {
+  return latencyMs >= SLOW_NETWORK_LATENCY_MS ? Math.min(2, current + 1) : Math.max(0, current - 1);
+}
+
+export function workspaceRuntimeRetryDelayMs(retryCount: number): number {
+  return [2_000, 4_000, 8_000, 16_000, 30_000][Math.min(Math.max(0, retryCount), 4)]!;
 }
 
 const CoderContext = createContext<CoderContextValue | null>(null);
@@ -72,7 +90,7 @@ export async function readWorkspaceRuntime(
   const next: Record<string, CoderWorkspaceRuntimeStatus> = Object.fromEntries(
     config.workspaces.map((workspace) => [
       workspace.id,
-      { status: "unknown", updateAvailable: false, healthy: null },
+      { status: "unknown", updateAvailable: false, healthy: null, autostopAt: null },
     ]),
   );
   for (const workspace of config.workspaces) {
@@ -84,6 +102,7 @@ export async function readWorkspaceRuntime(
         status: "unavailable",
         updateAvailable: false,
         healthy: null,
+        autostopAt: null,
         error: deployment.error,
       };
       continue;
@@ -98,6 +117,7 @@ export async function readWorkspaceRuntime(
         status: discovered.status,
         updateAvailable: discovered.updateAvailable,
         healthy: discovered.healthy,
+        autostopAt: discovered.autostopAt,
       };
     }
   }
@@ -134,9 +154,10 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
   >({});
   const [connectedWorkspaceIds, setConnectedWorkspaceIds] = useState<readonly string[]>([]);
-  const [workspaceLatencyMs, setWorkspaceLatencyMs] = useState<Readonly<Record<string, number>>>(
-    {},
-  );
+  const [workspaceNetwork, setWorkspaceNetwork] = useState<
+    Readonly<Record<string, CoderWorkspaceNetworkState>>
+  >({});
+  const slowNetworkSampleCounts = useRef<Record<string, number>>({});
 
   const reload = useCallback(async () => {
     setLoadError(null);
@@ -186,19 +207,46 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       const measurements = await Promise.all(
         connectedWorkspaceIds.map(async (workspaceId) => {
           try {
-            return [workspaceId, await loadCoderWorkspaceLatency(workspaceId)] as const;
+            return [workspaceId, await loadCoderWorkspaceNetworkSample(workspaceId)] as const;
           } catch {
             return [workspaceId, null] as const;
           }
         }),
       );
       if (cancelled) return;
-      setWorkspaceLatencyMs((current) => {
-        const next: Record<string, number> = { ...current };
+      setWorkspaceNetwork((current) => {
+        const next: Record<string, CoderWorkspaceNetworkState> = { ...current };
         let changed = false;
-        for (const [workspaceId, latencyMs] of measurements) {
-          if (latencyMs === null || current[workspaceId] === latencyMs) continue;
-          next[workspaceId] = latencyMs;
+        const now = Date.now();
+        for (const [workspaceId, sample] of measurements) {
+          if (sample === null) {
+            const previous = current[workspaceId];
+            if (previous === undefined || previous.stale) continue;
+            if (now - previous.sampledAt < STALE_NETWORK_SAMPLE_MS) continue;
+            next[workspaceId] = { ...previous, stale: true };
+            changed = true;
+            continue;
+          }
+          const previous = current[workspaceId];
+          const previousSlowCount = slowNetworkSampleCounts.current[workspaceId] ?? 0;
+          const slowCount =
+            previous?.sampledAt === sample.sampledAt
+              ? previousSlowCount
+              : nextCoderSlowSampleCount(previousSlowCount, sample.latencyMs);
+          slowNetworkSampleCounts.current[workspaceId] = slowCount;
+          const value: CoderWorkspaceNetworkState = {
+            ...sample,
+            stale: now - sample.sampledAt >= STALE_NETWORK_SAMPLE_MS,
+            slow: slowCount >= 2,
+          };
+          if (
+            previous?.sampledAt === value.sampledAt &&
+            previous.stale === value.stale &&
+            previous.slow === value.slow
+          ) {
+            continue;
+          }
+          next[workspaceId] = value;
           changed = true;
         }
         return changed ? next : current;
@@ -233,12 +281,15 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           ? current.filter((workspaceId) => !inactiveWorkspaceIds.has(workspaceId))
           : current,
       );
-      setWorkspaceLatencyMs((current) => {
+      setWorkspaceNetwork((current) => {
         const next = Object.fromEntries(
           Object.entries(current).filter(([workspaceId]) => !inactiveWorkspaceIds.has(workspaceId)),
         );
         return Object.keys(next).length === Object.keys(current).length ? current : next;
       });
+      for (const workspaceId of inactiveWorkspaceIds) {
+        delete slowNetworkSampleCounts.current[workspaceId];
+      }
       setConnectionErrors((current) => discardInactiveWorkspaceConnectionErrors(current, runtime));
     },
     [],
@@ -249,7 +300,9 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     setCoderWorkspaceOrder(config.workspaces.map((workspace) => workspace.id));
     let cancelled = false;
     let retryTimer: number | undefined;
+    let retryCount = 0;
     const connectAvailableWorkspaces = async (): Promise<void> => {
+      retryTimer = undefined;
       const runtime = await readWorkspaceRuntime(config);
       if (cancelled) return;
       applyWorkspaceRuntime(runtime);
@@ -264,13 +317,32 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         void connectWorkspace(workspace.id).catch(() => undefined);
       }
       if (hasPendingWorkspaceStatus) {
-        retryTimer = window.setTimeout(() => void connectAvailableWorkspaces(), 2_000);
+        retryTimer = window.setTimeout(
+          () => void connectAvailableWorkspaces(),
+          workspaceRuntimeRetryDelayMs(retryCount),
+        );
+        retryCount += 1;
+      } else {
+        retryCount = 0;
+        retryTimer = window.setTimeout(
+          () => void connectAvailableWorkspaces(),
+          STABLE_RUNTIME_REFRESH_MS,
+        );
       }
     };
+    const wake = () => {
+      if (document.visibilityState !== "visible" || retryTimer === undefined) return;
+      window.clearTimeout(retryTimer);
+      retryTimer = undefined;
+      retryCount = 0;
+      void connectAvailableWorkspaces();
+    };
+    document.addEventListener("visibilitychange", wake);
     void connectAvailableWorkspaces();
     return () => {
       cancelled = true;
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+      document.removeEventListener("visibilitychange", wake);
     };
   }, [applyWorkspaceRuntime, config, connectWorkspace]);
 
@@ -293,12 +365,13 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     await disconnectCoderWorkspace(workspaceId);
     removeCoderWorkspaceEnvironment(workspaceId);
     setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
-    setWorkspaceLatencyMs((current) => {
+    setWorkspaceNetwork((current) => {
       if (current[workspaceId] === undefined) return current;
       const next = { ...current };
       delete next[workspaceId];
       return next;
     });
+    delete slowNetworkSampleCounts.current[workspaceId];
     setConnectionErrors((current) => {
       const next = { ...current };
       delete next[workspaceId];
@@ -310,12 +383,13 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     async (workspaceId: string, action: (workspaceId: string) => Promise<void>) => {
       removeCoderWorkspaceEnvironment(workspaceId);
       setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
-      setWorkspaceLatencyMs((current) => {
+      setWorkspaceNetwork((current) => {
         if (current[workspaceId] === undefined) return current;
         const next = { ...current };
         delete next[workspaceId];
         return next;
       });
+      delete slowNetworkSampleCounts.current[workspaceId];
       const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
       connectionAttemptGenerations.current[workspaceId] = actionGeneration;
       setConnectionErrors((current) => {
@@ -330,6 +404,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           status: "starting",
           updateAvailable: current[workspaceId]?.updateAvailable ?? false,
           healthy: null,
+          autostopAt: current[workspaceId]?.autostopAt ?? null,
         },
       }));
       try {
@@ -362,12 +437,13 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     async (workspaceId: string) => {
       removeCoderWorkspaceEnvironment(workspaceId);
       setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
-      setWorkspaceLatencyMs((current) => {
+      setWorkspaceNetwork((current) => {
         if (current[workspaceId] === undefined) return current;
         const next = { ...current };
         delete next[workspaceId];
         return next;
       });
+      delete slowNetworkSampleCounts.current[workspaceId];
       const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
       connectionAttemptGenerations.current[workspaceId] = actionGeneration;
       setConnectionErrors((current) => {
@@ -384,6 +460,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
             status: "stopped",
             updateAvailable: current[workspaceId]?.updateAvailable ?? false,
             healthy: null,
+            autostopAt: null,
           },
         }));
       } catch (cause) {
@@ -414,7 +491,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
             config,
             connectionErrors,
             workspaceRuntime,
-            workspaceLatencyMs,
+            workspaceNetwork,
             saveConfig,
             connectWorkspace,
             disconnectWorkspace,
@@ -436,7 +513,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       stopWorkspace,
       updateWorkspace,
       workspaceRuntime,
-      workspaceLatencyMs,
+      workspaceNetwork,
     ],
   );
 

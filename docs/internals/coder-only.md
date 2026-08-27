@@ -25,9 +25,11 @@ persist those application messages.
 
 After the browser requests latency for a connected workspace, the gateway starts one additional
 foreground `coder ping` process for that workspace. It parses each pong into an in-memory latest
-round-trip value and serves that value only through the loopback gateway. Repeated reads share the
-same process. The ping is stopped with the exact workspace connection scope, and an unexpected exit
-is retried only when the browser requests latency again.
+round-trip value and sample timestamp and serves that value only through the loopback gateway.
+Repeated reads share the same process. The browser retains the last sample with a stale marker when
+updates stop and shows a slow-connection warning only after consecutive high latency samples. The
+ping is stopped with the exact workspace connection scope, and an unexpected exit is retried only
+when the browser requests latency again.
 
 The header's workspace health card reads Coder's workspace health from `coder list --output json`.
 While the card is open, the browser refreshes that health and asks the gateway for workspace-scoped
@@ -70,6 +72,10 @@ CLI profile. A successful start, restart, or update restores the saved forwards 
 successful stop leaves the helper and forwards stopped. The browser reports workspace
 and port-forward status as unavailable when their status requests fail; it does not leave a request
 checking indefinitely or retain a stale running label.
+The browser also surfaces the workspace build deadline as an autostop countdown. Status discovery
+for starting or temporarily unavailable workspaces backs off from two to thirty seconds and retries
+immediately when the browser becomes visible again. Stable workspace status refreshes once per
+minute so deadline, health, and template-update state do not remain stale.
 
 The gateway stores each workspace and saved forward in one tagged lifecycle state held by an Effect
 `SynchronizedRef`. Workspace connection and action claims, and port-forward start and stop claims,
@@ -77,6 +83,11 @@ are serialized transitions. Duplicate requests for the same workspace action sha
 conflicting actions are rejected instead of being coalesced into a different command. Process exits
 can update only the state that still owns that exact connection, so a late exit cannot overwrite a
 newer start, stop, or restart transition.
+
+The gateway keeps at most 24 in-memory connection phase events per workspace for preflight, helper
+installation, helper negotiation, connection, and disconnection. Each attempt and phase duration is
+visible in Settings and the active phase is shown on the reconnecting screen. This timeline is not
+persisted and contains no command output or credentials.
 
 Each saved port-forward rule starts a separate foreground `coder port-forward` process. The rule
 contains only a configured workspace, TCP or UDP protocol, and validated local and remote ports. The

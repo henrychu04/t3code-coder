@@ -229,7 +229,11 @@ import type { SessionPhase, Thread } from "../../types";
 import type { PendingUserInputDraftAnswer } from "../../pendingUserInput";
 import type { PendingApproval, PendingUserInput } from "../../session-logic";
 import { deriveLatestContextWindowSnapshot } from "../../lib/contextWindow";
-import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
+import {
+  formatProviderSkillDisplayName,
+  getProviderSlashCommandsForSlashMenu,
+  getProviderSkillsForSlashMenu,
+} from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -420,6 +424,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
+  onCompactContext?: (() => void) | undefined;
+  compactDisabled: boolean;
+  compactDisabledReason: string | null;
 }) {
   return (
     <>
@@ -427,6 +434,9 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         <ContextWindowMeter
           usage={props.activeContextWindow}
           modelDisplayName={props.activeThreadModelDisplayName}
+          onCompact={props.onCompactContext}
+          compactDisabled={props.compactDisabled}
+          compactDisabledReason={props.compactDisabledReason}
         />
       ) : null}
       {props.isPreparingWorktree ? (
@@ -465,6 +475,7 @@ export interface ChatComposerHandle {
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
+  compactContext: () => void;
   readSnapshot: () => {
     value: string;
     cursor: number;
@@ -1048,7 +1059,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ] as const)
           : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
-      const providerSlashCommandItems = availableSlashCommands.map((command) => ({
+      const slashMenuSkills = getProviderSkillsForSlashMenu(selectedProviderStatus?.skills ?? []);
+      const providerSlashCommandItems = getProviderSlashCommandsForSlashMenu(
+        availableSlashCommands,
+        slashMenuSkills,
+      ).map((command) => ({
         id: `provider-slash-command:${selectedProvider}:${command.name}`,
         type: "provider-slash-command" as const,
         provider: selectedProvider,
@@ -1057,19 +1072,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         description: command.description ?? command.input?.hint ?? "Run provider command",
       }));
       const query = composerTrigger.query.trim().toLowerCase();
-      const skillItems = (selectedProviderStatus?.skills ?? [])
-        .filter((skill) => skill.enabled)
-        .map((skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: `skill:${skill.name}`,
-          description:
-            skill.shortDescription ??
-            skill.description ??
-            (skill.scope ? `${skill.scope} skill` : ""),
-        }));
+      const skillItems = slashMenuSkills.map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: `skill:${skill.name}`,
+        description:
+          skill.shortDescription ??
+          skill.description ??
+          (skill.scope ? `${skill.scope} skill` : ""),
+      }));
       const slashCommandItems = [
         ...builtInSlashCommandItems,
         ...providerSlashCommandItems,
@@ -1757,6 +1770,32 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const compactDisabled =
+    selectedProvider !== "claudeAgent" ||
+    !activeThreadId ||
+    phase === "running" ||
+    isComposerBusy ||
+    isConnecting ||
+    isUploadingClipboardImages ||
+    activePendingApproval !== null ||
+    pendingUserInputs.length > 0 ||
+    showPlanFollowUpPrompt ||
+    composerSendState.hasSendableContent;
+  const compactDisabledReason = compactDisabled
+    ? composerSendState.hasSendableContent
+      ? "Send or clear your draft before compacting"
+      : "Compacting is unavailable right now"
+    : null;
+  const compactThreadContext = useCallback(() => {
+    if (compactDisabled) return;
+    promptRef.current = "/compact";
+    setComposerDraftPrompt(composerDraftTarget, "/compact");
+    submitComposer();
+    if (promptRef.current === "/compact") {
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+    }
+  }, [compactDisabled, composerDraftTarget, promptRef, setComposerDraftPrompt, submitComposer]);
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
@@ -2055,6 +2094,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         setIsComposerModelPickerOpen((open) => !open);
       },
       isModelPickerOpen: () => isComposerModelPickerOpen,
+      compactContext: compactThreadContext,
       readSnapshot: () => {
         return readComposerSnapshot();
       },
@@ -2144,6 +2184,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptRef,
       composerTerminalContextsRef,
       composerReviewComments,
+      compactThreadContext,
       isConnecting,
       isComposerApprovalState,
       pendingUserInputs.length,
@@ -2623,6 +2664,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
+                    onCompactContext={
+                      selectedProvider === "claudeAgent" ? compactThreadContext : undefined
+                    }
+                    compactDisabled={compactDisabled}
+                    compactDisabledReason={compactDisabledReason}
                   />
                 </div>
               </div>

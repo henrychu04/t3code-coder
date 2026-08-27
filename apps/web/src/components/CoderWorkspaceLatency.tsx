@@ -5,6 +5,8 @@ import {
   CpuIcon,
   HardDriveIcon,
   MemoryStickIcon,
+  TimerIcon,
+  TriangleAlertIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,6 +20,18 @@ const RESOURCE_REFRESH_MS = 10_000;
 
 export function formatCoderWorkspaceLatency(latencyMs: number): string {
   return latencyMs < 1 ? "<1 ms" : `${Math.round(latencyMs)} ms`;
+}
+
+export function formatCoderAutostop(autostopAt: string, now = Date.now()): string | null {
+  const deadline = Date.parse(autostopAt);
+  if (!Number.isFinite(deadline)) return null;
+  const remainingMs = deadline - now;
+  if (remainingMs <= 0) return "Autostop due";
+  const minutes = Math.ceil(remainingMs / 60_000);
+  if (minutes < 60) return `Stops in ${String(minutes)}m`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `Stops in ${String(hours)}h`;
+  return `Stops in ${String(Math.ceil(hours / 24))}d`;
 }
 
 export function formatCoderResourcePercent(used: number, total: number): string {
@@ -102,15 +116,21 @@ export function CoderWorkspaceLatency({
 }: {
   readonly environmentId: EnvironmentId;
 }) {
-  const { workspaceLatencyMs, workspaceRuntime } = useCoder();
+  const { workspaceNetwork, workspaceRuntime } = useCoder();
   const { environments } = useEnvironments();
   const [cardOpen, setCardOpen] = useState(false);
   const [resourceUsage, setResourceUsage] = useState<CoderWorkspaceMetrics | null>(null);
   const [resourceError, setResourceError] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const environment = environments.find((entry) => entry.environmentId === environmentId);
   const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
-  const latencyMs = workspaceId === null ? undefined : workspaceLatencyMs[workspaceId];
+  const network = workspaceId === null ? undefined : workspaceNetwork[workspaceId];
   const runtime = workspaceId === null ? undefined : workspaceRuntime[workspaceId];
+
+  useEffect(() => {
+    setResourceUsage(null);
+    setResourceError(false);
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!cardOpen || workspaceId === null) return;
@@ -135,9 +155,27 @@ export function CoderWorkspaceLatency({
     };
   }, [cardOpen, workspaceId]);
 
+  useEffect(() => {
+    if (runtime?.autostopAt === null || runtime?.autostopAt === undefined) return;
+    setNow(Date.now());
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [runtime?.autostopAt]);
+
   if (environment?.connection.phase !== "connected" || workspaceId === null) return null;
 
-  const latencyLabel = latencyMs === undefined ? "— ms" : formatCoderWorkspaceLatency(latencyMs);
+  const latencyLabel =
+    network === undefined
+      ? "— ms"
+      : `${network.stale ? "~" : ""}${formatCoderWorkspaceLatency(network.latencyMs)}`;
+  const autostopLabel =
+    runtime?.autostopAt === null || runtime?.autostopAt === undefined
+      ? null
+      : formatCoderAutostop(runtime.autostopAt, now);
+  const autostopIsSoon =
+    runtime?.autostopAt !== null &&
+    runtime?.autostopAt !== undefined &&
+    Date.parse(runtime.autostopAt) - now <= 30 * 60_000;
   const healthy = resourceUsage?.healthy ?? runtime?.healthy;
   const healthLabel = healthy === true ? "Healthy" : healthy === false ? "Unhealthy" : "Connected";
   const healthDotClass =
@@ -155,7 +193,7 @@ export function CoderWorkspaceLatency({
         render={
           <button
             aria-label={`Coder workspace health and resource usage. Latest latency: ${latencyLabel}`}
-            className="inline-flex h-6 shrink-0 cursor-default items-center gap-1 rounded-sm px-1 text-xs tabular-nums text-muted-foreground/65 outline-hidden transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+            className={`inline-flex h-6 shrink-0 cursor-default items-center gap-1 rounded-sm px-1 text-xs tabular-nums outline-hidden transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring ${network?.slow ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground/65"}`}
             type="button"
           >
             <ActivityIcon aria-hidden className="size-3" />
@@ -192,6 +230,22 @@ export function CoderWorkspaceLatency({
             <span className="font-semibold tabular-nums text-foreground">{latencyLabel}</span>
           </div>
 
+          {network?.slow ? (
+            <div className="mt-2.5 flex gap-2 rounded-md border border-amber-500/25 bg-amber-500/10 p-2 text-amber-700 dark:text-amber-300">
+              <TriangleAlertIcon aria-hidden className="mt-0.5 size-3 shrink-0" />
+              <span>Sustained high latency may make terminal and editor input feel delayed.</span>
+            </div>
+          ) : null}
+
+          {autostopLabel !== null ? (
+            <div
+              className={`mt-2.5 flex items-center gap-2 rounded-md border p-2 ${autostopIsSoon ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-border text-muted-foreground"}`}
+            >
+              <TimerIcon aria-hidden className="size-3 shrink-0" />
+              <span>{autostopLabel}</span>
+            </div>
+          ) : null}
+
           <div className="pt-3">
             {resourceUsage !== null ? (
               <ResourceUsage usage={resourceUsage} />
@@ -204,7 +258,11 @@ export function CoderWorkspaceLatency({
         </div>
         <div className="-mx-2 -mb-1 mt-1 flex items-center gap-1.5 border-t bg-muted/25 px-3.5 py-2 text-[10px] text-muted-foreground/75">
           <span aria-hidden className="size-1 rounded-full bg-current" />
-          {resourceError && resourceUsage !== null ? "Could not refresh usage" : "Updated just now"}
+          {network?.stale
+            ? "Network sample is stale"
+            : resourceError && resourceUsage !== null
+              ? "Could not refresh usage"
+              : "Updated just now"}
         </div>
       </PopoverPopup>
     </Popover>
