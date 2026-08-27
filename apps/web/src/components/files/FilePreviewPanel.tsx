@@ -8,12 +8,10 @@ import { EditContext, File, type FileOptions, Virtualizer } from "@pierre/diffs/
 import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
-  ProjectEntry,
   ProjectTextSearchMatch,
   ProjectWriteFileResult,
   ScopedThreadRef,
 } from "@t3tools/contracts";
-import { matchesFileMask } from "@t3tools/shared/fileMask";
 import {
   ArrowDown,
   ArrowUp,
@@ -64,7 +62,7 @@ import { isTerminalFocused } from "~/lib/terminalFocus";
 import { cn } from "~/lib/utils";
 import { buildFileReviewComment } from "~/reviewCommentContext";
 import { projectEnvironment } from "~/state/projects";
-import { useProjectTextSearch } from "~/state/queries";
+import { useProjectPathSearch, useProjectTextSearch } from "~/state/queries";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 
@@ -100,7 +98,6 @@ import {
   discardProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
-  useProjectEntriesQuery,
   useProjectFileQuery,
 } from "./projectFilesQueryState";
 
@@ -461,19 +458,6 @@ function fileName(path: string): string {
   return path.slice(path.lastIndexOf("/") + 1);
 }
 
-function rankFilePath(path: string, query: string): number | null {
-  const normalizedPath = path.toLocaleLowerCase();
-  const normalizedName = fileName(path).toLocaleLowerCase();
-  const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.every((term) => normalizedPath.includes(term))) return null;
-  if (terms.length === 0) return 3;
-  const joined = terms.join("");
-  if (normalizedName === joined) return 0;
-  if (normalizedName.startsWith(joined)) return 1;
-  if (normalizedName.includes(joined)) return 2;
-  return 3;
-}
-
 function SearchFilePreview(props: {
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef;
@@ -607,27 +591,21 @@ function FileSearchDialog(props: {
   projectName: string;
   onOpenFile: (relativePath: string) => void;
 }) {
-  const entries = useProjectEntriesQuery(props.environmentId, props.threadRef.threadId, props.cwd);
   const [query, setQuery] = useState("");
   const [fileMask, setFileMask] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const files = useMemo(
-    () =>
-      (entries.data?.entries ?? [])
-        .filter((entry): entry is ProjectEntry & { kind: "file" } => entry.kind === "file")
-        .flatMap((entry) => {
-          if (!matchesFileMask(entry.path, fileMask)) return [];
-          const rank = rankFilePath(entry.path, query);
-          return rank === null ? [] : [{ entry, rank }];
-        })
-        .sort(
-          (left, right) =>
-            left.rank - right.rank || left.entry.path.localeCompare(right.entry.path),
-        )
-        .slice(0, 200)
-        .map(({ entry }) => entry),
-    [entries.data?.entries, fileMask, query],
+  const result = useProjectPathSearch(
+    {
+      environmentId: props.open ? props.environmentId : null,
+      cwd: props.open ? props.cwd : null,
+      query,
+      kind: "file",
+      fileMask,
+    },
+    200,
+    { allowEmptyQuery: true },
   );
+  const files = result.entries;
   const selected = files[Math.min(selectedIndex, Math.max(0, files.length - 1))] ?? null;
 
   useEffect(() => setSelectedIndex(0), [fileMask, query]);
@@ -675,7 +653,7 @@ function FileSearchDialog(props: {
             />
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(9rem,42%)_minmax(0,1fr)]">
               <div className="min-h-0 overflow-auto border-b border-border/60 p-2">
-                {entries.isPending && entries.data === null ? (
+                {result.isPending && files.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                     Loading project files…
                   </div>

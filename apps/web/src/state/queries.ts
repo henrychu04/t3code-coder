@@ -234,6 +234,7 @@ export function usePaginatedBranches(target: VcsRefTarget) {
 type ProjectPathSearchTarget = ComposerPathSearchTarget & {
   readonly kind?: ProjectEntryKind | undefined;
   readonly imageOnly?: boolean | undefined;
+  readonly fileMask?: string | undefined;
 };
 
 export function areProjectPathSearchTargetsEqual(
@@ -245,7 +246,8 @@ export function areProjectPathSearchTargetsEqual(
     left.cwd === right.cwd &&
     left.query === right.query &&
     left.kind === right.kind &&
-    left.imageOnly === right.imageOnly
+    left.imageOnly === right.imageOnly &&
+    left.fileMask === right.fileMask
   );
 }
 
@@ -262,8 +264,16 @@ export function useProjectPathSearch(
       query: target.query == null ? null : target.query.trim(),
       kind: target.kind,
       imageOnly: target.imageOnly,
+      fileMask: target.fileMask?.trim(),
     }),
-    [target.cwd, target.environmentId, target.imageOnly, target.kind, target.query],
+    [
+      target.cwd,
+      target.environmentId,
+      target.fileMask,
+      target.imageOnly,
+      target.kind,
+      target.query,
+    ],
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(
@@ -279,6 +289,7 @@ export function useProjectPathSearch(
             limit,
             ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
             ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
+            ...(debouncedTarget.fileMask ? { fileMask: debouncedTarget.fileMask } : {}),
           },
         })
       : null,

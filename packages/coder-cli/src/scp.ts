@@ -168,6 +168,7 @@ export function buildCoderScpInvocation(input: {
   readonly localPath: string;
   readonly sshHost: string;
   readonly remotePath: string;
+  readonly recursive?: boolean;
   readonly scpExecutable?: string;
 }): CoderInvocation {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(input.sshHost)) {
@@ -182,6 +183,7 @@ export function buildCoderScpInvocation(input: {
       "-F",
       input.sshConfigPath,
       "-B",
+      ...(input.recursive ? ["-r"] : []),
       input.localPath,
       `${input.sshHost}:${input.remotePath}`,
     ],
@@ -258,6 +260,7 @@ function copyWithCoderScp(input: {
   readonly invocationOptions?: CoderInvocationOptions;
   readonly localPath: string;
   readonly remotePath: string;
+  readonly recursive?: boolean;
   readonly platform?: NodeJS.Platform;
   readonly scpExecutable?: string;
 }): Effect.Effect<void, CoderProcessError> {
@@ -273,6 +276,7 @@ function copyWithCoderScp(input: {
           localPath: input.localPath,
           sshHost: host,
           remotePath: input.remotePath,
+          ...(input.recursive ? { recursive: true } : {}),
           ...(input.scpExecutable ? { scpExecutable: input.scpExecutable } : {}),
         }),
         "Coder SCP transfer",
@@ -314,6 +318,7 @@ export function installCoderHelperWithScp(input: {
         workspace: input.workspace,
         localPath: input.helperBundlePath,
         remotePath,
+        recursive: true,
         ...(input.invocationOptions ? { invocationOptions: input.invocationOptions } : {}),
         ...(input.platform ? { platform: input.platform } : {}),
         ...(input.scpExecutable ? { scpExecutable: input.scpExecutable } : {}),
@@ -321,9 +326,13 @@ export function installCoderHelperWithScp(input: {
       const command = [
         "set -eu",
         `temporary="$HOME/${remotePath}"`,
-        '[ -f "$temporary" ]',
-        'chmod 700 "$temporary"',
-        'mv "$temporary" "$HOME/.t3-coder/bin/workspace-helper"',
+        'final="$HOME/.t3-coder/bin/workspace-helper"',
+        'backup="$HOME/.t3-coder/bin/workspace-helper.previous"',
+        '[ -f "$temporary/index.mjs" ]',
+        'chmod 700 "$temporary/index.mjs"',
+        'rm -rf "$backup"',
+        'if [ -e "$final" ]; then mv "$final" "$backup"; fi',
+        'if mv "$temporary" "$final"; then rm -rf "$backup"; else if [ -e "$backup" ]; then mv "$backup" "$final"; fi; exit 1; fi',
       ].join("; ");
       yield* runProcess(
         buildCoderWorkspaceShellInvocation(
@@ -338,12 +347,16 @@ export function installCoderHelperWithScp(input: {
     });
     yield* install.pipe(
       Effect.onError(() =>
-        cleanupRemoteTransfer(
-          input.deployment,
-          input.workspace,
-          remotePath,
-          input.invocationOptions,
-        ),
+        runProcess(
+          buildCoderWorkspaceShellInvocation(
+            input.deployment,
+            input.workspace,
+            `rm -rf "$HOME/${remotePath}"`,
+            input.invocationOptions,
+          ),
+          "Coder helper transfer cleanup",
+          DEFAULT_COMMAND_TIMEOUT_MS,
+        ).pipe(Effect.ignore),
       ),
     );
   });

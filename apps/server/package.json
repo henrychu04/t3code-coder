@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
+    "@ff-labs/fff-node": "0.9.4",
     "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "yaml": "catalog:"

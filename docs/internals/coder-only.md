@@ -198,9 +198,10 @@ are not exposed by T3.
 
 ## Distribution
 
-`npm start` builds the web client and Linux helper from the checked-out source and lockfile, then
-starts the local gateway without opening a browser. Connecting never installs from npm or downloads
-an application update. The first connection may download the pinned Node.js package through Nix if
-it is not already in the workspace's Nix store. On the first connection to a workspace in each local
-gateway session, the gateway replaces the remote helper with that locally built bundle through
-Coder before starting it in the foreground.
+`npm start` builds the web client and a Linux x86-64 helper bundle from the checked-out source and
+lockfile, including the locked native runtime packages needed by workspace search, then starts the
+local gateway without opening a browser. Connecting never installs from npm or downloads an
+application update. The first connection may download the pinned Node.js package through Nix if it
+is not already in the workspace's Nix store. On the first connection to a workspace in each local
+gateway session, the gateway replaces the remote helper directory with that locally built bundle
+through Coder before starting it in the foreground.

@@ -19,7 +19,7 @@ export interface CoderInvocationOptions {
 }
 
 export const REMOTE_NODE_COMMAND = '"$HOME/.t3-coder/node24/bin/node"';
-export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper"';
+export const REMOTE_HELPER_COMMAND = '"$HOME/.t3-coder/bin/workspace-helper/index.mjs"';
 export const REMOTE_HELPER_READY_SENTINEL = "T3_CODER_HELPER_READY";
 export const REMOTE_WORKSPACE_STATS_COMMAND = [
   "set -eu",

@@ -60,6 +60,26 @@ describe("Coder SCP", () => {
     );
   });
 
+  it("adds recursive mode only for the versioned helper directory", () => {
+    const invocation = buildCoderScpInvocation({
+      platform: "win32",
+      sshConfigPath: String.raw`C:\Temp\ssh-config`,
+      localPath: String.raw`C:\T3\workspace-helper`,
+      sshHost: "t3-coder-1234-workspace",
+      remotePath: ".t3-coder/bin/workspace-helper.tmp.1234",
+      recursive: true,
+    });
+
+    deepStrictEqual(invocation.args, [
+      "-F",
+      String.raw`C:\Temp\ssh-config`,
+      "-B",
+      "-r",
+      String.raw`C:\T3\workspace-helper`,
+      "t3-coder-1234-workspace:.t3-coder/bin/workspace-helper.tmp.1234",
+    ]);
+  });
+
   it("rejects arbitrary SCP destinations", () => {
     throws(
       () =>

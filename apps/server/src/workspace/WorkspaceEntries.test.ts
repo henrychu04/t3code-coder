@@ -71,6 +71,43 @@ it.layer(TestLayer)("WorkspaceEntries", (it) => {
     );
   });
 
+  describe("search", () => {
+    it.effect("uses fuzzy path search and applies file masks before limiting results", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-coder-entry-search-",
+        });
+        yield* fileSystem.makeDirectory(path.join(root, "src"));
+        yield* fileSystem.writeFileString(path.join(root, "src", "WorkspaceSearchIndex.ts"), "");
+        yield* fileSystem.writeFileString(
+          path.join(root, "src", "WorkspaceSearchIndex.test.ts"),
+          "",
+        );
+        yield* fileSystem.writeFileString(path.join(root, "src", "unrelated.tsx"), "");
+
+        const fuzzy = yield* entries.search({
+          cwd: root,
+          query: "wspcsearch",
+          limit: 10,
+          kind: "file",
+        });
+        const masked = yield* entries.search({
+          cwd: root,
+          query: "",
+          limit: 10,
+          kind: "file",
+          fileMask: "*.tsx",
+        });
+
+        expect(fuzzy.entries.map((entry) => entry.path)).toContain("src/WorkspaceSearchIndex.ts");
+        expect(masked.entries).toEqual([{ path: "src/unrelated.tsx", kind: "file" }]);
+      }),
+    );
+  });
+
   describe("listDirectories", () => {
     it.effect("lists immediate remote directories without reading file contents", () =>
       Effect.gen(function* () {
