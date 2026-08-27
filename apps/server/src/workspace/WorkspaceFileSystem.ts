@@ -11,7 +11,6 @@ import type {
   ProjectWriteFileInput,
   ProjectWriteFileResult,
 } from "@t3tools/contracts";
-import { matchesFileMask } from "@t3tools/shared/fileMask";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -295,10 +294,17 @@ export const make = Effect.gen(function* () {
   const searchText: WorkspaceFileSystem["Service"]["searchText"] = Effect.fn(
     "WorkspaceFileSystem.searchText",
   )(function* (input) {
-    const listed = yield* workspaceEntries.list({ cwd: input.cwd });
-    const fileEntries = listed.entries.filter(
-      (entry) => entry.kind === "file" && matchesFileMask(entry.path, input.fileMask ?? ""),
-    );
+    const fileMask = input.fileMask?.trim() ?? "";
+    const listed = fileMask
+      ? yield* workspaceEntries.search({
+          cwd: input.cwd,
+          query: "",
+          limit: PROJECT_TEXT_SEARCH_MAX_FILES + 1,
+          kind: "file",
+          fileMask,
+        })
+      : yield* workspaceEntries.list({ cwd: input.cwd });
+    const fileEntries = listed.entries.filter((entry) => entry.kind === "file");
     const candidates = fileEntries.slice(0, PROJECT_TEXT_SEARCH_MAX_FILES);
     const needle = input.query.toLocaleLowerCase();
     const matches: Array<ProjectTextSearchResult["matches"][number]> = [];

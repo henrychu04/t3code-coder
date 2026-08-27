@@ -26,21 +26,38 @@ function globPatternToRegex(pattern: string): RegExp {
     }
     source += escapeRegexCharacter(character);
   }
-  return new RegExp(`${source}$`, "i");
+  return new RegExp(`${source}$`, "u");
 }
 
-export function matchesFileMask(path: string, mask: string): boolean {
+export interface FileMaskPatterns {
+  readonly includes: ReadonlyArray<string>;
+  readonly excludes: ReadonlyArray<string>;
+}
+
+export function parseFileMask(mask: string): FileMaskPatterns {
+  const includes: string[] = [];
+  const excludes: string[] = [];
   const patterns = mask
     .split(/[;,]/)
     .map((pattern) => pattern.trim())
     .filter(Boolean);
-  if (patterns.length === 0) return true;
+  for (const pattern of patterns) {
+    if (pattern.startsWith("!") && pattern.length > 1) {
+      excludes.push(pattern.slice(1));
+    } else {
+      includes.push(pattern);
+    }
+  }
+  return { includes, excludes };
+}
+
+export function matchesFileMask(path: string, mask: string): boolean {
+  const { includes, excludes } = parseFileMask(mask);
+  if (includes.length === 0 && excludes.length === 0) return true;
+
+  // IntelliJ file masks apply to file names, not project-relative paths.
   const normalizedPath = path.replaceAll("\\", "/");
-  const basename = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1);
-  return patterns.some((pattern) => {
-    const normalizedPattern = pattern.replaceAll("\\", "/");
-    return globPatternToRegex(normalizedPattern).test(
-      normalizedPattern.includes("/") ? normalizedPath : basename,
-    );
-  });
+  const fileName = normalizedPath.slice(normalizedPath.lastIndexOf("/") + 1);
+  const matches = (pattern: string) => globPatternToRegex(pattern).test(fileName);
+  return (includes.length === 0 || includes.some(matches)) && !excludes.some(matches);
 }

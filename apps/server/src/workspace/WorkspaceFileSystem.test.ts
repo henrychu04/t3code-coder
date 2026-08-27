@@ -77,24 +77,25 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
       }),
     );
 
-    it.effect("filters candidates with a file mask before scanning", () =>
+    it.effect("filters candidates with an IntelliJ file mask before scanning", () =>
       Effect.gen(function* () {
         const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
         const cwd = yield* makeTempDir;
         yield* writeTextFile(cwd, "src/one.ts", "needle\n");
         yield* writeTextFile(cwd, "src/two.test.ts", "needle\n");
+        yield* writeTextFile(cwd, "nested/three.ts", "needle\n");
         yield* writeTextFile(cwd, "README.md", "needle\n");
 
         const result = yield* files.searchText({
           cwd,
           query: "needle",
-          fileMask: "src/*.ts",
+          fileMask: "*.ts,!*.test.ts",
           limit: 20,
         });
 
-        expect(result.matches.map((match) => match.path)).toEqual([
+        expect(result.matches.map((match) => match.path).toSorted()).toEqual([
+          "nested/three.ts",
           "src/one.ts",
-          "src/two.test.ts",
         ]);
       }),
     );

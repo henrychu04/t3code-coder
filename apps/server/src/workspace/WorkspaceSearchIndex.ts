@@ -14,7 +14,7 @@ import type {
   ProjectListEntriesResult,
   ProjectSearchEntriesResult,
 } from "@t3tools/contracts";
-import { matchesFileMask } from "@t3tools/shared/fileMask";
+import { matchesFileMask, parseFileMask } from "@t3tools/shared/fileMask";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -177,6 +177,31 @@ function withDirectoryAncestors(entries: ReadonlyArray<ProjectEntry>): ProjectEn
   return [...byPath.values()];
 }
 
+const FFF_UNSAFE_FILE_MASK_CHARACTER = /[\s\\/[\]{}:]/u;
+
+/**
+ * Compile IntelliJ filename masks into FFF path constraints. FFF constraints
+ * operate on project-relative paths, so every filename pattern is anchored to
+ * the final path segment. Unsupported literals fall back to the broad native
+ * file search plus the exact IntelliJ matcher.
+ */
+function toFffFileMaskConstraint(fileMask: string): string | undefined {
+  const { includes, excludes } = parseFileMask(fileMask);
+  const patterns = [...includes, ...excludes];
+  if (patterns.some((pattern) => FFF_UNSAFE_FILE_MASK_CHARACTER.test(pattern))) {
+    return undefined;
+  }
+
+  const includeConstraint =
+    includes.length === 0
+      ? ""
+      : includes.length === 1
+        ? `**/${includes[0]}`
+        : `{${includes.map((pattern) => `**/${pattern}`).join(",")}}`;
+  const excludeConstraints = excludes.map((pattern) => `!**/${pattern}`);
+  return [includeConstraint, ...excludeConstraints].filter(Boolean).join(" ");
+}
+
 const waitForIndexReady = Effect.fn("WorkspaceSearchIndex.waitForIndexReady")(function* <E>(
   cwd: string,
   finder: FileFinder,
@@ -300,10 +325,16 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (cwd: strin
     "WorkspaceSearchIndex.search",
   )(function* (query, limit, kind, imageOnly = false, fileMask = "") {
     if (kind === "file" || imageOnly || fileMask.trim().length > 0) {
-      const filtered = imageOnly || fileMask.trim().length > 0;
+      const hasFileMask = fileMask.trim().length > 0;
+      const nativeFileMask = hasFileMask ? toFffFileMaskConstraint(fileMask) : "";
+      const nativeQuery =
+        nativeFileMask === undefined
+          ? query
+          : [nativeFileMask, query].filter(Boolean).join(" ");
+      const filtered = imageOnly || hasFileMask;
       const pageSize = filtered ? WORKSPACE_INDEX_PAGE_SIZE : Math.max(1, limit + 1);
       const result = yield* runSearch(query, pageSize, "fileSearch", () =>
-        finder.fileSearch(query, { pageSize }),
+        finder.fileSearch(nativeQuery, { pageSize }),
       );
       return mapFileSearchResult(result, limit, imageOnly, fileMask);
     }

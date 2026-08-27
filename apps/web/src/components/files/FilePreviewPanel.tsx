@@ -544,7 +544,7 @@ function SearchDialogHeader(props: {
           </InputGroupAddon>
           <InputGroupInput
             aria-label="File mask"
-            placeholder="*.ts, src/**/*.tsx"
+            placeholder="*.ts, !*.test.ts"
             size="sm"
             spellCheck={false}
             value={props.fileMask}

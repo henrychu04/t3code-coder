@@ -5,7 +5,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { describe, expect, it } from "@effect/vitest";
+import { FileFinder } from "@ff-labs/fff-node";
+import { describe, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -104,6 +105,42 @@ it.layer(TestLayer)("WorkspaceEntries", (it) => {
 
         expect(fuzzy.entries.map((entry) => entry.path)).toContain("src/WorkspaceSearchIndex.ts");
         expect(masked.entries).toEqual([{ path: "src/unrelated.tsx", kind: "file" }]);
+      }),
+    );
+
+    it.effect("compiles IntelliJ file masks into native FFF constraints", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "t3-coder-entry-native-mask-",
+        });
+        yield* fileSystem.makeDirectory(path.join(root, "src"));
+        yield* fileSystem.writeFileString(path.join(root, "src", "App.ts"), "");
+        yield* fileSystem.writeFileString(path.join(root, "src", "App.test.ts"), "");
+        yield* fileSystem.writeFileString(path.join(root, "src", "App.tsx"), "");
+        const fileSearch = yield* Effect.acquireRelease(
+          Effect.sync(() => vi.spyOn(FileFinder.prototype, "fileSearch")),
+          (spy) => Effect.sync(() => spy.mockRestore()),
+        );
+
+        const result = yield* entries.search({
+          cwd: root,
+          query: "",
+          limit: 10,
+          kind: "file",
+          fileMask: "*.ts,*.tsx,!*.test.ts",
+        });
+
+        expect(fileSearch).toHaveBeenCalledWith(
+          "{**/*.ts,**/*.tsx} !**/*.test.ts",
+          { pageSize: 25_002 },
+        );
+        expect(result.entries).toEqual([
+          { path: "src/App.ts", kind: "file" },
+          { path: "src/App.tsx", kind: "file" },
+        ]);
       }),
     );
   });
