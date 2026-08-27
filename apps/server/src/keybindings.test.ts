@@ -213,6 +213,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.equal(defaultsByCommand.get("fileViewer.find"), "mod+f");
       assert.equal(defaultsByCommand.get("fileViewer.goToLine"), "mod+g");
       assert.isFalse(defaultsByCommand.has("fileViewer.searchFiles"));
+      assert.isFalse(defaultsByCommand.has("editor.openFavorite"));
       assert.equal(
         Keybindings.DEFAULT_KEYBINDINGS.find(
           (binding) => binding.command === "projectSearch.toggle",
@@ -335,6 +336,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
         { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
         { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+        { key: "mod+o", command: "editor.openFavorite" },
         { key: "mod+alt+p", command: "filePicker.toggle", when: "!terminalFocus" },
         {
           key: "shift shift",
@@ -359,6 +361,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       assert.isFalse(
         persisted.some((entry) => entry.command === "filePicker.toggle" && entry.key === "mod+p"),
       );
+      assert.isFalse(persisted.some((entry) => entry.command === "editor.openFavorite"));
       assert.isTrue(
         persisted.some(
           (entry) => entry.command === "filePicker.toggle" && entry.key === "mod+alt+p",

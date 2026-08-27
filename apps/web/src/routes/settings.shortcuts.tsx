@@ -309,7 +309,7 @@ function ShortcutsSettingsView() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="min-w-28"
+                            className="w-28 shrink-0"
                             data-keybinding-capture=""
                             disabled={environmentId === null || busy !== null}
                             onClick={() => {

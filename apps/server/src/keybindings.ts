@@ -61,6 +61,7 @@ export {
 const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
   { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+  { key: "mod+o", command: "editor.openFavorite" },
   {
     key: "mod+shift+f",
     command: "projectSearch.toggle",

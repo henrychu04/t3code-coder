@@ -296,7 +296,7 @@ export function KeybindingWhenEditor(props: {
       <PopoverTrigger
         disabled={props.disabled}
         className={cn(
-          "inline-flex h-8 min-w-48 max-w-72 flex-1 items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+          "inline-flex h-8 w-72 min-w-72 flex-none items-center justify-between gap-2 rounded-md border border-input bg-background px-2.5 text-left font-mono text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
           !trimmed && "text-muted-foreground",
           invalid && "border-destructive text-destructive",
         )}
