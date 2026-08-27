@@ -203,6 +203,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       assert.equal(defaultsByCommand.get("thread.previous"), "mod+shift+[");
       assert.equal(defaultsByCommand.get("thread.next"), "mod+shift+]");
+      assert.equal(defaultsByCommand.get("thread.settle"), "mod+shift+s");
       assert.equal(defaultsByCommand.get("thread.jump.1"), "mod+1");
       assert.equal(defaultsByCommand.get("thread.jump.9"), "mod+9");
       assert.equal(defaultsByCommand.get("modelPicker.toggle"), "mod+shift+m");
@@ -216,7 +217,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         Keybindings.DEFAULT_KEYBINDINGS.find(
           (binding) => binding.command === "projectSearch.toggle",
         )?.when,
-        "projectOpen && !terminalFocus",
+        "!terminalFocus",
       );
       assert.equal(
         Keybindings.DEFAULT_KEYBINDINGS.find(
@@ -364,7 +365,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         {
           key: "mod+shift+f",
           command: "projectSearch.toggle",
-          when: "fileViewerOpen && !terminalFocus",
+          when: "projectOpen && !terminalFocus",
         },
         {
           key: "shift shift",
@@ -380,10 +381,17 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       assert.isFalse(persisted.some((entry) => entry.when === "fileViewerOpen && !terminalFocus"));
+      assert.isFalse(
+        persisted.some(
+          (entry) =>
+            entry.command === "projectSearch.toggle" &&
+            entry.when === "projectOpen && !terminalFocus",
+        ),
+      );
       assert.deepInclude(persisted, {
         key: "mod+shift+f",
         command: "projectSearch.toggle",
-        when: "projectOpen && !terminalFocus",
+        when: "!terminalFocus",
       });
       assert.deepInclude(persisted, {
         key: "shift shift",

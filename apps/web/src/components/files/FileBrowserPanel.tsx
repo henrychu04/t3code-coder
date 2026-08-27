@@ -1,13 +1,15 @@
 import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { type MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
+import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
@@ -28,6 +30,18 @@ function treePath(entry: ProjectEntry): string {
   return entry.kind === "directory" ? `${entry.path}/` : entry.path;
 }
 
+export function filePathFromTreeContextMenu(
+  eventPath: readonly EventTarget[],
+  entryKinds: ReadonlyMap<string, ProjectEntry["kind"]>,
+): string | null {
+  const row = eventPath.find(
+    (target): target is HTMLElement =>
+      target instanceof HTMLElement && target.dataset.itemPath !== undefined,
+  );
+  const relativePath = row?.dataset.itemPath?.replace(/\/$/, "");
+  return relativePath && entryKinds.get(relativePath) === "file" ? relativePath : null;
+}
+
 export default function FileBrowserPanel(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -39,6 +53,7 @@ export default function FileBrowserPanel(props: {
   onRefreshSelectedFile?: () => void;
 }) {
   const { resolvedTheme } = useTheme();
+  const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
   const entriesQuery = useProjectEntriesQuery(props.environmentId, props.threadId, props.cwd);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
@@ -118,6 +133,30 @@ export default function FileBrowserPanel(props: {
     props.onRefreshSelectedFile?.();
   };
 
+  const handleContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLElement>) => {
+      const relativePath = filePathFromTreeContextMenu(
+        event.nativeEvent.composedPath(),
+        entryKindsRef.current,
+      );
+      if (!relativePath) return;
+
+      const localApi = readLocalApi();
+      if (!localApi) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void localApi.contextMenu
+        .show([{ id: "copy-path", label: "Copy path", icon: "copy" }], {
+          x: event.clientX,
+          y: event.clientY,
+        })
+        .then((action) => {
+          if (action === "copy-path") copyToClipboard(relativePath, undefined);
+        });
+    },
+    [copyToClipboard],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="flex h-10 min-h-10 shrink-0 items-center gap-1 border-b border-border/60 px-2">
@@ -168,6 +207,7 @@ export default function FileBrowserPanel(props: {
             aria-label={`${props.projectName} files`}
             aria-hidden={hasNoSearchMatches || undefined}
             className={cn("size-full overflow-hidden", hasNoSearchMatches && "invisible")}
+            onContextMenu={handleContextMenu}
             style={{
               colorScheme: resolvedTheme,
               ["--trees-fg-override" as string]: "var(--contrast-foreground)",

@@ -66,6 +66,11 @@ const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     when: "fileViewerOpen && !terminalFocus",
   },
   {
+    key: "mod+shift+f",
+    command: "projectSearch.toggle",
+    when: "projectOpen && !terminalFocus",
+  },
+  {
     key: "shift shift",
     command: "fileViewer.searchFiles",
     when: "fileViewerOpen && !terminalFocus",

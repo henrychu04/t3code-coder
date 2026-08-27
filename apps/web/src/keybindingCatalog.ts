@@ -20,6 +20,7 @@ export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
   { command: "commandPalette.toggle", label: "Find action", category: "Navigation" },
   { command: "thread.previous", label: "Previous thread", category: "Navigation" },
   { command: "thread.next", label: "Next thread", category: "Navigation" },
+  { command: "thread.settle", label: "Settle or un-settle current thread", category: "Chat" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     command,
     label: `Go to thread ${index + 1}`,

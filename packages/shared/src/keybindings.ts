@@ -30,11 +30,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
   { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
   { key: "mod+f", command: "fileViewer.find", when: "fileOpen && !terminalFocus" },
-  {
-    key: "mod+shift+f",
-    command: "projectSearch.toggle",
-    when: "projectOpen && !terminalFocus",
-  },
+  { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
   {
     key: "shift shift",
     command: "fileViewer.searchFiles",
@@ -53,6 +49,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
+  { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
   ...THREAD_JUMP_KEYBINDING_COMMANDS.map((command, index) => ({
     key: `mod+${index + 1}`,
     command,

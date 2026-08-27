@@ -127,7 +127,7 @@ const DEFAULT_BINDINGS = compile([
   {
     shortcut: modShortcut("f", { shiftKey: true }),
     command: "projectSearch.toggle",
-    whenAst: whenAnd(whenIdentifier("projectOpen"), whenNot(whenIdentifier("terminalFocus"))),
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
   },
   {
     shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
@@ -143,6 +143,11 @@ const DEFAULT_BINDINGS = compile([
   { shortcut: modShortcut("o"), command: "editor.openFavorite" },
   { shortcut: modShortcut("[", { shiftKey: true }), command: "thread.previous" },
   { shortcut: modShortcut("]", { shiftKey: true }), command: "thread.next" },
+  {
+    shortcut: modShortcut("s", { shiftKey: true }),
+    command: "thread.settle",
+    whenAst: whenNot(whenIdentifier("terminalFocus")),
+  },
   { shortcut: modShortcut("1"), command: "thread.jump.1" },
   { shortcut: modShortcut("2"), command: "thread.jump.2" },
   { shortcut: modShortcut("3"), command: "thread.jump.3" },
@@ -572,7 +577,7 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("matches projectSearch.toggle while a project is open and outside terminal focus", () => {
+  it("matches projectSearch.toggle outside terminal focus", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "f", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
@@ -587,12 +592,29 @@ describe("chat/editor shortcuts", () => {
       }),
       "projectSearch.toggle",
     );
-    assert.notStrictEqual(
+    assert.strictEqual(
       resolveShortcutCommand(event({ key: "f", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
         platform: "MacIntel",
         context: { projectOpen: false, terminalFocus: false },
       }),
       "projectSearch.toggle",
+    );
+  });
+
+  it("matches thread.settle outside terminal focus", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(event({ key: "s", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: false },
+      }),
+      "thread.settle",
+    );
+    assert.notStrictEqual(
+      resolveShortcutCommand(event({ key: "s", metaKey: true, shiftKey: true }), DEFAULT_BINDINGS, {
+        platform: "MacIntel",
+        context: { terminalFocus: true },
+      }),
+      "thread.settle",
     );
   });
 
