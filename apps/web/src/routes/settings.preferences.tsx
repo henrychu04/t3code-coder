@@ -3,6 +3,7 @@ import {
   MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   MIN_SIDEBAR_THREAD_PREVIEW_COUNT,
+  type DiffRenderMode,
   type SidebarProjectGroupingMode,
   type SidebarProjectSortOrder,
   type SidebarThreadSortOrder,
@@ -216,6 +217,24 @@ function GeneralSettingsView() {
               <option value="locale">System default</option>
               <option value="12-hour">12-hour</option>
               <option value="24-hour">24-hour</option>
+            </SettingsSelect>
+          }
+        />
+        <SettingsRow
+          title="Diff layout"
+          description="Choose how diffs are displayed by default."
+          control={
+            <SettingsSelect
+              ariaLabel="Diff layout"
+              value={settings.diffRenderMode}
+              onChange={(value) => {
+                if (value === "stacked" || value === "split") {
+                  updateSettings({ diffRenderMode: value satisfies DiffRenderMode });
+                }
+              }}
+            >
+              <option value="stacked">Stacked</option>
+              <option value="split">Side by side</option>
             </SettingsSelect>
           }
         />
