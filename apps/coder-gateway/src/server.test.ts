@@ -377,6 +377,7 @@ describe("local Coder gateway", () => {
           updateAvailable: false,
           healthy: null,
           autostopAt: null,
+          requiredStopAt: null,
         },
       ],
       startWorkspace: async () => {
@@ -454,6 +455,7 @@ describe("local Coder gateway", () => {
           updateAvailable: false,
           healthy: true,
           autostopAt: null,
+          requiredStopAt: null,
         },
       ],
       connectPortForward: async () => {
@@ -725,6 +727,7 @@ describe("local Coder gateway", () => {
             updateAvailable: true,
             healthy: true,
             autostopAt: null,
+            requiredStopAt: null,
           },
         ];
       },
@@ -763,6 +766,7 @@ describe("local Coder gateway", () => {
           updateAvailable: true,
           healthy: true,
           autostopAt: null,
+          requiredStopAt: null,
         },
       ],
     });
@@ -781,7 +785,7 @@ describe("local Coder gateway", () => {
     });
   });
 
-  it("parses stopped, starting, and update-available state from Coder", async () => {
+  it("reports effective and required stop deadlines only for active start builds", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
     const configPath = NodePath.join(directory, "config.json");
@@ -790,8 +794,11 @@ describe("local Coder gateway", () => {
       executablePath,
       `#!/usr/bin/env node
 process.stdout.write(JSON.stringify([
-  { name: "starting-workspace", owner_name: "henry", latest_build: { status: "starting", deadline: "2026-08-25T18:30:00Z" }, outdated: true, health: { healthy: true } },
-  { name: "stopped-workspace", latest_build: { status: "stopped" }, outdated: false },
+  { name: "starting-workspace", owner_name: "henry", ttl_ms: 1800000, latest_build: { transition: "start", status: "starting", deadline: "2026-08-25T18:30:00Z" }, outdated: true, health: { healthy: true } },
+  { name: "template-default-workspace", latest_build: { transition: "start", status: "running", deadline: "2026-08-25T19:00:00Z" }, outdated: false },
+  { name: "required-stop-workspace", latest_build: { transition: "start", status: "running", deadline: "2026-08-25T19:30:00Z", max_deadline: "2026-08-25T19:30:00Z" }, outdated: false },
+  { name: "manual-workspace", latest_build: { transition: "start", status: "running" }, outdated: false },
+  { name: "stopped-workspace", latest_build: { transition: "stop", status: "stopped", deadline: "2026-08-25T20:30:00Z", max_deadline: "2026-08-25T20:30:00Z" }, outdated: false },
   { name: "unknown-workspace", latest_build: { status: "failed" }, outdated: false }
 ]));
 `,
@@ -833,6 +840,34 @@ process.stdout.write(JSON.stringify([
           updateAvailable: true,
           healthy: true,
           autostopAt: "2026-08-25T18:30:00.000Z",
+          requiredStopAt: null,
+        },
+        {
+          name: "template-default-workspace",
+          target: "template-default-workspace",
+          status: "running",
+          updateAvailable: false,
+          healthy: null,
+          autostopAt: "2026-08-25T19:00:00.000Z",
+          requiredStopAt: null,
+        },
+        {
+          name: "required-stop-workspace",
+          target: "required-stop-workspace",
+          status: "running",
+          updateAvailable: false,
+          healthy: null,
+          autostopAt: "2026-08-25T19:30:00.000Z",
+          requiredStopAt: "2026-08-25T19:30:00.000Z",
+        },
+        {
+          name: "manual-workspace",
+          target: "manual-workspace",
+          status: "running",
+          updateAvailable: false,
+          healthy: null,
+          autostopAt: null,
+          requiredStopAt: null,
         },
         {
           name: "stopped-workspace",
@@ -841,6 +876,7 @@ process.stdout.write(JSON.stringify([
           updateAvailable: false,
           healthy: null,
           autostopAt: null,
+          requiredStopAt: null,
         },
         {
           name: "unknown-workspace",
@@ -849,6 +885,7 @@ process.stdout.write(JSON.stringify([
           updateAvailable: false,
           healthy: null,
           autostopAt: null,
+          requiredStopAt: null,
         },
       ],
     });
@@ -1194,6 +1231,7 @@ process.on("SIGTERM", () => {
           updateAvailable: false,
           healthy: true,
           autostopAt: null,
+          requiredStopAt: null,
         },
       ],
     });

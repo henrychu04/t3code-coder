@@ -72,7 +72,9 @@ CLI profile. A successful start, restart, or update restores the saved forwards 
 successful stop leaves the helper and forwards stopped. The browser reports workspace
 and port-forward status as unavailable when their status requests fail; it does not leave a request
 checking indefinitely or retain a stale running label.
-The browser also surfaces the workspace build deadline as an autostop countdown. Status discovery
+For an active start build, the browser surfaces Coder's current build deadline as an idle-stop
+countdown. It also surfaces `max_deadline`, when present, as the absolute stop required by a template
+policy. A stopped or non-start build never exposes either countdown. Status discovery
 for starting or temporarily unavailable workspaces backs off from two to thirty seconds and retries
 immediately when the browser becomes visible again. Stable workspace status refreshes once per
 minute so deadline, health, and template-update state do not remain stale.

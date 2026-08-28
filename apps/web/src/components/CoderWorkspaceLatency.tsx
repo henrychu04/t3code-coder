@@ -17,21 +17,35 @@ import { useEnvironments } from "../state/environments";
 import { Popover, PopoverPopup, PopoverTrigger } from "./ui/popover";
 
 const RESOURCE_REFRESH_MS = 10_000;
+const AUTOSTOP_REFRESH_MS = 1_000;
 
 export function formatCoderWorkspaceLatency(latencyMs: number): string {
   return latencyMs < 1 ? "<1 ms" : `${Math.round(latencyMs)} ms`;
 }
 
-export function formatCoderAutostop(autostopAt: string, now = Date.now()): string | null {
+export function formatCoderWorkspaceLatencyDetail(latencyMs: number): string {
+  if (latencyMs < 0.1) return "<0.1 ms";
+  return `${String(Math.round(latencyMs * 10) / 10)} ms`;
+}
+
+export function formatCoderAutostop(
+  autostopAt: string,
+  now = Date.now(),
+  kind: "idle" | "required" = "idle",
+): string | null {
   const deadline = Date.parse(autostopAt);
   if (!Number.isFinite(deadline)) return null;
+  const label = kind === "required" ? "Required stop" : "Idle stop";
   const remainingMs = deadline - now;
-  if (remainingMs <= 0) return "Autostop due";
+  if (remainingMs <= 0) return `${label} due`;
   const minutes = Math.ceil(remainingMs / 60_000);
-  if (minutes < 60) return `Stops in ${String(minutes)}m`;
-  const hours = Math.ceil(minutes / 60);
-  if (hours < 24) return `Stops in ${String(hours)}h`;
-  return `Stops in ${String(Math.ceil(hours / 24))}d`;
+  if (minutes < 60) return `${label} in ${String(minutes)}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  if (hours < 24) return `${label} in ${String(hours)}h ${String(remainingMinutes)}m`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return `${label} in ${String(days)}d ${String(remainingHours)}h`;
 }
 
 export function formatCoderResourcePercent(used: number, total: number): string {
@@ -156,11 +170,17 @@ export function CoderWorkspaceLatency({
   }, [cardOpen, workspaceId]);
 
   useEffect(() => {
-    if (runtime?.autostopAt === null || runtime?.autostopAt === undefined) return;
+    if (
+      !cardOpen ||
+      ((runtime?.autostopAt === null || runtime?.autostopAt === undefined) &&
+        (runtime?.requiredStopAt === null || runtime?.requiredStopAt === undefined))
+    ) {
+      return;
+    }
     setNow(Date.now());
-    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    const timer = window.setInterval(() => setNow(Date.now()), AUTOSTOP_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [runtime?.autostopAt]);
+  }, [cardOpen, runtime?.autostopAt, runtime?.requiredStopAt]);
 
   if (environment?.connection.phase !== "connected" || workspaceId === null) return null;
 
@@ -168,14 +188,34 @@ export function CoderWorkspaceLatency({
     network === undefined
       ? "— ms"
       : `${network.stale ? "~" : ""}${formatCoderWorkspaceLatency(network.latencyMs)}`;
-  const autostopLabel =
-    runtime?.autostopAt === null || runtime?.autostopAt === undefined
+  const latencyDetailLabel =
+    network === undefined
+      ? "— ms"
+      : `${network.stale ? "~" : ""}${formatCoderWorkspaceLatencyDetail(network.latencyMs)}`;
+  const autostopAt = runtime?.autostopAt;
+  const requiredStopAt = runtime?.requiredStopAt;
+  const effectiveStopIsRequired =
+    autostopAt !== null &&
+    autostopAt !== undefined &&
+    requiredStopAt !== null &&
+    requiredStopAt !== undefined &&
+    autostopAt === requiredStopAt;
+  const idleStopLabel =
+    autostopAt === null || autostopAt === undefined || effectiveStopIsRequired
       ? null
-      : formatCoderAutostop(runtime.autostopAt, now);
-  const autostopIsSoon =
-    runtime?.autostopAt !== null &&
-    runtime?.autostopAt !== undefined &&
-    Date.parse(runtime.autostopAt) - now <= 30 * 60_000;
+      : formatCoderAutostop(autostopAt, now);
+  const idleStopIsSoon =
+    idleStopLabel !== null &&
+    typeof autostopAt === "string" &&
+    Date.parse(autostopAt) - now <= 30 * 60_000;
+  const requiredStopLabel =
+    requiredStopAt === null || requiredStopAt === undefined
+      ? null
+      : formatCoderAutostop(requiredStopAt, now, "required");
+  const requiredStopIsSoon =
+    requiredStopLabel !== null &&
+    typeof requiredStopAt === "string" &&
+    Date.parse(requiredStopAt) - now <= 30 * 60_000;
   const healthy = resourceUsage?.healthy ?? runtime?.healthy;
   const healthLabel = healthy === true ? "Healthy" : healthy === false ? "Unhealthy" : "Connected";
   const healthDotClass =
@@ -227,7 +267,7 @@ export function CoderWorkspaceLatency({
               <ActivityIcon aria-hidden className="size-3" />
               Latency
             </span>
-            <span className="font-semibold tabular-nums text-foreground">{latencyLabel}</span>
+            <span className="font-semibold tabular-nums text-foreground">{latencyDetailLabel}</span>
           </div>
 
           {network?.slow ? (
@@ -237,12 +277,21 @@ export function CoderWorkspaceLatency({
             </div>
           ) : null}
 
-          {autostopLabel !== null ? (
+          {idleStopLabel !== null ? (
             <div
-              className={`mt-2.5 flex items-center gap-2 rounded-md border p-2 ${autostopIsSoon ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-border text-muted-foreground"}`}
+              className={`mt-2.5 flex items-center gap-2 rounded-md border p-2 ${idleStopIsSoon ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-border text-muted-foreground"}`}
             >
               <TimerIcon aria-hidden className="size-3 shrink-0" />
-              <span>{autostopLabel}</span>
+              <span>{idleStopLabel}</span>
+            </div>
+          ) : null}
+
+          {requiredStopLabel !== null ? (
+            <div
+              className={`mt-2.5 flex items-center gap-2 rounded-md border p-2 ${requiredStopIsSoon ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300" : "border-border text-muted-foreground"}`}
+            >
+              <TimerIcon aria-hidden className="size-3 shrink-0" />
+              <span>{requiredStopLabel}</span>
             </div>
           ) : null}
 
