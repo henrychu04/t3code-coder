@@ -135,7 +135,12 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const canGoBack = useCanGoBack();
   const { isMobile, setOpenMobile } = useSidebar();
   const currentFooterPage = useLocation({
-    select: (location) => (/^\/settings(?:\/|$)/.test(location.pathname) ? "settings" : null),
+    select: (location) =>
+      /^\/settings(?:\/|$)/.test(location.pathname)
+        ? "settings"
+        : /^\/projects\/[^/]+\/?$/.test(location.pathname)
+          ? "project-settings"
+          : null,
   });
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
