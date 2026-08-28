@@ -240,12 +240,20 @@ describe("ProjectTextSearchDialog", () => {
     const query = container.querySelector<HTMLInputElement>("[aria-label='Find in Files']");
     await act(async () => setInputValue(query!, "const"));
     const queryGroup = query?.closest<HTMLElement>("[data-slot=input-group]");
+    const fileMask = container.querySelector<HTMLInputElement>("[aria-label='File mask']");
+    const fileMaskGroup = fileMask?.closest<HTMLElement>("[data-slot=input-group]");
+    const fileMaskLabel = [...(fileMaskGroup?.querySelectorAll("span") ?? [])].find(
+      (element) => element.textContent === "File mask:",
+    );
     const selectedResult = container.querySelector<HTMLElement>("[aria-selected=true]");
     const unselectedResult = container.querySelector<HTMLElement>("[aria-selected=false]");
     const footer = container.querySelector<HTMLElement>("[data-slot=command-footer]");
 
     expect(queryGroup?.className).toContain("border-transparent!");
     expect(queryGroup?.className).toContain("ring-0!");
+    expect(fileMaskGroup?.className).toContain("sm:w-64");
+    expect(fileMaskLabel?.className).toContain("whitespace-nowrap");
+    expect(fileMaskGroup?.querySelector("svg")?.getAttribute("class")).toContain("mx-0!");
     expect(selectedResult?.className).toContain("bg-accent");
     expect(selectedResult?.className).not.toContain("bg-primary");
     expect(unselectedResult?.className).toContain("hover:bg-foreground/[0.06]");

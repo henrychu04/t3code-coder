@@ -539,11 +539,11 @@ function SearchDialogHeader(props: {
             {props.summary}
           </span>
         </div>
-        <InputGroup className="h-7 w-full sm:ms-auto sm:w-52" variant="ghost">
+        <InputGroup className="h-7 w-full sm:ms-auto sm:w-64" variant="ghost">
           <InputGroupAddon>
-            <InputGroupText>
-              <Filter className="size-3.5" />
-              <span className="text-[11px]">File mask:</span>
+            <InputGroupText className="shrink-0 overflow-visible! whitespace-nowrap">
+              <Filter className="mx-0! size-3.5 shrink-0" />
+              <span className="whitespace-nowrap text-[11px]">File mask:</span>
             </InputGroupText>
           </InputGroupAddon>
           <InputGroupInput
