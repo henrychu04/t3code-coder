@@ -6,11 +6,12 @@ import {
 } from "@pierre/diffs";
 import { EditContext, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
 import { useAtomValue } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  ProjectTextSearchMatch,
-  ProjectWriteFileResult,
-  ScopedThreadRef,
+import {
+  type EnvironmentId,
+  PROJECT_SEARCH_INPUT_MAX_LENGTH,
+  type ProjectTextSearchMatch,
+  type ProjectWriteFileResult,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ArrowDown,
@@ -42,7 +43,7 @@ import {
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
 import { Button } from "~/components/ui/button";
-import { CommandDialog, CommandDialogPopup } from "~/components/ui/command";
+import { CommandDialog, CommandDialogPopup, CommandFooter } from "~/components/ui/command";
 import {
   Dialog,
   DialogFooter,
@@ -58,6 +59,7 @@ import {
   InputGroupText,
 } from "~/components/ui/input-group";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import { Toggle } from "~/components/ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -97,6 +99,8 @@ import {
 } from "./fileEditorSessions";
 import { projectFileCacheKey } from "./fileContentRevision";
 import {
+  type FileLineRevealRequest,
+  isSameFileLineRevealRequest,
   resolveAnchoredFileLineScrollTop,
   resolveCenteredFileLineScrollTop,
   resolveVisibleFileLineAnchor,
@@ -377,8 +381,8 @@ function useFileLineReveal(
   revealLine: number | null,
   revealRequestId: number,
 ): FilePostRender {
-  const stateRef = useRef<{ requestId: number | null; frame: number | null }>({
-    requestId: null,
+  const stateRef = useRef<{ request: FileLineRevealRequest | null; frame: number | null }>({
+    request: null,
     frame: null,
   });
   return useCallback<FilePostRender>(
@@ -392,11 +396,14 @@ function useFileLineReveal(
       const line =
         revealLine === null || contents === undefined ? null : clampFileLine(contents, revealLine);
       updateFileLinkReveal(fileContainer, line);
+      const request =
+        relativePath === null || line === null
+          ? null
+          : { requestId: revealRequestId, relativePath, line };
       if (
-        relativePath === null ||
-        line === null ||
+        request === null ||
         !(instance instanceof VirtualizedFile) ||
-        stateRef.current.requestId === revealRequestId ||
+        isSameFileLineRevealRequest(stateRef.current.request, request) ||
         stateRef.current.frame !== null
       ) {
         return;
@@ -406,7 +413,7 @@ function useFileLineReveal(
       const attemptReveal = (attempt: number) => {
         stateRef.current.frame = requestAnimationFrame(() => {
           stateRef.current.frame = null;
-          const position = instance.getLinePosition(line);
+          const position = instance.getLinePosition(request.line);
           if (!position) {
             if (attempt < 30) attemptReveal(attempt + 1);
             return;
@@ -415,7 +422,7 @@ function useFileLineReveal(
           const fileTop =
             scrollContainer.scrollTop + fileContainer.getBoundingClientRect().top - viewport.top;
           const rendered = (fileContainer.shadowRoot ?? fileContainer)
-            .querySelector<HTMLElement>(`[data-line="${line}"]`)
+            .querySelector<HTMLElement>(`[data-line="${request.line}"]`)
             ?.getBoundingClientRect();
           scrollContainer.scrollTop = resolveCenteredFileLineScrollTop({
             scrollTop: scrollContainer.scrollTop,
@@ -426,8 +433,8 @@ function useFileLineReveal(
             estimatedLine: position,
             ...(rendered ? { renderedLine: { top: rendered.top, height: rendered.height } } : {}),
           });
-          stateRef.current.requestId = revealRequestId;
-          updateFileLinkReveal(fileContainer, line);
+          stateRef.current.request = request;
+          updateFileLinkReveal(fileContainer, request.line);
         });
       };
       attemptReveal(0);
@@ -505,20 +512,34 @@ function SearchFilePreview(props: {
 function SearchDialogHeader(props: {
   title: string;
   summary: string;
+  summaryLive?: boolean;
   query: string;
   fileMask: string;
   queryPlaceholder: string;
   queryTestId?: string;
   queryOptions?: ReactNode;
+  queryActiveDescendant?: string;
+  queryControls?: string;
   onQueryChange: (value: string) => void;
   onFileMaskChange: (value: string) => void;
 }) {
   return (
     <div className="shrink-0 border-b border-border/60 bg-background">
-      <div className="flex h-11 items-center gap-3 px-4">
-        <h2 className="font-heading font-semibold text-sm">{props.title}</h2>
-        <span className="text-xs text-muted-foreground">{props.summary}</span>
-        <InputGroup className="ms-auto h-7 w-52" variant="ghost">
+      <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:h-11 sm:flex-nowrap sm:px-4 sm:py-0">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <h2 className="shrink-0 whitespace-nowrap font-heading font-semibold text-sm">
+            {props.title}
+          </h2>
+          <span
+            aria-atomic={props.summaryLive || undefined}
+            aria-live={props.summaryLive ? "polite" : undefined}
+            className="min-w-0 truncate text-xs text-muted-foreground"
+            role={props.summaryLive ? "status" : undefined}
+          >
+            {props.summary}
+          </span>
+        </div>
+        <InputGroup className="h-7 w-full sm:ms-auto sm:w-52" variant="ghost">
           <InputGroupAddon>
             <InputGroupText>
               <Filter className="size-3.5" />
@@ -528,26 +549,45 @@ function SearchDialogHeader(props: {
           <InputGroupInput
             aria-label="File mask"
             placeholder="*.ts, !*.test.ts"
+            maxLength={PROJECT_SEARCH_INPUT_MAX_LENGTH}
             size="sm"
             spellCheck={false}
             value={props.fileMask}
-            onChange={(event) => props.onFileMaskChange(event.currentTarget.value)}
+            onChange={(event) =>
+              props.onFileMaskChange(
+                event.currentTarget.value.slice(0, PROJECT_SEARCH_INPUT_MAX_LENGTH),
+              )
+            }
           />
         </InputGroup>
       </div>
-      <div className="px-3 pb-3">
-        <InputGroup className="h-10 border-ring ring-[3px] ring-ring/20">
+      <div className="px-[var(--command-shell-inset)] py-1.5">
+        <InputGroup
+          className="h-10 rounded-lg border-transparent! bg-transparent! shadow-none! ring-0! hover:bg-transparent! has-[input:focus-visible]:border-transparent! has-[input:focus-visible]:bg-transparent! has-[input:focus-visible]:ring-0!"
+          variant="ghost"
+        >
           <InputGroupAddon>
             <Search className="size-4 text-icon-muted" />
           </InputGroupAddon>
           <InputGroupInput
             autoFocus
             data-testid={props.queryTestId}
+            aria-activedescendant={props.queryActiveDescendant}
+            aria-autocomplete={props.queryControls ? "list" : undefined}
+            aria-controls={props.queryControls}
+            aria-expanded={props.queryControls ? true : undefined}
             aria-label={props.title}
+            role={props.queryControls ? "combobox" : undefined}
             placeholder={props.queryPlaceholder}
+            maxLength={PROJECT_SEARCH_INPUT_MAX_LENGTH}
+            size="lg"
             spellCheck={false}
             value={props.query}
-            onChange={(event) => props.onQueryChange(event.currentTarget.value)}
+            onChange={(event) =>
+              props.onQueryChange(
+                event.currentTarget.value.slice(0, PROJECT_SEARCH_INPUT_MAX_LENGTH),
+              )
+            }
           />
           {props.queryOptions ? (
             <InputGroupAddon align="inline-end" className="gap-0.5 pe-1">
@@ -562,11 +602,27 @@ function SearchDialogHeader(props: {
 
 function SearchDialogFooter() {
   return (
-    <div className="flex h-9 shrink-0 items-center justify-end gap-4 border-t border-border/60 bg-muted/30 px-4 text-[11px] text-muted-foreground">
-      <span>↑↓ Navigate</span>
-      <span>Enter Open</span>
-      <span>Esc Close</span>
-    </div>
+    <CommandFooter className="shrink-0 gap-3 border-t border-border/60 max-sm:flex-col max-sm:items-start">
+      <div className="flex items-center gap-3">
+        <KbdGroup className="items-center gap-1.5">
+          <Kbd>
+            <ArrowUp />
+          </Kbd>
+          <Kbd>
+            <ArrowDown />
+          </Kbd>
+          <span>Navigate</span>
+        </KbdGroup>
+        <KbdGroup className="items-center gap-1.5">
+          <Kbd>Enter</Kbd>
+          <span>Open</span>
+        </KbdGroup>
+        <KbdGroup className="items-center gap-1.5">
+          <Kbd>Esc</Kbd>
+          <span>Close</span>
+        </KbdGroup>
+      </div>
+    </CommandFooter>
   );
 }
 
@@ -591,7 +647,7 @@ function HighlightedFuzzyText(props: {
   return <>{parts}</>;
 }
 
-function FileSearchDialog(props: {
+export function FileSearchDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   environmentId: EnvironmentId;
@@ -680,12 +736,11 @@ function FileSearchDialog(props: {
                       key={entry.path}
                       type="button"
                       className={cn(
-                        "flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-xs",
+                        "flex min-h-8 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-base sm:min-h-7 sm:text-sm",
                         index === selectedIndex
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-muted/60",
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-foreground/[0.06]",
                       )}
-                      onMouseEnter={() => setSelectedIndex(index)}
                       onClick={() => setSelectedIndex(index)}
                       onDoubleClick={() => {
                         props.onOpenFile(entry.path);
@@ -729,6 +784,17 @@ function FileSearchDialog(props: {
 }
 
 const CONTENT_SEARCH_VISIBLE_WINDOW = 100;
+const CONTENT_SEARCH_RESULTS_ID = "project-text-search-results";
+
+function contentSearchResultId(resultIndex: number): string {
+  return `project-text-search-result-${resultIndex}`;
+}
+
+function formatContentSearchSummary(matchCount: number, fileCount: number, truncated: boolean) {
+  const matches = matchCount === 1 ? "match" : "matches";
+  const files = fileCount === 1 ? "file" : "files";
+  return `${matchCount}${truncated ? "+" : ""} ${matches} in ${fileCount} ${files}`;
+}
 
 interface ContentSearchGroup {
   readonly path: string;
@@ -759,7 +825,7 @@ function groupContentMatches(
   }));
 }
 
-function ProjectTextSearchDialog(props: {
+export function ProjectTextSearchDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   environmentId: EnvironmentId;
@@ -776,6 +842,8 @@ function ProjectTextSearchDialog(props: {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [visibleCount, setVisibleCount] = useState(CONTENT_SEARCH_VISIBLE_WINDOW);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const searchRootRef = useRef<HTMLDivElement>(null);
+  const focusSelectedResultRef = useRef(false);
   const { resolvedTheme } = useTheme();
   const result = useProjectTextSearch({
     environmentId: props.open ? props.environmentId : null,
@@ -795,11 +863,14 @@ function ProjectTextSearchDialog(props: {
     () => new Set(result.matches.map((match) => match.path)).size,
     [result.matches],
   );
+  const resolvedSelectedIndex =
+    result.matches.length === 0 ? null : Math.min(selectedIndex, result.matches.length - 1);
   const selected =
-    result.matches[Math.min(selectedIndex, Math.max(0, result.matches.length - 1))] ?? null;
+    resolvedSelectedIndex === null ? null : (result.matches[resolvedSelectedIndex] ?? null);
   const canOpenSelected = !result.isPending && !result.error && !result.regexFallbackError;
 
   useEffect(() => {
+    focusSelectedResultRef.current = false;
     setSelectedIndex(0);
     setVisibleCount(CONTENT_SEARCH_VISIBLE_WINDOW);
   }, [caseSensitive, fileMask, query, useRegex, wholeWord]);
@@ -808,9 +879,14 @@ function ProjectTextSearchDialog(props: {
       setVisibleCount(selectedIndex + CONTENT_SEARCH_VISIBLE_WINDOW);
       return;
     }
-    document
-      .querySelector<HTMLElement>(`[data-content-search-result="${selectedIndex}"]`)
-      ?.scrollIntoView({ block: "nearest" });
+    const resultElement = searchRootRef.current?.querySelector<HTMLElement>(
+      `[data-content-search-result="${selectedIndex}"]`,
+    );
+    resultElement?.scrollIntoView({ block: "nearest" });
+    if (focusSelectedResultRef.current && resultElement) {
+      focusSelectedResultRef.current = false;
+      resultElement.focus();
+    }
   }, [selectedIndex, visibleCount]);
   useEffect(() => {
     const sentinel = loadMoreRef.current;
@@ -849,37 +925,66 @@ function ProjectTextSearchDialog(props: {
             if (event.key === "ArrowDown") {
               event.preventDefault();
               if (result.matches.length > 0) {
-                setSelectedIndex((current) => (current + 1) % result.matches.length);
+                const moveFocus =
+                  event.target instanceof Element &&
+                  event.target.closest("[data-content-search-result]") !== null;
+                focusSelectedResultRef.current = moveFocus;
+                setSelectedIndex((current) => {
+                  const next = (current + 1) % result.matches.length;
+                  return next;
+                });
               }
             } else if (event.key === "ArrowUp") {
               event.preventDefault();
               if (result.matches.length > 0) {
-                setSelectedIndex(
-                  (current) => (current - 1 + result.matches.length) % result.matches.length,
-                );
+                const moveFocus =
+                  event.target instanceof Element &&
+                  event.target.closest("[data-content-search-result]") !== null;
+                focusSelectedResultRef.current = moveFocus;
+                setSelectedIndex((current) => {
+                  const next = (current - 1 + result.matches.length) % result.matches.length;
+                  return next;
+                });
               }
             } else if (event.key === "Enter") {
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+              if (event.target instanceof Element && event.target.closest("button")) return;
               event.preventDefault();
               openSelected();
             }
           }}
         >
-          <div className="flex size-full min-h-0 flex-col" data-testid="project-text-search">
+          <div
+            ref={searchRootRef}
+            className="flex size-full min-h-0 flex-col"
+            data-testid="project-text-search"
+          >
             <SearchDialogHeader
               title="Find in Files"
               summary={
-                query.trim().length === 0
+                query.length === 0
                   ? `Search ${props.projectName}`
                   : result.isPending
                     ? "Searching…"
-                    : result.regexFallbackError
-                      ? "Invalid regular expression"
-                      : `${result.matches.length}${result.truncated ? "+" : ""} matches in ${fileCount} files`
+                    : result.error
+                      ? "Search failed"
+                      : result.regexFallbackError
+                        ? "Invalid regular expression"
+                        : formatContentSearchSummary(
+                            result.matches.length,
+                            fileCount,
+                            result.truncated,
+                          )
               }
+              summaryLive
               query={query}
               fileMask={fileMask}
               queryPlaceholder={`Find text in ${props.projectName}…`}
               queryTestId="project-text-search-input"
+              {...(query.length > 0 && canOpenSelected && resolvedSelectedIndex !== null
+                ? { queryActiveDescendant: contentSearchResultId(resolvedSelectedIndex) }
+                : {})}
+              queryControls={CONTENT_SEARCH_RESULTS_ID}
               queryOptions={
                 <>
                   <Toggle
@@ -915,8 +1020,11 @@ function ProjectTextSearchDialog(props: {
               onFileMaskChange={setFileMask}
             />
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(10rem,46%)_minmax(0,1fr)]">
-              <div className="min-h-0 overflow-auto border-b border-border/60 p-2">
-                {query.trim().length === 0 ? (
+              <div
+                id={CONTENT_SEARCH_RESULTS_ID}
+                className="min-h-0 overflow-auto border-b border-border/60 p-2"
+              >
+                {query.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
                     Type to search project text.
                   </div>
@@ -933,9 +1041,14 @@ function ProjectTextSearchDialog(props: {
                     No matches found.
                   </div>
                 ) : (
-                  <div>
+                  <div role="listbox" aria-label="Search results">
                     {groups.map((group) => (
-                      <section className="pb-2" key={group.path}>
+                      <section
+                        aria-label={group.path}
+                        className="pb-2"
+                        key={group.path}
+                        role="group"
+                      >
                         <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-background/95 px-2 text-xs backdrop-blur-sm">
                           <FileIcon className="size-3.5 shrink-0 opacity-75" />
                           <span className="min-w-0 flex-1 truncate font-medium">{group.path}</span>
@@ -946,15 +1059,33 @@ function ProjectTextSearchDialog(props: {
                         {group.matches.map((match) => (
                           <button
                             key={`${match.path}:${match.lineNumber}:${match.resultIndex}`}
+                            id={contentSearchResultId(match.resultIndex)}
                             type="button"
+                            role="option"
                             data-content-search-result={match.resultIndex}
                             disabled={!canOpenSelected}
+                            aria-current={
+                              match.resultIndex === resolvedSelectedIndex ? "true" : undefined
+                            }
+                            aria-selected={match.resultIndex === resolvedSelectedIndex}
+                            aria-label={`${group.path}, line ${match.lineNumber}: ${match.lineContent}`}
+                            tabIndex={match.resultIndex === resolvedSelectedIndex ? 0 : -1}
                             className={cn(
-                              "flex h-7 w-full min-w-0 items-center gap-3 rounded-md px-2 text-left font-mono text-xs hover:bg-muted/60 disabled:pointer-events-none",
-                              match.resultIndex === selectedIndex &&
-                                "bg-primary text-primary-foreground",
+                              "flex h-7 w-full min-w-0 items-center gap-3 rounded-sm px-2 text-left font-mono text-xs disabled:pointer-events-none",
+                              match.resultIndex === resolvedSelectedIndex
+                                ? "bg-accent text-accent-foreground [&_mark]:bg-foreground/15! [&_mark]:text-foreground!"
+                                : "hover:bg-foreground/[0.06]",
                             )}
-                            onMouseEnter={() => setSelectedIndex(match.resultIndex)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter") return;
+                              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              if (!canOpenSelected) return;
+                              props.onOpenFile(match.path, match.lineNumber);
+                              props.onOpenChange(false);
+                            }}
+                            onFocus={() => setSelectedIndex(match.resultIndex)}
                             onClick={() => setSelectedIndex(match.resultIndex)}
                             onDoubleClick={() => {
                               if (!canOpenSelected) return;
@@ -988,7 +1119,7 @@ function ProjectTextSearchDialog(props: {
                 cwd={props.cwd}
                 relativePath={selected?.path ?? null}
                 line={selected?.lineNumber ?? null}
-                revealRequestId={selectedIndex + 1}
+                revealRequestId={(resolvedSelectedIndex ?? 0) + 1}
               />
             </div>
             <SearchDialogFooter />

@@ -9,6 +9,7 @@ import {
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
 const PROJECT_TEXT_SEARCH_MAX_LIMIT = 500;
+export const PROJECT_SEARCH_INPUT_MAX_LENGTH = 256;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_FILE_CONTENT_MAX_LENGTH = 1024 * 1024;
@@ -20,11 +21,13 @@ export const ProjectSearchEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   // An empty query is a bounded browse: the index returns frecency-ordered
   // entries, which the file picker uses for its initial results.
-  query: TrimmedString.check(Schema.isMaxLength(256)),
+  query: TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_ENTRIES_MAX_LIMIT)),
   kind: Schema.optional(ProjectEntryKind),
   imageOnly: Schema.optional(Schema.Boolean),
-  fileMask: Schema.optional(TrimmedString.check(Schema.isMaxLength(256))),
+  fileMask: Schema.optional(
+    TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
+  ),
 });
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
@@ -44,8 +47,13 @@ export const ProjectTextSearchInput = Schema.Struct({
   threadId: ThreadId,
   cwd: TrimmedNonEmptyString,
   // Leading and trailing whitespace are meaningful in content queries.
-  query: Schema.String.check(Schema.isNonEmpty(), Schema.isMaxLength(256)),
-  fileMask: Schema.optional(TrimmedString.check(Schema.isMaxLength(256))),
+  query: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH),
+  ),
+  fileMask: Schema.optional(
+    TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
+  ),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_TEXT_SEARCH_MAX_LIMIT)),
   caseSensitive: Schema.Boolean,
   wholeWord: Schema.Boolean,
