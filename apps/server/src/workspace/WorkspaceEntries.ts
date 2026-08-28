@@ -1,15 +1,14 @@
-// @effect-diagnostics nodeBuiltinImport:off -- Workspace enumeration is a small Linux process/filesystem adapter.
-import { execFile } from "node:child_process";
+// @effect-diagnostics nodeBuiltinImport:off -- Directory browsing is a small Linux filesystem adapter.
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
-import { promisify } from "node:util";
 
 import type {
-  ProjectEntry,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
+  ProjectTextSearchInput,
+  ProjectTextSearchResult,
   WorkspaceListDirectoriesInput,
   WorkspaceListDirectoriesResult,
 } from "@t3tools/contracts";
@@ -17,32 +16,24 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as RcMap from "effect/RcMap";
 import * as Schema from "effect/Schema";
+import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
 
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
-const execFileAsync = promisify(execFile);
-const MAX_SCANNED_PATHS = 25_000;
 const MAX_LISTED_DIRECTORIES = 500;
 type WorkspaceListEntriesInput = Pick<ProjectListEntriesInput, "cwd">;
-
-export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexSearchFailed>()(
-  "WorkspaceSearchIndexSearchFailed",
-  {
-    cwd: Schema.String,
-    queryLength: Schema.Number,
-    pageSize: Schema.Number,
-    reason: Schema.String,
-    cause: Schema.optional(Schema.Defect()),
-  },
-) {}
 
 export const WorkspaceEntriesError = Schema.Union([
   WorkspacePaths.WorkspaceRootNotExistsError,
   WorkspacePaths.WorkspaceRootCreateFailedError,
   WorkspacePaths.WorkspaceRootStatFailedError,
   WorkspacePaths.WorkspaceRootNotDirectoryError,
-  WorkspaceSearchIndexSearchFailed,
+  WorkspaceSearchIndex.WorkspaceSearchIndexCreateFailed,
+  WorkspaceSearchIndex.WorkspaceSearchIndexScanTimedOut,
+  WorkspaceSearchIndex.WorkspaceSearchIndexSearchFailed,
 ]);
 export type WorkspaceEntriesError = typeof WorkspaceEntriesError.Type;
 
@@ -56,6 +47,9 @@ export class WorkspaceEntries extends Context.Service<
       input: WorkspaceListEntriesInput,
     ) => Effect.Effect<ProjectListEntriesResult, WorkspaceEntriesError>;
     readonly refresh: (cwd: string) => Effect.Effect<void>;
+    readonly searchText: (
+      input: Omit<ProjectTextSearchInput, "threadId">,
+    ) => Effect.Effect<ProjectTextSearchResult, WorkspaceEntriesError>;
     readonly listDirectories: (
       input: WorkspaceListDirectoriesInput,
     ) => Effect.Effect<WorkspaceListDirectoriesResult, WorkspaceDirectoryListFailed>;
@@ -74,104 +68,87 @@ export class WorkspaceDirectoryListFailed extends Schema.TaggedErrorClass<Worksp
   }
 }
 
-const normalizePath = (value: string): string => value.replaceAll("\\", "/").replace(/^\.\//, "");
-
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
+  const searchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
 
-  const readPaths = (cwd: string) =>
-    Effect.tryPromise({
-      try: async () => {
-        try {
-          const [{ stdout }, { stdout: deletedStdout }] = await Promise.all([
-            execFileAsync(
-              "git",
-              ["ls-files", "--cached", "--others", "--exclude-standard", "--deduplicate", "-z"],
-              { cwd, maxBuffer: 8 * 1024 * 1024, windowsHide: true },
-            ),
-            execFileAsync("git", ["ls-files", "--deleted", "-z"], {
-              cwd,
-              maxBuffer: 8 * 1024 * 1024,
-              windowsHide: true,
-            }),
-          ]);
-          const deletedPaths = new Set(deletedStdout.split("\0").filter(Boolean));
-          return stdout
-            .split("\0")
-            .filter((entry) => entry.length > 0 && !deletedPaths.has(entry))
-            .slice(0, MAX_SCANNED_PATHS);
-        } catch {
-          const entries = await NodeFS.readdir(cwd, { recursive: true, withFileTypes: true });
-          return entries
-            .filter((entry) => entry.isFile())
-            .map((entry) =>
-              normalizePath(path.relative(cwd, path.join(entry.parentPath, entry.name))),
-            )
-            .slice(0, MAX_SCANNED_PATHS);
-        }
-      },
-      catch: (cause) =>
-        new WorkspaceSearchIndexSearchFailed({
-          cwd,
-          queryLength: 0,
-          pageSize: MAX_SCANNED_PATHS,
-          reason: "Failed to enumerate workspace paths.",
-          cause,
-        }),
-    });
-
-  const entriesForPaths = (paths: readonly string[]): ProjectEntry[] => {
-    const directories = new Set<string>();
-    for (const file of paths) {
-      let directory = normalizePath(file).split("/").slice(0, -1).join("/");
-      while (directory.length > 0) {
-        directories.add(directory);
-        directory = directory.split("/").slice(0, -1).join("/");
-      }
-    }
-    return [
-      ...paths.map((entry) => ({ path: normalizePath(entry), kind: "file" as const })),
-      ...[...directories].map((entry) => ({ path: entry, kind: "directory" as const })),
-    ];
-  };
+  const normalizeRealWorkspaceRoot = Effect.fn("WorkspaceEntries.normalizeRealWorkspaceRoot")(
+    function* (cwd: string) {
+      const normalized = yield* workspacePaths.normalizeWorkspaceRoot(cwd);
+      return yield* Effect.tryPromise({
+        try: () => NodeFS.realpath(normalized),
+        catch: () =>
+          new WorkspaceSearchIndex.WorkspaceSearchIndexCreateFailed({
+            reason: "Failed to resolve the verified project root.",
+          }),
+      });
+    },
+  );
 
   const search: WorkspaceEntries["Service"]["search"] = Effect.fn("WorkspaceEntries.search")(
     function* (input) {
-      const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
-      const query = input.query
-        .trim()
-        .replace(/^[@./]+/, "")
-        .toLocaleLowerCase();
-      const paths = yield* readPaths(cwd).pipe(
-        Effect.mapError(
-          (error) =>
-            new WorkspaceSearchIndexSearchFailed({
-              ...error,
-              queryLength: query.length,
-              pageSize: input.limit,
-            }),
+      const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
+      const query = normalizeSearchQuery(input.query, { trimLeadingPattern: /^[@./]+/u });
+      return yield* Effect.gen(function* () {
+        const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
+        return yield* index.search(query, input.limit, input.kind, input.imageOnly, input.fileMask);
+      }).pipe(
+        Effect.provide(
+          searchIndexes.get(WorkspaceSearchIndex.workspaceSearchIndexKey(cwd, "paths")),
         ),
       );
-      const candidates = entriesForPaths(paths);
-      const matching = candidates.filter(
-        (entry) =>
-          (input.kind === undefined || entry.kind === input.kind) &&
-          (!input.imageOnly || /\.(?:avif|gif|jpe?g|png|svg|webp)$/i.test(entry.path)) &&
-          (query.length === 0 || entry.path.toLocaleLowerCase().includes(query)),
-      );
-      return { entries: matching.slice(0, input.limit), truncated: matching.length > input.limit };
     },
   );
 
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
-      const cwd = yield* workspacePaths.normalizeWorkspaceRoot(input.cwd);
-      const paths = yield* readPaths(cwd);
-      return {
-        entries: entriesForPaths(paths),
-        truncated: paths.length >= MAX_SCANNED_PATHS,
-      };
+      const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
+      return yield* Effect.gen(function* () {
+        const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
+        return yield* index.list();
+      }).pipe(
+        Effect.provide(
+          searchIndexes.get(WorkspaceSearchIndex.workspaceSearchIndexKey(cwd, "paths")),
+        ),
+      );
+    },
+  );
+
+  const searchText: WorkspaceEntries["Service"]["searchText"] = Effect.fn(
+    "WorkspaceEntries.searchText",
+  )(function* (input) {
+    const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
+    return yield* Effect.gen(function* () {
+      const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
+      return yield* index.searchText(input);
+    }).pipe(
+      Effect.provide(
+        searchIndexes.get(WorkspaceSearchIndex.workspaceSearchIndexKey(cwd, "content")),
+      ),
+    );
+  });
+
+  const refresh: WorkspaceEntries["Service"]["refresh"] = Effect.fn("WorkspaceEntries.refresh")(
+    function* (cwd) {
+      const normalizedCwd = yield* normalizeRealWorkspaceRoot(cwd).pipe(
+        Effect.orElseSucceed(() => cwd),
+      );
+      for (const variant of WorkspaceSearchIndex.WORKSPACE_SEARCH_INDEX_VARIANTS) {
+        const key = WorkspaceSearchIndex.workspaceSearchIndexKey(normalizedCwd, variant);
+        if (!(yield* RcMap.has(searchIndexes.rcMap, key))) continue;
+        yield* Effect.gen(function* () {
+          const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
+          yield* index.refresh();
+        }).pipe(
+          Effect.provide(searchIndexes.get(key)),
+          Effect.catchTags({
+            WorkspaceSearchIndexCreateFailed: () => searchIndexes.invalidate(key),
+            WorkspaceSearchIndexScanTimedOut: () => searchIndexes.invalidate(key),
+            WorkspaceSearchIndexRefreshFailed: () => searchIndexes.invalidate(key),
+          }),
+        );
+      }
     },
   );
 
@@ -220,7 +197,9 @@ export const make = Effect.gen(function* () {
     };
   });
 
-  return WorkspaceEntries.of({ search, list, listDirectories, refresh: () => Effect.void });
+  return WorkspaceEntries.of({ search, searchText, list, listDirectories, refresh });
 });
 
-export const layer = Layer.effect(WorkspaceEntries, make);
+export const layer = Layer.effect(WorkspaceEntries, make).pipe(
+  Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
+);

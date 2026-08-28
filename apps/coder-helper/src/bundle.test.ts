@@ -9,7 +9,7 @@ import { it } from "node:test";
 
 import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION } from "@t3tools/coder-cli/rpc";
 
-import { buildCoderHelper } from "./build.ts";
+import { buildCoderHelper, currentHelperNativeTarget } from "./build.ts";
 
 function readNdjsonLine(stream: NodeJS.ReadableStream): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -32,10 +32,10 @@ function readNdjsonLine(stream: NodeJS.ReadableStream): Promise<unknown> {
 
 it("runs the bundled ESM helper under Node", async () => {
   const testRoot = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-bundle-"));
-  const outfile = NodePath.join(testRoot, "workspace-helper.mjs");
-  await buildCoderHelper(outfile);
+  const outputDirectory = NodePath.join(testRoot, "workspace-helper");
+  await buildCoderHelper(outputDirectory, currentHelperNativeTarget());
 
-  const helper = spawn(process.execPath, [outfile], {
+  const helper = spawn(process.execPath, [NodePath.join(outputDirectory, "index.mjs")], {
     env: {
       ...process.env,
       HOME: testRoot,

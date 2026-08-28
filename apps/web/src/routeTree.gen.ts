@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
+import { Route as SettingsShortcutsRouteImport } from './routes/settings.shortcuts'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
@@ -32,6 +33,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ChatRoute,
+} as any)
+const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
+  id: '/shortcuts',
+  path: '/shortcuts',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsPreferencesRoute = SettingsPreferencesRouteImport.update({
   id: '/preferences',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
 }
@@ -81,6 +88,7 @@ export interface FileRoutesByTo {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
+    | '/settings/shortcuts'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
@@ -115,6 +125,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
+    | '/settings/shortcuts'
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -126,6 +137,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
+    | '/settings/shortcuts'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
@@ -158,6 +170,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/settings/shortcuts': {
+      id: '/settings/shortcuts'
+      path: '/shortcuts'
+      fullPath: '/settings/shortcuts'
+      preLoaderRoute: typeof SettingsShortcutsRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/settings/preferences': {
       id: '/settings/preferences'
@@ -223,6 +242,7 @@ interface SettingsRouteChildren {
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
+  SettingsShortcutsRoute: typeof SettingsShortcutsRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -230,6 +250,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsPreferencesRoute: SettingsPreferencesRoute,
+  SettingsShortcutsRoute: SettingsShortcutsRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

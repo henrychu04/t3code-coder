@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isSameFileLineRevealRequest,
   resolveAnchoredFileLineScrollTop,
   resolveVisibleFileLineAnchor,
 } from "./fileLineReveal";
+
+describe("file line reveal request identity", () => {
+  const request = { requestId: 1, relativePath: "src/main.ts", line: 10 };
+
+  it("treats only the same request, file, and line as already revealed", () => {
+    expect(isSameFileLineRevealRequest(request, request)).toBe(true);
+    expect(isSameFileLineRevealRequest(null, request)).toBe(false);
+    expect(isSameFileLineRevealRequest(request, { ...request, requestId: 2 })).toBe(false);
+    expect(isSameFileLineRevealRequest(request, { ...request, relativePath: "src/other.ts" })).toBe(
+      false,
+    );
+    expect(isSameFileLineRevealRequest(request, { ...request, line: 20 })).toBe(false);
+  });
+});
 
 describe("anchored file line reveal", () => {
   it("keeps the same line offset after virtualized heights change", () => {

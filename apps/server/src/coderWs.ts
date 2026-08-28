@@ -35,6 +35,7 @@ import {
   ProjectListEntriesError,
   ProjectReadFileError,
   ProjectSearchEntriesError,
+  ProjectTextSearchError,
   ProjectWriteFileError,
   ProjectId,
   type TerminalAttachStreamEvent,
@@ -55,6 +56,7 @@ import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as Keybindings from "./keybindings.ts";
 import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
@@ -152,10 +154,19 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
         failure: "workspace_root_not_directory",
         normalizedCwd: error.normalizedWorkspaceRoot,
       };
+    case "WorkspaceSearchIndexCreateFailed":
+      return {
+        failure: "search_index_create_failed",
+        detail: error.reason,
+      };
+    case "WorkspaceSearchIndexScanTimedOut":
+      return {
+        failure: "search_index_scan_timed_out",
+        timeout: error.timeout,
+      };
     case "WorkspaceSearchIndexSearchFailed":
       return {
         failure: "search_index_search_failed",
-        normalizedCwd: error.cwd,
         detail: error.reason,
       };
   }
@@ -358,6 +369,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const providerService = yield* ProviderService;
     const settings = yield* ServerSettings.ServerSettingsService;
+    const keybindings = yield* Keybindings.Keybindings;
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
@@ -721,6 +733,9 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     const loadServerConfig = Effect.gen(function* () {
       const providerSnapshots = yield* providers.getProviders;
+      const keybindingsSnapshot = yield* keybindings.getSnapshot.pipe(
+        Effect.orElseSucceed(() => ({ keybindings: DEFAULT_RESOLVED_KEYBINDINGS, issues: [] })),
+      );
       const serverSettings = ServerSettings.redactServerSettingsForClient(
         yield* settings.getSettings,
       );
@@ -728,8 +743,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         environment: environment.descriptor,
         cwd: config.cwd,
         keybindingsConfigPath: config.keybindingsConfigPath,
-        keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
-        issues: [],
+        keybindings: keybindingsSnapshot.keybindings,
+        issues: keybindingsSnapshot.issues,
         providers: providerSnapshots,
         settings: serverSettings,
       };
@@ -744,6 +759,14 @@ export const layer = CoderWsRpcGroup.toLayer(
         settings
           .updateSettings(patch)
           .pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
+      [WS_METHODS.serverUpsertKeybinding]: (input) =>
+        keybindings
+          .upsertKeybindingRule(input)
+          .pipe(Effect.map((nextKeybindings) => ({ keybindings: nextKeybindings, issues: [] }))),
+      [WS_METHODS.serverRemoveKeybinding]: (input) =>
+        keybindings
+          .removeKeybindingRule(input)
+          .pipe(Effect.map((nextKeybindings) => ({ keybindings: nextKeybindings, issues: [] }))),
       [WS_METHODS.projectsSearchEntries]: (input) =>
         workspaceEntries.search(input).pipe(
           Effect.mapError(
@@ -757,6 +780,29 @@ export const layer = CoderWsRpcGroup.toLayer(
               }),
           ),
         ),
+      [WS_METHODS.projectsSearchText]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned) {
+            return yield* new ProjectTextSearchError({
+              queryLength: input.query.length,
+              limit: input.limit,
+              failure: "workspace_not_owned_by_thread",
+            });
+          }
+          return yield* workspaceEntries.searchText(input).pipe(
+            Effect.mapError(
+              () =>
+                new ProjectTextSearchError({
+                  queryLength: input.query.length,
+                  limit: input.limit,
+                  failure: "search_index_search_failed",
+                }),
+            ),
+          );
+        }),
       [WS_METHODS.projectsListEntries]: (input) =>
         Effect.gen(function* () {
           const owned = yield* workspaceOwnedByThread(input).pipe(
@@ -971,13 +1017,20 @@ export const layer = CoderWsRpcGroup.toLayer(
                 payload: { settings: nextSettings },
               })),
             );
+            const keybindingChanges = keybindings.streamChanges.pipe(
+              Stream.map((change) => ({
+                version: 1 as const,
+                type: "keybindingsUpdated" as const,
+                payload: change,
+              })),
+            );
             return Stream.concat(
               Stream.make({
                 version: 1 as const,
                 type: "snapshot" as const,
                 config: initialConfig,
               }),
-              Stream.merge(providerChanges, settingChanges),
+              Stream.merge(providerChanges, Stream.merge(settingChanges, keybindingChanges)),
             );
           }),
         ),

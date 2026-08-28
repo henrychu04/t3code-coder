@@ -40,9 +40,29 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   helper stdio RPC. Accept only validated project-relative paths, verify the project root belongs to
   the requesting thread, reject path and symlink escapes and binary files, detect stale writes, and
   keep open-file and editor state in browser memory only. Its explicit Copy path action may place
-  only that project-relative path—not file contents or an absolute path—on the local clipboard. The
-  other user-facing transfer exceptions are an image pasted directly into the message composer and
-  the display of turn-scoped screenshot artifacts.
+  only that project-relative path—not file contents or an absolute path—on the local clipboard.
+  Ordinary user-initiated reads and edits retain the 1 MiB limit and all existing path, UTF-8,
+  binary-file, symlink, and stale-write validation. Project-content search is the only additional
+  text-content exception. Filename and path search must continue to use a lightweight path-only FFF
+  index. Content search may use a separate, on-demand, content-enabled `@ff-labs/fff-node` index only
+  after verifying that the exact project root belongs to the requesting thread and using the
+  verified real project root as FFF's `basePath`. It may use FFF's native plain-text and regex grep,
+  but must never scan a filesystem root or home directory. Enforce a hard native search time budget,
+  initially 250 ms per request, cursor-based pagination, at most 100 matches per file and 500
+  returned matches per request, cancellation and timeout behavior that cannot monopolize the
+  helper's stdio RPC connection, and a 15-minute idle TTL followed by deterministic destruction of
+  each content index. Treat every FFF result as untrusted: before exposure, reject absolute paths,
+  traversal, NUL bytes, malformed relative paths, and realpath or symlink escapes. Return only
+  validated project-relative paths, bounded UTF-8 line snippets, and match ranges; reject or suppress
+  binary-file matches and never expose arbitrary file bytes or a general content-reading API. Keep
+  query text, matching contents, absolute paths, and secrets out of errors and logs. The former
+  2,000-file and 32 MiB aggregate scan limits do not apply once this compliant native,
+  time-budgeted search path replaces the existing scanner. Before implementation is approved,
+  focused Linux x86-64 tests must characterize FFF's handling of symlinks, binary files, oversized
+  files, regex failures, cancellation, and time budgets. This search exception does not authorize
+  uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace connections.
+  The other user-facing transfer exceptions are an image pasted directly into the message composer
+  and the display of turn-scoped screenshot artifacts.
   Accept PNG, JPEG, and WebP images only, validate their signatures rather than trusting metadata,
   and reject images larger than 20 MiB. For pasted images, generate filenames internally and copy
   only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path. For

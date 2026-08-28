@@ -59,9 +59,26 @@ export {
 };
 
 const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
   { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
+  { key: "mod+o", command: "editor.openFavorite" },
+  {
+    key: "mod+shift+f",
+    command: "projectSearch.toggle",
+    when: "fileViewerOpen && !terminalFocus",
+  },
+  {
+    key: "mod+shift+f",
+    command: "projectSearch.toggle",
+    when: "projectOpen && !terminalFocus",
+  },
+  {
+    key: "shift shift",
+    command: "filePicker.toggle",
+    when: "fileViewerOpen && !terminalFocus",
+  },
 ];
+
+const LEGACY_FILE_SEARCH_COMMAND = "fileViewer.searchFiles";
 
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
   Schema.decodeTo(
@@ -106,19 +123,25 @@ export const ResolvedKeybindingsFromConfig = Schema.Array(ResolvedKeybindingFrom
 );
 
 function isSameKeybindingRule(left: KeybindingRule, right: KeybindingRule): boolean {
+  const leftResolved = compileResolvedKeybindingRule(left);
+  const rightResolved = compileResolvedKeybindingRule(right);
+  if (!leftResolved || !rightResolved || leftResolved.command !== rightResolved.command) {
+    return false;
+  }
   return (
-    left.command === right.command &&
-    left.key === right.key &&
-    (left.when ?? undefined) === (right.when ?? undefined)
+    encodeShortcut(leftResolved.shortcut) === encodeShortcut(rightResolved.shortcut) &&
+    (leftResolved.whenAst ? encodeWhenAst(leftResolved.whenAst) : undefined) ===
+      (rightResolved.whenAst ? encodeWhenAst(rightResolved.whenAst) : undefined)
   );
 }
 
 function keybindingShortcutContext(rule: KeybindingRule): string | null {
-  const parsed = parseKeybindingShortcut(rule.key);
-  if (!parsed) return null;
-  const encoded = encodeShortcut(parsed);
+  const resolved = compileResolvedKeybindingRule(rule);
+  if (!resolved) return null;
+  const encoded = encodeShortcut(resolved.shortcut);
   if (!encoded) return null;
-  return `${encoded}\u0000${rule.when ?? ""}`;
+  const when = resolved.whenAst ? encodeWhenAst(resolved.whenAst) : "";
+  return `${encoded}\u0000${when}`;
 }
 
 function hasSameShortcutContext(left: KeybindingRule, right: KeybindingRule): boolean {
@@ -148,6 +171,7 @@ function keybindingRuleFromRemoveInput(input: ServerRemoveKeybindingInput): Keyb
 }
 
 function encodeShortcut(shortcut: KeybindingShortcut): string | null {
+  if (shortcut.key === "double-shift") return "shift shift";
   const modifiers: string[] = [];
   if (shortcut.modKey) modifiers.push("mod");
   if (shortcut.metaKey) modifiers.push("meta");
@@ -179,6 +203,14 @@ const decodeKeybindingRuleExit = Schema.decodeUnknownExit(KeybindingRule);
 const decodeResolvedKeybindingFromConfigExit = Schema.decodeExit(ResolvedKeybindingFromConfig);
 const decodeRawKeybindingsEntriesExit = Schema.decodeUnknownExit(RawKeybindingsEntries);
 const encodeKeybindingsConfigPrettyJson = Schema.encodeEffect(KeybindingsConfigPrettyJson);
+
+function normalizeLegacyKeybindingEntry(entry: unknown): unknown {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
+  const record = entry as Record<string, unknown>;
+  return record.command === LEGACY_FILE_SEARCH_COMMAND
+    ? { ...record, command: "filePicker.toggle" }
+    : entry;
+}
 
 export interface KeybindingsConfigState {
   readonly keybindings: ResolvedKeybindingsConfig;
@@ -349,7 +381,7 @@ const make = Effect.gen(function* () {
 
     return yield* Effect.forEach(rawConfig, (entry) =>
       Effect.gen(function* () {
-        const decodedRule = decodeKeybindingRuleExit(entry);
+        const decodedRule = decodeKeybindingRuleExit(normalizeLegacyKeybindingEntry(entry));
         if (decodedRule._tag === "Failure") {
           yield* Effect.logWarning("ignoring invalid keybinding entry", {
             path: keybindingsConfigPath,
@@ -396,7 +428,7 @@ const make = Effect.gen(function* () {
     const keybindings: KeybindingRule[] = [];
     const issues: ServerConfigIssue[] = [];
     for (const [index, entry] of decodedEntries.value.entries()) {
-      const decodedRule = decodeKeybindingRuleExit(entry);
+      const decodedRule = decodeKeybindingRuleExit(normalizeLegacyKeybindingEntry(entry));
       if (decodedRule._tag === "Failure") {
         const detail = Cause.pretty(decodedRule.cause);
         issues.push(invalidEntryIssue(index, detail));
@@ -504,7 +536,6 @@ const make = Effect.gen(function* () {
           ),
       );
       const removedRetiredDefaults = customConfig.length !== runtimeConfig.keybindings.length;
-      const existingCommands = new Set(customConfig.map((entry) => entry.command));
       const missingDefaults: KeybindingRule[] = [];
       const shortcutConflictWarnings: Array<{
         defaultCommand: KeybindingRule["command"];
@@ -513,7 +544,20 @@ const make = Effect.gen(function* () {
         when: string | null;
       }> = [];
       for (const defaultRule of DEFAULT_KEYBINDINGS) {
-        if (existingCommands.has(defaultRule.command)) {
+        if (customConfig.some((entry) => isSameKeybindingRule(entry, defaultRule))) {
+          continue;
+        }
+        const commandEntries = customConfig.filter(
+          (entry) => entry.command === defaultRule.command,
+        );
+        const commandWasCustomized = commandEntries.some(
+          (entry) =>
+            !DEFAULT_KEYBINDINGS.some(
+              (candidate) =>
+                candidate.command === defaultRule.command && isSameKeybindingRule(entry, candidate),
+            ),
+        );
+        if (commandWasCustomized) {
           continue;
         }
         const conflictingEntry = customConfig.find((entry) =>

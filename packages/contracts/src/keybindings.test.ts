@@ -126,6 +126,13 @@ it.effect("rejects invalid command values", () =>
       }),
     );
     assert.strictEqual(result._tag, "Failure");
+    const retiredAlias = yield* Effect.exit(
+      decode(KeybindingRule, {
+        key: "shift shift",
+        command: "fileViewer.searchFiles",
+      }),
+    );
+    assert.strictEqual(retiredAlias._tag, "Failure");
   }),
 );
 

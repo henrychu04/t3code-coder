@@ -234,6 +234,7 @@ export function usePaginatedBranches(target: VcsRefTarget) {
 type ProjectPathSearchTarget = ComposerPathSearchTarget & {
   readonly kind?: ProjectEntryKind | undefined;
   readonly imageOnly?: boolean | undefined;
+  readonly fileMask?: string | undefined;
 };
 
 export function areProjectPathSearchTargetsEqual(
@@ -245,7 +246,8 @@ export function areProjectPathSearchTargetsEqual(
     left.cwd === right.cwd &&
     left.query === right.query &&
     left.kind === right.kind &&
-    left.imageOnly === right.imageOnly
+    left.imageOnly === right.imageOnly &&
+    left.fileMask === right.fileMask
   );
 }
 
@@ -262,8 +264,16 @@ export function useProjectPathSearch(
       query: target.query == null ? null : target.query.trim(),
       kind: target.kind,
       imageOnly: target.imageOnly,
+      fileMask: target.fileMask?.trim(),
     }),
-    [target.cwd, target.environmentId, target.imageOnly, target.kind, target.query],
+    [
+      target.cwd,
+      target.environmentId,
+      target.fileMask,
+      target.imageOnly,
+      target.kind,
+      target.query,
+    ],
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(
@@ -279,16 +289,17 @@ export function useProjectPathSearch(
             limit,
             ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
             ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
+            ...(debouncedTarget.fileMask ? { fileMask: debouncedTarget.fileMask } : {}),
           },
         })
       : null,
   );
+  const isCurrentSearch = areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget);
 
   return {
-    entries: result.data?.entries ?? [],
-    error: result.error,
-    isPending:
-      !areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget) || result.isPending,
+    entries: isCurrentSearch ? (result.data?.entries ?? []) : [],
+    error: isCurrentSearch ? result.error : null,
+    isPending: !isCurrentSearch || result.isPending,
     searchedQuery: debouncedTarget.query ?? "",
     refresh: result.refresh,
   };
@@ -296,6 +307,64 @@ export function useProjectPathSearch(
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
+}
+
+export function useProjectTextSearch(target: {
+  readonly environmentId: EnvironmentId | null;
+  readonly threadId: ThreadId | null;
+  readonly cwd: string | null;
+  readonly query: string;
+  readonly fileMask?: string;
+  readonly caseSensitive: boolean;
+  readonly wholeWord: boolean;
+  readonly useRegex: boolean;
+}) {
+  const normalizedTarget = useMemo(
+    () => ({
+      query: target.query,
+      fileMask: target.fileMask?.trim() ?? "",
+      caseSensitive: target.caseSensitive,
+      wholeWord: target.wholeWord,
+      useRegex: target.useRegex,
+    }),
+    [target.caseSensitive, target.fileMask, target.query, target.useRegex, target.wholeWord],
+  );
+  const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
+  const result = useEnvironmentQuery(
+    target.environmentId !== null &&
+      target.threadId !== null &&
+      target.cwd !== null &&
+      debouncedTarget.query.length > 0
+      ? projectEnvironment.searchText({
+          environmentId: target.environmentId,
+          input: {
+            threadId: target.threadId,
+            cwd: target.cwd,
+            query: debouncedTarget.query,
+            ...(debouncedTarget.fileMask ? { fileMask: debouncedTarget.fileMask } : {}),
+            limit: 500,
+            caseSensitive: debouncedTarget.caseSensitive,
+            wholeWord: debouncedTarget.wholeWord,
+            useRegex: debouncedTarget.useRegex,
+          },
+        })
+      : null,
+  );
+  const isCurrentQuery =
+    normalizedTarget.query === debouncedTarget.query &&
+    normalizedTarget.fileMask === debouncedTarget.fileMask &&
+    normalizedTarget.caseSensitive === debouncedTarget.caseSensitive &&
+    normalizedTarget.wholeWord === debouncedTarget.wholeWord &&
+    normalizedTarget.useRegex === debouncedTarget.useRegex;
+
+  return {
+    matches: isCurrentQuery ? (result.data?.matches ?? []) : [],
+    truncated: isCurrentQuery ? (result.data?.truncated ?? false) : false,
+    regexFallbackError: isCurrentQuery ? (result.data?.regexFallbackError ?? null) : null,
+    error: isCurrentQuery ? result.error : null,
+    isPending: !isCurrentQuery || result.isPending,
+    searchedQuery: debouncedTarget.query,
+  };
 }
 
 export function useCheckpointDiff(

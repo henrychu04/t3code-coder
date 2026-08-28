@@ -60,6 +60,11 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsSearchEntries,
       staleTimeMs: 15_000,
     }),
+    searchText: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:search-text",
+      tag: WS_METHODS.projectsSearchText,
+      staleTimeMs: 5_000,
+    }),
     listEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:list-entries",
       tag: WS_METHODS.projectsListEntries,

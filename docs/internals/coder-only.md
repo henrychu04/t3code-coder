@@ -164,11 +164,43 @@ filesystem API. The browser supplies the active project root plus a project-rela
 workspace helper over the existing RPC stream. The helper first verifies that the root is the
 requesting thread's project checkout or managed worktree. Reads are capped at 1 MiB; binary files
 are rejected, larger text files are truncated and read-only, and both lexical traversal and symlinks
-resolving outside the project are rejected. Writes apply only to an existing, non-truncated text file, use the
-revision returned by the read to reject stale edits, and replace the file atomically. The UI exposes
-no upload, download, export, drag-and-drop, absolute path, or local file access. An explicit Copy
-path action may copy only the project-relative path to the browser clipboard. Open tabs, explorer
-state, Markdown source/render mode, and editor state are not persisted locally.
+resolving outside the project are rejected. Writes apply only to an existing, non-truncated text
+file, use the revision returned by the read to reject stale edits, and replace the file atomically.
+These ordinary user-initiated read and edit operations retain the 1 MiB limit and all existing root,
+path, UTF-8, binary-file, symlink, revision, and atomic-write validation.
+
+File search has two deliberately separate indexes. Filename and path search continues to use a
+lightweight path-only FFF index. Project-content search may create a separate, on-demand,
+content-enabled `@ff-labs/fff-node` index only after the helper verifies that the exact project root
+belongs to the requesting thread. The helper must resolve that verified root and pass the resulting
+real project root as FFF's `basePath`; a filesystem root or home directory must never be indexed or
+searched. Content search may use FFF's native plain-text grep and native regex grep. It must enforce
+a hard native search time budget, initially 250 ms per request, and support cursor-based pagination.
+Each request may return at most 100 matches from any one file and 500 matches total. A content index
+has a 15-minute idle TTL and must be destroyed deterministically on expiry and when its owning
+project or helper lifecycle ends.
+
+FFF output is untrusted input. Before a match is exposed, the helper must reject absolute paths,
+traversal, NUL bytes, malformed relative paths, and any path whose realpath or symlink resolution
+escapes the verified project root. Returned paths remain project-relative. Results may contain only
+bounded UTF-8 line snippets and match ranges; binary-file matches must be rejected or suppressed.
+The search RPC must not expose arbitrary file bytes or become a general content-reading API. Errors
+and logs must omit query text, matching contents, absolute paths, and secrets. Cancellation and
+timeout handling must terminate or yield search work so content search cannot monopolize the
+helper's stdio RPC connection.
+
+Once this compliant native, time-budgeted content-search path replaces the existing scanner, the
+former 2,000-file and 32 MiB aggregate scan limits are removed; they are not replaced by permission
+for unbounded request time or unbounded result delivery. Before implementation is approved, focused
+tests on the supported Linux x86-64 helper target must characterize FFF's behavior for symlinks,
+binary files, oversized files, regex failures, cancellation, and time budgets. This exception is
+only for project-content search. It does not change ordinary file-read or edit limits, and it does
+not authorize uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace
+connections.
+
+The UI exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
+explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
+tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
 The other user-facing exception displays screenshots produced while Claude verifies a frontend.
 This does not require MCP or a project-specific T3 skill. While a Claude turn is active, the helper
@@ -206,9 +238,10 @@ are not exposed by T3.
 
 ## Distribution
 
-`npm start` builds the web client and Linux helper from the checked-out source and lockfile, then
-starts the local gateway without opening a browser. Connecting never installs from npm or downloads
-an application update. The first connection may download the pinned Node.js package through Nix if
-it is not already in the workspace's Nix store. On the first connection to a workspace in each local
-gateway session, the gateway replaces the remote helper with that locally built bundle through
-Coder before starting it in the foreground.
+`npm start` builds the web client and a Linux x86-64 helper bundle from the checked-out source and
+lockfile, including the locked native runtime packages needed by workspace search, then starts the
+local gateway without opening a browser. Connecting never installs from npm or downloads an
+application update. The first connection may download the pinned Node.js package through Nix if it
+is not already in the workspace's Nix store. On the first connection to a workspace in each local
+gateway session, the gateway replaces the remote helper directory with that locally built bundle
+through Coder before starting it in the foreground.

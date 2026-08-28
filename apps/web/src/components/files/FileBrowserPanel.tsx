@@ -1,13 +1,16 @@
 import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
+import type { ContextMenuItem, ContextMenuOpenContext } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSearch } from "@pierre/trees/react";
 import { RotateCw } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
+import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
@@ -28,6 +31,25 @@ function treePath(entry: ProjectEntry): string {
   return entry.kind === "directory" ? `${entry.path}/` : entry.path;
 }
 
+export function contextMenuFilePath(
+  item: Pick<ContextMenuItem, "kind" | "path">,
+  entryKinds: ReadonlyMap<string, ProjectEntry["kind"]>,
+): string | null {
+  const path = item.path.replace(/\/$/, "");
+  if (
+    item.kind !== "file" ||
+    entryKinds.get(path) !== "file" ||
+    !path ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    path.includes("\0") ||
+    path.split("/").some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    return null;
+  }
+  return path;
+}
+
 export default function FileBrowserPanel(props: {
   environmentId: EnvironmentId;
   threadId: ThreadId;
@@ -39,6 +61,7 @@ export default function FileBrowserPanel(props: {
   onRefreshSelectedFile?: () => void;
 }) {
   const { resolvedTheme } = useTheme();
+  const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
   const entriesQuery = useProjectEntriesQuery(props.environmentId, props.threadId, props.cwd);
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
@@ -50,8 +73,50 @@ export default function FileBrowserPanel(props: {
   const previousTreePathsRef = useRef<readonly string[]>([]);
   const syncingSelectionRef = useRef(false);
   const handledRevealRef = useRef<{ path: string; revealId: number } | null>(null);
+  const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
+  useEffect(() => {
+    const capturePointer = (event: MouseEvent) => {
+      contextMenuPointerRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+        at: event.timeStamp,
+      };
+    };
+    document.addEventListener("contextmenu", capturePointer, true);
+    return () => document.removeEventListener("contextmenu", capturePointer, true);
+  }, []);
+  const showEntryContextMenu = useCallback(
+    (item: ContextMenuItem, context: ContextMenuOpenContext) => {
+      const relativePath = contextMenuFilePath(item, entryKindsRef.current);
+      const localApi = readLocalApi();
+      if (!relativePath || !localApi) {
+        context.close();
+        return;
+      }
+      const pointer = contextMenuPointerRef.current;
+      const pointerIsFresh = pointer !== null && performance.now() - pointer.at < 1_000;
+      const anchorRect = context.anchorElement.getBoundingClientRect();
+      const position = pointerIsFresh
+        ? { x: pointer.x, y: pointer.y }
+        : { x: anchorRect.left, y: anchorRect.bottom };
+      void localApi.contextMenu
+        .show([{ id: "copy-path", label: "Copy path", icon: "copy" }], position)
+        .then((action) => {
+          if (action === "copy-path") copyToClipboard(relativePath, undefined);
+        })
+        .catch(() => undefined)
+        .finally(() => context.close());
+    },
+    [copyToClipboard],
+  );
 
   const { model } = useFileTree({
+    composition: {
+      contextMenu: {
+        triggerMode: "right-click",
+        onOpen: showEntryContextMenu,
+      },
+    },
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,

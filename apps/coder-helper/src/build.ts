@@ -1,14 +1,76 @@
 import { build } from "esbuild";
+import * as NodeFS from "node:fs/promises";
+import { createRequire } from "node:module";
+import * as NodePath from "node:path";
 import { fileURLToPath } from "node:url";
 
 const entryPoint = fileURLToPath(new URL("./bin.ts", import.meta.url));
-const defaultOutfile = fileURLToPath(new URL("../dist/workspace-helper", import.meta.url));
+const defaultOutputDirectory = fileURLToPath(new URL("../dist/workspace-helper", import.meta.url));
+type HelperNativeTarget = "darwin-arm64" | "darwin-x64" | "linux-x64-gnu" | "win32-x64";
 
-export async function buildCoderHelper(outfile = defaultOutfile): Promise<void> {
+const nativePackagesByTarget: Record<HelperNativeTarget, readonly [fff: string, ffi: string]> = {
+  "darwin-arm64": ["@ff-labs/fff-bin-darwin-arm64", "@yuuang/ffi-rs-darwin-arm64"],
+  "darwin-x64": ["@ff-labs/fff-bin-darwin-x64", "@yuuang/ffi-rs-darwin-x64"],
+  "linux-x64-gnu": ["@ff-labs/fff-bin-linux-x64-gnu", "@yuuang/ffi-rs-linux-x64-gnu"],
+  "win32-x64": ["@ff-labs/fff-bin-win32-x64", "@yuuang/ffi-rs-win32-x64-msvc"],
+};
+
+export function currentHelperNativeTarget(): HelperNativeTarget {
+  if (process.platform === "darwin" && process.arch === "arm64") return "darwin-arm64";
+  if (process.platform === "darwin" && process.arch === "x64") return "darwin-x64";
+  if (process.platform === "linux" && process.arch === "x64") return "linux-x64-gnu";
+  if (process.platform === "win32" && process.arch === "x64") return "win32-x64";
+  throw new Error(`Unsupported helper build host: ${process.platform}/${process.arch}.`);
+}
+
+async function copyRuntimePackages(
+  outputDirectory: string,
+  nativeTarget: HelperNativeTarget,
+): Promise<void> {
+  const fffPackageJson = await NodeFS.realpath(
+    fileURLToPath(
+      new URL("../../server/node_modules/@ff-labs/fff-node/package.json", import.meta.url),
+    ),
+  );
+  const requireFromFff = createRequire(fffPackageJson);
+  const runtimePackages = [
+    "@ff-labs/fff-node",
+    "ffi-rs",
+    ...nativePackagesByTarget[nativeTarget],
+  ] as const;
+  const packageJsonByName = new Map<string, string>([
+    ["@ff-labs/fff-node", fffPackageJson],
+    ...runtimePackages
+      .slice(1)
+      .map(
+        (packageName) =>
+          [packageName, requireFromFff.resolve(`${packageName}/package.json`)] as const,
+      ),
+  ]);
+
+  await Promise.all(
+    runtimePackages.map(async (packageName) => {
+      const packageJson = packageJsonByName.get(packageName);
+      if (!packageJson)
+        throw new Error(`Could not resolve helper runtime package '${packageName}'.`);
+      const destination = NodePath.join(outputDirectory, "node_modules", ...packageName.split("/"));
+      await NodeFS.mkdir(NodePath.dirname(destination), { recursive: true });
+      await NodeFS.cp(NodePath.dirname(packageJson), destination, { recursive: true });
+    }),
+  );
+}
+
+export async function buildCoderHelper(
+  outputDirectory = defaultOutputDirectory,
+  nativeTarget: HelperNativeTarget = "linux-x64-gnu",
+): Promise<void> {
+  await NodeFS.rm(outputDirectory, { recursive: true, force: true });
+  await NodeFS.mkdir(outputDirectory, { recursive: true });
   await build({
     entryPoints: [entryPoint],
-    outfile,
+    outfile: NodePath.join(outputDirectory, "index.mjs"),
     bundle: true,
+    external: ["@ff-labs/fff-node"],
     platform: "node",
     format: "esm",
     target: "node24",
@@ -20,6 +82,7 @@ export async function buildCoderHelper(outfile = defaultOutfile): Promise<void> 
       ].join("\n"),
     },
   });
+  await copyRuntimePackages(outputDirectory, nativeTarget);
 }
 
 if (import.meta.main) {

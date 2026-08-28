@@ -75,3 +75,8 @@ peerDependencyRules:
     - vite
   allowedVersions:
     vite: "*"
+
+supportedArchitectures:
+  cpu: [current, x64]
+  libc: [current, glibc]
+  os: [current, linux]

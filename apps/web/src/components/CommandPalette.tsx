@@ -3,7 +3,6 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { inferProjectTitleFromPath } from "@t3tools/client-runtime/state/projects";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -15,6 +14,7 @@ import {
   FolderPlusIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
+  SearchIcon,
   SettingsIcon,
   SquarePenIcon,
 } from "lucide-react";
@@ -39,7 +39,7 @@ import {
 import { useCoder } from "../coder/CoderBootstrap";
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { ComposerHandleContext } from "../composerHandleContext";
-import { useActiveProjectTarget } from "../hooks/useActiveProjectTarget";
+import { openFileViewerCommand } from "../fileViewerCommandBus";
 import { useHandleNewThread, useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useClientSettings } from "../hooks/useSettings";
 import { resolveShortcutCommand } from "../keybindings";
@@ -55,7 +55,7 @@ import {
 import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
-import { useProjectPathSearch, useThreadSearch } from "../state/queries";
+import { useThreadSearch } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
 import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
@@ -70,7 +70,6 @@ import {
   type CommandPaletteGroup,
   type CommandPaletteOpenIntent,
   type CommandPaletteSubmenuItem,
-  type SearchOverlayMode,
 } from "./CommandPalette.logic";
 import { CommandPaletteResults } from "./CommandPaletteResults";
 import { Button } from "./ui/button";
@@ -86,7 +85,6 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
   });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
-  const pendingComposerInsertionRef = useRef<string | null>(null);
 
   useEffect(
     () =>
@@ -108,16 +106,10 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
       const command = resolveShortcutCommand(event, keybindings, {
         context: { terminalFocus: isTerminalFocused() },
       });
-      const mode: SearchOverlayMode | null =
-        command === "commandPalette.toggle"
-          ? "command"
-          : command === "filePicker.toggle"
-            ? "files"
-            : null;
-      if (mode === null) return;
+      if (command !== "commandPalette.toggle") return;
       event.preventDefault();
       event.stopPropagation();
-      dispatch({ _tag: "ToggleMode", mode });
+      dispatch({ _tag: "ToggleMode", mode: "command" });
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -125,10 +117,6 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
 
   const addProjectOpen = state.open && state.openIntent?.kind === "add-project";
   const setOpen = useCallback((open: boolean) => dispatch({ _tag: "SetOpen", open }), []);
-  const queueComposerInsertion = useCallback((text: string) => {
-    pendingComposerInsertionRef.current = text;
-    dispatch({ _tag: "SetOpen", open: false });
-  }, []);
 
   return (
     <ComposerHandleContext value={composerHandleRef}>
@@ -136,26 +124,10 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
         {children}
         {state.open && !addProjectOpen ? (
           <CommandDialogPopup
-            aria-label={state.mode === "files" ? "File picker" : "Command palette"}
+            aria-label="Command palette"
             className="overflow-hidden p-0"
             data-command-palette="true"
             finalFocus={() => {
-              const pendingInsertion = pendingComposerInsertionRef.current;
-              pendingComposerInsertionRef.current = null;
-              if (pendingInsertion !== null) {
-                const inserted =
-                  composerHandleRef.current?.insertTextAtEnd(pendingInsertion, {
-                    ensureLeadingBoundary: true,
-                  }) ?? false;
-                if (inserted) {
-                  window.setTimeout(() => composerHandleRef.current?.focusAtEnd(), 0);
-                } else {
-                  window.requestAnimationFrame(() =>
-                    dispatch({ _tag: "ToggleMode", mode: "files" }),
-                  );
-                }
-                return false;
-              }
               composerHandleRef.current?.focusAtEnd();
               return false;
             }}
@@ -163,11 +135,8 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
           >
             <CoderCommandPaletteDialog
               clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
-              mode={state.mode}
               openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
-              openFiles={() => dispatch({ _tag: "ToggleMode", mode: "files" })}
               openIntent={state.openIntent}
-              queueComposerInsertion={queueComposerInsertion}
               setOpen={setOpen}
             />
           </CommandDialogPopup>
@@ -180,11 +149,8 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
 
 function CoderCommandPaletteDialog(props: {
   readonly clearOpenIntent: () => void;
-  readonly mode: SearchOverlayMode;
   readonly openAddProject: () => void;
-  readonly openFiles: () => void;
   readonly openIntent: CommandPaletteOpenIntent | null;
-  readonly queueComposerInsertion: (text: string) => void;
   readonly setOpen: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
@@ -207,10 +173,7 @@ function CoderCommandPaletteDialog(props: {
         .map((environment) => environment.environmentId),
     [environments],
   );
-  const messageSearch = useThreadSearch(
-    environmentIds,
-    props.mode === "command" && view === "root" ? query : "",
-  );
+  const messageSearch = useThreadSearch(environmentIds, view === "root" ? query : "");
   const environmentLabelById = useMemo(
     () =>
       new Map(environments.map((environment) => [environment.environmentId, environment.label])),
@@ -286,10 +249,6 @@ function CoderCommandPaletteDialog(props: {
     props.clearOpenIntent();
   }, [props.clearOpenIntent, props.openIntent]);
 
-  if (props.mode === "files") {
-    return <CoderProjectFilePicker queueComposerInsertion={props.queueComposerInsertion} />;
-  }
-
   const projectByRef = new Map(
     projects.map((project) => [`${project.environmentId}:${project.id}`, project]),
   );
@@ -350,6 +309,14 @@ function CoderCommandPaletteDialog(props: {
     });
   const preferredProject =
     projectPickerEntries.find((entry) => entry.isPreferred) ?? projectPickerEntries[0];
+  const projectSearchAvailable =
+    activeThread !== null &&
+    projects.some(
+      (project) =>
+        project.environmentId === activeThread.environmentId &&
+        project.id === activeThread.projectId,
+    );
+  const projectSearchUnavailableDescription = "Open a project to search its files.";
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
   if (preferredProject) {
     actionItems.push({
@@ -388,11 +355,23 @@ function CoderCommandPaletteDialog(props: {
       kind: "action",
       value: "action:find-files",
       searchTerms: ["find files", "search files", "project files"],
-      title: "Find project files",
+      title: "Search project files",
+      description: projectSearchAvailable ? undefined : projectSearchUnavailableDescription,
       icon: <FileIcon className="size-4 text-icon-muted" />,
+      disabled: !projectSearchAvailable,
       shortcutCommand: "filePicker.toggle",
-      keepOpen: true,
-      run: async () => props.openFiles(),
+      run: async () => openFileViewerCommand("filePicker.toggle"),
+    },
+    {
+      kind: "action",
+      value: "action:find-project-contents",
+      searchTerms: ["find text", "search project contents", "find in files"],
+      title: "Search project contents",
+      description: projectSearchAvailable ? undefined : projectSearchUnavailableDescription,
+      icon: <SearchIcon className="size-4 text-icon-muted" />,
+      disabled: !projectSearchAvailable,
+      shortcutCommand: "projectSearch.toggle",
+      run: async () => openFileViewerCommand("projectSearch.toggle"),
     },
     {
       kind: "action",
@@ -473,83 +452,6 @@ function CoderCommandPaletteDialog(props: {
         keybindings={keybindings}
         onExecuteItem={executeItem}
         {...(messageSearch.isPending ? { emptyStateMessage: "Searching threads…" } : {})}
-      />
-    </CommandPaletteContent>
-  );
-}
-
-function CoderProjectFilePicker(props: {
-  readonly queueComposerInsertion: (text: string) => void;
-}) {
-  const target = useActiveProjectTarget();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
-  const [query, setQuery] = useState("");
-  const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
-  const result = useProjectPathSearch(
-    {
-      environmentId: target?.environmentId ?? null,
-      cwd: target?.cwd ?? null,
-      query,
-      kind: "file",
-    },
-    80,
-    { allowEmptyQuery: true },
-  );
-  const items: CommandPaletteActionItem[] = result.entries.map((entry) => ({
-    kind: "action",
-    value: `file:${entry.path}`,
-    searchTerms: [entry.path],
-    title: entry.path.split("/").at(-1) ?? entry.path,
-    description: entry.path,
-    icon: <FileIcon className="size-4 text-icon-muted" />,
-    run: async () => {
-      props.queueComposerInsertion(`${serializeComposerFileLink(entry.path)} `);
-    },
-  }));
-
-  return (
-    <CommandPaletteContent
-      key={items.length > 0 ? "files:results" : "files:empty"}
-      autoHighlight="always"
-      escapeLabel="Close"
-      footerActionLabel="Add to prompt"
-      inputProps={{
-        disabled: target === null,
-        placeholder: target ? "Search project files…" : "Open a project to search its files",
-      }}
-      mode="none"
-      onItemHighlighted={(value) =>
-        setHighlightedItemValue(typeof value === "string" ? value : null)
-      }
-      onValueChange={(value) => {
-        setHighlightedItemValue(null);
-        setQuery(value);
-      }}
-      panelClassName="max-h-[min(34rem,76vh)]"
-      testId="project-file-picker"
-      value={query}
-    >
-      <CommandPaletteResults
-        emptyStateMessage={
-          target === null
-            ? "Open a project to search its files."
-            : result.isPending
-              ? "Searching workspace files…"
-              : result.error
-                ? String(result.error)
-                : "No matching files."
-        }
-        groups={
-          items.length > 0
-            ? [{ value: "project-files", label: target?.projectName ?? "Files", items }]
-            : []
-        }
-        highlightedItemValue={highlightedItemValue}
-        keybindings={keybindings}
-        onExecuteItem={(item) => {
-          if (item.kind !== "action") return;
-          void item.run();
-        }}
       />
     </CommandPaletteContent>
   );

@@ -22,5 +22,6 @@ describe("areProjectPathSearchTargetsEqual", () => {
     expect(areProjectPathSearchTargetsEqual(target, { ...target, query: "readme" })).toBe(false);
     expect(areProjectPathSearchTargetsEqual(target, { ...target, kind: "file" })).toBe(false);
     expect(areProjectPathSearchTargetsEqual(target, { ...target, imageOnly: true })).toBe(false);
+    expect(areProjectPathSearchTargetsEqual(target, { ...target, fileMask: "*.ts" })).toBe(false);
   });
 });

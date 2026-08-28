@@ -33,6 +33,8 @@ export interface ShortcutMatchContext {
   [key: string]: boolean;
 }
 
+export const DOUBLE_SHIFT_MAX_INTERVAL_MS = 500;
+
 interface ShortcutMatchOptions {
   platform?: string;
   context?: Partial<ShortcutMatchContext>;
@@ -219,6 +221,7 @@ export function resolveShortcutCommand(
 }
 
 function formatShortcutKeyLabel(key: string): string {
+  if (key === "double-shift") return "Shift Shift";
   if (key === " ") return "Space";
   if (key.length === 1) return key.toUpperCase();
   if (key === "escape") return "Esc";
@@ -234,6 +237,7 @@ export function formatShortcutLabel(
   platform = navigator.platform,
 ): string {
   const keyLabel = formatShortcutKeyLabel(shortcut.key);
+  if (shortcut.key === "double-shift") return keyLabel;
   const useMetaForMod = isMacPlatform(platform);
   const showMeta = shortcut.metaKey || (shortcut.modKey && useMetaForMod);
   const showCtrl = shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod);
@@ -251,6 +255,46 @@ export function formatShortcutLabel(
   if (showMeta) parts.push("Meta");
   parts.push(keyLabel);
   return parts.join("+");
+}
+
+export function keybindingKeyForShortcut(shortcut: KeybindingShortcut): string {
+  if (shortcut.key === "double-shift") return "shift shift";
+  const modifiers: string[] = [];
+  if (shortcut.modKey) modifiers.push("mod");
+  if (shortcut.metaKey) modifiers.push("meta");
+  if (shortcut.ctrlKey) modifiers.push("ctrl");
+  if (shortcut.altKey) modifiers.push("alt");
+  if (shortcut.shiftKey) modifiers.push("shift");
+  modifiers.push(shortcut.key === " " ? "space" : shortcut.key);
+  return modifiers.join("+");
+}
+
+export function keybindingWhenForNode(node: KeybindingWhenNode | undefined): string | undefined {
+  if (!node) return undefined;
+  switch (node.type) {
+    case "identifier":
+      return node.name;
+    case "not":
+      return `!(${keybindingWhenForNode(node.node)})`;
+    case "and":
+      return `(${keybindingWhenForNode(node.left)}) && (${keybindingWhenForNode(node.right)})`;
+    case "or":
+      return `(${keybindingWhenForNode(node.left)}) || (${keybindingWhenForNode(node.right)})`;
+  }
+}
+
+export function resolveDoubleShiftShortcutCommand(
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): KeybindingCommand | null {
+  const context = resolveContext(options);
+  for (let index = keybindings.length - 1; index >= 0; index -= 1) {
+    const binding = keybindings[index];
+    if (!binding || binding.shortcut.key !== "double-shift") continue;
+    if (!matchesWhenClause(binding.whenAst, context)) continue;
+    return binding.command;
+  }
+  return null;
 }
 
 export function shortcutLabelForCommand(

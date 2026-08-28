@@ -8,6 +8,8 @@ import {
 } from "./baseSchemas.ts";
 
 const PROJECT_SEARCH_ENTRIES_MAX_LIMIT = 200;
+const PROJECT_TEXT_SEARCH_MAX_LIMIT = 500;
+export const PROJECT_SEARCH_INPUT_MAX_LENGTH = 256;
 const PROJECT_WRITE_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_READ_FILE_PATH_MAX_LENGTH = 512;
 const PROJECT_FILE_CONTENT_MAX_LENGTH = 1024 * 1024;
@@ -19,10 +21,13 @@ export const ProjectSearchEntriesInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   // An empty query is a bounded browse: the index returns frecency-ordered
   // entries, which the file picker uses for its initial results.
-  query: TrimmedString.check(Schema.isMaxLength(256)),
+  query: TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_SEARCH_ENTRIES_MAX_LIMIT)),
   kind: Schema.optional(ProjectEntryKind),
   imageOnly: Schema.optional(Schema.Boolean),
+  fileMask: Schema.optional(
+    TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
+  ),
 });
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
@@ -37,6 +42,45 @@ export const ProjectSearchEntriesResult = Schema.Struct({
   truncated: Schema.Boolean,
 });
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
+
+export const ProjectTextSearchInput = Schema.Struct({
+  threadId: ThreadId,
+  cwd: TrimmedNonEmptyString,
+  // Leading and trailing whitespace are meaningful in content queries.
+  query: Schema.String.check(
+    Schema.isNonEmpty(),
+    Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH),
+  ),
+  fileMask: Schema.optional(
+    TrimmedString.check(Schema.isMaxLength(PROJECT_SEARCH_INPUT_MAX_LENGTH)),
+  ),
+  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(PROJECT_TEXT_SEARCH_MAX_LIMIT)),
+  caseSensitive: Schema.Boolean,
+  wholeWord: Schema.Boolean,
+  useRegex: Schema.Boolean,
+});
+export type ProjectTextSearchInput = typeof ProjectTextSearchInput.Type;
+
+export const ProjectTextSearchMatchRange = Schema.Struct({
+  start: NonNegativeInt,
+  end: NonNegativeInt,
+});
+export type ProjectTextSearchMatchRange = typeof ProjectTextSearchMatchRange.Type;
+
+export const ProjectTextSearchMatch = Schema.Struct({
+  path: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+  lineNumber: PositiveInt,
+  lineContent: Schema.String.check(Schema.isMaxLength(4096)),
+  matchRanges: Schema.Array(ProjectTextSearchMatchRange).check(Schema.isMaxLength(100)),
+});
+export type ProjectTextSearchMatch = typeof ProjectTextSearchMatch.Type;
+
+export const ProjectTextSearchResult = Schema.Struct({
+  matches: Schema.Array(ProjectTextSearchMatch),
+  truncated: Schema.Boolean,
+  regexFallbackError: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),
+});
+export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
 
 export const ProjectListEntriesInput = Schema.Struct({
   threadId: ThreadId,
@@ -131,6 +175,32 @@ export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSe
       message:
         decodedProjectErrorMessage(props) ??
         `Failed to search workspace entries in '${props.cwd}'.`,
+    } as any);
+  }
+}
+
+export class ProjectTextSearchError extends Schema.TaggedErrorClass<ProjectTextSearchError>()(
+  "ProjectTextSearchError",
+  {
+    cwd: Schema.optional(TrimmedNonEmptyString),
+    queryLength: Schema.optional(NonNegativeInt),
+    limit: Schema.optional(PositiveInt),
+    failure: Schema.optional(ProjectEntriesFailure),
+    message: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  // Structured fields remain optional so older message-only errors can decode.
+  // @effect-diagnostics-next-line overriddenSchemaConstructor:off
+  constructor(props: {
+    readonly queryLength: number;
+    readonly limit: number;
+    readonly failure: ProjectEntriesFailure;
+    readonly detail?: string;
+  }) {
+    super({
+      ...props,
+      message: "Failed to search project contents.",
     } as any);
   }
 }

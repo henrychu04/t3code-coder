@@ -11,6 +11,23 @@ interface RenderedFileLineGeometry {
 
 const FILE_LINE_VISIBILITY_EPSILON = 0.5;
 
+export interface FileLineRevealRequest {
+  readonly requestId: number;
+  readonly relativePath: string;
+  readonly line: number;
+}
+
+export function isSameFileLineRevealRequest(
+  previous: FileLineRevealRequest | null,
+  next: FileLineRevealRequest,
+): boolean {
+  return (
+    previous?.requestId === next.requestId &&
+    previous.relativePath === next.relativePath &&
+    previous.line === next.line
+  );
+}
+
 export function resolveVisibleFileLineAnchor(input: {
   readonly viewportTop: number;
   readonly viewportBottom: number;
@@ -22,9 +39,7 @@ export function resolveVisibleFileLineAnchor(input: {
         line.top >= input.viewportTop - FILE_LINE_VISIBILITY_EPSILON &&
         line.bottom <= input.viewportBottom + FILE_LINE_VISIBILITY_EPSILON,
     ) ??
-    input.lines.find(
-      (line) => line.bottom > input.viewportTop && line.top < input.viewportBottom,
-    );
+    input.lines.find((line) => line.bottom > input.viewportTop && line.top < input.viewportBottom);
   if (!anchor) return undefined;
   return {
     lineNumber: anchor.lineNumber,

@@ -314,6 +314,6 @@ describe("Coder CLI command construction", () => {
     throws(() => buildBrowserOpenInvocation("win32", "http://localhost:43127"));
     throws(() => buildBrowserOpenInvocation("darwin", "https://example.com"));
     strictEqual(REMOTE_NODE_COMMAND, '"$HOME/.t3-coder/node24/bin/node"');
-    strictEqual(REMOTE_HELPER_COMMAND, '"$HOME/.t3-coder/bin/workspace-helper"');
+    strictEqual(REMOTE_HELPER_COMMAND, '"$HOME/.t3-coder/bin/workspace-helper/index.mjs"');
   });
 });

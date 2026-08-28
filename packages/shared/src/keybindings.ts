@@ -28,13 +28,32 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
-  { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
+  {
+    key: "mod+f",
+    command: "fileViewer.find",
+    when: "fileOpen && fileViewerFocus && !terminalFocus",
+  },
+  { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
+  {
+    key: "mod+p",
+    command: "filePicker.toggle",
+    when: "!terminalFocus",
+  },
+  {
+    key: "shift shift",
+    command: "filePicker.toggle",
+    when: "projectOpen && !terminalFocus",
+  },
+  {
+    key: "mod+g",
+    command: "fileViewer.goToLine",
+    when: "fileOpen && fileViewerFocus && !terminalFocus",
+  },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
   { key: "mod+n", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+o", command: "chat.new", when: "!terminalFocus" },
   { key: "mod+shift+n", command: "chat.newLocal", when: "!terminalFocus" },
   { key: "mod+shift+m", command: "modelPicker.toggle", when: "!terminalFocus" },
-  { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
   { key: "mod+shift+s", command: "thread.settle", when: "!terminalFocus" },
@@ -56,6 +75,16 @@ function normalizeKeyToken(token: string): string {
 }
 
 export function parseKeybindingShortcut(value: string): KeybindingShortcut | null {
+  if (value.trim().toLowerCase().replace(/\s+/g, " ") === "shift shift") {
+    return {
+      key: "double-shift",
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      modKey: false,
+    };
+  }
   const rawTokens = value
     .toLowerCase()
     .split("+")
