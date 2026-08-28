@@ -471,10 +471,19 @@ function asRuntimeItemId(value: string): RuntimeItemId {
   return RuntimeItemId.make(value);
 }
 
-function maxClaudeContextWindowFromModelUsage(
+// `modelUsage` includes every model that ran during the turn, including
+// subagents. Prefer this session's model so a child's window cannot become
+// the parent's denominator.
+function claudeContextWindowFromModelUsage(
   modelUsage: Record<string, ModelUsage> | undefined,
+  sessionModel: string | undefined,
 ): number | undefined {
   if (!modelUsage) return undefined;
+
+  const sessionEntry = sessionModel ? modelUsage[sessionModel] : undefined;
+  if (sessionEntry) {
+    return sessionEntry.contextWindow;
+  }
 
   let maxContextWindow: number | undefined;
   for (const value of Object.values(modelUsage)) {
@@ -662,6 +671,9 @@ function compactBoundaryTokenUsageSnapshot(
   });
 }
 
+// A subagent's tokens are spent in its own context window. They may advance
+// the thread's running total, but they must never replace the parent's active
+// context usage.
 function normalizeClaudeTaskProgressTokenUsage(
   value: unknown,
   context: ClaudeSessionContext,
@@ -671,32 +683,30 @@ function normalizeClaudeTaskProgressTokenUsage(
     return undefined;
   }
 
-  const lastUsedTokens = context.lastKnownTokenUsage?.usedTokens;
-  const activeTokens =
-    lastUsedTokens !== undefined ? Math.max(totalTokens, lastUsedTokens) : totalTokens;
-  if (lastUsedTokens !== undefined && activeTokens === lastUsedTokens) {
+  const lastKnown = context.lastKnownTokenUsage;
+  if (!lastKnown) {
+    return undefined;
+  }
+
+  // The SDK does not document whether result totals already include child
+  // work. A maximum is a safe floor that cannot double-count the same tokens.
+  const totalProcessedTokens = Math.max(
+    totalTokens,
+    context.lastKnownTotalProcessedTokens ?? totalTokens,
+  );
+  if (
+    totalProcessedTokens === context.lastKnownTotalProcessedTokens ||
+    totalProcessedTokens <= lastKnown.usedTokens
+  ) {
     return undefined;
   }
 
   const usage = value as Record<string, unknown>;
-  const snapshot = makeClaudeTokenUsageSnapshot({
-    activeTokens,
-    ...(context.lastKnownContextWindow !== undefined
-      ? { contextWindow: context.lastKnownContextWindow }
-      : {}),
-    totalProcessedTokens: Math.max(
-      totalTokens,
-      context.lastKnownTotalProcessedTokens ?? totalTokens,
-    ),
-  });
-  if (!snapshot) {
-    return undefined;
-  }
-
   const toolUses = finiteNonNegativeInteger(usage.tool_uses);
   const durationMs = finiteNonNegativeInteger(usage.duration_ms);
   return {
-    ...snapshot,
+    ...lastKnown,
+    totalProcessedTokens,
     ...(toolUses !== undefined ? { toolUses } : {}),
     ...(durationMs !== undefined ? { durationMs } : {}),
   };
@@ -2298,13 +2308,20 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     errorMessage?: string,
     result?: SDKResultMessage,
   ) {
-    const resultContextWindow = maxClaudeContextWindowFromModelUsage(result?.modelUsage);
+    const resultContextWindow = claudeContextWindowFromModelUsage(
+      result?.modelUsage,
+      context.currentApiModelId,
+    );
     if (resultContextWindow !== undefined) {
       context.lastKnownContextWindow = resultContextWindow;
     }
 
     const maxTokens = resultContextWindow ?? context.lastKnownContextWindow;
-    const accumulatedTotalProcessedTokens = claudeTotalProcessedTokens(result?.usage);
+    const resultTotalProcessedTokens = claudeTotalProcessedTokens(result?.usage);
+    const accumulatedTotalProcessedTokens =
+      resultTotalProcessedTokens !== undefined
+        ? Math.max(resultTotalProcessedTokens, context.lastKnownTotalProcessedTokens ?? 0)
+        : undefined;
     if (accumulatedTotalProcessedTokens !== undefined) {
       context.lastKnownTotalProcessedTokens = accumulatedTotalProcessedTokens;
     }
@@ -2327,7 +2344,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       resultUsageRecord !== undefined &&
       !resultHasActiveUsage &&
       claudeTotalProcessedTokens(resultUsageRecord) !== undefined;
-    const resultIterationSnapshot = resultUsageRecord
+    const resultIterationSnapshot = resultHasActiveUsage && resultUsageRecord
       ? normalizeClaudeActiveTokenUsage(
           resultUsageRecord,
           maxTokens,
@@ -3229,7 +3246,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     switch (message.subtype) {
-      case "init":
+      case "init": {
+        const initModel = trimmedString(message.model);
+        if (initModel && !context.currentApiModelId) {
+          context.currentApiModelId = initModel;
+        }
         yield* offerRuntimeEvent({
           ...base,
           type: "session.configured",
@@ -3238,6 +3259,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           },
         });
         return;
+      }
       case "status":
         yield* offerRuntimeEvent({
           ...base,
@@ -3529,7 +3551,15 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         return;
       // Inner protocol/UX details with no T3 surface today — consumed
       // deliberately so they don't masquerade as unknown-subtype warnings.
-      case "model_refusal_fallback":
+      case "model_refusal_fallback": {
+        if (message.direction === "retry") {
+          const fallbackModel = trimmedString(message.fallback_model);
+          if (fallbackModel) {
+            context.currentApiModelId = fallbackModel;
+          }
+        }
+        return;
+      }
       case "local_command_output":
       case "plugin_install":
       case "commands_changed":
