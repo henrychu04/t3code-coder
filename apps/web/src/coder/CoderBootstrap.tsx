@@ -90,7 +90,13 @@ export async function readWorkspaceRuntime(
   const next: Record<string, CoderWorkspaceRuntimeStatus> = Object.fromEntries(
     config.workspaces.map((workspace) => [
       workspace.id,
-      { status: "unknown", updateAvailable: false, healthy: null, autostopAt: null },
+      {
+        status: "unknown",
+        updateAvailable: false,
+        healthy: null,
+        autostopAt: null,
+        requiredStopAt: null,
+      },
     ]),
   );
   for (const workspace of config.workspaces) {
@@ -103,6 +109,7 @@ export async function readWorkspaceRuntime(
         updateAvailable: false,
         healthy: null,
         autostopAt: null,
+        requiredStopAt: null,
         error: deployment.error,
       };
       continue;
@@ -118,6 +125,7 @@ export async function readWorkspaceRuntime(
         updateAvailable: discovered.updateAvailable,
         healthy: discovered.healthy,
         autostopAt: discovered.autostopAt,
+        requiredStopAt: discovered.requiredStopAt,
       };
     }
   }
@@ -405,6 +413,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           updateAvailable: current[workspaceId]?.updateAvailable ?? false,
           healthy: null,
           autostopAt: current[workspaceId]?.autostopAt ?? null,
+          requiredStopAt: current[workspaceId]?.requiredStopAt ?? null,
         },
       }));
       try {
@@ -461,6 +470,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
             updateAvailable: current[workspaceId]?.updateAvailable ?? false,
             healthy: null,
             autostopAt: null,
+            requiredStopAt: null,
           },
         }));
       } catch (cause) {

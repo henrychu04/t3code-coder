@@ -43,6 +43,7 @@ export interface DiscoveredCoderWorkspace {
   readonly updateAvailable: boolean;
   readonly healthy: boolean | null;
   readonly autostopAt: string | null;
+  readonly requiredStopAt: string | null;
 }
 
 export interface CoderWorkspaceRuntimeStatus {
@@ -50,6 +51,7 @@ export interface CoderWorkspaceRuntimeStatus {
   readonly updateAvailable: boolean;
   readonly healthy: boolean | null;
   readonly autostopAt: string | null;
+  readonly requiredStopAt: string | null;
   readonly error?: string;
 }
 

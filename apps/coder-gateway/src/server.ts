@@ -286,6 +286,7 @@ export interface DiscoveredCoderWorkspace {
   readonly updateAvailable: boolean;
   readonly healthy: boolean | null;
   readonly autostopAt: string | null;
+  readonly requiredStopAt: string | null;
 }
 
 export interface CoderWorkspaceResourceUsage {
@@ -362,13 +363,24 @@ function discoveredWorkspace(value: unknown): DiscoveredCoderWorkspace | null {
       : undefined;
   const rawDeadline = latestBuild?.deadline;
   const deadlineMs = typeof rawDeadline === "string" ? Date.parse(rawDeadline) : Number.NaN;
+  const rawMaxDeadline = latestBuild?.max_deadline;
+  const maxDeadlineMs =
+    typeof rawMaxDeadline === "string" ? Date.parse(rawMaxDeadline) : Number.NaN;
+  const activeStartBuild =
+    latestBuild?.transition === "start" && (status === "running" || status === "starting");
+  const autostopAt =
+    activeStartBuild && Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null;
   return {
     name,
     target: owner.length === 0 ? name : `${owner}/${name}`,
     status,
     updateAvailable: record.outdated === true,
     healthy: typeof health?.healthy === "boolean" ? health.healthy : null,
-    autostopAt: Number.isFinite(deadlineMs) ? new Date(deadlineMs).toISOString() : null,
+    autostopAt,
+    requiredStopAt:
+      autostopAt !== null && Number.isFinite(maxDeadlineMs)
+        ? new Date(maxDeadlineMs).toISOString()
+        : null,
   };
 }
 

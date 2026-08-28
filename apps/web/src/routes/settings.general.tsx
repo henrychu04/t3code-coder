@@ -286,7 +286,18 @@ function CoderSettingsView() {
                         ) : null}
                         {runtime?.autostopAt ? (
                           <Badge variant="outline">
-                            {formatCoderAutostop(runtime.autostopAt) ?? "Autostop scheduled"}
+                            {formatCoderAutostop(
+                              runtime.autostopAt,
+                              Date.now(),
+                              runtime.requiredStopAt === runtime.autostopAt ? "required" : "idle",
+                            ) ?? "Stop scheduled"}
+                          </Badge>
+                        ) : null}
+                        {runtime?.requiredStopAt &&
+                        runtime.requiredStopAt !== runtime.autostopAt ? (
+                          <Badge variant="outline">
+                            {formatCoderAutostop(runtime.requiredStopAt, Date.now(), "required") ??
+                              "Required stop scheduled"}
                           </Badge>
                         ) : null}
                       </div>

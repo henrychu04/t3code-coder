@@ -38,6 +38,7 @@ describe("Coder workspace runtime discovery", () => {
         updateAvailable: false,
         healthy: null,
         autostopAt: null,
+        requiredStopAt: null,
         error: "Could not fetch workspace status. Failed to fetch",
       },
     });
@@ -55,6 +56,7 @@ describe("Coder workspace runtime discovery", () => {
         updateAvailable: false,
         healthy: null,
         autostopAt: null,
+        requiredStopAt: null,
       },
     });
   });
@@ -73,6 +75,7 @@ describe("Coder workspace connection errors", () => {
               updateAvailable: false,
               healthy: null,
               autostopAt: null,
+              requiredStopAt: null,
               ...(status === "unavailable" ? { error: "Status request failed" } : {}),
             },
           },
@@ -91,6 +94,7 @@ describe("Coder workspace connection errors", () => {
           updateAvailable: false,
           healthy: true,
           autostopAt: null,
+          requiredStopAt: null,
         },
       }),
     ).toBe(errors);

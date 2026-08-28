@@ -74,6 +74,7 @@ describe("Coder workspace lifecycle API", () => {
         updateAvailable: true,
         healthy: true,
         autostopAt: "2026-08-25T18:30:00.000Z",
+        requiredStopAt: null,
       },
     ] as const;
     const fetchMock = vi.fn(async () => Response.json({ workspaces }));
