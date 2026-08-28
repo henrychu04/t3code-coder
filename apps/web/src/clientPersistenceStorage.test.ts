@@ -44,12 +44,21 @@ describe("clientPersistenceStorage", () => {
       await import("./clientPersistenceStorage");
     const settings = {
       ...DEFAULT_CLIENT_SETTINGS,
+      diffRenderMode: "split" as const,
       timestampFormat: "24-hour" as const,
     };
 
     writeBrowserClientSettings(settings);
 
     expect(readBrowserClientSettings()).toEqual(settings);
+  });
+
+  it("defaults legacy settings to the stacked diff layout", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify({}));
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+    expect(readBrowserClientSettings()?.diffRenderMode).toBe("stacked");
   });
 
   it("reports structured decode failures while preserving the fallback", async () => {
