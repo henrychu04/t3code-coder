@@ -14,6 +14,65 @@ or download features and does not expose a remote HTTP or WebSocket listener. It
 signature-validated screenshots produced during a Claude turn through its existing workspace-helper
 connection; this requires neither MCP nor changes to a project's verification skill.
 
+## Product-level differences from upstream T3 Code
+
+This is a Coder-only fork, compared with upstream T3 Code at the [shared source base
+commit](https://github.com/pingdotgg/t3code/tree/a3a8cbd60539b4af4de8f96c892dbd07a2b6c041).
+This is a supported product-level comparison, not a commit-by-commit change ledger; the
+[architecture note](./docs/internals/coder-only.md) and [compliance review](./docs/compliance-review.md)
+define the complete runtime and policy boundary.
+
+### Removed
+
+- Electron and other native desktop packaging; iOS and Android clients; hosted web, relay,
+  Tailscale, Cloudflare, OAuth, Clerk, auto-update, browser preview, and T3-owned telemetry.
+- All providers except the workspace-installed Claude Code CLI, plus packaged Agent SDK support,
+  MCP servers, and Claude browser integration.
+- Generic SSH, direct workspace connections, background workspace daemons, arbitrary tunnels,
+  reverse forwards, and non-loopback port-forward binds.
+- Arbitrary file transfer: uploads, downloads, exports, drag-and-drop, clipboard text transfer,
+  and background synchronization.
+- Remote and hosted source-control operations: fetch, pull, push, pull requests, and provider
+  integrations.
+
+### Kept
+
+- The browser-based T3 interface, including projects, threads, Claude conversations, terminals,
+  repository-local Git status/diffs/branches/worktrees/commits/checkpoints, and permission control.
+- Workspace-resident server orchestration, SQLite state, terminal PTYs, and the web terminal assets.
+- Review diffs, core keyboard shortcuts, and user-interface preferences stored only in browser memory
+  or browser storage as appropriate.
+
+### Introduced
+
+- A local IPv4-loopback gateway and a version-matched Linux workspace helper connected only through
+  foreground `coder ssh` stdio; Coder owns authentication and deployment connectivity.
+- Coder deployment, workspace, lifecycle, health, latency, and explicit stop/restart/update controls,
+  plus structured TCP/UDP forwards that always bind locally to `127.0.0.1`.
+- A contained Files surface: validated project-relative paths, 1 MiB text-read/edit limits, binary
+  and symlink-escape rejection, stale-write detection, and atomic writes.
+- Project/path search, including on-demand bounded content search with IntelliJ-style file masks;
+  validated pasted-image delivery; and explicit, bounded display of turn-scoped screenshot artifacts.
+- Workspace preflight that verifies Linux x86-64 requirements and provisions the helper's pinned
+  Node.js 24 runtime through Nix without changing the workspace's normal Node.js setup.
+- Workspace-supported Claude model and mode discovery, project Claude-command discovery, and
+  workspace-aware semantic branch and worktree naming.
+
+### Improved for this deployment model
+
+- A deliberately narrow network and data boundary: exact loopback Host/Origin checks, no CORS or
+  app token, no helper listener, and no durable local repository, conversation, terminal, or SQLite
+  data.
+- Safer Coder lifecycle handling: foreground child processes, serialized workspace/forward state,
+  reconnect status, and stopping only the exact process that was started.
+- A workspace-aware experience: connection diagnostics, health and latency indicators, responsive
+  right-panel controls, per-thread scroll restoration, project search, IntelliJ-style shortcuts,
+  and screenshot-artifact navigation.
+- More resilient long-running work: faster thread switching and resumed-session traffic, bounded
+  progressive caches, and typed oversized-diff outcomes that keep review usable instead of failing.
+- A smaller, auditable distribution: upstream release, hosting, mobile, relay, native-app, and
+  external-integration surfaces have been removed while preserving the core development workflow.
+
 ## Requirements
 
 On the local macOS test machine or Windows 11 work computer:
