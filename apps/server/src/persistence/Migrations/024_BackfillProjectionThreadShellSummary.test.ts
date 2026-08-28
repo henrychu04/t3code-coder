@@ -63,7 +63,6 @@ layer("024_BackfillProjectionThreadShellSummary", (it) => {
           turn_id,
           role,
           text,
-          attachments_json,
           is_streaming,
           created_at,
           updated_at
@@ -74,7 +73,6 @@ layer("024_BackfillProjectionThreadShellSummary", (it) => {
           'turn-1',
           'user',
           'Need help',
-          NULL,
           0,
           '2026-02-24T00:01:00.000Z',
           '2026-02-24T00:01:00.000Z'
