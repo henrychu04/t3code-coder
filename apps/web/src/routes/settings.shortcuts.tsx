@@ -268,7 +268,7 @@ function ShortcutsSettingsView() {
                       </p>
                     ) : null}
                   </div>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:flex-[2]">
                     {targets.map((target, index) => {
                       const targetPending =
                         pending?.command === action.command && sameRule(pending.replace, target)
