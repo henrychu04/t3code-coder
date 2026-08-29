@@ -822,7 +822,7 @@ function ChatMarkdown({
                 useRightPanelStore.getState().openPullRequest(threadRef, {
                   environmentId: project.environmentId,
                   projectId: project.id,
-                  repository: mergeRequest.repository,
+                  repository: linkedPullRequest.repository,
                   number: mergeRequest.number,
                 })
               }

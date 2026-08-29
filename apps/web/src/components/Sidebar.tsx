@@ -786,9 +786,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const changeRequestSnapshots = useAtomValue(threadChangeRequestSnapshotsAtom);
   const changeRequestSnapshot = changeRequestSnapshots.get(threadKey);
   const gitStatus = useEnvironmentQuery(
-    thread.linkedPullRequest == null &&
-      (thread.branch != null || thread.worktreePath !== null) &&
-      gitCwd !== null
+    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
       ? vcsEnvironment.status({
           environmentId: thread.environmentId,
           input: { cwd: gitCwd },

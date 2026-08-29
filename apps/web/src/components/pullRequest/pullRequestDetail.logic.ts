@@ -416,7 +416,13 @@ export function buildPullRequestTimeline(
           },
         ]
       : []),
-  ].toSorted((left, right) => right.at.localeCompare(left.at));
+  ].toSorted((left, right) => {
+    const leftAt = instant(left.at);
+    const rightAt = instant(right.at);
+    if (Number.isNaN(leftAt)) return Number.isNaN(rightAt) ? 0 : 1;
+    if (Number.isNaN(rightAt)) return -1;
+    return rightAt - leftAt;
+  });
 }
 
 const FINDING_LIMIT = 20;

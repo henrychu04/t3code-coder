@@ -394,6 +394,28 @@ describe("pull request timeline", () => {
     ]);
   });
 
+  it("orders equivalent ISO-8601 offsets by their actual instant", () => {
+    const events = buildPullRequestTimeline({
+      ...TIMELINE_SOURCE,
+      commits: [
+        {
+          ...TIMELINE_SOURCE.commits[0]!,
+          oid: "earlier",
+          committedDate: "2026-07-05T01:00:00+02:00",
+        },
+      ],
+      comments: [
+        {
+          ...TIMELINE_SOURCE.comments[0]!,
+          id: "later",
+          createdAt: "2026-07-05T00:30:00Z",
+        },
+      ],
+    });
+
+    expect(events.slice(0, 2).map((event) => event.id)).toEqual(["later", "earlier"]);
+  });
+
   it("carries the comment url, and leaves the events the host cannot address without one", () => {
     const events = buildPullRequestTimeline({
       ...TIMELINE_SOURCE,

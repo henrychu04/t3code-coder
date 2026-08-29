@@ -573,6 +573,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
             render={
               <span
                 aria-label={prStatus.tooltip}
+                role="img"
                 className={`inline-flex items-center justify-center ${prStatus.colorClass}`}
               />
             }

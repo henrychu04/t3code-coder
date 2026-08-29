@@ -11,7 +11,14 @@ function createBrowserLocalApi(): LocalApi {
   return {
     shell: {
       openExternal: async (url) => {
-        window.open(url, "_blank", "noopener,noreferrer");
+        let parsed: URL;
+        try {
+          parsed = new URL(url.trim());
+        } catch {
+          return;
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+        window.open(parsed.href, "_blank", "noopener,noreferrer");
       },
     },
     dialogs: {

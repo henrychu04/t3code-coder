@@ -710,6 +710,9 @@ export function BranchToolbarBranchSelector({
     event.stopPropagation();
     if (!branchPr || !activeProject) return;
     const repository =
+      (serverThread?.linkedPullRequest?.number === branchPr.number
+        ? serverThread.linkedPullRequest.repository
+        : null) ??
       activeProject.repositoryIdentity?.displayName ??
       parseChangeRequestUrl(branchPr.url)?.repository ??
       null;

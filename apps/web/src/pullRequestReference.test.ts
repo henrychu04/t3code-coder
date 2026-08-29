@@ -6,6 +6,8 @@ describe("parsePullRequestReference", () => {
   it("accepts GitLab merge request URLs", () => {
     const reference = "https://gitlab.example.com/group/project/-/merge_requests/42";
     expect(parsePullRequestReference(reference)).toBe(reference);
+    const selfHosted = "http://git.example.com/group/project/-/merge_requests/43";
+    expect(parsePullRequestReference(selfHosted)).toBe(selfHosted);
   });
 
   it("accepts raw numbers and #number references", () => {
