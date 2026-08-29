@@ -1838,16 +1838,22 @@ const makeLocalGitService = Effect.gen(function* () {
     );
     const upstreamBranch = upstream.exitCode === 0 ? upstream.stdout.trim() || null : null;
     const remoteName = options?.remoteName ?? "origin";
-    const setUpstream = upstreamBranch === null;
-    yield* run(
-      "GitVcsDriver.pushCurrentBranch.push",
-      cwd,
-      setUpstream ? ["push", "--set-upstream", remoteName, branch] : ["push"],
-      { timeoutMs: 300_000, ...(options?.progress ? { progress: options.progress } : {}) },
-    );
+    const targetUpstream = `${remoteName}/${branch}`;
+    const setUpstream =
+      upstreamBranch === null ||
+      (options?.remoteName !== undefined && upstreamBranch !== targetUpstream);
+    const pushArgs = setUpstream
+      ? ["push", "--set-upstream", remoteName, branch]
+      : options?.remoteName !== undefined
+        ? ["push", remoteName, branch]
+        : ["push"];
+    yield* run("GitVcsDriver.pushCurrentBranch.push", cwd, pushArgs, {
+      timeoutMs: 300_000,
+      ...(options?.progress ? { progress: options.progress } : {}),
+    });
     return {
       branch,
-      upstreamBranch: upstreamBranch ?? `${remoteName}/${branch}`,
+      upstreamBranch: setUpstream ? targetUpstream : upstreamBranch,
       setUpstream,
     };
   });

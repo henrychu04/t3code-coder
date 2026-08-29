@@ -93,6 +93,7 @@ export function PendingReviewCommentCard({
 export function ReviewThreadCard({
   thread,
   workspaceRoot,
+  hostUrl,
   canReply,
   canResolve,
   canReact,
@@ -111,6 +112,7 @@ export function ReviewThreadCard({
 }: {
   thread: PullRequestReviewThread;
   workspaceRoot: string;
+  hostUrl: string;
   canReply: boolean;
   canResolve: boolean;
   canReact: boolean;
@@ -272,6 +274,7 @@ export function ReviewThreadCard({
                   <PullRequestMarkdownEditor
                     className="mt-1"
                     value={comment.body}
+                    hostUrl={hostUrl}
                     cwd={workspaceRoot}
                     environmentId={environmentId}
                     label="Edit comment"
@@ -284,6 +287,7 @@ export function ReviewThreadCard({
                     <PullRequestMarkdown
                       className="min-w-0 flex-1 text-sm"
                       text={comment.body}
+                      hostUrl={hostUrl}
                       cwd={workspaceRoot}
                       environmentId={environmentId}
                     />

@@ -23,7 +23,7 @@ const FENCE_PATTERN = /^\s{0,3}((?:`{3,})|(?:~{3,}))(.*)$/u;
 const VIDEO_TAG_MAX_LINES = 8;
 /** Four spaces open an indented code block, so its contents stay verbatim markdown. */
 const INDENTED_CODE_PATTERN = /^(?: {4}|\t)/u;
-const BARE_URL_PATTERN = /^<?(https?:\/\/\S+?)>?$/u;
+const BARE_URL_PATTERN = /^<?((?:https?:\/\/|\/uploads\/)\S+?)>?$/u;
 const VIDEO_EXTENSION_PATTERN = /\.(?:mp4|webm|mov|m4v|ogv)(?:$|[?#])/iu;
 /** A dropped video becomes a bare asset link; a dropped image becomes an `<img>` tag. */
 const GITHUB_ASSET_PATTERN = /^https:\/\/github\.com\/user-attachments\/assets\/[\w-]+$/iu;
@@ -42,6 +42,12 @@ function isWebUrl(url: string): boolean {
   }
 }
 
+function resolveAttachmentUrl(url: string, hostUrl?: string | null): string | null {
+  if (isWebUrl(url)) return url;
+  if (!url.startsWith("/uploads/") || hostUrl == null || !isWebUrl(hostUrl)) return null;
+  return new URL(url, hostUrl).href;
+}
+
 function attachmentHostLabel(url: string): string {
   const hostname = new URL(url).hostname.toLowerCase();
   if (hostname === "github.com") return "GitHub";
@@ -51,9 +57,19 @@ function attachmentHostLabel(url: string): string {
 
 function attachmentFromLine(
   line: string,
+  hostUrl?: string | null,
 ): { url: string; hostLabel: string; media: "video" | "unknown" } | null {
-  const url = BARE_URL_PATTERN.exec(line.trim())?.[1];
-  if (url === undefined || !isWebUrl(url)) return null;
+  const reference = BARE_URL_PATTERN.exec(line.trim())?.[1];
+  if (reference === undefined) return null;
+  const url = resolveAttachmentUrl(reference, hostUrl);
+  if (url === null) return null;
+  if (reference.startsWith("/uploads/")) {
+    return {
+      url,
+      hostLabel: attachmentHostLabel(url),
+      media: VIDEO_EXTENSION_PATTERN.test(url) ? "video" : "unknown",
+    };
+  }
   if (VIDEO_EXTENSION_PATTERN.test(url) || GITHUB_ASSET_PATTERN.test(url)) {
     return { url, hostLabel: attachmentHostLabel(url), media: "video" };
   }
@@ -66,9 +82,14 @@ function attachmentFromLine(
  * link arrives as prose. Two shapes are recognised, both of which GitHub produces itself: a
  * `<video>` (or `<source>`) tag, and a bare link on its own line to a video file or an
  * uploaded attachment. Fenced code is copied through untouched so a snippet that happens to
- * contain a link is never lifted out of it.
+ * uploaded attachment. GitLab's root-relative `/uploads/…` form is resolved against the merge
+ * request host before it is exposed. Fenced code is copied through untouched so a snippet that
+ * happens to contain a link is never lifted out of it.
  */
-export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBodySegment> {
+export function splitPullRequestBody(
+  body: string,
+  hostUrl?: string | null,
+): ReadonlyArray<PullRequestBodySegment> {
   const segments: PullRequestBodySegment[] = [];
   const markdown: string[] = [];
   let openFence: string | null = null;
@@ -110,7 +131,7 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
       continue;
     }
 
-    const bareAttachment = attachmentFromLine(line);
+    const bareAttachment = attachmentFromLine(line, hostUrl);
     if (bareAttachment !== null) {
       flushMarkdown();
       segments.push({ id: `attachment:${segments.length}`, kind: "attachment", ...bareAttachment });
@@ -128,10 +149,12 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
     while (cursor < lastCandidate && !VIDEO_TAG_END_PATTERN.test(lines[cursor]!)) {
       cursor += 1;
     }
-    const source = VIDEO_TAG_END_PATTERN.test(lines[cursor]!)
+    const sourceReference = VIDEO_TAG_END_PATTERN.test(lines[cursor]!)
       ? VIDEO_TAG_SRC_PATTERN.exec(lines.slice(index, cursor + 1).join("\n"))?.[1]
       : undefined;
-    if (source !== undefined && isWebUrl(source)) {
+    const source =
+      sourceReference === undefined ? null : resolveAttachmentUrl(sourceReference, hostUrl);
+    if (source !== null) {
       flushMarkdown();
       segments.push({
         id: `attachment:${segments.length}`,

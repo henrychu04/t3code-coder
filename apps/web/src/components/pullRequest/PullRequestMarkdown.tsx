@@ -19,16 +19,18 @@ import { splitPullRequestBody } from "./pullRequestMarkdown.logic";
  */
 export function PullRequestMarkdown({
   text,
+  hostUrl,
   cwd,
   environmentId,
   className,
 }: {
   text: string;
+  hostUrl: string | null;
   cwd: string;
   environmentId: EnvironmentId;
   className?: string;
 }) {
-  const segments = splitPullRequestBody(text);
+  const segments = splitPullRequestBody(text, hostUrl);
   return (
     <div className={cn("space-y-3", className)}>
       {segments.map((segment) => {

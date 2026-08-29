@@ -41,6 +41,23 @@ describe("pull request body segmentation", () => {
     ]);
   });
 
+  it("resolves a GitLab-relative upload against the merge request origin", () => {
+    expect(
+      splitPullRequestBody(
+        "/uploads/0123456789abcdef/report.pdf",
+        "https://gitlab.example/group/project/-/merge_requests/42",
+      ),
+    ).toEqual([
+      {
+        id: "attachment:0",
+        kind: "attachment",
+        url: "https://gitlab.example/uploads/0123456789abcdef/report.pdf",
+        hostLabel: "gitlab.example",
+        media: "unknown",
+      },
+    ]);
+  });
+
   it("reads the source out of a video tag, including a multi-line one", () => {
     expect(
       splitPullRequestBody(

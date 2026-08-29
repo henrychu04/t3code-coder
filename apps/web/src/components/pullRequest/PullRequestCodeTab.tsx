@@ -793,6 +793,7 @@ export function PullRequestCodeTab({
         key={`${reference.projectId}#${reference.number}:${thread.id}`}
         thread={thread}
         workspaceRoot={detail.workspaceRoot}
+        hostUrl={detail.url}
         canReply={review.reply}
         canResolve={review.resolve}
         canReact={detail.capabilities.reactions === true}

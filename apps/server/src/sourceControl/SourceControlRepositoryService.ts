@@ -144,7 +144,8 @@ export const make = Effect.gen(function* () {
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
     function* (destinationPath: string) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
-      if (yield* fileSystem.exists(normalizedDestination)) {
+      const destinationExisted = yield* fileSystem.exists(normalizedDestination);
+      if (destinationExisted) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
           .pipe(
@@ -173,6 +174,7 @@ export const make = Effect.gen(function* () {
         destinationPath: normalizedDestination,
         parentPath: path.dirname(normalizedDestination),
         directoryName: path.basename(normalizedDestination),
+        destinationExisted,
       };
     },
   );
@@ -212,8 +214,19 @@ export const make = Effect.gen(function* () {
         maxOutputBytes: 256 * 1024,
       })
       .pipe(
-        Effect.catch((cause) =>
-          fileSystem
+        Effect.catch((cause) => {
+          if (preparedDestination.destinationExisted) {
+            return Effect.fail(
+              new SourceControlRepositoryError({
+                operation: "cloneRepository",
+                provider,
+                detail:
+                  "The clone failed in a pre-existing destination. The directory was preserved and may contain partial clone data.",
+                cause,
+              }),
+            );
+          }
+          return fileSystem
             .remove(preparedDestination.destinationPath, { force: true, recursive: true })
             .pipe(
               Effect.matchEffect({
@@ -229,8 +242,8 @@ export const make = Effect.gen(function* () {
                     }),
                   ),
               }),
-            ),
-        ),
+            );
+        }),
       );
 
     return {

@@ -17,6 +17,7 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
  */
 export function PullRequestMarkdownEditor({
   value,
+  hostUrl,
   cwd,
   environmentId,
   placeholder,
@@ -28,6 +29,7 @@ export function PullRequestMarkdownEditor({
   onCancel,
 }: {
   readonly value: string;
+  readonly hostUrl: string | null;
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
   readonly placeholder?: string | undefined;
@@ -84,7 +86,12 @@ export function PullRequestMarkdownEditor({
           {empty ? (
             <p className="text-xs text-muted-foreground">Nothing to preview.</p>
           ) : (
-            <PullRequestMarkdown text={draft} cwd={cwd} environmentId={environmentId} />
+            <PullRequestMarkdown
+              text={draft}
+              hostUrl={hostUrl}
+              cwd={cwd}
+              environmentId={environmentId}
+            />
           )}
         </div>
       ) : (

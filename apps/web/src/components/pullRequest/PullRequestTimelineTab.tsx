@@ -62,18 +62,25 @@ interface ReactionSurface {
 function TimelineBody({
   body,
   markdown,
+  hostUrl,
   cwd,
   environmentId,
 }: {
   body: string;
   markdown: boolean;
+  hostUrl: string | null;
   cwd: string;
   environmentId: EnvironmentId;
 }) {
   return (
     <div className="mt-3">
       {markdown ? (
-        <PullRequestMarkdown text={body} cwd={cwd} environmentId={environmentId} />
+        <PullRequestMarkdown
+          text={body}
+          hostUrl={hostUrl}
+          cwd={cwd}
+          environmentId={environmentId}
+        />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
       )}
@@ -244,6 +251,7 @@ function ConversationCard({
         <div className="px-2 pb-2 pt-3">
           <PullRequestMarkdownEditor
             value={editable.body}
+            hostUrl={event.url}
             cwd={cwd}
             environmentId={reactions.environmentId}
             label="Edit comment"
@@ -257,6 +265,7 @@ function ConversationCard({
           <TimelineBody
             body={event.body}
             markdown={event.markdown}
+            hostUrl={event.url}
             cwd={cwd}
             environmentId={reactions.environmentId}
           />
@@ -524,6 +533,7 @@ function ReviewVerdictEvent({
             <TimelineBody
               body={event.body}
               markdown={event.markdown}
+              hostUrl={event.url}
               cwd={cwd}
               environmentId={reactions.environmentId}
             />

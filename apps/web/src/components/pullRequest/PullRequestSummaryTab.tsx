@@ -94,6 +94,7 @@ function reviewStateLabel(state: string): string {
 /** What every remark in the conversation needs to be rewritten where it sits. */
 interface CommentEditing {
   readonly cwd: string;
+  readonly hostUrl: string;
   readonly environmentId: EnvironmentId;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
@@ -120,6 +121,7 @@ function CommentBody({
       <PullRequestMarkdownEditor
         className={className}
         value={comment.body}
+        hostUrl={editing.hostUrl}
         cwd={editing.cwd}
         environmentId={editing.environmentId}
         label="Edit comment"
@@ -134,6 +136,7 @@ function CommentBody({
       <PullRequestMarkdown
         className="min-w-0 flex-1"
         text={comment.body}
+        hostUrl={editing.hostUrl}
         cwd={editing.cwd}
         environmentId={editing.environmentId}
       />
@@ -496,6 +499,7 @@ export function PullRequestSummaryTab({
 
   const commentEditing: CommentEditing = {
     cwd: detail.workspaceRoot,
+    hostUrl: detail.url,
     environmentId,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
@@ -656,6 +660,7 @@ export function PullRequestSummaryTab({
               // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
+              hostUrl={detail.url}
               cwd={detail.workspaceRoot}
               environmentId={environmentId}
               label="Pull request description"
@@ -669,6 +674,7 @@ export function PullRequestSummaryTab({
               <PullRequestMarkdown
                 className="min-w-0 flex-1"
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
+                hostUrl={detail.url}
                 cwd={detail.workspaceRoot}
                 environmentId={environmentId}
               />
