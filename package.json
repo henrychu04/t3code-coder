@@ -9,6 +9,7 @@
     "coder:live:status": "node scripts/coder-live-test.mjs status",
     "coder:live:stop": "node scripts/coder-live-test.mjs stop",
     "coder:live:test": "node scripts/coder-live-test.mjs test",
+    "coder:pr-smoke": "pnpm --filter @t3tools/web build && node scripts/coder-pr-smoke.mjs",
     "start": "pnpm build && node apps/coder-gateway/src/bin.ts",
     "start:open": "pnpm build && node apps/coder-gateway/src/bin.ts --open-browser",
     "generate:sbom": "pnpm sbom --sbom-format cyclonedx --sbom-spec-version 1.6 --sbom-type application --lockfile-only --prod --out docs/sbom.cdx.json",
