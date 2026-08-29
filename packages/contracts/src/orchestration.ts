@@ -154,6 +154,18 @@ export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unkn
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
+export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
+export const PastedImageAttachmentId = TrimmedNonEmptyString.check(
+  Schema.isPattern(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp)$/i,
+  ),
+);
+export type PastedImageAttachmentId = typeof PastedImageAttachmentId.Type;
+export const PastedImageAttachment = Schema.Struct({
+  type: Schema.Literal("image"),
+  id: PastedImageAttachmentId,
+});
+export type PastedImageAttachment = typeof PastedImageAttachment.Type;
 // Correlation id is command id by design in this model.
 export const CorrelationId = CommandId;
 export type CorrelationId = typeof CorrelationId.Type;
@@ -796,6 +808,11 @@ export const ThreadTurnStartCommand = Schema.Struct({
     text: Schema.String,
   }),
   modelSelection: Schema.optional(ModelSelection),
+  attachments: Schema.optional(
+    Schema.Array(PastedImageAttachment).check(
+      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    ),
+  ),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
@@ -816,6 +833,11 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     text: Schema.String,
   }),
   modelSelection: Schema.optional(ModelSelection),
+  attachments: Schema.optional(
+    Schema.Array(PastedImageAttachment).check(
+      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    ),
+  ),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
@@ -1209,6 +1231,11 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),
+  attachments: Schema.optional(
+    Schema.Array(PastedImageAttachment).check(
+      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    ),
+  ),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(

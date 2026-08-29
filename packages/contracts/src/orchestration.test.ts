@@ -642,10 +642,22 @@ it.effect("accepts a title seed in thread.turn.start", () =>
         role: "user",
         text: "hello",
       },
+      attachments: [
+        {
+          type: "image",
+          id: "550e8400-e29b-41d4-a716-446655440000.webp",
+        },
+      ],
       titleSeed: "Investigate reconnect failures",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.titleSeed, "Investigate reconnect failures");
+    assert.deepStrictEqual(parsed.attachments, [
+      {
+        type: "image",
+        id: "550e8400-e29b-41d4-a716-446655440000.webp",
+      },
+    ]);
   }),
 );
 

@@ -44,6 +44,7 @@ export function resolveProviderSkillSourceKind(
 ): ProviderSkillSourceKind {
   const normalizedPath = normalizePathSeparators(skill.path);
   if (
+    normalizedPath.includes("/.codex/plugins/") ||
     normalizedPath.includes("/.claude/plugins/") ||
     normalizedPath.includes("/.agents/plugins/")
   ) {

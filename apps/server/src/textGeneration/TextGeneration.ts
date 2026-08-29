@@ -1,7 +1,7 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import type { ModelSelection, ProviderInstanceId } from "@t3tools/contracts";
+import type { ModelSelection, PastedImageAttachment, ProviderInstanceId } from "@t3tools/contracts";
 import { TextGenerationError } from "@t3tools/contracts";
 
 import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
@@ -12,6 +12,7 @@ export type TextGenerationProvider = "codex" | "claudeAgent";
 export interface BranchNameGenerationInput {
   cwd: string;
   message: string;
+  attachments?: ReadonlyArray<PastedImageAttachment> | undefined;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
 }
@@ -25,6 +26,7 @@ export interface ThreadTitleGenerationInput {
   message: string;
   /** Present when replacing an existing title from the current thread history. */
   previousTitle?: string | undefined;
+  attachments?: ReadonlyArray<PastedImageAttachment> | undefined;
   /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
 }

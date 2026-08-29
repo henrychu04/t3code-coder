@@ -27,6 +27,7 @@ function withFakeCodex<A, E, R>(
   run: (harness: {
     readonly textGeneration: TextGeneration.TextGeneration["Service"];
     readonly argsPath: string;
+    readonly attachmentsDir: string;
     readonly homePath: string;
   }) => Effect.Effect<A, E, R>,
 ) {
@@ -79,9 +80,16 @@ function withFakeCodex<A, E, R>(
         launchArgs: input.launchArgs ?? "",
       }),
       environment,
+      tempDir,
+      () => Effect.succeed([]),
     );
 
-    return yield* run({ textGeneration, argsPath, homePath: homeCapturePath });
+    return yield* run({
+      textGeneration,
+      argsPath,
+      attachmentsDir: tempDir,
+      homePath: homeCapturePath,
+    });
   }).pipe(Effect.scoped);
 }
 
@@ -136,6 +144,33 @@ it.layer(NodeServices.layer)("CodexTextGeneration", (it) => {
           expect(args).toContain('model_reasoning_effort="xhigh"');
           expect(args).toContain('service_tier="priority"');
           expect(yield* fileSystem.readFileString(homePath)).toBe("/workspace/.codex-t3");
+        }),
+    ),
+  );
+
+  it.effect("passes validated pasted images to Codex label generation", () =>
+    withFakeCodex(
+      { output: JSON.stringify({ branch: "image-fix" }) },
+      ({ textGeneration, argsPath, attachmentsDir }) =>
+        Effect.gen(function* () {
+          const fileSystem = yield* FileSystem.FileSystem;
+          const attachmentId = "550e8400-e29b-41d4-a716-446655440000.png";
+          const imagePath = `${attachmentsDir}/${attachmentId}`;
+          yield* fileSystem.writeFile(
+            imagePath,
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]),
+          );
+
+          yield* textGeneration.generateBranchName({
+            cwd: process.cwd(),
+            message: "Fix this visual issue.",
+            attachments: [{ type: "image", id: attachmentId }],
+            modelSelection: DEFAULT_SELECTION,
+          });
+          const args = (yield* fileSystem.readFileString(argsPath)).split("\n");
+          const imageFlag = args.indexOf("--image");
+          expect(imageFlag).toBeGreaterThan(-1);
+          expect(args[imageFlag + 1]).toBe(imagePath);
         }),
     ),
   );

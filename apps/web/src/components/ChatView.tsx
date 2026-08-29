@@ -19,6 +19,7 @@ import {
   RuntimeMode,
   TerminalOpenInput,
 } from "@t3tools/contracts";
+import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
@@ -4469,6 +4470,9 @@ function ChatViewContent(props: ChatViewProps) {
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend,
     });
+    const pastedImageAttachments = extractComposerPastedImageAttachmentIds(outgoingMessageText).map(
+      (id) => ({ type: "image" as const, id }),
+    );
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
     }
@@ -4650,6 +4654,7 @@ function ChatViewContent(props: ChatViewProps) {
             text: outgoingMessageText,
           },
           modelSelection: ctxSelectedModelSelection,
+          ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
           titleSeed: title,
           runtimeMode: ctxRuntimeMode,
           interactionMode,

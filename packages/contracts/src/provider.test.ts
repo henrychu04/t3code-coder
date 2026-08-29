@@ -115,6 +115,26 @@ describe("ProviderSessionStartInput", () => {
 });
 
 describe("ProviderSendTurnInput", () => {
+  it("accepts bounded opaque pasted-image ids", () => {
+    const parsed = decodeProviderSendTurnInput({
+      threadId: "thread-1",
+      input: "Inspect this image",
+      attachments: [
+        {
+          type: "image",
+          id: "550e8400-e29b-41d4-a716-446655440000.png",
+        },
+      ],
+    });
+
+    expect(parsed.attachments).toEqual([
+      {
+        type: "image",
+        id: "550e8400-e29b-41d4-a716-446655440000.png",
+      },
+    ]);
+  });
+
   it("accepts codex modelSelection", () => {
     const parsed = decodeProviderSendTurnInput({
       threadId: "thread-1",

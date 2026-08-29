@@ -25,8 +25,11 @@ whose local endpoint is fixed to `127.0.0.1`; raw arguments, reverse forwards, a
 addresses are not accepted. SCP is restricted to generated helper and clipboard-image paths and
 reaches the workspace only through a temporary Coder ProxyCommand. Network telemetry and direct
 workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Claude
-sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers. T3 does
-not inject the removed preview MCP into Codex; user-configured Codex MCP servers remain workspace-owned.
+sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers. Every
+T3-managed Codex process enumerates configured MCP names without starting the servers, appends a
+final per-server disable override for every name, and disables app integrations. Configured launch
+arguments cannot supersede these final overrides; failed discovery prevents the managed process
+from starting.
 
 User commands entered in a workspace terminal, repository-local Git hooks, and the externally
 installed Codex, Claude, or Coder executables remain subject to the workspace and corporate network
@@ -41,6 +44,8 @@ responses, provider sessions, terminals, checkpoints, project records, project r
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
 connection and loopback WebSocket but is not durably cached by the gateway. A validated pasted image
 may be staged in an OS temporary directory for one SCP attempt; the gateway removes it afterward.
+Native Codex image input accepts only bounded opaque ids for generated workspace attachment files;
+the helper rejects symlinks and revalidates file size and image signatures before reading bytes.
 Turn-scoped screenshot artifacts remain beneath `$HOME/.t3-coder/artifacts` in the workspace. Their
 bytes traverse the existing stdio and loopback path only after the user expands the collapsed
 artifact row, and exist in the browser only as revocable, memory-only object URLs.
@@ -65,8 +70,8 @@ installed Codex or Claude Code CLI.
   up to 20 MiB. Artifact capture is limited to 10 images per turn, and artifact reads accept only
   generated opaque IDs in bounded chunks after explicit UI expansion;
 - Git fetch, pull, push, pull requests, and hosted source-control integrations;
-- the removed T3 preview MCP, Claude browser integration, free-form Claude launch flags, and the
-  packaged Anthropic Agent SDK; user-configured Codex MCP servers remain workspace-owned;
+- the removed T3 preview MCP, all Codex MCP and app integrations, Claude browser integration,
+  free-form Claude launch flags, and the packaged Anthropic Agent SDK;
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
   the gateway's loopback URL.
 

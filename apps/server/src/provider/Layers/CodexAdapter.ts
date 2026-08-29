@@ -52,13 +52,17 @@ import { type CodexAdapterShape } from "../Services/CodexAdapter.ts";
 import {
   CodexResumeCursorSchema,
   CodexSessionRuntimeThreadIdMissingError,
-  describeMcpElicitation,
   makeCodexSessionRuntime,
   type CodexSessionRuntimeError,
   type CodexSessionRuntimeOptions,
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import {
+  discoverCodexMcpServerNames,
+  type CodexMcpServerNameResolver,
+} from "./CodexIntegrationPolicy.ts";
+import { resolvePastedImageAttachment } from "../PastedImageAttachments.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -71,6 +75,8 @@ const PROVIDER = ProviderDriverKind.make("codex");
 export interface CodexAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly attachmentsDir?: string;
+  readonly resolveMcpServerNames?: CodexMcpServerNameResolver;
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -803,11 +809,6 @@ function mapToRuntimeEvents(
       ];
     }
 
-    const elicitation =
-      event.method === "mcpServer/elicitation/request"
-        ? readPayload(EffectCodexSchema.McpServerElicitationRequestParams, event.payload)
-        : undefined;
-    const elicitationApproval = elicitation ? describeMcpElicitation(elicitation) : undefined;
     const detail = (() => {
       switch (event.method) {
         case "item/commandExecution/requestApproval": {
@@ -824,8 +825,6 @@ function mapToRuntimeEvents(
           );
           return payload?.reason ?? undefined;
         }
-        case "mcpServer/elicitation/request":
-          return elicitation?.message;
         case "applyPatchApproval": {
           const payload = readPayload(
             EffectCodexSchema.ServerRequest__ApplyPatchApprovalParams,
@@ -859,12 +858,6 @@ function mapToRuntimeEvents(
         payload: {
           requestType: toRequestTypeFromMethod(event.method),
           ...(detail ? { detail } : {}),
-          ...(elicitationApproval
-            ? {
-                appName: elicitationApproval.appName,
-                options: elicitationApproval.options,
-              }
-            : {}),
           ...(event.payload !== undefined ? { args: event.payload } : {}),
         },
       },
@@ -1643,6 +1636,17 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
   const crypto = yield* Crypto.Crypto;
   const runtimeEventQueue = yield* Queue.unbounded<ProviderRuntimeEvent>();
   const sessions = new Map<ThreadId, CodexAdapterSessionContext>();
+  const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment);
+  const resolveMcpServerNames: CodexMcpServerNameResolver =
+    options?.resolveMcpServerNames ??
+    ((cwd) =>
+      discoverCodexMcpServerNames({
+        binaryPath: codexConfig.binaryPath,
+        launchArgs,
+        cwd,
+        ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
+        ...(options?.environment ? { environment: options.environment } : {}),
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner)));
 
   const startSession: CodexAdapterShape["startSession"] = (input) =>
     Effect.scoped(
@@ -1660,6 +1664,18 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           yield* Effect.suspend(() => stopSessionInternal(existing));
         }
 
+        const cwd = input.cwd ?? process.cwd();
+        const disabledMcpServerNames = yield* resolveMcpServerNames(cwd).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterProcessError({
+                provider: PROVIDER,
+                threadId: input.threadId,
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        );
         const serviceTier =
           input.modelSelection?.instanceId === boundInstanceId
             ? getCodexServiceTierOptionValue(input.modelSelection)
@@ -1667,9 +1683,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         const runtimeInput: CodexSessionRuntimeOptions = {
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
-          cwd: input.cwd ?? process.cwd(),
+          cwd,
           binaryPath: codexConfig.binaryPath,
-          launchArgs: resolveCodexLaunchArgs(codexConfig.launchArgs, options?.environment),
+          launchArgs,
           ...(options?.environment ? { environment: options.environment } : {}),
           ...(codexConfig.homePath ? { homePath: codexConfig.homePath } : {}),
           ...(isCodexResumeCursorSchema(input.resumeCursor)
@@ -1680,6 +1696,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? { model: input.modelSelection.model }
             : {}),
           ...(serviceTier ? { serviceTier } : {}),
+          disabledMcpServerNames,
         };
         const sessionScope = yield* Scope.make("sequential");
         let sessionScopeTransferred = false;
@@ -1756,6 +1773,36 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 
   const sendTurn: CodexAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
     const session = yield* requireSession(input.threadId);
+    const codexAttachments = yield* Effect.forEach(
+      input.attachments ?? [],
+      (attachment) => {
+        if (!options?.attachmentsDir) {
+          return Effect.fail(
+            new ProviderAdapterRequestError({
+              provider: PROVIDER,
+              method: "turn/start",
+              detail: "Pasted image storage is unavailable.",
+            }),
+          );
+        }
+        return resolvePastedImageAttachment({
+          attachmentsDir: options.attachmentsDir,
+          attachment,
+        }).pipe(
+          Effect.map((resolved) => ({ type: "image" as const, url: resolved.dataUrl })),
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterRequestError({
+                provider: PROVIDER,
+                method: "turn/start",
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        );
+      },
+      { concurrency: 1 },
+    );
     const reasoningEffort =
       input.modelSelection?.instanceId === boundInstanceId
         ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")
@@ -1777,6 +1824,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           : {}),
         ...(serviceTier ? { serviceTier } : {}),
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
+        ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
       })
       .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));
   });

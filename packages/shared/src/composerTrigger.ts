@@ -40,6 +40,19 @@ export function serializeComposerFileLink(path: string): string {
   return `[${label}](${encodeMarkdownLinkDestination(path)})`;
 }
 
+const PASTED_IMAGE_ATTACHMENT_PATH_REGEX =
+  /\/\.t3-coder\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp))(?=[)\s]|$)/giu;
+
+/** Extracts opaque generated image ids from composer links without accepting a remote path. */
+export function extractComposerPastedImageAttachmentIds(text: string): ReadonlyArray<string> {
+  const ids = new Set<string>();
+  for (const match of text.matchAll(PASTED_IMAGE_ATTACHMENT_PATH_REGEX)) {
+    const id = match[1];
+    if (id) ids.add(id.toLowerCase());
+  }
+  return [...ids];
+}
+
 function clampCursor(text: string, cursor: number): number {
   if (!Number.isFinite(cursor)) return text.length;
   return Math.max(0, Math.min(text.length, Math.floor(cursor)));

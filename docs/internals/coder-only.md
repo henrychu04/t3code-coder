@@ -112,10 +112,13 @@ the local gateway does not open or mirror its SQLite file or artifact directory.
 The helper starts workspace-installed provider executables directly with argument-array spawning.
 Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout.
 No provider executable or Anthropic Agent SDK package is bundled. T3 does not inject its removed
-preview MCP server or a local-host transport into Codex. Codex authentication, configuration, and
-user-configured MCP servers remain workspace-owned and subject to workspace policy. T3 passes an
-empty strict MCP configuration and disables connected claude.ai MCP servers for managed Claude
-sessions. Both provider connections remain owned by their workspace executables.
+preview MCP server or a local-host transport into Codex. Codex authentication and other
+configuration remain workspace-owned and subject to workspace policy. Before every managed Codex
+process, T3 enumerates configured MCP names without starting the servers, appends a final
+per-server disable override for every name, and disables app integrations. Failed discovery is
+fail-closed and prevents the managed process from starting.
+T3 passes an empty strict MCP configuration and disables connected claude.ai MCP servers for
+managed Claude sessions. Both provider connections remain owned by their workspace executables.
 
 ## Authentication
 
@@ -161,7 +164,11 @@ message composer. The browser sends the image only to the loopback gateway. The 
 signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS temporary directory,
 and copies it through helper-scoped SCP to a generated path beneath
 `$HOME/.t3-coder/attachments`. It then deletes the local staging file and inserts the remote path
-into the draft.
+into the draft. At send time the browser may additionally submit at most eight opaque generated
+image ids—never a caller-supplied path. The helper resolves each id only beneath the attachment
+directory, rejects symlinks, size violations, and signature/extension mismatches, and sends the
+validated bytes to Codex as native image input. The same validated images may be passed by fixed
+path to the workspace Codex process that generates the initial branch name and thread title.
 
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
 filesystem API. The browser supplies the active project root plus a project-relative path to the

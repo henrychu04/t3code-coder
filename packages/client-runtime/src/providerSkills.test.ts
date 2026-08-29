@@ -70,12 +70,13 @@ describe("provider slash menu collisions", () => {
 
 describe("resolveProviderSkillSourceKind", () => {
   it("marks plugin-backed skills as app installs", () => {
-    expect(
-      resolveProviderSkillSourceKind({
-        path: "/Users/julius/.claude/plugins/cache/openai-curated/github/skills/gh-fix-ci/SKILL.md",
-        scope: "user",
-      }),
-    ).toBe("app");
+    for (const path of [
+      "/Users/julius/.codex/plugins/cache/openai-curated/github/skills/gh-fix-ci/SKILL.md",
+      "/Users/julius/.claude/plugins/cache/openai-curated/github/skills/gh-fix-ci/SKILL.md",
+      "/Users/julius/.agents/plugins/github/skills/gh-fix-ci/SKILL.md",
+    ]) {
+      expect(resolveProviderSkillSourceKind({ path, scope: "user" })).toBe("app");
+    }
   });
 
   it("maps standard scopes to source kinds", () => {

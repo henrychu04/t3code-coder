@@ -27,6 +27,10 @@ import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/co
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
+import {
+  CodexIntegrationPolicyError,
+  discoverCodexMcpServerNames,
+} from "./CodexIntegrationPolicy.ts";
 import { resolveCodexSupportedRuntimeModes } from "../CodexRuntimeModes.ts";
 import { attachSupportedRuntimeModes } from "../runtimeModeCapabilities.ts";
 import {
@@ -338,9 +342,16 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     ...input.environment,
     ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
   };
+  const disabledMcpServerNames = yield* discoverCodexMcpServerNames({
+    binaryPath: input.binaryPath,
+    cwd: input.cwd,
+    ...(input.launchArgs ? { launchArgs: input.launchArgs } : {}),
+    ...(input.homePath ? { homePath: input.homePath } : {}),
+    ...(input.environment ? { environment: input.environment } : {}),
+  });
   const spawnCommand = yield* resolveSpawnCommand(
     input.binaryPath,
-    codexAppServerArgs(input.launchArgs),
+    codexAppServerArgs(input.launchArgs, disabledMcpServerNames),
     {
       env: environment,
       extendEnv: true,
@@ -509,7 +520,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     readonly environment?: NodeJS.ProcessEnv;
   }) => Effect.Effect<
     CodexAppServerProviderSnapshot,
-    CodexErrors.CodexAppServerError,
+    CodexErrors.CodexAppServerError | CodexIntegrationPolicyError,
     ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
   > = probeCodexAppServerProvider,
   environment?: NodeJS.ProcessEnv,
@@ -555,7 +566,10 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   if (Result.isFailure(probeResult)) {
     const error = probeResult.failure;
-    const installed = !isCodexAppServerSpawnError(error);
+    const unavailable =
+      isCodexAppServerSpawnError(error) ||
+      (error instanceof CodexIntegrationPolicyError && error.unavailable);
+    const installed = !unavailable;
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
       enabled: codexSettings.enabled,

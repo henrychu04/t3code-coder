@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { serializeComposerFileLink, serializeComposerMentionPath } from "./composerTrigger.ts";
+import {
+  extractComposerPastedImageAttachmentIds,
+  serializeComposerFileLink,
+  serializeComposerMentionPath,
+} from "./composerTrigger.ts";
 
 describe("serializeComposerMentionPath", () => {
   it("keeps simple mention paths unquoted", () => {
@@ -39,5 +43,24 @@ describe("serializeComposerFileLink", () => {
     expect(serializeComposerFileLink("@scope/package.json")).toBe(
       "[package.json](@scope/package.json)",
     );
+  });
+});
+
+describe("extractComposerPastedImageAttachmentIds", () => {
+  it("extracts and deduplicates generated attachment ids", () => {
+    const id = "550e8400-e29b-41d4-a716-446655440000.png";
+    expect(
+      extractComposerPastedImageAttachmentIds(
+        `[${id}](/home/dev/.t3-coder/attachments/${id}) [again](/home/dev/.t3-coder/attachments/${id})`,
+      ),
+    ).toEqual([id]);
+  });
+
+  it("rejects arbitrary paths and non-generated names", () => {
+    expect(
+      extractComposerPastedImageAttachmentIds(
+        "[secret](/etc/secret.png) [fake](/home/dev/.t3-coder/attachments/user.png)",
+      ),
+    ).toEqual([]);
   });
 });

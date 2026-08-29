@@ -18,6 +18,11 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import { expandHomePath } from "../pathExpansion.ts";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
+import { resolvePastedImageAttachment } from "../provider/PastedImageAttachments.ts";
+import {
+  discoverCodexMcpServerNames,
+  type CodexMcpServerNameResolver,
+} from "../provider/Layers/CodexIntegrationPolicy.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { buildBranchNamePrompt, buildThreadTitlePrompt } from "./TextGenerationPrompts.ts";
@@ -33,10 +38,23 @@ const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(function* (
   codexConfig: CodexSettings,
   environment?: NodeJS.ProcessEnv,
+  attachmentsDir?: string,
+  mcpServerNameResolver?: CodexMcpServerNameResolver,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const resolvedEnvironment = environment ?? process.env;
+  const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
+  const resolveMcpServerNames: CodexMcpServerNameResolver =
+    mcpServerNameResolver ??
+    ((cwd) =>
+      discoverCodexMcpServerNames({
+        binaryPath: codexConfig.binaryPath || "codex",
+        launchArgs,
+        cwd,
+        homePath: codexConfig.homePath,
+        environment: resolvedEnvironment,
+      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, commandSpawner)));
 
   const readStreamAsString = <E>(
     operation: "generateBranchName" | "generateThreadTitle",
@@ -76,6 +94,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     readonly prompt: string;
     readonly outputSchemaJson: S;
     readonly modelSelection: ModelSelection;
+    readonly imagePaths?: ReadonlyArray<string>;
   }): Effect.fn.Return<S["Type"], TextGenerationError, S["DecodingServices"]> {
     const schemaJson = yield* encodeJsonString(toJsonSchemaObject(input.outputSchemaJson)).pipe(
       Effect.mapError(
@@ -89,7 +108,16 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
     const schemaPath = yield* writeTempFile(input.operation, "codex-schema", schemaJson);
     const outputPath = yield* writeTempFile(input.operation, "codex-output", "");
-    const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
+    const disabledMcpServerNames = yield* resolveMcpServerNames(input.cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({
+            operation: input.operation,
+            detail: cause.message,
+            cause,
+          }),
+      ),
+    );
     const reasoningEffort =
       getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort") ??
       DEFAULT_TEXT_GENERATION_REASONING_EFFORT;
@@ -98,7 +126,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       codexConfig.binaryPath || "codex",
       [
         "exec",
-        ...codexExecLaunchArgs(launchArgs),
+        ...codexExecLaunchArgs(launchArgs, disabledMcpServerNames),
         "--ephemeral",
         "--skip-git-repo-check",
         "-s",
@@ -112,6 +140,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         schemaPath,
         "--output-last-message",
         outputPath,
+        ...(input.imagePaths ?? []).flatMap((imagePath) => ["--image", imagePath]),
         "-",
       ],
       { env: resolvedEnvironment },
@@ -200,15 +229,46 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
   });
 
+  const resolveImagePaths = Effect.fn("CodexTextGeneration.resolveImagePaths")(function* (
+    input: TextGeneration.BranchNameGenerationInput,
+    operation: "generateBranchName" | "generateThreadTitle",
+  ) {
+    if (!input.attachments || input.attachments.length === 0) return [];
+    if (!attachmentsDir) {
+      return yield* new TextGenerationError({
+        operation,
+        detail: "Pasted image attachments are unavailable in this workspace.",
+      });
+    }
+    return yield* Effect.forEach(
+      input.attachments,
+      (attachment) =>
+        resolvePastedImageAttachment({ attachmentsDir, attachment }).pipe(
+          Effect.map((resolved) => resolved.path),
+          Effect.mapError(
+            (cause) =>
+              new TextGenerationError({
+                operation,
+                detail: cause.message,
+                cause,
+              }),
+          ),
+        ),
+      { concurrency: 1 },
+    );
+  });
+
   const generateBranchName: TextGeneration.TextGeneration["Service"]["generateBranchName"] =
     Effect.fn("CodexTextGeneration.generateBranchName")(function* (input) {
       const { prompt, outputSchema } = buildBranchNamePrompt({ message: input.message });
+      const imagePaths = yield* resolveImagePaths(input, "generateBranchName");
       const generated = yield* runCodexJson({
         operation: "generateBranchName",
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
         modelSelection: input.modelSelection,
+        imagePaths,
       }).pipe(Effect.scoped);
       return { branch: sanitizeBranchFragment(generated.branch) };
     });
@@ -219,12 +279,14 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         message: input.message,
         previousTitle: input.previousTitle,
       });
+      const imagePaths = yield* resolveImagePaths(input, "generateThreadTitle");
       const generated = yield* runCodexJson({
         operation: "generateThreadTitle",
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
         modelSelection: input.modelSelection,
+        imagePaths,
       }).pipe(Effect.scoped);
       return { title: sanitizeThreadTitle(generated.title) };
     });

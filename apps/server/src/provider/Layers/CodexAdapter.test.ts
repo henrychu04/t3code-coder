@@ -20,6 +20,7 @@ import {
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -42,6 +43,7 @@ import {
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
+const resolveNoMcpServers = () => Effect.succeed([] as ReadonlyArray<string>);
 const asEventId = (value: string): EventId => EventId.make(value);
 const asItemId = (value: string): ProviderItemId => ProviderItemId.make(value);
 
@@ -169,12 +171,50 @@ const adapterLayer = it.layer(
         instanceId: ProviderInstanceId.make("codex_personal"),
         environment: { T3_TEST_ENV: "1" },
         makeRuntime: runtimeFactory.factory,
+        resolveMcpServerNames: () => Effect.succeed(["workspace-tools"]),
       },
     ),
   ).pipe(Layer.provideMerge(NodeServices.layer)),
 );
 
 adapterLayer("CodexAdapter Coder integration", (it) => {
+  it.effect("forwards validated pasted images as native Codex inputs", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-codex-image-",
+      });
+      const attachmentId = "550e8400-e29b-41d4-a716-446655440000.png";
+      const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+      yield* fileSystem.writeFile(`${attachmentsDir}/${attachmentId}`, bytes);
+      const factory = makeRuntimeFactory();
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        attachmentsDir,
+        makeRuntime: factory.factory,
+        resolveMcpServerNames: resolveNoMcpServers,
+      });
+      const threadId = asThreadId("image-thread");
+      yield* adapter.startSession({ threadId, runtimeMode: "auto" });
+
+      yield* adapter.sendTurn({
+        threadId,
+        input: "Inspect this image",
+        attachments: [{ type: "image", id: attachmentId }],
+      });
+
+      NodeAssert.deepStrictEqual(factory.lastRuntime?.sendTurnImpl.mock.calls.at(-1)?.[0], {
+        input: "Inspect this image",
+        attachments: [
+          {
+            type: "image",
+            url: `data:image/png;base64,${bytes.toString("base64")}`,
+          },
+        ],
+      });
+      yield* adapter.stopAll();
+    }),
+  );
+
   it.effect("rejects a non-Codex provider before constructing a runtime", () =>
     Effect.gen(function* () {
       runtimeFactory.factory.mockClear();
@@ -218,6 +258,7 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
       NodeAssert.deepStrictEqual(runtimeFactory.lastRuntime?.options, {
         binaryPath: "/workspace/bin/codex",
         cwd: "/workspace/project",
+        disabledMcpServerNames: ["workspace-tools"],
         environment: { T3_TEST_ENV: "1" },
         homePath: "/workspace/.codex-personal",
         launchArgs: "--strict-config --enable collaboration_modes",
@@ -339,6 +380,7 @@ const scopedLayer = it.layer(
     CodexAdapter,
     makeCodexAdapter(decodeCodexSettings({}), {
       makeRuntime: scopedRuntimeFactory.factory,
+      resolveMcpServerNames: resolveNoMcpServers,
     }),
   ).pipe(Layer.provideMerge(NodeServices.layer)),
 );
@@ -372,6 +414,7 @@ const failingLayer = it.layer(
     CodexAdapter,
     makeCodexAdapter(decodeCodexSettings({}), {
       makeRuntime: failingRuntimeFactory.factory,
+      resolveMcpServerNames: resolveNoMcpServers,
     }),
   ).pipe(Layer.provideMerge(NodeServices.layer)),
 );

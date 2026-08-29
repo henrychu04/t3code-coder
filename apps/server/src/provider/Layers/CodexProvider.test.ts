@@ -1,6 +1,17 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import { CodexSettings } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
-import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
+import { CodexIntegrationPolicyError } from "./CodexIntegrationPolicy.ts";
+import {
+  applyPreferredCodexDefaultModel,
+  checkCodexProviderStatus,
+  mapCodexModelCapabilities,
+} from "./CodexProvider.ts";
+
+const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -143,4 +154,22 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
+});
+
+it.layer(NodeServices.layer)("Codex provider availability", (it) => {
+  it.effect("reports a missing Codex binary as provider-unavailable", () =>
+    Effect.gen(function* () {
+      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
+        Effect.fail(
+          new CodexIntegrationPolicyError("Codex MCP policy discovery failed.", {
+            unavailable: true,
+          }),
+        ),
+      );
+
+      assert.equal(provider.installed, false);
+      assert.equal(provider.status, "error");
+      assert.equal(provider.message, "Codex CLI (`codex`) was not found on PATH.");
+    }),
+  );
 });

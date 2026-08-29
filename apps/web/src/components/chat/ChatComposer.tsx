@@ -10,9 +10,16 @@ import type {
   ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
-import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import {
+  extractComposerPastedImageAttachmentIds,
+  serializeComposerFileLink,
+} from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   memo,
@@ -1968,6 +1975,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
     if (imageFiles.length === 0) return;
     event.preventDefault();
+    if (
+      extractComposerPastedImageAttachmentIds(promptRef.current).length + imageFiles.length >
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+    ) {
+      setComposerSubmissionError(
+        `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} pasted images per message.`,
+      );
+      return;
+    }
     if (clipboardImageUploadInFlightRef.current) {
       setComposerSubmissionError("Wait for the current pasted image upload to finish.");
       return;
