@@ -1724,6 +1724,13 @@ describe("estimateMessagesTimelineRowHeight", () => {
     expect(shortMultiLine).toBe(88 + 3 * 23);
   });
 
+  it("wraps each newline-delimited segment independently", () => {
+    const twoWrappedSegments = estimateMessagesTimelineRowHeight(
+      messageRow("assistant", `${"x".repeat(100)}\n${"x".repeat(100)}`),
+    );
+    expect(twoWrappedSegments).toBe(88 + 2 * Math.ceil(100 / 88) * 23);
+  });
+
   it("caps user messages at the collapsed preview height", () => {
     const collapsed = estimateMessagesTimelineRowHeight(
       messageRow("user", "x".repeat(10_000)),
