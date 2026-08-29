@@ -275,7 +275,13 @@ const ESTIMATED_ASSISTANT_TEXT_HEIGHT_CAP_PX = 820;
 const FALLBACK_ESTIMATED_TIMELINE_ROW_HEIGHT = 90;
 
 function estimateTimelineTextHeightPx(text: string, charsPerLine: number): number {
-  return Math.max(1, Math.ceil(text.length / charsPerLine)) * ESTIMATED_TIMELINE_LINE_HEIGHT_PX;
+  const lineCount = Math.max(
+    Math.ceil(text.length / charsPerLine),
+    // Preserved explicit line breaks each render as their own line; a short
+    // multi-line message would otherwise estimate as a single wrapped line.
+    text.split("\n").length,
+  );
+  return lineCount * ESTIMATED_TIMELINE_LINE_HEIGHT_PX;
 }
 
 export function estimateMessagesTimelineRowHeight(row: MessagesTimelineRow): number {

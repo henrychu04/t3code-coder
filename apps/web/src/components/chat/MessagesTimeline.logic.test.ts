@@ -1715,6 +1715,15 @@ describe("estimateMessagesTimelineRowHeight", () => {
     expect(mid).toBe(88 + Math.ceil(2_000 / 88) * 23);
   });
 
+  it("counts preserved explicit line breaks as their own lines", () => {
+    const multiLine = estimateMessagesTimelineRowHeight(
+      messageRow("user", "a\nb\nc\nd\ne\nf\ng\nh"),
+    );
+    expect(multiLine).toBe(96 + 8 * 23);
+    const shortMultiLine = estimateMessagesTimelineRowHeight(messageRow("assistant", "ab\ncd\nef"));
+    expect(shortMultiLine).toBe(88 + 3 * 23);
+  });
+
   it("caps user messages at the collapsed preview height", () => {
     const collapsed = estimateMessagesTimelineRowHeight(
       messageRow("user", "x".repeat(10_000)),
