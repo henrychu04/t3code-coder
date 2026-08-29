@@ -1,8 +1,22 @@
-# Coder-only architecture
+# How T3 Coder keeps work in Coder
 
-The Coder-only distribution runs its user interface on the developer's computer and all repository,
-Codex, Claude, terminal, checkpoint, and durable orchestration work inside Linux Coder workspaces. It does
-not use the upstream desktop, relay, Tailscale, hosted web, or direct remote-server connection paths.
+> This is a maintainer and reviewer reference. For the user-facing explanation, start with
+> [Coder workspaces](../user/workspaces.md) and [Product decisions and upstream
+> differences](../product-differences.md).
+
+T3 Coder runs its browser interface on the developer's computer while repository, Codex, Claude,
+terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The
+architecture exists to preserve that product promise without using upstream desktop, relay,
+Tailscale, hosted-web, or direct remote-server connection paths.
+
+## Product guarantees
+
+- The browser interface is local-only.
+- Coder owns workspace connectivity and Coder authentication.
+- Codex and Claude Code run only in the workspace and use workspace-owned configuration.
+- Durable development and conversation data remains in the workspace.
+- Workspace actions, file access, image exceptions, and port forwards stay within the deliberate
+  product boundaries described below.
 
 ## Runtime boundary
 

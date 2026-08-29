@@ -10,8 +10,8 @@ where you started.
 
 ## What you get
 
-- **Projects and threads** — organize agent work by project, with pinning, snoozing,
-  settling, and archiving for threads.
+- **Projects and threads** — organize agent work by project, with pinning, snoozing, settling, and
+  archiving for threads.
 - **Conversation controls** — four permission modes, inline approvals, model and mode selection
   per thread, and a context meter with compaction.
 - **Review** — per-turn diffs, diff comments, checkpoints, and worktree-aware branch controls.
@@ -39,6 +39,9 @@ Inside each Linux Coder workspace:
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)
 - the standard Linux `script` utility
 
+T3 Coder does not install or authenticate a provider. A missing or unauthenticated provider is
+shown as unavailable while another ready provider remains usable.
+
 ## Quick start
 
 ```bash
@@ -64,26 +67,29 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 
 ## Documentation
 
-| Guide                                            | Covers                                       |
-| ------------------------------------------------ | -------------------------------------------- |
-| [Install and first run](./docs/user/getting-started.md) | Requirements, setup, and the first connection |
-| [Coder workspaces](./docs/user/workspaces.md)    | Domains, lifecycle, health, port forwards, troubleshooting |
-| [Projects and threads](./docs/user/projects-and-threads.md) | Organizing projects, threads, pins, snooze, archive |
-| [Permission modes](./docs/user/permission-modes.md) | How much Claude does on its own |
-| [Message composer](./docs/user/composer.md)      | Images, skills, commands, stash, context |
-| [Files and search](./docs/user/files-and-search.md) | Browsing, editing, and searching project files |
-| [Images and screenshots](./docs/user/images-and-screenshots.md) | Pasting images and viewing Claude's screenshots |
-| [Source control](./docs/user/source-control.md)  | Diffs, branches, worktrees, commits, checkpoints |
-| [Keyboard shortcuts](./docs/user/keybindings.md) | Every shortcut and how to remap it |
+| Guide                                                           | Covers                                                       |
+| --------------------------------------------------------------- | ------------------------------------------------------------ |
+| [Install and first run](./docs/user/getting-started.md)         | Requirements, setup, and the first connection                |
+| [Codex and Claude Code](./docs/user/providers.md)               | Availability, sign-in, models, skills, and provider settings |
+| [Coder workspaces](./docs/user/workspaces.md)                   | Domains, lifecycle, health, port forwards, troubleshooting   |
+| [Projects and threads](./docs/user/projects-and-threads.md)     | Organizing projects, threads, pins, snooze, archive          |
+| [Permission modes](./docs/user/permission-modes.md)             | How much the selected agent does on its own                  |
+| [Message composer](./docs/user/composer.md)                     | Images, skills, commands, stash, context                     |
+| [Files and search](./docs/user/files-and-search.md)             | Browsing, editing, and searching project files               |
+| [Images and screenshots](./docs/user/images-and-screenshots.md) | Pasting images and viewing agent screenshots                 |
+| [Source control](./docs/user/source-control.md)                 | Diffs, branches, worktrees, commits, checkpoints             |
+| [Keyboard shortcuts](./docs/user/keybindings.md)                | Every shortcut and how to remap it                           |
+| [Product decisions](./docs/product-differences.md)              | What matches upstream and what changes for Coder             |
 
 ## How this differs from upstream T3 Code
 
 T3 Coder is a Coder-only fork of the open-source [T3 Code](https://github.com/pingdotgg/t3code).
 It keeps the T3 Code interface and developer workflow but specializes it for Coder-managed Linux
-workspaces: no desktop or mobile apps, no hosted web or relay service, no telemetry or
-auto-update, Claude Code as the only agent, and repository-local source control without hosted
-pull-request integrations. Where upstream and T3 Coder share behavior, upstream's documentation is
-the source of truth; T3 Coder's guides adapt it and note the differences.
+workspaces: no desktop or mobile apps, no hosted web or relay service, no telemetry or auto-update,
+only Codex and Claude Code as providers, and repository-local source control without hosted
+pull-request integrations. MCP servers and provider app integrations are disabled. Where upstream
+and T3 Coder share behavior, upstream's documentation is the source of truth; T3 Coder's guides
+adapt it and note the differences.
 
 The complete runtime and policy boundary is documented for software-intake review in
 [the architecture note](./docs/internals/coder-only.md) and

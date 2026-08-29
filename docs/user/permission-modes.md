@@ -1,27 +1,27 @@
 # Permission modes
 
-A permission mode controls how much Claude does on its own and when it stops to ask you.
+A permission mode controls how much the selected agent does on its own and when it stops to ask
+you.
 
-The mode is set per thread, from the mode control in the message composer. Changing it in one
-thread does not change any other thread. A thread created from inside another thread keeps that
-thread's mode; otherwise new threads start in **Full access** unless you pick something else
-before sending.
+The mode is set per thread from the mode control in the message composer. Changing it in one thread
+does not change any other thread. A thread created from inside another thread keeps that thread's
+mode; otherwise new threads start in **Full access** unless you pick something else before sending.
 
 ## The modes
 
-**Supervised**: ask before commands and file changes. Claude pauses and shows you what it wants to
-run or edit, and waits for approval. Work outside the workspace is restricted.
+**Supervised** asks before commands and file changes. Use it when you want to inspect actions before
+they happen. Work outside the workspace remains restricted.
 
-**Auto-accept edits**: auto-approve edits, ask before other actions. File changes go through
-without prompting; commands and anything else still stop for approval.
+**Auto-accept edits** applies file changes without prompting while still asking before other
+actions.
 
-**Auto**: routine actions proceed without you; risky ones still ask. Claude uses its own auto
-permission mode for this.
+**Auto** lets supported providers approve routine actions while still asking about risky ones.
+Provider policy decides the exact approval boundary.
 
-**Full access**: allow commands and edits without prompts. The default. Claude runs unattended
-until it finishes or asks a question of its own.
+**Full access** allows commands and edits without approval prompts. The agent can still stop to ask
+a question.
 
-Approvals appear inline in the conversation. Approve or reject one and Claude continues from
+Approvals appear inline in the conversation. Approve or reject one and the agent continues from
 there.
 
 ## Choosing a mode
@@ -35,11 +35,21 @@ run an unfamiliar task.
 **Auto-accept edits** suits refactors where the edits are the point and you only care about the
 shell commands.
 
-## How modes map to Claude
+Use **Auto** when you want routine work to proceed while retaining provider-supported risk review.
 
-Each mode translates onto Claude Code's own approval settings, managed by T3 Coder — you do not
-configure Claude's permission flags yourself. The labels above describe what you get; the exact
-translation is internal and may change.
+## Availability depends on the provider
 
-T3 Coder runs every managed session with a strict, empty MCP configuration: no filesystem or
-claude.ai MCP servers are attached, and free-form Claude launch flags are not exposed.
+T3 Coder maps these product modes to each provider's own approval and sandbox controls. The labels
+describe the user experience; the provider-specific implementation can differ.
+
+The menu shows only modes supported by the selected provider and model. Codex also reports
+workspace configuration requirements, and T3 Coder removes any mode that those requirements do not
+permit. While provider capabilities are unknown, T3 Coder limits the menu to **Supervised** and
+**Auto-accept edits**.
+
+If a previously selected mode becomes unavailable, T3 Coder uses the first supported mode instead
+of sending an unsupported configuration to the provider.
+
+Permission mode does not enable features outside the T3 Coder product boundary. T3 Coder runs
+managed Codex and Claude sessions without MCP servers or provider app integrations, and does not
+expose free-form provider launch flags.

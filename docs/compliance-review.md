@@ -1,9 +1,23 @@
-# Software intake and compliance review
+# Security and data handling
 
-This document describes what the `coder-only` source distribution does. It is review evidence, not
-an assertion that any employer has approved the software.
+T3 Coder is designed around a simple product promise: development work stays in the selected Coder
+workspace, the browser interface stays local, and connections outside the computer remain owned by
+Coder or the workspace provider.
 
-## Runtime process and network inventory
+Reviewers can expect:
+
+- repositories, prompts, responses, sessions, terminals, checkpoints, and the application database
+  to remain in the workspace;
+- the local app to remember only non-secret Coder targets and explicit port-forward rules;
+- Coder to own deployment authentication and provider CLIs to own provider authentication;
+- no general upload, download, synchronization, hosted source-control, MCP, or app-integration
+  surface;
+- workspace lifecycle and port-forward actions to remain explicit and visible to the user.
+
+This document provides software-intake evidence for those product promises. It is not an assertion
+that any employer has approved the software.
+
+## How connections are used
 
 | Source             | Destination                    | Mechanism                             | Purpose                                                |
 | ------------------ | ------------------------------ | ------------------------------------- | ------------------------------------------------------ |
@@ -36,7 +50,7 @@ installed Codex, Claude, or Coder executables remain subject to the workspace an
 policy; T3 cannot make those external programs networkless while still connecting to Coder and the
 provider backends.
 
-## Data ownership
+## Where data lives
 
 The T3-owned local profile is limited to non-secret Coder deployment URLs, optional Coder executable
 paths, workspace targets, and structured port-forward rules. UI preferences may use browser storage. Repositories, prompts,
@@ -56,7 +70,7 @@ writes a plaintext session token in each directory. The gateway never asks for, 
 or writes those tokens. Provider authentication exists only in the workspace and is owned by the
 installed Codex or Claude Code CLI.
 
-## Removed and prohibited capabilities
+## Capabilities outside the product
 
 - Electron, native desktop packaging, mobile, hosted web, relay, Tailscale, Cloudflare, OAuth,
   Clerk, telemetry, auto-update, and browser preview;
@@ -80,7 +94,7 @@ exception. Both helper and clipboard-image SCP use `coder ssh --stdio` as their 
 Screenshot artifact display uses the already-running helper RPC and does not spawn SCP or another
 connection.
 
-## Source ZIP and installation review
+## Distribution review
 
 The GitHub source ZIP for the default `coder-only` branch contains only the selected commit's files;
 it does not contain Git history or `node_modules`. Large vendored reference repositories, editor
