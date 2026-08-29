@@ -235,6 +235,111 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
+  it.effect("creates a fork merge request from the source project into the current target", () =>
+    Effect.gen(function* () {
+      mockedRun
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              JSON.stringify({
+                id: 100,
+                path: "project",
+                path_with_namespace: "group/project",
+              }),
+            ),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+
+      const glab = yield* GitLabCli.GitLabCli;
+      yield* glab.createMergeRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "contributor:feature/provider",
+        source: {
+          owner: "contributor",
+          repository: "contributor/project",
+          refName: "feature/provider",
+        },
+        title: "Provider MR",
+        bodyFile: "/tmp/t3-mr-body.md",
+      });
+
+      expect(mockedRun).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ args: ["api", "projects/:fullpath"] }),
+      );
+      expect(mockedRun).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          args: expect.arrayContaining([
+            "projects/contributor%2Fproject/merge_requests",
+            "target_project_id=100",
+          ]),
+        }),
+      );
+      expect(mockedRun.mock.calls[1]?.[0].args).not.toContain(
+        "source_project_id=contributor/project",
+      );
+    }),
+  );
+
+  it.effect("resolves an explicit target project for a fork merge request", () =>
+    Effect.gen(function* () {
+      mockedRun
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              JSON.stringify({
+                id: 200,
+                path: "project",
+                path_with_namespace: "contributor/project",
+              }),
+            ),
+          ),
+        )
+        .mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              JSON.stringify({
+                id: 100,
+                path: "project",
+                path_with_namespace: "group/project",
+              }),
+            ),
+          ),
+        )
+        .mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+
+      const glab = yield* GitLabCli.GitLabCli;
+      yield* glab.createMergeRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "feature/provider",
+        target: {
+          repository: "group/project",
+          refName: "main",
+        },
+        title: "Provider MR",
+        bodyFile: "/tmp/t3-mr-body.md",
+      });
+
+      expect(mockedRun).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ args: ["api", "projects/group%2Fproject"] }),
+      );
+      expect(mockedRun).toHaveBeenNthCalledWith(
+        3,
+        expect.objectContaining({
+          args: expect.arrayContaining([
+            "projects/:fullpath/merge_requests",
+            "target_project_id=100",
+          ]),
+        }),
+      );
+    }),
+  );
+
   it.effect("creates repositories under an explicit namespace", () =>
     Effect.gen(function* () {
       mockedRun

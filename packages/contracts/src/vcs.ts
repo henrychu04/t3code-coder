@@ -38,6 +38,20 @@ export const VcsListWorkspaceFilesResult = Schema.Struct({
 });
 export type VcsListWorkspaceFilesResult = typeof VcsListWorkspaceFilesResult.Type;
 
+export const VcsRemote = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  pushUrl: Schema.Option(TrimmedNonEmptyString),
+  isPrimary: Schema.Boolean,
+});
+export type VcsRemote = typeof VcsRemote.Type;
+
+export const VcsListRemotesResult = Schema.Struct({
+  remotes: Schema.Array(VcsRemote),
+  freshness: VcsFreshness,
+});
+export type VcsListRemotesResult = typeof VcsListRemotesResult.Type;
+
 export interface VcsProcessErrorContext {
   readonly operation: string;
   readonly command: string;

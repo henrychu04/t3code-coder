@@ -6,7 +6,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, GitCommandError } from "@t3tools/contracts";
 
 import { CoderVcsStatus, layer } from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
@@ -90,11 +90,9 @@ describe("CoderVcsStatus", () => {
 
     return Effect.gen(function* () {
       const vcsStatus = yield* CoderVcsStatus;
-      const eventsFiber = yield* vcsStatus.stream("/repo").pipe(
-        Stream.take(3),
-        Stream.runCollect,
-        Effect.forkChild,
-      );
+      const eventsFiber = yield* vcsStatus
+        .stream("/repo")
+        .pipe(Stream.take(3), Stream.runCollect, Effect.forkChild);
       yield* Effect.yieldNow;
       expect(remoteReads).toBe(1);
       yield* TestClock.adjust(Duration.seconds(5));
@@ -105,6 +103,58 @@ describe("CoderVcsStatus", () => {
         "remoteUpdated",
       ]);
       expect(remoteReads).toBe(2);
+    }).pipe(Effect.provide(testLayer));
+  });
+
+  it.effect("keeps polling after a transient Git failure", () => {
+    let remoteReads = 0;
+    const testLayer = layer.pipe(
+      Layer.provide(
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          invalidateStatus: () => Effect.void,
+          localStatus: () => Effect.succeed(status("main")),
+          remoteStatus: () => {
+            remoteReads += 1;
+            return remoteReads === 2
+              ? Effect.fail(
+                  new GitCommandError({
+                    operation: "test.poll",
+                    command: "git",
+                    cwd: "/repo",
+                    detail: "Transient upstream failure.",
+                  }),
+                )
+              : Effect.succeed(null);
+          },
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.mock(ServerSettings.ServerSettingsService)({
+          getSettings: Effect.succeed({
+            ...DEFAULT_SERVER_SETTINGS,
+            automaticGitFetchInterval: Duration.seconds(5),
+          }),
+        }),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      const vcsStatus = yield* CoderVcsStatus;
+      const eventsFiber = yield* vcsStatus
+        .stream("/repo")
+        .pipe(Stream.take(3), Stream.runCollect, Effect.forkChild);
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(Duration.seconds(5));
+      yield* Effect.yieldNow;
+      yield* TestClock.adjust(Duration.seconds(5));
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+
+      expect(events.map((event) => event._tag)).toEqual([
+        "snapshot",
+        "localUpdated",
+        "remoteUpdated",
+      ]);
+      expect(remoteReads).toBe(3);
     }).pipe(Effect.provide(testLayer));
   });
 });

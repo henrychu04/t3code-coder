@@ -40,6 +40,15 @@ function makeDriver(calls: string[]): VcsDriver.VcsDriver["Service"] {
           expiresAt: Option.none(),
         },
       }),
+    listRemotes: () =>
+      Effect.succeed({
+        remotes: [],
+        freshness: {
+          source: "live-local",
+          observedAt: TEST_EPOCH,
+          expiresAt: Option.none(),
+        },
+      }),
     filterIgnoredPaths: (_cwd, relativePaths) => Effect.succeed(relativePaths),
     initRepository: (input) =>
       Effect.sync(() => {

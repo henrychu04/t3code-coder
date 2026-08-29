@@ -233,7 +233,11 @@ const createTrace2Monitor = Effect.fn("GitVcsDriver.createTrace2Monitor")(functi
             ? Math.max(0, Date.now() - started.startedAtMs)
             : null;
       if (progress.onHookFinished) {
-        yield* progress.onHookFinished({ hookName: started?.hookName ?? hookName, exitCode, durationMs });
+        yield* progress.onHookFinished({
+          hookName: started?.hookName ?? hookName,
+          exitCode,
+          durationMs,
+        });
       }
     }
   });
@@ -265,10 +269,10 @@ const createTrace2Monitor = Effect.fn("GitVcsDriver.createTrace2Monitor")(functi
 
   const flush = Effect.gen(function* () {
     yield* readDelta;
-    const remainder = yield* Ref.modify(tail, (state) => [
-      state.remainder.trim(),
-      { ...state, remainder: "" },
-    ] as const);
+    const remainder = yield* Ref.modify(
+      tail,
+      (state) => [state.remainder.trim(), { ...state, remainder: "" }] as const,
+    );
     if (remainder) yield* handleLine(remainder);
   }).pipe(Effect.ignore);
   yield* Effect.addFinalizer(() => flush);
@@ -356,6 +360,23 @@ function parseRemoteRef(
     return branchName.length > 0 ? { remoteName, branchName } : null;
   }
   return null;
+}
+
+function parseGitRemoteVerboseOutput(
+  output: string,
+): Map<string, { url?: string; pushUrl?: string }> {
+  const remotes = new Map<string, { url?: string; pushUrl?: string }>();
+  for (const line of output.split("\n")) {
+    const match = /^(\S+)\s+(\S+)\s+\((fetch|push)\)$/u.exec(line.trim());
+    if (!match) continue;
+    const [, name, url, direction] = match;
+    if (!name || !url) continue;
+    const remote = remotes.get(name) ?? {};
+    if (direction === "fetch") remote.url = url;
+    else remote.pushUrl = url;
+    remotes.set(name, remote);
+  }
+  return remotes;
 }
 
 function parsePorcelainV2Paths(stdout: string): ReadonlyArray<string> {
@@ -592,6 +613,40 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             ),
       ),
     );
+
+  const listRemotes: VcsDriver.VcsDriver["Service"]["listRemotes"] = Effect.fn("listRemotes")(
+    function* (cwd) {
+      const result = yield* gitCommand(
+        vcsProcess,
+        "GitVcsDriver.listRemotes",
+        cwd,
+        ["remote", "-v"],
+        { allowNonZeroExit: true, timeoutMs: 5_000, maxOutputBytes: 64 * 1024 },
+      );
+      if (result.exitCode !== 0) {
+        return yield* new VcsProcessExitError({
+          operation: "GitVcsDriver.listRemotes",
+          command: "git remote -v",
+          cwd,
+          exitCode: result.exitCode,
+          detail: result.stderr.trim() || "git remote -v failed",
+        });
+      }
+      const remotes = [...parseGitRemoteVerboseOutput(result.stdout)].flatMap(([name, remote]) =>
+        remote.url
+          ? [
+              {
+                name,
+                url: remote.url,
+                pushUrl: remote.pushUrl ? Option.some(remote.pushUrl) : Option.none(),
+                isPrimary: name === "origin",
+              },
+            ]
+          : [],
+      );
+      return { remotes, freshness: yield* nowFreshness() };
+    },
+  );
 
   const filterIgnoredPaths: VcsDriver.VcsDriver["Service"]["filterIgnoredPaths"] = Effect.fn(
     "filterIgnoredPaths",
@@ -907,6 +962,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
     detectRepository,
     isInsideWorkTree,
     listWorkspaceFiles,
+    listRemotes,
     filterIgnoredPaths,
     initRepository,
   };

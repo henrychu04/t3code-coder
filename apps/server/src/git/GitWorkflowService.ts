@@ -1118,7 +1118,7 @@ export const layer = Layer.effect(
           },
         );
         const reuseExistingWorktree = Effect.fn("preparePullRequestThread.reuseExistingWorktree")(
-          function* (worktreePath: string, checkedOutBranch: string) {
+          function* (worktreePath: string, checkedOutBranch: string, newlyCreated = false) {
             if (checkedOutBranch !== localBranch) {
               yield* configureUpstream(worktreePath, checkedOutBranch);
               return {
@@ -1142,7 +1142,7 @@ export const layer = Layer.effect(
                 }).pipe(Effect.as({ moved: false, onTarget: false } as const)),
               ),
             );
-            if (refreshed.moved) yield* maybeRunSetupScript(worktreePath);
+            if (newlyCreated || refreshed.moved) yield* maybeRunSetupScript(worktreePath);
             return {
               pullRequest,
               branch: localBranch,
@@ -1168,6 +1168,18 @@ export const layer = Layer.effect(
         });
 
         const beforeFetch = yield* findLocalHeadBranch();
+        if (beforeFetch && beforeFetch.worktreePath === null) {
+          const worktree = yield* git.createWorktree({
+            cwd: input.cwd,
+            refName: beforeFetch.name,
+            path: null,
+          });
+          return yield* reuseExistingWorktree(
+            worktree.worktree.path,
+            worktree.worktree.refName,
+            true,
+          );
+        }
         const reusedBeforeFetch = yield* reuseOrReject(beforeFetch);
         if (reusedBeforeFetch) return reusedBeforeFetch;
 

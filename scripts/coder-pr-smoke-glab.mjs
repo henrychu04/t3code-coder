@@ -148,6 +148,10 @@ if (args[0] === "mr" && args[1] === "view") {
 }
 
 if (args[0] === "mr") {
+  if (state.writeAccess !== "writable") {
+    console.error("GitLab write endpoints are unavailable in this workspace");
+    process.exit(1);
+  }
   const subcommand = args[1];
   if (subcommand === "update") {
     if (args.includes("--draft")) state.draft = true;
@@ -176,10 +180,6 @@ const method = optionValue(args, "--method") ?? "GET";
 let body = null;
 if (stdin.trim()) body = JSON.parse(stdin);
 
-if (method !== "GET" && path !== "projects/0/merge_requests") {
-  state.actions.push({ args, body });
-}
-
 if (path === "projects/0/merge_requests" && method === "POST") {
   if (state.writeAccess === "policy-blocked") {
     console.error("GitLab write endpoints are blocked by workspace policy");
@@ -192,9 +192,13 @@ if (path === "projects/0/merge_requests" && method === "POST") {
   process.exit(1);
 }
 
-if (method !== "GET" && state.writeAccess === "policy-blocked") {
-  console.error("GitLab write endpoints are blocked by workspace policy");
+if (method !== "GET" && state.writeAccess !== "writable") {
+  console.error("GitLab write endpoints are unavailable in this workspace");
   process.exit(1);
+}
+
+if (method !== "GET") {
+  state.actions.push({ args, body });
 }
 
 if (path === "user") {

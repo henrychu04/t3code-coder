@@ -96,6 +96,7 @@ const CoderVcsDriverRegistryLive = VcsDriverRegistry.layer.pipe(
 
 const CoderSourceControlLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provideMerge(GitLabCli.layer),
+  Layer.provideMerge(CoderVcsDriverRegistryLive),
 );
 
 const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(

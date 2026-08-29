@@ -1,8 +1,8 @@
 # Source control
 
-Source control in T3 Coder is repository-local. Everything happens inside the workspace copy of
-the repository, which makes it fast and safe to use in environments where a hosted Git integration
-is not welcome.
+Source control in T3 Coder runs inside the Coder workspace. Repository operations use workspace
+Git, and hosted source-control operations use the workspace-installed GitLab CLI (`glab`). The
+browser and local gateway never receive GitLab credentials.
 
 ## What you can do
 
@@ -11,6 +11,10 @@ is not welcome.
 - **Branches** — create, switch, and manage branches from the branch toolbar.
 - **Worktrees** — run threads in their own worktree so parallel lines of work stay isolated.
 - **Commits** — stage and commit from the panel.
+- **Sync and publishing** — fetch, pull, push, clone, add remotes, and publish repositories without
+  moving Git execution out of the workspace.
+- **GitLab merge requests** — create, check out, review, comment on, update, merge, close, reopen,
+  and manage reviewers from the merge-request views.
 - **Checkpoints** — every turn gets a checkpoint you can compare against and restore to.
 
 ## Worktrees
@@ -36,8 +40,10 @@ Each turn records a checkpoint of the repository state. Open a checkpoint to see
 changed — including diffs against earlier checkpoints — and restore to roll the repository back to
 that point. Checkpoints are the local, workspace-side safety net; nothing is pushed anywhere.
 
-## What it deliberately does not do
+## GitLab access
 
-T3 Coder does not fetch, pull, push, or create pull requests, and it has no GitHub, GitLab, or
-other hosted integrations. Do that from a terminal in the workspace or your normal Git tooling.
-This keeps credentials for your Git host out of T3 Coder entirely.
+GitLab authentication remains entirely owned by `glab` in the workspace. T3 Coder never asks for,
+reads, stores, or logs a GitLab token. A workspace-level write probe runs once before the first
+GitLab mutation. If workspace policy blocks writes, authentication is unavailable, or the result is
+indeterminate, GitLab write actions stay disabled while read-only merge-request features continue
+to work. T3 Coder does not register GitHub, Bitbucket, Azure DevOps, or another hosted provider.

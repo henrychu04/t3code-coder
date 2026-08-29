@@ -1,11 +1,15 @@
+import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import {
   SourceControlProviderError,
   type SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
 import type { SourceControlProviderKind } from "@t3tools/contracts";
+import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
 
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
 import * as SourceControlProvider from "./SourceControlProvider.ts";
@@ -15,7 +19,11 @@ import {
   type SourceControlProviderDiscoverySpec,
 } from "./SourceControlProviderDiscovery.ts";
 import { ServerConfig } from "../config.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+
+const PROVIDER_DETECTION_CACHE_CAPACITY = 2_048;
+const PROVIDER_DETECTION_CACHE_TTL = Duration.seconds(5);
 
 export interface SourceControlProviderRegistration {
   readonly kind: SourceControlProviderKind;
@@ -113,6 +121,25 @@ function unsupportedProvider(
   });
 }
 
+function selectProviderContext(
+  remotes: ReadonlyArray<{ readonly name: string; readonly url: string }>,
+): SourceControlProvider.SourceControlProviderContext | null {
+  const candidates: Array<SourceControlProvider.SourceControlProviderContext> = [];
+  for (const remote of remotes) {
+    const provider = detectSourceControlProviderFromRemoteUrl(remote.url);
+    if (provider) {
+      candidates.push({ provider, remoteName: remote.name, remoteUrl: remote.url });
+    }
+  }
+
+  return (
+    candidates.find((candidate) => candidate.remoteName === "origin") ??
+    candidates.find((candidate) => candidate.provider.kind !== "unknown") ??
+    candidates[0] ??
+    null
+  );
+}
+
 function bindProviderContext(
   provider: SourceControlProvider.SourceControlProvider["Service"],
   context: SourceControlProvider.SourceControlProviderContext | null,
@@ -161,6 +188,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
   function* (registrations: ReadonlyArray<SourceControlProviderRegistration>) {
     const config = yield* ServerConfig;
     const process = yield* VcsProcess.VcsProcess;
+    const vcsRegistry = yield* VcsDriverRegistry.VcsDriverRegistry;
     const providers = new Map<
       SourceControlProviderKind,
       SourceControlProvider.SourceControlProvider["Service"]
@@ -170,9 +198,53 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
     const get: SourceControlProviderRegistry["Service"]["get"] = (kind) =>
       Effect.succeed(providers.get(kind) ?? unsupportedProvider(kind));
 
+    const detectProviderContext = Effect.fn("SourceControlProviderRegistry.detectProviderContext")(
+      function* (cwd: string) {
+        const handle = yield* vcsRegistry.resolve({ cwd }).pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "unknown",
+                operation: "detectProvider",
+                cwd,
+                detail: "Failed to detect source control provider.",
+                cause: error,
+              }),
+          ),
+        );
+        const remotes = yield* handle.driver.listRemotes(cwd).pipe(
+          Effect.mapError(
+            (error) =>
+              new SourceControlProviderError({
+                provider: "unknown",
+                operation: "detectProvider",
+                cwd,
+                detail: "Failed to detect source control provider.",
+                cause: error,
+              }),
+          ),
+        );
+        return yield* refineUnknownRemoteProvider({
+          specs: discoverySpecs,
+          process,
+          cwd,
+          context: selectProviderContext(remotes.remotes),
+        });
+      },
+    );
+
+    const providerContextCache = yield* Cache.makeWith<
+      string,
+      SourceControlProvider.SourceControlProviderContext | null,
+      SourceControlProviderError
+    >(detectProviderContext, {
+      capacity: PROVIDER_DETECTION_CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? PROVIDER_DETECTION_CACHE_TTL : Duration.zero),
+    });
+
     const resolveHandle: SourceControlProviderRegistry["Service"]["resolveHandle"] = (input) =>
       (input.context === undefined
-        ? Effect.succeed(null)
+        ? Cache.get(providerContextCache, input.cwd)
         : refineUnknownRemoteProvider({
             specs: discoverySpecs,
             process,

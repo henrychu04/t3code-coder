@@ -359,6 +359,86 @@ layer("GitWorkflowService.preparePullRequestThread", (it) => {
     }),
   );
 
+  it.effect("preserves local commits on a branch that is not attached to a worktree", () =>
+    Effect.gen(function* () {
+      listRefs.mockReturnValue(
+        Effect.succeed({
+          refs: [
+            {
+              name: "feature/panel",
+              isRemote: false,
+              worktreePath: null,
+              current: false,
+              isDefault: false,
+            },
+          ],
+          isRepo: true,
+          hasPrimaryRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
+      createWorktree.mockReturnValueOnce(
+        Effect.succeed({
+          worktree: {
+            path: "/worktrees/project/feature-panel",
+            refName: "feature/panel",
+          },
+        }),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "rev-parse") {
+          const revision = input.args[1];
+          return Effect.succeed(
+            gitOutput(
+              revision === "@{upstream}"
+                ? "base\n"
+                : revision === "refs/t3code/merge-requests/42/head"
+                  ? "new\n"
+                  : "local\n",
+            ),
+          );
+        }
+        if (input.args[0] === "merge-base") return Effect.succeed(gitOutput("", 1));
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.preparePullRequestThread({
+        cwd: "/repo",
+        reference: "42",
+        mode: "worktree",
+        threadId: ThreadId.make("thread-1"),
+      });
+
+      expect(createWorktree).toHaveBeenCalledWith({
+        cwd: "/repo",
+        refName: "feature/panel",
+        path: null,
+      });
+      expect(
+        execute.mock.calls.some(
+          (call) =>
+            call[0].args[0] === "fetch" &&
+            call[0].args.some((arg) => arg.endsWith(":refs/heads/feature/panel")),
+        ),
+      ).toBe(false);
+      expect(
+        execute.mock.calls.some(
+          (call) => call[0].args[0] === "reset" || call[0].args[0] === "merge",
+        ),
+      ).toBe(false);
+      expect(runSetupScript).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({
+        worktreePath: "/worktrees/project/feature-panel",
+        isOnPullRequestHead: false,
+      });
+    }),
+  );
+
   it.effect("uses a namespaced local branch and fork remote for cross-project MRs", () =>
     Effect.gen(function* () {
       getChangeRequest.mockReturnValueOnce(

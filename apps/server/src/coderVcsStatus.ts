@@ -79,12 +79,24 @@ export const layer = Layer.effect(
                 : Stream.tick(interval).pipe(
                     Stream.drop(1),
                     Stream.mapEffect(() =>
-                      Effect.all([readLocal(cwd), readRemote(cwd, true)] as const),
+                      Effect.all([readLocal(cwd), readRemote(cwd, true)] as const).pipe(
+                        Effect.map(Result.succeed),
+                        Effect.catch((cause) =>
+                          Effect.logWarning("Coder VCS status polling cycle failed", {
+                            cwd,
+                            cause,
+                          }).pipe(Effect.as(Result.failVoid)),
+                        ),
+                      ),
                     ),
+                    Stream.filterMap((result) => result),
                     Stream.flatMap(([nextLocal, nextRemote]) =>
                       Stream.make(
                         { _tag: "localUpdated", local: nextLocal } satisfies VcsStatusStreamEvent,
-                        { _tag: "remoteUpdated", remote: nextRemote } satisfies VcsStatusStreamEvent,
+                        {
+                          _tag: "remoteUpdated",
+                          remote: nextRemote,
+                        } satisfies VcsStatusStreamEvent,
                       ),
                     ),
                   );

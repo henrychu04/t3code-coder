@@ -18,6 +18,7 @@ const TEMPLATE_PATHS = [
 ] as const;
 
 const TEMPLATE_DIRECTORIES = [
+  ".gitlab/merge_request_templates",
   ".github/PULL_REQUEST_TEMPLATE",
   "PULL_REQUEST_TEMPLATE",
   "docs/PULL_REQUEST_TEMPLATE",
@@ -108,8 +109,19 @@ function readTemplateDirectory(input: {
       return !relativePath.includes("/") && relativePath.toLowerCase().endsWith(".md");
     });
 
+    const defaultTemplate = candidates.find(
+      (entry) => entry.path.slice(prefix.length).toLowerCase() === "default.md",
+    );
+    if (defaultTemplate !== undefined) {
+      const template = yield* readTemplateBlob({ ...input, entry: defaultTemplate });
+      if (Option.isSome(template)) {
+        return { _tag: "Template", template: template.value } as const;
+      }
+    }
+
     const templates: string[] = [];
     for (const entry of candidates) {
+      if (entry === defaultTemplate) continue;
       const template = yield* readTemplateBlob({ ...input, entry });
       if (Option.isSome(template)) {
         templates.push(template.value);

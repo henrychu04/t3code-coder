@@ -594,6 +594,12 @@ describe("decodeOwnAwardIdJson", () => {
     ).toBe(102);
   });
 
+  it("matches the reader's GitLab username case-insensitively", () => {
+    expect(
+      expectSuccess(decodeOwnAwardIdJson(awards, { content: "thumbs-up", viewer: "BILAL" })),
+    ).toBe(102);
+  });
+
   it("returns nothing where the reader has no award of that name", () => {
     expect(
       expectSuccess(decodeOwnAwardIdJson(awards, { content: "heart", viewer: "bilal" })),

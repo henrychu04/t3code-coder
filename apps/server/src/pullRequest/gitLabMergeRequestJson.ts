@@ -928,12 +928,13 @@ export function decodeOwnAwardIdJson(
     return Result.fail(decoded.failure);
   }
   const name = gitLabAwardName(input.content);
+  const viewer = input.viewer.trim().toLowerCase();
   for (const entry of decoded.success) {
     const award = decodeAward(entry);
     if (Exit.isFailure(award)) continue;
     const value = award.value;
     if (trimmed(value.name)?.toLowerCase() !== name) continue;
-    if (trimmed(value.user?.username) !== input.viewer) continue;
+    if (trimmed(value.user?.username)?.toLowerCase() !== viewer) continue;
     return Result.succeed(value.id);
   }
   return Result.succeed(null);

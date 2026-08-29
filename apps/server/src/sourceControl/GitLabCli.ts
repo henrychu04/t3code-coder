@@ -232,7 +232,12 @@ export class GitLabRepositoryDecodeError extends Schema.TaggedErrorClass<GitLabR
   "GitLabRepositoryDecodeError",
   {
     ...gitLabCliDecodeErrorContext,
-    operation: Schema.Literals(["getRepositoryCloneUrls", "createRepository", "getDefaultBranch"]),
+    operation: Schema.Literals([
+      "getRepositoryCloneUrls",
+      "createRepository",
+      "createMergeRequest",
+      "getDefaultBranch",
+    ]),
     repository: Schema.optional(Schema.String),
   },
 ) {
@@ -383,6 +388,12 @@ const RawGitLabDefaultBranchSchema = Schema.Struct({
   default_branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
 });
 
+const RawGitLabProjectIdentitySchema = Schema.Struct({
+  id: Schema.Number,
+  path: TrimmedNonEmptyString,
+  path_with_namespace: TrimmedNonEmptyString,
+});
+
 const RawGitLabNamespaceSchema = Schema.Struct({
   id: Schema.Number,
 });
@@ -392,6 +403,9 @@ const decodeGitLabRepositoryCloneUrls = Schema.decodeEffect(
 );
 const decodeGitLabDefaultBranch = Schema.decodeEffect(
   Schema.fromJsonString(RawGitLabDefaultBranchSchema),
+);
+const decodeGitLabProjectIdentity = Schema.decodeEffect(
+  Schema.fromJsonString(RawGitLabProjectIdentitySchema),
 );
 const decodeGitLabNamespace = Schema.decodeEffect(Schema.fromJsonString(RawGitLabNamespaceSchema));
 
@@ -429,12 +443,6 @@ function sourceRefName(input: {
   readonly source?: SourceControlProvider.SourceControlRefSelector;
 }): string {
   return input.source?.refName ?? normalizeHeadSelector(input.headSelector);
-}
-
-function sourceProjectIdentifier(
-  source: SourceControlProvider.SourceControlRefSelector | undefined,
-): string | null {
-  return source?.repository ?? source?.owner ?? null;
 }
 
 function toSummaryWithOptionalUpdatedAt(
@@ -544,6 +552,33 @@ export const make = Effect.gen(function* () {
           reference: input.reference,
         },
         error,
+      ),
+    );
+
+  const readProjectIdentity = (input: { readonly cwd: string; readonly repository?: string }) =>
+    execute({
+      cwd: input.cwd,
+      args: [
+        "api",
+        input.repository
+          ? `projects/${encodeURIComponent(input.repository)}`
+          : "projects/:fullpath",
+      ],
+    }).pipe(
+      Effect.map((result) => result.stdout.trim()),
+      Effect.flatMap((raw) =>
+        decodeGitLabProjectIdentity(raw).pipe(
+          Effect.mapError(
+            (cause) =>
+              new GitLabRepositoryDecodeError({
+                operation: "createMergeRequest",
+                command: "glab",
+                cwd: input.cwd,
+                ...(input.repository ? { repository: input.repository } : {}),
+                cause,
+              }),
+          ),
+        ),
       ),
     );
 
@@ -704,27 +739,57 @@ export const make = Effect.gen(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       );
     },
-    createMergeRequest: (input) => {
-      const sourceProject = sourceProjectIdentifier(input.source);
-      return executeWrite({
-        cwd: input.cwd,
-        args: [
-          "api",
-          "--method",
-          "POST",
-          "projects/:fullpath/merge_requests",
-          "--raw-field",
-          `source_branch=${sourceRefName(input)}`,
-          "--raw-field",
-          `target_branch=${input.target?.refName ?? input.baseBranch}`,
-          ...(sourceProject ? ["--raw-field", `source_project_id=${sourceProject}`] : []),
-          "--raw-field",
-          `title=${input.title}`,
-          "--field",
-          `description=@${input.bodyFile}`,
-        ],
-      }).pipe(Effect.asVoid);
-    },
+    createMergeRequest: (input) =>
+      Effect.gen(function* () {
+        const hasProjectSelector =
+          input.source?.repository !== undefined ||
+          input.source?.owner !== undefined ||
+          input.target?.repository !== undefined ||
+          input.target?.owner !== undefined;
+        const currentProject = hasProjectSelector
+          ? yield* readProjectIdentity({ cwd: input.cwd })
+          : null;
+        const selectedRepository = (
+          selector: SourceControlProvider.SourceControlRefSelector | undefined,
+        ) =>
+          selector?.repository ??
+          (selector?.owner && currentProject ? `${selector.owner}/${currentProject.path}` : null);
+        const sourceRepository = selectedRepository(input.source);
+        const targetRepository = selectedRepository(input.target);
+        const sourceIsCurrent =
+          sourceRepository === null ||
+          sourceRepository.toLowerCase() === currentProject?.path_with_namespace.toLowerCase();
+        const targetProjectId = targetRepository
+          ? targetRepository.toLowerCase() === currentProject?.path_with_namespace.toLowerCase()
+            ? currentProject.id
+            : (yield* readProjectIdentity({ cwd: input.cwd, repository: targetRepository })).id
+          : sourceIsCurrent
+            ? null
+            : currentProject?.id;
+
+        yield* executeWrite({
+          cwd: input.cwd,
+          args: [
+            "api",
+            "--method",
+            "POST",
+            sourceIsCurrent
+              ? "projects/:fullpath/merge_requests"
+              : `projects/${encodeURIComponent(sourceRepository!)}/merge_requests`,
+            "--raw-field",
+            `source_branch=${sourceRefName(input)}`,
+            "--raw-field",
+            `target_branch=${input.target?.refName ?? input.baseBranch}`,
+            ...(targetProjectId === null || targetProjectId === undefined
+              ? []
+              : ["--raw-field", `target_project_id=${targetProjectId}`]),
+            "--raw-field",
+            `title=${input.title}`,
+            "--field",
+            `description=@${input.bodyFile}`,
+          ],
+        });
+      }),
     getDefaultBranch: (input) =>
       execute({
         cwd: input.cwd,
