@@ -5,7 +5,14 @@ import { createJSONStorage, persist } from "zustand/middleware";
 
 import { createMemoryStorage } from "./lib/storage";
 
-export const RIGHT_PANEL_KINDS = ["diff", "files", "file", "terminal", "agents"] as const;
+export const RIGHT_PANEL_KINDS = [
+  "diff",
+  "files",
+  "file",
+  "terminal",
+  "pull-request",
+  "agents",
+] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
 export type RightPanelSurface =
@@ -26,6 +33,15 @@ export type RightPanelSurface =
       revealLine: number | null;
       revealRequestId: number;
     }
+  | { id: "pull-request"; kind: "pull-request" }
+  | {
+      id: `pull-request:${string}`;
+      kind: "pull-request";
+      environmentId?: string;
+      projectId: string;
+      repository: string;
+      number: number;
+    }
   | { id: "agents"; kind: "agents" };
 
 export interface ThreadRightPanelState {
@@ -37,6 +53,10 @@ export interface ThreadRightPanelState {
 interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
   open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
+  openPullRequest: (
+    ref: ScopedThreadRef,
+    target: { environmentId?: string; projectId: string; repository: string; number: number },
+  ) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
@@ -52,6 +72,7 @@ interface RightPanelStoreState {
   closeOtherSurfaces: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeSurfacesToRight: (ref: ScopedThreadRef, surfaceId: string) => void;
   closeAllSurfaces: (ref: ScopedThreadRef) => void;
+  show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
   toggle: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
@@ -73,12 +94,16 @@ const updateThread = (
   return { ...byThreadKey, [key]: update(byThreadKey[key] ?? EMPTY_THREAD_STATE) };
 };
 
-const singletonSurface = (kind: "diff" | "files" | "agents"): RightPanelSurface => {
+const singletonSurface = (
+  kind: "diff" | "files" | "pull-request" | "agents",
+): RightPanelSurface => {
   switch (kind) {
     case "diff":
       return { id: "diff", kind };
     case "files":
       return { id: "files", kind };
+    case "pull-request":
+      return { id: "pull-request", kind };
     case "agents":
       return { id: "agents", kind };
   }
@@ -109,6 +134,43 @@ const terminalSurface = (terminalId: string): RightPanelSurface => ({
   activeTerminalId: terminalId,
 });
 
+export type PullRequestSurface = Extract<
+  RightPanelSurface,
+  { kind: "pull-request"; number: number }
+>;
+
+export function isPullRequestSurface(surface: RightPanelSurface | null): surface is PullRequestSurface {
+  return surface?.kind === "pull-request" && "number" in surface;
+}
+
+export function updatePullRequestTabStatus<Status extends { state: unknown; isDraft: boolean }>(
+  statuses: Readonly<Record<string, Status>>,
+  surfaceId: string,
+  status: Status,
+): Readonly<Record<string, Status>> {
+  return statuses[surfaceId]?.state === status.state &&
+    statuses[surfaceId]?.isDraft === status.isDraft
+    ? statuses
+    : { ...statuses, [surfaceId]: status };
+}
+
+export function pullRequestSurface(target: {
+  environmentId?: string;
+  projectId: string;
+  repository: string;
+  number: number;
+}): PullRequestSurface {
+  const environment = target.environmentId ? `${encodeURIComponent(target.environmentId)}:` : "";
+  return {
+    id: `pull-request:${environment}${encodeURIComponent(target.projectId)}:${encodeURIComponent(target.repository)}:${target.number}`,
+    kind: "pull-request",
+    ...(target.environmentId ? { environmentId: target.environmentId } : {}),
+    projectId: target.projectId,
+    repository: target.repository,
+    number: target.number,
+  };
+}
+
 const upsert = (current: ThreadRightPanelState, surface: RightPanelSurface) => ({
   isOpen: true,
   activeSurfaceId: surface.id,
@@ -138,6 +200,12 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
             upsert(current, singletonSurface(kind)),
+          ),
+        })),
+      openPullRequest: (ref, target) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
+            upsert(current, pullRequestSurface(target)),
           ),
         })),
       openFile: (ref, relativePath, line) =>
@@ -274,6 +342,13 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
       closeAllSurfaces: (ref) =>
         set((state) => ({
           byThreadKey: updateThread(state.byThreadKey, ref, () => EMPTY_THREAD_STATE),
+        })),
+      show: (ref) =>
+        set((state) => ({
+          byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
+            ...current,
+            isOpen: current.surfaces.length > 0,
+          })),
         })),
       close: (ref) =>
         set((state) => ({

@@ -30,6 +30,8 @@ import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
 import type { ContextMenuItem } from "../localApiTypes";
+import { parsePullRequestReference } from "../pullRequestReference";
+import { GitLabIcon } from "./Icons";
 import { shouldLoadNextBranchPageAfterScroll } from "../state/paginatedBranches";
 import { usePaginatedBranches } from "../state/queries";
 import { useProject, useThread } from "../state/entities";
@@ -87,6 +89,7 @@ interface BranchToolbarBranchSelectorProps {
   onActiveThreadBranchOverrideChange?: (refName: string | null) => void;
   startFromOrigin: boolean;
   onStartFromOriginChange: (startFromOrigin: boolean) => void;
+  onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
 }
 
@@ -105,6 +108,7 @@ export function BranchToolbarBranchSelector({
   onActiveThreadBranchOverrideChange,
   startFromOrigin,
   onStartFromOriginChange,
+  onCheckoutPullRequestRequest,
   onComposerFocusRequest,
 }: BranchToolbarBranchSelectorProps) {
   const startFromOriginSwitchId = useId();
@@ -265,6 +269,7 @@ export function BranchToolbarBranchSelector({
     [refs],
   );
   const normalizedDeferredBranchQuery = deferredTrimmedBranchQuery.toLowerCase();
+  const pullRequestReference = parsePullRequestReference(trimmedBranchQuery);
   const isSelectingWorktreeBase =
     effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
   const canCreateBranch = !isSelectingWorktreeBase && trimmedBranchQuery.length > 0;
@@ -276,13 +281,18 @@ export function BranchToolbarBranchSelector({
   const createBranchItemValue = canCreateBranch
     ? `__create_new_branch__:${trimmedBranchQuery}`
     : null;
+  const checkoutPullRequestItemValue =
+    pullRequestReference && onCheckoutPullRequestRequest
+      ? `__checkout_merge_request__:${pullRequestReference}`
+      : null;
   const branchPickerItems = useMemo(() => {
     const items = [...branchNames];
     if (createBranchItemValue && !hasExactBranchMatch) {
       items.push(createBranchItemValue);
     }
+    if (checkoutPullRequestItemValue) items.unshift(checkoutPullRequestItemValue);
     return items;
-  }, [branchNames, createBranchItemValue, hasExactBranchMatch]);
+  }, [branchNames, checkoutPullRequestItemValue, createBranchItemValue, hasExactBranchMatch]);
   const filteredBranchPickerItems = useMemo(
     () =>
       normalizedDeferredBranchQuery.length === 0
@@ -292,9 +302,15 @@ export function BranchToolbarBranchSelector({
               itemValue,
               normalizedQuery: normalizedDeferredBranchQuery,
               createBranchItemValue,
+              checkoutPullRequestItemValue,
             }),
           ),
-    [branchPickerItems, createBranchItemValue, normalizedDeferredBranchQuery],
+    [
+      branchPickerItems,
+      checkoutPullRequestItemValue,
+      createBranchItemValue,
+      normalizedDeferredBranchQuery,
+    ],
   );
   const [resolvedActiveBranch, setOptimisticBranch] = useOptimistic(
     canonicalActiveBranch,
@@ -672,6 +688,33 @@ export function BranchToolbarBranchSelector({
   });
 
   function renderPickerItem(itemValue: string, index: number) {
+    if (checkoutPullRequestItemValue && itemValue === checkoutPullRequestItemValue) {
+      return (
+        <ComboboxItem
+          hideIndicator
+          key={itemValue}
+          index={index}
+          value={itemValue}
+          className="pe-2"
+          onClick={() => {
+            if (!pullRequestReference || !onCheckoutPullRequestRequest) return;
+            setIsBranchMenuOpen(false);
+            setBranchQuery("");
+            onCheckoutPullRequestRequest(pullRequestReference);
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2 py-1">
+            <GitLabIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex min-w-0 flex-col items-start">
+              <span className="truncate font-medium">Check out GitLab merge request</span>
+              <span className="truncate text-muted-foreground text-xs">
+                {pullRequestReference}
+              </span>
+            </span>
+          </div>
+        </ComboboxItem>
+      );
+    }
     if (createBranchItemValue && itemValue === createBranchItemValue) {
       return (
         <ComboboxItem
@@ -798,7 +841,11 @@ export function BranchToolbarBranchSelector({
                 data={filteredBranchPickerItems}
                 keyExtractor={(item) => item}
                 getItemType={(item) =>
-                  item === createBranchItemValue ? "create-branch" : "branch"
+                  item === checkoutPullRequestItemValue
+                    ? "checkout-pull-request"
+                    : item === createBranchItemValue
+                      ? "create-branch"
+                      : "branch"
                 }
                 renderItem={({ item, index }) => renderPickerItem(item, index)}
                 estimatedItemSize={28}

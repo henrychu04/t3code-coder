@@ -56,6 +56,7 @@ import { useActiveEnvironmentId, useProjects, useThreadShells } from "../state/e
 import { projectEnvironment } from "../state/projects";
 import { useThreadSearch } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
+import { sourceControlEnvironment } from "../state/sourceControl";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
@@ -72,6 +73,7 @@ import {
 import { CommandPaletteResults } from "./CommandPaletteResults";
 import { Button } from "./ui/button";
 import { CommandDialog, CommandDialogPopup } from "./ui/command";
+import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 
@@ -466,6 +468,7 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
   const [discovering, setDiscovering] = useState(false);
   const [connectingTarget, setConnectingTarget] = useState<string | null>(null);
   const [environmentId, setEnvironmentId] = useState<EnvironmentId | null>(null);
+  const [projectSource, setProjectSource] = useState<"folder" | "gitlab">("folder");
   const [error, setError] = useState<string | null>(null);
   const environment = useEnvironment(environmentId);
   const projects = useProjects();
@@ -604,7 +607,8 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
             Add project
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Choose a folder inside an authenticated Coder workspace. No files are copied.
+            Open an existing folder or clone a GitLab repository inside an authenticated Coder
+            workspace.
           </p>
         </div>
 
@@ -715,7 +719,41 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
             )}
           </div>
         ) : (
-          <RemoteDirectoryBrowser environmentId={environmentId} onSelect={addProject} />
+          <div className="mt-5">
+            <div className="flex gap-1 rounded-lg border bg-muted/30 p-1">
+              <Button
+                className="flex-1"
+                size="sm"
+                variant={projectSource === "folder" ? "secondary" : "ghost"}
+                onClick={() => {
+                  setProjectSource("folder");
+                  setError(null);
+                }}
+              >
+                Existing folder
+              </Button>
+              <Button
+                className="flex-1"
+                size="sm"
+                variant={projectSource === "gitlab" ? "secondary" : "ghost"}
+                onClick={() => {
+                  setProjectSource("gitlab");
+                  setError(null);
+                }}
+              >
+                Clone from GitLab
+              </Button>
+            </div>
+            {projectSource === "folder" ? (
+              <RemoteDirectoryBrowser environmentId={environmentId} onSelect={addProject} />
+            ) : (
+              <GitLabCloneProject
+                environmentId={environmentId}
+                onClone={addProject}
+                onError={setError}
+              />
+            )}
+          </div>
         )}
 
         {error ? <p className="mt-3 text-sm text-destructive-foreground">{error}</p> : null}
@@ -744,6 +782,116 @@ function AddProjectDialog({ onClose }: { readonly onClose: () => void }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function repositoryDirectoryName(repository: string): string {
+  return (
+    repository
+      .trim()
+      .replace(/\/+$/, "")
+      .split("/")
+      .at(-1)
+      ?.replace(/\.git$/i, "") ?? ""
+  );
+}
+
+function GitLabCloneProject({
+  environmentId,
+  onClone,
+  onError,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly onClone: (path: string) => Promise<void>;
+  readonly onError: (message: string | null) => void;
+}) {
+  const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository);
+  const [repository, setRepository] = useState("");
+  const [destinationPath, setDestinationPath] = useState("");
+  const [destinationEdited, setDestinationEdited] = useState(false);
+  const [cloning, setCloning] = useState(false);
+  const canClone = repository.trim().length > 0 && destinationPath.trim().length > 0 && !cloning;
+
+  const updateRepository = (value: string) => {
+    setRepository(value);
+    if (!destinationEdited) {
+      const directoryName = repositoryDirectoryName(value);
+      setDestinationPath(directoryName.length > 0 ? `~/projects/${directoryName}` : "");
+    }
+  };
+
+  const submit = async (): Promise<void> => {
+    if (!canClone) return;
+    setCloning(true);
+    onError(null);
+    try {
+      const result = await cloneRepository({
+        environmentId,
+        input: {
+          provider: "gitlab",
+          repository: repository.trim(),
+          destinationPath: destinationPath.trim(),
+        },
+      });
+      if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+      await onClone(result.value.cwd);
+    } catch (cause) {
+      onError(cause instanceof Error ? cause.message : "Failed to clone GitLab repository.");
+    } finally {
+      setCloning(false);
+    }
+  };
+
+  return (
+    <form
+      className="mt-5 space-y-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void submit();
+      }}
+    >
+      <div>
+        <Label className="mb-2 text-xs" htmlFor="gitlab-clone-repository">
+          GitLab repository
+        </Label>
+        <Input
+          id="gitlab-clone-repository"
+          nativeInput
+          placeholder="group/project"
+          value={repository}
+          onChange={(event) => updateRepository(event.target.value)}
+        />
+        <p className="mt-1.5 text-xs text-muted-foreground">
+          Uses the workspace&apos;s authenticated glab CLI and its configured GitLab host.
+        </p>
+      </div>
+      <div>
+        <Label className="mb-2 text-xs" htmlFor="gitlab-clone-destination">
+          Destination folder
+        </Label>
+        <Input
+          id="gitlab-clone-destination"
+          nativeInput
+          placeholder="~/projects/project"
+          value={destinationPath}
+          onChange={(event) => {
+            setDestinationEdited(true);
+            setDestinationPath(event.target.value);
+          }}
+        />
+      </div>
+      <div className="flex justify-end">
+        <Button disabled={!canClone} size="sm" type="submit">
+          {cloning ? (
+            <>
+              <LoaderCircleIcon className="size-4 animate-spin" /> Cloning…
+            </>
+          ) : (
+            "Clone and add project"
+          )}
+        </Button>
+      </div>
+    </form>
   );
 }
 

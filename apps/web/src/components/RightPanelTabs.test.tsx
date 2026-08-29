@@ -38,10 +38,12 @@ const sharedProps = {
   onAddTerminal: () => {},
   onAddDiff: () => {},
   onAddFiles: () => {},
+  onAddPullRequest: () => {},
   onAddAgents: () => {},
   terminalAvailable: true,
   diffAvailable: true,
   filesAvailable: true,
+  pullRequestAvailable: true,
   agentsAvailable: true,
   liveAgentCount: 0,
   children: null,
@@ -93,12 +95,13 @@ describe("RightPanelTabs", () => {
   it("renders upstream launcher cards and their retained shortcuts", () => {
     const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
 
-    expect(markup).toContain('data-surface-launcher-keys="TFDA"');
+    expect(markup).toContain('data-surface-launcher-keys="TFDPA"');
     expect(markup).toContain("grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))]");
-    expect(markup.match(/relative flex min-w-0 w-full/g)).toHaveLength(4);
+    expect(markup.match(/relative flex min-w-0 w-full/g)).toHaveLength(5);
     expect(markup).toContain("Start a shell in this workspace.");
     expect(markup).toContain("Browse and read workspace files.");
     expect(markup).toContain("Review changes in this thread.");
+    expect(markup).toContain("View the current GitLab merge request.");
     expect(markup).toContain("Follow subagents and workflows.");
   });
 });

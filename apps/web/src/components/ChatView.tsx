@@ -141,6 +141,7 @@ import {
   useRightPanelStore,
 } from "../rightPanelStore";
 import { RightPanelTabs } from "./RightPanelTabs";
+import { GitLabPullRequestDetailPanel } from "./gitlab/GitLabPullRequestDetailPanel";
 import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
@@ -2041,10 +2042,21 @@ function ChatViewContent(props: ChatViewProps) {
     hasProject: activeProject !== null,
     hasWorkspaceRoot: activeWorkspaceRoot !== undefined,
   });
+  const repositoryIdentity = activeProject?.repositoryIdentity;
+  const gitLabRepository =
+    repositoryIdentity?.locator.source === "git-remote" &&
+    (repositoryIdentity.provider === "gitlab" || repositoryIdentity.provider === "unknown")
+      ? (repositoryIdentity.displayName ?? null)
+      : null;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  const pullRequestAvailable =
+    isServerThread &&
+    isGitRepo &&
+    gitLabRepository !== null &&
+    serverConfig?.environment.capabilities.gitLabMergeRequests === true;
   const showComposerContextStrip = shouldShowComposerContextStrip({
     hasActiveProject: activeProject !== null,
     isGitRepo,
@@ -2405,6 +2417,22 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addPullRequestSurface = useCallback(() => {
+    if (!activeThreadRef || !pullRequestAvailable) return;
+    useRightPanelStore.getState().open(activeThreadRef, "pull-request");
+  }, [activeThreadRef, pullRequestAvailable]);
+  const openPullRequestFromHeader = useCallback(
+    (number: number) => {
+      if (!activeThreadRef || !activeProject || !gitLabRepository) return;
+      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+        environmentId: activeThreadRef.environmentId,
+        projectId: activeProject.id,
+        repository: gitLabRepository,
+        number,
+      });
+    },
+    [activeProject, activeThreadRef, gitLabRepository],
+  );
   const addFilesSurface = useCallback(() => {
     if (!activeThreadRef || !filesAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
@@ -5529,6 +5557,37 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef.environmentId}
         threadId={activeThreadRef.threadId}
       />
+    ) : activeRightPanelSurface?.kind === "pull-request" &&
+      ("number" in activeRightPanelSurface || (activeProject && gitCwd && gitLabRepository)) ? (
+      <GitLabPullRequestDetailPanel
+        environmentId={
+          "number" in activeRightPanelSurface && activeRightPanelSurface.environmentId
+            ? (activeRightPanelSurface.environmentId as EnvironmentId)
+            : activeThreadRef.environmentId
+        }
+        projectId={
+          "number" in activeRightPanelSurface
+            ? (activeRightPanelSurface.projectId as ProjectId)
+            : activeProject!.id
+        }
+        threadId={activeThreadRef.threadId}
+        cwd={gitCwd ?? ""}
+        repository={
+          "number" in activeRightPanelSurface
+            ? activeRightPanelSurface.repository
+            : gitLabRepository!
+        }
+        composerDraftTarget={composerDraftTarget}
+        {...("number" in activeRightPanelSurface
+          ? {
+              reference: {
+                projectId: activeRightPanelSurface.projectId as ProjectId,
+                repository: activeRightPanelSurface.repository,
+                number: activeRightPanelSurface.number,
+              },
+            }
+          : {})}
+      />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       filesAvailable &&
       activeProject &&
@@ -5582,10 +5641,16 @@ function ChatViewContent(props: ChatViewProps) {
             isServerThread={isServerThread}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
+            gitCwd={gitStatusCwd}
+            {...(draftId ? { draftId } : {})}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             keybindings={keybindings}
             rightPanelOpen={rightPanelOpen}
             onNewThreadInProject={handleNewThreadInActiveProject}
+            {...(activeProject && gitLabRepository
+              ? { onOpenPullRequest: openPullRequestFromHeader }
+              : {})}
+            onOpenFile={openFileSurface}
           />
         </WorkspacePageHeader>
 
@@ -5917,10 +5982,12 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
+          pullRequestAvailable={pullRequestAvailable}
           agentsAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -5949,10 +6016,12 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}
+            pullRequestAvailable={pullRequestAvailable}
             agentsAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >

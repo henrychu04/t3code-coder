@@ -63,6 +63,11 @@ import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
 import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "../markdown-links";
 import { useRightPanelStore } from "../rightPanelStore";
+import { useProjects } from "../state/entities";
+import {
+  findProjectForGitLabMergeRequest,
+  parseGitLabMergeRequestUrl,
+} from "../lib/openPullRequestLink";
 import {
   chatMarkdownClipboardPayload,
   serializeTableElementToCsv,
@@ -606,6 +611,7 @@ function ChatMarkdown({
   onUseArtifactTemplate,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
+  const projects = useProjects();
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const handleCopy = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
     const selection = window.getSelection();
@@ -716,6 +722,28 @@ function ChatMarkdown({
             </button>
           );
         }
+        const mergeRequest = href ? parseGitLabMergeRequestUrl(href) : null;
+        const project = mergeRequest
+          ? findProjectForGitLabMergeRequest(projects, mergeRequest)
+          : undefined;
+        if (threadRef && mergeRequest && project) {
+          return (
+            <button
+              type="button"
+              className={cn(props.className, "cursor-pointer text-primary underline")}
+              onClick={() =>
+                useRightPanelStore.getState().openPullRequest(threadRef, {
+                  environmentId: project.environmentId,
+                  projectId: project.id,
+                  repository: mergeRequest.repository,
+                  number: mergeRequest.number,
+                })
+              }
+            >
+              {children}
+            </button>
+          );
+        }
         return <span className={cn(props.className, "text-primary underline")}>{children}</span>;
       },
       img({ node: _node, title: _title, src: _src, alt }) {
@@ -782,6 +810,7 @@ function ChatMarkdown({
       isStreaming,
       onTaskListChange,
       onUseArtifactTemplate,
+      projects,
       skills,
       text,
       threadRef,
