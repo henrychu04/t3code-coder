@@ -175,13 +175,13 @@ const method = optionValue(args, "--method") ?? "GET";
 let body = null;
 if (stdin.trim()) body = JSON.parse(stdin);
 
-if (method !== "GET" && path !== "projects/:fullpath/ci/lint") {
+if (method !== "GET" && path !== "projects/0/merge_requests") {
   state.actions.push({ args, body });
 }
 
-if (path === "projects/:fullpath/ci/lint" && method === "POST") {
-  console.log(JSON.stringify({ valid: true, errors: [], warnings: [] }));
-  process.exit(0);
+if (path === "projects/0/merge_requests" && method === "POST") {
+  console.error("glab: 404 Not Found (HTTP 404)");
+  process.exit(1);
 }
 
 if (path === "user") {

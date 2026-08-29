@@ -115,6 +115,27 @@ describe("VcsProcess.run", () => {
     }).pipe(provideLive),
   );
 
+  it.effect("classifies a policy response before discarding stderr", () =>
+    Effect.gen(function* () {
+      const policyMessage = "write endpoints are disabled by workspace policy";
+      const error = yield* run({
+        operation: "test.policy-block",
+        command: "node",
+        args: ["-e", `process.stderr.write(${JSON.stringify(policyMessage)}); process.exit(1)`],
+        cwd: process.cwd(),
+        classifyNonZeroExit: (stderr) =>
+          stderr.includes("workspace policy") ? "policy-blocked" : undefined,
+      }).pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "VcsProcessExitError",
+        failureKind: "policy-blocked",
+        detail: "Write operation blocked by workspace policy.",
+      });
+      expect(JSON.stringify(error)).not.toContain(policyMessage);
+    }).pipe(provideLive),
+  );
+
   it.effect("retains spawn causes without exposing process arguments in the error message", () =>
     Effect.gen(function* () {
       const secretArgument = "--token=super-secret-token";

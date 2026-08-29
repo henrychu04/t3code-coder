@@ -57,6 +57,7 @@ export const VcsProcessExitFailureKind = Schema.Literals([
   "authentication",
   "not-found",
   "rate-limited",
+  "policy-blocked",
   "command-failed",
 ]);
 export type VcsProcessExitFailureKind = typeof VcsProcessExitFailureKind.Type;
@@ -121,7 +122,9 @@ export class VcsProcessExitError extends Schema.TaggedErrorClass<VcsProcessExitE
             ? context.command === "glab"
               ? "Merge request not found."
               : "VCS resource not found."
-            : "Process exited with a non-zero status.";
+            : failureKind === "policy-blocked"
+              ? "Write operation blocked by workspace policy."
+              : "Process exited with a non-zero status.";
     return new VcsProcessExitError({
       ...context,
       exitCode: error.exitCode,

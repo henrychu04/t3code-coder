@@ -2,17 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
-import { useRef } from "react";
-import type { SourceControlWritingStyleMode } from "@t3tools/contracts";
+import { useRef, useState } from "react";
+import type {
+  SourceControlWriteAccessStatus,
+  SourceControlWritingStyleMode,
+} from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
-import {
-  CheckCircle2Icon,
-  CircleAlertIcon,
-  GitBranchIcon,
-  RefreshCwIcon,
-} from "lucide-react";
+import { CheckCircle2Icon, CircleAlertIcon, GitBranchIcon, RefreshCwIcon } from "lucide-react";
 
 import { GitLabIcon } from "../components/Icons";
 import { ProviderModelPicker } from "../components/chat/ProviderModelPicker";
@@ -37,6 +35,7 @@ import { useEnvironments, type EnvironmentPresentation } from "../state/environm
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { primaryServerProvidersAtom } from "../state/server";
+import { useAtomCommand } from "../state/use-atom-command";
 
 const WRITING_STYLE_LABELS: Record<SourceControlWritingStyleMode, string> = {
   repo_conventions: "Repository conventions",
@@ -213,10 +212,8 @@ function SourceControlPreferences() {
               variant="outline"
               onClick={() =>
                 updateSettings({
-                  automaticGitFetchInterval:
-                    DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
-                  sourceControlWritingStyle:
-                    DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle,
+                  automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
+                  sourceControlWritingStyle: DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle,
                 })
               }
             >
@@ -233,6 +230,22 @@ function textOf(value: Option.Option<string>): string | null {
   return Option.getOrNull(value);
 }
 
+const WRITE_ACCESS_LABELS: Record<SourceControlWriteAccessStatus, string> = {
+  unchecked: "Not checked",
+  writable: "Available",
+  "policy-blocked": "Blocked by policy",
+  unauthenticated: "Authentication required",
+  indeterminate: "Could not verify",
+};
+
+const WRITE_ACCESS_DESCRIPTIONS: Record<SourceControlWriteAccessStatus, string> = {
+  unchecked: "Write access has not been checked for this workspace session.",
+  writable: "The workspace write probe succeeded. GitLab write actions are enabled.",
+  "policy-blocked": "Workspace policy blocked the probe or a later GitLab write operation.",
+  unauthenticated: "The write probe reported that the GitLab CLI is not authenticated.",
+  indeterminate: "The write probe failed without a recognized policy or authentication result.",
+};
+
 function EnvironmentSourceControlStatus({ environment }: { environment: EnvironmentPresentation }) {
   const query = useEnvironmentQuery(
     sourceControlEnvironment.discovery({
@@ -240,12 +253,33 @@ function EnvironmentSourceControlStatus({ environment }: { environment: Environm
       input: undefined,
     }),
   );
+  const reprobeWriteAccess = useAtomCommand(sourceControlEnvironment.probeWriteAccess, {
+    reportFailure: false,
+  });
+  const [probingWrites, setProbingWrites] = useState(false);
+  const [probeError, setProbeError] = useState<string | null>(null);
   const git = query.data?.versionControlSystems.find((item) => item.kind === "git") ?? null;
   const gitLab = query.data?.sourceControlProviders.find((item) => item.kind === "gitlab") ?? null;
   const gitReady = git?.status === "available" && git.implemented;
   const gitLabReady = gitLab?.status === "available" && gitLab.auth.status === "authenticated";
   const account = gitLab ? textOf(gitLab.auth.account) : null;
   const host = gitLab ? textOf(gitLab.auth.host) : null;
+  const writeAccess = gitLab?.writeAccess ?? { status: "unchecked" as const, writable: false };
+
+  const handleReprobe = async () => {
+    setProbingWrites(true);
+    setProbeError(null);
+    const result = await reprobeWriteAccess({
+      environmentId: environment.environmentId,
+      input: { provider: "gitlab" },
+    });
+    setProbingWrites(false);
+    if (result._tag === "Failure") {
+      setProbeError("The workspace write probe could not be run.");
+      return;
+    }
+    query.refresh();
+  };
 
   return (
     <div className="space-y-3 rounded-xl border bg-card/40 p-4">
@@ -292,13 +326,33 @@ function EnvironmentSourceControlStatus({ environment }: { environment: Environm
                   ? `Authenticated${account ? ` as ${account}` : ""}${host ? ` on ${host}` : ""}`
                   : gitLab.status !== "available"
                     ? gitLab.installHint
-                    : textOf(gitLab.auth.detail) ??
-                      "Run glab auth login in a terminal inside this Coder workspace."
+                    : (textOf(gitLab.auth.detail) ??
+                      "Run glab auth login in a terminal inside this Coder workspace.")
             }
             control={
               <Badge variant={gitLabReady ? "success" : "warning"}>
                 <GitLabIcon /> {gitLabReady ? "Authenticated" : "Setup required"}
               </Badge>
+            }
+          />
+          <SettingsRow
+            title="GitLab writes"
+            description={probeError ?? WRITE_ACCESS_DESCRIPTIONS[writeAccess.status]}
+            control={
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge variant={writeAccess.writable ? "success" : "warning"}>
+                  {WRITE_ACCESS_LABELS[writeAccess.status]}
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={probingWrites}
+                  onClick={() => void handleReprobe()}
+                >
+                  <RefreshCwIcon className={probingWrites ? "animate-spin" : undefined} />
+                  Reprobe
+                </Button>
+              </div>
             }
           />
         </div>

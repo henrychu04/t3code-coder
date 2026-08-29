@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 
 import * as CoderBackgroundPolicy from "./coderBackgroundPolicy.ts";
+import * as ServerConfig from "./config.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
@@ -190,6 +191,8 @@ const CoderRuntimeStartupLive = Layer.effect(
     const settings = yield* ServerSettings.ServerSettingsService;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
     const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
+    const gitLabCli = yield* GitLabCli.GitLabCli;
+    const config = yield* ServerConfig.ServerConfig;
     const commandGate = yield* CoderRuntimeStartup.makeCommandGate;
     const reactorScope = yield* Scope.make("sequential");
 
@@ -198,6 +201,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
+    yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
     yield* commandGate.signalReady;
 
     return CoderRuntimeStartup.CoderRuntimeStartup.of({

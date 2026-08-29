@@ -10,6 +10,7 @@ import type * as DateTime from "effect/DateTime";
 import {
   TrimmedNonEmptyString,
   type SourceControlRepositoryVisibility,
+  type SourceControlWriteAccess,
   type VcsError,
 } from "@t3tools/contracts";
 
@@ -81,10 +82,27 @@ export class GitLabWriteUnavailableError extends Schema.TaggedErrorClass<GitLabW
     operation: Schema.Literal("execute"),
     command: Schema.Literal("glab"),
     cwd: Schema.String,
+    status: Schema.Literals([
+      "unchecked",
+      "writable",
+      "policy-blocked",
+      "unauthenticated",
+      "indeterminate",
+    ]),
   },
 ) {
   get detail(): string {
-    return "GitLab write commands are disabled because the workspace write probe failed.";
+    switch (this.status) {
+      case "policy-blocked":
+        return "GitLab write commands are disabled by workspace policy.";
+      case "unauthenticated":
+        return "GitLab write commands are disabled because the CLI is not authenticated.";
+      case "indeterminate":
+      case "unchecked":
+        return "GitLab write commands are disabled because write access could not be verified.";
+      case "writable":
+        return "GitLab write command failed after write access was verified.";
+    }
   }
 
   override get message(): string {
@@ -160,6 +178,7 @@ export class GitLabCliCommandError extends Schema.TaggedErrorClass<GitLabCliComm
           case "rate-limited":
             return new GitLabCliRateLimitError({ ...context, cause });
           case "not-found":
+          case "policy-blocked":
           case "command-failed":
           case undefined:
             return new GitLabCliCommandError({ ...context, cause });
@@ -301,6 +320,10 @@ export class GitLabCli extends Context.Service<
     readonly probeWriteAccess: (input: {
       readonly cwd: string;
     }) => Effect.Effect<GitLabWriteProbe.GitLabWriteProbeResult>;
+    readonly getWriteAccess: Effect.Effect<SourceControlWriteAccess>;
+    readonly reprobeWriteAccess: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<SourceControlWriteAccess>;
 
     readonly listMergeRequests: (input: {
       readonly cwd: string;
@@ -446,6 +469,7 @@ export const make = Effect.gen(function* () {
   const run = (
     input: Parameters<GitLabCli["Service"]["execute"]>[0],
     mapError: (error: VcsError) => GitLabCliError,
+    classifyNonZeroExit?: VcsProcess.VcsProcessInput["classifyNonZeroExit"],
   ) =>
     process
       .run({
@@ -454,6 +478,7 @@ export const make = Effect.gen(function* () {
         args: input.args,
         cwd: input.cwd,
         timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+        ...(classifyNonZeroExit === undefined ? {} : { classifyNonZeroExit }),
         ...(input.stdin === undefined ? {} : { stdin: input.stdin }),
         ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
       })
@@ -471,12 +496,35 @@ export const make = Effect.gen(function* () {
     writeProbe.check({ cwd: input.cwd }).pipe(
       Effect.flatMap((result) =>
         result.writable
-          ? execute(input)
+          ? run(
+              input,
+              (error) =>
+                error._tag === "VcsProcessExitError" && error.failureKind === "policy-blocked"
+                  ? new GitLabWriteUnavailableError({
+                      operation: "execute",
+                      command: "glab",
+                      cwd: input.cwd,
+                      status: "policy-blocked",
+                    })
+                  : GitLabCliCommandError.fromVcsError(
+                      { operation: "execute", command: "glab", cwd: input.cwd },
+                      error,
+                    ),
+              (stderr) =>
+                writeProbe.isPolicyBlockedWriteFailure(stderr) ? "policy-blocked" : undefined,
+            ).pipe(
+              Effect.tapError((error) =>
+                error._tag === "GitLabWriteUnavailableError" && error.status === "policy-blocked"
+                  ? writeProbe.markPolicyBlocked
+                  : Effect.void,
+              ),
+            )
           : Effect.fail(
               new GitLabWriteUnavailableError({
                 operation: "execute",
                 command: "glab",
                 cwd: input.cwd,
+                status: result.status,
               }),
             ),
       ),
@@ -503,6 +551,8 @@ export const make = Effect.gen(function* () {
     execute,
     executeWrite,
     probeWriteAccess: writeProbe.check,
+    getWriteAccess: writeProbe.current,
+    reprobeWriteAccess: writeProbe.reprobe,
     listMergeRequests: (input) =>
       execute({
         cwd: input.cwd,

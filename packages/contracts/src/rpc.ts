@@ -142,9 +142,11 @@ import {
   SourceControlDiscoveryResult,
   SourceControlPublishRepositoryInput,
   SourceControlPublishRepositoryResult,
+  SourceControlProbeWriteAccessInput,
   SourceControlRepositoryError,
   SourceControlRepositoryInfo,
   SourceControlRepositoryLookupInput,
+  SourceControlWriteAccess,
 } from "./sourceControl.ts";
 import {
   ScreenshotArtifactChunk,
@@ -162,6 +164,7 @@ export const WS_METHODS = {
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   providerListSlashCommands: "provider.listSlashCommands",
   serverDiscoverSourceControl: "server.discoverSourceControl",
+  sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   sourceControlLookupRepository: "sourceControl.lookupRepository",
   sourceControlCloneRepository: "sourceControl.cloneRepository",
   sourceControlPublishRepository: "sourceControl.publishRepository",
@@ -364,6 +367,11 @@ const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
 
 const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
   success: SourceControlDiscoveryResult,
+});
+
+const WsSourceControlProbeWriteAccessRpc = Rpc.make(WS_METHODS.sourceControlProbeWriteAccess, {
+  payload: SourceControlProbeWriteAccessInput,
+  success: SourceControlWriteAccess,
 });
 
 const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
@@ -665,6 +673,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
   WsServerDiscoverSourceControlRpc,
+  WsSourceControlProbeWriteAccessRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,
   WsSourceControlPublishRepositoryRpc,

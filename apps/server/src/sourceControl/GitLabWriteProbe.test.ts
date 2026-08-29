@@ -8,11 +8,11 @@ import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 
 const mockedRun = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
 
-function output(exitCode: number): VcsProcess.VcsProcessOutput {
+function output(exitCode: number, stderr = ""): VcsProcess.VcsProcessOutput {
   return {
     exitCode: ChildProcessSpawner.ExitCode(exitCode),
     stdout: "{}",
-    stderr: "",
+    stderr,
     stdoutTruncated: false,
     stderrTruncated: false,
   };
@@ -22,7 +22,7 @@ afterEach(() => {
   mockedRun.mockReset();
 });
 
-it.effect("uses a state-free CI lint POST as the default write probe", () =>
+it.effect("uses a state-free workspace-level mutation canary", () =>
   Effect.gen(function* () {
     mockedRun.mockReturnValueOnce(Effect.succeed(output(0)));
     const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
@@ -38,7 +38,7 @@ it.effect("uses a state-free CI lint POST as the default write probe", () =>
         allowNonZeroExit: true,
         args: [
           "api",
-          "projects/:fullpath/ci/lint",
+          "projects/0/merge_requests",
           "--method",
           "POST",
           "--input",
@@ -46,6 +46,7 @@ it.effect("uses a state-free CI lint POST as the default write probe", () =>
           "--header",
           "Content-Type: application/json",
         ],
+        stdin: "{}",
       }),
     );
   }).pipe(
@@ -57,7 +58,7 @@ it.effect("uses a state-free CI lint POST as the default write probe", () =>
   ),
 );
 
-it.effect("fails closed when the probe behavior rejects the response", () =>
+it.effect("fails closed when GitLab returns an unrecognized response", () =>
   Effect.gen(function* () {
     mockedRun.mockReturnValueOnce(Effect.succeed(output(7)));
     const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
@@ -65,6 +66,7 @@ it.effect("fails closed when the probe behavior rejects the response", () =>
     const result = yield* probe.check({ cwd: "/repo" });
 
     assert.isFalse(result.writable);
+    assert.strictEqual(result.status, "indeterminate");
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
@@ -86,9 +88,9 @@ it.effect("runs once for concurrent and later checks in the workspace runtime", 
     const later = yield* probe.check({ cwd: "/third" });
 
     expect([...concurrent, later]).toEqual([
-      { writable: true },
-      { writable: true },
-      { writable: true },
+      { status: "writable", writable: true },
+      { status: "writable", writable: true },
+      { status: "writable", writable: true },
     ]);
     expect(mockedRun).toHaveBeenCalledOnce();
   }).pipe(
@@ -115,8 +117,48 @@ it.effect("allows the probe request and classifier to be replaced together", () 
     Effect.provide(
       GitLabWriteProbe.layerWithBehavior({
         request: () => ({ args: ["custom", "probe"], stdin: "canary" }),
-        accepts: (result) => result.exitCode === 9,
+        classifyProbe: (result) => (result.exitCode === 9 ? "writable" : "indeterminate"),
+        isPolicyBlockedWriteFailure: () => false,
       }).pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun }))),
+    ),
+  ),
+);
+
+it.effect("treats GitLab's expected rejection as proof that the canary reached the host", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Not Found (HTTP 404)")));
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({ status: "writable", writable: true });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
+it.effect("reprobes explicitly and replaces the workspace result", () =>
+  Effect.gen(function* () {
+    mockedRun
+      .mockReturnValueOnce(Effect.succeed(output(1, "write endpoints are disabled")))
+      .mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Not Found (HTTP 404)")));
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const blocked = yield* probe.check({ cwd: "/workspace" });
+    const writable = yield* probe.reprobe({ cwd: "/workspace" });
+
+    expect(blocked).toEqual({ status: "policy-blocked", writable: false });
+    expect(writable).toEqual({ status: "writable", writable: true });
+    expect(mockedRun).toHaveBeenCalledTimes(2);
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
     ),
   ),
 );

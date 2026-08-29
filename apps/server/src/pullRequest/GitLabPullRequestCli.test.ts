@@ -17,7 +17,7 @@ const layer = it.layer(
       Layer.mock(GitLabCli.GitLabCli)({
         execute: mockedExecute,
         executeWrite: mockedExecuteWrite,
-        probeWriteAccess: () => Effect.succeed({ writable: true }),
+        probeWriteAccess: () => Effect.succeed({ status: "writable", writable: true }),
       }),
     ),
   ),

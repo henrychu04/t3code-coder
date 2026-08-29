@@ -61,9 +61,7 @@ describe("gitLabViewerPermissions", () => {
   });
 
   it("offers no writes when the workspace probe fails", () => {
-    expect(
-      gitLabViewerPermissions({ viewerCanMerge: true, writeAvailable: false }),
-    ).toEqual({
+    expect(gitLabViewerPermissions({ viewerCanMerge: true, writeAvailable: false })).toEqual({
       actions: [],
       comment: false,
       resolve: false,
@@ -100,10 +98,7 @@ describe("getChangeRequest base freshness", () => {
     reviewerIds: [],
   };
 
-  const readWith = (
-    divergence: { readonly divergedCommits?: number },
-    writable = true,
-  ) =>
+  const readWith = (divergence: { readonly divergedCommits?: number }, writable = true) =>
     Effect.gen(function* () {
       const provider = yield* make;
       return yield* provider.getChangeRequest({
@@ -118,7 +113,11 @@ describe("getChangeRequest base freshness", () => {
           getMergeRequestDetail: () => Effect.succeed({ ...detail, ...divergence }),
           getProjectMergeCapabilities: () =>
             Effect.succeed({ merge: true, squash: true, rebase: true }),
-          probeWriteAccess: () => Effect.succeed({ writable }),
+          probeWriteAccess: () =>
+            Effect.succeed({
+              status: writable ? "writable" : "policy-blocked",
+              writable,
+            }),
         }),
       ),
     );

@@ -270,12 +270,15 @@ GitLab-only provider registry. Repository status, fetch, pull, commit, push, rep
 merge-request creation, and MR checkout all travel over the existing helper stdio RPC and execute
 inside the Linux workspace. The helper uses repository-scoped Git commands and the
 workspace-installed `glab` CLI to read MR summary, activity, discussions, checks, reviewers, and
-diffs and to perform actions permitted for the signed-in viewer. Before any command that mutates
-GitLab, the helper runs a replaceable, state-free `glab` write probe once per helper lifetime; a
-failed probe disables every GitLab mutation while leaving reads, Git operations, and MR checkout
-available. The default probe
-validates fixed CI YAML through GitLab's lint endpoint and neither creates nor edits a GitLab
-resource. Generated commit and MR content is
+diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
+state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
+default sends an incomplete merge-request creation request to the impossible project ID `0`; a
+normal GitLab validation or not-found response proves the request reached GitLab, while neither a
+project nor an MR can be changed. A failed or indeterminate probe disables every GitLab mutation
+while leaving reads, Git operations, and MR checkout available. The Source Control settings surface
+shows the structured result and can explicitly rerun the probe. A later mutation that matches the
+configured GS policy-block response immediately downgrades the cached workspace result. Generated
+commit and MR content is
 produced by the workspace Claude CLI using bounded Git summaries and patches; repository MR
 templates are read from the committed base tree. The gateway never runs Git or `glab`, never
 connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other

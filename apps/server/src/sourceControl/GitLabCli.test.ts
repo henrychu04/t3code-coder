@@ -10,14 +10,21 @@ import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 
 const mockedRun = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
+
+function writeProbe(status: "writable" | "policy-blocked") {
+  const result = { status, writable: status === "writable" } as const;
+  return GitLabWriteProbe.GitLabWriteProbe.of({
+    check: () => Effect.succeed(result),
+    current: Effect.succeed(result),
+    reprobe: () => Effect.succeed(result),
+    markPolicyBlocked: Effect.void,
+    isPolicyBlockedWriteFailure: () => false,
+  });
+}
+
 const layer = it.layer(
   GitLabCli.layerWithWriteProbe(
-    Layer.succeed(
-      GitLabWriteProbe.GitLabWriteProbe,
-      GitLabWriteProbe.GitLabWriteProbe.of({
-        check: () => Effect.succeed({ writable: true }),
-      }),
-    ),
+    Layer.succeed(GitLabWriteProbe.GitLabWriteProbe, writeProbe("writable")),
   ).pipe(
     Layer.provide(
       Layer.mock(VcsProcess.VcsProcess)({
@@ -415,12 +422,76 @@ it.effect("refuses a GitLab mutation before spawning it when the write probe fai
   }).pipe(
     Effect.provide(
       GitLabCli.layerWithWriteProbe(
-        Layer.succeed(
-          GitLabWriteProbe.GitLabWriteProbe,
-          GitLabWriteProbe.GitLabWriteProbe.of({
-            check: () => Effect.succeed({ writable: false }),
-          }),
-        ),
+        Layer.succeed(GitLabWriteProbe.GitLabWriteProbe, writeProbe("policy-blocked")),
+      ).pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun }))),
+    ),
+  ),
+);
+
+it.effect("downgrades the workspace after a real write is blocked by policy", () =>
+  Effect.gen(function* () {
+    mockedRun.mockImplementation((input) => {
+      if (input.operation === "GitLabWriteProbe.check") {
+        return Effect.succeed(processOutput("{}"));
+      }
+      const failureKind = input.classifyNonZeroExit?.(
+        "write endpoints are disabled by workspace policy",
+      );
+      return Effect.fail(
+        new VcsProcessExitError({
+          operation: input.operation,
+          command: "glab",
+          cwd: input.cwd,
+          argumentCount: input.args.length,
+          exitCode: 1,
+          detail: "Write operation blocked by workspace policy.",
+          failureKind,
+          stderrLength: 56,
+          stderrTruncated: false,
+        }),
+      );
+    });
+    const glab = yield* GitLabCli.GitLabCli;
+
+    const firstError = yield* glab
+      .createMergeRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "feature/probe",
+        title: "Probe gate",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+    const state = yield* glab.getWriteAccess;
+    const callsAfterFirstWrite = mockedRun.mock.calls.length;
+    const secondError = yield* glab
+      .createMergeRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "feature/probe",
+        title: "Probe gate",
+        bodyFile: "/tmp/body.md",
+      })
+      .pipe(Effect.flip);
+
+    expect(firstError).toMatchObject({
+      _tag: "GitLabWriteUnavailableError",
+      status: "policy-blocked",
+    });
+    expect(state).toEqual({ status: "policy-blocked", writable: false });
+    expect(secondError).toMatchObject({
+      _tag: "GitLabWriteUnavailableError",
+      status: "policy-blocked",
+    });
+    expect(mockedRun).toHaveBeenCalledTimes(callsAfterFirstWrite);
+  }).pipe(
+    Effect.provide(
+      GitLabCli.layerWithWriteProbe(
+        GitLabWriteProbe.layerWithBehavior({
+          request: () => ({ args: ["api", "probe"] }),
+          classifyProbe: () => "writable",
+          isPolicyBlockedWriteFailure: (stderr) => stderr.includes("workspace policy"),
+        }),
       ).pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun }))),
     ),
   ),

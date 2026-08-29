@@ -63,6 +63,7 @@ import * as GitLabMergeRequestService from "./gitlab/GitLabMergeRequestService.t
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as Keybindings from "./keybindings.ts";
 import {
   projectActivityEvent,
@@ -388,6 +389,7 @@ export const layer = CoderWsRpcGroup.toLayer(
       yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
     const sourceControlRepositories =
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const gitLabCli = yield* GitLabCli.GitLabCli;
     const gitLabMergeRequests = yield* GitLabMergeRequestService.GitLabMergeRequestService;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
@@ -918,8 +920,8 @@ export const layer = CoderWsRpcGroup.toLayer(
           }),
         ),
       [WS_METHODS.serverDiscoverSourceControl]: () =>
-        sourceControlProviders.discover.pipe(
-          Effect.map((sourceControlProviders) => ({
+        Effect.all([sourceControlProviders.discover, gitLabCli.getWriteAccess]).pipe(
+          Effect.map(([sourceControlProviders, writeAccess]) => ({
             versionControlSystems: [
               {
                 kind: "git" as const,
@@ -931,9 +933,13 @@ export const layer = CoderWsRpcGroup.toLayer(
                 detail: Option.none<string>(),
               },
             ],
-            sourceControlProviders,
+            sourceControlProviders: sourceControlProviders.map((provider) =>
+              provider.kind === "gitlab" ? { ...provider, writeAccess } : provider,
+            ),
           })),
         ),
+      [WS_METHODS.sourceControlProbeWriteAccess]: (input) =>
+        gitLabCli.reprobeWriteAccess({ cwd: config.cwd }),
       [WS_METHODS.sourceControlLookupRepository]: (input) =>
         sourceControlRepositories.lookupRepository(input),
       [WS_METHODS.sourceControlCloneRepository]: (input) =>
