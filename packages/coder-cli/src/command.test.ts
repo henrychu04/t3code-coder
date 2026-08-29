@@ -156,6 +156,8 @@ describe("Coder CLI command construction", () => {
     strictEqual(REMOTE_WORKSPACE_PROBE_COMMAND.includes("24.10"), false);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v codex/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /requires Claude Code or Codex/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/attachments/u);

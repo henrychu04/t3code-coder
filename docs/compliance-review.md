@@ -5,18 +5,18 @@ an assertion that any employer has approved the software.
 
 ## Runtime process and network inventory
 
-| Source                | Destination                         | Mechanism                             | Purpose                                                 |
-| --------------------- | ----------------------------------- | ------------------------------------- | ------------------------------------------------------- |
-| Approved browser      | `127.0.0.1` gateway                 | HTTP and WebSocket                    | Load the UI and exchange live RPC                       |
-| Gateway               | installed Coder CLI                 | child stdio, `shell: false`           | Invoke authenticated Coder commands                     |
-| Local client          | configured `127.0.0.1` port         | TCP or UDP                            | Access one configured workspace service                 |
-| Coder CLI             | configured Coder workspace          | foreground `coder port-forward`       | Carry a loopback-bound port forward                     |
-| Gateway               | installed OpenSSH `scp`             | child process, `shell: false`         | Copy the helper and validated pasted images             |
-| Coder CLI             | configured Coder deployment         | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh`  |
-| OpenSSH `scp`         | Coder CLI ProxyCommand              | `coder ssh --stdio`                   | Coder-authenticated transfer with no direct SSH path    |
-| Gateway               | workspace helper                    | foreground `coder ssh` stdio          | Newline-delimited RPC                                   |
-| Workspace helper      | workspace Claude Code               | child stdio, `shell: false`           | Streaming JSON conversation and permission control      |
-| Workspace Claude Code | approved Claude backend             | workspace-managed provider connection | Claude inference and authentication                     |
+| Source             | Destination                    | Mechanism                             | Purpose                                                |
+| ------------------ | ------------------------------ | ------------------------------------- | ------------------------------------------------------ |
+| Approved browser   | `127.0.0.1` gateway            | HTTP and WebSocket                    | Load the UI and exchange live RPC                      |
+| Gateway            | installed Coder CLI            | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
+| Local client       | configured `127.0.0.1` port    | TCP or UDP                            | Access one configured workspace service                |
+| Coder CLI          | configured Coder workspace     | foreground `coder port-forward`       | Carry a loopback-bound port forward                    |
+| Gateway            | installed OpenSSH `scp`        | child process, `shell: false`         | Copy the helper and validated pasted images            |
+| Coder CLI          | configured Coder deployment    | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
+| OpenSSH `scp`      | Coder CLI ProxyCommand         | `coder ssh --stdio`                   | Coder-authenticated transfer with no direct SSH path   |
+| Gateway            | workspace helper               | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
+| Workspace helper   | workspace Codex or Claude Code | child stdio, `shell: false`           | Provider conversation and permission control           |
+| Workspace provider | approved provider backend      | workspace-managed provider connection | Inference and authentication                           |
 
 The gateway contains no general HTTP client and makes no direct external request. It binds only to
 IPv4 loopback and validates the exact Host and Origin. The helper opens no listener, tunnel, or
@@ -25,17 +25,19 @@ whose local endpoint is fixed to `127.0.0.1`; raw arguments, reverse forwards, a
 addresses are not accepted. SCP is restricted to generated helper and clipboard-image paths and
 reaches the workspace only through a temporary Coder ProxyCommand. Network telemetry and direct
 workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Claude
-sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers.
+sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers. T3 does
+not inject the removed preview MCP into Codex; user-configured Codex MCP servers remain workspace-owned.
 
 User commands entered in a workspace terminal, repository-local Git hooks, and the externally
-installed Claude or Coder executables remain subject to the workspace and corporate network policy;
-T3 cannot make those external programs networkless while still connecting to Coder and Claude.
+installed Codex, Claude, or Coder executables remain subject to the workspace and corporate network
+policy; T3 cannot make those external programs networkless while still connecting to Coder and the
+provider backends.
 
 ## Data ownership
 
 The T3-owned local profile is limited to non-secret Coder deployment URLs, optional Coder executable
 paths, workspace targets, and structured port-forward rules. UI preferences may use browser storage. Repositories, prompts,
-responses, Claude sessions, terminals, checkpoints, project records, project roots, and SQLite state
+responses, provider sessions, terminals, checkpoints, project records, project roots, and SQLite state
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
 connection and loopback WebSocket but is not durably cached by the gateway. A validated pasted image
 may be staged in an OS temporary directory for one SCP attempt; the gateway removes it afterward.
@@ -46,14 +48,14 @@ artifact row, and exist in the browser only as revocable, memory-only object URL
 Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selects a separate opaque
 `--global-config` directory per domain so two file-backed Coder sessions can coexist. Coder 2.25.3
 writes a plaintext session token in each directory. The gateway never asks for, reads, logs, copies,
-or writes those tokens. Claude authentication exists only in the workspace and is owned by the
-installed Claude Code CLI.
+or writes those tokens. Provider authentication exists only in the workspace and is owned by the
+installed Codex or Claude Code CLI.
 
 ## Removed and prohibited capabilities
 
 - Electron, native desktop packaging, mobile, hosted web, relay, Tailscale, Cloudflare, OAuth,
   Clerk, telemetry, auto-update, and browser preview;
-- providers other than workspace Claude Code;
+- providers other than workspace Codex and Claude Code;
 - generic user-facing SSH, reverse forwarding, arbitrary tunnels, non-loopback port-forward binds,
   and background workspace daemons; the structured foreground `coder port-forward` feature is the
   sole forwarding exception;
@@ -63,8 +65,8 @@ installed Claude Code CLI.
   up to 20 MiB. Artifact capture is limited to 10 images per turn, and artifact reads accept only
   generated opaque IDs in bounded chunks after explicit UI expansion;
 - Git fetch, pull, push, pull requests, and hosted source-control integrations;
-- MCP servers, Claude browser integration, free-form Claude launch flags, and the packaged Anthropic
-  Agent SDK;
+- the removed T3 preview MCP, Claude browser integration, free-form Claude launch flags, and the
+  packaged Anthropic Agent SDK; user-configured Codex MCP servers remain workspace-owned;
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
   the gateway's loopback URL.
 

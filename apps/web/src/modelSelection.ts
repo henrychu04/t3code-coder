@@ -27,7 +27,7 @@ import { sortModelsForProviderInstance } from "./modelOrdering";
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
-const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("claudeAgent");
+const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
 
 /**
  * Resolve the custom-model list for a given instance, preferring the
@@ -286,17 +286,10 @@ export function resolveAppModelSelectionState(
     model: DEFAULT_TEXT_GENERATION_MODEL,
   };
   const entries = deriveProviderInstanceEntries(providers);
-  const selectedEntry = entries.find(
-    (entry) => entry.instanceId === selection.instanceId && entry.enabled && entry.isAvailable,
-  );
-  const entry =
-    selectedEntry ?? entries.find((candidate) => candidate.enabled && candidate.isAvailable);
+  const entry = entries.find((candidate) => candidate.instanceId === selection.instanceId);
   if (entry) {
-    // When the instance changed due to fallback (e.g. selected instance was disabled),
-    // don't carry over the old instance's model — use the fallback instance's default.
-    const selectedModel = selectedEntry ? selection.model : null;
     const model =
-      resolveAppModelSelectionForInstance(entry.instanceId, settings, providers, selectedModel) ??
+      resolveAppModelSelectionForInstance(entry.instanceId, settings, providers, selection.model) ??
       entry.models[0]?.slug ??
       DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[entry.driverKind];
     if (!model) {
@@ -307,27 +300,12 @@ export function resolveAppModelSelectionState(
       provider,
       model,
       models: entry.models,
-      modelOptions: selectedEntry ? selection.options : undefined,
+      modelOptions: selection.options,
       planModeEnabled: settings.planModeEnabled,
     });
 
     return createModelSelection(entry.instanceId, model, modelOptionsForDispatch);
   }
 
-  const provider = resolveSelectableProvider(providers, null);
-  const keptSelectedProvider = false;
-
-  // When the provider changed due to fallback (e.g. selected provider was disabled),
-  // don't carry over the old provider's model — use the fallback provider's default.
-  const selectedModel = keptSelectedProvider ? selection.model : null;
-  const model = resolveAppModelSelection(provider, settings, providers, selectedModel);
-  const { modelOptionsForDispatch } = getComposerProviderState({
-    provider,
-    model,
-    models: getProviderModels(providers, provider),
-    modelOptions: keptSelectedProvider ? selection.options : undefined,
-    planModeEnabled: settings.planModeEnabled,
-  });
-
-  return createModelSelection(defaultInstanceIdForDriver(provider), model, modelOptionsForDispatch);
+  return selection;
 }

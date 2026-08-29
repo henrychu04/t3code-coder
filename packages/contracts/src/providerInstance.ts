@@ -4,7 +4,7 @@
  * Splits the historical "provider kind" concept into two:
  *
  *   - `ProviderDriverKind` is the implementation kind selector. This fork
- *     registers only `claudeAgent`; the type remains a slug so configured
+ *     registers `codex` and `claudeAgent`; the type remains a slug so configured
  *     instance routing stays generic. It picks which driver package
  *     handles the protocol, the probe, the adapter, and text generation.
  *

@@ -277,7 +277,6 @@ const runtimeModeConfig: Record<
   },
 };
 
-const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-composer-drawer-layer="true"]',
   '[data-slot="popover-popup"]',
@@ -783,7 +782,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   //   2. Thread's persisted instance id (server-side saved selection).
   //   3. Project default's instance id.
   //   4. First enabled entry matching the current driver kind.
-  //   5. First enabled entry overall / default instance for the kind.
+  // No provider-kind fallback is allowed: an unavailable Codex selection
+  // must not silently become Claude, or vice versa.
   //
   const selectedInstanceId = useMemo<ProviderInstanceId>(() => {
     const candidates: Array<string | null | undefined> = [
@@ -820,7 +820,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
     return (
       resolveSelectableProviderInstanceEntry(requestedDriverEntries, undefined)?.instanceId ??
-      resolveSelectableProviderInstanceEntry(compatibleEntries, undefined)?.instanceId ??
       NO_PROVIDER_MODEL_SELECTION.instanceId
     );
   }, [
@@ -896,7 +895,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const availableRuntimeModes = resolveAvailableRuntimeModes(
     selectedProviderStatus?.status,
     composerProviderState.supportedRuntimeModes,
-    runtimeModeOptions,
   );
   const effectiveRuntimeMode = resolveComposerRuntimeMode(runtimeMode, availableRuntimeModes);
   // Plan mode is a legacy feature behind Settings → Beta. With the flag off,

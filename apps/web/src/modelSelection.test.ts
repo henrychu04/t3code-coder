@@ -320,4 +320,17 @@ describe("instance-scoped model selection", () => {
       model: "openai/gpt-5.5",
     });
   });
+
+  it("does not replace a missing Codex text-generation instance with Claude", () => {
+    const providers = [
+      provider({
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-4-6"],
+      }),
+    ];
+
+    expect(resolveAppModelSelectionState(DEFAULT_UNIFIED_SETTINGS, providers)).toEqual(
+      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+    );
+  });
 });

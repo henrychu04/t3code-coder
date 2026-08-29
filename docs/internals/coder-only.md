@@ -1,7 +1,7 @@
 # Coder-only architecture
 
 The Coder-only distribution runs its user interface on the developer's computer and all repository,
-Claude, terminal, checkpoint, and durable orchestration work inside Linux Coder workspaces. It does
+Codex, Claude, terminal, checkpoint, and durable orchestration work inside Linux Coder workspaces. It does
 not use the upstream desktop, relay, Tailscale, hosted web, or direct remote-server connection paths.
 
 ## Runtime boundary
@@ -98,22 +98,24 @@ settings UI, does not loop on failures, and stops the exact captured process whe
 removed, or the gateway exits.
 
 ```text
-browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> claude
+browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
 browser -> 127.0.0.1 gateway -> coder ping -> workspace agent
 browser -> 127.0.0.1 gateway -> coder ssh -> coder stat in connected workspace
 local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```
 
-The workspace helper owns the existing T3 orchestration store, project records, threads, Claude
+The workspace helper owns the existing T3 orchestration store, project records, threads, provider
 sessions, repository-local Git and filesystem operations, terminals, and checkpoints. Its durable
 state remains in the workspace. Validated screenshot artifacts are also stored in the workspace;
 the local gateway does not open or mirror its SQLite file or artifact directory.
 
-The helper starts the workspace-installed `claude` executable directly with argument-array spawning
-and streaming JSON over stdin/stdout. No Anthropic Agent SDK package or Claude executable is bundled.
-T3 passes an empty strict MCP configuration and disables connected claude.ai MCP servers for every
-managed session. Claude's provider connection remains owned by the workspace executable and subject
-to workspace policy.
+The helper starts workspace-installed provider executables directly with argument-array spawning.
+Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout.
+No provider executable or Anthropic Agent SDK package is bundled. T3 does not inject its removed
+preview MCP server or a local-host transport into Codex. Codex authentication, configuration, and
+user-configured MCP servers remain workspace-owned and subject to workspace policy. T3 passes an
+empty strict MCP configuration and disables connected claude.ai MCP servers for managed Claude
+sessions. Both provider connections remain owned by their workspace executables.
 
 ## Authentication
 
@@ -138,7 +140,7 @@ feature installed, so local paths and processes must use Node platform APIs and 
 spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
 remote OS and architecture, realizes a Node.js 24 package from the workspace's configured
-`nixpkgs` only when that runtime is not already available, and checks Git, Claude Code, `script(1)`,
+`nixpkgs` only when that runtime is not already available, and checks Git, Codex or Claude Code, `script(1)`,
 and the workspace state directory. The helper is launched
 with the Nix package's absolute Node path without changing `PATH`, so workspace shells and helper
 children retain the workspace's default Node.js version. Platform and protocol versions are then
@@ -152,7 +154,7 @@ allowed to make a non-loopback workspace connection. Structured port-forward rul
 addresses, and raw tunnel arguments are not exposed. The gateway may invoke OpenSSH `scp` for helper
 bootstrap and validated clipboard-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
-no network listener; Claude and user-initiated terminal commands remain subject to workspace policy.
+no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
 
 General user-facing file transfer remains disabled. One exception is an image pasted into the
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts
@@ -204,8 +206,8 @@ The UI exposes no upload, download, export, drag-and-drop, absolute path, or loc
 explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
-The other user-facing exception displays screenshots produced while Claude verifies a frontend.
-This does not require MCP or a project-specific T3 skill. While a Claude turn is active, the helper
+The other user-facing exception displays screenshots produced while a provider verifies a frontend.
+This does not require MCP or a project-specific T3 skill. While a provider turn is active, the helper
 observes image paths created or modified inside that turn's active project and accepts image content
 returned directly by tool results. Tool-result images are captured as they arrive; observed paths
 are captured when the turn completes. Both paths signature-validate PNG, JPEG, and WebP content,
@@ -216,7 +218,7 @@ before activity and turn history are persisted.
 
 ```text
 project verification skill -> screenshot in active project --+
-Claude image tool result -> in-memory image content -----------+-> validate/dedupe/copy in workspace
+provider image tool result -> in-memory image content --------+-> validate/dedupe/copy in workspace
                                                                 -> metadata-only activity row
 user expands Visual artifacts -> opaque-ID chunk RPC -> browser Blob URL -> thumbnail/lightbox
 ```

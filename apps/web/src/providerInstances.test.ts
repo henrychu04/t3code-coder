@@ -192,19 +192,18 @@ describe("resolveSelectableProviderInstance", () => {
     expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
   });
 
-  it("falls back to the first enabled and available instance", () => {
+  it("does not replace an unavailable requested instance", () => {
     const disabled = ProviderInstanceId.make("codex");
-    const fallback = ProviderInstanceId.make("claudeAgent");
     const providers = [
       provider({
         provider: ProviderDriverKind.make("codex"),
         instanceId: disabled,
         enabled: false,
       }),
-      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: fallback }),
+      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, disabled)).toBe(fallback);
+    expect(resolveSelectableProviderInstance(providers, disabled)).toBeUndefined();
   });
 
   it("prefers a ready instance over an enabled one whose driver cannot start", () => {
@@ -384,23 +383,36 @@ describe("getDefaultProviderInstanceModel", () => {
 });
 
 describe("resolveDefaultProviderModelSelection", () => {
-  it.each([
-    ["codex", "codex", "gpt-5.6"],
-    ["claudeAgent", "claudeAgent", "claude-fable-5"],
-    ["cursor", "cursor", "composer-2"],
-  ])("uses the only available %s instance", (driver, instanceId, modelSlug) => {
+  it("uses Codex for a new selection", () => {
     const providers = [
       provider({
-        provider: ProviderDriverKind.make(driver),
-        instanceId,
-        models: [model(modelSlug, false, true)],
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [model("claude-fable-5", false, true)],
+      }),
+      provider({
+        provider: ProviderDriverKind.make("codex"),
+        instanceId: "codex",
+        models: [model("gpt-5.6", false, true)],
       }),
     ];
 
     expect(resolveDefaultProviderModelSelection(providers, null)).toEqual({
-      instanceId,
-      model: modelSlug,
+      instanceId: "codex",
+      model: "gpt-5.6",
     });
+  });
+
+  it("does not use Claude when Codex is absent", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [model("claude-fable-5", false, true)],
+      }),
+    ];
+
+    expect(resolveDefaultProviderModelSelection(providers, null)).toBeNull();
   });
 
   it("preserves a valid stored selection including its options", () => {
@@ -420,7 +432,7 @@ describe("resolveDefaultProviderModelSelection", () => {
     expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
   });
 
-  it("replaces a stale stored instance with the first ready instance and its model", () => {
+  it("does not replace a stale stored instance", () => {
     const providers = [
       provider({
         provider: ProviderDriverKind.make("codex"),
@@ -440,11 +452,11 @@ describe("resolveDefaultProviderModelSelection", () => {
         instanceId: ProviderInstanceId.make("removed-provider"),
         model: "stale-model",
       }),
-    ).toEqual({ instanceId: "claudeAgent", model: "claude-opus-4-8" });
+    ).toBeNull();
   });
 
   it.each([{ enabled: false }, { availability: "unavailable" as const }])(
-    "replaces an unavailable stored instance deterministically",
+    "does not replace an unavailable stored instance",
     (requestedState) => {
       const providers = [
         provider({
@@ -465,11 +477,11 @@ describe("resolveDefaultProviderModelSelection", () => {
           instanceId: ProviderInstanceId.make("codex"),
           model: "gpt-5.6",
         }),
-      ).toEqual({ instanceId: "claudeAgent", model: "claude-opus-4-8" });
+      ).toBeNull();
     },
   );
 
-  it("returns no selection for empty, disabled, unavailable, or error-only profiles", () => {
+  it("returns no selection for empty, disabled, or unavailable Codex profiles", () => {
     expect(resolveDefaultProviderModelSelection([], null)).toBeNull();
     expect(
       resolveDefaultProviderModelSelection(
@@ -495,6 +507,9 @@ describe("resolveDefaultProviderModelSelection", () => {
         null,
       ),
     ).toBeNull();
+  });
+
+  it("keeps Codex selected when its probe reports an error", () => {
     expect(
       resolveDefaultProviderModelSelection(
         [
@@ -506,6 +521,6 @@ describe("resolveDefaultProviderModelSelection", () => {
         ],
         null,
       ),
-    ).toBeNull();
+    ).toEqual({ instanceId: "codex", model: "gpt-5.6-sol" });
   });
 });

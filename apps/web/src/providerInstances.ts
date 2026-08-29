@@ -336,10 +336,8 @@ const isSelectableProviderInstanceEntry = (entry: ProviderInstanceEntry): boolea
 
 /**
  * Resolve an exact stored instance when it remains enabled and available.
- * Otherwise choose a deterministic fallback that can plausibly start now:
- * ready first, then a non-error probe result. An errored provider is retained
- * only when it was explicitly requested; it is never invented as a new-user
- * default.
+ * With no requested instance, choose a deterministic default from the caller's
+ * already-scoped entries. An explicit selection is never replaced.
  */
 export function resolveSelectableProviderInstanceEntry(
   entries: ReadonlyArray<ProviderInstanceEntry>,
@@ -347,9 +345,7 @@ export function resolveSelectableProviderInstanceEntry(
 ): ProviderInstanceEntry | undefined {
   if (instanceId !== undefined) {
     const requested = entries.find((entry) => entry.instanceId === instanceId);
-    if (requested && isSelectableProviderInstanceEntry(requested)) {
-      return requested;
-    }
+    return requested && isSelectableProviderInstanceEntry(requested) ? requested : undefined;
   }
   return (
     entries.find(isProviderInstancePickerReady) ??
@@ -358,10 +354,8 @@ export function resolveSelectableProviderInstanceEntry(
 }
 
 /**
- * Resolve the routing key for a selection that may reference an instance
- * id that no longer exists (e.g. a persisted thread selection after the
- * user deleted the custom instance). Returns a ready or non-error fallback,
- * or `undefined` when no provider can safely become a new selection.
+ * Resolve the routing key for a selection. Explicit selections are strict;
+ * callers that want a default omit the instance id and scope the entries.
  */
 export function resolveSelectableProviderInstance(
   providers: ReadonlyArray<ServerProvider>,
@@ -372,16 +366,16 @@ export function resolveSelectableProviderInstance(
 }
 
 /**
- * Resolve the model selection persisted for a project or new thread. A valid
- * stored selection is preserved byte-for-byte. Falling back to another
- * instance also resets the model to that instance's own default, avoiding
- * cross-provider instance/model pairs.
+ * Resolve the model selection persisted for a project or new thread. New
+ * projects default to Codex. A stored selection is never replaced with a
+ * different provider instance.
  */
 export function resolveDefaultProviderModelSelection(
   providers: ReadonlyArray<ServerProvider>,
   selection: ModelSelection | null | undefined,
 ): ModelSelection | null {
-  const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
+  const requestedInstanceId = selection?.instanceId ?? ProviderInstanceId.make("codex");
+  const instanceId = resolveSelectableProviderInstance(providers, requestedInstanceId);
   if (instanceId === undefined) return null;
   if (selection?.instanceId === instanceId) return selection;
   const model = getDefaultProviderInstanceModel(providers, instanceId);

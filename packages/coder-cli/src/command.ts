@@ -43,7 +43,7 @@ export const REMOTE_WORKSPACE_PROBE_COMMAND = [
   `[ -x ${REMOTE_NODE_COMMAND} ] || fail "T3 Coder's Nix-provisioned Node.js runtime is not executable."`,
   `${REMOTE_NODE_VERSION_CHECK} || fail "T3 Coder requires Node.js 24 or newer from its Nix runtime."`,
   'command -v git >/dev/null 2>&1 || fail "T3 Coder requires Git."',
-  'command -v claude >/dev/null 2>&1 || fail "T3 Coder requires Claude Code in the workspace PATH."',
+  'command -v claude >/dev/null 2>&1 || command -v codex >/dev/null 2>&1 || fail "T3 Coder requires Claude Code or Codex in the workspace PATH."',
   'command -v script >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1)."',
   'script -qefc true /dev/null >/dev/null 2>&1 || fail "T3 Coder requires util-linux script(1) with -qefc support."',
   'printf "T3_CODER_PREFLIGHT_OK\\n"',

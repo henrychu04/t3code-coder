@@ -18,11 +18,19 @@ import {
   MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
   ScreenshotArtifactReference,
 } from "./screenshotArtifact.ts";
+import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
 const UnknownRecordSchema = Schema.Record(Schema.String, Schema.Unknown);
 
-const RuntimeEventRawSource = Schema.Literals(["claude.sdk.message", "claude.sdk.permission"]);
+const RuntimeEventRawSource = Schema.Union([
+  Schema.Literal("codex.app-server.notification"),
+  Schema.Literal("codex.app-server.request"),
+  Schema.Literal("codex.eventmsg"),
+  Schema.Literal("codex.sdk.thread-event"),
+  Schema.Literal("claude.sdk.message"),
+  Schema.Literal("claude.sdk.permission"),
+]);
 export type RuntimeEventRawSource = typeof RuntimeEventRawSource.Type;
 
 export const RuntimeEventRaw = Schema.Struct({
@@ -98,6 +106,7 @@ export type RuntimeErrorClass = typeof RuntimeErrorClass.Type;
 export const TOOL_LIFECYCLE_ITEM_TYPES = [
   "command_execution",
   "file_change",
+  "mcp_tool_call",
   "dynamic_tool_call",
   "collab_agent_tool_call",
   "web_search",
@@ -131,6 +140,7 @@ export const CanonicalRequestType = Schema.Literals([
   "file_change_approval",
   "apply_patch_approval",
   "exec_command_approval",
+  "mcp_elicitation_approval",
   "tool_user_input",
   "dynamic_tool_call",
   "auth_tokens_refresh",
@@ -179,6 +189,8 @@ const ProviderRuntimeEventType = Schema.Literals([
   "auth.status",
   "account.updated",
   "account.rate-limits.updated",
+  "mcp.status.updated",
+  "mcp.oauth.completed",
   "model.rerouted",
   "config.warning",
   "deprecation.notice",
@@ -228,6 +240,8 @@ const ToolSummaryType = Schema.Literal("tool.summary");
 const AuthStatusType = Schema.Literal("auth.status");
 const AccountUpdatedType = Schema.Literal("account.updated");
 const AccountRateLimitsUpdatedType = Schema.Literal("account.rate-limits.updated");
+const McpStatusUpdatedType = Schema.Literal("mcp.status.updated");
+const McpOauthCompletedType = Schema.Literal("mcp.oauth.completed");
 const ModelReroutedType = Schema.Literal("model.rerouted");
 const ConfigWarningType = Schema.Literal("config.warning");
 const DeprecationNoticeType = Schema.Literal("deprecation.notice");
@@ -425,7 +439,9 @@ export type ContentDeltaPayload = typeof ContentDeltaPayload.Type;
 const RequestOpenedPayload = Schema.Struct({
   requestType: CanonicalRequestType,
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
+  appName: Schema.optional(TrimmedNonEmptyStringSchema),
   args: Schema.optional(Schema.Unknown),
+  options: Schema.optional(Schema.Array(ProviderApprovalOption)),
 });
 export type RequestOpenedPayload = typeof RequestOpenedPayload.Type;
 
@@ -698,6 +714,18 @@ const AccountRateLimitsUpdatedPayload = Schema.Struct({
   rateLimits: Schema.Unknown,
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
+
+const McpStatusUpdatedPayload = Schema.Struct({
+  status: Schema.Unknown,
+});
+export type McpStatusUpdatedPayload = typeof McpStatusUpdatedPayload.Type;
+
+const McpOauthCompletedPayload = Schema.Struct({
+  success: Schema.Boolean,
+  name: Schema.optional(TrimmedNonEmptyStringSchema),
+  error: Schema.optional(TrimmedNonEmptyStringSchema),
+});
+export type McpOauthCompletedPayload = typeof McpOauthCompletedPayload.Type;
 
 const ModelReroutedPayload = Schema.Struct({
   fromModel: TrimmedNonEmptyStringSchema,
@@ -1054,6 +1082,21 @@ const ProviderRuntimeAccountRateLimitsUpdatedEvent = Schema.Struct({
 export type ProviderRuntimeAccountRateLimitsUpdatedEvent =
   typeof ProviderRuntimeAccountRateLimitsUpdatedEvent.Type;
 
+const ProviderRuntimeMcpStatusUpdatedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: McpStatusUpdatedType,
+  payload: McpStatusUpdatedPayload,
+});
+export type ProviderRuntimeMcpStatusUpdatedEvent = typeof ProviderRuntimeMcpStatusUpdatedEvent.Type;
+
+const ProviderRuntimeMcpOauthCompletedEvent = Schema.Struct({
+  ...ProviderRuntimeEventBase.fields,
+  type: McpOauthCompletedType,
+  payload: McpOauthCompletedPayload,
+});
+export type ProviderRuntimeMcpOauthCompletedEvent =
+  typeof ProviderRuntimeMcpOauthCompletedEvent.Type;
+
 const ProviderRuntimeModelReroutedEvent = Schema.Struct({
   ...ProviderRuntimeEventBase.fields,
   type: ModelReroutedType,
@@ -1145,6 +1188,8 @@ export const ProviderRuntimeEventV2 = Schema.Union([
   ProviderRuntimeAuthStatusEvent,
   ProviderRuntimeAccountUpdatedEvent,
   ProviderRuntimeAccountRateLimitsUpdatedEvent,
+  ProviderRuntimeMcpStatusUpdatedEvent,
+  ProviderRuntimeMcpOauthCompletedEvent,
   ProviderRuntimeModelReroutedEvent,
   ProviderRuntimeConfigWarningEvent,
   ProviderRuntimeDeprecationNoticeEvent,

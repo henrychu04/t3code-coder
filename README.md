@@ -1,8 +1,8 @@
 # T3 Coder
 
-T3 Coder is a browser interface for Claude Code running inside your Coder workspaces. Start
-threads, review changes, run terminals, and manage repositories from a local web app while your
-code, Claude sessions, and history stay in the workspace.
+T3 Coder is a browser interface for Codex and Claude Code running inside your Coder workspaces.
+Start threads, review changes, run terminals, and manage repositories from a local web app while
+your code, provider sessions, and history stay in the workspace.
 
 Your computer runs only a small local gateway and the browser UI. Nothing about your projects,
 conversations, or terminals is stored on the local machine — refresh the page and you are back
@@ -10,7 +10,7 @@ where you started.
 
 ## What you get
 
-- **Projects and threads** — organize Claude Code work by project, with pinning, snoozing,
+- **Projects and threads** — organize agent work by project, with pinning, snoozing,
   settling, and archiving for threads.
 - **Conversation controls** — four permission modes, inline approvals, model and mode selection
   per thread, and a context meter with compaction.
@@ -21,8 +21,8 @@ where you started.
 - **Workspace management** — connect to Coder domains, start and stop workspaces, watch health
   and latency, and forward workspace ports to your machine.
 
-Claude Code is the only agent T3 Coder drives, and it always runs inside the workspace — never on
-your computer.
+Codex and Claude Code are the only agents T3 Coder drives, and they always run inside the
+workspace — never on your computer. A workspace may provide either one or both.
 
 ## Requirements
 
@@ -34,7 +34,7 @@ On the local machine (macOS for development, Windows 11 for daily use):
 
 Inside each Linux Coder workspace:
 
-- Claude Code, already authenticated
+- Codex or Claude Code, already authenticated for the provider you intend to use
 - Git
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)
 - the standard Linux `script` utility
@@ -54,9 +54,11 @@ never opens the browser for you. Then:
    `npm start`; the token is handled there, never in the browser.
 3. Choose **Add project** in the sidebar, pick your domain and workspace, and select a folder in
    the remote folder picker.
+4. Choose an available Codex or Claude model and start a thread.
 
-The first connection to a workspace runs a short preflight (it verifies Claude Code, Git, Nix, and
-installs a version-matched helper) and may take a minute. After that, connecting is quick.
+The first connection to a workspace runs a short preflight. It verifies the workspace platform,
+Git, Nix, `script(1)`, and that at least one supported provider is present, then installs a
+version-matched helper. This may take a minute; later connections are quick.
 
 Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 

@@ -116,6 +116,18 @@ it("uses Claude's reported model and permission capabilities as authoritative", 
     "auto",
     "full-access",
   ]);
+
+  const customModel = providerModelsFromClaudeCapabilities({
+    models: [],
+    autoModeDisabled: false,
+    bypassPermissionsDisabled: false,
+    customModels: ["claude-custom"],
+  })[0];
+  assert.deepEqual(customModel?.capabilities?.supportedRuntimeModes, [
+    "approval-required",
+    "auto-accept-edits",
+    "full-access",
+  ]);
 });
 
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
