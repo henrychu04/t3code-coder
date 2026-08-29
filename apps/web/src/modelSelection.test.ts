@@ -321,7 +321,7 @@ describe("instance-scoped model selection", () => {
     });
   });
 
-  it("does not replace a missing Codex text-generation instance with Claude", () => {
+  it("replaces a missing Codex text-generation instance with Claude", () => {
     const providers = [
       provider({
         instanceId: "claudeAgent",
@@ -329,8 +329,9 @@ describe("instance-scoped model selection", () => {
       }),
     ];
 
-    expect(resolveAppModelSelectionState(DEFAULT_UNIFIED_SETTINGS, providers)).toEqual(
-      DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
-    );
+    expect(resolveAppModelSelectionState(DEFAULT_UNIFIED_SETTINGS, providers)).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    });
   });
 });

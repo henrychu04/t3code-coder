@@ -782,8 +782,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   //   2. Thread's persisted instance id (server-side saved selection).
   //   3. Project default's instance id.
   //   4. First enabled entry matching the current driver kind.
-  // No provider-kind fallback is allowed: an unavailable Codex selection
-  // must not silently become Claude, or vice versa.
+  //   5. First enabled entry overall / default instance for the kind.
   //
   const selectedInstanceId = useMemo<ProviderInstanceId>(() => {
     const candidates: Array<string | null | undefined> = [
@@ -820,6 +819,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
     return (
       resolveSelectableProviderInstanceEntry(requestedDriverEntries, undefined)?.instanceId ??
+      resolveSelectableProviderInstanceEntry(compatibleEntries, undefined)?.instanceId ??
       NO_PROVIDER_MODEL_SELECTION.instanceId
     );
   }, [
