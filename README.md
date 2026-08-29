@@ -15,6 +15,8 @@ where you started.
 - **Conversation controls** — four permission modes, inline approvals, model and mode selection
   per thread, and a context meter with compaction.
 - **Review** — per-turn diffs, diff comments, checkpoints, and worktree-aware branch controls.
+- **GitLab merge requests** — browse and review MRs, inspect discussions and checks, manage
+  reviewers and MR state, check out branches, and hand work to Claude.
 - **Files** — browse, read, and edit text files in the active project, with file and content
   search.
 - **Terminals** — workspace terminals attached to the thread you are working in.
@@ -36,6 +38,7 @@ Inside each Linux Coder workspace:
 
 - Codex or Claude Code, already authenticated for the provider you intend to use
 - Git
+- GitLab CLI (`glab`), authenticated when using GitLab merge-request features
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)
 
 T3 Coder does not install or authenticate a provider. A missing or unauthenticated provider is
@@ -85,10 +88,11 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 T3 Coder is a Coder-only fork of the open-source [T3 Code](https://github.com/pingdotgg/t3code).
 It keeps the T3 Code interface and developer workflow but specializes it for Coder-managed Linux
 workspaces: no desktop or mobile apps, no hosted web or relay service, no telemetry or auto-update,
-only Codex and Claude Code as providers, and repository-local source control without hosted
-pull-request integrations. MCP servers and provider app integrations are disabled. Where upstream
-and T3 Coder share behavior, upstream's documentation is the source of truth; T3 Coder's guides
-adapt it and note the differences.
+only Codex and Claude Code as providers, and GitLab as the only hosted source-control provider.
+MCP servers and provider app integrations are disabled. Git and `glab` run inside the workspace
+through the existing Coder RPC connection; the local gateway never handles GitLab credentials.
+Where upstream and T3 Coder share behavior, upstream's documentation is the source of truth; T3
+Coder's guides adapt it and note the differences.
 
 The complete runtime and policy boundary is documented for software-intake review in
 [the architecture note](./docs/internals/coder-only.md) and

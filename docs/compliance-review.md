@@ -10,8 +10,8 @@ Reviewers can expect:
   to remain in the workspace;
 - the local app to remember only non-secret Coder targets and explicit port-forward rules;
 - Coder to own deployment authentication and provider CLIs to own provider authentication;
-- no general upload, download, synchronization, hosted source-control, MCP, or app-integration
-  surface;
+- no general upload, download, synchronization, non-GitLab hosted source-control, MCP, or
+  app-integration surface;
 - workspace lifecycle and port-forward actions to remain explicit and visible to the user.
 
 This document provides software-intake evidence for those product promises. It is not an assertion
@@ -19,18 +19,20 @@ that any employer has approved the software.
 
 ## How connections are used
 
-| Source             | Destination                    | Mechanism                             | Purpose                                                |
-| ------------------ | ------------------------------ | ------------------------------------- | ------------------------------------------------------ |
-| Approved browser   | `127.0.0.1` gateway            | HTTP and WebSocket                    | Load the UI and exchange live RPC                      |
-| Gateway            | installed Coder CLI            | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
-| Local client       | configured `127.0.0.1` port    | TCP or UDP                            | Access one configured workspace service                |
-| Coder CLI          | configured Coder workspace     | foreground `coder port-forward`       | Carry a loopback-bound port forward                    |
-| Gateway            | installed OpenSSH `scp`        | child process, `shell: false`         | Copy the helper and validated pasted images            |
-| Coder CLI          | configured Coder deployment    | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
-| OpenSSH `scp`      | Coder CLI ProxyCommand         | `coder ssh --stdio`                   | Coder-authenticated transfer with no direct SSH path   |
-| Gateway            | workspace helper               | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
-| Workspace helper   | workspace Codex or Claude Code | child stdio, `shell: false`           | Provider conversation and permission control           |
-| Workspace provider | approved provider backend      | workspace-managed provider connection | Inference and authentication                           |
+| Source                | Destination                    | Mechanism                             | Purpose                                                |
+| --------------------- | ------------------------------ | ------------------------------------- | ------------------------------------------------------ |
+| Approved browser      | `127.0.0.1` gateway            | HTTP and WebSocket                    | Load the UI and exchange live RPC                      |
+| Gateway               | installed Coder CLI            | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
+| Local client          | configured `127.0.0.1` port    | TCP or UDP                            | Access one configured workspace service                |
+| Coder CLI             | configured Coder workspace     | foreground `coder port-forward`       | Carry a loopback-bound port forward                    |
+| Gateway               | installed OpenSSH `scp`        | child process, `shell: false`         | Copy the helper and validated pasted images            |
+| Coder CLI             | configured Coder deployment    | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
+| OpenSSH `scp`         | Coder CLI ProxyCommand         | `coder ssh --stdio`                   | Coder-authenticated transfer with no direct SSH path   |
+| Gateway               | workspace helper               | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
+| Workspace helper      | workspace Codex or Claude Code | child stdio, `shell: false`           | Provider conversation and permission control           |
+| Workspace provider    | approved provider backend      | workspace-managed provider connection | Inference and authentication                           |
+| Workspace helper      | workspace Git and `glab`       | child stdio, `shell: false`           | Repository and GitLab actions                          |
+| Workspace GitLab CLI  | configured GitLab host         | workspace-managed provider connection | Repository/MR API access and authentication            |
 
 The gateway contains no general HTTP client and makes no direct external request. It binds only to
 IPv4 loopback and validates the exact Host and Origin. The helper opens no listener, tunnel, or
@@ -46,9 +48,9 @@ arguments cannot supersede these final overrides; failed discovery prevents the 
 from starting.
 
 User commands entered in a workspace terminal, repository-local Git hooks, and the externally
-installed Codex, Claude, or Coder executables remain subject to the workspace and corporate network
-policy; T3 cannot make those external programs networkless while still connecting to Coder and the
-provider backends.
+installed Codex, Claude, GitLab, Git, or Coder executables remain subject to the workspace and
+corporate network policy; T3 cannot make those external programs networkless while still connecting
+to Coder, the provider backends, and the configured GitLab host.
 
 ## Where data lives
 
@@ -68,7 +70,8 @@ Coder owns deployment credentials. With the supported Coder CLI 2.25.3, T3 selec
 `--global-config` directory per domain so two file-backed Coder sessions can coexist. Coder 2.25.3
 writes a plaintext session token in each directory. The gateway never asks for, reads, logs, copies,
 or writes those tokens. Provider authentication exists only in the workspace and is owned by the
-installed Codex or Claude Code CLI.
+installed Codex or Claude Code CLI. GitLab authentication is owned by the workspace-installed
+`glab` CLI; T3 does not ask for, read, persist, copy, or log its tokens.
 
 ## Capabilities outside the product
 
@@ -83,7 +86,10 @@ installed Codex or Claude Code CLI.
   only user-facing transfer exceptions. Both accept signature-validated PNG, JPEG, and WebP images
   up to 20 MiB. Artifact capture is limited to 10 images per turn, and artifact reads accept only
   generated opaque IDs in bounded chunks after explicit UI expansion;
-- Git fetch, pull, push, pull requests, and hosted source-control integrations;
+- Hosted source-control providers other than GitLab. Repository-scoped fetch, pull, commit, push,
+  clone, repository publishing, and merge-request operations are available only in the workspace
+  helper through Git and the workspace-installed `glab` CLI; the local gateway performs none of
+  those operations and does not register GitHub, Azure DevOps, or Bitbucket;
 - the removed T3 preview MCP, all Codex MCP and app integrations, Claude browser integration,
   free-form Claude launch flags, and the packaged Anthropic Agent SDK;
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
