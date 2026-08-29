@@ -82,6 +82,7 @@ import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
   deriveMessagesTimelineRows,
+  estimateMessagesTimelineAverageRowHeight,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   resolveTimelineIsAtEnd,
@@ -444,6 +445,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
+  const estimatedItemSize = useMemo(
+    () => estimateMessagesTimelineAverageRowHeight(rows),
+    [rows],
+  );
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -622,7 +627,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             keyExtractor={keyExtractor}
             getItemType={getItemType}
             renderItem={renderItem}
-            estimatedItemSize={90}
+            estimatedItemSize={estimatedItemSize}
             initialScrollAtEnd
             {...(anchoredEndSpace ? { anchoredEndSpace } : {})}
             contentInsetEndAdjustment={contentInsetEndAdjustment}
