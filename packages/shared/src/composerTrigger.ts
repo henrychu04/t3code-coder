@@ -40,14 +40,18 @@ export function serializeComposerFileLink(path: string): string {
   return `[${label}](${encodeMarkdownLinkDestination(path)})`;
 }
 
+const MARKDOWN_LINK_DESTINATION_REGEX = /\]\(([^)\s]+)\)/gu;
+const REMOTE_LINK_DESTINATION_REGEX = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/iu;
 const PASTED_IMAGE_ATTACHMENT_PATH_REGEX =
-  /\/\.t3-coder\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp))(?=[)\s]|$)/giu;
+  /\/\.t3-coder\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp))$/iu;
 
 /** Extracts opaque generated image ids from composer links without accepting a remote path. */
 export function extractComposerPastedImageAttachmentIds(text: string): ReadonlyArray<string> {
   const ids = new Set<string>();
-  for (const match of text.matchAll(PASTED_IMAGE_ATTACHMENT_PATH_REGEX)) {
-    const id = match[1];
+  for (const linkMatch of text.matchAll(MARKDOWN_LINK_DESTINATION_REGEX)) {
+    const destination = linkMatch[1];
+    if (!destination || REMOTE_LINK_DESTINATION_REGEX.test(destination)) continue;
+    const id = PASTED_IMAGE_ATTACHMENT_PATH_REGEX.exec(destination)?.[1];
     if (id) ids.add(id.toLowerCase());
   }
   return [...ids];

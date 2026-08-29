@@ -154,8 +154,9 @@ it.layer(NodeServices.layer)("CodexTextGeneration", (it) => {
       ({ textGeneration, argsPath, attachmentsDir }) =>
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
           const attachmentId = "550e8400-e29b-41d4-a716-446655440000.png";
-          const imagePath = `${attachmentsDir}/${attachmentId}`;
+          const imagePath = path.join(attachmentsDir, attachmentId);
           yield* fileSystem.writeFile(
             imagePath,
             Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]),

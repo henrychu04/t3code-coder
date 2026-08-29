@@ -166,6 +166,41 @@ it.layer(NodeServices.layer)("CodexHomeLayout", (it) => {
       }),
     );
 
+    it.effect("accepts a matching symlink created concurrently", () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const sharedHome = yield* makeTempDir("t3code-codex-shared-");
+        const shadowRoot = yield* makeTempDir("t3code-codex-shadow-root-");
+        const shadowHome = path.join(shadowRoot, "shadow");
+        const sessionsTarget = path.join(sharedHome, "sessions");
+        const sessionsLink = path.join(shadowHome, "sessions");
+        let injectRace = true;
+        const racedFileSystem = {
+          ...fileSystem,
+          symlink: (target: string, link: string) => {
+            if (!injectRace) return fileSystem.symlink(target, link);
+            injectRace = false;
+            return fileSystem
+              .symlink(target, link)
+              .pipe(Effect.andThen(fileSystem.symlink(target, link)));
+          },
+        } satisfies FileSystem.FileSystem;
+        const layout = yield* resolveCodexHomeLayout(
+          decodeCodexSettings({
+            homePath: sharedHome,
+            shadowHomePath: shadowHome,
+          }),
+        );
+
+        yield* materializeCodexShadowHome(layout).pipe(
+          Effect.provideService(FileSystem.FileSystem, racedFileSystem),
+        );
+
+        expect(yield* fileSystem.readLink(sessionsLink)).toBe(sessionsTarget);
+      }),
+    );
+
     it.effect("accepts Codex-created shadow-local runtime directories", () =>
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;

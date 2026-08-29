@@ -63,4 +63,14 @@ describe("extractComposerPastedImageAttachmentIds", () => {
       ),
     ).toEqual([]);
   });
+
+  it("rejects remote links that contain a workspace attachment-shaped path", () => {
+    const id = "550e8400-e29b-41d4-a716-446655440000.png";
+    const attachmentPath = `/home/dev/.t3-coder/attachments/${id}`;
+    expect(
+      extractComposerPastedImageAttachmentIds(
+        `[https](https://example.test${attachmentPath}) [host](//example.test${attachmentPath}) [file](file://${attachmentPath})`,
+      ),
+    ).toEqual([]);
+  });
 });

@@ -4391,12 +4391,17 @@ function ChatViewContent(props: ChatViewProps) {
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
         return;
       }
+      const pastedImageAttachments = followUp.pastedImageAttachmentIds.map((id) => ({
+        type: "image" as const,
+        id,
+      }));
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
+        pastedImageAttachments,
       });
       return;
     }
@@ -4954,9 +4959,11 @@ function ChatViewContent(props: ChatViewProps) {
     async ({
       text,
       interactionMode: nextInteractionMode,
+      pastedImageAttachments,
     }: {
       text: string;
       interactionMode: "default" | "plan";
+      pastedImageAttachments: ReadonlyArray<{ readonly type: "image"; readonly id: string }>;
     }) => {
       if (
         !activeThread ||
@@ -5047,6 +5054,7 @@ function ChatViewContent(props: ChatViewProps) {
               text: outgoingMessageText,
             },
             modelSelection: ctxSelectedModelSelection,
+            ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
             titleSeed: activeThread.title,
             runtimeMode: ctxRuntimeMode,
             interactionMode: nextInteractionMode,
