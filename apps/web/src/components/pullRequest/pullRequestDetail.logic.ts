@@ -419,8 +419,9 @@ export function buildPullRequestTimeline(
   ].toSorted((left, right) => {
     const leftAt = instant(left.at);
     const rightAt = instant(right.at);
-    if (Number.isNaN(leftAt)) return Number.isNaN(rightAt) ? 0 : 1;
-    if (Number.isNaN(rightAt)) return -1;
+    if (Number.isNaN(leftAt) || Number.isNaN(rightAt) || leftAt === rightAt) {
+      return right.at.localeCompare(left.at);
+    }
     return rightAt - leftAt;
   });
 }

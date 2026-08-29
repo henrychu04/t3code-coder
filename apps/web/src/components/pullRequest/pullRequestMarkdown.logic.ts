@@ -5,6 +5,7 @@ export type PullRequestBodySegment =
       readonly id: string;
       readonly kind: "attachment";
       readonly url: string;
+      readonly hostLabel: string;
       /**
        * What the reader can be told the upload is. The uuid says nothing on its own — the type
        * only appears in the signed redirect GitHub answers with — but the shape does: GitHub
@@ -41,11 +42,20 @@ function isWebUrl(url: string): boolean {
   }
 }
 
-function attachmentFromLine(line: string): { url: string; media: "video" | "unknown" } | null {
+function attachmentHostLabel(url: string): string {
+  const hostname = new URL(url).hostname.toLowerCase();
+  if (hostname === "github.com") return "GitHub";
+  if (hostname === "gitlab.com") return "GitLab";
+  return hostname;
+}
+
+function attachmentFromLine(
+  line: string,
+): { url: string; hostLabel: string; media: "video" | "unknown" } | null {
   const url = BARE_URL_PATTERN.exec(line.trim())?.[1];
   if (url === undefined || !isWebUrl(url)) return null;
   if (VIDEO_EXTENSION_PATTERN.test(url) || GITHUB_ASSET_PATTERN.test(url)) {
-    return { url, media: "video" };
+    return { url, hostLabel: attachmentHostLabel(url), media: "video" };
   }
   return null;
 }
@@ -127,6 +137,7 @@ export function splitPullRequestBody(body: string): ReadonlyArray<PullRequestBod
         id: `attachment:${segments.length}`,
         kind: "attachment",
         url: source,
+        hostLabel: attachmentHostLabel(source),
         // The author wrote the tag, so this one is a video whatever the URL looks like.
         media: "video",
       });

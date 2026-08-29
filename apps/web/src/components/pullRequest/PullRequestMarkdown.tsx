@@ -57,7 +57,9 @@ export function PullRequestMarkdown({
           >
             <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">
-              {isVideo ? "Play video on GitLab" : "Open attachment on GitLab"}
+              {isVideo
+                ? `Play video on ${segment.hostLabel}`
+                : `Open attachment on ${segment.hostLabel}`}
             </span>
             <ExternalLinkIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
           </a>

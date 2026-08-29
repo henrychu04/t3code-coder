@@ -22,6 +22,7 @@ describe("pull request body segmentation", () => {
         id: "attachment:1",
         kind: "attachment",
         url: "https://github.com/user-attachments/assets/2f8c1a90-1b2c-4d5e-8f90-abcdef123456",
+        hostLabel: "GitHub",
         media: "video",
       },
       { id: "markdown:2", kind: "markdown", text: "After" },
@@ -34,6 +35,7 @@ describe("pull request body segmentation", () => {
         id: "attachment:0",
         kind: "attachment",
         url: "https://example.com/demo.mp4?raw=1",
+        hostLabel: "example.com",
         media: "video",
       },
     ]);
@@ -49,6 +51,7 @@ describe("pull request body segmentation", () => {
         id: "attachment:0",
         kind: "attachment",
         url: "https://example.com/a.webm",
+        hostLabel: "example.com",
         media: "video",
       },
     ]);
