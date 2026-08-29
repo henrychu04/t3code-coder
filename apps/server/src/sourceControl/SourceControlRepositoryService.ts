@@ -203,13 +203,35 @@ export const make = Effect.gen(function* () {
       });
     }
 
-    yield* git.execute({
-      operation: "SourceControlRepositoryService.cloneRepository",
-      cwd: preparedDestination.parentPath,
-      args: ["clone", "--", remoteUrl, preparedDestination.directoryName],
-      timeoutMs: 120_000,
-      maxOutputBytes: 256 * 1024,
-    });
+    yield* git
+      .execute({
+        operation: "SourceControlRepositoryService.cloneRepository",
+        cwd: preparedDestination.parentPath,
+        args: ["clone", "--", remoteUrl, preparedDestination.directoryName],
+        timeoutMs: 120_000,
+        maxOutputBytes: 256 * 1024,
+      })
+      .pipe(
+        Effect.catch((cause) =>
+          fileSystem
+            .remove(preparedDestination.destinationPath, { force: true, recursive: true })
+            .pipe(
+              Effect.matchEffect({
+                onSuccess: () => Effect.fail(cause),
+                onFailure: (cleanupCause) =>
+                  Effect.fail(
+                    new SourceControlRepositoryError({
+                      operation: "cloneRepository",
+                      provider,
+                      detail:
+                        "The clone failed and its partially populated destination could not be removed.",
+                      cause: { clone: cause, cleanup: cleanupCause },
+                    }),
+                  ),
+              }),
+            ),
+        ),
+      );
 
     return {
       cwd: preparedDestination.destinationPath,

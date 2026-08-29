@@ -503,6 +503,13 @@ export function createVcsActionManager<R, E>(
               }
             }),
           ),
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              if (registry.get(stateAtom).actionId === input.actionId) {
+                registry.set(stateAtom, EMPTY_VCS_ACTION_STATE);
+              }
+            }),
+          ),
         );
       },
     });

@@ -59,11 +59,10 @@ export const make = Effect.gen(function* () {
     );
 
   return SourceControlDiscovery.of({
-    discover: Effect.all([
-      discoverGit,
-      providers.discover,
-      gitLab.probeWriteAccess({ cwd: config.cwd }),
-    ]).pipe(
+    discover: Effect.all(
+      [discoverGit, providers.discover, gitLab.probeWriteAccess({ cwd: config.cwd })],
+      { concurrency: 3 },
+    ).pipe(
       Effect.map(([git, sourceControlProviders, writeAccess]) => ({
         versionControlSystems: [git],
         sourceControlProviders: sourceControlProviders.map((provider) =>

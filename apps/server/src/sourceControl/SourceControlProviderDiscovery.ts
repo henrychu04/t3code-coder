@@ -134,7 +134,8 @@ function sanitizedAuthLines(text: string): ReadonlyArray<string> {
   for (const entry of text.split(/\r?\n/)) {
     const line = entry.trim();
     if (line.length === 0) continue;
-    if (/^[-\s]*token(?:\s+scopes?)?:/iu.test(line)) continue;
+    if (/\btoken(?:\s+scopes?)?\s*:/iu.test(line)) continue;
+    if (/\bglpat-[a-z0-9_-]{10,}\b/iu.test(line)) continue;
     lines.push(line);
   }
   return lines;
