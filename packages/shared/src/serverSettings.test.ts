@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Duration from "effect/Duration";
-import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 
 import { createModelSelection } from "./model.ts";
 import {
@@ -17,11 +21,13 @@ describe("source control server settings", () => {
   });
 
   it("uses an enabled dedicated writer model and falls back when disabled", () => {
-    const selection = createModelSelection(ProviderInstanceId.make("writer"), "claude-opus-4-1");
+    const writerId = ProviderInstanceId.make("writer");
+    const writerDriver = ProviderDriverKind.make("claudeAgent");
+    const selection = createModelSelection(writerId, "claude-opus-4-1");
     const enabled = {
       ...DEFAULT_SERVER_SETTINGS,
       providerInstances: {
-        writer: { driver: "claudeAgent", enabled: true, config: {} },
+        [writerId]: { driver: writerDriver, enabled: true, config: {} },
       },
       sourceControlWriterModelSelection: selection,
     };
@@ -30,7 +36,7 @@ describe("source control server settings", () => {
       resolveSourceControlWriterModelSelection({
         ...enabled,
         providerInstances: {
-          writer: { driver: "claudeAgent", enabled: false, config: {} },
+          [writerId]: { driver: writerDriver, enabled: false, config: {} },
         },
       }),
     ).toBe(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
