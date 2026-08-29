@@ -1,5 +1,10 @@
 # T3 Coder
 
+T3 Coder is a browser interface for Claude Code running inside Linux Coder workspaces. It keeps
+the T3 Code product — projects, threads, review, terminals, files — and specializes it for
+Coder-managed workspaces, removing upstream's desktop, mobile, hosted-web, relay, telemetry, and
+non-Claude provider surfaces.
+
 Use the global `karpathy-guidelines` skill for coding, review, and refactoring work.
 
 T3 Coder is a Coder-only fork of T3 Code. A browser talks to a Node gateway bound to
@@ -35,44 +40,49 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
-  transfer, or background file synchronization. The Files surface is the only text-file exception:
-  it may list, read, and edit bounded UTF-8 text files inside the active project through the existing
-  helper stdio RPC. Accept only validated project-relative paths, verify the project root belongs to
-  the requesting thread, reject path and symlink escapes and binary files, detect stale writes, and
-  keep open-file and editor state in browser memory only. Its explicit Copy path action may place
-  only that project-relative path—not file contents or an absolute path—on the local clipboard.
-  Ordinary user-initiated reads and edits retain the 1 MiB limit and all existing path, UTF-8,
-  binary-file, symlink, and stale-write validation. Project-content search is the only additional
-  text-content exception. Filename and path search must continue to use a lightweight path-only FFF
-  index. Content search may use a separate, on-demand, content-enabled `@ff-labs/fff-node` index only
-  after verifying that the exact project root belongs to the requesting thread and using the
-  verified real project root as FFF's `basePath`. It may use FFF's native plain-text and regex grep,
-  but must never scan a filesystem root or home directory. Enforce a hard native search time budget,
-  initially 250 ms per request, cursor-based pagination, at most 100 matches per file and 500
-  returned matches per request, cancellation and timeout behavior that cannot monopolize the
-  helper's stdio RPC connection, and a 15-minute idle TTL followed by deterministic destruction of
-  each content index. Treat every FFF result as untrusted: before exposure, reject absolute paths,
-  traversal, NUL bytes, malformed relative paths, and realpath or symlink escapes. Return only
-  validated project-relative paths, bounded UTF-8 line snippets, and match ranges; reject or suppress
-  binary-file matches and never expose arbitrary file bytes or a general content-reading API. Keep
-  query text, matching contents, absolute paths, and secrets out of errors and logs. The former
-  2,000-file and 32 MiB aggregate scan limits do not apply once this compliant native,
-  time-budgeted search path replaces the existing scanner. Before implementation is approved,
-  focused Linux x86-64 tests must characterize FFF's handling of symlinks, binary files, oversized
-  files, regex failures, cancellation, and time budgets. This search exception does not authorize
-  uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace connections.
-  The other user-facing transfer exceptions are an image pasted directly into the message composer
-  and the display of turn-scoped screenshot artifacts.
-  Accept PNG, JPEG, and WebP images only, validate their signatures rather than trusting metadata,
-  and reject images larger than 20 MiB. For pasted images, generate filenames internally and copy
-  only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path. For
-  screenshot artifacts, capture at most 10 images that were created or modified inside the active
-  project during a Claude turn, or returned as image content by that turn's tool results. Copy them
-  to generated paths beneath `$HOME/.t3-coder/artifacts`, expose only opaque IDs and metadata in
-  durable activity, and return bytes in bounded chunks over the existing helper stdio RPC only
-  after explicit UI expansion. Do not expose arbitrary paths, download/export actions, local
-  persistence, or a general file-reading API. The versioned helper bootstrap is the other transfer
-  exception.
+  transfer, or background file synchronization. The only exceptions are listed below; each is
+  scoped to its own mechanism and authorizes nothing beyond it.
+  - **Files surface (the only text-file exception).** It may list, read, and edit bounded UTF-8
+    text files inside the active project through the existing helper stdio RPC. Accept only
+    validated project-relative paths, verify the project root belongs to the requesting thread,
+    reject path and symlink escapes and binary files, detect stale writes, and keep open-file and
+    editor state in browser memory only. Its explicit Copy path action may place only that
+    project-relative path—not file contents or an absolute path—on the local clipboard. Ordinary
+    user-initiated reads and edits retain the 1 MiB limit and all existing path, UTF-8, binary-file,
+    symlink, and stale-write validation.
+  - **Project-content search (the only additional text-content exception).**
+    - Filename and path search must continue to use a lightweight path-only FFF index.
+    - Content search may use a separate, on-demand, content-enabled `@ff-labs/fff-node` index only
+      after verifying that the exact project root belongs to the requesting thread and using the
+      verified real project root as FFF's `basePath`. It may use FFF's native plain-text and regex
+      grep, but must never scan a filesystem root or home directory.
+    - Enforce a hard native search time budget, initially 250 ms per request, cursor-based
+      pagination, at most 100 matches per file and 500 returned matches per request, cancellation
+      and timeout behavior that cannot monopolize the helper's stdio RPC connection, and a
+      15-minute idle TTL followed by deterministic destruction of each content index.
+    - Treat every FFF result as untrusted: before exposure, reject absolute paths, traversal, NUL
+      bytes, malformed relative paths, and realpath or symlink escapes. Return only validated
+      project-relative paths, bounded UTF-8 line snippets, and match ranges; reject or suppress
+      binary-file matches and never expose arbitrary file bytes or a general content-reading API.
+    - Keep query text, matching contents, absolute paths, and secrets out of errors and logs.
+    - The former 2,000-file and 32 MiB aggregate scan limits do not apply once this compliant
+      native, time-budgeted search path replaces the existing scanner. Before implementation is
+      approved, focused Linux x86-64 tests must characterize FFF's handling of symlinks, binary
+      files, oversized files, regex failures, cancellation, and time budgets.
+    - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
+      reads, or non-Coder workspace connections.
+  - **Images: composer paste-in and turn-scoped screenshot artifacts.** Accept PNG, JPEG, and WebP
+    images only, validate their signatures rather than trusting metadata, and reject images larger
+    than 20 MiB.
+    - Pasted images: generate filenames internally and copy only into
+      `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
+    - Screenshot artifacts: capture at most 10 images that were created or modified inside the
+      active project during a Claude turn, or returned as image content by that turn's tool
+      results. Copy them to generated paths beneath `$HOME/.t3-coder/artifacts`, expose only opaque
+      IDs and metadata in durable activity, and return bytes in bounded chunks over the existing
+      helper stdio RPC only after explicit UI expansion. Do not expose arbitrary paths,
+      download/export actions, local persistence, or a general file-reading API.
+  - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git is repository-local in the workspace. Do not add fetch, pull, push, pull-request, or hosted
   source-control integrations.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
@@ -128,6 +138,10 @@ without explicit user permission. Do not test against or modify `~/.t3/userdata`
 ## Working practices
 
 - Prefer `rg`/`rg --files` for discovery.
+- Upstream T3 Code's docs (`docs/user/` in `pingdotgg/t3code`) are the source of truth for shared
+  product behavior. When documenting product behavior, start from upstream's docs rather than
+  re-deriving from code, adapt them to the Coder-only model, and port upstream doc updates when
+  they apply.
 - Preserve unrelated user changes and avoid destructive Git commands.
 - Never kill processes by pattern; stop only a PID captured at spawn.
 - Never commit plans, scratch notes, local state, secrets, credentials, or generated build output.
