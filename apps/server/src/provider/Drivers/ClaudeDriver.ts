@@ -40,6 +40,7 @@ import {
   type ProviderDriver,
   type ProviderInstance,
 } from "../ProviderDriver.ts";
+import { applyBundledModelManifest } from "../ModelManifest.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 import { makeClaudeCapabilitiesCacheKey, makeClaudeContinuationGroupKey } from "./ClaudeHome.ts";
@@ -101,6 +102,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         continuationGroupKey,
       });
+      const classifyAndStamp = (draft: ServerProviderDraft): ServerProvider =>
+        stampIdentity(applyBundledModelManifest(draft, DRIVER_KIND));
 
       const adapterOptions = {
         instanceId,
@@ -139,7 +142,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         processEnv,
         cwd,
       ).pipe(
-        Effect.map(stampIdentity),
+        Effect.map(classifyAndStamp),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         Effect.provideService(FileSystem.FileSystem, fileSystem),
         Effect.provideService(Path.Path, path),
@@ -150,7 +153,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         streamSettings: Stream.never,
         haveSettingsChanged: () => false,
         initialSnapshot: (settings) =>
-          makePendingClaudeProvider(settings).pipe(Effect.map(stampIdentity)),
+          makePendingClaudeProvider(settings).pipe(Effect.map(classifyAndStamp)),
         checkProvider,
       }).pipe(
         Effect.mapError(

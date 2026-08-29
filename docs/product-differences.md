@@ -37,6 +37,14 @@ Codex is missing or unauthenticated, Claude remains usable when it is ready, and
 also true. T3 Coder may choose a ready provider for a new draft, but it never silently changes the
 provider for an existing thread or a turn already in progress.
 
+Codex and Claude share one provider-settings experience, and a workspace can expose additional
+instances of either provider. The workspace remains the source of the installations, identities,
+configuration, and login state behind every instance.
+
+The model picker's current and older groupings follow upstream's model lifecycle list. T3 Coder
+bundles that list with each release instead of refreshing it from a public service in the
+background, preserving the product's Coder-only connection boundary.
+
 ### Access choices reflect workspace policy
 
 The access menu uses the same product modes as upstream, but only shows modes supported by the

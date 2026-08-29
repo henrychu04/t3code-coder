@@ -35,7 +35,7 @@ import {
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
-import { usePrimaryEnvironment } from "~/state/environments";
+import { usePrimaryEnvironmentId } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
 
@@ -346,7 +346,7 @@ export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
 }
 
 export function useUpdatePrimarySettings() {
-  return useUpdateSettingsTarget(usePrimaryEnvironment()?.environmentId ?? null);
+  return useUpdateSettingsTarget(usePrimaryEnvironmentId());
 }
 
 export function useUpdateClientSettings() {

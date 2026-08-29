@@ -20,83 +20,15 @@ import {
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../hooks/useSettings";
+import { WorkspaceProviderSettings } from "../components/settings/WorkspaceProviderSettings";
 
 function GeneralSettingsView() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
-  const updateCodexSettings = (patch: Partial<(typeof settings.providers)["codex"]>): void => {
-    updateSettings({ providers: { codex: patch } });
-  };
 
   return (
     <SettingsPage>
-      <SettingsSection
-        title="Codex"
-        description="Codex runs in the connected Linux workspace and uses that workspace's Codex login and configuration."
-      >
-        <SettingsRow
-          title="Enable Codex"
-          description="Show Codex models and allow new threads to use the workspace Codex CLI."
-          control={
-            <Switch
-              aria-label="Enable Codex"
-              checked={settings.providers.codex.enabled}
-              onCheckedChange={(checked) => updateCodexSettings({ enabled: Boolean(checked) })}
-            />
-          }
-        />
-        <SettingsRow
-          title="Binary path"
-          description="Executable name or absolute Linux path inside the workspace."
-          control={
-            <Input
-              aria-label="Codex binary path"
-              className="w-64"
-              value={settings.providers.codex.binaryPath}
-              onValueChange={(value) => updateCodexSettings({ binaryPath: value })}
-            />
-          }
-        />
-        <SettingsRow
-          title="CODEX_HOME"
-          description="Leave empty to use the workspace's standard Codex home."
-          control={
-            <Input
-              aria-label="Codex home path"
-              className="w-64"
-              placeholder="~/.codex"
-              value={settings.providers.codex.homePath}
-              onValueChange={(value) => updateCodexSettings({ homePath: value })}
-            />
-          }
-        />
-        <SettingsRow
-          title="Isolated state path"
-          description="Optional private state that shares authentication and sessions with CODEX_HOME."
-          control={
-            <Input
-              aria-label="Codex isolated state path"
-              className="w-64"
-              placeholder="~/.codex-t3/personal"
-              value={settings.providers.codex.shadowHomePath}
-              onValueChange={(value) => updateCodexSettings({ shadowHomePath: value })}
-            />
-          }
-        />
-        <SettingsRow
-          title="Launch arguments"
-          description="Additional Codex configuration flags passed to app-server sessions."
-          control={
-            <Input
-              aria-label="Codex launch arguments"
-              className="w-64"
-              placeholder="-c key=value"
-              value={settings.providers.codex.launchArgs}
-              onValueChange={(value) => updateCodexSettings({ launchArgs: value })}
-            />
-          }
-        />
-      </SettingsSection>
+      <WorkspaceProviderSettings />
 
       <SettingsSection
         title="New threads"

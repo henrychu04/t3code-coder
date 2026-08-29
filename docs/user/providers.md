@@ -41,6 +41,8 @@ The model picker is capability-driven rather than a hard-coded compatibility lis
 - Codex models, reasoning choices, and service tiers come from the workspace Codex app server.
 - Claude models and supported access modes come from the workspace Claude Code installation.
 - A model appears only while its provider is ready.
+- The current and older model sections follow the upstream model lifecycle list bundled with the
+  T3 Coder release.
 - Existing threads retain their recorded provider and model selection unless the user explicitly
   changes a supported option.
 
@@ -70,10 +72,15 @@ T3-managed Codex and Claude sessions do not use MCP servers. Codex app integrati
 browser integration are also disabled. Skills and native provider commands remain available; they
 are distinct from MCP and app integrations.
 
-## Codex settings
+## Provider settings
 
-The default Codex settings use the workspace's `codex` executable, standard `CODEX_HOME`, and
-existing login. Most users should leave them unchanged.
+The default Codex and Claude settings use the workspace's standard executables, provider homes,
+and existing logins. Most users should leave them unchanged. Each provider can be enabled or
+disabled independently.
 
-The advanced fields can point T3 Coder at a different workspace binary or Codex state layout when
-the workspace is already configured that way. They do not install Codex or perform login.
+Additional provider instances let a workspace expose another Codex or Claude installation,
+identity, or configuration without replacing the default. The same settings experience is used
+for both providers, while each provider shows only the choices it supports.
+
+These settings change how T3 Coder uses software and state already present in the workspace. They
+do not install a provider, perform login, or copy provider state to the local computer.

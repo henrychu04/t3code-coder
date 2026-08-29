@@ -16,6 +16,7 @@ import { makeCodexMcpServerNameResolver } from "../Layers/CodexIntegrationPolicy
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../Layers/codexLaunchArgs.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
+import { applyBundledModelManifest } from "../ModelManifest.ts";
 import type { ProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
 import type { ServerProviderDraft } from "../providerSnapshot.ts";
 import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
@@ -70,6 +71,8 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         accentColor,
         continuationGroupKey: continuationIdentity.continuationKey,
       });
+      const classifyAndStamp = (draft: ServerProviderDraft): ServerProvider =>
+        stampIdentity(applyBundledModelManifest(draft, DRIVER_KIND));
 
       yield* materializeCodexShadowHome(homeLayout).pipe(
         Effect.mapError(
@@ -112,7 +115,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         processEnv,
         cwd,
       ).pipe(
-        Effect.map(stampIdentity),
+        Effect.map(classifyAndStamp),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
       );
       const snapshot = yield* makeManagedServerProvider<CodexSettings>({
@@ -120,7 +123,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         streamSettings: Stream.never,
         haveSettingsChanged: () => false,
         initialSnapshot: (settings) =>
-          makePendingCodexProvider(settings).pipe(Effect.map(stampIdentity)),
+          makePendingCodexProvider(settings).pipe(Effect.map(classifyAndStamp)),
         checkProvider,
       }).pipe(
         Effect.mapError(
