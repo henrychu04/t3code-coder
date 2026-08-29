@@ -30,6 +30,13 @@ export function isModelSelectionProviderEnabled(
   );
 }
 
+export function resolveSourceControlWriterModelSelection(settings: ServerSettings): ModelSelection {
+  const selection = settings.sourceControlWriterModelSelection;
+  return selection && isModelSelectionProviderEnabled(settings, selection)
+    ? selection
+    : settings.textGenerationModelSelection;
+}
+
 const shouldReplaceSelection = (
   patch: ServerSettingsPatch["textGenerationModelSelection"] | undefined,
 ): boolean => Boolean(patch && (patch.instanceId !== undefined || patch.model !== undefined));
@@ -52,6 +59,12 @@ export function applyServerSettingsPatch(
   const selectionPatch = patch.textGenerationModelSelection;
   const next = {
     ...deepMerge(current, patch),
+    ...(patch.automaticGitFetchInterval === undefined
+      ? {}
+      : { automaticGitFetchInterval: patch.automaticGitFetchInterval }),
+    ...(patch.sourceControlWriterModelSelection === undefined
+      ? {}
+      : { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }),
     ...(patch.providerInstances === undefined
       ? {}
       : { providerInstances: patch.providerInstances }),

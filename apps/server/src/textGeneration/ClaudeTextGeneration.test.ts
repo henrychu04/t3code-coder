@@ -320,6 +320,71 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("generates commit messages through the configured Claude model", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            subject: "Restore Git actions.",
+            body: "- Route operations through the workspace helper",
+          },
+        }),
+        argsMustContain: "--model claude-sonnet-4-6",
+        stdinMustContain: "Staged files:",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/git-actions",
+            stagedSummary: "1 file changed",
+            stagedPatch: "+restore",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated).toEqual({
+            subject: "Restore Git actions",
+            body: "- Route operations through the workspace helper",
+          });
+        }),
+    ),
+  );
+
+  it.effect("generates GitLab merge request content", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            title: "Restore GitLab workflow",
+            body: "## Summary\n\n- Restore actions\n\n## Testing\n\n- Focused tests",
+          },
+        }),
+        stdinMustContain: "GitLab merge request content",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generatePrContent({
+            cwd: process.cwd(),
+            baseBranch: "main",
+            headBranch: "feature/git-actions",
+            commitSummary: "abc Restore actions",
+            diffSummary: "1 file changed",
+            diffPatch: "+restore",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated.title).toBe("Restore GitLab workflow");
+          expect(generated.body).toContain("## Testing");
+        }),
+    ),
+  );
+
   it.effect("runs Claude text generation with the configured CLAUDE_CONFIG_DIR", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

@@ -2,6 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { EnvironmentId, ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { SourceControlProviderKind } from "./sourceControl.ts";
 
 export const ExecutionEnvironmentPlatformOs = Schema.Literals([
   "darwin",
@@ -30,6 +31,10 @@ export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.T
 
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Server can list and operate on hosted merge requests. */
+  pullRequests: Schema.optionalKey(Schema.Boolean),
+  /** Server can read the current branch's GitLab merge request through workspace `glab`. */
+  gitLabMergeRequests: Schema.optionalKey(Schema.Boolean),
   connectionProbe: Schema.optionalKey(Schema.Boolean),
   /** Server understands thread.settle / thread.unsettle commands. Absent on
       pre-settlement servers, so clients treat missing as unsupported and
@@ -67,10 +72,17 @@ export const EnvironmentConnectionState = Schema.Literals([
 ]);
 export type EnvironmentConnectionState = typeof EnvironmentConnectionState.Type;
 
-export const RepositoryIdentityLocator = Schema.Struct({
-  source: Schema.Literal("workspace-path"),
-  path: TrimmedNonEmptyString,
-});
+export const RepositoryIdentityLocator = Schema.Union([
+  Schema.Struct({
+    source: Schema.Literal("workspace-path"),
+    path: TrimmedNonEmptyString,
+  }),
+  Schema.Struct({
+    source: Schema.Literal("git-remote"),
+    remoteName: TrimmedNonEmptyString,
+    remoteUrl: TrimmedNonEmptyString,
+  }),
+]);
 export type RepositoryIdentityLocator = typeof RepositoryIdentityLocator.Type;
 
 export const RepositoryIdentity = Schema.Struct({
@@ -78,6 +90,8 @@ export const RepositoryIdentity = Schema.Struct({
   locator: RepositoryIdentityLocator,
   rootPath: Schema.optionalKey(TrimmedNonEmptyString),
   displayName: Schema.optionalKey(TrimmedNonEmptyString),
+  provider: Schema.optionalKey(SourceControlProviderKind),
+  owner: Schema.optionalKey(TrimmedNonEmptyString),
   name: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type RepositoryIdentity = typeof RepositoryIdentity.Type;

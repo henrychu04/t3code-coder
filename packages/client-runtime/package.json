@@ -75,6 +75,22 @@
       "types": "./src/state/review.ts",
       "default": "./src/state/review.ts"
     },
+    "./state/gitLabMergeRequests": {
+      "types": "./src/state/gitLabMergeRequests.ts",
+      "default": "./src/state/gitLabMergeRequests.ts"
+    },
+    "./state/git": {
+      "types": "./src/state/git.ts",
+      "default": "./src/state/git.ts"
+    },
+    "./state/source-control": {
+      "types": "./src/state/sourceControl.ts",
+      "default": "./src/state/sourceControl.ts"
+    },
+    "./state/pullRequests": {
+      "types": "./src/state/pullRequests.ts",
+      "default": "./src/state/pullRequests.ts"
+    },
     "./state/runtime": {
       "types": "./src/state/runtime.ts",
       "default": "./src/state/runtime.ts"

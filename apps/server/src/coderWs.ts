@@ -15,6 +15,9 @@ import {
   CoderWsRpcGroup,
   CommandId,
   GitCommandError,
+  type GitActionProgressEvent,
+  type GitManagerServiceError,
+  GitLabMergeRequestViewError,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
@@ -56,6 +59,10 @@ import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as GitLabMergeRequestService from "./gitlab/GitLabMergeRequestService.ts";
+import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
+import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as Keybindings from "./keybindings.ts";
 import {
   projectActivityEvent,
@@ -377,6 +384,12 @@ export const layer = CoderWsRpcGroup.toLayer(
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
+    const sourceControlProviders =
+      yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+    const sourceControlRepositories =
+      yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const gitLabMergeRequests = yield* GitLabMergeRequestService.GitLabMergeRequestService;
+    const pullRequests = yield* PullRequestService.PullRequestService;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
     const review = yield* ReviewService.ReviewService;
     const terminals = yield* TerminalManager.TerminalManager;
@@ -904,9 +917,36 @@ export const layer = CoderWsRpcGroup.toLayer(
               : Effect.succeed([]);
           }),
         ),
+      [WS_METHODS.serverDiscoverSourceControl]: () =>
+        sourceControlProviders.discover.pipe(
+          Effect.map((sourceControlProviders) => ({
+            versionControlSystems: [
+              {
+                kind: "git" as const,
+                implemented: true,
+                label: "Git",
+                status: "available" as const,
+                version: Option.none<string>(),
+                installHint: "Git is provided by the Coder workspace.",
+                detail: Option.none<string>(),
+              },
+            ],
+            sourceControlProviders,
+          })),
+        ),
+      [WS_METHODS.sourceControlLookupRepository]: (input) =>
+        sourceControlRepositories.lookupRepository(input),
+      [WS_METHODS.sourceControlCloneRepository]: (input) =>
+        sourceControlRepositories.cloneRepository(input),
+      [WS_METHODS.sourceControlPublishRepository]: (input) =>
+        sourceControlRepositories
+          .publishRepository(input)
+          .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.refStream(cwd),
       [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),
+      [WS_METHODS.vcsPull]: (input) =>
+        git.pull(input).pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.vcsListRefs]: (input) => git.listRefs(input),
       [WS_METHODS.vcsCreateWorktree]: (input) =>
         git.createWorktree(input).pipe(
@@ -947,6 +987,60 @@ export const layer = CoderWsRpcGroup.toLayer(
           ),
           Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
         ),
+      [WS_METHODS.gitRunStackedAction]: (input) =>
+        Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
+          git
+            .runStackedAction(input, {
+              publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
+            })
+            .pipe(
+              Effect.matchCauseEffect({
+                onFailure: (cause) => Queue.failCause(queue, cause),
+                onSuccess: () =>
+                  vcsStatus
+                    .refresh(input.cwd)
+                    .pipe(Effect.ignore, Effect.andThen(Queue.end(queue).pipe(Effect.asVoid))),
+              }),
+            ),
+        ),
+      [WS_METHODS.gitResolvePullRequest]: (input) => git.resolvePullRequest(input),
+      [WS_METHODS.gitPreparePullRequestThread]: (input) =>
+        git
+          .preparePullRequestThread(input)
+          .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
+      [WS_METHODS.gitLabMergeRequestView]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned) {
+            return yield* new GitLabMergeRequestViewError({
+              failure: "workspace_not_owned_by_thread",
+              detail: "The merge request workspace does not belong to this thread.",
+            });
+          }
+          return yield* gitLabMergeRequests.viewCurrent({ cwd: input.cwd });
+        }),
+      [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
+      [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
+      [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
+      [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
+      [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
+      [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
+      [WS_METHODS.pullRequestsDiffFileContents]: (input) => pullRequests.diffFileContents(input),
+      [WS_METHODS.pullRequestsRunAction]: (input) => pullRequests.runAction(input),
+      [WS_METHODS.pullRequestsUpdate]: (input) => pullRequests.update(input),
+      [WS_METHODS.pullRequestsComment]: (input) => pullRequests.comment(input),
+      [WS_METHODS.pullRequestsUpdateComment]: (input) => pullRequests.updateComment(input),
+      [WS_METHODS.pullRequestsSubmitReview]: (input) => pullRequests.submitReview(input),
+      [WS_METHODS.pullRequestsReplyToThread]: (input) => pullRequests.replyToThread(input),
+      [WS_METHODS.pullRequestsSetThreadResolution]: (input) =>
+        pullRequests.setThreadResolution(input),
+      [WS_METHODS.pullRequestsSetReaction]: (input) => pullRequests.setReaction(input),
+      [WS_METHODS.pullRequestsInvalidate]: (input) => pullRequests.invalidate(input),
+      [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
+        pullRequests.reviewerCandidates(input),
+      [WS_METHODS.pullRequestsRequestReviewers]: (input) => pullRequests.requestReviewers(input),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
       [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
       [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),

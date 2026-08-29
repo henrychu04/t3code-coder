@@ -279,6 +279,46 @@ it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", ()
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
 
+it.effect("GitVcsDriver adds a remote and pushes the current branch with upstream tracking", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-push-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const remote = path.join(fixtureRoot, "remote.git");
+    yield* fileSystem.makeDirectory(repo);
+    yield* fileSystem.makeDirectory(remote);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(remote, ["init", "--bare", "--initial-branch=main"]);
+
+    const remoteName = yield* driver.ensureRemote({
+      cwd: repo,
+      preferredName: "origin",
+      url: remote,
+    });
+    const pushed = yield* driver.pushCurrentBranch(repo, null, { remoteName });
+
+    assert.strictEqual(remoteName, "origin");
+    assert.strictEqual(pushed.branch, "main");
+    assert.strictEqual(pushed.upstreamBranch, "origin/main");
+    assert.strictEqual(pushed.setUpstream, true);
+    assert.strictEqual(
+      yield* readGit(remote, ["rev-parse", "refs/heads/main"]),
+      yield* readGit(repo, ["rev-parse", "HEAD"]),
+    );
+    assert.strictEqual(
+      yield* driver.ensureRemote({ cwd: repo, preferredName: "origin", url: remote }),
+      "origin",
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
 it.effect("GitVcsDriver uses the remote HEAD when determining the default branch", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

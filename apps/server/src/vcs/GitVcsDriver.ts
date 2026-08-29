@@ -7,6 +7,9 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
+import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
@@ -95,11 +98,28 @@ export interface GitMoveWorktreeInput {
   newPath: string;
 }
 
+export interface GitPushResult {
+  readonly branch: string;
+  readonly upstreamBranch: string | null;
+  readonly setUpstream: boolean;
+}
+
 export class GitVcsDriver extends Context.Service<
   GitVcsDriver,
   {
     readonly execute: (input: ExecuteGitInput) => Effect.Effect<ExecuteGitResult, GitCommandError>;
     readonly statusDetailsLocal: (cwd: string) => Effect.Effect<GitStatusDetails, GitCommandError>;
+    readonly statusDetails: (cwd: string) => Effect.Effect<GitStatusDetails, GitCommandError>;
+    readonly ensureRemote: (input: {
+      readonly cwd: string;
+      readonly preferredName: string;
+      readonly url: string;
+    }) => Effect.Effect<string, GitCommandError>;
+    readonly pushCurrentBranch: (
+      cwd: string,
+      branch: string | null,
+      options?: { readonly remoteName?: string; readonly progress?: ExecuteGitProgress },
+    ) => Effect.Effect<GitPushResult, GitCommandError>;
     readonly refStatusLocal: (cwd: string) => Effect.Effect<VcsRefStatusResult, GitCommandError>;
     readonly getReviewDiffPreview: (
       input: ReviewDiffPreviewInput,
@@ -147,6 +167,113 @@ const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "-c",
   "core.untrackedCache=false",
 ] as const;
+
+interface Trace2Monitor {
+  readonly env: NodeJS.ProcessEnv;
+  readonly flush: Effect.Effect<void, never>;
+}
+
+interface Trace2TailState {
+  readonly processedChars: number;
+  readonly remainder: string;
+}
+
+function trace2ChildKey(record: Record<string, unknown>): string | null {
+  const childId = record.child_id;
+  if (typeof childId === "number" || typeof childId === "string") return String(childId);
+  const hookName = record.hook_name;
+  return typeof hookName === "string" && hookName.trim() ? hookName.trim() : null;
+}
+
+const createTrace2Monitor = Effect.fn("GitVcsDriver.createTrace2Monitor")(function* (
+  fileSystem: FileSystem.FileSystem,
+  path: Path.Path,
+  progress: ExecuteGitProgress | undefined,
+) {
+  if (!progress?.onHookStarted && !progress?.onHookFinished) {
+    return { env: {}, flush: Effect.void } satisfies Trace2Monitor;
+  }
+
+  const traceFilePath = yield* fileSystem.makeTempFileScoped({
+    prefix: `t3-coder-git-trace2-${process.pid}-`,
+    suffix: ".json",
+  });
+  const starts = new Map<string, { hookName: string; startedAtMs: number }>();
+  const tail = yield* Ref.make<Trace2TailState>({ processedChars: 0, remainder: "" });
+
+  const handleLine = Effect.fn("GitVcsDriver.handleTrace2Line")(function* (line: string) {
+    let record: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(line);
+      if (typeof parsed !== "object" || parsed === null) return;
+      record = parsed as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    const childKey = trace2ChildKey(record);
+    if (childKey === null) return;
+    const started = starts.get(childKey);
+    if (record.child_class !== "hook" && started === undefined) return;
+    const eventHookName = typeof record.hook_name === "string" ? record.hook_name.trim() : "";
+    const hookName = eventHookName || started?.hookName || "";
+    if (!hookName) return;
+
+    if (record.event === "child_start") {
+      starts.set(childKey, { hookName, startedAtMs: Date.now() });
+      if (progress.onHookStarted) yield* progress.onHookStarted(hookName);
+    } else if (record.event === "child_exit") {
+      starts.delete(childKey);
+      const rawCode = record.code ?? record.exitCode;
+      const exitCode = typeof rawCode === "number" && Number.isInteger(rawCode) ? rawCode : null;
+      const rawDuration = record.t_rel;
+      const durationMs =
+        typeof rawDuration === "number"
+          ? Math.max(0, Math.round(rawDuration * 1_000))
+          : started
+            ? Math.max(0, Date.now() - started.startedAtMs)
+            : null;
+      if (progress.onHookFinished) {
+        yield* progress.onHookFinished({ hookName: started?.hookName ?? hookName, exitCode, durationMs });
+      }
+    }
+  });
+
+  const mutex = yield* Semaphore.make(1);
+  const readDelta = mutex.withPermit(
+    fileSystem.readFileString(traceFilePath).pipe(
+      Effect.flatMap((contents) =>
+        Ref.modify(tail, (state) => {
+          if (contents.length <= state.processedChars) return [[] as string[], state] as const;
+          const lines = `${state.remainder}${contents.slice(state.processedChars)}`.split("\n");
+          const remainder = lines.pop() ?? "";
+          return [
+            lines.map((item) => item.replace(/\r$/, "")),
+            { processedChars: contents.length, remainder },
+          ] as const;
+        }).pipe(Effect.flatMap((lines) => Effect.forEach(lines, handleLine, { discard: true }))),
+      ),
+      Effect.ignore,
+    ),
+  );
+  const traceFileName = path.basename(traceFilePath);
+  yield* Stream.runForEach(fileSystem.watch(traceFilePath), (event) => {
+    const eventPath = event.path;
+    return eventPath === traceFilePath || path.basename(eventPath) === traceFileName
+      ? readDelta
+      : Effect.void;
+  }).pipe(Effect.ignore, Effect.forkScoped);
+
+  const flush = Effect.gen(function* () {
+    yield* readDelta;
+    const remainder = yield* Ref.modify(tail, (state) => [
+      state.remainder.trim(),
+      { ...state, remainder: "" },
+    ] as const);
+    if (remainder) yield* handleLine(remainder);
+  }).pipe(Effect.ignore);
+  yield* Effect.addFinalizer(() => flush);
+  return { env: { GIT_TRACE2_EVENT: traceFilePath }, flush } satisfies Trace2Monitor;
+});
 
 // Matches `git worktree remove` on a path git no longer tracks: "is not a
 // working tree" when the registration is gone, "cannot remove working tree"
@@ -337,6 +464,8 @@ const gitCommand = (
     readonly timeoutMs?: number;
     readonly maxOutputBytes?: number;
     readonly appendTruncationMarker?: boolean;
+    readonly onStdoutLine?: (line: string) => Effect.Effect<void, never>;
+    readonly onStderrLine?: (line: string) => Effect.Effect<void, never>;
   },
 ) =>
   process.run({
@@ -355,6 +484,8 @@ const gitCommand = (
     ...(options?.appendTruncationMarker !== undefined
       ? { appendTruncationMarker: options.appendTruncationMarker }
       : {}),
+    ...(options?.onStdoutLine ? { onStdoutLine: options.onStdoutLine } : {}),
+    ...(options?.onStderrLine ? { onStderrLine: options.onStderrLine } : {}),
   });
 
 export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* () {
@@ -797,13 +928,32 @@ const makeLocalGitService = Effect.gen(function* () {
     cwd: string,
     args: ReadonlyArray<string>,
     options: {
+      readonly stdin?: string;
+      readonly env?: NodeJS.ProcessEnv;
       readonly allowNonZeroExit?: boolean;
       readonly timeoutMs?: number;
       readonly maxOutputBytes?: number;
       readonly appendTruncationMarker?: boolean;
+      readonly progress?: ExecuteGitProgress;
     } = {},
   ) =>
-    gitCommand(vcsProcess, operation, cwd, args, options).pipe(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const monitor = yield* createTrace2Monitor(fileSystem, path, options.progress);
+        return yield* gitCommand(vcsProcess, operation, cwd, args, {
+          ...options,
+          ...(Object.keys(monitor.env).length > 0
+            ? { env: { ...options.env, ...monitor.env } }
+            : {}),
+          ...(options.progress?.onStdoutLine
+            ? { onStdoutLine: options.progress.onStdoutLine }
+            : {}),
+          ...(options.progress?.onStderrLine
+            ? { onStderrLine: options.progress.onStderrLine }
+            : {}),
+        }).pipe(Effect.ensuring(monitor.flush));
+      }),
+    ).pipe(
       Effect.mapError(
         (cause) =>
           new GitCommandError({
@@ -818,12 +968,15 @@ const makeLocalGitService = Effect.gen(function* () {
 
   const execute: GitVcsDriver["Service"]["execute"] = (input) =>
     run(input.operation, input.cwd, input.args, {
+      ...(input.stdin !== undefined ? { stdin: input.stdin } : {}),
+      ...(input.env !== undefined ? { env: input.env } : {}),
       ...(input.allowNonZeroExit !== undefined ? { allowNonZeroExit: input.allowNonZeroExit } : {}),
       ...(input.timeoutMs != null ? { timeoutMs: input.timeoutMs } : {}),
       ...(input.maxOutputBytes !== undefined ? { maxOutputBytes: input.maxOutputBytes } : {}),
       ...(input.appendTruncationMarker !== undefined
         ? { appendTruncationMarker: input.appendTruncationMarker }
         : {}),
+      ...(input.progress ? { progress: input.progress } : {}),
     });
 
   const currentBranch = (cwd: string) =>
@@ -1585,9 +1738,70 @@ const makeLocalGitService = Effect.gen(function* () {
     },
   );
 
+  const ensureRemote: GitVcsDriver["Service"]["ensureRemote"] = Effect.fn(
+    "GitVcsDriver.ensureRemote",
+  )(function* (input) {
+    const remotes = yield* run("GitVcsDriver.ensureRemote.list", input.cwd, ["remote"]);
+    const names = new Set(parseRemoteNames(remotes.stdout));
+    let candidate = input.preferredName;
+    let suffix = 2;
+    while (names.has(candidate)) {
+      const existing = yield* run(
+        "GitVcsDriver.ensureRemote.getUrl",
+        input.cwd,
+        ["remote", "get-url", candidate],
+        { allowNonZeroExit: true },
+      );
+      if (existing.exitCode === 0 && existing.stdout.trim() === input.url) {
+        return candidate;
+      }
+      candidate = `${input.preferredName}-${suffix}`;
+      suffix += 1;
+    }
+    yield* run("GitVcsDriver.ensureRemote.add", input.cwd, ["remote", "add", candidate, input.url]);
+    return candidate;
+  });
+
+  const pushCurrentBranch: GitVcsDriver["Service"]["pushCurrentBranch"] = Effect.fn(
+    "GitVcsDriver.pushCurrentBranch",
+  )(function* (cwd, requestedBranch, options) {
+    const branch = requestedBranch ?? (yield* currentBranch(cwd));
+    if (branch === null) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.pushCurrentBranch",
+        command: "git push",
+        cwd,
+        detail: "A checked-out branch is required before pushing.",
+      });
+    }
+    const upstream = yield* run(
+      "GitVcsDriver.pushCurrentBranch.upstream",
+      cwd,
+      ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+      { allowNonZeroExit: true },
+    );
+    const upstreamBranch = upstream.exitCode === 0 ? upstream.stdout.trim() || null : null;
+    const remoteName = options?.remoteName ?? "origin";
+    const setUpstream = upstreamBranch === null;
+    yield* run(
+      "GitVcsDriver.pushCurrentBranch.push",
+      cwd,
+      setUpstream ? ["push", "--set-upstream", remoteName, branch] : ["push"],
+      { timeoutMs: 300_000, ...(options?.progress ? { progress: options.progress } : {}) },
+    );
+    return {
+      branch,
+      upstreamBranch: upstreamBranch ?? `${remoteName}/${branch}`,
+      setUpstream,
+    };
+  });
+
   return GitVcsDriver.of({
     execute,
     statusDetailsLocal,
+    statusDetails: statusDetailsLocal,
+    ensureRemote,
+    pushCurrentBranch,
     refStatusLocal,
     getReviewDiffPreview,
     getReviewDiffFileContents,

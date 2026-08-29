@@ -7,12 +7,14 @@ import {
   ClientSettingsPatch,
   CodexSettings,
   DEFAULT_SERVER_SETTINGS,
+  ServerSettings,
   ServerSettingsPatch,
 } from "./settings.ts";
 
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 const decodeCodexSettings = Schema.decodeUnknownSync(CodexSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
+const decodeServerSettings = Schema.decodeUnknownSync(ServerSettings);
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
 
@@ -82,6 +84,27 @@ describe("Codex settings", () => {
       shadowHomePath: "~/.codex-t3/work",
       launchArgs: "--config model_reasoning_effort=high",
     });
+  });
+});
+
+describe("source control settings", () => {
+  it("defaults legacy settings and accepts partial writing-style patches", () => {
+    const settings = decodeServerSettings({});
+    expect(settings.sourceControlWritingStyle).toEqual({
+      mode: "repo_conventions",
+      customInstructions: "",
+      followChangeRequestTemplates: true,
+    });
+    expect(settings.sourceControlWriterModelSelection).toBeNull();
+
+    expect(
+      decodeServerSettingsPatch({
+        sourceControlWritingStyle: {
+          mode: "custom",
+          customInstructions: "  Prefer concise wording.  ",
+        },
+      }).sourceControlWritingStyle,
+    ).toEqual({ mode: "custom", customInstructions: "Prefer concise wording." });
   });
 });
 

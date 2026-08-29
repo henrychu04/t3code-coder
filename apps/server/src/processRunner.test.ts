@@ -289,6 +289,28 @@ describe("runProcess", () => {
     }),
   );
 
+  it.effect("reports complete stdout and stderr lines while retaining output", () =>
+    Effect.gen(function* () {
+      const stdoutLines: string[] = [];
+      const stderrLines: string[] = [];
+      const spawner = makeSpawner(() =>
+        Effect.succeed(makeHandle({ stdout: "one\ntwo", stderr: "warning\n" })),
+      );
+
+      const result = yield* runWith(spawner)({
+        command: "fake",
+        args: ["lines"],
+        onStdoutLine: (line) => Effect.sync(() => stdoutLines.push(line)),
+        onStderrLine: (line) => Effect.sync(() => stderrLines.push(line)),
+      });
+
+      expect(stdoutLines).toEqual(["one", "two"]);
+      expect(stderrLines).toEqual(["warning"]);
+      expect(result.stdout).toBe("one\ntwo");
+      expect(result.stderr).toBe("warning\n");
+    }),
+  );
+
   it.effect("writes stdin before waiting for exit", () =>
     Effect.gen(function* () {
       const stdinWritten = yield* Deferred.make<void>();

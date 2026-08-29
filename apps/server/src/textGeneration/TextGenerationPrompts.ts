@@ -6,8 +6,88 @@
 import * as Schema from "effect/Schema";
 
 import { limitSection } from "./TextGenerationUtils.ts";
+import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
 const EARLIER_CONTENT_TRUNCATION_MARKER = "[Earlier content truncated]\n\n";
+
+function policyInstruction(instruction: string | undefined): readonly string[] {
+  const trimmed = instruction?.trim();
+  return trimmed ? ["", "Additional instructions:", limitSection(trimmed, 4_000)] : [];
+}
+
+export function buildCommitMessagePrompt(input: {
+  readonly branch: string | null;
+  readonly stagedSummary: string;
+  readonly stagedPatch: string;
+  readonly policy?: TextGenerationPolicy;
+}) {
+  const prompt = [
+    "You write concise git commit messages.",
+    "Return a JSON object with keys: subject, body.",
+    "Rules:",
+    "- subject must be imperative, <= 72 chars, and no trailing period",
+    "- body can be an empty string or short markdown bullet points",
+    "- capture the primary user-visible or developer-visible change",
+    ...policyInstruction(input.policy?.commitInstructions),
+    "",
+    `Branch: ${input.branch ?? "(detached)"}`,
+    "",
+    "Staged files:",
+    limitSection(input.stagedSummary, 6_000),
+    "",
+    "Staged patch:",
+    limitSection(input.stagedPatch, 40_000),
+  ].join("\n");
+  return {
+    prompt,
+    outputSchema: Schema.Struct({ subject: Schema.String, body: Schema.String }),
+  };
+}
+
+export function buildPrContentPrompt(input: {
+  readonly baseBranch: string;
+  readonly headBranch: string;
+  readonly commitSummary: string;
+  readonly diffSummary: string;
+  readonly diffPatch: string;
+  readonly changeRequestTemplate?: string;
+  readonly policy?: TextGenerationPolicy;
+}) {
+  const template = input.changeRequestTemplate?.trim();
+  const prompt = [
+    "You write GitLab merge request content.",
+    "Return a JSON object with keys: title, body.",
+    "Rules:",
+    "- title should be concise and specific",
+    ...(template
+      ? [
+          "- body must follow the repository merge request template structure",
+          "- fill the template sections and remove HTML comments",
+        ]
+      : [
+          "- body must include headings '## Summary' and '## Testing'",
+          "- use short markdown bullet points under each heading",
+        ]),
+    ...policyInstruction(input.policy?.changeRequestInstructions),
+    ...(template ? ["", "Repository merge request template:", limitSection(template, 8_000)] : []),
+    "",
+    `Base branch: ${input.baseBranch}`,
+    `Head branch: ${input.headBranch}`,
+    "",
+    "Commits:",
+    limitSection(input.commitSummary, 12_000),
+    "",
+    "Diff stat:",
+    limitSection(input.diffSummary, 12_000),
+    "",
+    "Diff patch:",
+    limitSection(input.diffPatch, 40_000),
+  ].join("\n");
+  return {
+    prompt,
+    outputSchema: Schema.Struct({ title: Schema.String, body: Schema.String }),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Branch name

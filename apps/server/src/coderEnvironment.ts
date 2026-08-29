@@ -48,6 +48,8 @@ export const layer = Layer.effect(
         serverVersion: packageJson.version,
         capabilities: {
           repositoryIdentity: true,
+          pullRequests: true,
+          gitLabMergeRequests: true,
           connectionProbe: true,
           threadSettlement: true,
           threadSnooze: true,
