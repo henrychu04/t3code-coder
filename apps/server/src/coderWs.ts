@@ -17,7 +17,6 @@ import {
   GitCommandError,
   type GitActionProgressEvent,
   type GitManagerServiceError,
-  GitLabMergeRequestViewError,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
@@ -59,9 +58,8 @@ import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import * as GitLabMergeRequestService from "./gitlab/GitLabMergeRequestService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
-import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
+import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -385,12 +383,10 @@ export const layer = CoderWsRpcGroup.toLayer(
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
-    const sourceControlProviders =
-      yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+    const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
     const sourceControlRepositories =
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const gitLabCli = yield* GitLabCli.GitLabCli;
-    const gitLabMergeRequests = yield* GitLabMergeRequestService.GitLabMergeRequestService;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
     const review = yield* ReviewService.ReviewService;
@@ -919,25 +915,7 @@ export const layer = CoderWsRpcGroup.toLayer(
               : Effect.succeed([]);
           }),
         ),
-      [WS_METHODS.serverDiscoverSourceControl]: () =>
-        Effect.all([sourceControlProviders.discover, gitLabCli.getWriteAccess]).pipe(
-          Effect.map(([sourceControlProviders, writeAccess]) => ({
-            versionControlSystems: [
-              {
-                kind: "git" as const,
-                implemented: true,
-                label: "Git",
-                status: "available" as const,
-                version: Option.none<string>(),
-                installHint: "Git is provided by the Coder workspace.",
-                detail: Option.none<string>(),
-              },
-            ],
-            sourceControlProviders: sourceControlProviders.map((provider) =>
-              provider.kind === "gitlab" ? { ...provider, writeAccess } : provider,
-            ),
-          })),
-        ),
+      [WS_METHODS.serverDiscoverSourceControl]: () => sourceControlDiscovery.discover,
       [WS_METHODS.sourceControlProbeWriteAccess]: (input) =>
         gitLabCli.reprobeWriteAccess({ cwd: config.cwd }),
       [WS_METHODS.sourceControlLookupRepository]: (input) =>
@@ -1014,19 +992,6 @@ export const layer = CoderWsRpcGroup.toLayer(
         git
           .preparePullRequestThread(input)
           .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
-      [WS_METHODS.gitLabMergeRequestView]: (input) =>
-        Effect.gen(function* () {
-          const owned = yield* workspaceOwnedByThread(input).pipe(
-            Effect.orElseSucceed(() => false),
-          );
-          if (!owned) {
-            return yield* new GitLabMergeRequestViewError({
-              failure: "workspace_not_owned_by_thread",
-              detail: "The merge request workspace does not belong to this thread.",
-            });
-          }
-          return yield* gitLabMergeRequests.viewCurrent({ cwd: input.cwd });
-        }),
       [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
       [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
       [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),

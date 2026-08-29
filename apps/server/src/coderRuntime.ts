@@ -10,11 +10,11 @@ import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
-import * as GitLabMergeRequestService from "./gitlab/GitLabMergeRequestService.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
+import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as Keybindings from "./keybindings.ts";
@@ -32,6 +32,7 @@ import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionRe
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
+import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -97,11 +98,26 @@ const CoderSourceControlLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provideMerge(GitLabCli.layer),
 );
 
+const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
+  Layer.provideMerge(CoderSourceControlLive),
+);
+
+const CoderTerminalLive = TerminalManager.layer.pipe(
+  Layer.provideMerge(ScriptPtyAdapter.layer),
+  Layer.provideMerge(ProcessRunner.layer),
+);
+
+const CoderProjectSetupScriptRunnerLive = ProjectSetupScriptRunner.layer.pipe(
+  Layer.provideMerge(CoderOrchestrationLayerLive),
+  Layer.provideMerge(CoderTerminalLive),
+);
+
 const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderSourceControlLive),
   Layer.provideMerge(CoderTextGenerationLive),
   Layer.provideMerge(CoderSettingsLive),
+  Layer.provideMerge(CoderProjectSetupScriptRunnerLive),
 );
 
 const CoderSourceControlRepositoriesLive = SourceControlRepositoryService.layer.pipe(
@@ -116,7 +132,6 @@ const CoderVcsLive = Layer.mergeAll(
   CoderGitWorkflowLive,
   CoderSourceControlRepositoriesLive,
   CoderVcsStatus.layer.pipe(Layer.provide(CoderGitWorkflowLive)),
-  GitLabMergeRequestService.layer,
   ReviewService.layer.pipe(
     Layer.provideMerge(GitVcsDriver.layer),
     Layer.provideMerge(CoderVcsDriverRegistryLive),
@@ -156,6 +171,7 @@ const CoderRuntimeCoreLive = Layer.empty.pipe(
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(CoderVcsLive),
   Layer.provideMerge(CoderPullRequestsLive),
+  Layer.provideMerge(CoderSourceControlDiscoveryLive),
   Layer.provideMerge(CoderCheckpointingLive),
   Layer.provideMerge(CoderTerminalLive),
   Layer.provideMerge(WorkspacePaths.layer),

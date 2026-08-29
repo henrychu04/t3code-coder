@@ -33,7 +33,6 @@ export type RightPanelSurface =
       revealLine: number | null;
       revealRequestId: number;
     }
-  | { id: "pull-request"; kind: "pull-request" }
   | {
       id: `pull-request:${string}`;
       kind: "pull-request";
@@ -52,7 +51,10 @@ export interface ThreadRightPanelState {
 
 interface RightPanelStoreState {
   byThreadKey: Record<string, ThreadRightPanelState>;
-  open: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
+  open: (
+    ref: ScopedThreadRef,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+  ) => void;
   openPullRequest: (
     ref: ScopedThreadRef,
     target: { environmentId?: string; projectId: string; repository: string; number: number },
@@ -75,7 +77,10 @@ interface RightPanelStoreState {
   show: (ref: ScopedThreadRef) => void;
   close: (ref: ScopedThreadRef) => void;
   toggleVisibility: (ref: ScopedThreadRef) => void;
-  toggle: (ref: ScopedThreadRef, kind: Exclude<RightPanelKind, "file" | "terminal">) => void;
+  toggle: (
+    ref: ScopedThreadRef,
+    kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
+  ) => void;
   removeThread: (ref: ScopedThreadRef) => void;
 }
 
@@ -94,16 +99,12 @@ const updateThread = (
   return { ...byThreadKey, [key]: update(byThreadKey[key] ?? EMPTY_THREAD_STATE) };
 };
 
-const singletonSurface = (
-  kind: "diff" | "files" | "pull-request" | "agents",
-): RightPanelSurface => {
+const singletonSurface = (kind: "diff" | "files" | "agents"): RightPanelSurface => {
   switch (kind) {
     case "diff":
       return { id: "diff", kind };
     case "files":
       return { id: "files", kind };
-    case "pull-request":
-      return { id: "pull-request", kind };
     case "agents":
       return { id: "agents", kind };
   }
@@ -139,8 +140,10 @@ export type PullRequestSurface = Extract<
   { kind: "pull-request"; number: number }
 >;
 
-export function isPullRequestSurface(surface: RightPanelSurface | null): surface is PullRequestSurface {
-  return surface?.kind === "pull-request" && "number" in surface;
+export function isPullRequestSurface(
+  surface: RightPanelSurface | null,
+): surface is PullRequestSurface {
+  return surface?.kind === "pull-request";
 }
 
 export function updatePullRequestTabStatus<Status extends { state: unknown; isDraft: boolean }>(

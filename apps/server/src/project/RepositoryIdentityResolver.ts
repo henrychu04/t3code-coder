@@ -1,5 +1,8 @@
 import type { RepositoryIdentity } from "@t3tools/contracts";
-import { detectSourceControlProviderFromRemoteUrl } from "@t3tools/shared/sourceControl";
+import {
+  detectSourceControlProviderFromGitRemoteUrl,
+  normalizeGitRemoteUrl,
+} from "@t3tools/shared/git";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -58,15 +61,7 @@ function pickPrimaryRemote(
 }
 
 export function repositoryPathFromRemoteUrl(remoteUrl: string): string {
-  const trimmed = remoteUrl.trim();
-  const scpPath = /^[^@\s]+@[^:\s]+:(.+)$/u.exec(trimmed)?.[1];
-  if (scpPath !== undefined) return scpPath.replace(/^\/+|\/+$/gu, "").replace(/\.git$/iu, "");
-
-  try {
-    return new URL(trimmed).pathname.replace(/^\/+|\/+$/gu, "").replace(/\.git$/iu, "");
-  } catch {
-    return trimmed.replace(/^\/+|\/+$/gu, "").replace(/\.git$/iu, "");
-  }
+  return normalizeGitRemoteUrl(remoteUrl).split("/").slice(1).join("/");
 }
 
 function buildRepositoryIdentity(input: {
@@ -74,13 +69,9 @@ function buildRepositoryIdentity(input: {
   readonly remoteUrl: string;
   readonly rootPath: string;
 }): RepositoryIdentity {
-  const canonicalKey = input.remoteUrl
-    .trim()
-    .replace(/\/+$/g, "")
-    .replace(/\.git$/i, "")
-    .toLowerCase();
-  const sourceControlProvider = detectSourceControlProviderFromRemoteUrl(input.remoteUrl);
-  const repositoryPath = repositoryPathFromRemoteUrl(input.remoteUrl);
+  const canonicalKey = normalizeGitRemoteUrl(input.remoteUrl);
+  const sourceControlProvider = detectSourceControlProviderFromGitRemoteUrl(input.remoteUrl);
+  const repositoryPath = canonicalKey.split("/").slice(1).join("/");
   const repositoryPathSegments = repositoryPath.split("/").filter((segment) => segment.length > 0);
   const [owner] = repositoryPathSegments;
   const repositoryName = repositoryPathSegments.at(-1);

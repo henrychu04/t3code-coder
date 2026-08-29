@@ -193,6 +193,9 @@ console.log(`T3 Coder GitLab MR smoke gateway listening on ${gateway.url}`);
 console.log(`Smoke repository: ${repository}`);
 console.log(`Mutable glab state: ${statePath}`);
 console.log(`glab command trace: ${commandLogPath}`);
+console.log(
+  'Change writeAccess in the mutable state to "writable", "policy-blocked", or "indeterminate", then use Recheck write access in Settings.',
+);
 console.log("Add the smoke-repo project, then open Merge Requests in the sidebar.");
 
 await new Promise((resolve, reject) => {

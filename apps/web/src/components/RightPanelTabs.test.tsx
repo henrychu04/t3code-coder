@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { RightPanelSurface } from "../rightPanelStore";
+import { pullRequestSurface, type RightPanelSurface } from "../rightPanelStore";
 import {
   RightPanelTabs,
   rightPanelTabContextMenuItems,
@@ -103,6 +103,33 @@ describe("RightPanelTabs", () => {
     expect(markup).toContain("Review changes in this thread.");
     expect(markup).toContain("View the current GitLab merge request.");
     expect(markup).toContain("Follow subagents and workflows.");
+  });
+
+  it("colors a merge-request tab from its reported state", () => {
+    const surface = pullRequestSurface({
+      projectId: "project-1",
+      repository: "group/project",
+      number: 42,
+    });
+    const markup = renderToStaticMarkup(
+      <RightPanelTabs
+        {...sharedProps}
+        mode="inline"
+        surfaces={[surface]}
+        activeSurfaceId={surface.id}
+        pullRequestStatuses={{
+          [surface.id]: {
+            projectId: "project-1",
+            repository: "group/project",
+            number: 42,
+            state: "merged",
+            isDraft: false,
+          },
+        }}
+      />,
+    );
+
+    expect(markup).toContain("text-violet-600");
   });
 });
 

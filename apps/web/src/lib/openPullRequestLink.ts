@@ -1,4 +1,8 @@
-import type { RepositoryIdentity } from "@t3tools/contracts";
+import {
+  pullRequestHostOf,
+  type RepositoryIdentity,
+  type ThreadLinkedPullRequest,
+} from "@t3tools/contracts";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
 export interface GitLabMergeRequestLink {
@@ -6,6 +10,8 @@ export interface GitLabMergeRequestLink {
   readonly repository: string;
   readonly number: number;
 }
+
+export type ChangeRequestLink = GitLabMergeRequestLink;
 
 export async function openPullRequestLink(
   shell: { readonly openExternal: (url: string) => Promise<void> },
@@ -30,6 +36,24 @@ export function parseGitLabMergeRequestUrl(targetUrl: string): GitLabMergeReques
     : null;
 }
 
+export const parseChangeRequestUrl = parseGitLabMergeRequestUrl;
+
+/** Match a stored MR without requiring its project to remain available. */
+export function matchesLinkedPullRequestUrl(
+  linkedPullRequest: ThreadLinkedPullRequest,
+  targetUrl: string,
+): boolean {
+  const linked = parseGitLabMergeRequestUrl(linkedPullRequest.url);
+  const target = parseGitLabMergeRequestUrl(targetUrl);
+  return (
+    linked !== null &&
+    target !== null &&
+    linked.host === target.host &&
+    linked.repository === target.repository &&
+    linked.number === target.number
+  );
+}
+
 export function findProjectForGitLabMergeRequest(
   projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
   link: GitLabMergeRequestLink,
@@ -42,10 +66,12 @@ export function findProjectForGitLabMergeRequest(
     const repository =
       identity.displayName ??
       (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
-    const canonicalHost = identity.canonicalKey.split("/")[0]?.toLowerCase();
+    const canonicalHost = pullRequestHostOf(identity, "gitlab");
     return repository?.toLowerCase() === link.repository && canonicalHost === link.host;
   });
 }
+
+export const findProjectForChangeRequest = findProjectForGitLabMergeRequest;
 
 /** Builds a GitHub URL that remains available when the pull request API cannot be read. */
 export function gitHubPullRequestBrowserUrl(

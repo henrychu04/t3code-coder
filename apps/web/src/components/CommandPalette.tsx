@@ -76,6 +76,7 @@ import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
+import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
 
 export function CommandPalette({ children }: { readonly children: ReactNode }) {
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
@@ -272,6 +273,8 @@ function CoderCommandPaletteDialog(props: {
         value: `thread:${thread.environmentId}:${thread.id}`,
         searchTerms: [thread.title, projectTitle, thread.branch ?? "", match?.snippet ?? ""],
         title: thread.title,
+        titleLeadingContent: <ThreadRowLeadingStatus thread={thread} />,
+        titleTrailingContent: <ThreadRowTrailingStatus thread={thread} />,
         description: (
           <ThreadCommandSubtitle
             environmentId={thread.environmentId}

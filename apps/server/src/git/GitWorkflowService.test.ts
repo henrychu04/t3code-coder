@@ -1,4 +1,4 @@
-import { expect, it, vi } from "@effect/vitest";
+import { beforeEach, expect, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -9,6 +9,7 @@ import * as Path from "effect/Path";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ServerConfig from "../config.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -28,24 +29,74 @@ const getChangeRequest = vi.fn(() =>
   }),
 );
 const checkoutChangeRequest = vi.fn(() => Effect.void);
+const getRepositoryCloneUrls = vi.fn(() =>
+  Effect.succeed({
+    nameWithOwner: "contributor/project",
+    url: "https://gitlab.example.com/contributor/project.git",
+    sshUrl: "git@gitlab.example.com:contributor/project.git",
+  }),
+);
 const provider = {
   kind: "gitlab" as const,
   getChangeRequest,
   checkoutChangeRequest,
+  getRepositoryCloneUrls,
 } as unknown as SourceControlProvider.SourceControlProvider["Service"];
 
 const listRefs = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["listRefs"]>();
 const createWorktree = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>();
 const refStatusLocal = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["refStatusLocal"]>();
+const execute = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["execute"]>();
+const ensureRemote = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["ensureRemote"]>();
+const runSetupScript =
+  vi.fn<ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"]>();
+
+function gitOutput(stdout = "", exitCode = 0): GitVcsDriver.ExecuteGitResult {
+  return {
+    exitCode: ChildProcessSpawner.ExitCode(exitCode),
+    stdout,
+    stderr: "",
+    stdoutTruncated: false,
+    stderrTruncated: false,
+  };
+}
+
+beforeEach(() => {
+  execute.mockReset();
+  execute.mockImplementation((input) => {
+    if (input.args[0] === "remote" && input.args.length === 1) {
+      return Effect.succeed(gitOutput("origin\n"));
+    }
+    if (input.args[0] === "config" && input.args[1] === "--get") {
+      return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
+    }
+    return Effect.succeed(gitOutput());
+  });
+  ensureRemote.mockReset();
+  ensureRemote.mockReturnValue(Effect.succeed("fork"));
+  runSetupScript.mockReset();
+  runSetupScript.mockReturnValue(Effect.succeed({ status: "no-script" }));
+  listRefs.mockReset();
+  createWorktree.mockReset();
+  refStatusLocal.mockReset();
+  checkoutChangeRequest.mockClear();
+  getRepositoryCloneUrls.mockClear();
+  getChangeRequest.mockClear();
+});
 
 const layer = it.layer(
   GitWorkflowService.layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(GitVcsDriver.GitVcsDriver)({
+          execute,
+          ensureRemote,
           listRefs,
           createWorktree,
           refStatusLocal,
+        }),
+        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
+          runForThread: runSetupScript,
         }),
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
           get: () => Effect.succeed(provider),
@@ -93,16 +144,30 @@ layer("GitWorkflowService.preparePullRequestThread", (it) => {
           totalCount: 0,
         }),
       );
+      listRefs.mockReturnValueOnce(
+        Effect.succeed({
+          refs: [
+            {
+              name: "feature/panel",
+              isRemote: false,
+              worktreePath: null,
+              current: false,
+              isDefault: false,
+            },
+          ],
+          isRepo: true,
+          hasPrimaryRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
       createWorktree.mockReturnValueOnce(
         Effect.succeed({
           worktree: {
-            path: "/worktrees/project/t3code-mr-42-thread-1",
-            refName: "t3code/mr-42-thread-1",
+            path: "/worktrees/project/feature-panel",
+            refName: "feature/panel",
           },
         }),
-      );
-      refStatusLocal.mockReturnValueOnce(
-        Effect.succeed({ isRepo: true, refName: "t3code/mr-42-thread-1" }),
       );
       const service = yield* GitWorkflowService.GitWorkflowService;
 
@@ -115,21 +180,256 @@ layer("GitWorkflowService.preparePullRequestThread", (it) => {
 
       expect(createWorktree).toHaveBeenCalledWith({
         cwd: "/repo",
-        refName: "HEAD",
-        newRefName: "t3code/mr-42-thread-1",
+        refName: "feature/panel",
         path: null,
       });
-      expect(checkoutChangeRequest).toHaveBeenCalledWith({
-        cwd: "/worktrees/project/t3code-mr-42-thread-1",
-        reference: "42",
-        branch: "t3code/mr-42-thread-1",
-        force: true,
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/repo",
+          args: ["fetch", "origin", "+refs/merge-requests/42/head:refs/heads/feature/panel"],
+        }),
+      );
+      expect(runSetupScript).toHaveBeenCalledWith({
+        threadId: "thread-1",
+        projectCwd: "/repo",
+        worktreePath: "/worktrees/project/feature-panel",
       });
       expect(result).toMatchObject({
-        branch: "t3code/mr-42-thread-1",
-        worktreePath: "/worktrees/project/t3code-mr-42-thread-1",
+        branch: "feature/panel",
+        worktreePath: "/worktrees/project/feature-panel",
         isOnPullRequestHead: true,
       });
+    }),
+  );
+
+  it.effect("refreshes a clean reused worktree after the MR head is force-pushed", () =>
+    Effect.gen(function* () {
+      listRefs.mockReturnValue(
+        Effect.succeed({
+          refs: [
+            {
+              name: "feature/panel",
+              isRemote: false,
+              worktreePath: "/worktrees/project/feature-panel",
+              current: false,
+              isDefault: false,
+            },
+          ],
+          isRepo: true,
+          hasPrimaryRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "rev-parse") {
+          const revision = input.args[1];
+          return Effect.succeed(
+            gitOutput(revision === "refs/t3code/merge-requests/42/head" ? "new\n" : "old\n"),
+          );
+        }
+        if (input.args[0] === "status") return Effect.succeed(gitOutput());
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.preparePullRequestThread({
+        cwd: "/repo",
+        reference: "42",
+        mode: "worktree",
+        threadId: ThreadId.make("thread-1"),
+      });
+
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cwd: "/worktrees/project/feature-panel",
+          args: ["reset", "--hard", "new"],
+        }),
+      );
+      expect(runSetupScript).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({
+        worktreePath: "/worktrees/project/feature-panel",
+        isOnPullRequestHead: true,
+      });
+    }),
+  );
+
+  it.effect("preserves dirty work in a reused worktree and reports that it is stale", () =>
+    Effect.gen(function* () {
+      listRefs.mockReturnValue(
+        Effect.succeed({
+          refs: [
+            {
+              name: "feature/panel",
+              isRemote: false,
+              worktreePath: "/worktrees/project/feature-panel",
+              current: false,
+              isDefault: false,
+            },
+          ],
+          isRepo: true,
+          hasPrimaryRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "rev-parse") {
+          const revision = input.args[1];
+          return Effect.succeed(
+            gitOutput(revision === "refs/t3code/merge-requests/42/head" ? "new\n" : "old\n"),
+          );
+        }
+        if (input.args[0] === "status") return Effect.succeed(gitOutput(" M src/panel.ts\n"));
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.preparePullRequestThread({
+        cwd: "/repo",
+        reference: "42",
+        mode: "worktree",
+        threadId: ThreadId.make("thread-1"),
+      });
+
+      expect(execute.mock.calls.some((call) => call[0].args[0] === "reset")).toBe(false);
+      expect(runSetupScript).not.toHaveBeenCalled();
+      expect(result.isOnPullRequestHead).toBe(false);
+    }),
+  );
+
+  it.effect("preserves local commits in a reused worktree", () =>
+    Effect.gen(function* () {
+      listRefs.mockReturnValue(
+        Effect.succeed({
+          refs: [
+            {
+              name: "feature/panel",
+              isRemote: false,
+              worktreePath: "/worktrees/project/feature-panel",
+              current: false,
+              isDefault: false,
+            },
+          ],
+          isRepo: true,
+          hasPrimaryRemote: true,
+          nextCursor: null,
+          totalCount: 1,
+        }),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "rev-parse") {
+          const revision = input.args[1];
+          return Effect.succeed(
+            gitOutput(
+              revision === "@{upstream}"
+                ? "base\n"
+                : revision === "refs/t3code/merge-requests/42/head"
+                  ? "new\n"
+                  : "local\n",
+            ),
+          );
+        }
+        if (input.args[0] === "merge-base") return Effect.succeed(gitOutput("", 1));
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.preparePullRequestThread({
+        cwd: "/repo",
+        reference: "42",
+        mode: "worktree",
+      });
+
+      expect(
+        execute.mock.calls.some(
+          (call) => call[0].args[0] === "reset" || call[0].args[0] === "merge",
+        ),
+      ).toBe(false);
+      expect(result.isOnPullRequestHead).toBe(false);
+    }),
+  );
+
+  it.effect("uses a namespaced local branch and fork remote for cross-project MRs", () =>
+    Effect.gen(function* () {
+      getChangeRequest.mockReturnValueOnce(
+        Effect.succeed({
+          provider: "gitlab" as const,
+          number: 42,
+          title: "Restore the panel",
+          url: "https://gitlab.example.com/group/project/-/merge_requests/42",
+          baseRefName: "main",
+          headRefName: "Feature/Panel",
+          state: "open" as const,
+          updatedAt: Option.none(),
+          isCrossRepository: true,
+          headRepositoryNameWithOwner: "contributor/project",
+          headRepositoryOwnerLogin: "contributor",
+        }),
+      );
+      listRefs
+        .mockReturnValueOnce(
+          Effect.succeed({
+            refs: [],
+            isRepo: true,
+            hasPrimaryRemote: true,
+            nextCursor: null,
+            totalCount: 0,
+          }),
+        )
+        .mockReturnValueOnce(
+          Effect.succeed({
+            refs: [
+              {
+                name: "t3code/pr-42/feature/panel",
+                isRemote: false,
+                worktreePath: null,
+                current: false,
+                isDefault: false,
+              },
+            ],
+            isRepo: true,
+            hasPrimaryRemote: true,
+            nextCursor: null,
+            totalCount: 1,
+          }),
+        );
+      createWorktree.mockReturnValueOnce(
+        Effect.succeed({
+          worktree: {
+            path: "/worktrees/project/fork-panel",
+            refName: "t3code/pr-42/feature/panel",
+          },
+        }),
+      );
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.preparePullRequestThread({
+        cwd: "/repo",
+        reference: "42",
+        mode: "worktree",
+      });
+
+      expect(ensureRemote).toHaveBeenCalledWith({
+        cwd: expect.any(String),
+        preferredName: "contributor",
+        url: expect.any(String),
+      });
+      expect(createWorktree).toHaveBeenCalledWith({
+        cwd: "/repo",
+        refName: "t3code/pr-42/feature/panel",
+        path: null,
+      });
+      expect(result.branch).toBe("t3code/pr-42/feature/panel");
     }),
   );
 });

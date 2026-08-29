@@ -1,4 +1,4 @@
-import { WS_METHODS } from "@t3tools/contracts";
+import { WS_METHODS, type PullRequestDetail, type VcsStatusResult } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
 import {
@@ -7,6 +7,32 @@ import {
   createEnvironmentRpcQueryAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+
+/** Refresh a linked MR while its thread is visible so merges update the sidebar. */
+export function createLinkedPullRequestDetailAtomFamily<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  return createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:pull-requests:linked-detail",
+    tag: WS_METHODS.pullRequestsDetail,
+    staleTimeMs: 15_000,
+    refreshIntervalMs: 30_000,
+  });
+}
+
+export function pullRequestDetailToVcsStatus(
+  detail: PullRequestDetail,
+): NonNullable<VcsStatusResult["pr"]> {
+  return {
+    number: detail.number,
+    title: detail.title,
+    url: detail.url,
+    baseRef: detail.baseBranch,
+    headRef: detail.headBranch,
+    state: detail.state,
+    updatedAt: detail.updatedAt,
+  };
+}
 
 /** GitLab merge-request reads and mutations scoped to one Coder environment. */
 export function createPullRequestEnvironmentAtoms<R, E>(

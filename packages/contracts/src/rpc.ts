@@ -104,11 +104,6 @@ import {
 } from "./terminal.ts";
 import { VcsError } from "./vcs.ts";
 import {
-  GitLabMergeRequestViewError,
-  GitLabMergeRequestViewInput,
-  GitLabMergeRequestViewResult,
-} from "./gitLabMergeRequest.ts";
-import {
   PullRequestActionInput,
   PullRequestActivity,
   PullRequestCommentInput,
@@ -180,7 +175,6 @@ export const WS_METHODS = {
   gitRunStackedAction: "git.runStackedAction",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
-  gitLabMergeRequestView: "gitlab.mergeRequest.view",
   pullRequestsList: "pullRequests.list",
   pullRequestsListStats: "pullRequests.listStats",
   pullRequestsDetail: "pullRequests.detail",
@@ -415,12 +409,6 @@ const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePullReque
   payload: GitPreparePullRequestThreadInput,
   success: GitPreparePullRequestThreadResult,
   error: GitManagerServiceError,
-});
-
-const WsGitLabMergeRequestViewRpc = Rpc.make(WS_METHODS.gitLabMergeRequestView, {
-  payload: GitLabMergeRequestViewInput,
-  success: GitLabMergeRequestViewResult,
-  error: GitLabMergeRequestViewError,
 });
 
 const PullRequestRpcError = Schema.Union([PullRequestUnavailableError, PullRequestOperationError]);
@@ -691,7 +679,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,
   WsGitPreparePullRequestThreadRpc,
-  WsGitLabMergeRequestViewRpc,
   WsPullRequestsListRpc,
   WsPullRequestsListStatsRpc,
   WsPullRequestsDetailRpc,

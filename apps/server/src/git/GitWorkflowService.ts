@@ -42,6 +42,7 @@ import {
   detectSourceControlProviderFromGitRemoteUrl,
   mergeGitStatusParts,
   resolveAutoFeatureBranchName,
+  sanitizeBranchFragment,
 } from "@t3tools/shared/git";
 import { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
 
@@ -49,6 +50,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import { detectPrTemplate } from "../sourceControl/PrTemplateDetection.ts";
 import * as ServerSettings from "../serverSettings.ts";
+import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import {
   conventionalCommitsTextGenerationPolicy,
@@ -131,6 +133,9 @@ export const layer = Layer.effect(
     const textGeneration = yield* Effect.serviceOption(TextGeneration.TextGeneration);
     const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
     const fileSystem = yield* Effect.serviceOption(FileSystem.FileSystem);
+    const projectSetupScriptRunner = yield* Effect.serviceOption(
+      ProjectSetupScriptRunner.ProjectSetupScriptRunner,
+    );
     const readGenerationSettings = (cwd: string) =>
       Option.isSome(serverSettings)
         ? serverSettings.value.getSettings.pipe(
@@ -232,13 +237,10 @@ export const layer = Layer.effect(
         workingTree: details.workingTree,
       } satisfies VcsStatusLocalResult;
     });
-    const localStatusCache = yield* Cache.makeWith(
-      (cwd: string) => readLocalStatus({ cwd }),
-      {
-        capacity: STATUS_CACHE_CAPACITY,
-        timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_CACHE_TTL : Duration.zero),
-      },
-    );
+    const localStatusCache = yield* Cache.makeWith((cwd: string) => readLocalStatus({ cwd }), {
+      capacity: STATUS_CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_CACHE_TTL : Duration.zero),
+    });
     const localStatus = ({ cwd }: VcsStatusInput) => Cache.get(localStatusCache, cwd);
 
     const resolveDefaultBranch = Effect.fn("GitWorkflowService.resolveDefaultBranch")(function* (
@@ -315,9 +317,9 @@ export const layer = Layer.effect(
       );
     };
 
-    const readRemoteStatus = Effect.fn("GitWorkflowService.readRemoteStatus")(function* (
-      { cwd }: VcsStatusInput,
-    ) {
+    const readRemoteStatus = Effect.fn("GitWorkflowService.readRemoteStatus")(function* ({
+      cwd,
+    }: VcsStatusInput) {
       const local = yield* localStatus({ cwd });
       if (!local.isRepo || !local.hasPrimaryRemote || local.refName === null) return null;
       const upstream = yield* git.execute({
@@ -388,13 +390,10 @@ export const layer = Layer.effect(
         },
       },
     );
-    const remoteStatusCache = yield* Cache.makeWith(
-      (cwd: string) => readRemoteStatus({ cwd }),
-      {
-        capacity: STATUS_CACHE_CAPACITY,
-        timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_CACHE_TTL : Duration.zero),
-      },
-    );
+    const remoteStatusCache = yield* Cache.makeWith((cwd: string) => readRemoteStatus({ cwd }), {
+      capacity: STATUS_CACHE_CAPACITY,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_CACHE_TTL : Duration.zero),
+    });
     const remoteStatus = Effect.fn("GitWorkflowService.remoteStatus")(function* (
       { cwd }: VcsStatusInput,
       options?: { readonly fetch?: boolean },
@@ -904,7 +903,7 @@ export const layer = Layer.effect(
       return result;
     });
 
-    const preparePullRequestThread = Effect.fn("GitWorkflowService.preparePullRequestThread")(
+    const preparePullRequestThreadImpl = Effect.fn("GitWorkflowService.preparePullRequestThread")(
       function* (input: GitPreparePullRequestThreadInput) {
         const provider = yield* sourceControls.get("gitlab");
         const summary = yield* provider.getChangeRequest({
@@ -920,6 +919,112 @@ export const layer = Layer.effect(
           state: summary.state,
         } as const;
 
+        const canonicalizeExistingPath = (value: string) =>
+          Option.isSome(fileSystem)
+            ? fileSystem.value.realPath(value).pipe(Effect.orElseSucceed(() => value))
+            : Effect.succeed(value);
+        const execute = (
+          cwd: string,
+          operation: string,
+          args: ReadonlyArray<string>,
+          allowNonZeroExit = false,
+        ) =>
+          git.execute({
+            cwd,
+            operation: `GitWorkflowService.preparePullRequestThread.${operation}`,
+            args,
+            allowNonZeroExit,
+            maxOutputBytes: 64 * 1024,
+          });
+        const primaryRemoteName = Effect.fn("preparePullRequestThread.primaryRemoteName")(
+          function* (cwd: string) {
+            const remotes = yield* execute(cwd, "listRemotes", ["remote"]);
+            const names = remotes.stdout
+              .split(/\r?\n/u)
+              .map((name) => name.trim())
+              .filter(Boolean);
+            const remote = names.includes("origin") ? "origin" : names[0];
+            if (!remote) {
+              return yield* new GitManagerError({
+                operation: "preparePullRequestThread",
+                cwd,
+                detail: "The repository has no Git remote for fetching the merge request.",
+              });
+            }
+            return remote;
+          },
+        );
+        const readConfig = Effect.fn("preparePullRequestThread.readConfig")(function* (
+          cwd: string,
+          key: string,
+        ) {
+          const result = yield* execute(cwd, "readConfig", ["config", "--get", key], true);
+          return Number(result.exitCode) === 0 ? result.stdout.trim() || null : null;
+        });
+        const configureUpstreamBase = Effect.fn("preparePullRequestThread.configureUpstream")(
+          function* (cwd: string, localBranch: string) {
+            let remoteName = yield* primaryRemoteName(cwd);
+            if (summary.isCrossRepository && summary.headRepositoryNameWithOwner) {
+              const cloneUrls = yield* provider.getRepositoryCloneUrls({
+                cwd,
+                repository: summary.headRepositoryNameWithOwner,
+              });
+              const originUrl = yield* readConfig(cwd, "remote.origin.url");
+              const remoteUrl = /^(?:git@|ssh:)/iu.test(originUrl ?? "")
+                ? cloneUrls.sshUrl
+                : cloneUrls.url;
+              remoteName = yield* git.ensureRemote({
+                cwd,
+                preferredName:
+                  summary.headRepositoryOwnerLogin?.trim() ||
+                  summary.headRepositoryNameWithOwner.split("/")[0]?.trim() ||
+                  "fork",
+                url: remoteUrl,
+              });
+            }
+            yield* execute(cwd, "fetchHeadTrackingBranch", [
+              "fetch",
+              remoteName,
+              `+refs/heads/${pullRequest.headBranch}:refs/remotes/${remoteName}/${pullRequest.headBranch}`,
+            ]);
+            yield* execute(cwd, "setHeadUpstream", [
+              "branch",
+              "--set-upstream-to",
+              `${remoteName}/${pullRequest.headBranch}`,
+              localBranch,
+            ]);
+          },
+        );
+        const configureUpstream = (cwd: string, localBranch: string) =>
+          configureUpstreamBase(cwd, localBranch).pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("GitWorkflowService prepare MR upstream configuration failed", {
+                cwd,
+                localBranch,
+                cause,
+              }).pipe(Effect.asVoid),
+            ),
+          );
+        const maybeRunSetupScript = (worktreePath: string) => {
+          if (!input.threadId || Option.isNone(projectSetupScriptRunner)) return Effect.void;
+          return projectSetupScriptRunner.value
+            .runForThread({
+              threadId: input.threadId,
+              projectCwd: input.cwd,
+              worktreePath,
+            })
+            .pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("GitWorkflowService prepare MR setup script failed", {
+                  threadId: input.threadId,
+                  worktreePath,
+                  cause,
+                }).pipe(Effect.asVoid),
+              ),
+              Effect.asVoid,
+            );
+        };
+
         if (input.mode === "local") {
           yield* provider.checkoutChangeRequest({
             cwd: input.cwd,
@@ -927,77 +1032,175 @@ export const layer = Layer.effect(
             force: true,
           });
           const status = yield* git.refStatusLocal(input.cwd);
+          const branch = status.refName ?? pullRequest.headBranch;
+          yield* configureUpstream(input.cwd, branch);
           return {
             pullRequest,
-            branch: status.refName ?? pullRequest.headBranch,
+            branch,
             worktreePath: null,
             isOnPullRequestHead: true,
           };
         }
 
-        const threadSuffix = input.threadId?.replace(/[^a-zA-Z0-9-]/gu, "-").slice(0, 36);
-        const branch = `t3code/mr-${pullRequest.number}${threadSuffix ? `-${threadSuffix}` : ""}`;
-        const refs = yield* git.listRefs({
-          cwd: input.cwd,
-          query: branch,
-          refresh: true,
-          limit: 200,
-        });
-        const existing = refs.refs.find(
-          (ref) => !ref.isRemote && ref.name === branch && ref.worktreePath !== null,
+        const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
+        const localBranch = summary.isCrossRepository
+          ? `t3code/pr-${pullRequest.number}/${sanitizedHeadBranch || "head"}`
+          : pullRequest.headBranch;
+        const rootWorktreePath = yield* canonicalizeExistingPath(input.cwd);
+        const listLocalRefs = () =>
+          git.listRefs({ cwd: input.cwd, query: localBranch, refresh: true, limit: 500 });
+        const findLocalHeadBranch = Effect.fn("preparePullRequestThread.findLocalHeadBranch")(
+          function* () {
+            const refs = yield* listLocalRefs();
+            const exact = refs.refs.find((ref) => !ref.isRemote && ref.name === localBranch);
+            if (exact || localBranch === pullRequest.headBranch) return exact ?? null;
+            return (
+              refs.refs.find(
+                (ref) =>
+                  !ref.isRemote && ref.name === pullRequest.headBranch && ref.worktreePath !== null,
+              ) ?? null
+            );
+          },
         );
-        const existingWorktreePath = existing?.worktreePath ?? null;
-        if (existingWorktreePath === input.cwd) {
-          return yield* new GitManagerError({
-            operation: "preparePullRequestThread",
-            cwd: input.cwd,
-            detail:
-              "This merge-request branch is already checked out in the main repository. Use Local or switch the main repository before creating a worktree.",
-          });
-        }
-        const branchExists = refs.refs.some((ref) => !ref.isRemote && ref.name === branch);
-        const created = existing
-          ? null
-          : yield* git.createWorktree({
-              cwd: input.cwd,
-              refName: branchExists ? branch : "HEAD",
-              ...(branchExists ? {} : { newRefName: branch }),
-              path: null,
+        const resolveCommit = Effect.fn("preparePullRequestThread.resolveCommit")(function* (
+          cwd: string,
+          revision: string,
+        ) {
+          const result = yield* execute(cwd, "resolveCommit", ["rev-parse", revision], true);
+          return Number(result.exitCode) === 0 ? result.stdout.trim() || null : null;
+        });
+        const fetchPullRequestHead = Effect.fn("preparePullRequestThread.fetchHead")(function* (
+          cwd: string,
+        ) {
+          const remoteName = yield* primaryRemoteName(cwd);
+          const targetRef = `refs/t3code/merge-requests/${pullRequest.number}/head`;
+          yield* execute(cwd, "fetchHead", [
+            "fetch",
+            remoteName,
+            `+refs/merge-requests/${pullRequest.number}/head:${targetRef}`,
+          ]);
+          const commit = yield* resolveCommit(cwd, targetRef);
+          if (!commit) {
+            return yield* new GitManagerError({
+              operation: "preparePullRequestThread",
+              cwd,
+              detail: "The merge request head could not be resolved after fetching it.",
             });
-        const worktree = created?.worktree.path ?? existingWorktreePath;
-        if (worktree === null) {
-          return yield* new GitManagerError({
-            operation: "preparePullRequestThread",
-            cwd: input.cwd,
-            detail: "The merge-request worktree could not be resolved.",
-          });
-        }
+          }
+          return commit;
+        });
+        const refreshReusedWorktree = Effect.fn("preparePullRequestThread.refreshReusedWorktree")(
+          function* (worktreePath: string, upstreamCommitBeforeFetch: string | null) {
+            const targetCommit = yield* fetchPullRequestHead(worktreePath);
+            const headCommit = yield* resolveCommit(worktreePath, "HEAD");
+            if (headCommit === targetCommit) return { moved: false, onTarget: true } as const;
+            const dirty = yield* execute(worktreePath, "statusPorcelain", [
+              "status",
+              "--porcelain=v1",
+              "--untracked-files=normal",
+            ]);
+            if (dirty.stdout.trim()) return { moved: false, onTarget: false } as const;
+            if (headCommit && upstreamCommitBeforeFetch === headCommit) {
+              yield* execute(worktreePath, "resetRewrittenHead", ["reset", "--hard", targetCommit]);
+              return { moved: true, onTarget: true } as const;
+            }
+            const ancestor = yield* execute(
+              worktreePath,
+              "headIsAncestor",
+              ["merge-base", "--is-ancestor", "HEAD", targetCommit],
+              true,
+            );
+            if (Number(ancestor.exitCode) !== 0) {
+              return { moved: false, onTarget: false } as const;
+            }
+            yield* execute(worktreePath, "fastForwardHead", ["merge", "--ff-only", targetCommit]);
+            return { moved: true, onTarget: true } as const;
+          },
+        );
+        const reuseExistingWorktree = Effect.fn("preparePullRequestThread.reuseExistingWorktree")(
+          function* (worktreePath: string, checkedOutBranch: string) {
+            if (checkedOutBranch !== localBranch) {
+              yield* configureUpstream(worktreePath, checkedOutBranch);
+              return {
+                pullRequest,
+                branch: localBranch,
+                worktreePath,
+                isOnPullRequestHead: false,
+              };
+            }
+            const upstreamCommitBeforeFetch = yield* resolveCommit(worktreePath, "@{upstream}");
+            yield* configureUpstream(worktreePath, localBranch);
+            const refreshed = yield* refreshReusedWorktree(
+              worktreePath,
+              upstreamCommitBeforeFetch,
+            ).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("GitWorkflowService reused MR worktree refresh failed", {
+                  worktreePath,
+                  localBranch,
+                  cause,
+                }).pipe(Effect.as({ moved: false, onTarget: false } as const)),
+              ),
+            );
+            if (refreshed.moved) yield* maybeRunSetupScript(worktreePath);
+            return {
+              pullRequest,
+              branch: localBranch,
+              worktreePath,
+              isOnPullRequestHead: refreshed.onTarget,
+            };
+          },
+        );
+        const reuseOrReject = Effect.fn("preparePullRequestThread.reuseOrReject")(function* (
+          candidate: VcsListRefsResult["refs"][number] | null,
+        ) {
+          if (!candidate?.worktreePath) return null;
+          const candidatePath = yield* canonicalizeExistingPath(candidate.worktreePath);
+          if (candidatePath === rootWorktreePath) {
+            return yield* new GitManagerError({
+              operation: "preparePullRequestThread",
+              cwd: input.cwd,
+              detail:
+                "This merge-request branch is already checked out in the main repository. Use Local or switch the main repository before creating a worktree.",
+            });
+          }
+          return yield* reuseExistingWorktree(candidate.worktreePath, candidate.name);
+        });
 
-        yield* provider
-          .checkoutChangeRequest({
-            cwd: worktree,
-            reference: input.reference,
-            branch,
-            force: true,
-          })
-          .pipe(
-            Effect.tapError(() =>
-              created
-                ? git
-                    .removeWorktree({ cwd: input.cwd, path: worktree, force: true })
-                    .pipe(Effect.ignore)
-                : Effect.void,
-            ),
-          );
-        const status = yield* git.refStatusLocal(worktree);
+        const beforeFetch = yield* findLocalHeadBranch();
+        const reusedBeforeFetch = yield* reuseOrReject(beforeFetch);
+        if (reusedBeforeFetch) return reusedBeforeFetch;
+
+        const remoteName = yield* primaryRemoteName(input.cwd);
+        yield* execute(input.cwd, "materializeHead", [
+          "fetch",
+          remoteName,
+          `+refs/merge-requests/${pullRequest.number}/head:refs/heads/${localBranch}`,
+        ]);
+        yield* configureUpstream(input.cwd, localBranch);
+
+        const afterFetch = yield* findLocalHeadBranch();
+        const reusedAfterFetch = yield* reuseOrReject(afterFetch);
+        if (reusedAfterFetch) return reusedAfterFetch;
+
+        const worktree = yield* git.createWorktree({
+          cwd: input.cwd,
+          refName: localBranch,
+          path: null,
+        });
+        yield* configureUpstream(worktree.worktree.path, localBranch);
+        yield* maybeRunSetupScript(worktree.worktree.path);
         return {
           pullRequest,
-          branch: status.refName ?? branch,
-          worktreePath: worktree,
+          branch: worktree.worktree.refName,
+          worktreePath: worktree.worktree.path,
           isOnPullRequestHead: true,
         };
       },
     );
+    const preparePullRequestThread: GitWorkflowService["Service"]["preparePullRequestThread"] = (
+      input,
+    ) => preparePullRequestThreadImpl(input).pipe(Effect.ensuring(invalidateStatus(input.cwd)));
 
     return GitWorkflowService.of({
       localStatus,

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   findProjectForGitLabMergeRequest,
+  matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
 } from "./openPullRequestLink";
 
@@ -39,5 +40,30 @@ describe("GitLab merge request links", () => {
     };
 
     expect(findProjectForGitLabMergeRequest([project], link)).toBe(project);
+  });
+
+  it("matches a durable linked MR by host, repository, and number", () => {
+    expect(
+      matchesLinkedPullRequestUrl(
+        {
+          projectId: ProjectId.make("project-1"),
+          repository: "group/project",
+          number: 42,
+          url: "https://gitlab.example.com/group/project/-/merge_requests/42",
+        },
+        "https://gitlab.example.com/group/project/-/merge_requests/42/diffs",
+      ),
+    ).toBe(true);
+    expect(
+      matchesLinkedPullRequestUrl(
+        {
+          projectId: ProjectId.make("project-1"),
+          repository: "group/project",
+          number: 42,
+          url: "https://gitlab.example.com/group/project/-/merge_requests/42",
+        },
+        "https://gitlab.example.com/group/project/-/merge_requests/43",
+      ),
+    ).toBe(false);
   });
 });

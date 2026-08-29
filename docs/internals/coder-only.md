@@ -273,8 +273,9 @@ workspace-installed `glab` CLI to read MR summary, activity, discussions, checks
 diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
 state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
 default sends an incomplete merge-request creation request to the impossible project ID `0`; a
-normal GitLab validation or not-found response proves the request reached GitLab, while neither a
-project nor an MR can be changed. A failed or indeterminate probe disables every GitLab mutation
+normal GitLab validation or not-found response with a GitLab-specific response fingerprint proves
+the request reached GitLab, while neither a project nor an MR can be changed. A generic proxy 404,
+failed probe, or indeterminate response disables every GitLab mutation
 while leaving reads, Git operations, and MR checkout available. The Source Control settings surface
 shows the structured result and can explicitly rerun the probe. A later mutation that matches the
 configured GS policy-block response immediately downgrades the cached workspace result. Generated

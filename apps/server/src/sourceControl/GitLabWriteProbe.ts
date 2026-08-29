@@ -35,7 +35,13 @@ const POLICY_BLOCK_PATTERNS = [
   /workspace.*(?:read[- ]only|writes? disabled)/i,
 ] as const;
 
-const EXPECTED_GITLAB_REJECTION = /HTTP (?:400|404|405|422)\b/i;
+const EXPECTED_GITLAB_REJECTION =
+  /HTTP(?:\/\d(?:\.\d)?)?\s+(?:400|404|405|422)\b|glab:\s*(?:400|404|405|422)\b/i;
+const GITLAB_RESPONSE_FINGERPRINTS = [
+  /\bx-gitlab-(?:feature-category|meta|version)\s*:/i,
+  /"message"\s*:\s*"(?:404 )?project not found"/i,
+  /glab:\s*(?:400 bad request|404 project not found|405 method not allowed|422 unprocessable entity)\b/i,
+] as const;
 
 function matchesAny(value: string, patterns: ReadonlyArray<RegExp>): boolean {
   return patterns.some((pattern) => pattern.test(value));
@@ -61,14 +67,21 @@ export const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
       "-",
       "--header",
       "Content-Type: application/json",
+      "--include",
     ],
     stdin: "{}",
   }),
   classifyProbe: (output) => {
-    if (output.exitCode === 0) return "writable";
-    if (matchesAny(output.stderr, AUTH_FAILURE_PATTERNS)) return "unauthenticated";
-    if (matchesAny(output.stderr, POLICY_BLOCK_PATTERNS)) return "policy-blocked";
-    if (EXPECTED_GITLAB_REJECTION.test(output.stderr)) return "writable";
+    const response = `${output.stdout}\n${output.stderr}`;
+    if (matchesAny(response, AUTH_FAILURE_PATTERNS)) return "unauthenticated";
+    if (matchesAny(response, POLICY_BLOCK_PATTERNS)) return "policy-blocked";
+    if (
+      output.exitCode !== 0 &&
+      EXPECTED_GITLAB_REJECTION.test(response) &&
+      matchesAny(response, GITLAB_RESPONSE_FINGERPRINTS)
+    ) {
+      return "writable";
+    }
     return "indeterminate";
   },
   isPolicyBlockedWriteFailure: (stderr) => matchesAny(stderr, POLICY_BLOCK_PATTERNS),

@@ -419,9 +419,11 @@ function surfaceLabel(
 function SurfaceIcon({
   surface,
   theme,
+  pullRequestStatuses,
 }: {
   readonly surface: RightPanelSurface;
   readonly theme: "light" | "dark";
+  readonly pullRequestStatuses: Readonly<Record<string, PullRequestTabStatus>> | undefined;
 }) {
   if (surface.kind === "diff") return <FileDiff className="size-3.5" />;
   if (surface.kind === "files") return <Files className="size-3.5" />;
@@ -435,7 +437,20 @@ function SurfaceIcon({
       />
     );
   }
-  if (surface.kind === "pull-request") return <GitPullRequest className="size-3.5" />;
+  if (surface.kind === "pull-request") {
+    const status = pullRequestStatuses?.[surface.id] ?? null;
+    const toneClassName =
+      status?.state === "merged"
+        ? "text-violet-600 dark:text-violet-300/90"
+        : status?.state === "closed"
+          ? "text-red-600 dark:text-red-300/90"
+          : status?.isDraft
+            ? "text-zinc-500 dark:text-zinc-400/80"
+            : status?.state === "open"
+              ? "text-emerald-600 dark:text-emerald-300/90"
+              : "text-muted-foreground";
+    return <GitPullRequest className={cn("size-3.5", toneClassName)} />;
+  }
   if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
 }
@@ -617,7 +632,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   label={`Close ${title}`}
                   onClick={() => props.onCloseSurface(surface)}
                 >
-                  <SurfaceIcon surface={surface} theme={resolvedTheme} />
+                  <SurfaceIcon
+                    surface={surface}
+                    theme={resolvedTheme}
+                    pullRequestStatuses={props.pullRequestStatuses}
+                  />
                   {pending ? (
                     <span
                       className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"

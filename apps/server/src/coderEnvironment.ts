@@ -49,13 +49,13 @@ export const layer = Layer.effect(
         capabilities: {
           repositoryIdentity: true,
           pullRequests: true,
-          gitLabMergeRequests: true,
           connectionProbe: true,
           threadSettlement: true,
           threadSnooze: true,
           threadPinning: true,
           threadPinReorder: true,
           threadTitleRegeneration: true,
+          threadPullRequestLinking: true,
         },
       },
     });

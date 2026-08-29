@@ -98,6 +98,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
+import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -107,6 +108,7 @@ import { useActiveEnvironmentId, useProjects, useThreadShells } from "../state/e
 import { environmentServerConfigsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
+import { useRightPanelStore } from "../rightPanelStore";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
@@ -144,9 +146,18 @@ import {
 } from "./Sidebar.logic";
 import { resolveCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
+  ChangeRequestStatusIcon,
+  nextThreadChangeRequestSnapshot,
+  prStatusIndicator,
+  PrStatusTooltipContent,
+  resolveDisplayedThreadPr,
+  resolveDisplayedThreadPrProvider,
+  setThreadChangeRequestSnapshot,
+  threadChangeRequestSnapshotsAtom,
   ThreadWorktreeIndicator,
   terminalStatusFromRunningIds,
   type TerminalStatusIndicator,
+  useLinkedThreadPullRequest,
 } from "./ThreadStatusIndicators";
 import {
   resolveSnoozePresets,
@@ -768,14 +779,61 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const terminalProcessCount = runningTerminalIds.length;
 
   const gitCwd = thread.worktreePath ?? props.projectCwd;
+  const linkedPullRequestStatus = useLinkedThreadPullRequest(
+    thread.environmentId,
+    thread.linkedPullRequest,
+  );
+  const changeRequestSnapshots = useAtomValue(threadChangeRequestSnapshotsAtom);
+  const changeRequestSnapshot = changeRequestSnapshots.get(threadKey);
   const gitStatus = useEnvironmentQuery(
-    (thread.branch != null || thread.worktreePath !== null) && gitCwd !== null
-      ? vcsEnvironment.refStatus({
+    thread.linkedPullRequest == null &&
+      (thread.branch != null || thread.worktreePath !== null) &&
+      gitCwd !== null
+      ? vcsEnvironment.status({
           environmentId: thread.environmentId,
           input: { cwd: gitCwd },
         })
       : null,
   );
+  const retainTerminalOnBranchMismatch = thread.worktreePath === null;
+  const changeRequest = resolveDisplayedThreadPr({
+    threadBranch: thread.branch,
+    gitStatus: gitStatus.data,
+    snapshot: changeRequestSnapshot,
+    retainTerminalOnBranchMismatch,
+    linkedPullRequest: thread.linkedPullRequest,
+    linkedPullRequestStatus,
+  });
+  const changeRequestProvider = resolveDisplayedThreadPrProvider({
+    threadBranch: thread.branch,
+    gitStatus: gitStatus.data,
+    snapshot: changeRequestSnapshot,
+    retainTerminalOnBranchMismatch,
+    linkedPullRequest: thread.linkedPullRequest,
+    linkedPullRequestStatus,
+  });
+  const changeRequestStatus = prStatusIndicator(changeRequest, changeRequestProvider);
+  useEffect(() => {
+    const nextSnapshot = nextThreadChangeRequestSnapshot({
+      threadBranch: thread.branch,
+      gitStatus: gitStatus.data,
+      snapshot: changeRequestSnapshot,
+      retainTerminalOnBranchMismatch,
+      linkedPullRequest: thread.linkedPullRequest,
+      linkedPullRequestStatus,
+    });
+    if (nextSnapshot !== undefined) {
+      setThreadChangeRequestSnapshot(threadKey, nextSnapshot);
+    }
+  }, [
+    changeRequestSnapshot,
+    gitStatus.data,
+    linkedPullRequestStatus,
+    retainTerminalOnBranchMismatch,
+    thread.branch,
+    thread.linkedPullRequest,
+    threadKey,
+  ]);
   // Same semantics as the legacy sidebar (never-visited counts as read):
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
@@ -917,6 +975,26 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       onContextMenu(threadRef, { x: event.clientX, y: event.clientY });
     },
     [onContextMenu, threadRef],
+  );
+  const handleChangeRequestClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!changeRequest) return;
+      const repository =
+        thread.linkedPullRequest?.repository ??
+        parseChangeRequestUrl(changeRequest.url)?.repository ??
+        null;
+      if (repository === null) return;
+      useRightPanelStore.getState().openPullRequest(threadRef, {
+        environmentId: thread.environmentId,
+        projectId: thread.linkedPullRequest?.projectId ?? thread.projectId,
+        repository,
+        number: changeRequest.number,
+      });
+      if (!props.isActive) onThreadActivate(threadRef);
+    },
+    [changeRequest, onThreadActivate, props.isActive, thread, threadRef],
   );
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {
@@ -1432,6 +1510,28 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : null}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
+              {changeRequestStatus ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        type="button"
+                        aria-label={changeRequestStatus.tooltip}
+                        onClick={handleChangeRequestClick}
+                        className={cn(
+                          "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring",
+                          changeRequestStatus.colorClass,
+                        )}
+                      />
+                    }
+                  >
+                    <ChangeRequestStatusIcon className="size-3" />
+                  </TooltipTrigger>
+                  <TooltipPopup side="top">
+                    <PrStatusTooltipContent status={changeRequestStatus} />
+                  </TooltipPopup>
+                </Tooltip>
+              ) : null}
               {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
                   branch, so the row lost its most stable identifier. */}
@@ -1611,6 +1711,8 @@ export default function Sidebar() {
   const activeEnvironmentId = useActiveEnvironmentId();
   const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
   const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
+  const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
+  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -1948,6 +2050,16 @@ export default function Sidebar() {
       const supportsSnooze =
         serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
       const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+      const snapshot = changeRequestSnapshotByKey.get(threadKey);
+      const changeRequest =
+        snapshot != null &&
+        (thread.linkedPullRequest == null
+          ? thread.worktreePath === null || snapshot.branch === thread.branch
+          : snapshot.linkedPullRequest?.projectId === thread.linkedPullRequest.projectId &&
+            snapshot.linkedPullRequest.repository === thread.linkedPullRequest.repository &&
+            snapshot.linkedPullRequest.number === thread.linkedPullRequest.number)
+          ? snapshot.pr
+          : null;
       // Snooze outranks settlement and pinning until the thread wakes.
       if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
         snoozed.push(thread);
@@ -1956,6 +2068,8 @@ export default function Sidebar() {
         effectiveSettled(thread, {
           now,
           autoSettleAfterDays,
+          autoSettleOnMerge,
+          changeRequest,
         })
       ) {
         settled.push(thread);
@@ -1991,7 +2105,16 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [autoSettleAfterDays, nowMinute, scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
+  }, [
+    autoSettleAfterDays,
+    autoSettleOnMerge,
+    changeRequestSnapshotByKey,
+    nowMinute,
+    scopedProjectKeys,
+    serverConfigs,
+    snoozeWakeTick,
+    threads,
+  ]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");

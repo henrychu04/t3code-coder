@@ -24,7 +24,9 @@ afterEach(() => {
 
 it.effect("uses a state-free workspace-level mutation canary", () =>
   Effect.gen(function* () {
-    mockedRun.mockReturnValueOnce(Effect.succeed(output(0)));
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed(output(1, "glab: 404 Project Not Found (HTTP 404)")),
+    );
     const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
 
     const result = yield* probe.check({ cwd: "/repo" });
@@ -45,6 +47,7 @@ it.effect("uses a state-free workspace-level mutation canary", () =>
           "-",
           "--header",
           "Content-Type: application/json",
+          "--include",
         ],
         stdin: "{}",
       }),
@@ -78,7 +81,7 @@ it.effect("fails closed when GitLab returns an unrecognized response", () =>
 
 it.effect("runs once for concurrent and later checks in the workspace runtime", () =>
   Effect.gen(function* () {
-    mockedRun.mockReturnValue(Effect.succeed(output(0)));
+    mockedRun.mockReturnValue(Effect.succeed(output(1, "glab: 404 Project Not Found (HTTP 404)")));
     const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
 
     const concurrent = yield* Effect.all(
@@ -124,9 +127,11 @@ it.effect("allows the probe request and classifier to be replaced together", () 
   ),
 );
 
-it.effect("treats GitLab's expected rejection as proof that the canary reached the host", () =>
+it.effect("requires a GitLab fingerprint before accepting the expected rejection", () =>
   Effect.gen(function* () {
-    mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Not Found (HTTP 404)")));
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed(output(1, "glab: 404 Project Not Found (HTTP 404)")),
+    );
     const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
 
     const result = yield* probe.check({ cwd: "/workspace" });
@@ -141,11 +146,51 @@ it.effect("treats GitLab's expected rejection as proof that the canary reached t
   ),
 );
 
+it.effect("recognizes an included HTTP/2 GitLab response", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed({
+        ...output(1),
+        stdout: 'HTTP/2 404\r\nx-gitlab-meta: {"correlation_id":"redacted"}\r\n',
+        stderr: "",
+      }),
+    );
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({ status: "writable", writable: true });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
+it.effect("does not treat a generic proxy 404 as proof of write access", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Not Found (HTTP 404)")));
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({ status: "indeterminate", writable: false });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
 it.effect("reprobes explicitly and replaces the workspace result", () =>
   Effect.gen(function* () {
     mockedRun
       .mockReturnValueOnce(Effect.succeed(output(1, "write endpoints are disabled")))
-      .mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Not Found (HTTP 404)")));
+      .mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Project Not Found (HTTP 404)")));
     const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
 
     const blocked = yield* probe.check({ cwd: "/workspace" });

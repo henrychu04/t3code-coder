@@ -10,6 +10,7 @@ import {
   resolveEffectiveEnvMode,
   resolveEnvModeLabel,
   resolveBranchTriggerLabel,
+  resolveBranchToolbarPrBranch,
   resolveBranchToolbarValue,
   resolveLockedWorkspaceLabel,
   resolveCheckoutBranchMismatch,
@@ -268,6 +269,23 @@ describe("resolveBranchTriggerLabel", () => {
         startFromOrigin: true,
       }),
     ).toBe("From upstream/feature/demo");
+  });
+});
+
+describe("resolveBranchToolbarPrBranch", () => {
+  it("shows the MR only while the composer is on the thread's branch", () => {
+    expect(
+      resolveBranchToolbarPrBranch({
+        activeThreadBranch: "feature/panel",
+        resolvedActiveBranch: "feature/panel",
+      }),
+    ).toBe("feature/panel");
+    expect(
+      resolveBranchToolbarPrBranch({
+        activeThreadBranch: "feature/panel",
+        resolvedActiveBranch: "main",
+      }),
+    ).toBeNull();
   });
 });
 

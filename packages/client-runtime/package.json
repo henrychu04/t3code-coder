@@ -75,10 +75,6 @@
       "types": "./src/state/review.ts",
       "default": "./src/state/review.ts"
     },
-    "./state/gitLabMergeRequests": {
-      "types": "./src/state/gitLabMergeRequests.ts",
-      "default": "./src/state/gitLabMergeRequests.ts"
-    },
     "./state/git": {
       "types": "./src/state/git.ts",
       "default": "./src/state/git.ts"
