@@ -255,6 +255,83 @@ export interface StableMessagesTimelineRowsState {
   result: MessagesTimelineRow[];
 }
 
+// ---------------------------------------------------------------------------
+// Row height estimation
+// ---------------------------------------------------------------------------
+
+// LegendList sizes unmeasured rows from a single `estimatedItemSize` number.
+// A data-driven average keeps the pre-measurement layout close to reality, so
+// thread restores, minimap jumps, and load-earlier prepends need fewer scroll
+// corrections than a flat guess. Calibration: message text renders at
+// text-sm/leading-relaxed (~23px per line) in the max-w-3xl column; long user
+// messages collapse to 8 lines behind a disclosure; plan cards preview 10
+// lines before expansion.
+const ESTIMATED_TIMELINE_LINE_HEIGHT_PX = 23;
+const ESTIMATED_ASSISTANT_CHARS_PER_LINE = 88;
+const ESTIMATED_USER_CHARS_PER_LINE = 56;
+const ESTIMATED_USER_COLLAPSED_LINE_COUNT = 8;
+const ESTIMATED_PROPOSED_PLAN_PREVIEW_LINE_COUNT = 10;
+const ESTIMATED_ASSISTANT_TEXT_HEIGHT_CAP_PX = 820;
+const FALLBACK_ESTIMATED_TIMELINE_ROW_HEIGHT = 90;
+
+function estimateTimelineTextHeightPx(text: string, charsPerLine: number): number {
+  return Math.max(1, Math.ceil(text.length / charsPerLine)) * ESTIMATED_TIMELINE_LINE_HEIGHT_PX;
+}
+
+export function estimateMessagesTimelineRowHeight(row: MessagesTimelineRow): number {
+  switch (row.kind) {
+    case "work":
+    case "work-live":
+    case "work-toggle":
+      return 64;
+    case "turn-fold":
+      return 56;
+    case "working":
+      return 40;
+    case "turn-plan":
+      return 148;
+    case "proposed-plan":
+      return (
+        120 +
+        Math.min(
+          estimateTimelineTextHeightPx(row.proposedPlan.planMarkdown, ESTIMATED_ASSISTANT_CHARS_PER_LINE),
+          ESTIMATED_PROPOSED_PLAN_PREVIEW_LINE_COUNT * ESTIMATED_TIMELINE_LINE_HEIGHT_PX,
+        )
+      );
+    case "message": {
+      if (row.message.role === "user") {
+        return (
+          96 +
+          Math.min(
+            estimateTimelineTextHeightPx(row.message.text, ESTIMATED_USER_CHARS_PER_LINE),
+            ESTIMATED_USER_COLLAPSED_LINE_COUNT * ESTIMATED_TIMELINE_LINE_HEIGHT_PX,
+          )
+        );
+      }
+      return (
+        88 +
+        Math.min(
+          estimateTimelineTextHeightPx(row.message.text, ESTIMATED_ASSISTANT_CHARS_PER_LINE),
+          ESTIMATED_ASSISTANT_TEXT_HEIGHT_CAP_PX,
+        )
+      );
+    }
+  }
+}
+
+export function estimateMessagesTimelineAverageRowHeight(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+): number {
+  if (rows.length === 0) {
+    return FALLBACK_ESTIMATED_TIMELINE_ROW_HEIGHT;
+  }
+  let totalHeight = 0;
+  for (const row of rows) {
+    totalHeight += estimateMessagesTimelineRowHeight(row);
+  }
+  return Math.round(totalHeight / rows.length);
+}
+
 export function computeMessageDurationStart(
   messages: ReadonlyArray<TimelineDurationMessage>,
 ): Map<string, string> {

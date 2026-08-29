@@ -3,6 +3,8 @@ import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
+  estimateMessagesTimelineAverageRowHeight,
+  estimateMessagesTimelineRowHeight,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
@@ -1676,5 +1678,132 @@ describe("computeStableMessagesTimelineRows", () => {
 
     expect(reordered).not.toBe(initial);
     expect(reordered.result).toEqual([initial.result[1], initial.result[0]]);
+  });
+});
+
+describe("estimateMessagesTimelineRowHeight", () => {
+  const baseMessage = {
+    id: "m1" as never,
+    turnId: null,
+    streaming: false,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  const messageRow = (role: "user" | "assistant", text: string) => ({
+    kind: "message" as const,
+    id: "row-1",
+    createdAt: "2026-01-01T00:00:00Z",
+    message: { ...baseMessage, role, text },
+    durationStart: "2026-01-01T00:00:00Z",
+    showAssistantMeta: false,
+    showAssistantCopyButton: false,
+    assistantCopyStreaming: false,
+  });
+
+  it("grows with text length for assistant messages up to the cap", () => {
+    const short = estimateMessagesTimelineRowHeight(messageRow("assistant", "Done."));
+    const long = estimateMessagesTimelineRowHeight(
+      messageRow("assistant", "x".repeat(20_000)),
+    );
+    expect(long).toBeGreaterThan(short * 5);
+    expect(long).toBe(88 + 820);
+  });
+
+  it("estimates mid-length assistant messages from the calibrated chars-per-line", () => {
+    const mid = estimateMessagesTimelineRowHeight(messageRow("assistant", "x".repeat(2_000)));
+    expect(mid).toBe(88 + Math.ceil(2_000 / 88) * 23);
+  });
+
+  it("caps user messages at the collapsed preview height", () => {
+    const collapsed = estimateMessagesTimelineRowHeight(
+      messageRow("user", "x".repeat(10_000)),
+    );
+    expect(collapsed).toBe(96 + 8 * 23);
+  });
+
+  it("uses fixed heights for non-message rows", () => {
+    const workRow = {
+      kind: "work" as const,
+      id: "w1",
+      createdAt: "2026-01-01T00:00:00Z",
+      groupedEntries: [],
+      isExpandedToolGroupEntry: false,
+      isLastExpandedToolGroupEntry: false,
+    };
+    const workingRow = {
+      kind: "working" as const,
+      id: "wk1",
+      createdAt: null,
+      showThinking: true,
+    };
+    expect(estimateMessagesTimelineRowHeight(workRow)).toBe(64);
+    expect(estimateMessagesTimelineRowHeight(workingRow)).toBe(40);
+  });
+});
+
+describe("estimateMessagesTimelineAverageRowHeight", () => {
+  const baseMessage = {
+    id: "m1" as never,
+    turnId: null,
+    streaming: false,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+  };
+
+  it("falls back to the historical flat estimate for empty rows", () => {
+    expect(estimateMessagesTimelineAverageRowHeight([])).toBe(90);
+  });
+
+  it("averages per-row estimates and rounds", () => {
+    const workingRow = {
+      kind: "working" as const,
+      id: "wk1",
+      createdAt: null,
+      showThinking: true,
+    };
+    const workRow = {
+      kind: "work" as const,
+      id: "w1",
+      createdAt: "2026-01-01T00:00:00Z",
+      groupedEntries: [],
+      isExpandedToolGroupEntry: false,
+      isLastExpandedToolGroupEntry: false,
+    };
+    expect(estimateMessagesTimelineAverageRowHeight([workingRow, workRow])).toBe(52);
+  });
+
+  it("averages text-driven message rows above the flat fallback for long threads", () => {
+    const rows = [
+      {
+        kind: "message" as const,
+        id: "row-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        message: {
+          ...baseMessage,
+          role: "assistant" as const,
+          text: "x".repeat(3_000),
+        },
+        durationStart: "2026-01-01T00:00:00Z",
+        showAssistantMeta: false,
+        showAssistantCopyButton: false,
+        assistantCopyStreaming: false,
+      },
+      {
+        kind: "message" as const,
+        id: "row-2",
+        createdAt: "2026-01-01T00:00:01Z",
+        message: {
+          ...baseMessage,
+          role: "user" as const,
+          text: "ok",
+        },
+        durationStart: "2026-01-01T00:00:01Z",
+        showAssistantMeta: false,
+        showAssistantCopyButton: false,
+        assistantCopyStreaming: false,
+      },
+    ];
+    expect(estimateMessagesTimelineAverageRowHeight(rows)).toBeGreaterThan(90);
   });
 });
