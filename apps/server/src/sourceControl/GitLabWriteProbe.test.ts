@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
+import { VcsProcessTimeoutError } from "@t3tools/contracts";
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 
@@ -68,8 +69,12 @@ it.effect("fails closed when GitLab returns an unrecognized response", () =>
 
     const result = yield* probe.check({ cwd: "/repo" });
 
-    assert.isFalse(result.writable);
-    assert.strictEqual(result.status, "indeterminate");
+    expect(result).toEqual({
+      status: "indeterminate",
+      writable: false,
+      detail:
+        "The GitLab CLI exited with status 7, but its response did not match a known GitLab, authentication, or workspace-policy result.",
+    });
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
@@ -169,6 +174,23 @@ it.effect("recognizes an included HTTP/2 GitLab response", () =>
   ),
 );
 
+it.effect("reports an HTTP 401 response as unauthenticated", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "glab: 401 (HTTP 401)")));
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({ status: "unauthenticated", writable: false });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
 it.effect("does not treat a generic proxy 404 as proof of write access", () =>
   Effect.gen(function* () {
     mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "glab: 404 Not Found (HTTP 404)")));
@@ -176,7 +198,69 @@ it.effect("does not treat a generic proxy 404 as proof of write access", () =>
 
     const result = yield* probe.check({ cwd: "/workspace" });
 
-    expect(result).toEqual({ status: "indeterminate", writable: false });
+    expect(result).toEqual({
+      status: "indeterminate",
+      writable: false,
+      detail:
+        "The GitLab CLI exited with status 1, but its response did not match a known GitLab, authentication, or workspace-policy result.",
+    });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
+it.effect("reports a safe reason when the probe process times out", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(
+      Effect.fail(
+        new VcsProcessTimeoutError({
+          operation: "GitLabWriteProbe.check",
+          command: "glab",
+          cwd: "/workspace/secret-project",
+          argumentCount: 9,
+          timeoutMs: 15_000,
+        }),
+      ),
+    );
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace/secret-project" });
+
+    expect(result).toEqual({
+      status: "indeterminate",
+      writable: false,
+      detail: "The GitLab write probe timed out after 15 seconds.",
+    });
+    expect(JSON.stringify(result)).not.toContain("secret-project");
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
+it.effect("reports a bounded HTTP rejection without exposing response contents", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed(output(1, "glab: 403 Forbidden: private diagnostic (HTTP 403)")),
+    );
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({
+      status: "indeterminate",
+      writable: false,
+      detail:
+        "GitLab or an intermediary rejected the write-shaped request with HTTP 403. Writes remain disabled.",
+    });
+    expect(JSON.stringify(result)).not.toContain("private diagnostic");
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(

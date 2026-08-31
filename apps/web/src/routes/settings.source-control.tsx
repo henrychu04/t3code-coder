@@ -337,7 +337,9 @@ function EnvironmentSourceControlStatus({ environment }: { environment: Environm
           />
           <SettingsRow
             title="GitLab writes"
-            description={probeError ?? WRITE_ACCESS_DESCRIPTIONS[writeAccess.status]}
+            description={
+              probeError ?? writeAccess.detail ?? WRITE_ACCESS_DESCRIPTIONS[writeAccess.status]
+            }
             control={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <Badge variant={writeAccess.writable ? "success" : "warning"}>

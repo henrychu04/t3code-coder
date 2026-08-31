@@ -2,7 +2,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SynchronizedRef from "effect/SynchronizedRef";
-import type { SourceControlWriteAccess, SourceControlWriteAccessStatus } from "@t3tools/contracts";
+import type {
+  SourceControlWriteAccess,
+  SourceControlWriteAccessStatus,
+  VcsError,
+} from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 
@@ -26,6 +30,7 @@ const AUTH_FAILURE_PATTERNS = [
   /glab auth login/i,
   /no oauth token/i,
   /unauthorized/i,
+  /HTTP(?:\/\d(?:\.\d)?)?\s+401\b|glab:\s*401\b/i,
 ] as const;
 
 const POLICY_BLOCK_PATTERNS = [
@@ -42,13 +47,86 @@ const GITLAB_RESPONSE_FINGERPRINTS = [
   /"message"\s*:\s*"(?:404 )?project not found"/i,
   /glab:\s*(?:400 bad request|404 project not found|405 method not allowed|422 unprocessable entity)\b/i,
 ] as const;
+const NETWORK_FAILURE_PATTERNS = [
+  /could not resolve host/i,
+  /connection refused/i,
+  /network is unreachable/i,
+  /no route to host/i,
+  /proxyconnect tcp/i,
+  /i\/o timeout/i,
+] as const;
+const TLS_FAILURE_PATTERNS = [
+  /certificate signed by unknown authority/i,
+  /certificate verify failed/i,
+  /tls handshake/i,
+  /x509:/i,
+] as const;
+const RATE_LIMIT_PATTERN = /HTTP(?:\/\d(?:\.\d)?)?\s+429\b|glab:\s*429\b|too many requests/i;
+const FORBIDDEN_PATTERN = /HTTP(?:\/\d(?:\.\d)?)?\s+403\b|glab:\s*403\b|\bforbidden\b/i;
+const SERVER_FAILURE_PATTERN =
+  /HTTP(?:\/\d(?:\.\d)?)?\s+5\d\d\b|glab:\s*5\d\d\b|bad gateway|service unavailable/i;
 
 function matchesAny(value: string, patterns: ReadonlyArray<RegExp>): boolean {
   return patterns.some((pattern) => pattern.test(value));
 }
 
-function access(status: SourceControlWriteAccessStatus): SourceControlWriteAccess {
-  return { status, writable: status === "writable" };
+function access(status: SourceControlWriteAccessStatus, detail?: string): SourceControlWriteAccess {
+  return {
+    status,
+    writable: status === "writable",
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
+/** Returns only fixed text derived from coarse result categories, never command output. */
+function unrecognizedResponseDetail(output: VcsProcess.VcsProcessOutput): string {
+  if (output.stdoutInvalidUtf8 === true || output.stderrInvalidUtf8 === true) {
+    return "The GitLab CLI returned output that was not valid UTF-8, so the probe could not verify it.";
+  }
+  if (output.stdoutTruncated || output.stderrTruncated) {
+    return "The GitLab CLI response exceeded the probe output limit and was truncated.";
+  }
+  const response = `${output.stdout}\n${output.stderr}`;
+  if (matchesAny(response, NETWORK_FAILURE_PATTERNS)) {
+    return "The GitLab CLI could not reach GitLab because of a network, DNS, or proxy failure.";
+  }
+  if (matchesAny(response, TLS_FAILURE_PATTERNS)) {
+    return "The GitLab CLI could not establish a trusted TLS connection to GitLab.";
+  }
+  if (RATE_LIMIT_PATTERN.test(response)) {
+    return "GitLab rate-limited the write probe. Writes remain disabled until a later probe succeeds.";
+  }
+  if (FORBIDDEN_PATTERN.test(response)) {
+    return "GitLab or an intermediary rejected the write-shaped request with HTTP 403. Writes remain disabled.";
+  }
+  if (SERVER_FAILURE_PATTERN.test(response)) {
+    return "GitLab or an intermediary returned a server error while handling the write probe.";
+  }
+  if (output.exitCode === 0) {
+    return "The invalid write canary unexpectedly reported success, so the probe could not verify the result safely.";
+  }
+  return `The GitLab CLI exited with status ${output.exitCode}, but its response did not match a known GitLab, authentication, or workspace-policy result.`;
+}
+
+/** Maps typed process failures to safe UI diagnostics without inspecting their causes. */
+function processFailureDetail(error: VcsError): string {
+  switch (error._tag) {
+    case "VcsProcessSpawnError":
+      return "The workspace could not start the GitLab CLI. Confirm that glab is installed and executable.";
+    case "VcsProcessTimeoutError":
+      return `The GitLab write probe timed out after ${Math.round(error.timeoutMs / 1_000)} seconds.`;
+    case "VcsProcessStdinWriteError":
+      return "The workspace could not send the write canary to the GitLab CLI.";
+    case "VcsProcessOutputReadError":
+    case "VcsProcessMissingExitCodeError":
+      return "The workspace could not read a complete probe result from the GitLab CLI.";
+    case "VcsProcessOutputLimitError":
+      return "The GitLab CLI response exceeded the probe output limit.";
+    case "VcsProcessExitError":
+    case "VcsRepositoryDetectionError":
+    case "VcsUnsupportedOperationError":
+      return "The workspace could not complete the GitLab write probe.";
+  }
 }
 
 /**
@@ -119,10 +197,18 @@ export function make(behavior: GitLabWriteProbeBehavior = workspacePolicyWritePr
           ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
         })
         .pipe(
-          Effect.map((output) => access(behavior.classifyProbe(output))),
-          // A missing CLI, timeout, blocked process, or unreadable response all fail closed. The
-          // underlying output is intentionally not carried into the result or logged here.
-          Effect.catch(() => Effect.succeed(access("indeterminate"))),
+          Effect.map((output) => {
+            const status = behavior.classifyProbe(output);
+            return access(
+              status,
+              status === "indeterminate" ? unrecognizedResponseDetail(output) : undefined,
+            );
+          }),
+          // Fail closed with a bounded explanation. Causes and command output remain inside the
+          // workspace process boundary and are neither transported nor logged.
+          Effect.catch((error) =>
+            Effect.succeed(access("indeterminate", processFailureDetail(error))),
+          ),
         );
     };
 

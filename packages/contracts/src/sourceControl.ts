@@ -133,6 +133,8 @@ export type SourceControlWriteAccessStatus = typeof SourceControlWriteAccessStat
 export const SourceControlWriteAccess = Schema.Struct({
   status: SourceControlWriteAccessStatus,
   writable: Schema.Boolean,
+  /** A bounded, synthesized explanation. Probe command output must never be transported here. */
+  detail: Schema.optional(TrimmedNonEmptyString),
 });
 export type SourceControlWriteAccess = typeof SourceControlWriteAccess.Type;
 

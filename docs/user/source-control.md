@@ -46,4 +46,7 @@ GitLab authentication remains entirely owned by `glab` in the workspace. T3 Code
 reads, stores, or logs a GitLab token. A workspace-level write probe runs once before the first
 GitLab mutation. If workspace policy blocks writes, authentication is unavailable, or the result is
 indeterminate, GitLab write actions stay disabled while read-only merge-request features continue
-to work. T3 Coder does not register GitHub, Bitbucket, Azure DevOps, or another hosted provider.
+to work. Settings shows a bounded diagnostic category for failed or indeterminate probes, such as
+a missing CLI, timeout, network/TLS failure, HTTP rejection, or unrecognized exit status. Raw
+`glab` output is never sent to the browser. T3 Coder does not register GitHub, Bitbucket, Azure
+DevOps, or another hosted provider.
