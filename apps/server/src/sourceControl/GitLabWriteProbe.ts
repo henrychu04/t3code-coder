@@ -198,7 +198,12 @@ export function make(behavior: GitLabWriteProbeBehavior = workspacePolicyWritePr
         })
         .pipe(
           Effect.map((output) => {
-            const status = behavior.classifyProbe(output);
+            const outputIncomplete =
+              output.stdoutInvalidUtf8 === true ||
+              output.stderrInvalidUtf8 === true ||
+              output.stdoutTruncated ||
+              output.stderrTruncated;
+            const status = outputIncomplete ? "indeterminate" : behavior.classifyProbe(output);
             return access(
               status,
               status === "indeterminate" ? unrecognizedResponseDetail(output) : undefined,

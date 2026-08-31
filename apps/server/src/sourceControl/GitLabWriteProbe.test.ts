@@ -174,6 +174,33 @@ it.effect("recognizes an included HTTP/2 GitLab response", () =>
   ),
 );
 
+it.effect("fails closed when an otherwise writable response is truncated", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed({
+        ...output(1, "glab: 404 Project Not Found (HTTP 404)"),
+        stdout: 'HTTP/2 404\r\nx-gitlab-meta: {"correlation_id":"redacted"}\r\n',
+        stdoutTruncated: true,
+      }),
+    );
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({
+      status: "indeterminate",
+      writable: false,
+      detail: "The GitLab CLI response exceeded the probe output limit and was truncated.",
+    });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
 it.effect("reports an HTTP 401 response as unauthenticated", () =>
   Effect.gen(function* () {
     mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "glab: 401 (HTTP 401)")));
