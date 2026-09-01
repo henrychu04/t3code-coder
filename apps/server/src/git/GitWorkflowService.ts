@@ -32,6 +32,7 @@ import { GitCommandError, GitManagerError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -41,6 +42,7 @@ import * as Option from "effect/Option";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
   mergeGitStatusParts,
+  normalizeGitRemoteUrl,
   resolveAutoFeatureBranchName,
   sanitizeBranchFragment,
 } from "@t3tools/shared/git";
@@ -76,6 +78,14 @@ export class GitWorkflowService extends Context.Service<
       input: VcsStatusInput,
       options?: { readonly fetch?: boolean },
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
+    /** Resolve the MR for a saved branch without changing the current checkout. */
+    readonly branchPullRequest: (input: {
+      readonly cwd: string;
+      readonly branch: string;
+    }) => Effect.Effect<
+      { readonly state: "open" | "closed" | "merged"; readonly updatedAt: string | null } | null,
+      GitManagerServiceError
+    >;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly pull: (input: VcsPullInput) => Effect.Effect<VcsPullResult, GitCommandError>;
     readonly resolvePullRequest: (
@@ -245,29 +255,31 @@ export const layer = Layer.effect(
 
     const resolveDefaultBranch = Effect.fn("GitWorkflowService.resolveDefaultBranch")(function* (
       cwd: string,
+      remoteName = "origin",
     ) {
       const symbolic = yield* git.execute({
         operation: "GitWorkflowService.resolveDefaultBranch.symbolic",
         cwd,
-        args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+        args: ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remoteName}/HEAD`],
         allowNonZeroExit: true,
       });
       if (symbolic.exitCode === 0) {
         const value = symbolic.stdout.trim();
-        if (value.startsWith("origin/") && value.length > "origin/".length) {
-          return value.slice("origin/".length);
+        const prefix = `${remoteName}/`;
+        if (value.startsWith(prefix) && value.length > prefix.length) {
+          return value.slice(prefix.length);
         }
       }
       for (const candidate of ["main", "master"] as const) {
         const exists = yield* git.execute({
           operation: "GitWorkflowService.resolveDefaultBranch.exists",
           cwd,
-          args: ["show-ref", "--verify", "--quiet", `refs/remotes/origin/${candidate}`],
+          args: ["show-ref", "--verify", "--quiet", `refs/remotes/${remoteName}/${candidate}`],
           allowNonZeroExit: true,
         });
         if (exists.exitCode === 0) return candidate;
       }
-      return "main";
+      return null;
     });
 
     const prEpochByCwd = new Map<string, number>();
@@ -317,6 +329,244 @@ export const layer = Layer.effect(
       );
     };
 
+    const readGitConfig = Effect.fn("GitWorkflowService.readGitConfig")(function* (
+      cwd: string,
+      key: string,
+    ) {
+      const result = yield* git.execute({
+        operation: "GitWorkflowService.readGitConfig",
+        cwd,
+        args: ["config", "--get", key],
+        allowNonZeroExit: true,
+      });
+      return result.exitCode === 0 ? result.stdout.trim() || null : null;
+    });
+    const repositoryPathFromRemoteKey = (remoteKey: string): string | null => {
+      const separator = remoteKey.indexOf("/");
+      return separator > 0 && separator < remoteKey.length - 1
+        ? remoteKey.slice(separator + 1)
+        : null;
+    };
+    const branchPrFailureStreak = new Map<string, number>();
+    const branchPrCache = yield* Cache.makeWith(
+      (key: string) => {
+        const [cwd = "", headBranch = "", headRemoteKey = "", targetRemoteKey = ""] =
+          key.split("\0");
+        return Effect.gen(function* () {
+          const provider = yield* sourceControls.get("gitlab");
+          const requests = yield* provider.listChangeRequests({
+            cwd,
+            headSelector: headBranch,
+            state: "all",
+            limit: 20,
+          });
+          const headRepository = repositoryPathFromRemoteKey(headRemoteKey);
+          const targetRepository = repositoryPathFromRemoteKey(targetRemoteKey);
+          const headOwner = headRepository?.split("/")[0] ?? null;
+          const isCrossRepository =
+            headRepository !== null &&
+            targetRepository !== null &&
+            headRepository !== targetRepository;
+          const matching = requests.filter((candidate) => {
+            if (candidate.headRefName !== headBranch) return false;
+            const candidateRepository =
+              candidate.headRepositoryNameWithOwner?.toLowerCase() ?? null;
+            const candidateOwner = candidate.headRepositoryOwnerLogin?.toLowerCase() ?? null;
+            if (headRepository !== null && candidateRepository !== null) {
+              if (candidateRepository !== headRepository) return false;
+            }
+            if (headOwner !== null && candidateOwner !== null && candidateOwner !== headOwner) {
+              return false;
+            }
+            if (isCrossRepository) {
+              if (candidate.isCrossRepository === false) return false;
+              return candidateRepository !== null || candidateOwner !== null;
+            }
+            if (
+              candidate.isCrossRepository === true &&
+              candidateRepository === null &&
+              candidateOwner === null
+            ) {
+              return false;
+            }
+            return true;
+          });
+          const request =
+            matching.toSorted((left, right) => {
+              const leftAt = Option.match(left.updatedAt, {
+                onNone: () => Number.NEGATIVE_INFINITY,
+                onSome: DateTime.toEpochMillis,
+              });
+              const rightAt = Option.match(right.updatedAt, {
+                onNone: () => Number.NEGATIVE_INFINITY,
+                onSome: DateTime.toEpochMillis,
+              });
+              return rightAt - leftAt;
+            })[0] ?? null;
+          return { request, headRemoteKey, targetRemoteKey };
+        });
+      },
+      {
+        capacity: STATUS_CACHE_CAPACITY,
+        timeToLive: (exit, key) => {
+          if (Exit.isSuccess(exit)) {
+            branchPrFailureStreak.delete(key);
+            return PR_CACHE_TTL;
+          }
+          const failures = (branchPrFailureStreak.get(key) ?? 0) + 1;
+          setBounded(branchPrFailureStreak, key, failures);
+          return failureTtl(failures);
+        },
+      },
+    );
+
+    const branchPullRequest: GitWorkflowService["Service"]["branchPullRequest"] = Effect.fn(
+      "GitWorkflowService.branchPullRequest",
+    )(function* ({ cwd, branch }) {
+      const remotes = yield* git.execute({
+        operation: "GitWorkflowService.branchPullRequest.remotes",
+        cwd,
+        args: ["remote"],
+      });
+      const remoteNames = remotes.stdout
+        .split(/\r?\n/u)
+        .map((name) => name.trim())
+        .filter(Boolean);
+      const firstRemote = remoteNames[0];
+      if (firstRemote === undefined) return null;
+      const targetRemote = remoteNames.includes("origin") ? "origin" : firstRemote;
+
+      const branchRef = yield* git.execute({
+        operation: "GitWorkflowService.branchPullRequest.branchRef",
+        cwd,
+        args: [
+          "for-each-ref",
+          "--format=%(refname)%00%(upstream:short)%00%(upstream:remotename)%00%(upstream:remoteref)",
+          `refs/heads/${branch}`,
+        ],
+      });
+      const exactBranch = branchRef.stdout
+        .split(/\r?\n/u)
+        .find((line) => line.split("\0", 1)[0] === `refs/heads/${branch}`);
+      const [refName = "", savedUpstream = "", savedRemote = "", savedRemoteRef = ""] =
+        exactBranch?.split("\0") ?? [];
+      const localBranchExists = refName.length > 0;
+      let headRemote = savedRemote || targetRemote;
+      let headBranch = branch;
+
+      if (savedUpstream.length > 0) {
+        if (savedRemote.length === 0 || savedRemoteRef.length === 0) {
+          return yield* new GitManagerError({
+            operation: "branchPullRequest",
+            cwd,
+            detail: `Saved upstream for ${branch} is incomplete.`,
+          });
+        }
+        headBranch = savedRemoteRef.replace(/^refs\/heads\//u, "");
+      } else if (!localBranchExists) {
+        const trackingRefs = yield* git.execute({
+          operation: "GitWorkflowService.branchPullRequest.remoteTrackingRefs",
+          cwd,
+          args: ["for-each-ref", "--format=%(refname)", "refs/remotes"],
+        });
+        const refs = new Set(
+          trackingRefs.stdout
+            .split(/\r?\n/u)
+            .map((ref) => ref.trim())
+            .filter(Boolean),
+        );
+        const matchingRemotes = remoteNames.filter((remote) =>
+          refs.has(`refs/remotes/${remote}/${branch}`),
+        );
+        if (matchingRemotes.length > 1) {
+          return yield* new GitManagerError({
+            operation: "branchPullRequest",
+            cwd,
+            detail: `Multiple remotes track ${branch}. Its merge request is ambiguous.`,
+          });
+        }
+        headRemote = matchingRemotes[0] ?? targetRemote;
+      }
+
+      const defaultBranch = yield* resolveDefaultBranch(cwd, targetRemote);
+      const headBranchIsDefault =
+        headBranch === defaultBranch ||
+        (defaultBranch === null && (headBranch === "main" || headBranch === "master"));
+      if (headBranch !== branch && headBranchIsDefault && headRemote === targetRemote) {
+        return null;
+      }
+      if (localBranchExists && savedUpstream.length === 0) {
+        const trackingRefs = yield* git.execute({
+          operation: "GitWorkflowService.branchPullRequest.publishedRef",
+          cwd,
+          args: ["for-each-ref", "--format=%(refname)", "refs/remotes"],
+        });
+        const refs = trackingRefs.stdout
+          .split(/\r?\n/u)
+          .map((ref) => ref.trim())
+          .filter(Boolean);
+        if (
+          refs.length > 0 &&
+          !remoteNames.some((remote) => refs.includes(`refs/remotes/${remote}/${headBranch}`))
+        ) {
+          return null;
+        }
+      }
+
+      const readIdentity = Effect.fn("GitWorkflowService.branchPullRequest.identity")(function* () {
+        const [headUrl, targetUrl] = yield* Effect.all(
+          [
+            readGitConfig(cwd, `remote.${headRemote}.url`),
+            readGitConfig(cwd, `remote.${targetRemote}.url`),
+          ],
+          { concurrency: "unbounded" },
+        );
+        if (headUrl === null || targetUrl === null) {
+          return yield* new GitManagerError({
+            operation: "branchPullRequest",
+            cwd,
+            detail: `Repository identity for ${branch} could not be verified.`,
+          });
+        }
+        return {
+          headRemoteKey: normalizeGitRemoteUrl(headUrl),
+          targetRemoteKey: normalizeGitRemoteUrl(targetUrl),
+        };
+      });
+      const identity = yield* readIdentity();
+      const cacheKey = [
+        cwd,
+        headBranch,
+        identity.headRemoteKey,
+        identity.targetRemoteKey,
+        String(prEpochByCwd.get(cwd) ?? 0),
+      ].join("\0");
+      const cached = yield* Cache.get(branchPrCache, cacheKey);
+      const currentIdentity = yield* readIdentity();
+      if (
+        cached.headRemoteKey !== currentIdentity.headRemoteKey ||
+        cached.targetRemoteKey !== currentIdentity.targetRemoteKey
+      ) {
+        return yield* new GitManagerError({
+          operation: "branchPullRequest",
+          cwd,
+          detail: `Repository identity for ${branch} changed during merge request lookup.`,
+        });
+      }
+      if (cached.request === null) return null;
+      const branchIsDefault =
+        branch === defaultBranch ||
+        (defaultBranch === null && (branch === "main" || branch === "master"));
+      if (branchIsDefault && cached.request.state !== "open") return null;
+      return {
+        state: cached.request.state,
+        updatedAt: Option.match(cached.request.updatedAt, {
+          onNone: () => null,
+          onSome: DateTime.formatIso,
+        }),
+      };
+    });
+
     const readRemoteStatus = Effect.fn("GitWorkflowService.readRemoteStatus")(function* ({
       cwd,
     }: VcsStatusInput) {
@@ -341,7 +591,7 @@ export const layer = Layer.effect(
         behindCount = parseCount(behind);
         aheadCount = parseCount(ahead);
       }
-      const defaultBranch = yield* resolveDefaultBranch(cwd);
+      const defaultBranch = (yield* resolveDefaultBranch(cwd)) ?? "main";
       const aheadOfDefault = yield* git.execute({
         operation: "GitWorkflowService.remoteStatus.aheadOfDefault",
         cwd,
@@ -739,7 +989,7 @@ export const layer = Layer.effect(
           });
         }
         const provider = yield* sourceControls.get("gitlab");
-        const baseBranch = yield* resolveDefaultBranch(input.cwd);
+        const baseBranch = (yield* resolveDefaultBranch(input.cwd)) ?? "main";
         const existing = yield* provider.listChangeRequests({
           cwd: input.cwd,
           headSelector: branch,
@@ -1218,6 +1468,7 @@ export const layer = Layer.effect(
       localStatus,
       remoteStatus,
       status,
+      branchPullRequest,
       invalidateStatus,
       pull,
       resolvePullRequest,

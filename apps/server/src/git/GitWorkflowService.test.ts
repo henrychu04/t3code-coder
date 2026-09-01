@@ -28,6 +28,8 @@ const getChangeRequest = vi.fn(() =>
     updatedAt: Option.none(),
   }),
 );
+const listChangeRequests =
+  vi.fn<SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"]>();
 const checkoutChangeRequest = vi.fn(() => Effect.void);
 const getRepositoryCloneUrls = vi.fn(() =>
   Effect.succeed({
@@ -39,6 +41,7 @@ const getRepositoryCloneUrls = vi.fn(() =>
 const provider = {
   kind: "gitlab" as const,
   getChangeRequest,
+  listChangeRequests,
   checkoutChangeRequest,
   getRepositoryCloneUrls,
 } as unknown as SourceControlProvider.SourceControlProvider["Service"];
@@ -82,6 +85,21 @@ beforeEach(() => {
   checkoutChangeRequest.mockClear();
   getRepositoryCloneUrls.mockClear();
   getChangeRequest.mockClear();
+  listChangeRequests.mockReset();
+  listChangeRequests.mockReturnValue(
+    Effect.succeed([
+      {
+        provider: "gitlab" as const,
+        number: 42,
+        title: "Restore the panel",
+        url: "https://gitlab.example.com/group/project/-/merge_requests/42",
+        baseRefName: "main",
+        headRefName: "feature/panel",
+        state: "open" as const,
+        updatedAt: Option.none(),
+      },
+    ]),
+  );
 });
 
 const layer = it.layer(
@@ -510,6 +528,324 @@ layer("GitWorkflowService.preparePullRequestThread", (it) => {
         path: null,
       });
       expect(result.branch).toBe("t3code/pr-42/feature/panel");
+    }),
+  );
+});
+
+layer("GitWorkflowService.branchPullRequest", (it) => {
+  it.effect("resolves a saved branch merge request without changing the checkout", () =>
+    Effect.gen(function* () {
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
+          return Effect.succeed(
+            gitOutput(
+              "refs/heads/feature/panel\0origin/feature/panel\0origin\0refs/heads/feature/panel\n",
+            ),
+          );
+        }
+        if (input.args[0] === "symbolic-ref") {
+          return Effect.succeed(gitOutput("origin/main\n"));
+        }
+        if (input.args[0] === "config" && input.args[1] === "--get") {
+          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.branchPullRequest({
+        cwd: "/repo",
+        branch: "feature/panel",
+      });
+
+      expect(result).toEqual({ state: "open", updatedAt: null });
+      expect(listChangeRequests).toHaveBeenCalledWith({
+        cwd: "/repo",
+        headSelector: "feature/panel",
+        state: "all",
+        limit: 20,
+      });
+      expect(
+        execute.mock.calls.some(([input]) =>
+          ["checkout", "switch", "fetch", "pull", "push"].includes(input.args[0] ?? ""),
+        ),
+      ).toBe(false);
+    }),
+  );
+
+  it.effect("rejects an unqualified branch tracked by multiple remotes", () =>
+    Effect.gen(function* () {
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\nfork\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
+          return Effect.succeed(gitOutput());
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/remotes") {
+          return Effect.succeed(
+            gitOutput("refs/remotes/origin/feature/panel\nrefs/remotes/fork/feature/panel\n"),
+          );
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const error = yield* service
+        .branchPullRequest({ cwd: "/repo", branch: "feature/panel" })
+        .pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "GitManagerError",
+        detail: "Multiple remotes track feature/panel. Its merge request is ambiguous.",
+      });
+      expect(listChangeRequests).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("does not query GitLab for a known unpublished local branch", () =>
+    Effect.gen(function* () {
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
+          return Effect.succeed(gitOutput("refs/heads/feature/panel\0\0\0\n"));
+        }
+        if (input.args[0] === "symbolic-ref") {
+          return Effect.succeed(gitOutput("origin/main\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/remotes") {
+          return Effect.succeed(gitOutput("refs/remotes/origin/main\n"));
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.branchPullRequest({
+        cwd: "/repo",
+        branch: "feature/panel",
+      });
+
+      expect(result).toBeNull();
+      expect(listChangeRequests).not.toHaveBeenCalled();
+    }),
+  );
+
+  it.effect("uses the default branch of a non-origin remote", () =>
+    Effect.gen(function* () {
+      listChangeRequests.mockReturnValueOnce(
+        Effect.succeed([
+          {
+            provider: "gitlab" as const,
+            number: 43,
+            title: "Merged main branch",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/43",
+            baseRefName: "develop",
+            headRefName: "main",
+            state: "merged" as const,
+            updatedAt: Option.none(),
+          },
+        ]),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("upstream\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/main") {
+          return Effect.succeed(
+            gitOutput("refs/heads/main\0upstream/main\0upstream\0refs/heads/main\n"),
+          );
+        }
+        if (input.args[0] === "symbolic-ref") {
+          return Effect.succeed(gitOutput("upstream/develop\n"));
+        }
+        if (input.args[0] === "config" && input.args[1] === "--get") {
+          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.branchPullRequest({ cwd: "/repo", branch: "main" });
+
+      expect(result).toEqual({ state: "merged", updatedAt: null });
+      expect(execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/upstream/HEAD"],
+        }),
+      );
+    }),
+  );
+
+  it.effect("suppresses terminal master MRs when the remote default cannot be resolved", () =>
+    Effect.gen(function* () {
+      listChangeRequests.mockReturnValueOnce(
+        Effect.succeed([
+          {
+            provider: "gitlab" as const,
+            number: 48,
+            title: "Merged master branch",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/48",
+            baseRefName: "master",
+            headRefName: "master",
+            state: "merged" as const,
+            updatedAt: Option.none(),
+          },
+        ]),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/master") {
+          return Effect.succeed(
+            gitOutput("refs/heads/master\0origin/master\0origin\0refs/heads/master\n"),
+          );
+        }
+        if (input.args[0] === "show-ref") {
+          return Effect.succeed(gitOutput("", 1));
+        }
+        if (input.args[0] === "config" && input.args[1] === "--get") {
+          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.branchPullRequest({ cwd: "/repo", branch: "master" });
+
+      expect(result).toBeNull();
+    }),
+  );
+
+  it.effect("disambiguates fork merge requests by remote repository identity", () =>
+    Effect.gen(function* () {
+      listChangeRequests.mockReturnValueOnce(
+        Effect.succeed([
+          {
+            provider: "gitlab" as const,
+            number: 44,
+            title: "Unrelated branch",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/44",
+            baseRefName: "main",
+            headRefName: "feature/panel",
+            headRepositoryNameWithOwner: "group/project",
+            state: "closed" as const,
+            updatedAt: Option.none(),
+          },
+          {
+            provider: "gitlab" as const,
+            number: 45,
+            title: "Fork branch",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/45",
+            baseRefName: "main",
+            headRefName: "feature/panel",
+            headRepositoryNameWithOwner: "contributor/project",
+            state: "merged" as const,
+            updatedAt: Option.none(),
+          },
+        ]),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\nfork\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
+          return Effect.succeed(
+            gitOutput(
+              "refs/heads/feature/panel\0fork/feature/panel\0fork\0refs/heads/feature/panel\n",
+            ),
+          );
+        }
+        if (input.args[0] === "symbolic-ref") {
+          return Effect.succeed(gitOutput("origin/main\n"));
+        }
+        if (input.args[0] === "config" && input.args[1] === "--get") {
+          const key = input.args[2];
+          return Effect.succeed(
+            gitOutput(
+              key === "remote.fork.url"
+                ? "git@gitlab.example.com:contributor/project.git\n"
+                : "git@gitlab.example.com:group/project.git\n",
+            ),
+          );
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.branchPullRequest({
+        cwd: "/repo",
+        branch: "feature/panel",
+      });
+
+      expect(result).toEqual({ state: "merged", updatedAt: null });
+    }),
+  );
+
+  it.effect("does not attach a fork MR to a same-named target-repository branch", () =>
+    Effect.gen(function* () {
+      listChangeRequests.mockReturnValueOnce(
+        Effect.succeed([
+          {
+            provider: "gitlab" as const,
+            number: 46,
+            title: "Fork branch",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/46",
+            baseRefName: "main",
+            headRefName: "feature/panel",
+            isCrossRepository: true,
+            headRepositoryNameWithOwner: "contributor/project",
+            headRepositoryOwnerLogin: "contributor",
+            state: "closed" as const,
+            updatedAt: Option.none(),
+          },
+          {
+            provider: "gitlab" as const,
+            number: 47,
+            title: "Target branch",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/47",
+            baseRefName: "main",
+            headRefName: "feature/panel",
+            isCrossRepository: false,
+            headRepositoryNameWithOwner: "group/project",
+            headRepositoryOwnerLogin: "group",
+            state: "merged" as const,
+            updatedAt: Option.none(),
+          },
+        ]),
+      );
+      execute.mockImplementation((input) => {
+        if (input.args[0] === "remote" && input.args.length === 1) {
+          return Effect.succeed(gitOutput("origin\n"));
+        }
+        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
+          return Effect.succeed(
+            gitOutput(
+              "refs/heads/feature/panel\0origin/feature/panel\0origin\0refs/heads/feature/panel\n",
+            ),
+          );
+        }
+        if (input.args[0] === "symbolic-ref") {
+          return Effect.succeed(gitOutput("origin/main\n"));
+        }
+        if (input.args[0] === "config" && input.args[1] === "--get") {
+          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
+        }
+        return Effect.succeed(gitOutput());
+      });
+      const service = yield* GitWorkflowService.GitWorkflowService;
+
+      const result = yield* service.branchPullRequest({
+        cwd: "/repo/same-target",
+        branch: "feature/panel",
+      });
+
+      expect(result).toEqual({ state: "merged", updatedAt: null });
     }),
   );
 });
