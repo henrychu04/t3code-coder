@@ -262,6 +262,18 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          title="Confirm before unpinning"
+          control={
+            <Switch
+              aria-label="Confirm before unpinning"
+              checked={settings.confirmThreadUnpin}
+              onCheckedChange={(checked) =>
+                updateSettings({ confirmThreadUnpin: Boolean(checked) })
+              }
+            />
+          }
+        />
+        <SettingsRow
           title="Confirm before archiving"
           control={
             <Switch

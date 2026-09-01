@@ -11,7 +11,6 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
-  deriveTurnPlans,
   derivePendingApprovals,
   derivePendingUserInputs,
   deriveTimelineEntries,
@@ -464,8 +463,8 @@ describe("deriveActivePlanState", () => {
   });
 });
 
-describe("deriveTurnPlans", () => {
-  it("keeps one entry per turn, anchored at the first snapshot with the latest steps", () => {
+describe("deriveActivePlanState duration tracking", () => {
+  it("keeps the latest steps for each turn", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "plan-1a",
@@ -502,17 +501,12 @@ describe("deriveTurnPlans", () => {
       }),
     ];
 
-    const turnPlans = deriveTurnPlans(activities);
-    expect(turnPlans).toHaveLength(2);
-    expect(turnPlans[0]).toMatchObject({
-      id: "turn-plan:turn-1",
-      createdAt: "2026-02-23T00:00:01.000Z",
-      turnId: "turn-1",
-    });
-    expect(turnPlans[0]?.plan.steps).toEqual([
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toEqual([
       { durationMs: 4_000, step: "Inspect code", status: "completed" },
     ]);
-    expect(turnPlans[1]?.plan.steps).toEqual([{ step: "Ship it", status: "pending" }]);
+    expect(deriveActivePlanState(activities, TurnId.make("turn-2"))?.steps).toEqual([
+      { step: "Ship it", status: "pending" },
+    ]);
   });
 
   it("skips activities without parseable steps", () => {
@@ -527,7 +521,7 @@ describe("deriveTurnPlans", () => {
         payload: { plan: [] },
       }),
     ];
-    expect(deriveTurnPlans(activities)).toEqual([]);
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))).toBeNull();
   });
 
   it("tracks repeated step labels independently", () => {
@@ -576,7 +570,7 @@ describe("deriveTurnPlans", () => {
       }),
     ];
 
-    expect(deriveTurnPlans(activities)[0]?.plan.steps).toEqual([
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toEqual([
       { durationMs: 4_000, step: "Check", status: "completed" },
       { durationMs: 6_000, step: "Check", status: "completed" },
     ]);
@@ -628,13 +622,13 @@ describe("deriveTurnPlans", () => {
       }),
     ];
 
-    expect(deriveTurnPlans(activities)[0]?.plan.steps).toEqual([
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toEqual([
       { durationMs: 5_000, step: "First", status: "completed" },
       { durationMs: 5_000, step: "Second", status: "completed" },
     ]);
   });
 
-  it("drops a turn's chip when a later snapshot clears the plan", () => {
+  it("clears the active plan when a later snapshot clears it", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
         id: "plan-set",
@@ -655,7 +649,7 @@ describe("deriveTurnPlans", () => {
         payload: { plan: [] },
       }),
     ];
-    expect(deriveTurnPlans(activities)).toEqual([]);
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))).toBeNull();
   });
 });
 
@@ -882,6 +876,44 @@ describe("workEntryIndicatesToolFailure", () => {
 });
 
 describe("deriveWorkLogEntries", () => {
+  it("keeps the latest task progress without emitting plan-update log entries", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "before",
+        kind: "tool.completed",
+        summary: "Read files",
+        sequence: 0,
+      }),
+      makeActivity({
+        id: "plan-1",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        turnId: "turn-1",
+        sequence: 1,
+        payload: { plan: [{ step: "Verify the composer", status: "inProgress" }] },
+      }),
+      makeActivity({
+        id: "plan-2",
+        kind: "turn.plan.updated",
+        summary: "Plan updated",
+        turnId: "turn-1",
+        sequence: 2,
+        payload: { plan: [{ step: "Verify the composer", status: "completed" }] },
+      }),
+      makeActivity({
+        id: "after",
+        kind: "tool.completed",
+        summary: "Ran tests",
+        sequence: 3,
+      }),
+    ];
+
+    expect(deriveWorkLogEntries(activities).map((entry) => entry.id)).toEqual(["before", "after"]);
+    expect(deriveActivePlanState(activities, TurnId.make("turn-1"))?.steps).toMatchObject([
+      { step: "Verify the composer", status: "completed" },
+    ]);
+  });
+
   it("preserves validated screenshot artifact metadata for visual artifact rows", () => {
     const [entry] = deriveWorkLogEntries([
       makeActivity({

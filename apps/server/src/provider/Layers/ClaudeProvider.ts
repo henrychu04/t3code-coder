@@ -596,8 +596,14 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     // SessionStart hooks would run on every health check.
     settings: { disableAllHooks: true },
     allowedTools: [],
-    // The CLI transport enforces an empty strict integration config.
-    env: input.environment,
+    // The CLI transport enforces an empty strict integration config. Probes
+    // are noninteractive, so skip IDE discovery and its periodic process tree.
+    env: {
+      ...input.environment,
+      FORCE_CODE_TERMINAL: undefined,
+      CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
+      CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
+    },
     ...(input.cwd ? { cwd: input.cwd } : {}),
     stderr: () => {},
   };
