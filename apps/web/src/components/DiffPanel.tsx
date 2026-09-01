@@ -93,6 +93,7 @@ interface DiffPanelProps {
   mode?: DiffPanelMode;
   composerDraftTarget: ScopedThreadRef | DraftId;
   initialGitScope: "branch" | "unstaged";
+  onOpenFile: (relativePath: string) => void;
   workspaceMutationId: string | null;
 }
 
@@ -102,6 +103,7 @@ export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
   initialGitScope: initialGitScopeProp,
+  onOpenFile,
   workspaceMutationId,
 }: DiffPanelProps) {
   const { resolvedTheme } = useTheme();
@@ -893,8 +895,7 @@ export default function DiffPanel({
                   );
                   const filePath = title?.textContent?.trim();
                   if (filePath) {
-                    const file = codeViewFiles.find((candidate) => candidate.filePath === filePath);
-                    if (file) toggleDiffFileCollapsed(file.fileKey);
+                    onOpenFile(filePath);
                     return;
                   }
                   const header = composedPath.find(

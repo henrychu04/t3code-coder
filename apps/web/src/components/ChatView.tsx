@@ -2621,26 +2621,91 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeThreadRef, activeTerminalLabelsById, cleanupRightPanelSurfaces],
   );
+  const closeRightPanelSurfacesWithConfirmation = useCallback(
+    (surfaces: readonly RightPanelSurface[], finish: () => void) => {
+      if (!activeThreadRef) return;
+      const terminalLabels = surfaces.flatMap((surface) =>
+        surface.kind === "terminal"
+          ? surface.terminalIds.map(
+              (terminalId) =>
+                activeTerminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId),
+            )
+          : [],
+      );
+      const finishClose = () => {
+        cleanupRightPanelSurfaces(surfaces);
+        finish();
+      };
+      const [firstTerminalLabel, ...restTerminalLabels] = terminalLabels;
+      if (!firstTerminalLabel) {
+        finishClose();
+        return;
+      }
+      void confirmTerminalClose([firstTerminalLabel, ...restTerminalLabels]).then((confirmed) => {
+        if (confirmed) finishClose();
+      });
+    },
+    [activeThreadRef, activeTerminalLabelsById, cleanupRightPanelSurfaces],
+  );
   const closeOtherRightPanelSurfaces = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
-      const surfaces = rightPanelState.surfaces.filter((entry) => entry.id !== surface.id);
-      cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeOtherSurfaces(activeThreadRef, surface.id);
+      closeRightPanelSurfacesWithConfirmation(
+        rightPanelState.surfaces.filter((entry) => entry.id !== surface.id),
+        () => useRightPanelStore.getState().closeOtherSurfaces(activeThreadRef, surface.id),
+      );
     },
-    [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces],
+    [activeThreadRef, closeRightPanelSurfacesWithConfirmation, rightPanelState.surfaces],
   );
   const closeRightPanelSurfacesToRight = useCallback(
     (surface: RightPanelSurface) => {
       if (!activeThreadRef) return;
       const surfaceIndex = rightPanelState.surfaces.findIndex((entry) => entry.id === surface.id);
       if (surfaceIndex < 0) return;
-      const surfaces = rightPanelState.surfaces.slice(surfaceIndex + 1);
-      cleanupRightPanelSurfaces(surfaces);
-      useRightPanelStore.getState().closeSurfacesToRight(activeThreadRef, surface.id);
+      closeRightPanelSurfacesWithConfirmation(
+        rightPanelState.surfaces.slice(surfaceIndex + 1),
+        () => useRightPanelStore.getState().closeSurfacesToRight(activeThreadRef, surface.id),
+      );
     },
-    [activeThreadRef, cleanupRightPanelSurfaces, rightPanelState.surfaces],
+    [activeThreadRef, closeRightPanelSurfacesWithConfirmation, rightPanelState.surfaces],
   );
+  const closeAllRightPanelSurfaces = useCallback(() => {
+    if (!activeThreadRef) return;
+    closeRightPanelSurfacesWithConfirmation(rightPanelState.surfaces, () =>
+      useRightPanelStore.getState().closeAllSurfaces(activeThreadRef),
+    );
+  }, [activeThreadRef, closeRightPanelSurfacesWithConfirmation, rightPanelState.surfaces]);
+  const copyRightPanelFilePath = useCallback((relativePath: string) => {
+    if (typeof window === "undefined" || !navigator.clipboard?.writeText) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to copy path",
+          description: "Clipboard API unavailable.",
+        }),
+      );
+      return;
+    }
+
+    void navigator.clipboard.writeText(relativePath).then(
+      () => {
+        toastManager.add({
+          type: "success",
+          title: "Path copied",
+          description: relativePath,
+        });
+      },
+      (error) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to copy path",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      },
+    );
+  }, []);
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
       threadId: ThreadId;
@@ -5423,6 +5488,7 @@ function ChatViewContent(props: ChatViewProps) {
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
           initialGitScope={initialDiffPanelGitScope}
+          onOpenFile={openFileSurface}
           workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
@@ -5814,6 +5880,8 @@ function ChatViewContent(props: ChatViewProps) {
           onCloseSurface={closeRightPanelSurface}
           onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
           onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
+          onCloseAllSurfaces={closeAllRightPanelSurfaces}
+          onCopyFilePath={copyRightPanelFilePath}
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
@@ -5844,6 +5912,8 @@ function ChatViewContent(props: ChatViewProps) {
             onCloseSurface={closeRightPanelSurface}
             onCloseOtherSurfaces={closeOtherRightPanelSurfaces}
             onCloseSurfacesToRight={closeRightPanelSurfacesToRight}
+            onCloseAllSurfaces={closeAllRightPanelSurfaces}
+            onCopyFilePath={copyRightPanelFilePath}
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
