@@ -7,9 +7,24 @@ import {
   readProviderConfigBoolean,
   readProviderConfigString,
 } from "./ProviderSettingsForm";
-import { PROVIDER_CLIENT_DEFINITION_BY_VALUE } from "./providerDriverMeta";
+import {
+  PROVIDER_CLIENT_DEFINITIONS,
+  PROVIDER_CLIENT_DEFINITION_BY_VALUE,
+} from "./providerDriverMeta";
 
 describe("ProviderSettingsForm helpers", () => {
+  it("exposes only the two workspace providers supported by T3 Coder", () => {
+    expect(
+      PROVIDER_CLIENT_DEFINITIONS.map((definition) => ({
+        driver: definition.value,
+        label: definition.label,
+      })),
+    ).toEqual([
+      { driver: "codex", label: "Codex" },
+      { driver: "claudeAgent", label: "Claude" },
+    ]);
+  });
+
   it("derives Codex fields from the upstream schema annotations", () => {
     const definition = PROVIDER_CLIENT_DEFINITION_BY_VALUE[ProviderDriverKind.make("codex")];
     expect(definition).toBeDefined();

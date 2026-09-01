@@ -153,6 +153,8 @@ interface ProviderSettingsFormProps {
   readonly value: unknown;
   readonly idPrefix: string;
   readonly variant: "card" | "dialog";
+  readonly fieldKeys?: ReadonlyArray<string>;
+  readonly fieldActions?: Readonly<Record<string, ReactNode>>;
   readonly onChange: (nextConfig: Record<string, unknown> | undefined) => void;
 }
 
@@ -172,12 +174,14 @@ function ProviderSettingsFieldRow({
   value,
   idPrefix,
   variant,
+  action,
   onChange,
 }: {
   readonly field: ProviderSettingsFieldModel;
   readonly value: unknown;
   readonly idPrefix: string;
   readonly variant: ProviderSettingsFormProps["variant"];
+  readonly action?: ReactNode;
   readonly onChange: ProviderSettingsFormProps["onChange"];
 }) {
   const inputId = `${idPrefix}-${field.key}`;
@@ -189,13 +193,27 @@ function ProviderSettingsFieldRow({
   const description = field.description ? (
     <span className={descriptionClassName}>{field.description}</span>
   ) : null;
+  const labelWithAction = action ? (
+    <span className="flex min-h-5 items-center gap-1.5">
+      {label}
+      {action}
+    </span>
+  ) : (
+    label
+  );
+  const inputLabelWithAction = (
+    <div className="flex min-h-5 items-center gap-1.5">
+      <label htmlFor={inputId}>{label}</label>
+      {action}
+    </div>
+  );
 
   if (field.control === "switch") {
     return (
       <FieldFrame variant={variant}>
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
-            {label}
+            {labelWithAction}
             {description}
           </div>
           <Switch
@@ -211,58 +229,79 @@ function ProviderSettingsFieldRow({
   }
 
   if (field.control === "textarea") {
+    const control = (
+      <Textarea
+        id={inputId}
+        className={cn(variant === "card" && "mt-1.5")}
+        value={readProviderConfigString(value, field.key)}
+        onChange={(event) =>
+          onChange(nextProviderConfigWithFieldValue(value, field, event.target.value))
+        }
+        placeholder={field.placeholder}
+        spellCheck={false}
+      />
+    );
     return (
       <FieldFrame variant={variant}>
-        <label htmlFor={inputId} className={cn(variant === "card" && "block")}>
-          {label}
-          <Textarea
-            id={inputId}
-            className={cn(variant === "card" && "mt-1.5")}
-            value={readProviderConfigString(value, field.key)}
-            onChange={(event) =>
-              onChange(nextProviderConfigWithFieldValue(value, field, event.target.value))
-            }
-            placeholder={field.placeholder}
-            spellCheck={false}
-          />
-          {description}
-        </label>
+        {action ? (
+          <div className={cn(variant === "card" ? "block" : "grid gap-1.5")}>
+            {inputLabelWithAction}
+            {control}
+            {description}
+          </div>
+        ) : (
+          <label htmlFor={inputId} className={cn(variant === "card" && "block")}>
+            {label}
+            {control}
+            {description}
+          </label>
+        )}
       </FieldFrame>
     );
   }
 
   const type = field.control === "password" ? "password" : undefined;
+  const control =
+    variant === "card" ? (
+      <DraftInput
+        id={inputId}
+        className="mt-1.5"
+        type={type}
+        autoComplete={field.control === "password" ? "off" : undefined}
+        value={readProviderConfigString(value, field.key)}
+        onCommit={(next) => onChange(nextProviderConfigWithFieldValue(value, field, next))}
+        placeholder={field.placeholder}
+        spellCheck={false}
+      />
+    ) : (
+      <Input
+        id={inputId}
+        className="bg-background"
+        type={type}
+        autoComplete={field.control === "password" ? "off" : undefined}
+        value={readProviderConfigString(value, field.key)}
+        onChange={(event) =>
+          onChange(nextProviderConfigWithFieldValue(value, field, event.target.value))
+        }
+        placeholder={field.placeholder}
+        spellCheck={false}
+      />
+    );
   return (
     <FieldFrame variant={variant}>
-      <label htmlFor={inputId} className={cn(variant === "card" && "block")}>
-        {label}
-        {variant === "card" ? (
-          <DraftInput
-            id={inputId}
-            className="mt-1.5"
-            type={type}
-            autoComplete={field.control === "password" ? "off" : undefined}
-            value={readProviderConfigString(value, field.key)}
-            onCommit={(next) => onChange(nextProviderConfigWithFieldValue(value, field, next))}
-            placeholder={field.placeholder}
-            spellCheck={false}
-          />
-        ) : (
-          <Input
-            id={inputId}
-            className="bg-background"
-            type={type}
-            autoComplete={field.control === "password" ? "off" : undefined}
-            value={readProviderConfigString(value, field.key)}
-            onChange={(event) =>
-              onChange(nextProviderConfigWithFieldValue(value, field, event.target.value))
-            }
-            placeholder={field.placeholder}
-            spellCheck={false}
-          />
-        )}
-        {description}
-      </label>
+      {action ? (
+        <div className={cn(variant === "card" ? "block" : "grid gap-1.5")}>
+          {inputLabelWithAction}
+          {control}
+          {description}
+        </div>
+      ) : (
+        <label htmlFor={inputId} className={cn(variant === "card" && "block")}>
+          {label}
+          {control}
+          {description}
+        </label>
+      )}
     </FieldFrame>
   );
 }
@@ -272,9 +311,14 @@ export function ProviderSettingsForm({
   value,
   idPrefix,
   variant,
+  fieldKeys,
+  fieldActions,
   onChange,
 }: ProviderSettingsFormProps) {
-  const fields = useMemo(() => deriveProviderSettingsFields(definition), [definition]);
+  const fields = useMemo(() => {
+    const derived = deriveProviderSettingsFields(definition);
+    return fieldKeys ? derived.filter((field) => fieldKeys.includes(field.key)) : derived;
+  }, [definition, fieldKeys]);
   if (fields.length === 0) return null;
 
   return fields.map((field) => (
@@ -284,6 +328,7 @@ export function ProviderSettingsForm({
       value={value}
       idPrefix={idPrefix}
       variant={variant}
+      action={fieldActions?.[field.key]}
       onChange={onChange}
     />
   ));

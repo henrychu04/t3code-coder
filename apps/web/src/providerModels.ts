@@ -95,7 +95,6 @@ export function getDefaultServerModel(
   return (
     models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     models.find((model) => !model.isCustom)?.slug ??
-    models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[provider] ??
     DEFAULT_MODEL
   );

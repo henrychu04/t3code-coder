@@ -3,461 +3,456 @@
 import { useAtomValue } from "@effect/atom-react";
 import {
   defaultInstanceIdForDriver,
-  ProviderInstanceId,
+  ProviderDriverKind,
   resolveProviderInstanceEnabled,
   type ClaudeSettings,
   type CodexSettings,
-  type ProviderDriverKind,
   type ProviderInstanceConfig,
+  type ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
-import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useMemo, useState } from "react";
+import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { useState } from "react";
 
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
-import { readLocalApi } from "../../localApi";
-import { normalizeProviderAccentColor } from "../../providerInstances";
+import { cn } from "../../lib/utils";
+import { resolveAppModelSelectionState } from "../../modelSelection";
 import { primaryServerProvidersAtom } from "../../state/server";
-import { Button } from "../ui/button";
-import { DraftInput } from "../ui/draft-input";
-import {
-  Dialog,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogPanel,
-  DialogPopup,
-  DialogTitle,
-} from "../ui/dialog";
-import { Input } from "../ui/input";
+import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
-import { SettingsSection } from "./SettingsPage";
+import { SettingResetButton, SettingsSection } from "./SettingsPage";
+import { ProviderModelsSection } from "./ProviderModelsSection";
+import { ProviderSettingsForm, readProviderConfigString } from "./ProviderSettingsForm";
+import { PROVIDER_CLIENT_DEFINITIONS, type ProviderClientDefinition } from "./providerDriverMeta";
+import { providerSettingsTabClassName } from "./providerSettingsTabs";
 import {
-  PROVIDER_CLIENT_DEFINITIONS,
-  getProviderClientDefinition,
-  type ProviderClientDefinition,
-} from "./providerDriverMeta";
-import { ProviderSettingsForm } from "./ProviderSettingsForm";
-import {
-  deriveProviderInstanceId,
-  providerInstanceFallbackLabel,
-  validateProviderInstanceId,
-} from "./WorkspaceProviderSettings.logic";
+  getProviderSummary,
+  getProviderVersionLabel,
+  PROVIDER_STATUS_STYLES,
+  type ProviderStatusKey,
+} from "./providerStatus";
+import { shouldResetTextGenerationSelectionOnDisable } from "./WorkspaceProviderSettings.logic";
 
-const CODEX = "codex" as const;
-const CLAUDE = "claudeAgent" as const;
+const CODEX = ProviderDriverKind.make("codex");
+const CLAUDE = ProviderDriverKind.make("claudeAgent");
+const CLAUDE_USER_SETTING_KEYS = ["autoCompactWindow"] as const;
 
-function liveProviderForInstance(
-  providers: ReadonlyArray<ServerProvider>,
-  instanceId: ProviderInstanceId,
-): ServerProvider | undefined {
-  return providers.find((provider) => provider.instanceId === instanceId);
-}
-
-function providerStatusLabel(provider: ServerProvider | undefined): string {
-  if (!provider) return "Checking workspace";
-  if (provider.status === "ready") return "Ready";
-  if (provider.status === "disabled") return "Disabled";
-  if (provider.auth.status === "unauthenticated") return "Sign in required";
-  if (provider.availability === "unavailable" || !provider.installed) return "Unavailable";
-  return provider.status === "warning" ? "Needs attention" : "Error";
-}
-
-function WorkspaceProviderCard(props: {
+interface WorkspaceProviderRow {
   readonly instanceId: ProviderInstanceId;
-  readonly definition: ProviderClientDefinition | undefined;
+  readonly definition: ProviderClientDefinition;
   readonly instance: ProviderInstanceConfig;
+  readonly explicit: boolean;
   readonly liveProvider: ServerProvider | undefined;
-  readonly isDefault: boolean;
-  readonly onUpdate: (next: ProviderInstanceConfig) => void;
-  readonly onDelete?: (() => void) | undefined;
+}
+
+function withConfigValue(
+  instance: ProviderInstanceConfig,
+  key: string,
+  value: unknown,
+): ProviderInstanceConfig {
+  const config =
+    instance.config !== null && typeof instance.config === "object"
+      ? { ...(instance.config as Record<string, unknown>) }
+      : {};
+  config[key] = value;
+  const { config: _config, ...rest } = instance;
+  return { ...rest, config };
+}
+
+function providerPresentation(row: WorkspaceProviderRow) {
+  const enabled = resolveProviderInstanceEnabled(row.instance);
+  const statusKey: ProviderStatusKey = enabled
+    ? ((row.liveProvider?.status as ProviderStatusKey | undefined) ?? "warning")
+    : "disabled";
+  const summary = enabled
+    ? getProviderSummary(row.liveProvider)
+    : {
+        headline: "Disabled",
+        detail: "This provider is disabled for new sessions in T3 Coder.",
+      };
+  return {
+    enabled,
+    statusKey,
+    summary,
+    versionLabel: getProviderVersionLabel(row.liveProvider?.version),
+  };
+}
+
+export function WorkspaceProviderListRow(props: {
+  readonly row: WorkspaceProviderRow;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+  readonly onEnabledChange: (enabled: boolean) => void;
 }) {
-  const displayName =
-    props.instance.displayName ??
-    props.definition?.label ??
-    providerInstanceFallbackLabel(props.instanceId);
-  const Icon = props.definition?.icon;
-  const enabled = resolveProviderInstanceEnabled(props.instance);
+  const { enabled, statusKey, summary, versionLabel } = providerPresentation(props.row);
+  const Icon = props.row.definition.icon;
+  const needsAttention = statusKey === "warning" || statusKey === "error";
+  const statusDot = needsAttention ? (
+    <span
+      className={cn("size-1.5 shrink-0 rounded-full", PROVIDER_STATUS_STYLES[statusKey].dot)}
+      aria-hidden
+    />
+  ) : null;
 
   return (
-    <div className="space-y-4 px-4 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-3">
-          {Icon ? <Icon className="mt-0.5 size-5 shrink-0" aria-hidden /> : null}
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h3 className="text-sm font-medium">{displayName}</h3>
-              <span className="text-xs text-muted-foreground">
-                {providerStatusLabel(props.liveProvider)}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {props.isDefault
-                ? `Uses the workspace's default ${props.definition?.label ?? props.instance.driver} installation.`
-                : `Instance ID: ${props.instanceId}`}
-            </p>
-            {props.liveProvider?.message ? (
-              <p className="mt-1 text-xs text-muted-foreground">{props.liveProvider.message}</p>
-            ) : null}
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {props.onDelete ? (
-            <Button
-              aria-label={`Delete ${displayName}`}
-              size="icon-sm"
-              variant="destructive-outline"
-              onClick={props.onDelete}
-            >
-              <Trash2Icon />
-            </Button>
-          ) : null}
-          <Switch
-            aria-label={`Enable ${displayName}`}
-            checked={enabled}
-            onCheckedChange={(checked) =>
-              props.onUpdate({ ...props.instance, enabled: Boolean(checked) })
-            }
-          />
-        </div>
-      </div>
-
-      {!props.isDefault ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="block">
-            <span className="text-xs font-medium text-foreground">Display name</span>
-            <DraftInput
-              className="mt-1.5"
-              value={props.instance.displayName ?? ""}
-              placeholder={providerInstanceFallbackLabel(props.instanceId)}
-              onCommit={(value) => {
-                const displayName = value.trim();
-                const { displayName: _displayName, ...rest } = props.instance;
-                props.onUpdate(displayName ? { ...rest, displayName } : rest);
-              }}
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs font-medium text-foreground">Accent color</span>
-            <div className="mt-1.5 flex items-center gap-2">
-              <input
-                aria-label={`${displayName} accent color`}
-                className="h-8 w-11 cursor-pointer rounded-md border border-input bg-background p-0.5"
-                type="color"
-                value={normalizeProviderAccentColor(props.instance.accentColor) ?? "#2563eb"}
-                onChange={(event) =>
-                  props.onUpdate({ ...props.instance, accentColor: event.target.value })
-                }
-              />
-              {props.instance.accentColor ? (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    const { accentColor: _accentColor, ...rest } = props.instance;
-                    props.onUpdate(rest);
-                  }}
-                >
-                  Clear
-                </Button>
-              ) : null}
-            </div>
-          </label>
-        </div>
-      ) : null}
-
-      {props.definition ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ProviderSettingsForm
-            definition={props.definition}
-            value={props.instance.config}
-            idPrefix={`provider-${props.instanceId}`}
-            variant="card"
-            onChange={(config) => {
-              const { config: _config, ...rest } = props.instance;
-              props.onUpdate(config ? { ...rest, config } : rest);
-            }}
-          />
-        </div>
-      ) : (
-        <p className="rounded-md border border-border/70 bg-muted/25 px-3 py-2 text-xs text-muted-foreground">
-          This provider driver is not included in T3 Coder. Its workspace configuration is preserved
-          but cannot be edited here.
-        </p>
+    <div
+      className={cn(
+        "group flex h-19 items-start gap-3 rounded-md px-3 py-2 transition-colors",
+        props.selected ? "bg-foreground/8" : "hover:bg-foreground/4",
       )}
+    >
+      <button
+        type="button"
+        className={cn(
+          "flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-sm text-left outline-none transition-opacity focus-visible:ring-2 focus-visible:ring-ring",
+          !enabled && !props.selected && "opacity-60 group-hover:opacity-100",
+        )}
+        onClick={props.onSelect}
+        aria-pressed={props.selected}
+      >
+        <span className="inline-flex size-5 shrink-0 items-center justify-center">
+          <Icon className="size-4 text-foreground/80" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-sm font-medium text-foreground">
+              {props.row.definition.label}
+            </span>
+            {versionLabel ? (
+              <code className="text-xs text-muted-foreground">{versionLabel}</code>
+            ) : null}
+          </span>
+          <span className="mt-0.5 flex items-start gap-1.5 text-[13px] leading-[1.45] text-muted-foreground/80">
+            {statusDot ? <span className="flex h-[1.45em] items-center">{statusDot}</span> : null}
+            <span className="line-clamp-2 [overflow-wrap:anywhere]">
+              {summary.headline}
+              {needsAttention && summary.detail ? ` · ${summary.detail}` : null}
+            </span>
+          </span>
+        </span>
+      </button>
+      <span className="flex h-5 shrink-0 items-center">
+        <Switch
+          checked={enabled}
+          onCheckedChange={(checked) => props.onEnabledChange(Boolean(checked))}
+          aria-label={`Enable ${props.row.definition.label}`}
+        />
+      </span>
     </div>
   );
 }
 
-function AddWorkspaceProviderDialog(props: {
-  readonly open: boolean;
-  readonly reservedIds: ReadonlySet<string>;
-  readonly onOpenChange: (open: boolean) => void;
-  readonly onAdd: (instanceId: ProviderInstanceId, instance: ProviderInstanceConfig) => void;
+export function WorkspaceProviderEditor(props: {
+  readonly row: WorkspaceProviderRow;
+  readonly hiddenModels: ReadonlyArray<string>;
+  readonly favoriteModels: ReadonlyArray<string>;
+  readonly modelOrder: ReadonlyArray<string>;
+  readonly onUpdate: (next: ProviderInstanceConfig) => void;
+  readonly onHiddenModelsChange: (next: ReadonlyArray<string>) => void;
+  readonly onFavoriteModelsChange: (next: ReadonlyArray<string>) => void;
+  readonly onModelOrderChange: (next: ReadonlyArray<string>) => void;
 }) {
-  const [driver, setDriver] = useState<ProviderDriverKind>(PROVIDER_CLIENT_DEFINITIONS[0]!.value);
-  const [displayName, setDisplayName] = useState("");
-  const [instanceIdOverride, setInstanceIdOverride] = useState<string | null>(null);
-  const [accentColor, setAccentColor] = useState("");
-  const [configByDriver, setConfigByDriver] = useState<Record<string, Record<string, unknown>>>({});
-  const [attempted, setAttempted] = useState(false);
-
-  const definition = getProviderClientDefinition(driver) ?? PROVIDER_CLIENT_DEFINITIONS[0]!;
-  const instanceId = instanceIdOverride ?? deriveProviderInstanceId(driver, displayName);
-  const validationError = validateProviderInstanceId(instanceId, props.reservedIds);
-  const config = configByDriver[driver];
-
-  const reset = () => {
-    setDriver(PROVIDER_CLIENT_DEFINITIONS[0]!.value);
-    setDisplayName("");
-    setInstanceIdOverride(null);
-    setAccentColor("");
-    setConfigByDriver({});
-    setAttempted(false);
-  };
-
-  const setOpen = (open: boolean) => {
-    props.onOpenChange(open);
-    if (!open) reset();
-  };
-
-  const save = () => {
-    setAttempted(true);
-    if (validationError) return;
-    const normalizedAccent = normalizeProviderAccentColor(accentColor);
-    const label = displayName.trim();
-    props.onAdd(ProviderInstanceId.make(instanceId.trim()), {
-      driver,
-      enabled: true,
-      ...(label ? { displayName: label } : {}),
-      ...(normalizedAccent ? { accentColor: normalizedAccent } : {}),
-      ...(config && Object.keys(config).length > 0 ? { config } : {}),
-    });
-    setOpen(false);
-  };
+  const hasConfiguration = props.row.definition.value === CLAUDE;
+  const [activeTab, setActiveTab] = useState<"configuration" | "models">(
+    hasConfiguration ? "configuration" : "models",
+  );
+  const { statusKey, summary, versionLabel } = providerPresentation(props.row);
+  const Icon = props.row.definition.icon;
+  const needsAttention = statusKey === "warning" || statusKey === "error";
+  const models = props.row.liveProvider?.models.filter((model) => !model.isCustom) ?? [];
+  const autoCompactWindow = readProviderConfigString(
+    props.row.instance.config,
+    "autoCompactWindow",
+  );
 
   return (
-    <Dialog open={props.open} onOpenChange={setOpen}>
-      <DialogPopup className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle>Add provider instance</DialogTitle>
-          <DialogDescription>
-            Add another workspace Codex or Claude identity, installation, or configuration.
-          </DialogDescription>
-        </DialogHeader>
-        <DialogPanel className="grid gap-4">
-          <label className="grid gap-1.5 text-xs font-medium">
-            Provider
-            <select
-              className="h-8 rounded-md border border-input bg-background px-2.5 text-sm"
-              value={driver}
-              onChange={(event) => {
-                setDriver(event.target.value as ProviderDriverKind);
-                setInstanceIdOverride(null);
-              }}
-            >
-              {PROVIDER_CLIENT_DEFINITIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-1.5 text-xs font-medium">
-            Display name
-            <Input
-              className="bg-background"
-              placeholder="e.g. Work"
-              value={displayName}
-              onChange={(event) => setDisplayName(event.target.value)}
-            />
-          </label>
-          <label className="grid gap-1.5 text-xs font-medium">
-            Instance ID
-            <Input
-              aria-invalid={attempted && validationError !== null}
-              className="bg-background"
-              placeholder={`${driver}_work`}
-              value={instanceId}
-              onChange={(event) => setInstanceIdOverride(event.target.value)}
-            />
-            <span
-              className={
-                attempted && validationError ? "text-destructive" : "text-muted-foreground"
-              }
-            >
-              {attempted && validationError
-                ? validationError
-                : "Stable routing key used by threads and provider sessions."}
+    <div className="min-w-0 lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      <div className="flex min-h-16 shrink-0 items-start justify-between gap-3 border-b border-border/70 px-4 py-3">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="inline-flex size-5 shrink-0 items-center justify-center">
+              <Icon className="size-4 text-foreground/80" aria-hidden />
             </span>
-          </label>
-          <label className="grid gap-1.5 text-xs font-medium">
-            Accent color
-            <div className="flex items-center gap-2">
-              <input
-                aria-label="Provider instance accent color"
-                className="h-8 w-11 cursor-pointer rounded-md border border-input bg-background p-0.5"
-                type="color"
-                value={normalizeProviderAccentColor(accentColor) ?? "#2563eb"}
-                onChange={(event) => setAccentColor(event.target.value)}
+            <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
+              {props.row.definition.label}
+            </h3>
+            {versionLabel ? (
+              <code className="text-xs text-muted-foreground">{versionLabel}</code>
+            ) : null}
+          </div>
+          <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[13px] leading-[1.45] text-muted-foreground/80">
+            {needsAttention ? (
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  PROVIDER_STATUS_STYLES[statusKey].dot,
+                )}
+                aria-hidden
               />
-              <span className="font-normal text-muted-foreground">Optional picker marker</span>
-            </div>
-          </label>
-          <div className="grid gap-4 sm:grid-cols-2">
+            ) : null}
+            <span>{summary.headline}</span>
+            {summary.detail && !needsAttention ? <span>· {summary.detail}</span> : null}
+          </p>
+          {summary.detail && needsAttention ? (
+            <p className="text-[13px] leading-[1.45] text-muted-foreground/80 [overflow-wrap:anywhere]">
+              {summary.detail}
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {hasConfiguration ? (
+        <div className="flex h-11 shrink-0 border-b border-border/70 px-1">
+          <button
+            type="button"
+            aria-pressed={activeTab === "configuration"}
+            className={providerSettingsTabClassName(activeTab === "configuration")}
+            onClick={() => setActiveTab("configuration")}
+          >
+            Configuration
+          </button>
+          <button
+            type="button"
+            aria-pressed={activeTab === "models"}
+            className={providerSettingsTabClassName(activeTab === "models")}
+            onClick={() => setActiveTab("models")}
+          >
+            Models
+          </button>
+        </div>
+      ) : null}
+
+      <div className="lg:min-h-0 lg:flex-1">
+        <ScrollArea
+          scrollFade
+          chainVerticalScroll
+          className="lg:h-full"
+          hidden={!hasConfiguration || activeTab !== "configuration"}
+        >
+          <div className="space-y-5 px-4 py-5">
             <ProviderSettingsForm
-              definition={definition}
-              value={config}
-              idPrefix={`add-provider-${driver}`}
-              variant="dialog"
-              onChange={(next) =>
-                setConfigByDriver((current) => {
-                  const updated = { ...current };
-                  if (next && Object.keys(next).length > 0) updated[driver] = next;
-                  else delete updated[driver];
-                  return updated;
-                })
-              }
+              definition={props.row.definition}
+              value={props.row.instance.config}
+              idPrefix={`provider-instance-${props.row.instanceId}`}
+              variant="card"
+              fieldKeys={CLAUDE_USER_SETTING_KEYS}
+              {...(autoCompactWindow
+                ? {
+                    fieldActions: {
+                      autoCompactWindow: (
+                        <SettingResetButton
+                          label="auto-compact window"
+                          onClick={() =>
+                            props.onUpdate(
+                              withConfigValue(props.row.instance, "autoCompactWindow", ""),
+                            )
+                          }
+                        />
+                      ),
+                    },
+                  }
+                : {})}
+              onChange={(config) => {
+                const { config: _config, ...rest } = props.row.instance;
+                props.onUpdate({
+                  ...rest,
+                  config: {
+                    ...config,
+                    autoCompactWindow: readProviderConfigString(config, "autoCompactWindow"),
+                  },
+                });
+              }}
             />
           </div>
-        </DialogPanel>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button onClick={save}>Add instance</Button>
-        </DialogFooter>
-      </DialogPopup>
-    </Dialog>
+        </ScrollArea>
+        <div className="px-4 py-5 lg:h-full lg:min-h-0" hidden={activeTab !== "models"}>
+          <ProviderModelsSection
+            instanceId={props.row.instanceId}
+            models={models}
+            hiddenModels={props.hiddenModels}
+            favoriteModels={props.favoriteModels}
+            modelOrder={props.modelOrder}
+            onHiddenModelsChange={props.onHiddenModelsChange}
+            onFavoriteModelsChange={props.onFavoriteModelsChange}
+            onModelOrderChange={props.onModelOrderChange}
+          />
+        </div>
+      </div>
+    </div>
   );
+}
+
+function withoutProviderKey<V>(
+  record: Readonly<Record<ProviderInstanceId, V>> | undefined,
+  instanceId: ProviderInstanceId,
+): Record<ProviderInstanceId, V> {
+  const next = { ...record } as Record<ProviderInstanceId, V>;
+  delete next[instanceId];
+  return next;
 }
 
 export function WorkspaceProviderSettings() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const providers = useAtomValue(primaryServerProvidersAtom);
-  const [addOpen, setAddOpen] = useState(false);
-
-  const reservedIds = useMemo(
-    () =>
-      new Set([
-        ...Object.keys(settings.providerInstances),
-        ...PROVIDER_CLIENT_DEFINITIONS.map((definition) => definition.value),
-      ]),
-    [settings.providerInstances],
+  const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId>(
+    defaultInstanceIdForDriver(CODEX),
   );
+  const selectedTextGenerationInstanceId = resolveAppModelSelectionState(
+    settings,
+    providers,
+  ).instanceId;
 
-  const updateInstance = (instanceId: ProviderInstanceId, instance: ProviderInstanceConfig) => {
+  const rows: WorkspaceProviderRow[] = PROVIDER_CLIENT_DEFINITIONS.map((definition) => {
+    const driver = definition.value;
+    const instanceId = defaultInstanceIdForDriver(driver);
+    const explicitInstance = settings.providerInstances[instanceId];
+    const legacyConfig =
+      driver === CODEX ? settings.providers.codex : settings.providers.claudeAgent;
+    const { enabled, ...config } = legacyConfig;
+    return {
+      instanceId,
+      definition,
+      instance: explicitInstance ?? { driver, enabled, config },
+      explicit: explicitInstance !== undefined,
+      liveProvider: providers.find((provider) => provider.instanceId === instanceId),
+    };
+  });
+  const selectedRow = rows.find((row) => row.instanceId === selectedInstanceId) ?? rows[0] ?? null;
+
+  const updateProvider = (row: WorkspaceProviderRow, next: ProviderInstanceConfig) => {
+    const shouldResetTextGeneration = shouldResetTextGenerationSelectionOnDisable({
+      instanceId: row.instanceId,
+      selectedInstanceId: selectedTextGenerationInstanceId,
+      wasEnabled: resolveProviderInstanceEnabled(row.instance),
+      nextEnabled: next.enabled,
+    });
+    const textGenerationPatch = shouldResetTextGeneration
+      ? {
+          textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
+        }
+      : {};
+
+    if (row.explicit) {
+      updateSettings({
+        providerInstances: {
+          ...settings.providerInstances,
+          [row.instanceId]: next,
+        },
+        ...textGenerationPatch,
+      });
+      return;
+    }
+
+    const nextLegacyConfig = {
+      ...(next.config as Record<string, unknown>),
+      enabled: next.enabled,
+    };
+    if (row.definition.value === CODEX) {
+      updateSettings({
+        providers: { codex: nextLegacyConfig as CodexSettings },
+        ...textGenerationPatch,
+      });
+    } else if (row.definition.value === CLAUDE) {
+      updateSettings({
+        providers: { claudeAgent: nextLegacyConfig as ClaudeSettings },
+        ...textGenerationPatch,
+      });
+    }
+  };
+
+  const updateModelPreferences = (
+    instanceId: ProviderInstanceId,
+    next: {
+      readonly hiddenModels: ReadonlyArray<string>;
+      readonly modelOrder: ReadonlyArray<string>;
+    },
+  ) => {
+    const hiddenModels = [...new Set(next.hiddenModels.filter((slug) => slug.trim().length > 0))];
+    const modelOrder = [...new Set(next.modelOrder.filter((slug) => slug.trim().length > 0))];
+    const rest = withoutProviderKey(settings.providerModelPreferences, instanceId);
     updateSettings({
-      providerInstances: { ...settings.providerInstances, [instanceId]: instance },
+      providerModelPreferences:
+        hiddenModels.length === 0 && modelOrder.length === 0
+          ? rest
+          : { ...rest, [instanceId]: { hiddenModels, modelOrder } },
     });
   };
 
-  const deleteInstance = async (instanceId: ProviderInstanceId, displayName: string) => {
-    const confirmed = await readLocalApi()?.dialogs.confirm(`Delete ${displayName}?`, {
-      variant: "destructive",
+  const updateFavoriteModels = (
+    instanceId: ProviderInstanceId,
+    nextModels: ReadonlyArray<string>,
+  ) => {
+    const models = [...new Set(nextModels.map((model) => model.trim()).filter(Boolean))];
+    updateSettings({
+      favorites: [
+        ...(settings.favorites ?? []).filter((favorite) => favorite.provider !== instanceId),
+        ...models.map((model) => ({ provider: instanceId, model })),
+      ],
     });
-    if (!confirmed) return;
-    const next = { ...settings.providerInstances };
-    delete next[instanceId];
-    updateSettings({ providerInstances: next });
   };
 
   return (
-    <>
-      <SettingsSection
-        title="Providers"
-        description="Codex and Claude run in this Coder workspace and use its installations, login, and policy."
-      >
-        {PROVIDER_CLIENT_DEFINITIONS.map((definition) => {
-          const instanceId = defaultInstanceIdForDriver(definition.value);
-          const explicit = settings.providerInstances[instanceId];
-          if (explicit) {
-            return (
-              <WorkspaceProviderCard
-                key={instanceId}
-                instanceId={instanceId}
-                definition={getProviderClientDefinition(explicit.driver)}
-                instance={explicit}
-                liveProvider={liveProviderForInstance(providers, instanceId)}
-                isDefault
-                onUpdate={(next) => updateInstance(instanceId, next)}
-              />
-            );
-          }
-
-          const legacyConfig =
-            definition.value === CODEX ? settings.providers.codex : settings.providers.claudeAgent;
-          const instance: ProviderInstanceConfig = {
-            driver: definition.value,
-            enabled: legacyConfig.enabled,
-            config: legacyConfig,
-          };
-          return (
-            <WorkspaceProviderCard
-              key={instanceId}
-              instanceId={instanceId}
-              definition={definition}
-              instance={instance}
-              liveProvider={liveProviderForInstance(providers, instanceId)}
-              isDefault
-              onUpdate={(next) => {
-                const config = {
-                  ...(next.config as Record<string, unknown>),
-                  enabled: next.enabled,
-                };
-                if (definition.value === CODEX) {
-                  updateSettings({ providers: { codex: config as CodexSettings } });
-                } else if (definition.value === CLAUDE) {
-                  updateSettings({ providers: { claudeAgent: config as ClaudeSettings } });
-                }
-              }}
-            />
-          );
-        })}
-
-        {Object.entries(settings.providerInstances)
-          .filter(
-            ([instanceId]) =>
-              !PROVIDER_CLIENT_DEFINITIONS.some((definition) => definition.value === instanceId),
-          )
-          .map(([rawInstanceId, instance]) => {
-            const instanceId = ProviderInstanceId.make(rawInstanceId);
-            const displayName = instance.displayName ?? providerInstanceFallbackLabel(instanceId);
-            return (
-              <WorkspaceProviderCard
-                key={instanceId}
-                instanceId={instanceId}
-                definition={getProviderClientDefinition(instance.driver)}
-                instance={instance}
-                liveProvider={liveProviderForInstance(providers, instanceId)}
-                isDefault={false}
-                onUpdate={(next) => updateInstance(instanceId, next)}
-                onDelete={() => void deleteInstance(instanceId, displayName)}
-              />
-            );
-          })}
-
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <div>
-            <h3 className="text-sm font-medium">Additional instances</h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Use another workspace installation or provider home without changing the defaults.
-            </p>
+    <SettingsSection title="Providers" unframed>
+      <div className="space-y-1">
+        <div className="mx-3 overflow-hidden rounded-lg border border-border/70 sm:mx-4 lg:grid lg:h-[min(38rem,calc(100dvh-16rem))] lg:min-h-[30rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
+          <div className="border-b border-border/70 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
+            <ScrollArea scrollFade chainVerticalScroll className="lg:min-h-0 lg:flex-1">
+              <div className="divide-y divide-border/60">
+                {rows.map((row) => (
+                  <div key={row.instanceId} className="p-1">
+                    <WorkspaceProviderListRow
+                      row={row}
+                      selected={selectedRow?.instanceId === row.instanceId}
+                      onSelect={() => setSelectedInstanceId(row.instanceId)}
+                      onEnabledChange={(enabled) =>
+                        updateProvider(row, { ...row.instance, enabled })
+                      }
+                    />
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
           </div>
-          <Button size="sm" variant="outline" onClick={() => setAddOpen(true)}>
-            <PlusIcon />
-            Add instance
-          </Button>
-        </div>
-      </SettingsSection>
 
-      <AddWorkspaceProviderDialog
-        open={addOpen}
-        reservedIds={reservedIds}
-        onOpenChange={setAddOpen}
-        onAdd={updateInstance}
-      />
-    </>
+          <div className="min-w-0 lg:min-h-0">
+            {selectedRow ? (
+              <WorkspaceProviderEditor
+                key={selectedRow.instanceId}
+                row={selectedRow}
+                hiddenModels={
+                  settings.providerModelPreferences?.[selectedRow.instanceId]?.hiddenModels ?? []
+                }
+                favoriteModels={(settings.favorites ?? [])
+                  .filter((favorite) => favorite.provider === selectedRow.instanceId)
+                  .map((favorite) => favorite.model)}
+                modelOrder={
+                  settings.providerModelPreferences?.[selectedRow.instanceId]?.modelOrder ?? []
+                }
+                onUpdate={(next) => updateProvider(selectedRow, next)}
+                onHiddenModelsChange={(hiddenModels) =>
+                  updateModelPreferences(selectedRow.instanceId, {
+                    hiddenModels,
+                    modelOrder:
+                      settings.providerModelPreferences?.[selectedRow.instanceId]?.modelOrder ?? [],
+                  })
+                }
+                onFavoriteModelsChange={(models) =>
+                  updateFavoriteModels(selectedRow.instanceId, models)
+                }
+                onModelOrderChange={(modelOrder) =>
+                  updateModelPreferences(selectedRow.instanceId, {
+                    hiddenModels:
+                      settings.providerModelPreferences?.[selectedRow.instanceId]?.hiddenModels ??
+                      [],
+                    modelOrder,
+                  })
+                }
+              />
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </SettingsSection>
   );
 }

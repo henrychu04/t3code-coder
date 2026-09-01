@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "./providerInstances";
 import {
   getAppModelOptionsForInstance,
+  getModelOptionsByInstance,
   resolveAppModelSelectionForInstance,
   resolveAppModelSelectionState,
 } from "./modelSelection";
@@ -12,19 +13,21 @@ function provider(input: {
   provider?: ProviderDriverKind;
   instanceId: string;
   models?: ReadonlyArray<string>;
+  installed?: boolean;
+  status?: ServerProvider["status"];
 }): ServerProvider {
   const driver =
     input.provider ??
-    (input.instanceId.startsWith("claude_")
+    (input.instanceId === "claudeAgent" || input.instanceId.startsWith("claude_")
       ? ProviderDriverKind.make("claudeAgent")
       : ProviderDriverKind.make("codex"));
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
     driver,
     enabled: true,
-    installed: true,
+    installed: input.installed ?? true,
     version: null,
-    status: "ready",
+    status: input.status ?? "ready",
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
     models: (input.models ?? []).map((slug) => ({
@@ -73,104 +76,84 @@ describe("instance-scoped model selection", () => {
     );
   });
 
-  it("keeps custom models on the provider instance that declared them", () => {
+  it("ignores configured custom models while preserving their stored data", () => {
     const providers = [
       provider({
         instanceId: "claudeAgent",
         models: ["claude-sonnet-4-6"],
       }),
-      provider({
-        instanceId: "claude_openrouter",
-        models: ["claude-sonnet-4-6"],
-      }),
     ];
-    const entries = deriveProviderInstanceEntries(providers);
-    const stock = entries.find((entry) => entry.instanceId === "claudeAgent")!;
-    const openrouter = entries.find((entry) => entry.instanceId === "claude_openrouter")!;
+    const stock = deriveProviderInstanceEntries(providers)[0]!;
 
     expect(
       getAppModelOptionsForInstance(settingsWithProviderInstances(), stock).map(
         (option) => option.slug,
       ),
-    ).not.toContain("openai/gpt-5.5");
+    ).toEqual(["claude-sonnet-4-6"]);
     expect(
-      getAppModelOptionsForInstance(settingsWithProviderInstances(), openrouter).map(
-        (option) => option.slug,
-      ),
-    ).toContain("openai/gpt-5.5");
+      settingsWithProviderInstances().providerInstances[
+        ProviderInstanceId.make("claude_openrouter")
+      ]?.config,
+    ).toEqual({ customModels: ["openai/gpt-5.5"] });
   });
 
-  it("resolves a custom slug against the selected custom instance", () => {
+  it("ignores custom models reported by the workspace provider", () => {
+    const baseProvider = provider({
+      instanceId: "claudeAgent",
+      models: ["claude-sonnet-4-6"],
+    });
+    const providers: ReadonlyArray<ServerProvider> = [
+      {
+        ...baseProvider,
+        models: [
+          ...baseProvider.models,
+          {
+            slug: "custom-model",
+            name: "Custom Model",
+            isCustom: true,
+            capabilities: null,
+          },
+        ],
+      },
+    ];
+    const stock = deriveProviderInstanceEntries(providers)[0]!;
+
+    expect(
+      getAppModelOptionsForInstance(settingsWithProviderInstances(), stock).map(
+        (option) => option.slug,
+      ),
+    ).toEqual(["claude-sonnet-4-6"]);
+  });
+
+  it("falls back from a stored custom model to a built-in model", () => {
     const providers = [
-      provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: "claudeAgent" }),
       provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claude_openrouter",
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-4-6"],
       }),
     ];
 
     expect(
       resolveAppModelSelectionForInstance(
-        ProviderInstanceId.make("claude_openrouter"),
+        ProviderInstanceId.make("claudeAgent"),
         settingsWithProviderInstances(),
         providers,
         "openai/gpt-5.5",
       ),
-    ).toBe("openai/gpt-5.5");
+    ).toBe("claude-sonnet-4-6");
   });
 
-  it("preserves a custom slug that collides with a provider alias", () => {
+  it("offers only the built-in Codex and Claude provider instances", () => {
     const providers = [
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claude_openrouter",
-        models: ["claude-opus-4-8"],
-      }),
+      provider({ instanceId: "claudeAgent", models: ["claude-sonnet-4-6"] }),
+      provider({ instanceId: "claude_openrouter", models: ["claude-sonnet-4-6"] }),
+      provider({ provider: ProviderDriverKind.make("grok"), instanceId: "grok", models: ["grok"] }),
+      provider({ instanceId: "codex", models: ["gpt-5.4"] }),
     ];
-    const settings: UnifiedSettings = {
-      ...settingsWithProviderInstances(),
-      providerInstances: {
-        ...settingsWithProviderInstances().providerInstances,
-        [ProviderInstanceId.make("claude_openrouter")]: {
-          driver: ProviderDriverKind.make("claudeAgent"),
-          config: { customModels: ["opus"] },
-        },
-      },
-    };
-    const openrouter = deriveProviderInstanceEntries(providers)[0]!;
 
-    expect(
-      getAppModelOptionsForInstance(settings, openrouter).map((option) => option.slug),
-    ).toEqual(["claude-opus-4-8", "opus"]);
-    expect(
-      resolveAppModelSelectionForInstance(
-        ProviderInstanceId.make("claude_openrouter"),
-        settings,
-        providers,
-        "opus",
-      ),
-    ).toBe("opus");
-  });
-
-  it("includes Grok custom models from the selected provider instance", () => {
-    const providers = [provider({ provider: ProviderDriverKind.make("grok"), instanceId: "grok" })];
-    const settings: UnifiedSettings = {
-      ...settingsWithProviderInstances(),
-      providerInstances: {
-        ...settingsWithProviderInstances().providerInstances,
-        [ProviderInstanceId.make("grok")]: {
-          driver: ProviderDriverKind.make("grok"),
-          config: { customModels: ["grok-test-custom-model"] },
-        },
-      },
-    };
-    const grok = deriveProviderInstanceEntries(providers).find(
-      (entry) => entry.instanceId === "grok",
-    )!;
-
-    expect(getAppModelOptionsForInstance(settings, grok).map((option) => option.slug)).toContain(
-      "grok-test-custom-model",
-    );
+    expect([
+      ...getModelOptionsByInstance(settingsWithProviderInstances(), providers).keys(),
+    ]).toEqual([ProviderInstanceId.make("claudeAgent"), ProviderInstanceId.make("codex")]);
   });
 
   it("does not inject an unknown selected slug into the stock instance list", () => {
@@ -296,7 +279,7 @@ describe("instance-scoped model selection", () => {
     ).toBe("claude-sonnet-4-6");
   });
 
-  it("preserves custom provider instances in settings model selection", () => {
+  it("falls back from an unsupported provider instance in settings model selection", () => {
     const providers = [
       provider({
         instanceId: "claudeAgent",
@@ -316,13 +299,33 @@ describe("instance-scoped model selection", () => {
     };
 
     expect(resolveAppModelSelectionState(settings, providers)).toEqual({
-      instanceId: ProviderInstanceId.make("claude_openrouter"),
-      model: "openai/gpt-5.5",
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
     });
   });
 
   it("replaces a missing Codex text-generation instance with Claude", () => {
     const providers = [
+      provider({
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-4-6"],
+      }),
+    ];
+
+    expect(resolveAppModelSelectionState(DEFAULT_UNIFIED_SETTINGS, providers)).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-sonnet-4-6",
+    });
+  });
+
+  it("replaces an unavailable Codex text-generation instance with ready Claude", () => {
+    const providers = [
+      provider({
+        instanceId: "codex",
+        installed: false,
+        status: "error",
+        models: [],
+      }),
       provider({
         instanceId: "claudeAgent",
         models: ["claude-sonnet-4-6"],

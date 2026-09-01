@@ -9,6 +9,7 @@ import {
   type SidebarThreadSortOrder,
   type TimestampFormat,
 } from "@t3tools/contracts/settings";
+import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import {
@@ -20,15 +21,23 @@ import {
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../hooks/useSettings";
-import { WorkspaceProviderSettings } from "../components/settings/WorkspaceProviderSettings";
+import { TextGenerationModelSettings } from "../components/settings/TextGenerationModelSettings";
+import { primaryServerProvidersAtom } from "../state/server";
 
 function GeneralSettingsView() {
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
+  const providers = useAtomValue(primaryServerProvidersAtom);
 
   return (
     <SettingsPage>
-      <WorkspaceProviderSettings />
+      <TextGenerationModelSettings
+        settings={settings}
+        providers={providers}
+        onChange={(textGenerationModelSelection) =>
+          updateSettings({ textGenerationModelSelection })
+        }
+      />
 
       <SettingsSection
         title="New threads"

@@ -236,7 +236,7 @@ import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
+  deriveCoderProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
   resolveProviderDriverKindForInstanceSelection,
   resolveSelectableProviderInstanceEntry,
@@ -738,13 +738,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Model state
   // ------------------------------------------------------------------
-  // Instance-aware projection of the wire provider list. One entry per
-  // configured instance (default built-in + any custom `providerInstances.*`),
-  // sorted default-first per driver kind for a stable picker order.
+  // T3 Coder exposes only the workspace's built-in Codex and Claude
+  // instances for new selections. Broader upstream instance data remains
+  // decodable but does not appear in the picker.
   const providerInstanceEntries = useMemo<ReadonlyArray<ProviderInstanceEntry>>(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        applyProviderInstanceSettings(
+          deriveCoderProviderInstanceEntries(providerStatuses),
+          settings,
+        ),
       ),
     [providerStatuses, settings],
   );
@@ -840,9 +843,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     requestedDriverKind,
   ]);
 
-  // Resolve the active instance's snapshot by `instanceId` so a custom
-  // instance gets its own slash commands, skills, and model list — not
-  // the first snapshot for the same driver kind.
+  // Resolve the active built-in instance's snapshot by `instanceId`.
   const selectedProviderEntry = useMemo(
     () => providerInstanceEntries.find((entry) => entry.instanceId === selectedInstanceId),
     [providerInstanceEntries, selectedInstanceId],
@@ -920,10 +921,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
   const selectedModelForPicker = selectedModel;
-  // Instance-keyed option list so the picker can show each configured
-  // instance (built-in + custom) as a first-class sidebar entry. The
-  // options are server-reported models plus that exact instance's
-  // configured custom models; selected slugs are not injected into lists.
+  // Instance-keyed option list for the two built-in workspace providers.
   const modelOptionsByInstance = useMemo<
     ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>
   >(() => {

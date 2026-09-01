@@ -200,6 +200,22 @@ export function deriveProviderInstanceEntries(
   });
 }
 
+const CODER_PROVIDER_INSTANCE_IDS = new Set<string>(["codex", "claudeAgent"]);
+
+/**
+ * New selections in T3 Coder are intentionally limited to the workspace's
+ * built-in Codex and Claude instances. Keep the broader projection above for
+ * decoding historical upstream data, but do not surface additional instances
+ * or providers in interactive pickers.
+ */
+export function deriveCoderProviderInstanceEntries(
+  providers: ReadonlyArray<ServerProvider>,
+): ReadonlyArray<ProviderInstanceEntry> {
+  return deriveProviderInstanceEntries(providers).filter(
+    (entry) => entry.isDefault && CODER_PROVIDER_INSTANCE_IDS.has(entry.instanceId),
+  );
+}
+
 /**
  * Project several environments' `ServerProvider[]` into a nested
  * `environmentId → instanceId → entry` lookup.
@@ -312,10 +328,8 @@ export function getProviderInstanceModels(
 
 /**
  * Default model slug for a specific instance: its declared built-in default,
- * then its first built-in model, then any model it reports, then the driver-level default. Custom
- * instances can serve a different model list than the default instance of
- * the same driver kind, so the lookup must be instance-scoped rather than
- * kind-scoped.
+ * then its first built-in model, then the driver-level default. Custom models
+ * remain decodable but are never chosen as T3 Coder defaults.
  */
 export function getDefaultProviderInstanceModel(
   providers: ReadonlyArray<ServerProvider>,
@@ -326,7 +340,6 @@ export function getDefaultProviderInstanceModel(
   return (
     entry.models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
-    entry.models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[entry.driverKind]
   );
 }
@@ -358,16 +371,15 @@ export function resolveSelectableProviderInstanceEntry(
 }
 
 /**
- * Resolve the routing key for a selection that may reference an instance
- * id that no longer exists (e.g. a persisted thread selection after the
- * user deleted the custom instance). Returns a ready or non-error fallback,
- * or `undefined` when no provider can safely become a new selection.
+ * Resolve the routing key for a new selection against the two built-in Coder
+ * workspace providers. Unsupported persisted instances fall back without
+ * deleting their stored data.
  */
 export function resolveSelectableProviderInstance(
   providers: ReadonlyArray<ServerProvider>,
   instanceId: ProviderInstanceId | undefined,
 ): ProviderInstanceId | undefined {
-  const entries = deriveProviderInstanceEntries(providers);
+  const entries = deriveCoderProviderInstanceEntries(providers);
   return resolveSelectableProviderInstanceEntry(entries, instanceId)?.instanceId;
 }
 
@@ -383,7 +395,14 @@ export function resolveDefaultProviderModelSelection(
 ): ModelSelection | null {
   const instanceId = resolveSelectableProviderInstance(providers, selection?.instanceId);
   if (instanceId === undefined) return null;
-  if (selection?.instanceId === instanceId) return selection;
+  if (selection?.instanceId === instanceId) {
+    const entry = deriveCoderProviderInstanceEntries(providers).find(
+      (candidate) => candidate.instanceId === instanceId,
+    );
+    if (entry?.models.some((model) => !model.isCustom && model.slug === selection.model)) {
+      return selection;
+    }
+  }
   const model = getDefaultProviderInstanceModel(providers, instanceId);
   return model ? { instanceId, model } : null;
 }
