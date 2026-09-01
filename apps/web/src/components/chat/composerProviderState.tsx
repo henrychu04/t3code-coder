@@ -12,7 +12,6 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
-  normalizeModelSlug,
 } from "@t3tools/shared/model";
 import type { ReactNode } from "react";
 
@@ -75,10 +74,9 @@ export function resolveComposerRuntimeMode(
 export function resolveAvailableRuntimeModes(
   providerStatus: ServerProvider["status"] | null | undefined,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
-  fallbackRuntimeModes: ReadonlyArray<RuntimeMode>,
 ): ReadonlyArray<RuntimeMode> {
   return providerStatus === "ready"
-    ? (supportedRuntimeModes ?? fallbackRuntimeModes)
+    ? (supportedRuntimeModes ?? SAFE_RUNTIME_MODES)
     : SAFE_RUNTIME_MODES;
 }
 
@@ -92,9 +90,6 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     planModeEnabled,
   } = input;
   const caps = getProviderModelCapabilities(models, model, provider, planModeEnabled);
-  const selectedModelAvailable = models.some(
-    (candidate) => candidate.slug === normalizeModelSlug(model, provider),
-  );
   const descriptors = getProviderOptionDescriptors({ caps, selections: modelOptions });
   const primarySelectDescriptor = descriptors.find(
     (descriptor): descriptor is Extract<(typeof descriptors)[number], { type: "select" }> =>
@@ -110,11 +105,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     provider,
     promptEffort,
     modelOptionsForDispatch: buildProviderOptionSelectionsFromDescriptors(descriptors),
-    ...(caps.supportedRuntimeModes
-      ? { supportedRuntimeModes: caps.supportedRuntimeModes }
-      : provider === "claudeAgent" && !selectedModelAvailable
-        ? { supportedRuntimeModes: SAFE_RUNTIME_MODES }
-        : {}),
+    ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
     ...(ultrathinkActive
       ? {
           composerFrameClassName: "ultrathink-frame",

@@ -132,26 +132,41 @@ export const ModelCapabilities = Schema.Struct({
 });
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
+const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 
-export const DEFAULT_MODEL = "claude-sonnet-5";
-export const DEFAULT_TEXT_GENERATION_MODEL = "claude-haiku-4-5";
+export const DEFAULT_MODEL = "gpt-5.6-sol";
+export const PREFERRED_DEFAULT_CODEX_MODELS: ReadonlyArray<string> = [
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+];
+export const DEFAULT_TEXT_GENERATION_MODEL = "gpt-5.6-luna";
 export const DEFAULT_TEXT_GENERATION_REASONING_EFFORT = "low";
 
 export const DEFAULT_MODEL_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
-  [CLAUDE_DRIVER_KIND]: DEFAULT_MODEL,
+  [CODEX_DRIVER_KIND]: DEFAULT_MODEL,
+  [CLAUDE_DRIVER_KIND]: "claude-sonnet-5",
 };
 
 /** Per-provider text generation model defaults. */
 export const DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   Record<ProviderDriverKind, string>
 > = {
-  [CLAUDE_DRIVER_KIND]: DEFAULT_TEXT_GENERATION_MODEL,
+  [CODEX_DRIVER_KIND]: DEFAULT_TEXT_GENERATION_MODEL,
+  [CLAUDE_DRIVER_KIND]: "claude-haiku-4-5",
 };
 
 export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   Record<ProviderDriverKind, Record<string, string>>
 > = {
+  [CODEX_DRIVER_KIND]: {
+    "gpt-5-codex": "gpt-5.4",
+    "5.4": "gpt-5.4",
+    "5.3": "gpt-5.3-codex",
+    "gpt-5.3": "gpt-5.3-codex",
+    "5.3-spark": "gpt-5.3-codex-spark",
+    "gpt-5.3-spark": "gpt-5.3-codex-spark",
+  },
   [CLAUDE_DRIVER_KIND]: {
     opus: "claude-opus-5",
     "opus-5": "claude-opus-5",
@@ -181,5 +196,6 @@ export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
 // ── Provider display names ────────────────────────────────────────────
 
 export const PROVIDER_DISPLAY_NAMES: Partial<Record<ProviderDriverKind, string>> = {
+  [CODEX_DRIVER_KIND]: "Codex",
   [CLAUDE_DRIVER_KIND]: "Claude",
 };

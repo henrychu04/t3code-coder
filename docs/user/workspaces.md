@@ -12,6 +12,9 @@ Choose **Sign in** and complete the flow in the terminal where `npm start` runs:
 login URL and a hidden token prompt there. T3 Coder never asks for, reads, or stores the token —
 Coder owns the credential. If a sign-in expires, repeat the same flow.
 
+Provider authentication is separate and remains inside the workspace. See
+[Codex and Claude Code](./providers.md) for provider status and sign-in guidance.
+
 ## Workspaces
 
 After a domain is signed in, its workspaces appear on the connection page, and you pick one when
@@ -59,15 +62,22 @@ network. Each rule runs its own forward process, reports its state (**Starting**
 **Stopped**), and can be restarted or removed individually. Saved rules start again when the
 gateway starts; a rule that failed stays stopped until you restart it or change its configuration.
 
+## Data ownership
+
+Repositories, prompts, responses, provider sessions, terminals, checkpoints, project records, and
+the application database remain in the workspace. The local profile contains only the non-secret
+information needed to reconnect and recreate explicit port-forward rules. Coder owns Coder
+credentials, and provider credentials remain in the workspace.
+
 ## Troubleshooting
 
-**The page says the workspace failed preflight.** Preflight verifies Linux x86-64, Git, Claude
-Code, `script(1)`, and the Nix-provisioned Node.js runtime before connecting. Fix the missing
-piece in the workspace and connect again — the diagnostics timeline shows exactly which check
-failed and when.
+**The page says the workspace failed preflight.** Preflight verifies Linux x86-64, Git, Nix,
+`script(1)`, the managed Node.js runtime, and at least one supported provider. Fix the missing piece
+in the workspace and reconnect — the diagnostics timeline shows which check failed and when.
 
-**Claude Code is missing or not authenticated.** Install and sign in to Claude Code in the
-workspace itself (`claude auth login`); T3 Coder uses whatever the workspace provides.
+**Codex or Claude Code is missing or not authenticated.** Install or sign in to that provider in
+the workspace itself. T3 Coder uses what the workspace provides. The other provider remains usable
+when it is ready.
 
 **The connection dropped.** Refresh the browser. Reloading reattaches to the running session; the
 helper keeps working while the browser is away. If the underlying Coder SSH process exited, the

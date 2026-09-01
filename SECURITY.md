@@ -1,15 +1,23 @@
 # Security policy
 
-T3 Coder is a private-purpose, Coder-only fork. It is not an approved Goldman Sachs application by
-virtue of this repository; users must obtain the reviews required by their employer before using it
-with work systems or data.
+T3 Coder is designed so repositories, agent sessions, terminals, and durable application data stay
+inside authenticated Coder workspaces. The local browser interface is available only through IPv4
+loopback, and T3 Coder does not provide general file transfer or hosted integrations.
+
+This is a private-purpose fork. It is not an approved Goldman Sachs application by virtue of this
+repository; users must obtain the reviews required by their employer before using it with work
+systems or data.
 
 ## Supported boundary
 
 Security fixes target the `coder-only` branch and the architecture documented in
-[`docs/internals/coder-only.md`](./docs/internals/coder-only.md). Electron, hosted services, generic
-SSH, local Claude providers, file transfer, MCP integrations, and hosted source-control operations
-are outside the supported design.
+[`docs/internals/coder-only.md`](./docs/internals/coder-only.md). Native and mobile clients, hosted
+services, generic SSH, locally running providers, general file transfer, MCP and app integrations,
+and hosted source-control operations are outside the supported design.
+
+See [Product decisions and upstream differences](./docs/product-differences.md) for the
+user-visible boundary and [Security and data handling](./docs/compliance-review.md) for review
+evidence.
 
 ## Reporting
 

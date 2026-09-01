@@ -1,4 +1,11 @@
-import { ArchiveIcon, KeyboardIcon, PaletteIcon, ServerIcon, Settings2Icon } from "lucide-react";
+import {
+  ArchiveIcon,
+  BotIcon,
+  KeyboardIcon,
+  PaletteIcon,
+  ServerIcon,
+  Settings2Icon,
+} from "lucide-react";
 import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -16,6 +23,7 @@ const SETTINGS_NAV_ITEMS = [
   { label: "General", to: "/settings/preferences", icon: Settings2Icon },
   { label: "Appearance", to: "/settings/appearance", icon: PaletteIcon },
   { label: "Keyboard shortcuts", to: "/settings/shortcuts", icon: KeyboardIcon },
+  { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Coder connections", to: "/settings/general", icon: ServerIcon },
   { label: "Archived threads", to: "/settings/archived", icon: ArchiveIcon },
 ] as const;

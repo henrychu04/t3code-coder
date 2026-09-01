@@ -7,6 +7,7 @@ import {
   ProviderSession,
   ProviderSessionStartInput,
 } from "./provider.ts";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "./orchestration.ts";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
@@ -115,6 +116,48 @@ describe("ProviderSessionStartInput", () => {
 });
 
 describe("ProviderSendTurnInput", () => {
+  it("accepts bounded opaque pasted-image ids", () => {
+    const parsed = decodeProviderSendTurnInput({
+      threadId: "thread-1",
+      input: "Inspect this image",
+      attachments: [
+        {
+          type: "image",
+          id: "550e8400-e29b-41d4-a716-446655440000.png",
+        },
+      ],
+    });
+
+    expect(parsed.attachments).toEqual([
+      {
+        type: "image",
+        id: "550e8400-e29b-41d4-a716-446655440000.png",
+      },
+    ]);
+  });
+
+  it("rejects path-shaped ids and too many pasted images", () => {
+    const attachment = {
+      type: "image",
+      id: "550e8400-e29b-41d4-a716-446655440000.png",
+    } as const;
+    expect(() =>
+      decodeProviderSendTurnInput({
+        threadId: "thread-1",
+        attachments: [{ ...attachment, id: `../${attachment.id}` }],
+      }),
+    ).toThrow();
+    expect(() =>
+      decodeProviderSendTurnInput({
+        threadId: "thread-1",
+        attachments: Array.from(
+          { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1 },
+          () => attachment,
+        ),
+      }),
+    ).toThrow();
+  });
+
   it("accepts codex modelSelection", () => {
     const parsed = decodeProviderSendTurnInput({
       threadId: "thread-1",

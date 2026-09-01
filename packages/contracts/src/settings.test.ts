@@ -5,10 +5,13 @@ import {
   ClaudeSettings,
   ClientSettingsSchema,
   ClientSettingsPatch,
+  CodexSettings,
+  DEFAULT_SERVER_SETTINGS,
   ServerSettingsPatch,
 } from "./settings.ts";
 
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
+const decodeCodexSettings = Schema.decodeUnknownSync(CodexSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
 const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
 const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
@@ -18,6 +21,47 @@ describe("Client settings", () => {
     expect(decodeClientSettings({}).confirmThreadUnpin).toBe(false);
     expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
     expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
+  });
+});
+
+describe("Codex settings", () => {
+  it("uses Codex for title and branch generation by default", () => {
+    expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
+      instanceId: "codex",
+      model: "gpt-5.6-luna",
+      options: [{ id: "reasoningEffort", value: "low" }],
+    });
+  });
+
+  it("defaults to the workspace Codex executable", () => {
+    expect(decodeCodexSettings({})).toEqual({
+      enabled: true,
+      binaryPath: "codex",
+      homePath: "",
+      shadowHomePath: "",
+      launchArgs: "",
+      customModels: [],
+    });
+  });
+
+  it("accepts workspace paths and launch arguments in settings patches", () => {
+    const patch = decodeServerSettingsPatch({
+      providers: {
+        codex: {
+          binaryPath: "/opt/codex/bin/codex",
+          homePath: "~/.codex",
+          shadowHomePath: "~/.codex-t3/work",
+          launchArgs: "--config model_reasoning_effort=high",
+        },
+      },
+    });
+
+    expect(patch.providers?.codex).toEqual({
+      binaryPath: "/opt/codex/bin/codex",
+      homePath: "~/.codex",
+      shadowHomePath: "~/.codex-t3/work",
+      launchArgs: "--config model_reasoning_effort=high",
+    });
   });
 });
 

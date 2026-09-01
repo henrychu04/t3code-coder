@@ -14,6 +14,7 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
+  type ProviderInstanceId,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -138,6 +139,42 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
   return { ...settings, providerInstances };
 }
 
+/**
+ * Client settings replace the provider-instance map as one value. Preserve a
+ * sensitive environment value when the client sends back its redacted marker
+ * while editing another field on the same instance.
+ */
+export function restoreRedactedProviderEnvironmentValues(
+  current: ServerSettings,
+  patch: ServerSettingsPatch,
+): ServerSettingsPatch {
+  if (patch.providerInstances === undefined) return patch;
+
+  const entries = Object.entries(patch.providerInstances) as Array<
+    [ProviderInstanceId, ProviderInstanceConfig]
+  >;
+  const providerInstances = Object.fromEntries(
+    entries.map(([instanceId, instance]) => {
+      if (!instance.environment) return [instanceId, instance] as const;
+      const currentByName = new Map(
+        (current.providerInstances[instanceId]?.environment ?? []).map((variable) => [
+          variable.name,
+          variable,
+        ]),
+      );
+      const environment = instance.environment.map((variable) => {
+        if (!variable.sensitive || !variable.valueRedacted) return variable;
+        const existing = currentByName.get(variable.name);
+        const { valueRedacted: _valueRedacted, ...rest } = variable;
+        return { ...rest, value: existing?.value ?? "" };
+      });
+      return [instanceId, { ...instance, environment }] as const;
+    }),
+  );
+
+  return { ...patch, providerInstances: providerInstances as ServerSettings["providerInstances"] };
+}
+
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   {
@@ -183,7 +220,12 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
       getSettings: Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider)),
       updateSettings: (patch) =>
         Ref.get(currentSettingsRef).pipe(
-          Effect.map((currentSettings) => applyServerSettingsPatch(currentSettings, patch)),
+          Effect.map((currentSettings) =>
+            applyServerSettingsPatch(
+              currentSettings,
+              restoreRedactedProviderEnvironmentValues(currentSettings, patch),
+            ),
+          ),
           Effect.flatMap(normalizeServerSettings),
           Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
           Effect.map(resolveTextGenerationProvider),
@@ -400,7 +442,12 @@ const make = Effect.gen(function* () {
       writeSemaphore.withPermits(1)(
         Effect.gen(function* () {
           const current = yield* getSettingsFromCache;
-          const next = yield* normalizeServerSettings(applyServerSettingsPatch(current, patch));
+          const next = yield* normalizeServerSettings(
+            applyServerSettingsPatch(
+              current,
+              restoreRedactedProviderEnvironmentValues(current, patch),
+            ),
+          );
           yield* writeSettingsAtomically(next);
           yield* Cache.set(settingsCache, cacheKey, next);
           yield* emitChange(next);

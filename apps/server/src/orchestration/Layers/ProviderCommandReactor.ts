@@ -3,6 +3,7 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
+  type PastedImageAttachment,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -202,13 +203,15 @@ function isUnknownPendingApprovalRequestError(cause: Cause.Cause<ProviderService
     const detail = error.detail.toLowerCase();
     return (
       detail.includes("unknown pending approval request") ||
-      detail.includes("unknown pending permission request")
+      detail.includes("unknown pending permission request") ||
+      detail.includes("unknown pending codex approval request")
     );
   }
-  const message = Cause.pretty(cause);
+  const message = Cause.pretty(cause).toLowerCase();
   return (
     message.includes("unknown pending approval request") ||
-    message.includes("unknown pending permission request")
+    message.includes("unknown pending permission request") ||
+    message.includes("unknown pending codex approval request")
   );
 }
 
@@ -708,6 +711,7 @@ const make = Effect.gen(function* () {
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly messageText: string;
+    readonly attachments?: ReadonlyArray<PastedImageAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
@@ -757,6 +761,9 @@ const make = Effect.gen(function* () {
     return {
       threadId: input.threadId,
       ...(normalizedInput ? { input: normalizedInput } : {}),
+      ...(input.attachments && input.attachments.length > 0
+        ? { attachments: input.attachments }
+        : {}),
       ...(modelForTurn !== undefined ? { modelSelection: modelForTurn } : {}),
       ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
     };
@@ -769,6 +776,7 @@ const make = Effect.gen(function* () {
     readonly branch: string | null;
     readonly worktreePath: string | null;
     readonly messageText: string;
+    readonly attachments?: ReadonlyArray<PastedImageAttachment>;
   }) {
     if (!input.branch || !input.worktreePath) {
       return;
@@ -786,6 +794,7 @@ const make = Effect.gen(function* () {
       const generated = yield* textGeneration.generateBranchName({
         cwd,
         message: input.messageText,
+        ...(input.attachments ? { attachments: input.attachments } : {}),
         modelSelection,
       });
       if (!generated) return;
@@ -820,6 +829,7 @@ const make = Effect.gen(function* () {
       readonly cwd: string;
       readonly messageText: string;
       readonly titleSeed?: string;
+      readonly attachments?: ReadonlyArray<PastedImageAttachment>;
     }) {
       yield* Effect.gen(function* () {
         const { textGenerationModelSelection: modelSelection } =
@@ -829,6 +839,7 @@ const make = Effect.gen(function* () {
           .generateThreadTitle({
             cwd: input.cwd,
             message: input.messageText,
+            ...(input.attachments ? { attachments: input.attachments } : {}),
             modelSelection,
           })
           .pipe(
@@ -1071,6 +1082,9 @@ const make = Effect.gen(function* () {
         }) ?? process.cwd();
       const generationInput = {
         messageText: message.text,
+        ...(event.payload.attachments !== undefined
+          ? { attachments: event.payload.attachments }
+          : {}),
         ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
       };
 
@@ -1129,6 +1143,9 @@ const make = Effect.gen(function* () {
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
       messageText: message.text,
+      ...(event.payload.attachments !== undefined
+        ? { attachments: event.payload.attachments }
+        : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
         : {}),

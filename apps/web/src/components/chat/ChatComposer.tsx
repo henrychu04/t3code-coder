@@ -10,9 +10,16 @@ import type {
   ServerProvider,
   ThreadId,
 } from "@t3tools/contracts";
-import { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import {
+  extractComposerPastedImageAttachmentIds,
+  serializeComposerFileLink,
+} from "@t3tools/shared/composerTrigger";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   memo,
@@ -229,7 +236,7 @@ import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
 import {
   applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
+  deriveCoderProviderInstanceEntries,
   NO_PROVIDER_MODEL_SELECTION,
   resolveProviderDriverKindForInstanceSelection,
   resolveSelectableProviderInstanceEntry,
@@ -277,7 +284,6 @@ const runtimeModeConfig: Record<
   },
 };
 
-const runtimeModeOptions = Object.keys(runtimeModeConfig) as RuntimeMode[];
 const COMPOSER_FLOATING_LAYER_SELECTOR = [
   '[data-composer-drawer-layer="true"]',
   '[data-slot="popover-popup"]',
@@ -732,13 +738,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   // Model state
   // ------------------------------------------------------------------
-  // Instance-aware projection of the wire provider list. One entry per
-  // configured instance (default built-in + any custom `providerInstances.*`),
-  // sorted default-first per driver kind for a stable picker order.
+  // T3 Coder exposes only the workspace's built-in Codex and Claude
+  // instances for new selections. Broader upstream instance data remains
+  // decodable but does not appear in the picker.
   const providerInstanceEntries = useMemo<ReadonlyArray<ProviderInstanceEntry>>(
     () =>
       sortProviderInstanceEntries(
-        applyProviderInstanceSettings(deriveProviderInstanceEntries(providerStatuses), settings),
+        applyProviderInstanceSettings(
+          deriveCoderProviderInstanceEntries(providerStatuses),
+          settings,
+        ),
       ),
     [providerStatuses, settings],
   );
@@ -834,9 +843,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     requestedDriverKind,
   ]);
 
-  // Resolve the active instance's snapshot by `instanceId` so a custom
-  // instance gets its own slash commands, skills, and model list — not
-  // the first snapshot for the same driver kind.
+  // Resolve the active built-in instance's snapshot by `instanceId`.
   const selectedProviderEntry = useMemo(
     () => providerInstanceEntries.find((entry) => entry.instanceId === selectedInstanceId),
     [providerInstanceEntries, selectedInstanceId],
@@ -896,7 +903,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const availableRuntimeModes = resolveAvailableRuntimeModes(
     selectedProviderStatus?.status,
     composerProviderState.supportedRuntimeModes,
-    runtimeModeOptions,
   );
   const effectiveRuntimeMode = resolveComposerRuntimeMode(runtimeMode, availableRuntimeModes);
   // Plan mode is a legacy feature behind Settings → Beta. With the flag off,
@@ -915,10 +921,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [selectedInstanceId, selectedModel, selectedModelOptionsForDispatch],
   );
   const selectedModelForPicker = selectedModel;
-  // Instance-keyed option list so the picker can show each configured
-  // instance (built-in + custom) as a first-class sidebar entry. The
-  // options are server-reported models plus that exact instance's
-  // configured custom models; selected slugs are not injected into lists.
+  // Instance-keyed option list for the two built-in workspace providers.
   const modelOptionsByInstance = useMemo<
     ReadonlyMap<ProviderInstanceId, ReadonlyArray<AppModelOption>>
   >(() => {
@@ -1970,6 +1973,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
     if (imageFiles.length === 0) return;
     event.preventDefault();
+    if (
+      extractComposerPastedImageAttachmentIds(promptRef.current).length + imageFiles.length >
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+    ) {
+      setComposerSubmissionError(
+        `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} pasted images per message.`,
+      );
+      return;
+    }
     if (clipboardImageUploadInFlightRef.current) {
       setComposerSubmissionError("Wait for the current pasted image upload to finish.");
       return;

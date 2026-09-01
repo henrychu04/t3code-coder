@@ -124,4 +124,57 @@ describe("ChatMarkdown", () => {
     expect(markup).toContain("pnpm run test");
     expect(markup).not.toContain("href=");
   });
+
+  it("renders Codex file citations through the contained Files surface", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        threadRef={scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"))}
+        text={
+          'Created :codex-file-citation{path="/workspace/project/outputs/report.xlsx" purpose="output"}.'
+        }
+      />,
+    );
+
+    expect(markup).not.toContain("codex-file-citation");
+    expect(markup).toContain('type="button"');
+    expect(markup).toContain("report.xlsx");
+  });
+
+  it("leaves malformed and unfinished Codex file citations literal", () => {
+    for (const text of [
+      ':codex-file-citation{purpose="output"}',
+      ':codex-file-citation{path="/workspace/project/outputs/report.xlsx"',
+    ]) {
+      const markup = renderToStaticMarkup(
+        <ChatMarkdown
+          cwd="/workspace/project"
+          threadRef={scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"))}
+          text={text}
+        />,
+      );
+
+      expect(markup).toContain(":codex-file-citation");
+      expect(markup).not.toContain('type="button"');
+    }
+  });
+
+  it("renders Codex artifact templates as reusable cards", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        text={
+          '::artifact-template{skill_name="artifact-template-hello-world" skill_directory="/workspace/.codex/skills/artifact-template-hello-world" display_name="Hello World" artifact_kind="document"}'
+        }
+        onUseArtifactTemplate={() => undefined}
+      />,
+    );
+
+    expect(markup).not.toContain("::artifact-template");
+    expect(markup).toContain("chat-markdown-artifact-template");
+    expect(markup).toContain("Hello World");
+    expect(markup).toContain("Document template");
+    expect(markup).toContain("Use template");
+    expect(markup).not.toContain("/workspace/.codex/skills");
+  });
 });

@@ -72,6 +72,7 @@ describe("resolvePlanFollowUpSubmission", () => {
     ).toEqual({
       text: "PLEASE IMPLEMENT THIS PLAN:\n## Ship it\n\n- step 1",
       interactionMode: "default",
+      pastedImageAttachmentIds: [],
     });
   });
 
@@ -84,6 +85,21 @@ describe("resolvePlanFollowUpSubmission", () => {
     ).toEqual({
       text: "Refine step 2 first",
       interactionMode: "plan",
+      pastedImageAttachmentIds: [],
+    });
+  });
+
+  it("preserves pasted images in a plan follow-up", () => {
+    const id = "550e8400-e29b-41d4-a716-446655440000.png";
+    expect(
+      resolvePlanFollowUpSubmission({
+        draftText: `Check [this image](/home/dev/.t3-coder/attachments/${id}) first`,
+        planMarkdown: "## Ship it\n\n- step 1\n",
+      }),
+    ).toEqual({
+      text: `Check [this image](/home/dev/.t3-coder/attachments/${id}) first`,
+      interactionMode: "plan",
+      pastedImageAttachmentIds: [id],
     });
   });
 });

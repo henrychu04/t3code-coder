@@ -1,16 +1,16 @@
 # T3 Coder
 
-T3 Coder is a browser interface for Claude Code running inside Linux Coder workspaces. It keeps
-the T3 Code product — projects, threads, review, terminals, files — and specializes it for
+T3 Coder is a browser interface for Codex and Claude Code running inside Linux Coder workspaces. It
+keeps the T3 Code product — projects, threads, review, terminals, files — and specializes it for
 Coder-managed workspaces, removing upstream's desktop, mobile, hosted-web, relay, telemetry, and
-non-Claude provider surfaces.
+other provider surfaces.
 
 Use the global `karpathy-guidelines` skill for coding, review, and refactoring work.
 
 T3 Coder is a Coder-only fork of T3 Code. A browser talks to a Node gateway bound to
 `127.0.0.1`; the gateway talks to authenticated Linux Coder workspaces only through foreground
-Coder CLI processes. The workspace helper owns Claude Code, repositories, terminals, Git, SQLite,
-projects, threads, sessions, and checkpoints.
+Coder CLI processes. The workspace helper owns Codex, Claude Code, repositories, terminals, Git,
+SQLite, projects, threads, sessions, and checkpoints.
 
 Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
@@ -33,7 +33,8 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   persist Coder tokens.
 - The helper runs in the foreground through `coder ssh`, uses newline-delimited RPC over stdio, and
   opens no HTTP, WebSocket, tunnel, forwarded port, or other listener.
-- Claude Code exists only in the Linux workspace. Do not probe for or launch a local provider.
+- Codex and Claude Code exist only in the Linux workspace. Do not probe for or launch a local
+  provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
   non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
   rules, and ephemeral staging of validated clipboard images in an OS temporary directory. Delete
@@ -77,7 +78,7 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
     - Pasted images: generate filenames internally and copy only into
       `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
     - Screenshot artifacts: capture at most 10 images that were created or modified inside the
-      active project during a Claude turn, or returned as image content by that turn's tool
+    active project during a provider turn, or returned as image content by that turn's tool
       results. Copy them to generated paths beneath `$HOME/.t3-coder/artifacts`, expose only opaque
       IDs and metadata in durable activity, and return bytes in bounded chunks over the existing
       helper stdio RPC only after explicit UI expansion. Do not expose arbitrary paths,
@@ -87,16 +88,18 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
   source-control integrations.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
   OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
-  forwarding, arbitrary tunnels, or providers other than Claude. OpenSSH use is limited to helper
-  bootstrap and validated clipboard-image uploads through a `coder ssh --stdio` ProxyCommand.
+  forwarding, arbitrary tunnels, or providers other than Codex and Claude. OpenSSH use is limited
+  to helper bootstrap and validated clipboard-image uploads through a `coder ssh --stdio`
+  ProxyCommand.
 - External markdown links and images remain inert, and terminal URLs must not open automatically.
 
 ## Supported platforms
 
 - Local development and testing: macOS.
 - Production local host: Windows 11 with the OpenSSH Client feature (`ssh.exe` and `scp.exe`).
-- Remote workspace: Linux x86-64 with Nix, Git, Claude Code, and `script(1)`. T3 provisions its
-  pinned Node.js 24 runtime through Nix without changing the workspace's default Node.js version.
+- Remote workspace: Linux x86-64 with Nix, Git, Codex or Claude Code, and `script(1)`. T3 provisions
+  its pinned Node.js 24 runtime through Nix without changing the workspace's default Node.js
+  version.
 
 Use Node platform APIs for local paths and processes. Never assume POSIX paths on the local host.
 Remote commands may assume Linux and must quote user-configured values for the shell behavior of
@@ -109,8 +112,8 @@ Coder's arguments after `--`.
 - `packages/coder-cli`: validated non-secret profiles, Coder command construction, helper install,
   helper connection lifecycle, and foreground port-forward lifecycle.
 - `apps/coder-helper`: bundled Linux stdio entry point.
-- `apps/server`: workspace-owned orchestration, Claude adapter, persistence, terminal, filesystem,
-  and repository-local VCS implementation.
+- `apps/server`: workspace-owned orchestration, Codex and Claude adapters, persistence, terminal,
+  filesystem, and repository-local VCS implementation.
 - `apps/web`: browser client and Coder deployment/workspace manager.
 - `packages/contracts`, `packages/client-runtime`, `packages/shared`: typed wire and shared runtime
   logic retained by the web/helper pair.
