@@ -268,167 +268,174 @@ function ShortcutsSettingsView() {
                       </p>
                     ) : null}
                   </div>
-                  <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:flex-[2]">
-                    {targets.map((target, index) => {
-                      const targetPending =
-                        pending?.command === action.command && sameRule(pending.replace, target)
-                          ? pending.shortcut
-                          : null;
-                      const isCapturing =
-                        capturing?.command === action.command &&
-                        sameRule(capturing.replace, target);
-                      const pendingForTarget =
-                        pending?.command === action.command && sameRule(pending.replace, target)
-                          ? pending
-                          : null;
-                      const defaultRule = defaultsByCommand.get(action.command)?.at(-1);
-                      const editableShortcut =
-                        pendingForTarget?.shortcut ?? target?.shortcut ?? defaultRule?.shortcut;
-                      const targetWhen =
-                        pendingForTarget?.when ??
-                        keybindingWhenForNode((target ?? defaultRule)?.whenAst) ??
-                        "";
-                      const isDefault =
-                        target !== null &&
-                        DEFAULT_RESOLVED_KEYBINDINGS.some((binding) => sameRule(binding, target));
-                      return (
-                        <div
-                          key={target ? JSON.stringify(ruleInput(target)) : `unassigned:${index}`}
-                          className="flex flex-wrap items-center gap-2"
-                        >
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="w-28 shrink-0"
-                            data-keybinding-capture=""
-                            disabled={environmentId === null || busy !== null}
-                            onClick={() => {
-                              setPending(null);
-                              setCapturing({ command: action.command, replace: target });
-                              firstShiftAt.current = null;
-                            }}
-                            onBlur={() => {
-                              firstShiftAt.current = null;
-                              if (isCapturing) setCapturing(null);
-                            }}
-                            onKeyDown={(event) => {
-                              if (!isCapturing) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              if (event.key === "Escape") {
-                                setCapturing(null);
-                                setPending(null);
-                                return;
-                              }
-                              if (event.key === "Shift") {
-                                const now = performance.now();
-                                if (
-                                  firstShiftAt.current !== null &&
-                                  now - firstShiftAt.current < DOUBLE_SHIFT_MAX_INTERVAL_MS
-                                ) {
-                                  if (action.command !== "filePicker.toggle") {
-                                    setError(
-                                      "Shift Shift is currently supported only for Search project files.",
-                                    );
-                                    setCapturing(null);
-                                    firstShiftAt.current = null;
-                                    return;
-                                  }
-                                  const shortcut: KeybindingShortcut = {
-                                    key: "double-shift",
-                                    metaKey: false,
-                                    ctrlKey: false,
-                                    shiftKey: false,
-                                    altKey: false,
-                                    modKey: false,
-                                  };
-                                  setPending({
-                                    command: action.command,
-                                    replace: target,
-                                    shortcut,
-                                    when: targetWhen,
-                                  });
-                                  setCapturing(null);
-                                  firstShiftAt.current = null;
-                                } else {
-                                  firstShiftAt.current = now;
-                                }
-                                return;
-                              }
-                              firstShiftAt.current = null;
-                              const shortcut = shortcutFromEvent(event);
-                              if (!shortcut) return;
-                              setPending({
-                                command: action.command,
-                                replace: target,
-                                shortcut,
-                                when: targetWhen,
-                              });
-                              setCapturing(null);
-                            }}
+                  <div className="flex min-w-0 items-center gap-2 sm:flex-[2]">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                      {targets.map((target, index) => {
+                        const targetPending =
+                          pending?.command === action.command && sameRule(pending.replace, target)
+                            ? pending.shortcut
+                            : null;
+                        const isCapturing =
+                          capturing?.command === action.command &&
+                          sameRule(capturing.replace, target);
+                        const pendingForTarget =
+                          pending?.command === action.command && sameRule(pending.replace, target)
+                            ? pending
+                            : null;
+                        const defaultRule = defaultsByCommand.get(action.command)?.at(-1);
+                        const editableShortcut =
+                          pendingForTarget?.shortcut ?? target?.shortcut ?? defaultRule?.shortcut;
+                        const targetWhen =
+                          pendingForTarget?.when ??
+                          keybindingWhenForNode((target ?? defaultRule)?.whenAst) ??
+                          "";
+                        const isDefault =
+                          target !== null &&
+                          DEFAULT_RESOLVED_KEYBINDINGS.some((binding) => sameRule(binding, target));
+                        return (
+                          <div
+                            key={target ? JSON.stringify(ruleInput(target)) : `unassigned:${index}`}
+                            className="flex items-center gap-2"
                           >
-                            {isCapturing ? (
-                              "Press shortcut…"
-                            ) : targetPending ? (
-                              <Kbd>{formatShortcutLabel(targetPending)}</Kbd>
-                            ) : target ? (
-                              <Kbd>{formatShortcutLabel(target.shortcut)}</Kbd>
-                            ) : (
-                              "Unassigned"
-                            )}
-                          </Button>
-                          <KeybindingWhenEditor
-                            disabled={!editableShortcut || environmentId === null || busy !== null}
-                            value={targetWhen}
-                            onChange={(when) => {
-                              if (!editableShortcut) return;
-                              setPending({
-                                command: action.command,
-                                replace: target,
-                                shortcut: editableShortcut,
-                                when,
-                              });
-                            }}
-                          />
-                          <span className="w-14 text-[10px] uppercase tracking-wide text-muted-foreground">
-                            {target ? (isDefault ? "Default" : "Custom") : "None"}
-                          </span>
-                          {target && !isDefault ? (
                             <Button
                               type="button"
-                              size="icon-sm"
-                              variant="ghost"
-                              aria-label={`Remove ${action.label} binding`}
+                              variant="outline"
+                              className="w-28 shrink-0"
+                              data-keybinding-capture=""
                               disabled={environmentId === null || busy !== null}
-                              onClick={() => void remove(target)}
+                              onClick={() => {
+                                setPending(null);
+                                setCapturing({ command: action.command, replace: target });
+                                firstShiftAt.current = null;
+                              }}
+                              onBlur={() => {
+                                firstShiftAt.current = null;
+                                if (isCapturing) setCapturing(null);
+                              }}
+                              onKeyDown={(event) => {
+                                if (!isCapturing) return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                if (event.key === "Escape") {
+                                  setCapturing(null);
+                                  setPending(null);
+                                  return;
+                                }
+                                if (event.key === "Shift") {
+                                  const now = performance.now();
+                                  if (
+                                    firstShiftAt.current !== null &&
+                                    now - firstShiftAt.current < DOUBLE_SHIFT_MAX_INTERVAL_MS
+                                  ) {
+                                    if (action.command !== "filePicker.toggle") {
+                                      setError(
+                                        "Shift Shift is currently supported only for Search project files.",
+                                      );
+                                      setCapturing(null);
+                                      firstShiftAt.current = null;
+                                      return;
+                                    }
+                                    const shortcut: KeybindingShortcut = {
+                                      key: "double-shift",
+                                      metaKey: false,
+                                      ctrlKey: false,
+                                      shiftKey: false,
+                                      altKey: false,
+                                      modKey: false,
+                                    };
+                                    setPending({
+                                      command: action.command,
+                                      replace: target,
+                                      shortcut,
+                                      when: targetWhen,
+                                    });
+                                    setCapturing(null);
+                                    firstShiftAt.current = null;
+                                  } else {
+                                    firstShiftAt.current = now;
+                                  }
+                                  return;
+                                }
+                                firstShiftAt.current = null;
+                                const shortcut = shortcutFromEvent(event);
+                                if (!shortcut) return;
+                                setPending({
+                                  command: action.command,
+                                  replace: target,
+                                  shortcut,
+                                  when: targetWhen,
+                                });
+                                setCapturing(null);
+                              }}
                             >
-                              <Trash2Icon />
+                              {isCapturing ? (
+                                "Press shortcut…"
+                              ) : targetPending ? (
+                                <Kbd>{formatShortcutLabel(targetPending)}</Kbd>
+                              ) : target ? (
+                                <Kbd>{formatShortcutLabel(target.shortcut)}</Kbd>
+                              ) : (
+                                "Unassigned"
+                              )}
                             </Button>
-                          ) : null}
+                            <KeybindingWhenEditor
+                              disabled={!editableShortcut || environmentId === null || busy !== null}
+                              value={targetWhen}
+                              onChange={(when) => {
+                                if (!editableShortcut) return;
+                                setPending({
+                                  command: action.command,
+                                  replace: target,
+                                  shortcut: editableShortcut,
+                                  when,
+                                });
+                              }}
+                            />
+                            <span className="w-14 shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {target ? (isDefault ? "Default" : "Custom") : "None"}
+                            </span>
+                            {target && !isDefault ? (
+                              <Button
+                                type="button"
+                                size="icon-sm"
+                                variant="ghost"
+                                className="shrink-0"
+                                aria-label={`Remove ${action.label} binding`}
+                                disabled={environmentId === null || busy !== null}
+                                onClick={() => void remove(target)}
+                              >
+                                <Trash2Icon />
+                              </Button>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                      {candidate ? (
+                        <div className="flex justify-end">
+                          <Button
+                            size="sm"
+                            disabled={busy !== null}
+                            onClick={() =>
+                              void save(
+                                action.command,
+                                candidate,
+                                pending?.replace ?? null,
+                                pending?.when ?? candidateWhen,
+                              )
+                            }
+                          >
+                            Save
+                          </Button>
                         </div>
-                      );
-                    })}
-                    {candidate ? (
-                      <Button
-                        size="sm"
-                        disabled={busy !== null}
-                        onClick={() =>
-                          void save(
-                            action.command,
-                            candidate,
-                            pending?.replace ?? null,
-                            pending?.when ?? candidateWhen,
-                          )
-                        }
-                      >
-                        Save
-                      </Button>
-                    ) : null}
+                      ) : null}
+                    </div>
+                  <div className="flex shrink-0 items-center gap-1">
                     {current.length > 0 ? (
                       <Button
                         type="button"
                         size="icon-sm"
                         variant="ghost"
+                        className="shrink-0"
                         aria-label={`Add another ${action.label} binding`}
                         disabled={environmentId === null || busy !== null}
                         onClick={() => {
@@ -444,12 +451,14 @@ function ShortcutsSettingsView() {
                       type="button"
                       size="icon-sm"
                       variant="ghost"
+                      className="shrink-0"
                       aria-label={`Reset ${action.label}`}
                       disabled={environmentId === null || busy !== null}
                       onClick={() => void reset(action.command)}
                     >
                       <RotateCcwIcon />
                     </Button>
+                  </div>
                   </div>
                 </div>
               );
