@@ -104,6 +104,10 @@ import {
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
 import {
+  latestWorkspaceMutationId,
+  useWorkspaceMutationRefresh,
+} from "../hooks/useWorkspaceMutationRefresh";
+import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
   resolvePlanFollowUpSubmission,
@@ -1781,6 +1785,13 @@ function ChatViewContent(props: ChatViewProps) {
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const latestCheckpointCompletedAt = activeThread?.checkpoints.at(-1)?.completedAt ?? null;
+  const workspaceMutationId = useMemo(() => {
+    const activityId = latestWorkspaceMutationId(threadActivities);
+    return activityId === null && latestCheckpointCompletedAt === null
+      ? null
+      : JSON.stringify([activityId, latestCheckpointCompletedAt]);
+  }, [latestCheckpointCompletedAt, threadActivities]);
   const activeContextWindow = useMemo(
     () => deriveLatestContextWindowSnapshot(threadActivities),
     [threadActivities],
@@ -1993,6 +2004,12 @@ function ChatViewContent(props: ChatViewProps) {
           input: { cwd: gitStatusCwd },
         }),
   );
+  useWorkspaceMutationRefresh({
+    enabled: gitStatusCwd !== null,
+    mutationId: workspaceMutationId,
+    refresh: gitStatusQuery.refresh,
+    resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
+  });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   // Prefer an instance-id match so a custom Claude instance (e.g.
   // `claude_personal`) surfaces its own status/message in the banner rather
@@ -5436,6 +5453,7 @@ function ChatViewContent(props: ChatViewProps) {
           mode="embedded"
           composerDraftTarget={composerDraftTarget}
           initialGitScope={initialDiffPanelGitScope}
+          workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "agents" ? (
@@ -5473,6 +5491,11 @@ function ChatViewContent(props: ChatViewProps) {
           onCommandRequestHandled={handleFileViewerCommandRequest}
           onOpenFile={openFileSurface}
           onPendingChange={updateFilePending}
+          selectedFilePending={
+            activeRightPanelSurface.kind === "file" &&
+            pendingFileSurfaceIds.has(activeRightPanelSurface.id)
+          }
+          workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
     ) : null

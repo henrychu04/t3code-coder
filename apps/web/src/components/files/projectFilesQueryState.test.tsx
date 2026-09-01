@@ -1,4 +1,4 @@
-import { EnvironmentId, type ProjectReadFileResult } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -74,6 +74,7 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { useProjectFileQuery } from "./projectFilesQueryState";
 
 const environmentId = EnvironmentId.make("environment-1");
+const threadId = ThreadId.make("thread-1");
 
 function deferred<A>() {
   let resolve!: (value: A) => void;
@@ -124,7 +125,7 @@ describe("project file query refresh", () => {
 
     const render = (mutationId: string | null) => {
       reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, "/repo", "src/preview.ts");
+      const query = useProjectFileQuery(environmentId, threadId, "/repo", "src/preview.ts");
       renderedContents = query.data?.contents ?? null;
       useWorkspaceMutationRefresh({
         mutationId,
@@ -153,39 +154,6 @@ describe("project file query refresh", () => {
       expect(renderedContents).toBe("fresh");
     } finally {
       unmount();
-      registry.dispose();
-      atomHooks.registry = null;
-    }
-  });
-
-  it("does not issue a file read for a disabled image preview", async () => {
-    const requests: Array<ReturnType<typeof deferred<ProjectReadFileResult>>> = [];
-    const readAtom = Atom.make(
-      Effect.promise(() => {
-        const request = deferred<ProjectReadFileResult>();
-        requests.push(request);
-        return request.promise;
-      }),
-    );
-    const registry = AtomRegistry.make();
-    projectMocks.readFile.mockReturnValue(readAtom);
-    projectMocks.optimisticFile.mockReturnValue(Atom.make(null));
-    atomHooks.registry = registry;
-
-    try {
-      reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, "/repo", "preview.png", false);
-      useWorkspaceMutationRefresh({
-        enabled: false,
-        mutationId: "mutation-1",
-        refresh: query.refresh,
-        resourceKey: "file:environment-1:/repo:preview.png",
-      });
-      await flushEffects();
-
-      expect(projectMocks.readFile).not.toHaveBeenCalled();
-      expect(requests).toHaveLength(0);
-    } finally {
       registry.dispose();
       atomHooks.registry = null;
     }

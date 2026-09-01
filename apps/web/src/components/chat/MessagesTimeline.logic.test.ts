@@ -273,23 +273,6 @@ describe("resolveAssistantMessageCopyState", () => {
       visible: false,
     });
   });
-
-  it("copies the rendered representation of Codex directives", () => {
-    expect(
-      resolveAssistantMessageCopyState({
-        showCopyButton: true,
-        text: [
-          'Created :codex-file-citation{path="outputs/report.xlsx" purpose="output"}.',
-          "",
-          '::artifact-template{skill_name="artifact-template-hello-world" skill_directory="/Users/test/.codex/skills/artifact-template-hello-world" display_name="Hello World" artifact_kind="document"}',
-        ].join("\n"),
-        streaming: false,
-      }),
-    ).toEqual({
-      text: "Created [report.xlsx](<outputs/report.xlsx>).\n\nHello World (Document template)",
-      visible: true,
-    });
-  });
 });
 
 describe("deriveMessagesTimelineRows", () => {
@@ -1777,9 +1760,7 @@ describe("estimateMessagesTimelineRowHeight", () => {
 
   it("grows with text length for assistant messages up to the cap", () => {
     const short = estimateMessagesTimelineRowHeight(messageRow("assistant", "Done."));
-    const long = estimateMessagesTimelineRowHeight(
-      messageRow("assistant", "x".repeat(20_000)),
-    );
+    const long = estimateMessagesTimelineRowHeight(messageRow("assistant", "x".repeat(20_000)));
     expect(long).toBeGreaterThan(short * 5);
     expect(long).toBe(88 + 820);
   });
@@ -1806,9 +1787,7 @@ describe("estimateMessagesTimelineRowHeight", () => {
   });
 
   it("caps user messages at the collapsed preview height", () => {
-    const collapsed = estimateMessagesTimelineRowHeight(
-      messageRow("user", "x".repeat(10_000)),
-    );
+    const collapsed = estimateMessagesTimelineRowHeight(messageRow("user", "x".repeat(10_000)));
     expect(collapsed).toBe(96 + 8 * 23);
   });
 

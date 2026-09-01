@@ -9,6 +9,7 @@ import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
+import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
@@ -59,10 +60,16 @@ export default function FileBrowserPanel(props: {
   selectedPathRevealId: number;
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
+  workspaceMutationId: string | null;
 }) {
   const { resolvedTheme } = useTheme();
   const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
   const entriesQuery = useProjectEntriesQuery(props.environmentId, props.threadId, props.cwd);
+  useWorkspaceMutationRefresh({
+    mutationId: props.workspaceMutationId,
+    refresh: entriesQuery.refresh,
+    resourceKey: `files:${props.environmentId}:${props.cwd}`,
+  });
   const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
