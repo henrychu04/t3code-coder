@@ -111,11 +111,13 @@ interface ChatMarkdownProps {
   readonly className?: string;
   readonly lineBreaks?: boolean;
   readonly parseRawHtml?: boolean;
+  readonly extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   /** Append a prompt that invokes a newly created artifact-template skill. */
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
 const ARTIFACT_TEMPLATE_ICON_BY_KIND = {
   document: FileTextIcon,
@@ -195,6 +197,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
+    a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -628,6 +631,7 @@ function ChatMarkdown({
   lineBreaks = false,
   parseRawHtml = true,
   onUseArtifactTemplate,
+  extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
@@ -771,9 +775,22 @@ function ChatMarkdown({
         );
       },
       a({ node: _node, href, children, title: _title, ...props }) {
+        const pullRequestAutolink = String(
+          (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
+        );
+        const pullRequestCopy =
+          pullRequestAutolink === "commit"
+            ? /\/-\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
+            : pullRequestAutolink === "merge-request" || pullRequestAutolink === "issue"
+              ? nodeToPlainText(children)
+              : undefined;
+        const autolinkProps = {
+          className: cn(props.className, pullRequestAutolink === "commit" && "font-mono"),
+          ...(pullRequestCopy === undefined ? {} : { "data-markdown-copy": pullRequestCopy }),
+        };
         if (href?.startsWith("#")) {
           return (
-            <a {...props} href={href}>
+            <a {...props} {...autolinkProps} href={href}>
               {children}
             </a>
           );
@@ -783,7 +800,8 @@ function ChatMarkdown({
           return (
             <button
               type="button"
-              className={cn(props.className, "cursor-pointer text-primary underline")}
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
               onClick={() =>
                 useRightPanelStore
                   .getState()
@@ -814,7 +832,8 @@ function ChatMarkdown({
           return (
             <button
               type="button"
-              className={cn(props.className, "cursor-pointer text-primary underline")}
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
               onContextMenu={(event) =>
                 void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
               }
@@ -835,7 +854,8 @@ function ChatMarkdown({
           return (
             <button
               type="button"
-              className={cn(props.className, "cursor-pointer text-primary underline")}
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
               onClick={() =>
                 void navigate({
                   to: "/pull-requests",
@@ -854,7 +874,14 @@ function ChatMarkdown({
             </button>
           );
         }
-        return <span className={cn(props.className, "text-primary underline")}>{children}</span>;
+        return (
+          <span
+            className={cn(autolinkProps.className, "text-primary underline")}
+            data-markdown-copy={pullRequestCopy}
+          >
+            {children}
+          </span>
+        );
       },
       img({ node: _node, title: _title, src: _src, alt }) {
         return <InertMarkdownImage alt={alt ?? ""} />;
@@ -930,6 +957,14 @@ function ChatMarkdown({
     ],
   );
 
+  const remarkPlugins = useMemo(
+    () => [
+      ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
+      ...extraRemarkPlugins,
+    ],
+    [extraRemarkPlugins, lineBreaks],
+  );
+
   return (
     <div
       className={cn(
@@ -939,9 +974,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
         skipHtml={false}
         components={markdownComponents}
