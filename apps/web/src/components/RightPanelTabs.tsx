@@ -472,14 +472,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const handleTabContextMenu = useCallback(
     async (event: ReactMouseEvent, surface: RightPanelSurface) => {
-      event.preventDefault();
-      event.stopPropagation();
-
       const api = readLocalApi();
       if (!api) return;
 
       const items = rightPanelTabContextMenuItems(props.surfaces, surface);
       if (items.length === 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
 
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
