@@ -381,6 +381,9 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 }
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const FileSearchDialogs = lazy(() =>
+  import("./files/FilePreviewPanel").then((module) => ({ default: module.FileSearchDialogs })),
+);
 type FileViewerGlobalCommand = "filePicker.toggle" | "projectSearch.toggle";
 interface FileViewerCommandRequest {
   readonly id: number;
@@ -2392,15 +2395,6 @@ function ChatViewContent(props: ChatViewProps) {
   const requestFileViewerCommand = useCallback(
     (command: FileViewerGlobalCommand) => {
       if (!activeThreadRef || !activeThreadKey || !filesAvailable) return;
-      const fileViewerActive =
-        activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file";
-      if (fileViewerActive) {
-        if (!rightPanelOpen) {
-          useRightPanelStore.getState().toggleVisibility(activeThreadRef);
-        }
-      } else {
-        useRightPanelStore.getState().open(activeThreadRef, "files");
-      }
       fileViewerCommandRequestIdRef.current += 1;
       setFileViewerCommandRequest({
         id: fileViewerCommandRequestIdRef.current,
@@ -2408,13 +2402,7 @@ function ChatViewContent(props: ChatViewProps) {
         command,
       });
     },
-    [
-      activeRightPanelSurface?.kind,
-      activeThreadKey,
-      activeThreadRef,
-      filesAvailable,
-      rightPanelOpen,
-    ],
+    [activeThreadKey, activeThreadRef, filesAvailable],
   );
   const handleFileViewerCommandRequest = useCallback((id: number) => {
     setFileViewerCommandRequest((current) => (current?.id === id ? null : current));
@@ -5465,12 +5453,6 @@ function ChatViewContent(props: ChatViewProps) {
           revealRequestId={
             activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.revealRequestId : 0
           }
-          commandRequest={
-            fileViewerCommandRequest?.threadKey === activeThreadKey
-              ? fileViewerCommandRequest
-              : null
-          }
-          onCommandRequestHandled={handleFileViewerCommandRequest}
           onOpenFile={openFileSurface}
           onPendingChange={updateFilePending}
         />
@@ -5809,6 +5791,25 @@ function ChatViewContent(props: ChatViewProps) {
           />
         ))}
       </div>
+
+      {activeThreadRef && activeProject && activeWorkspaceRoot && filesAvailable ? (
+        <Suspense fallback={null}>
+          <FileSearchDialogs
+            key={activeThreadKey}
+            commandRequest={
+              fileViewerCommandRequest?.threadKey === activeThreadKey
+                ? fileViewerCommandRequest
+                : null
+            }
+            onCommandRequestHandled={handleFileViewerCommandRequest}
+            environmentId={activeProject.environmentId}
+            cwd={activeWorkspaceRoot}
+            projectName={activeProject.title}
+            threadRef={activeThreadRef}
+            onOpenFile={openFileSurface}
+          />
+        </Suspense>
+      ) : null}
 
       {!shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelTabs

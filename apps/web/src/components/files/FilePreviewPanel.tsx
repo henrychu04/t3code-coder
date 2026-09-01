@@ -125,14 +125,14 @@ interface FilePreviewPanelProps {
   composerDraftTarget: ScopedThreadRef | DraftId;
   revealLine: number | null;
   revealRequestId: number;
-  commandRequest: {
-    readonly id: number;
-    readonly command: "filePicker.toggle" | "projectSearch.toggle";
-  } | null;
-  onCommandRequestHandled: (id: number) => void;
   onOpenFile: (relativePath: string, line?: number) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
 }
+
+type FileSearchCommandRequest = {
+  readonly id: number;
+  readonly command: "filePicker.toggle" | "projectSearch.toggle";
+};
 
 const FILE_SAVE_DEBOUNCE_MS = 500;
 const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
@@ -1612,8 +1612,6 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [renderMarkdown, setRenderMarkdown] = useState(false);
   const [saveFailedPath, setSaveFailedPath] = useState<string | null>(null);
-  const [projectSearchOpen, setProjectSearchOpen] = useState(false);
-  const [fileSearchOpen, setFileSearchOpen] = useState(false);
   const [goToLineOpen, setGoToLineOpen] = useState(false);
   const [goToLineInitialValue, setGoToLineInitialValue] = useState("1:1");
   const [findOpen, setFindOpen] = useState(false);
@@ -1664,21 +1662,6 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
       ?.querySelector<HTMLElement>("[data-current-file-crumb='true']")
       ?.scrollIntoView({ block: "nearest", inline: "end" });
   }, [props.relativePath]);
-
-  const openFileSearch = useCallback(() => {
-    setFileSearchOpen(true);
-  }, []);
-
-  useEffect(() => {
-    const request = props.commandRequest;
-    if (!request) return;
-    if (request.command === "projectSearch.toggle") {
-      setProjectSearchOpen(true);
-    } else {
-      openFileSearch();
-    }
-    props.onCommandRequestHandled(request.id);
-  }, [openFileSearch, props.commandRequest, props.onCommandRequestHandled]);
 
   const openEditorFind = useCallback(() => {
     if (!props.relativePath || !file.data || file.data.truncated) return;
@@ -1828,24 +1811,6 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background" data-file-viewer="">
-      <ProjectTextSearchDialog
-        open={projectSearchOpen}
-        onOpenChange={setProjectSearchOpen}
-        environmentId={props.environmentId}
-        threadRef={props.threadRef}
-        cwd={props.cwd}
-        projectName={props.projectName}
-        onOpenFile={props.onOpenFile}
-      />
-      <FileSearchDialog
-        open={fileSearchOpen}
-        onOpenChange={setFileSearchOpen}
-        environmentId={props.environmentId}
-        threadRef={props.threadRef}
-        cwd={props.cwd}
-        projectName={props.projectName}
-        onOpenFile={props.onOpenFile}
-      />
       <GoToLineDialog
         open={goToLineOpen}
         initialValue={goToLineInitialValue}
@@ -2065,5 +2030,49 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+export function FileSearchDialogs(props: {
+  commandRequest: FileSearchCommandRequest | null;
+  onCommandRequestHandled: (id: number) => void;
+  environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef;
+  cwd: string;
+  projectName: string;
+  onOpenFile: (relativePath: string, line?: number) => void;
+}) {
+  const [projectSearchOpen, setProjectSearchOpen] = useState(false);
+  const [fileSearchOpen, setFileSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const request = props.commandRequest;
+    if (!request) return;
+    if (request.command === "projectSearch.toggle") setProjectSearchOpen(true);
+    else setFileSearchOpen(true);
+    props.onCommandRequestHandled(request.id);
+  }, [props.commandRequest, props.onCommandRequestHandled]);
+
+  return (
+    <>
+      <ProjectTextSearchDialog
+        open={projectSearchOpen}
+        onOpenChange={setProjectSearchOpen}
+        environmentId={props.environmentId}
+        threadRef={props.threadRef}
+        cwd={props.cwd}
+        projectName={props.projectName}
+        onOpenFile={props.onOpenFile}
+      />
+      <FileSearchDialog
+        open={fileSearchOpen}
+        onOpenChange={setFileSearchOpen}
+        environmentId={props.environmentId}
+        threadRef={props.threadRef}
+        cwd={props.cwd}
+        projectName={props.projectName}
+        onOpenFile={props.onOpenFile}
+      />
+    </>
   );
 }
