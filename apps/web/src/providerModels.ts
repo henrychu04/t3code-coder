@@ -13,7 +13,7 @@ import { createModelCapabilities, normalizeModelSlug } from "@t3tools/shared/mod
 const EMPTY_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
 });
-const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
+const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 
 export function formatProviderDriverKindLabel(provider: ProviderDriverKind): string {
   return provider
@@ -95,7 +95,6 @@ export function getDefaultServerModel(
   return (
     models.find((model) => model.isDefault && !model.isCustom)?.slug ??
     models.find((model) => !model.isCustom)?.slug ??
-    models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[provider] ??
     DEFAULT_MODEL
   );

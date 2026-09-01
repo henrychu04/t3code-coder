@@ -9,27 +9,11 @@ import * as Schema from "effect/Schema";
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
-  isLegacyClaudeModel,
   probeClaudeCapabilities,
   providerModelsFromClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
-
-it("keeps only the Claude 5 family out of legacy models", () => {
-  assert.deepStrictEqual(
-    ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8"].map((model) => [
-      model,
-      isLegacyClaudeModel(model),
-    ]),
-    [
-      ["claude-fable-5", false],
-      ["claude-opus-5", false],
-      ["claude-sonnet-5", false],
-      ["claude-opus-4-8", true],
-    ],
-  );
-});
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {
   const abortController = new AbortController();
@@ -114,6 +98,18 @@ it("uses Claude's reported model and permission capabilities as authoritative", 
     "approval-required",
     "auto-accept-edits",
     "auto",
+    "full-access",
+  ]);
+
+  const customModel = providerModelsFromClaudeCapabilities({
+    models: [],
+    autoModeDisabled: false,
+    bypassPermissionsDisabled: false,
+    customModels: ["claude-custom"],
+  })[0];
+  assert.deepEqual(customModel?.capabilities?.supportedRuntimeModes, [
+    "approval-required",
+    "auto-accept-edits",
     "full-access",
   ]);
 });

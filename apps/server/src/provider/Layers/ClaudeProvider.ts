@@ -2,7 +2,6 @@ import {
   type ClaudeSettings,
   type ModelCapabilities,
   type ModelSelection,
-  type RuntimeMode,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -43,6 +42,10 @@ import {
 } from "../providerSnapshot.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import {
+  buildSupportedRuntimeModes,
+  withSupportedRuntimeModes,
+} from "../runtimeModeCapabilities.ts";
 
 const DEFAULT_CLAUDE_MODEL_CAPABILITIES: ModelCapabilities = createModelCapabilities({
   optionDescriptors: [],
@@ -56,12 +59,6 @@ const MINIMUM_CLAUDE_OPUS_5_VERSION = "2.1.219";
 const MINIMUM_CLAUDE_FABLE_5_VERSION = "2.1.169";
 const MINIMUM_CLAUDE_OPUS_4_8_VERSION = "2.1.154";
 const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
-
-const CURRENT_CLAUDE_MODELS = new Set(["claude-fable-5", "claude-opus-5", "claude-sonnet-5"]);
-
-export function isLegacyClaudeModel(model: string): boolean {
-  return !CURRENT_CLAUDE_MODELS.has(model);
-}
 
 const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
   {
@@ -328,9 +325,9 @@ const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
   },
 ];
 
-const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = CLAUDE_MODEL_CATALOG.map((model) =>
-  isLegacyClaudeModel(model.slug) ? { ...model, isLegacy: true } : model,
-);
+// Legacy classification happens at the driver boundary so Codex and Claude
+// share the bundled upstream model lifecycle manifest.
+const BUILT_IN_MODELS: ReadonlyArray<ServerProviderModel> = CLAUDE_MODEL_CATALOG;
 
 function supportsClaudeOpus5(version: string | null | undefined): boolean {
   return version ? compareSemverVersions(version, MINIMUM_CLAUDE_OPUS_5_VERSION) >= 0 : false;
@@ -630,11 +627,6 @@ type ClaudeCapabilitiesProbe = {
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
 
-const CLAUDE_BASE_RUNTIME_MODES = [
-  "approval-required",
-  "auto-accept-edits",
-] as const satisfies ReadonlyArray<RuntimeMode>;
-
 function readClaudePermissionModeDisabled(
   settings: Record<string, unknown>,
   key: "disableAutoMode" | "disableBypassPermissionsMode",
@@ -679,6 +671,7 @@ export function providerModelsFromClaudeCapabilities(input: {
   readonly models: ReadonlyArray<ClaudeModelInfo>;
   readonly autoModeDisabled: boolean;
   readonly bypassPermissionsDisabled: boolean;
+  readonly customModels?: ReadonlyArray<string>;
 }): ReadonlyArray<ServerProviderModel> {
   const resolved: ServerProviderModel[] = [];
   const seen = new Set<string>();
@@ -693,15 +686,14 @@ export function providerModelsFromClaudeCapabilities(input: {
     seen.add(slug);
 
     const catalogModel = BUILT_IN_MODELS.find((candidate) => candidate.slug === catalogSlug);
-    const supportedRuntimeModes: RuntimeMode[] = [...CLAUDE_BASE_RUNTIME_MODES];
-    if (modelInfo.supportsAutoMode === true && !input.autoModeDisabled) {
-      supportedRuntimeModes.push("auto");
-    }
-    if (!input.bypassPermissionsDisabled) supportedRuntimeModes.push("full-access");
-    const capabilities: ModelCapabilities = {
-      ...(catalogModel?.capabilities ?? DEFAULT_CLAUDE_MODEL_CAPABILITIES),
+    const supportedRuntimeModes = buildSupportedRuntimeModes({
+      auto: modelInfo.supportsAutoMode === true && !input.autoModeDisabled,
+      fullAccess: !input.bypassPermissionsDisabled,
+    });
+    const capabilities = withSupportedRuntimeModes(
+      catalogModel?.capabilities ?? DEFAULT_CLAUDE_MODEL_CAPABILITIES,
       supportedRuntimeModes,
-    };
+    );
 
     resolved.push({
       slug,
@@ -713,7 +705,11 @@ export function providerModelsFromClaudeCapabilities(input: {
     });
   }
 
-  return resolved;
+  const customCapabilities = withSupportedRuntimeModes(
+    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    buildSupportedRuntimeModes({ fullAccess: !input.bypassPermissionsDisabled }),
+  );
+  return providerModelsFromSettings(resolved, input.customModels ?? [], customCapabilities);
 }
 
 function parseClaudeInitializationCommands(
@@ -1002,12 +998,9 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     models: capabilities?.models ?? [],
     autoModeDisabled: capabilities?.autoModeDisabled ?? true,
     bypassPermissionsDisabled: capabilities?.bypassPermissionsDisabled ?? true,
+    customModels: claudeSettings.customModels,
   });
-  const models = providerModelsFromSettings(
-    builtInModels,
-    claudeSettings.customModels,
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-  );
+  const models = builtInModels;
   const versionUpgradeMessage = supportsClaudeOpus5(parsedVersion)
     ? undefined
     : supportsClaudeFable5(parsedVersion)

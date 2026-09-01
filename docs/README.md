@@ -8,6 +8,7 @@ the update here.
 ## Using T3 Coder
 
 - [Install and first run](./user/getting-started.md)
+- [Codex and Claude Code](./user/providers.md)
 - [Coder workspaces](./user/workspaces.md)
 - [Projects and threads](./user/projects-and-threads.md)
 - [Permission modes](./user/permission-modes.md)
@@ -16,6 +17,7 @@ the update here.
 - [Images and screenshots](./user/images-and-screenshots.md)
 - [Source control](./user/source-control.md)
 - [Keyboard shortcuts](./user/keybindings.md)
+- [Product decisions and upstream differences](./product-differences.md)
 
 ## Working on T3 Coder
 

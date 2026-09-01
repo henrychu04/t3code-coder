@@ -121,7 +121,7 @@ describe("getComposerProviderState", () => {
     expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
   });
 
-  it("fails closed when Claude has no verified model capabilities", () => {
+  it("leaves missing capability handling to the provider-neutral availability resolver", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
       model: MODEL,
@@ -130,25 +130,22 @@ describe("getComposerProviderState", () => {
       planModeEnabled: true,
     });
 
-    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
+    expect(state.supportedRuntimeModes).toBeUndefined();
   });
 
   it("fails closed when a warning provider retains cached model capabilities", () => {
     expect(
-      resolveAvailableRuntimeModes(
-        "warning",
-        ["approval-required", "auto-accept-edits", "auto", "full-access"],
-        ["approval-required", "auto-accept-edits", "auto", "full-access"],
-      ),
-    ).toEqual(["approval-required", "auto-accept-edits"]);
-    expect(
-      resolveAvailableRuntimeModes("ready", undefined, [
+      resolveAvailableRuntimeModes("warning", [
         "approval-required",
         "auto-accept-edits",
         "auto",
         "full-access",
       ]),
-    ).toEqual(["approval-required", "auto-accept-edits", "auto", "full-access"]);
+    ).toEqual(["approval-required", "auto-accept-edits"]);
+    expect(resolveAvailableRuntimeModes("ready", undefined)).toEqual([
+      "approval-required",
+      "auto-accept-edits",
+    ]);
   });
 
   it("lets selections override defaults and propagates them through dispatch", () => {

@@ -16,6 +16,22 @@ function fastModeDescriptor(
   return { id: "fastMode", label: "Fast Mode", type: "boolean", currentValue };
 }
 
+function serviceTierDescriptor(
+  currentValue: "default" | "priority" | "flex",
+): Extract<ProviderOptionDescriptor, { type: "select" }> {
+  return {
+    id: "serviceTier",
+    label: "Service Tier",
+    type: "select",
+    options: [
+      { id: "default", label: "Standard", isDefault: true },
+      { id: "priority", label: "Fast" },
+      { id: "flex", label: "Flex" },
+    ],
+    currentValue,
+  };
+}
+
 const EFFORT = selectDescriptor(
   "reasoningEffort",
   [
@@ -34,6 +50,7 @@ const CONTEXT_WINDOW = selectDescriptor(
 );
 
 const CLAUDE = ProviderDriverKind.make("claudeAgent");
+const CODEX = ProviderDriverKind.make("codex");
 
 function display(descriptors: ReadonlyArray<ProviderOptionDescriptor>) {
   return buildTraitsTriggerDisplay({
@@ -56,6 +73,33 @@ describe("buildTraitsTriggerDisplay", () => {
     expect(display([EFFORT, fastModeDescriptor(true), CONTEXT_WINDOW])).toEqual({
       label: "High · 1M",
       showFastModeIcon: true,
+    });
+  });
+
+  it("treats Codex standard and fast service tiers as fast mode states", () => {
+    const codexDisplay = (descriptors: ReadonlyArray<ProviderOptionDescriptor>) =>
+      buildTraitsTriggerDisplay({
+        provider: CODEX,
+        descriptors,
+        primarySelectDescriptorId: "reasoningEffort",
+        ultrathinkPromptControlled: false,
+      });
+
+    expect(codexDisplay([EFFORT, serviceTierDescriptor("default")])).toEqual({
+      label: "High",
+      showFastModeIcon: false,
+    });
+    expect(codexDisplay([EFFORT, serviceTierDescriptor("priority")])).toEqual({
+      label: "High",
+      showFastModeIcon: true,
+    });
+    expect(codexDisplay([EFFORT, serviceTierDescriptor("flex")])).toEqual({
+      label: "High · Flex",
+      showFastModeIcon: false,
+    });
+    expect(codexDisplay([serviceTierDescriptor("priority")])).toEqual({
+      label: "Fast",
+      showFastModeIcon: false,
     });
   });
 

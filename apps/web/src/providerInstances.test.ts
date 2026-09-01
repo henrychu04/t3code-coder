@@ -182,14 +182,14 @@ describe("deriveProviderEntriesByEnvironment", () => {
 });
 
 describe("resolveSelectableProviderInstance", () => {
-  it("returns the requested instance when it is enabled and available", () => {
+  it("falls back when the requested instance is not a built-in workspace provider", () => {
     const requested = ProviderInstanceId.make("claude_work");
     const providers = [
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: requested }),
     ];
 
-    expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
+    expect(resolveSelectableProviderInstance(providers, requested)).toBe("codex");
   });
 
   it("falls back to the first enabled and available instance", () => {
@@ -387,7 +387,6 @@ describe("resolveDefaultProviderModelSelection", () => {
   it.each([
     ["codex", "codex", "gpt-5.6"],
     ["claudeAgent", "claudeAgent", "claude-fable-5"],
-    ["cursor", "cursor", "composer-2"],
   ])("uses the only available %s instance", (driver, instanceId, modelSlug) => {
     const providers = [
       provider({
@@ -403,7 +402,7 @@ describe("resolveDefaultProviderModelSelection", () => {
     });
   });
 
-  it("preserves a valid stored selection including its options", () => {
+  it("falls back from a stored custom model on a built-in provider", () => {
     const providers = [
       provider({
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -414,6 +413,26 @@ describe("resolveDefaultProviderModelSelection", () => {
     const stored = {
       instanceId: ProviderInstanceId.make("claudeAgent"),
       model: "custom-model",
+      options: [{ id: "effort", value: "high" }],
+    };
+
+    expect(resolveDefaultProviderModelSelection(providers, stored)).toEqual({
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-8",
+    });
+  });
+
+  it("preserves a valid built-in stored selection including its options", () => {
+    const providers = [
+      provider({
+        provider: ProviderDriverKind.make("claudeAgent"),
+        instanceId: "claudeAgent",
+        models: [model("claude-opus-4-8")],
+      }),
+    ];
+    const stored = {
+      instanceId: ProviderInstanceId.make("claudeAgent"),
+      model: "claude-opus-4-8",
       options: [{ id: "effort", value: "high" }],
     };
 

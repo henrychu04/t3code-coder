@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  dedupeProviderSkillsByName,
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
@@ -23,6 +24,31 @@ describe("formatProviderSkillDisplayName", () => {
         name: "review-follow-up",
       }),
     ).toBe("Review Follow Up");
+  });
+});
+
+describe("dedupeProviderSkillsByName", () => {
+  it("keeps the first resolved skill and preserves unrelated skill order", () => {
+    const firstSkill = {
+      name: "branch-audit",
+      path: "/home/dev/.codex/skills/branch-audit/SKILL.md",
+      enabled: true,
+    };
+    const otherSkill = {
+      name: "browser",
+      path: "/home/dev/.agents/skills/browser/SKILL.md",
+      enabled: true,
+    };
+    const duplicateSkill = {
+      name: "Branch-Audit",
+      path: "/home/dev/.agents/skills/branch-audit/SKILL.md",
+      enabled: true,
+    };
+
+    expect(dedupeProviderSkillsByName([firstSkill, otherSkill, duplicateSkill])).toEqual([
+      firstSkill,
+      otherSkill,
+    ]);
   });
 });
 
@@ -66,16 +92,39 @@ describe("provider slash menu collisions", () => {
       ).map((command) => command.name),
     ).toEqual(["review"]);
   });
+
+  it("shows one row when enabled skills share a name", () => {
+    expect(
+      getProviderSkillsForSlashMenu([
+        {
+          name: "branch-audit",
+          path: "/home/dev/.codex/skills/branch-audit/SKILL.md",
+          enabled: true,
+        },
+        {
+          name: "browser",
+          path: "/home/dev/.agents/skills/browser/SKILL.md",
+          enabled: true,
+        },
+        {
+          name: "branch-audit",
+          path: "/home/dev/.agents/skills/branch-audit/SKILL.md",
+          enabled: true,
+        },
+      ]).map((skill) => skill.name),
+    ).toEqual(["branch-audit", "browser"]);
+  });
 });
 
 describe("resolveProviderSkillSourceKind", () => {
   it("marks plugin-backed skills as app installs", () => {
-    expect(
-      resolveProviderSkillSourceKind({
-        path: "/Users/julius/.claude/plugins/cache/openai-curated/github/skills/gh-fix-ci/SKILL.md",
-        scope: "user",
-      }),
-    ).toBe("app");
+    for (const path of [
+      "/Users/julius/.codex/plugins/cache/openai-curated/github/skills/gh-fix-ci/SKILL.md",
+      "/Users/julius/.claude/plugins/cache/openai-curated/github/skills/gh-fix-ci/SKILL.md",
+      "/Users/julius/.agents/plugins/github/skills/gh-fix-ci/SKILL.md",
+    ]) {
+      expect(resolveProviderSkillSourceKind({ path, scope: "user" })).toBe("app");
+    }
   });
 
   it("maps standard scopes to source kinds", () => {

@@ -396,10 +396,10 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
 
 /**
  * Build the traits trigger's text label plus whether the fast-mode bolt should
- * render. Fast mode is a lightning bolt when on and nothing at all when off —
- * "Normal" is the near-universal case and isn't worth the horizontal space. The
- * one exception is when fast mode is the only trait, where a bare bolt (or bare
- * chevron) would leave the trigger unreadable.
+ * render. Claude exposes fast mode as a boolean, while Codex exposes it through
+ * the Standard/Fast service tiers. In either form, fast mode is a lightning bolt
+ * when on and nothing at all when off. The one exception is when fast mode is
+ * the only trait, where a bare bolt (or bare chevron) would be unreadable.
  */
 export function buildTraitsTriggerDisplay(input: {
   provider: ProviderDriverKind;
@@ -407,14 +407,29 @@ export function buildTraitsTriggerDisplay(input: {
   primarySelectDescriptorId: string | null;
   ultrathinkPromptControlled: boolean;
 }): { label: string; showFastModeIcon: boolean } {
-  let hasFastMode = false;
+  let fastModeFallbackLabel: string | null = null;
   let fastModeEnabled = false;
   const labels: Array<string> = [];
   for (const descriptor of input.descriptors) {
     if (descriptor.id === "fastMode" && descriptor.type === "boolean") {
-      hasFastMode = true;
       fastModeEnabled = descriptor.currentValue === true;
+      fastModeFallbackLabel = fastModeEnabled ? "Fast" : "Normal";
       continue;
+    }
+    if (
+      input.provider === "codex" &&
+      descriptor.id === "serviceTier" &&
+      descriptor.type === "select"
+    ) {
+      const currentValue = getProviderOptionCurrentValue(descriptor);
+      const fastTier = descriptor.options.find(({ label }) => label === "Fast");
+      if (fastTier && (currentValue === "default" || currentValue === fastTier.id)) {
+        fastModeEnabled = currentValue === fastTier.id;
+        fastModeFallbackLabel =
+          descriptor.options.find(({ id }) => id === currentValue)?.label ??
+          (fastModeEnabled ? "Fast" : "Normal");
+        continue;
+      }
     }
     const label =
       input.ultrathinkPromptControlled && descriptor.id === input.primarySelectDescriptorId
@@ -430,8 +445,8 @@ export function buildTraitsTriggerDisplay(input: {
   // Only fall back to text when fast mode is genuinely the sole trait. Keying
   // off an empty label list alone would also catch descriptors that resolved to
   // no label at all, printing a bogus "Normal" for a model without fast mode.
-  if (labels.length === 0 && hasFastMode) {
-    return { label: fastModeEnabled ? "Fast" : "Normal", showFastModeIcon: false };
+  if (labels.length === 0 && fastModeFallbackLabel !== null) {
+    return { label: fastModeFallbackLabel, showFastModeIcon: false };
   }
   return { label: labels.join(" · "), showFastModeIcon: fastModeEnabled };
 }
@@ -494,6 +509,8 @@ export const TraitsPicker = memo(function TraitsPicker({
     </>
   ) : null;
 
+  const isCodexStyle = provider === "codex";
+
   return (
     <Menu
       open={isMenuOpen}
@@ -505,13 +522,28 @@ export const TraitsPicker = memo(function TraitsPicker({
         render={
           <ComposerControl
             variant={triggerVariant ?? "ghost"}
-            className={cn("shrink-0 whitespace-nowrap", triggerClassName)}
+            className={cn(
+              isCodexStyle
+                ? "min-w-0 max-w-40 shrink justify-start overflow-hidden whitespace-nowrap sm:max-w-48"
+                : "shrink-0 whitespace-nowrap",
+              triggerClassName,
+            )}
           />
         }
       >
-        {fastModeIcon}
-        <span>{triggerLabel}</span>
-        <ComposerControlChevron />
+        {isCodexStyle ? (
+          <span className="flex min-w-0 w-full items-center gap-1.5 overflow-hidden">
+            {fastModeIcon}
+            <span className="min-w-0 truncate">{triggerLabel}</span>
+            <ComposerControlChevron />
+          </span>
+        ) : (
+          <>
+            {fastModeIcon}
+            <span>{triggerLabel}</span>
+            <ComposerControlChevron />
+          </>
+        )}
       </MenuTrigger>
       <MenuPopup align="start">
         <TraitsMenuContent

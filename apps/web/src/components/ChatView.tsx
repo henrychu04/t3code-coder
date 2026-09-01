@@ -19,11 +19,13 @@ import {
   RuntimeMode,
   TerminalOpenInput,
 } from "@t3tools/contracts";
+import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
+import { type CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import {
   effectiveSettled,
   effectiveSnoozed,
@@ -265,6 +267,7 @@ import {
   buildLoadingThreadFromShell,
   buildThreadTurnInterruptInput,
   canUseOwnedFilesSurface,
+  codexArtifactTemplatePromptToAppend,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
   dismissBranchMismatchForSession,
@@ -2169,6 +2172,25 @@ function ChatViewContent(props: ChatViewProps) {
       focusComposer();
     });
   }, [focusComposer]);
+  const useArtifactTemplate = useCallback(
+    (template: CodexArtifactTemplate) => {
+      const composer = composerRef.current;
+      if (!composer) return;
+
+      const currentDraft = composer.getSendContext().prompt;
+      const prompt = codexArtifactTemplatePromptToAppend(currentDraft, template);
+      if (prompt !== null && !composer.insertTextAtEnd(prompt, { ensureLeadingBoundary: true })) {
+        toastManager.add({
+          type: "error",
+          title: "Unable to add to chat",
+          description: "The composer is busy; try again once it is ready.",
+        });
+        return;
+      }
+      scheduleComposerFocus();
+    },
+    [composerRef, scheduleComposerFocus],
+  );
   const addTerminalContextToDraft = useCallback(
     (selection: TerminalContextSelection) => {
       composerRef.current?.addTerminalContext(selection);
@@ -4390,12 +4412,17 @@ function ChatViewContent(props: ChatViewProps) {
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
         return;
       }
+      const pastedImageAttachments = followUp.pastedImageAttachmentIds.map((id) => ({
+        type: "image" as const,
+        id,
+      }));
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
+        pastedImageAttachments,
       });
       return;
     }
@@ -4469,6 +4496,9 @@ function ChatViewContent(props: ChatViewProps) {
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend,
     });
+    const pastedImageAttachments = extractComposerPastedImageAttachmentIds(outgoingMessageText).map(
+      (id) => ({ type: "image" as const, id }),
+    );
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       return;
     }
@@ -4650,6 +4680,7 @@ function ChatViewContent(props: ChatViewProps) {
             text: outgoingMessageText,
           },
           modelSelection: ctxSelectedModelSelection,
+          ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
           titleSeed: title,
           runtimeMode: ctxRuntimeMode,
           interactionMode,
@@ -4949,9 +4980,11 @@ function ChatViewContent(props: ChatViewProps) {
     async ({
       text,
       interactionMode: nextInteractionMode,
+      pastedImageAttachments,
     }: {
       text: string;
       interactionMode: "default" | "plan";
+      pastedImageAttachments: ReadonlyArray<{ readonly type: "image"; readonly id: string }>;
     }) => {
       if (
         !activeThread ||
@@ -5042,6 +5075,7 @@ function ChatViewContent(props: ChatViewProps) {
               text: outgoingMessageText,
             },
             modelSelection: ctxSelectedModelSelection,
+            ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
             titleSeed: activeThread.title,
             runtimeMode: ctxRuntimeMode,
             interactionMode: nextInteractionMode,
@@ -5595,6 +5629,7 @@ function ChatViewContent(props: ChatViewProps) {
                 onOpenTurnDiff={onOpenTurnDiff}
                 revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
                 onRevertUserMessage={onRevertUserMessage}
+                onUseArtifactTemplate={useArtifactTemplate}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 markdownCwd={gitCwd ?? undefined}
                 resolvedTheme={resolvedTheme}
