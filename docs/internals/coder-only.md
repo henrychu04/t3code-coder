@@ -37,13 +37,13 @@ terminate within five seconds, the gateway closes the helper instead of retainin
 The gateway translates frame-delimited browser RPC into newline-delimited helper RPC and does not
 persist those application messages.
 
-After the browser requests latency for a connected workspace, the gateway starts one additional
-foreground `coder ping` process for that workspace. It parses each pong into an in-memory latest
-round-trip value and sample timestamp and serves that value only through the loopback gateway.
-Repeated reads share the same process. The browser retains the last sample with a stale marker when
-updates stop and shows a slow-connection warning only after consecutive high latency samples. The
-ping is stopped with the exact workspace connection scope, and an unexpected exit is retried only
-when the browser requests latency again.
+When the browser requests latency for a connected workspace, the gateway measures the round-trip
+over the existing helper stdio connection by sending an RPC ping envelope and timing the pong. Each
+read performs at most one in-flight measurement per workspace, and concurrent reads share that
+measurement. The sample is served only through the loopback gateway. The browser retains the last
+sample with a stale marker when updates stop and shows a slow-connection warning only after
+consecutive high-latency samples. No dedicated ping process is started, and no latency traffic
+occurs when the browser is not polling.
 
 The header's workspace health card reads Coder's workspace health from `coder list --output json`.
 While the card is open, the browser refreshes that health and asks the gateway for workspace-scoped
@@ -113,7 +113,6 @@ removed, or the gateway exits.
 
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
-browser -> 127.0.0.1 gateway -> coder ping -> workspace agent
 browser -> 127.0.0.1 gateway -> coder ssh -> coder stat in connected workspace
 local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```

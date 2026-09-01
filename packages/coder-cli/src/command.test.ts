@@ -8,7 +8,6 @@ import {
   buildCoderHelperInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
-  buildCoderPingWorkspaceInvocation,
   buildCoderPortForwardInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
@@ -75,18 +74,6 @@ describe("Coder CLI command construction", () => {
         "list",
         "--output",
         "json",
-      ],
-    });
-    deepStrictEqual(buildCoderPingWorkspaceInvocation(deployment, workspace, options), {
-      executable: String.raw`C:\Program Files\Coder\coder.exe`,
-      args: [
-        "--global-config",
-        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--no-version-warning",
-        "--url",
-        "https://coder.example.gs.com",
-        "ping",
-        "equities-dev",
       ],
     });
     throws(() => buildCoderLoginInvocation(deployment, { globalConfig: " " }));

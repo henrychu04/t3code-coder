@@ -104,23 +104,6 @@ export function buildCoderListWorkspacesInvocation(
   );
 }
 
-export function buildCoderPingWorkspaceInvocation(
-  deploymentInput: CoderDeploymentProfile,
-  workspaceInput: CoderWorkspaceProfile,
-  options?: CoderInvocationOptions,
-): CoderInvocation {
-  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  const workspace = normalizeCoderWorkspaceProfile(workspaceInput);
-  if (workspace.deploymentId !== deployment.id) {
-    throw new Error("Coder workspace does not belong to the selected deployment.");
-  }
-  return invocation(
-    deployment,
-    [...CODER_GLOBAL_ARGS, "--url", deployment.url, "ping", workspace.workspace],
-    options,
-  );
-}
-
 export function buildCoderWorkspaceProbeInvocation(
   deploymentInput: CoderDeploymentProfile,
   workspaceInput: CoderWorkspaceProfile,

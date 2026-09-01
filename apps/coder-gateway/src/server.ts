@@ -24,7 +24,6 @@ import {
   buildCoderAuthStatusInvocation,
   buildCoderListWorkspacesInvocation,
   buildCoderLoginInvocation,
-  buildCoderPingWorkspaceInvocation,
   buildCoderRestartWorkspaceInvocation,
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
@@ -46,9 +45,9 @@ import {
   type CoderPortForwardExit,
 } from "@t3tools/coder-cli/portForward";
 import {
-  connectCoderWorkspacePing,
-  type CoderWorkspacePingConnection,
-} from "@t3tools/coder-cli/workspacePing";
+  measureCoderHelperLatency,
+  type CoderHelperLatencySample,
+} from "@t3tools/coder-cli/helperLatency";
 import {
   installCoderHelperWithScp,
   uploadCoderClipboardImageWithScp,
@@ -725,9 +724,6 @@ export interface LocalCoderGatewayEffectOptions {
   readonly connectPortForward?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderPortForwardConnection, unknown, Scope.Scope>;
-  readonly connectWorkspacePing?: (
-    invocation: CoderInvocation,
-  ) => Effect.Effect<CoderWorkspacePingConnection, unknown, Scope.Scope>;
   readonly readWorkspaceResourceUsage?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderWorkspaceResourceUsage, unknown>;
@@ -756,14 +752,13 @@ export function makeLocalCoderGateway(
     const workspaceAttemptCounters = new Map<string, number>();
     let workspaceDiagnosticEventId = 0;
     const workspaceSockets = new Map<string, WebSocket>();
-    const workspacePings = new Map<
+    const workspaceLatencyMeasurements = new Map<
       string,
       {
-        readonly connection: CoderWorkspacePingConnection;
         readonly helper: CoderHelperConnection;
+        readonly sample: Promise<CoderHelperLatencySample>;
       }
     >();
-    const workspacePingStarts = new Map<string, Promise<CoderWorkspacePingConnection>>();
     const pendingWorkspaceUpgrades = new Set<string>();
     const portForwardLifecycles = new Map<
       string,
@@ -821,7 +816,6 @@ export function makeLocalCoderGateway(
     const installHelper = options?.installHelper ?? installCoderHelperWithScp;
     const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
     const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
-    const openWorkspacePing = options?.connectWorkspacePing ?? connectCoderWorkspacePing;
     const readWorkspaceResourceUsage =
       options?.readWorkspaceResourceUsage ??
       ((invocation: CoderInvocation) =>
@@ -1109,8 +1103,7 @@ export function makeLocalCoderGateway(
         await claim.operation.catch(() => undefined);
         return closeWorkspaceConnection(workspaceId);
       }
-      workspacePings.delete(workspaceId);
-      workspacePingStarts.delete(workspaceId);
+      workspaceLatencyMeasurements.delete(workspaceId);
       if (claim.scope !== undefined) {
         await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
       }
@@ -1122,72 +1115,29 @@ export function makeLocalCoderGateway(
       );
     };
 
-    const ensureWorkspacePing = (workspaceId: string): Promise<CoderWorkspacePingConnection> => {
+    const measureWorkspaceLatency = (workspaceId: string): Promise<CoderHelperLatencySample> => {
       const state = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
       if (state._tag !== "Connected") {
         return Promise.reject(new Error("Coder workspace is not connected."));
       }
-      const existing = workspacePings.get(workspaceId);
-      if (existing?.helper === state.connection) return Promise.resolve(existing.connection);
-      const pending = workspacePingStarts.get(workspaceId);
-      if (pending !== undefined) return pending;
-
-      const start = runPromise(
-        Effect.gen(function* () {
-          const connectionConfig = profileConfig;
-          const workspace = connectionConfig.workspaces.find((entry) => entry.id === workspaceId);
-          const deployment =
-            workspace === undefined
-              ? undefined
-              : connectionConfig.deployments.find((entry) => entry.id === workspace.deploymentId);
-          if (workspace === undefined || deployment === undefined) {
-            return yield* Effect.fail(new Error("Unknown Coder workspace."));
-          }
-          const pingScope = yield* Scope.fork(state.scope, "sequential");
-          return yield* Effect.gen(function* () {
-            const connection = yield* openWorkspacePing(
-              buildCoderPingWorkspaceInvocation(
-                deployment,
-                workspace,
-                coderInvocationOptions(deployment.id),
-              ),
-            ).pipe(Scope.provide(pingScope));
-            const currentState = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
-            if (
-              currentState._tag !== "Connected" ||
-              currentState.connection !== state.connection ||
-              !workspaceConnectionIsCurrent(connectionConfig, profileConfig, workspaceId)
-            ) {
-              return yield* Effect.fail(new Error("Coder workspace connection changed."));
-            }
-            workspacePings.set(workspaceId, {
-              connection,
-              helper: state.connection,
-            });
-            runFork(
-              connection.closed.pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    if (workspacePings.get(workspaceId)?.connection === connection) {
-                      workspacePings.delete(workspaceId);
-                    }
-                  }),
-                ),
-                Effect.ensuring(Scope.close(pingScope, Exit.void)),
-              ),
-            );
-            return connection;
-          }).pipe(Effect.onError(() => Scope.close(pingScope, Exit.void)));
-        }),
-      );
-      workspacePingStarts.set(workspaceId, start);
+      const helper = state.connection;
+      const existing = workspaceLatencyMeasurements.get(workspaceId);
+      if (existing?.helper === helper) return existing.sample;
+      const sample = runPromise(measureCoderHelperLatency(helper)).then((result) => {
+        const current = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+        if (current._tag !== "Connected" || current.connection !== helper) {
+          throw new Error("Coder workspace connection changed.");
+        }
+        return result;
+      });
+      workspaceLatencyMeasurements.set(workspaceId, { helper, sample });
       const cleanup = () => {
-        if (workspacePingStarts.get(workspaceId) === start) {
-          workspacePingStarts.delete(workspaceId);
+        if (workspaceLatencyMeasurements.get(workspaceId)?.sample === sample) {
+          workspaceLatencyMeasurements.delete(workspaceId);
         }
       };
-      void start.then(cleanup, cleanup);
-      return start;
+      void sample.then(cleanup, cleanup);
+      return sample;
     };
 
     const ensurePortForward = async (
@@ -1517,8 +1467,7 @@ export function makeLocalCoderGateway(
                 ?.filter((entry) => entry.workspaceId === workspaceId)
                 .map((entry) => entry.id) ?? [];
             workspaceSockets.get(workspaceId)?.close(1012, "Coder workspace state is changing.");
-            workspacePings.delete(workspaceId);
-            workspacePingStarts.delete(workspaceId);
+            workspaceLatencyMeasurements.delete(workspaceId);
             if (claim.scope !== undefined) {
               await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
             }
@@ -1697,15 +1646,16 @@ export function makeLocalCoderGateway(
             return;
           }
           try {
-            const ping = await ensureWorkspacePing(workspaceId);
+            const sample = await measureWorkspaceLatency(workspaceId);
             sendText(
               response,
               200,
               "application/json; charset=utf-8",
-              JSON.stringify({ sample: ping.latestSample() }),
+              JSON.stringify({ sample }),
             );
           } catch (cause) {
-            const message = cause instanceof Error ? cause.message : "Coder workspace ping failed.";
+            const message =
+              cause instanceof Error ? cause.message : "Coder workspace latency failed.";
             sendText(
               response,
               message === "Coder workspace is not connected." ? 409 : 502,
@@ -2331,8 +2281,7 @@ export function makeLocalCoderGateway(
           webSocket.close(1001, "Gateway stopped.");
         }
         workspaceSockets.clear();
-        workspacePings.clear();
-        workspacePingStarts.clear();
+        workspaceLatencyMeasurements.clear();
         workspaceDiagnosticEvents.clear();
         workspaceAttemptCounters.clear();
         pendingWorkspaceUpgrades.clear();
