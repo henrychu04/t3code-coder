@@ -16,6 +16,7 @@ const isJsonRpcId = Schema.is(JsonRpcId);
 const isJsonRpcResponseEnvelope = Schema.is(JsonRpcResponseEnvelope);
 const isCodexAppServerError = Schema.is(CodexError.CodexAppServerError);
 const MAX_BUFFERED_RAW_MESSAGES = 32;
+const textEncoder = new TextEncoder();
 
 export interface CodexAppServerProtocolLogEvent {
   readonly direction: "incoming" | "outgoing";
@@ -37,6 +38,7 @@ export interface CodexAppServerIncomingRequest {
 export interface CodexAppServerPatchedProtocolOptions {
   readonly stdio: Stdio.Stdio;
   readonly terminationError?: Effect.Effect<CodexError.CodexAppServerError>;
+  readonly startupPreambleMaxBytes?: number;
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
   readonly logger?: (event: CodexAppServerProtocolLogEvent) => Effect.Effect<void, never>;
@@ -169,6 +171,8 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
     const terminationFailure = yield* Ref.make(Option.none<CodexError.CodexAppServerError>());
     const terminationSignal = yield* Deferred.make<void>();
     const activeRequestHandlers = yield* Ref.make(0);
+    const receivedWireMessage = yield* Ref.make(false);
+    const startupPreambleBytes = yield* Ref.make(0);
 
     const logProtocol = (event: CodexAppServerProtocolLogEvent) => {
       if (event.direction === "incoming" && !options.logIncoming) {
@@ -358,40 +362,76 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
       return yield* CodexError.CodexAppServerProtocolParseError.fromUnroutableMessage(message);
     });
 
+    const shouldIgnoreStartupPreamble = (line: string) => {
+      const maximumBytes = options.startupPreambleMaxBytes ?? 0;
+      if (maximumBytes <= 0 || line.trimStart().startsWith("{")) {
+        return Effect.succeed(false);
+      }
+      return Ref.get(receivedWireMessage).pipe(
+        Effect.flatMap((received) => {
+          if (received) return Effect.succeed(false);
+          const lineBytes = textEncoder.encode(line).byteLength + 1;
+          return Ref.modify(startupPreambleBytes, (current) => {
+            const next = current + lineBytes;
+            return [next <= maximumBytes, next] as const;
+          });
+        }),
+      );
+    };
+
+    const logDecodeFailure = (error: CodexError.CodexAppServerProtocolParseError) =>
+      logProtocol({
+        direction: "incoming",
+        stage: "decode_failed",
+        payload: {
+          operation: error.operation,
+          ...(error.method === undefined ? {} : { method: error.method }),
+          ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
+          ...(error.issueCount === undefined ? {} : { issueCount: error.issueCount }),
+          ...(error.issueKinds === undefined ? {} : { issueKinds: error.issueKinds }),
+          ...(error.maximumPathDepth === undefined
+            ? {}
+            : { maximumPathDepth: error.maximumPathDepth }),
+        },
+      });
+
     const handleLine = (line: string): Effect.Effect<void, CodexError.CodexAppServerError> => {
       if (line.trim().length === 0) {
         return Effect.void;
       }
-      return logProtocol({
-        direction: "incoming",
-        stage: "raw",
-        payload: line,
-      }).pipe(
-        Effect.flatMap(() => decodeWireMessage(line)),
-        Effect.tap((decoded) =>
-          logProtocol({
-            direction: "incoming",
-            stage: "decoded",
-            payload: decoded,
-          }),
-        ),
-        Effect.tapErrorTag("CodexAppServerProtocolParseError", (error) =>
-          logProtocol({
-            direction: "incoming",
-            stage: "decode_failed",
-            payload: {
-              operation: error.operation,
-              ...(error.method === undefined ? {} : { method: error.method }),
-              ...(error.requestId === undefined ? {} : { requestId: error.requestId }),
-              ...(error.issueCount === undefined ? {} : { issueCount: error.issueCount }),
-              ...(error.issueKinds === undefined ? {} : { issueKinds: error.issueKinds }),
-              ...(error.maximumPathDepth === undefined
-                ? {}
-                : { maximumPathDepth: error.maximumPathDepth }),
-            },
-          }),
-        ),
-        Effect.flatMap(routeMessage),
+      return decodeWireMessage(line).pipe(
+        Effect.matchEffect({
+          onFailure: (error) =>
+            shouldIgnoreStartupPreamble(line).pipe(
+              Effect.flatMap((ignore) => {
+                if (ignore) return Effect.void;
+                return logProtocol({
+                  direction: "incoming",
+                  stage: "raw",
+                  payload: line,
+                }).pipe(
+                  Effect.andThen(logDecodeFailure(error)),
+                  Effect.andThen(Effect.fail(error)),
+                );
+              }),
+            ),
+          onSuccess: (decoded) =>
+            logProtocol({
+              direction: "incoming",
+              stage: "raw",
+              payload: line,
+            }).pipe(
+              Effect.andThen(
+                logProtocol({
+                  direction: "incoming",
+                  stage: "decoded",
+                  payload: decoded,
+                }),
+              ),
+              Effect.andThen(routeMessage(decoded)),
+              Effect.andThen(Ref.set(receivedWireMessage, true)),
+            ),
+        }),
       );
     };
 

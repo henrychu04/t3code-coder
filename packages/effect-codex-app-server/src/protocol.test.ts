@@ -399,6 +399,86 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
     }),
   );
 
+  it.effect("ignores a bounded startup preamble without logging its contents", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const events: Array<CodexProtocol.CodexAppServerProtocolLogEvent> = [];
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio,
+        startupPreambleMaxBytes: 1024,
+        logIncoming: true,
+        logger: (event) =>
+          Effect.sync(() => {
+            events.push(event);
+          }),
+      });
+      const response = yield* transport.request("initialize", {}).pipe(Effect.forkScoped);
+      yield* Queue.take(output);
+
+      yield* Queue.offer(
+        input,
+        encoder.encode(
+          `[GS] Inspecting workspace environment\n${encodeUnknownJsonString({ id: 1, result: { ok: true } })}\n`,
+        ),
+      );
+
+      assert.deepEqual(yield* Fiber.join(response), { ok: true });
+      assert.notInclude(encodeUnknownJsonString(events), "Inspecting workspace environment");
+    }),
+  );
+
+  it.effect("fails closed when a startup preamble exceeds its byte limit", () =>
+    Effect.gen(function* () {
+      const { stdio, input } = yield* makeInMemoryStdio();
+      const termination = yield* Deferred.make<CodexError.CodexAppServerError>();
+      yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio,
+        startupPreambleMaxBytes: 8,
+        onTermination: (error) => Deferred.succeed(termination, error).pipe(Effect.asVoid),
+      });
+
+      yield* Queue.offer(input, encoder.encode("a startup banner\n"));
+
+      const error = yield* Deferred.await(termination);
+      assert.instanceOf(error, CodexError.CodexAppServerProtocolParseError);
+      assert.equal(error.operation, "decode-wire-message");
+    }),
+  );
+
+  it.effect("rejects malformed JSON and post-handshake text even when preambles are allowed", () =>
+    Effect.gen(function* () {
+      const malformed = yield* makeInMemoryStdio();
+      const malformedTermination = yield* Deferred.make<CodexError.CodexAppServerError>();
+      yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio: malformed.stdio,
+        startupPreambleMaxBytes: 1024,
+        onTermination: (error) => Deferred.succeed(malformedTermination, error).pipe(Effect.asVoid),
+      });
+      yield* Queue.offer(malformed.input, encoder.encode('{"id":1,\n'));
+
+      const malformedError = yield* Deferred.await(malformedTermination);
+      assert.instanceOf(malformedError, CodexError.CodexAppServerProtocolParseError);
+      assert.equal(malformedError.operation, "decode-wire-message");
+
+      const afterHandshake = yield* makeInMemoryStdio();
+      const postHandshakeTermination = yield* Deferred.make<CodexError.CodexAppServerError>();
+      yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
+        stdio: afterHandshake.stdio,
+        startupPreambleMaxBytes: 1024,
+        onTermination: (error) =>
+          Deferred.succeed(postHandshakeTermination, error).pipe(Effect.asVoid),
+      });
+      yield* Queue.offer(
+        afterHandshake.input,
+        encoder.encode('{"method":"server/ready"}\nlate banner\n'),
+      );
+
+      const postHandshakeError = yield* Deferred.await(postHandshakeTermination);
+      assert.instanceOf(postHandshakeError, CodexError.CodexAppServerProtocolParseError);
+      assert.equal(postHandshakeError.operation, "decode-wire-message");
+    }),
+  );
+
   it.effect("keeps only recent raw notifications after their callbacks run", () =>
     Effect.gen(function* () {
       const { stdio, input } = yield* makeInMemoryStdio();

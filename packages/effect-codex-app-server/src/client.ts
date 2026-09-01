@@ -18,6 +18,9 @@ import {
 } from "./_internal/shared.ts";
 import { makeChildStdio, makeTerminationError } from "./_internal/stdio.ts";
 
+// Managed workspace wrappers can emit a scanner banner before Codex starts its JSONL protocol.
+const CHILD_PROCESS_STARTUP_PREAMBLE_MAX_BYTES = 16 * 1024;
+
 export interface CodexAppServerClientOptions {
   readonly logIncoming?: boolean;
   readonly logOutgoing?: boolean;
@@ -88,6 +91,7 @@ export const make = Effect.fn("effect-codex-app-server/CodexAppServerClient.make
   stdio: Stdio.Stdio,
   options: CodexAppServerClientOptions = {},
   terminationError?: Effect.Effect<CodexError.CodexAppServerError>,
+  startupPreambleMaxBytes?: number,
 ): Effect.fn.Return<CodexAppServerClient["Service"], never, Scope.Scope> {
   const requestHandlers = new Map<string, ServerRequestHandler>();
   const notificationHandlers = new Map<string, Array<ServerNotificationHandler>>();
@@ -187,6 +191,7 @@ export const make = Effect.fn("effect-codex-app-server/CodexAppServerClient.make
   const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({
     stdio,
     ...(terminationError ? { terminationError } : {}),
+    ...(startupPreambleMaxBytes === undefined ? {} : { startupPreambleMaxBytes }),
     ...(options.logIncoming !== undefined ? { logIncoming: options.logIncoming } : {}),
     ...(options.logOutgoing !== undefined ? { logOutgoing: options.logOutgoing } : {}),
     ...(options.logger ? { logger: options.logger } : {}),
@@ -265,5 +270,10 @@ const makeChildProcessClient = Effect.fn(
   "effect-codex-app-server/CodexAppServerClient.makeChildProcessClient",
 )(function* (handle: ChildProcessSpawner.ChildProcessHandle, options: CodexAppServerClientOptions) {
   yield* Stream.runDrain(handle.stderr).pipe(Effect.ignore, Effect.forkScoped);
-  return yield* make(makeChildStdio(handle), options, makeTerminationError(handle));
+  return yield* make(
+    makeChildStdio(handle),
+    options,
+    makeTerminationError(handle),
+    CHILD_PROCESS_STARTUP_PREAMBLE_MAX_BYTES,
+  );
 });

@@ -4,6 +4,11 @@ let nextServerRequestId = 10_000;
 let pendingSkillsListRequestId: number | string | null = null;
 let pendingUserInputRequestId: number | null = null;
 
+const startupPreamble = process.env.CODEX_APP_SERVER_TEST_STARTUP_PREAMBLE;
+if (startupPreamble) {
+  process.stdout.write(`${startupPreamble}\n`);
+}
+
 const writeMessage = (message: unknown) => {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 };
