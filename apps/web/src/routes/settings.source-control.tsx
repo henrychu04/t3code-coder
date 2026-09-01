@@ -25,7 +25,7 @@ import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../hooks/useSettings";
-import { getCustomModelOptionsByInstance, resolveAppModelSelectionState } from "../modelSelection";
+import { getModelOptionsByInstance, resolveAppModelSelectionState } from "../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -59,7 +59,7 @@ function SourceControlPreferences() {
   const instanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
   );
-  const modelOptionsByInstance = getCustomModelOptionsByInstance(
+  const modelOptionsByInstance = getModelOptionsByInstance(
     settings,
     providers,
     activeSelection.instanceId,
