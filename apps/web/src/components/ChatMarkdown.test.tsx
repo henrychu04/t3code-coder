@@ -146,7 +146,13 @@ describe("ChatMarkdown", () => {
       ':codex-file-citation{purpose="output"}',
       ':codex-file-citation{path="/workspace/project/outputs/report.xlsx"',
     ]) {
-      const markup = renderToStaticMarkup(<ChatMarkdown cwd="/workspace/project" text={text} />);
+      const markup = renderToStaticMarkup(
+        <ChatMarkdown
+          cwd="/workspace/project"
+          threadRef={scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("thread"))}
+          text={text}
+        />,
+      );
 
       expect(markup).toContain(":codex-file-citation");
       expect(markup).not.toContain('type="button"');
