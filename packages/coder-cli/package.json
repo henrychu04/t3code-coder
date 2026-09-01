@@ -19,6 +19,10 @@
       "types": "./src/helperConnection.ts",
       "import": "./src/helperConnection.ts"
     },
+    "./helperLatency": {
+      "types": "./src/helperLatency.ts",
+      "import": "./src/helperLatency.ts"
+    },
     "./profile": {
       "types": "./src/profile.ts",
       "import": "./src/profile.ts"
@@ -26,10 +30,6 @@
     "./portForward": {
       "types": "./src/portForward.ts",
       "import": "./src/portForward.ts"
-    },
-    "./workspacePing": {
-      "types": "./src/workspacePing.ts",
-      "import": "./src/workspacePing.ts"
     },
     "./rpc": {
       "types": "./src/rpc.ts",

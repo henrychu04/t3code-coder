@@ -1036,41 +1036,40 @@ setTimeout(() => process.exit(0), 100);
     );
   });
 
-  it("streams one foreground Coder ping per connected workspace", async () => {
+  it("measures workspace latency over the connected helper connection", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);
     const configPath = NodePath.join(directory, "config.json");
-    const executablePath = NodePath.join(directory, "coder");
-    const invocationLogPath = NodePath.join(directory, "ping-invocations.txt");
-    const lifecycleLogPath = NodePath.join(directory, "ping-lifecycle.txt");
-    await NodeFS.writeFile(
-      executablePath,
-      `#!/usr/bin/env node
-import * as fs from "node:fs";
-fs.appendFileSync(${JSON.stringify(invocationLogPath)}, JSON.stringify(process.argv.slice(2)) + "\\n");
-fs.appendFileSync(${JSON.stringify(lifecycleLogPath)}, "started\\n");
-process.stdout.write("pong from henry/project-one proxied via DERP(test) in 37ms\\n");
-const timer = setInterval(() => process.stdout.write("pong from henry/project-one proxied via DERP(test) in 35ms\\n"), 25);
-process.on("SIGTERM", () => {
-  clearInterval(timer);
-  fs.appendFileSync(${JSON.stringify(lifecycleLogPath)}, "stopped\\n");
-  process.exit(0);
-});
-`,
-      { mode: 0o700 },
-    );
     let closeConnection: (() => void) | undefined;
     const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
       closeConnection = () => resolve({ code: 130, signal: null, expected: true });
     });
+    const rpcListeners = new Set<(message: unknown) => void>();
+    const sentRpc: unknown[] = [];
     const gateway = await startLocalCoderGateway({
       configPath,
       probeWorkspace: async () => undefined,
       connectHelper: async () => ({
         info: helperInfo,
         closed,
-        sendRpc: () => undefined,
-        onRpcMessage: () => () => undefined,
+        sendRpc: (message: unknown) => {
+          sentRpc.push(message);
+          if (
+            typeof message === "object" &&
+            message !== null &&
+            (message as { readonly _tag?: unknown })._tag === "Ping"
+          ) {
+            setTimeout(() => {
+              for (const listener of [...rpcListeners]) listener({ _tag: "Pong" });
+            }, 10);
+          }
+        },
+        onRpcMessage: (listener: (message: unknown) => void) => {
+          rpcListeners.add(listener);
+          return () => {
+            rpcListeners.delete(listener);
+          };
+        },
         close: () => closeConnection?.(),
       }),
     });
@@ -1086,7 +1085,6 @@ process.on("SIGTERM", () => {
             id: "goldman",
             name: "Goldman",
             url: "https://coder.example.gs.com",
-            executable: executablePath,
           },
         ],
         workspaces: [
@@ -1118,57 +1116,41 @@ process.on("SIGTERM", () => {
       200,
     );
 
-    let sample: { readonly latencyMs: number; readonly sampledAt: number } | null = null;
-    for (let attempt = 0; attempt < 50 && sample === null; attempt += 1) {
-      const response = await request({
-        url: `${gateway.url}/api/workspaces/project-one/latency`,
-      });
-      strictEqual(response.statusCode, 200);
-      sample = (
-        JSON.parse(response.body) as {
-          sample: { readonly latencyMs: number; readonly sampledAt: number } | null;
-        }
+    const readLatency = async () =>
+      (
+        JSON.parse(
+          (
+            await request({
+              url: `${gateway.url}/api/workspaces/project-one/latency`,
+            })
+          ).body,
+        ) as { sample: { readonly latencyMs: number; readonly sampledAt: number } | null }
       ).sample;
-      if (sample === null) await new Promise((resolve) => setTimeout(resolve, 10));
-    }
-    strictEqual(sample?.latencyMs === 37 || sample?.latencyMs === 35, true);
-    strictEqual(typeof sample?.sampledAt, "number");
-    strictEqual(
-      (
-        await request({
-          url: `${gateway.url}/api/workspaces/project-one/latency`,
-        })
-      ).statusCode,
-      200,
-    );
-    const invocations = (await NodeFS.readFile(invocationLogPath, "utf8"))
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line) as string[]);
-    strictEqual(invocations.length, 1);
-    deepStrictEqual(invocations[0], [
-      "--global-config",
-      NodePath.join(directory, "coder-profiles", "goldman"),
-      "--no-version-warning",
-      "--url",
-      "https://coder.example.gs.com",
-      "ping",
-      "henry/project-one",
-    ]);
-    const connectedDiagnostics = JSON.parse(
-      (
-        await request({
-          url: `${gateway.url}/api/workspaces/project-one/diagnostics`,
-        })
-      ).body,
-    ) as { events: Array<{ phase: string; status: string }> };
+    const [sharedA, sharedB] = await Promise.all([readLatency(), readLatency()]);
+    if (sharedA === null || sharedB === null) throw new Error("Expected latency samples.");
+    strictEqual(sharedA.latencyMs >= 0, true);
+    strictEqual(typeof sharedA.sampledAt, "number");
+    deepStrictEqual(sharedA, sharedB);
     deepStrictEqual(
-      connectedDiagnostics.events.map(({ phase, status }) => ({ phase, status })),
-      [
-        { phase: "preflight", status: "completed" },
-        { phase: "negotiating_helper", status: "completed" },
-        { phase: "connected", status: "completed" },
-      ],
+      sentRpc.filter(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { readonly _tag?: unknown })._tag === "Ping",
+      ).length,
+      1,
+    );
+    const sequential = await readLatency();
+    if (sequential === null) throw new Error("Expected a latency sample.");
+    strictEqual(sequential.latencyMs >= 0, true);
+    deepStrictEqual(
+      sentRpc.filter(
+        (message) =>
+          typeof message === "object" &&
+          message !== null &&
+          (message as { readonly _tag?: unknown })._tag === "Ping",
+      ).length,
+      2,
     );
 
     strictEqual(
@@ -1182,8 +1164,12 @@ process.on("SIGTERM", () => {
       200,
     );
     strictEqual(
-      (await NodeFS.readFile(lifecycleLogPath, "utf8")).trim().split("\n").at(-1),
-      "stopped",
+      (
+        await request({
+          url: `${gateway.url}/api/workspaces/project-one/latency`,
+        })
+      ).statusCode,
+      409,
     );
     const disconnectedDiagnostics = JSON.parse(
       (
