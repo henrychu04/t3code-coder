@@ -246,6 +246,7 @@ import {
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
 import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ComposerSurface } from "./chat/ComposerSurface";
 import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
@@ -5619,7 +5620,7 @@ function ChatViewContent(props: ChatViewProps) {
                 ref={attachDraftHeroTransitionGroupRef}
                 className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
-                <div className="pointer-events-auto relative z-10">
+                <div className="group/composer-stack pointer-events-auto relative z-10">
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
@@ -5637,13 +5638,7 @@ function ChatViewContent(props: ChatViewProps) {
                           activeProjectTitle={activeProject?.title ?? null}
                         />
                       </div>
-                      <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
                     </div>
-                  ) : (
-                    <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                  )}
-                  {threadSyncPhase && !activeEnvironmentUnavailable ? (
-                    <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
                   <div
                     className="relative"
@@ -5653,14 +5648,12 @@ function ChatViewContent(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <div
-                      className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
-                        externalComposerDrawerAttached && "chat-composer-glass-shell-attached",
-                        showComposerContextStrip && "chat-composer-glass-shell-with-context",
-                      )}
-                    >
-                      <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                    <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
+                      <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
+                      {threadSyncPhase && !activeEnvironmentUnavailable ? (
+                        <ThreadSyncStatusPill phase={threadSyncPhase} />
+                      ) : null}
+                      <ComposerSurface.Host>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}
@@ -5734,7 +5727,7 @@ function ChatViewContent(props: ChatViewProps) {
                             scheduleComposerFocus={scheduleComposerFocus}
                           />
                         </div>
-                      </div>
+                      </ComposerSurface.Host>
                       <div className="min-h-0">
                         <div
                           data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
@@ -5769,7 +5762,7 @@ function ChatViewContent(props: ChatViewProps) {
                           )}
                         </div>
                       </div>
-                    </div>
+                    </ComposerSurface.Shell>
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
