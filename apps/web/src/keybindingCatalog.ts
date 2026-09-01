@@ -7,7 +7,7 @@ import {
 export interface KeybindingActionDefinition {
   readonly command: KeybindingCommand;
   readonly label: string;
-  readonly category: "Files" | "Navigation" | "Panels" | "Chat" | "Terminal" | "Scripts";
+  readonly category: "Files" | "Navigation" | "Panels" | "Chat" | "Terminal";
 }
 
 export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [

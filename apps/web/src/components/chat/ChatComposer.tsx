@@ -113,6 +113,16 @@ import {
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
 import { uploadCoderClipboardImage } from "../../coder/api";
 import { coderWorkspaceIdForEnvironment } from "../../coder/environmentStore";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
+import { getTerminalFocusOwner } from "../../lib/terminalFocus";
+import {
+  MAX_STASH_ENTRIES,
+  type PromptStashEntry,
+  usePromptStashStore,
+} from "../../promptStashStore";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../../keybindings";
+import { ComposerStashBadge } from "./ComposerStashBadge";
+import { ComposerStashMenu } from "./ComposerStashMenu";
 
 type ComposerCommandMenuPosition = {
   bottom: number;
@@ -971,6 +981,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const [composerMenuAnchor, setComposerMenuAnchor] = useState<HTMLDivElement | null>(null);
   const [isTasksDrawerOpen, setIsTasksDrawerOpen] = useState(false);
+  const [isStashMenuOpen, setIsStashMenuOpen] = useState(false);
+  const [stashPulse, setStashPulse] = useState<{ key: number; active: boolean }>({
+    key: 0,
+    active: false,
+  });
   const isMobileViewport = useMediaQuery("max-sm");
   const isComposerCollapsedMobile =
     isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
@@ -992,6 +1007,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
   const clipboardImageUploadInFlightRef = useRef(false);
+  const stashPulseKeyRef = useRef(0);
+  const stashPulseTimeoutRef = useRef<number | null>(null);
 
   // ------------------------------------------------------------------
   // Derived: composer send state
@@ -1004,6 +1021,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         supplementalContextCount: composerReviewComments.length,
       }),
     [composerReviewComments.length, composerTerminalContexts, prompt],
+  );
+
+  // ------------------------------------------------------------------
+  // Prompt stash
+  // ------------------------------------------------------------------
+  const stashQueue = usePromptStashStore((state) => state.entries);
+  const stashEntryToQueue = usePromptStashStore((state) => state.stashEntry);
+  const takeStashEntry = usePromptStashStore((state) => state.takeEntry);
+  const stashShortcutLabel = useMemo(
+    () => shortcutLabelForCommand(keybindings, "composer.stash"),
+    [keybindings],
   );
 
   // ------------------------------------------------------------------
@@ -1941,6 +1969,239 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsTasksDrawerOpen(false);
   }, [activeThreadId]);
 
+  // ------------------------------------------------------------------
+  // Prompt stash: callbacks
+  // ------------------------------------------------------------------
+  useEffect(() => {
+    return () => {
+      if (stashPulseTimeoutRef.current !== null) {
+        window.clearTimeout(stashPulseTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  /** Briefly highlight the badge so the save registers without a flourish. */
+  const pulseStashBadge = useCallback(() => {
+    stashPulseKeyRef.current += 1;
+    setStashPulse({ key: stashPulseKeyRef.current, active: true });
+    if (stashPulseTimeoutRef.current !== null) {
+      window.clearTimeout(stashPulseTimeoutRef.current);
+    }
+    stashPulseTimeoutRef.current = window.setTimeout(() => {
+      stashPulseTimeoutRef.current = null;
+      setStashPulse((current) => ({ ...current, active: false }));
+    }, 1200);
+  }, []);
+
+  const closeStashMenu = useCallback(() => {
+    setIsStashMenuOpen(false);
+  }, []);
+  const toggleStashMenu = useCallback(() => {
+    if (isComposerCollapsedMobile) {
+      expandMobileComposer();
+      setIsStashMenuOpen(true);
+      return;
+    }
+    setIsStashMenuOpen((open) => !open);
+  }, [expandMobileComposer, isComposerCollapsedMobile]);
+
+  const stashCurrentPrompt = useCallback(() => {
+    // Terminal-context placeholders reference live sessions the stash can't
+    // round-trip, so they are stripped from the stashed prompt.
+    const stashedPrompt = promptRef.current
+      .split(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)
+      .join("")
+      .trim();
+    if (stashedPrompt.length === 0) {
+      setIsStashMenuOpen((open) => !open);
+      return;
+    }
+    const { evicted, written, durable } = stashEntryToQueue({
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      environmentId,
+      prompt: stashedPrompt,
+    });
+
+    // Clearing the composer is only safe once the write actually landed.
+    // If it was rejected (quota) the store has already rolled itself back,
+    // so leave the composer untouched rather than making it the second
+    // casualty of a reload.
+    if (!written) {
+      toastManager.add({
+        type: "error",
+        title: "Could not stash this prompt",
+        description:
+          "Browser storage rejected the write, so the composer was left as-is. Free up site data and try again.",
+        data: { hideCopyButton: true },
+      });
+      return;
+    }
+    // Written but only into the in-memory fallback (localStorage blocked):
+    // the entry is visible and restorable this session, so proceed with the
+    // clear, but say it won't survive a reload.
+    if (!durable) {
+      toastManager.add({
+        type: "warning",
+        title: "Stashed prompt will not survive a reload",
+        description:
+          "Browser storage is unavailable, so this stash is kept in memory only for this session.",
+        data: { hideCopyButton: true },
+      });
+    }
+
+    // Only the prompt is cleared — terminal contexts, review comments, and
+    // model selections are not stashable, so destroying them here would be
+    // unrecoverable or simply wrong to carry along.
+    promptRef.current = "";
+    setComposerDraftPrompt(composerDraftTarget, "");
+    setComposerCursor(0);
+    setComposerTrigger(null);
+    pulseStashBadge();
+
+    if (evicted) {
+      toastManager.add({
+        type: "warning",
+        title: "Oldest stashed prompt discarded",
+        description: `The stash holds ${MAX_STASH_ENTRIES} prompts; the oldest was removed to make room.`,
+        data: { hideCopyButton: true },
+      });
+    }
+  }, [
+    composerDraftTarget,
+    environmentId,
+    pulseStashBadge,
+    promptRef,
+    setComposerDraftPrompt,
+    stashEntryToQueue,
+  ]);
+
+  const restoreStashEntry = useCallback(
+    (entry: PromptStashEntry) => {
+      // Remove first so a double activation (click + Enter) can't restore twice.
+      const { entry: taken, durable } = takeStashEntry(entry.id);
+      if (!taken) return;
+      if (!durable) {
+        toastManager.add({
+          type: "warning",
+          title: "Restored prompt may reappear in the stash",
+          description:
+            "Browser storage rejected the update, so this entry could still be there after a reload.",
+          data: { hideCopyButton: true },
+        });
+      }
+      setIsStashMenuOpen(false);
+
+      const currentPrompt = promptRef.current;
+      const nextPrompt = currentPrompt.trim().length
+        ? `${currentPrompt.replace(/\s+$/, "")}\n\n${entry.prompt}`
+        : entry.prompt;
+      const promptChanged = nextPrompt !== currentPrompt;
+      if (promptChanged) {
+        promptRef.current = nextPrompt;
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+        setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
+        setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
+      }
+
+      // Pasted images ride in the prompt as workspace file links, and those
+      // paths only exist in the workspace that uploaded them.
+      if (entry.environmentId !== environmentId) {
+        toastManager.add({
+          type: "warning",
+          title: "Prompt came from a different workspace",
+          description: "Workspace file links in this prompt may not resolve here.",
+          data: { hideCopyButton: true },
+        });
+      }
+
+      // Deliberately no model/provider restore: the stash exists to carry a
+      // prompt across threads and providers, so whatever the composer has
+      // selected right now stays selected.
+
+      if (promptChanged) {
+        window.requestAnimationFrame(() => {
+          composerEditorRef.current?.focusAtEnd();
+        });
+      }
+    },
+    [
+      composerDraftTarget,
+      composerEditorRef,
+      environmentId,
+      promptRef,
+      setComposerDraftPrompt,
+      takeStashEntry,
+    ],
+  );
+
+  const deleteStashEntry = useCallback(
+    (entry: PromptStashEntry) => {
+      const { durable } = takeStashEntry(entry.id);
+      if (!durable) {
+        toastManager.add({
+          type: "warning",
+          title: "Stash entry may come back",
+          description:
+            "Browser storage rejected the delete, so this prompt could reappear after a reload.",
+          data: { hideCopyButton: true },
+        });
+      }
+    },
+    [takeStashEntry],
+  );
+
+  useEffect(() => {
+    const handler = (event: globalThis.KeyboardEvent) => {
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: {
+          terminalFocus: getTerminalFocusOwner() !== null,
+          terminalOpen,
+          modelPickerOpen: isComposerModelPickerOpen,
+        },
+      });
+      if (command !== "composer.stash") return;
+      // Always claim the shortcut so the browser save dialog never opens,
+      // even when the composer is in a state that can't stash.
+      event.preventDefault();
+      event.stopPropagation();
+      if (isCommandPaletteOpen()) {
+        return;
+      }
+      if (pendingUserInputs.length > 0 && !isComposerApprovalState) {
+        setIsStashMenuOpen((open) => !open);
+        return;
+      }
+      if (isComposerApprovalState || projectSelectionRequired || activePendingProgress !== null) {
+        return;
+      }
+      stashCurrentPrompt();
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [
+    activePendingProgress,
+    isComposerApprovalState,
+    isComposerModelPickerOpen,
+    keybindings,
+    pendingUserInputs.length,
+    projectSelectionRequired,
+    stashCurrentPrompt,
+    terminalOpen,
+  ]);
+
+  // Close the stash menu whenever the trigger-driven command menu opens so
+  // the two popovers never stack in the same layer, and when the user
+  // resumes typing (the menu is a transient picker, not a panel).
+  useEffect(() => {
+    if (composerMenuOpen) {
+      setIsStashMenuOpen(false);
+    }
+  }, [composerMenuOpen]);
+  useEffect(() => {
+    setIsStashMenuOpen(false);
+  }, [prompt]);
+
   const insertComposerTextAtEnd = (
     text: string,
     options?: { ensureLeadingBoundary?: boolean },
@@ -2403,6 +2664,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               />
             </ComposerBanner.Attachment>
           ) : null}
+          {isStashMenuOpen && !isComposerApprovalState ? (
+            <ComposerStashMenu
+              entries={stashQueue}
+              stashShortcutLabel={stashShortcutLabel}
+              onRestore={restoreStashEntry}
+              onDelete={deleteStashEntry}
+              onClose={closeStashMenu}
+            />
+          ) : null}
         </ComposerBanner.Column>
       </ComposerBanner.Dock>
       <div className="relative">
@@ -2665,6 +2935,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       />
                     </>
                   )}
+
+                  <ComposerStashBadge
+                    count={stashQueue.length}
+                    menuOpen={isStashMenuOpen}
+                    pulseKey={stashPulse.key}
+                    pulsing={stashPulse.active}
+                    onToggleMenu={toggleStashMenu}
+                  />
                 </div>
 
                 {/* Right side: send / stop button */}
