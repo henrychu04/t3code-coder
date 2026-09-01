@@ -52,6 +52,14 @@ export interface OrchestrationEventStoreShape {
    * @returns Stream containing all stored events.
    */
   readonly readAll: () => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
+
+  /** Check whether an aggregate changed after a snapshot sequence. */
+  readonly hasEventAfter: (input: {
+    readonly aggregateKind: OrchestrationEvent["aggregateKind"];
+    readonly aggregateId: string;
+    readonly type?: OrchestrationEvent["type"];
+    readonly sequenceExclusive: number;
+  }) => Effect.Effect<boolean, OrchestrationEventStoreError>;
 }
 
 /**

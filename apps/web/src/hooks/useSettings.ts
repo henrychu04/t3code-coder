@@ -220,8 +220,9 @@ export function mergeEnvironmentSettings(
       ? undefined
       : clientSettings.providerPreferencesByEnvironment[environmentId];
   return {
-    ...serverSettings,
+    // Server-owned values win over retired keys from older client persistence.
     ...clientSettings,
+    ...serverSettings,
     favorites: providerPreferences?.favorites ?? clientSettings.favorites,
     providerModelPreferences:
       providerPreferences?.providerModelPreferences ?? clientSettings.providerModelPreferences,

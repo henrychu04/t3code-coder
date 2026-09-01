@@ -3005,4 +3005,46 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
     expect(thread?.session?.activeTurnId).toBeNull();
   });
+
+  it("stops a ready provider session after automatic settlement", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-for-auto-settle"),
+        threadId: ThreadId.make("thread-1"),
+        session: {
+          threadId: ThreadId.make("thread-1"),
+          status: "ready",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex_work"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      }),
+    );
+    const beforeSettlement = await harness.readModel();
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.auto-settle",
+        commandId: CommandId.make("cmd-auto-settle-with-session"),
+        threadId: ThreadId.make("thread-1"),
+        snapshotSequence: beforeSettlement.snapshotSequence,
+      }),
+    );
+
+    await waitFor(() => harness.stopSession.mock.calls.length === 1);
+    await harness.drain();
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.settledOverride).toBe("settled");
+    expect(thread?.session?.status).toBe("stopped");
+    expect(thread?.session?.providerInstanceId).toBe(ProviderInstanceId.make("codex_work"));
+  });
 });

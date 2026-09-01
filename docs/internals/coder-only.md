@@ -80,6 +80,14 @@ GitLab merge-request diffs are paged by file and capped below the gateway's 8 Mi
 host-backed full-file expansion is capped at 1 MiB of CLI output. These reads remain in browser or
 helper memory and are not persisted by the gateway.
 
+Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
+settings at startup, after relevant settings changes, and once per minute, including while no
+browser is connected. It resolves saved branches to GitLab merge requests without changing the
+checkout and dispatches a guarded internal settlement command through the normal orchestration
+engine. The engine rejects settlement if the thread changed after the reactor snapshot or still
+has live background work. Clients render the resulting persisted settlement state instead of
+deriving it from local timers or merge-request data.
+
 T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
 report whether a template update is available. It does not implicitly connect to a stopped
 workspace because Coder SSH would start it without an explicit user action. Starting, stopping,

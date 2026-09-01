@@ -140,7 +140,6 @@ export const ChatHeader = memo(function ChatHeader({
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
-    changeRequest: null,
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);

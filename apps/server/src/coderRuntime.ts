@@ -23,6 +23,7 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import { CheckpointReactor } from "./orchestration/Services/CheckpointReactor.ts";
@@ -191,6 +192,7 @@ const CoderRuntimeFeaturesLive = Layer.mergeAll(
   ProviderCommandReactorLive,
   CheckpointReactorLive,
   ThreadDeletionReactorLive,
+  ThreadSettlementReactor.layer,
 ).pipe(
   Layer.provideMerge(TextGeneration.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -234,6 +236,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
     const providerCommandReactor = yield* ProviderCommandReactor;
     const checkpointReactor = yield* CheckpointReactor;
     const threadDeletionReactor = yield* ThreadDeletionReactor;
+    const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
 
     return OrchestrationReactor.OrchestrationReactor.of({
       start: Effect.fn("coderOrchestrationReactor.start")(function* () {
@@ -241,6 +244,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
         yield* providerCommandReactor.start();
         yield* checkpointReactor.start();
         yield* threadDeletionReactor.start();
+        yield* threadSettlementReactor.start();
       }),
     });
   }),

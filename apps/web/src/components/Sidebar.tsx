@@ -19,7 +19,6 @@ import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import {
   canSnooze,
-  effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
@@ -102,7 +101,6 @@ import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import { useNowMinute } from "../hooks/useNowMinute";
 import { useEnvironmentKeybindings, useEnvironments } from "../state/environments";
 import { useActiveEnvironmentId, useProjects, useThreadShells } from "../state/entities";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -1708,9 +1706,6 @@ export default function Sidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
   const activeEnvironmentId = useActiveEnvironmentId();
   const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
-  const autoSettleAfterDays = useClientSettings((s) => s.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((s) => s.sidebarAutoSettleOnMerge);
-  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const sidebarProjectSortOrder = useClientSettings((s) => s.sidebarProjectSortOrder);
@@ -1905,9 +1900,6 @@ export default function Sidebar() {
     [projectGroups],
   );
 
-  // now is quantized to the minute so effectiveSettled memoization doesn't
-  // churn on every render; auto-settle thresholds are day-granular anyway.
-  const nowMinute = useNowMinute();
   // Snooze wake times are second-precise, so classifying with the quantized
   // minute would hold a woken thread on the shelf for up to a minute. The
   // tick is a plain counter bumped exactly at the next wake boundary (armed
@@ -2021,7 +2013,6 @@ export default function Sidebar() {
     settledThreads,
     snoozeNow,
   } = useMemo(() => {
-    const now = `${nowMinute}:00.000Z`;
     // Snooze classification uses a REAL clock, not the quantized minute:
     // wake times are second-precise and a woken thread must not linger on
     // the shelf for the rest of the minute. snoozeWakeTick re-runs this
@@ -2047,29 +2038,10 @@ export default function Sidebar() {
         serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement === true;
       const supportsSnooze =
         serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSnooze === true;
-      const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-      const snapshot = changeRequestSnapshotByKey.get(threadKey);
-      const changeRequest =
-        snapshot != null &&
-        (thread.linkedPullRequest == null
-          ? thread.worktreePath === null || snapshot.branch === thread.branch
-          : snapshot.linkedPullRequest?.projectId === thread.linkedPullRequest.projectId &&
-            snapshot.linkedPullRequest.repository === thread.linkedPullRequest.repository &&
-            snapshot.linkedPullRequest.number === thread.linkedPullRequest.number)
-          ? snapshot.pr
-          : null;
       // Snooze outranks settlement and pinning until the thread wakes.
       if (supportsSnooze && effectiveSnoozed(thread, { now: preciseNow })) {
         snoozed.push(thread);
-      } else if (
-        supportsSettlement &&
-        effectiveSettled(thread, {
-          now,
-          autoSettleAfterDays,
-          autoSettleOnMerge,
-          changeRequest,
-        })
-      ) {
+      } else if (supportsSettlement && thread.settledOverride === "settled") {
         settled.push(thread);
       } else if (thread.pinnedAt != null) {
         pinned.push(thread);
@@ -2103,16 +2075,7 @@ export default function Sidebar() {
       settledThreads: sortSettledThreadsForSidebar(settled),
       snoozeNow: preciseNow,
     };
-  }, [
-    autoSettleAfterDays,
-    autoSettleOnMerge,
-    changeRequestSnapshotByKey,
-    nowMinute,
-    scopedProjectKeys,
-    serverConfigs,
-    snoozeWakeTick,
-    threads,
-  ]);
+  }, [scopedProjectKeys, serverConfigs, snoozeWakeTick, threads]);
 
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");

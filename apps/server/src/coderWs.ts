@@ -68,6 +68,7 @@ import {
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { isOrchestrationCommandRejection } from "./orchestration/Errors.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -91,6 +92,18 @@ const SHELL_CURSOR_MAX_EVENT_GAP = 250;
 
 interface ThreadSnapshotProjectionQueries {
   readonly getThreadDetailSnapshot: ProjectionSnapshotQuery.ProjectionSnapshotQueryShape["getThreadDetailSnapshot"];
+}
+
+export function toCoderDispatchError(
+  cause: unknown,
+  fallbackMessage: string,
+): OrchestrationDispatchCommandError {
+  return isDispatchError(cause)
+    ? cause
+    : new OrchestrationDispatchCommandError({
+        message: isOrchestrationCommandRejection(cause) ? cause.message : fallbackMessage,
+        cause,
+      });
 }
 
 export const getProjectedThreadSnapshotWithinBudget = Effect.fn(
@@ -392,8 +405,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const review = yield* ReviewService.ReviewService;
     const terminals = yield* TerminalManager.TerminalManager;
 
-    const toDispatchError = (cause: unknown, message: string) =>
-      isDispatchError(cause) ? cause : new OrchestrationDispatchCommandError({ message, cause });
+    const toDispatchError = toCoderDispatchError;
     const randomUuid = crypto.randomUUIDv4.pipe(
       Effect.mapError((cause) => toDispatchError(cause, "Failed to create a command identifier.")),
     );

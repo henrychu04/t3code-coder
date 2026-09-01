@@ -3447,9 +3447,7 @@ function ChatViewContent(props: ChatViewProps) {
         : null,
     [activeThreadBranch, activeWorktreePath, envMode, gitStatusQuery.data?.refName, isServerThread],
   );
-  // Settled state of the open thread, resolved exactly like the sidebar
-  // partition (same shell, same capability gate, same PR auto-settle input)
-  // so the banner and the sidebar row never disagree.
+  // The server-projected settled state keeps the banner and sidebar in sync.
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const activeComposerTasksProgress = useMemo(() => {
     if (!activeLatestTurn || latestTurnSettled || activePlan?.turnId !== activeLatestTurn.turnId) {
@@ -3469,17 +3467,6 @@ function ChatViewContent(props: ChatViewProps) {
     activeComposerTasksProgress && activePlan && activePlan.turnId === activeLatestTurn?.turnId
       ? activePlan.steps
       : null;
-  const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = useClientSettings((settings) => settings.sidebarAutoSettleOnMerge);
-  const activeThreadPrState = activeThreadPr?.state ?? null;
-  const activeThreadPrUpdatedAt = activeThreadPr?.updatedAt ?? null;
-  const activeThreadChangeRequest = useMemo(
-    () =>
-      activeThreadPrState === null
-        ? null
-        : { state: activeThreadPrState, updatedAt: activeThreadPrUpdatedAt },
-    [activeThreadPrState, activeThreadPrUpdatedAt],
-  );
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
@@ -3534,22 +3521,8 @@ function ChatViewContent(props: ChatViewProps) {
     );
     return lastVisitedMs < wokeAtMs;
   }, [activeLatestTurn?.completedAt, activeThreadLastVisitedAt, activeThreadWokeAt]);
-  const activeThreadSettled = useMemo(() => {
-    if (activeThreadShell === null || !supportsSettlement) return false;
-    return effectiveSettled(activeThreadShell, {
-      now: `${nowMinute}:00.000Z`,
-      autoSettleAfterDays,
-      autoSettleOnMerge,
-      changeRequest: activeThreadChangeRequest,
-    });
-  }, [
-    activeThreadChangeRequest,
-    activeThreadShell,
-    autoSettleAfterDays,
-    autoSettleOnMerge,
-    nowMinute,
-    supportsSettlement,
-  ]);
+  const activeThreadSettled =
+    supportsSettlement && activeThreadShell?.settledOverride === "settled";
   const unsettleThreadMutation = useAtomCommand(threadEnvironment.unsettle, {
     reportFailure: false,
   });

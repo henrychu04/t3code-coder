@@ -1,6 +1,4 @@
-import { effectiveSettled } from "@t3tools/client-runtime/state/thread-settled";
-import type { OrchestrationThreadShell } from "@t3tools/contracts";
-import { ProjectId, ProviderInstanceId, ThreadId, type VcsStatusResult } from "@t3tools/contracts";
+import { ProjectId, ThreadId, type VcsStatusResult } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { AtomRegistry } from "effect/unstable/reactivity";
@@ -493,61 +491,6 @@ describe("resolveDisplayedThreadPr + nextThreadChangeRequestSnapshot", () => {
         retainTerminalOnBranchMismatch: true,
       }),
     ).toEqual(mergedPr);
-  });
-
-  it("keeps effectiveSettled true for a retained merged PR after a main checkout", () => {
-    const matchingStatus = status({
-      refName: featureBranch,
-      pr: mergedPr,
-      sourceControlProvider: provider,
-    });
-    const cached = nextThreadChangeRequestSnapshot({
-      threadBranch: featureBranch,
-      gitStatus: matchingStatus,
-      snapshot: undefined,
-      retainTerminalOnBranchMismatch: true,
-    });
-    expect(cached).not.toBeNull();
-    expect(cached).not.toBeUndefined();
-
-    const mainStatus = status({ refName: "main", pr: null, isDefaultRef: true });
-    const displayed = resolveDisplayedThreadPr({
-      threadBranch: "main",
-      gitStatus: mainStatus,
-      snapshot: cached as ThreadChangeRequestSnapshot,
-      retainTerminalOnBranchMismatch: true,
-    });
-    expect(displayed?.state).toBe("merged");
-
-    const shell = {
-      id: ThreadId.make("thread-1"),
-      projectId: ProjectId.make("project-1"),
-      title: "Feature thread",
-      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: "main",
-      worktreePath: null,
-      latestTurn: null,
-      session: null,
-      createdAt: "2026-04-09T00:00:00.000Z",
-      updatedAt: "2026-04-09T00:00:00.000Z",
-      archivedAt: null,
-      settledAt: null,
-      settledOverride: null,
-      latestUserMessageAt: "2026-04-09T00:00:00.000Z",
-      hasPendingApprovals: false,
-      hasPendingUserInput: false,
-      hasActionableProposedPlan: false,
-    } as OrchestrationThreadShell;
-
-    expect(
-      effectiveSettled(shell, {
-        now: "2026-04-10T00:00:00.000Z",
-        autoSettleAfterDays: null,
-        changeRequest: displayed,
-      }),
-    ).toBe(true);
   });
 });
 
