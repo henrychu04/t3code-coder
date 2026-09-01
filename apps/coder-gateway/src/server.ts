@@ -1123,7 +1123,13 @@ export function makeLocalCoderGateway(
       const helper = state.connection;
       const existing = workspaceLatencyMeasurements.get(workspaceId);
       if (existing?.helper === helper) return existing.sample;
-      const sample = runPromise(measureCoderHelperLatency(helper));
+      const sample = runPromise(measureCoderHelperLatency(helper)).then((result) => {
+        const current = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
+        if (current._tag !== "Connected" || current.connection !== helper) {
+          throw new Error("Coder workspace connection changed.");
+        }
+        return result;
+      });
       workspaceLatencyMeasurements.set(workspaceId, { helper, sample });
       const cleanup = () => {
         if (workspaceLatencyMeasurements.get(workspaceId)?.sample === sample) {

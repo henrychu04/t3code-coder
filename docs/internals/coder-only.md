@@ -28,7 +28,7 @@ over the existing helper stdio connection by sending an RPC ping envelope and ti
 read performs at most one in-flight measurement per workspace, and concurrent reads share that
 measurement. The sample is served only through the loopback gateway. The browser retains the last
 sample with a stale marker when updates stop and shows a slow-connection warning only after
-consecutive high latency samples. No dedicated ping process is started, and no latency traffic
+consecutive high-latency samples. No dedicated ping process is started, and no latency traffic
 occurs when the browser is not polling.
 
 The header's workspace health card reads Coder's workspace health from `coder list --output json`.
