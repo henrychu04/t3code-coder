@@ -1,6 +1,7 @@
 # Prompt: align a repo's markdown files to this structure
 
-Copy everything below this line into another session.
+Scratch file for copy-paste only — delete it after copying. Copy everything below the line into
+another session.
 
 ---
 
@@ -9,15 +10,19 @@ new policy — extract rules that already exist (in conversation history, code c
 docs) and consolidate them.
 
 ## Target layout
-- `AGENTS.md` (root): the single canonical agent-rules file. No nested AGENTS.md/CLAUDE.md files
-  anywhere else. If `CLAUDE.md` exists, make it the single line `@AGENTS.md`.
-- `docs/README.md`: index hub with two sections — user-facing guides, then maintainer/contributor
-  docs. Every md file must be reachable from an index.
+- `AGENTS.md` (root): the single canonical agent-rules file. If `CLAUDE.md` exists, make it the
+  single line `@AGENTS.md`. Before removing any nested `AGENTS.md`/`CLAUDE.md` files, inventory
+  them, record which rules are scoped to their directory, and merge still-valid scoped rules into
+  the root file — never silently delete existing guidance. Keep a nested file only when its rules
+  are genuinely directory-scoped and conflict with nothing at the root.
+- `docs/README.md`: the canonical index hub, with two sections — user-facing guides, then
+  maintainer/contributor docs. Every md file must be reachable from this index. Where two indexes
+  could exist, this one wins; other files link to it rather than re-listing the guides.
 - `docs/user/*.md`: task-oriented user guides, one topic per file.
 - `docs/internals/*.md`: deep architecture/boundary docs.
-- `README.md` (root): what the product is, requirements, quick start, a table linking each user
-  guide, how this project differs from its upstream/origin (if a fork), and the verification
-  commands.
+- `README.md` (root): what the product is, requirements, quick start, a link to the canonical docs
+  index (`docs/README.md`) instead of its own guide list, how this project differs from its
+  upstream/origin (if a fork), and the verification commands.
 - `CONTRIBUTING.md`: short — pointers to AGENTS.md and the internals doc, verification expectations,
   commit/hygiene rules.
 - `SECURITY.md` (if applicable): supported boundary, reporting process, dependency review.
