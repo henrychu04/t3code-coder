@@ -573,7 +573,7 @@ const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMeta
   stream: true,
 });
 
-const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
+export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
   payload: Schema.Struct({}),
   success: ServerConfigStreamEvent,
   error: ServerSettingsError,
