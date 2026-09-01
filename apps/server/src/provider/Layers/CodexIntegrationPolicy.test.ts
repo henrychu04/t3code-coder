@@ -82,4 +82,55 @@ it.layer(NodeServices.layer)("CodexIntegrationPolicy", (it) => {
       }
     }).pipe(Effect.scoped),
   );
+
+  it.effect("accepts one MCP list surrounded by workspace banner output", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-codex-mcp-banner-" });
+      const binaryPath = path.join(tempDir, "codex");
+      yield* fileSystem.writeFileString(
+        binaryPath,
+        '#!/bin/sh\nprintf \'[GS] workspace policy notice\\n[{"name":"workspace-tools","transport":{"args":["--port","4000"]}}]\\nScan complete\\n\'\n',
+      );
+      yield* fileSystem.chmod(binaryPath, 0o755);
+
+      const names = yield* discoverCodexMcpServerNames({
+        binaryPath,
+        cwd: tempDir,
+        environment: process.env,
+      });
+
+      expect(names).toEqual(["workspace-tools"]);
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("fails closed when MCP discovery returns more than one matching list", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3-codex-mcp-ambiguous-",
+      });
+      const binaryPath = path.join(tempDir, "codex");
+      yield* fileSystem.writeFileString(
+        binaryPath,
+        '#!/bin/sh\nprintf \'[{"name":"first"}]\\n[{"name":"second"}]\\n\'\n',
+      );
+      yield* fileSystem.chmod(binaryPath, 0o755);
+
+      const result = yield* discoverCodexMcpServerNames({
+        binaryPath,
+        cwd: tempDir,
+        environment: process.env,
+      }).pipe(Effect.result);
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure).toBeInstanceOf(CodexIntegrationPolicyError);
+        expect(result.failure.message).not.toContain("first");
+        expect(result.failure.message).not.toContain("second");
+      }
+    }).pipe(Effect.scoped),
+  );
 });

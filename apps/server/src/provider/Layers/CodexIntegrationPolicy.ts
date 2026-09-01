@@ -14,7 +14,65 @@ const CodexMcpList = Schema.Array(
     name: Schema.String,
   }),
 );
-const decodeCodexMcpList = Schema.decodeUnknownEffect(CodexMcpList);
+const isCodexMcpList = Schema.is(CodexMcpList);
+
+function findJsonArrayEnd(output: string, start: number): number | undefined {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = start; index < output.length; index++) {
+    const character = output[index];
+    if (character === undefined) break;
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+    } else if (character === "[") {
+      depth++;
+    } else if (character === "]") {
+      depth--;
+      if (depth === 0) return index;
+    }
+  }
+
+  return undefined;
+}
+
+function parseJsonArrayCandidates(output: string): ReadonlyArray<unknown> {
+  const candidates: unknown[] = [];
+  let cursor = 0;
+
+  while (cursor < output.length) {
+    const start = output.indexOf("[", cursor);
+    if (start === -1) break;
+
+    const end = findJsonArrayEnd(output, start);
+    if (end === undefined) {
+      cursor = start + 1;
+      continue;
+    }
+
+    try {
+      candidates.push(JSON.parse(output.slice(start, end + 1)) as unknown);
+    } catch {
+      // Ignore non-JSON bracketed banner text without retaining or exposing it.
+    }
+    cursor = end + 1;
+  }
+
+  return candidates;
+}
 
 export class CodexIntegrationPolicyError extends Error {
   readonly unavailable: boolean;
@@ -74,20 +132,26 @@ export const discoverCodexMcpServerNames = Effect.fn("discoverCodexMcpServerName
       );
     }
 
-    const parsed = yield* Effect.try({
-      try: () => JSON.parse(output.stdout) as unknown,
-      catch: () =>
+    const candidates = parseJsonArrayCandidates(output.stdout);
+    if (candidates.length === 0) {
+      return yield* Effect.fail(
         new CodexIntegrationPolicyError("Codex MCP policy discovery returned invalid JSON."),
-    }).pipe(
-      Effect.flatMap(decodeCodexMcpList),
-      Effect.mapError((cause) =>
-        cause instanceof CodexIntegrationPolicyError
-          ? cause
-          : new CodexIntegrationPolicyError(
-              "Codex MCP policy discovery returned an invalid payload.",
-            ),
-      ),
-    );
+      );
+    }
+
+    const matchingLists = candidates.filter(isCodexMcpList);
+    if (matchingLists.length !== 1) {
+      return yield* Effect.fail(
+        new CodexIntegrationPolicyError("Codex MCP policy discovery returned an invalid payload."),
+      );
+    }
+
+    const parsed = matchingLists[0];
+    if (parsed === undefined) {
+      return yield* Effect.fail(
+        new CodexIntegrationPolicyError("Codex MCP policy discovery returned an invalid payload."),
+      );
+    }
 
     return Array.from(new Set(parsed.map(({ name }) => name).filter((name) => name.length > 0)));
   },
