@@ -171,17 +171,6 @@ const gateway = await startLocalCoderGateway({
     },
   ],
   connectHelper: async () => connectLocalHelper(helperEnvironment),
-  connectWorkspacePing: async () => {
-    let close;
-    const closed = new Promise((resolve) => {
-      close = () => resolve({ code: 130, signal: null, expected: true });
-    });
-    return {
-      closed,
-      close,
-      latestSample: () => ({ latencyMs: 12, sampledAt: Date.now() }),
-    };
-  },
   readWorkspaceResourceUsage: async () => ({
     cpu: { used: 1, total: 8, unit: "cores" },
     memory: { used: 2 * 1024 ** 3, total: 16 * 1024 ** 3, unit: "B" },
@@ -194,7 +183,7 @@ console.log(`Smoke repository: ${repository}`);
 console.log(`Mutable glab state: ${statePath}`);
 console.log(`glab command trace: ${commandLogPath}`);
 console.log(
-  'Change writeAccess in the mutable state to "writable", "policy-blocked", or "indeterminate", then use Recheck write access in Settings.',
+  'Change writeAccess in the mutable state to "writable", "policy-blocked", or "indeterminate", then use Reprobe in GitLab source control settings.',
 );
 console.log("Add the smoke-repo project, then open Merge Requests in the sidebar.");
 
