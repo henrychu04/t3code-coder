@@ -445,10 +445,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     ],
   );
   const rows = useStableRows(rawRows);
-  const estimatedItemSize = useMemo(
-    () => estimateMessagesTimelineAverageRowHeight(rows),
-    [rows],
-  );
+  const estimatedItemSize = useMemo(() => estimateMessagesTimelineAverageRowHeight(rows), [rows]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
@@ -972,8 +969,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
   const isExpandedToolGroupEntry = row.kind === "work" && row.isExpandedToolGroupEntry;
   const isLastExpandedToolGroupEntry = row.kind === "work" && row.isLastExpandedToolGroupEntry;
   const isExpandedToolGroupHeader =
-    (row.kind === "work-toggle" && row.summary !== null && row.onlyToolEntries && row.expanded) ||
-    (row.kind === "work-live" && row.expanded);
+    (row.kind === "work-toggle" && row.expanded) || (row.kind === "work-live" && row.expanded);
 
   return (
     <div
@@ -1506,8 +1502,8 @@ function toolGroupSummaryIconName(
       return "bot";
     case "tone-tool":
       return "zap";
+    case "update":
     case "mixed":
-    case null:
       return "hammer";
   }
 }
@@ -1518,61 +1514,21 @@ function WorkGroupToggleTimelineRow({
   row: Extract<TimelineRow, { kind: "work-toggle" }>;
 }) {
   const ctx = use(TimelineRowCtx);
-  if (row.onlyToolEntries && row.summary) {
-    return (
-      <button
-        type="button"
-        className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
-        aria-expanded={row.expanded}
-        onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
-      >
-        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <WorkEntryIconSvg
-            name={toolGroupSummaryIconName(row.summaryKind)}
-            className="size-4 shrink-0 stroke-[1.8] opacity-70"
-          />
-        </span>
-        <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
-      </button>
-    );
-  }
-  const labelNoun = row.onlyToolEntries
-    ? row.hiddenCount === 1
-      ? "tool call"
-      : "tool calls"
-    : row.hiddenCount === 1
-      ? "log entry"
-      : "log entries";
   return (
     <button
       type="button"
-      className="flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-      aria-label={
-        row.hasFailure && !row.expanded
-          ? `+${row.hiddenCount} previous ${labelNoun}, includes a failure`
-          : undefined
-      }
+      className="group/tool-group flex min-h-6 w-full cursor-pointer items-center gap-1.5 rounded-md px-0.5 py-0.5 text-left text-sm leading-relaxed transition-colors duration-150 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+      aria-label={row.hasFailure ? `${row.summary}, tool call failed` : undefined}
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
       <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-        <ChevronDownIcon
-          className={cn(
-            "size-4 shrink-0 opacity-70 transition-transform duration-200",
-            row.expanded && "rotate-180",
-          )}
+        <WorkEntryIconSvg
+          name={toolGroupSummaryIconName(row.summaryKind)}
+          className="size-4 shrink-0 stroke-[1.8] opacity-70"
         />
       </span>
-      {row.expanded ? (
-        <span className="font-medium text-foreground">
-          Show fewer {row.onlyToolEntries ? "tool calls" : "log entries"}
-        </span>
-      ) : (
-        <span className="font-medium text-foreground">
-          +{row.hiddenCount} previous {labelNoun}
-        </span>
-      )}
+      <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
     </button>
   );
 }
@@ -2573,8 +2529,7 @@ const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props: {
   const selectedArtifact = artifacts[selectedArtifactIndex];
   const selectedImage = selectedArtifact ? images[selectedArtifact.id] : undefined;
   const canSelectPrevious = selectedArtifactIndex > 0;
-  const canSelectNext =
-    selectedArtifactIndex >= 0 && selectedArtifactIndex < artifacts.length - 1;
+  const canSelectNext = selectedArtifactIndex >= 0 && selectedArtifactIndex < artifacts.length - 1;
 
   const selectAdjacentArtifact = (offset: -1 | 1) => {
     const artifact = artifacts[selectedArtifactIndex + offset];

@@ -66,6 +66,7 @@ import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
+import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { resolveShortcutCommand } from "~/keybindings";
 import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
 import { isTerminalFocused } from "~/lib/terminalFocus";
@@ -127,6 +128,8 @@ interface FilePreviewPanelProps {
   revealRequestId: number;
   onOpenFile: (relativePath: string, line?: number) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
+  selectedFilePending: boolean;
+  workspaceMutationId: string | null;
 }
 
 type FileSearchCommandRequest = {
@@ -1609,6 +1612,12 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
     props.cwd,
     props.relativePath,
   );
+  useWorkspaceMutationRefresh({
+    enabled: props.relativePath !== null && !props.selectedFilePending,
+    mutationId: props.workspaceMutationId,
+    refresh: file.refresh,
+    resourceKey: `file:${props.environmentId}:${props.cwd}:${props.relativePath ?? ""}`,
+  });
   const [explorerOpen, setExplorerOpen] = useState(true);
   const [renderMarkdown, setRenderMarkdown] = useState(false);
   const [saveFailedPath, setSaveFailedPath] = useState<string | null>(null);
@@ -2024,6 +2033,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
               selectedPath={props.relativePath}
               selectedPathRevealId={props.revealRequestId}
               onOpenFile={props.onOpenFile}
+              workspaceMutationId={props.workspaceMutationId}
               {...(props.relativePath ? { onRefreshSelectedFile: file.refresh } : {})}
             />
           </aside>
