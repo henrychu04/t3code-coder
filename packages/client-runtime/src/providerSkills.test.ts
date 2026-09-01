@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  dedupeProviderSkillsByName,
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
@@ -23,6 +24,31 @@ describe("formatProviderSkillDisplayName", () => {
         name: "review-follow-up",
       }),
     ).toBe("Review Follow Up");
+  });
+});
+
+describe("dedupeProviderSkillsByName", () => {
+  it("keeps the first resolved skill and preserves unrelated skill order", () => {
+    const firstSkill = {
+      name: "branch-audit",
+      path: "/home/dev/.codex/skills/branch-audit/SKILL.md",
+      enabled: true,
+    };
+    const otherSkill = {
+      name: "browser",
+      path: "/home/dev/.agents/skills/browser/SKILL.md",
+      enabled: true,
+    };
+    const duplicateSkill = {
+      name: "Branch-Audit",
+      path: "/home/dev/.agents/skills/branch-audit/SKILL.md",
+      enabled: true,
+    };
+
+    expect(dedupeProviderSkillsByName([firstSkill, otherSkill, duplicateSkill])).toEqual([
+      firstSkill,
+      otherSkill,
+    ]);
   });
 });
 
@@ -65,6 +91,28 @@ describe("provider slash menu collisions", () => {
         getProviderSkillsForSlashMenu(disabledSkills),
       ).map((command) => command.name),
     ).toEqual(["review"]);
+  });
+
+  it("shows one row when enabled skills share a name", () => {
+    expect(
+      getProviderSkillsForSlashMenu([
+        {
+          name: "branch-audit",
+          path: "/home/dev/.codex/skills/branch-audit/SKILL.md",
+          enabled: true,
+        },
+        {
+          name: "browser",
+          path: "/home/dev/.agents/skills/browser/SKILL.md",
+          enabled: true,
+        },
+        {
+          name: "branch-audit",
+          path: "/home/dev/.agents/skills/branch-audit/SKILL.md",
+          enabled: true,
+        },
+      ]).map((skill) => skill.name),
+    ).toEqual(["branch-audit", "browser"]);
   });
 });
 
