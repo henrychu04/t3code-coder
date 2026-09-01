@@ -9,22 +9,35 @@ const DISMISS_TRANSITION_MS = 220;
 export interface ComposerBannerStackItem {
   readonly id: string;
   readonly variant: ComposerBannerVariant;
-  // Ordering is assembled by ChatView; urgent is its calm-styled priority hint.
-  readonly urgent?: boolean;
+  readonly priority?: "urgent" | "activity" | "notice";
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
   readonly children?: ReactNode;
   readonly actions?: ReactNode;
   readonly className?: string;
-  readonly actionClassName?: string;
   readonly dismissLabel?: string;
   readonly onDismiss?: () => void;
 }
 
+export type ComposerBannerStackContent = Pick<
+  ComposerBannerStackItem,
+  "id" | "variant" | "priority" | "className"
+> & { readonly content: ReactNode };
+
+type ComposerBannerStackEntry = ComposerBannerStackItem | ComposerBannerStackContent;
+
+function bannerPriority(item: ComposerBannerStackEntry) {
+  if (item.priority === "activity") return 0;
+  if (item.priority === "urgent" || item.variant === "error" || item.variant === "warning") {
+    return 1;
+  }
+  return 2;
+}
+
 interface ComposerBannerStackProps {
   readonly className?: string;
-  readonly items: ReadonlyArray<ComposerBannerStackItem>;
+  readonly items: ReadonlyArray<ComposerBannerStackEntry>;
 }
 
 export function ComposerBannerStack({ className, items }: ComposerBannerStackProps) {
@@ -66,15 +79,16 @@ export function ComposerBannerStack({ className, items }: ComposerBannerStackPro
 
   if (items.length === 0) return null;
 
-  const frontItem = items[0];
+  const orderedItems = items.toSorted((a, b) => bannerPriority(a) - bannerPriority(b));
+  const frontItem = orderedItems[0];
   if (!frontItem) return null;
-  const stackedItems = items.slice(1);
+  const stackedItems = orderedItems.slice(1);
   const hasStack = stackedItems.length > 0;
   const showCollapsedStackCap = hasStack && exitingItemId !== frontItem.id;
   const firstStackedItem = stackedItems[0];
 
-  const requestDismiss = (item: ComposerBannerStackItem) => {
-    if (!item.onDismiss || exitingItemId) return;
+  const requestDismiss = (item: ComposerBannerStackEntry) => {
+    if (!("onDismiss" in item) || !item.onDismiss || exitingItemId) return;
     setExitingItemId(item.id);
     if (dismissTimeoutRef.current) clearTimeout(dismissTimeoutRef.current);
     dismissTimeoutRef.current = setTimeout(() => {
@@ -215,11 +229,23 @@ function ComposerBannerStackAlert({
   exiting,
   onDismissRequest,
 }: {
-  readonly item: ComposerBannerStackItem;
+  readonly item: ComposerBannerStackEntry;
   readonly attached: boolean;
   readonly exiting: boolean;
   readonly onDismissRequest: () => void;
 }) {
+  if ("content" in item) {
+    return (
+      <ComposerBanner.Root
+        placement={attached ? "attached" : "floating"}
+        variant={item.variant}
+        className={item.className}
+      >
+        {item.content}
+      </ComposerBanner.Root>
+    );
+  }
+
   return (
     <ComposerBanner.Root
       role="alert"
@@ -231,7 +257,7 @@ function ComposerBannerStackAlert({
         <ComposerBanner.Icon>{item.icon}</ComposerBanner.Icon>
         <ComposerBanner.Content className="font-medium">{item.title}</ComposerBanner.Content>
         {item.actions || item.onDismiss ? (
-          <ComposerBanner.Actions className={item.actionClassName}>
+          <ComposerBanner.Actions>
             {item.actions}
             {item.onDismiss ? (
               <ComposerBanner.Dismiss

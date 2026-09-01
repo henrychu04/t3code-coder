@@ -65,6 +65,7 @@ import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
+import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
 import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
 import { ProviderService } from "./provider/Services/ProviderService.ts";
@@ -363,6 +364,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const environment = yield* CoderEnvironment.CoderEnvironment;
     const startup = yield* CoderRuntimeStartup.CoderRuntimeStartup;
     const orchestration = yield* OrchestrationEngine.OrchestrationEngineService;
+    const threadDeletionReactor = yield* ThreadDeletionReactor;
     const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const diffs = yield* CheckpointDiffQuery.CheckpointDiffQuery;
     const providers = yield* ProviderRegistry.ProviderRegistry;
@@ -665,7 +667,7 @@ export const layer = CoderWsRpcGroup.toLayer(
           });
         const program = Effect.gen(function* () {
           if (bootstrap?.createThread) {
-            yield* orchestration.dispatch({
+            const created = yield* orchestration.dispatch({
               type: "thread.create",
               commandId: yield* commandId("thread-create"),
               threadId: command.threadId,
@@ -678,6 +680,9 @@ export const layer = CoderWsRpcGroup.toLayer(
               worktreePath: bootstrap.createThread.worktreePath,
               createdAt: bootstrap.createThread.createdAt,
             });
+            // The successful create is an exact queue fence: every deletion
+            // for the prior incarnation committed before this sequence.
+            yield* threadDeletionReactor.drainThrough(created.sequence);
             createdThread = true;
           }
           if (bootstrap?.prepareWorktree) {
@@ -722,13 +727,16 @@ export const layer = CoderWsRpcGroup.toLayer(
       startup.enqueueCommand(
         command.type === "thread.turn.start" && command.bootstrap
           ? dispatchBootstrap(command)
-          : orchestration
-              .dispatch(command)
-              .pipe(
-                Effect.mapError((cause) =>
-                  toDispatchError(cause, "Failed to dispatch the orchestration command."),
-                ),
+          : orchestration.dispatch(command).pipe(
+              Effect.tap(({ sequence }) =>
+                command.type === "thread.create"
+                  ? threadDeletionReactor.drainThrough(sequence)
+                  : Effect.void,
               ),
+              Effect.mapError((cause) =>
+                toDispatchError(cause, "Failed to dispatch the orchestration command."),
+              ),
+            ),
       );
 
     const loadServerConfig = Effect.gen(function* () {
