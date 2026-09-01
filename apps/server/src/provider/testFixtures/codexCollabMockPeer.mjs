@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // Minimal codex app-server stand-in for runtime-level collab tests.
 // Speaks just enough of the protocol for CodexSessionRuntime to start a
 // session, using REAL captured responses (codexMultiAgentWire.json), then

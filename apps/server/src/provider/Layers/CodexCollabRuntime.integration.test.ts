@@ -9,6 +9,7 @@
  */
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -19,7 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { assert, describe } from "vite-plus/test";
+import { afterAll, assert, beforeAll, describe } from "vite-plus/test";
 
 import wireFixture from "../testFixtures/codexMultiAgentWire.json" with { type: "json" };
 import { makeCodexSessionRuntime } from "./CodexSessionRuntime.ts";
@@ -157,7 +158,31 @@ function readRecordedRequests() {
 }
 
 const scriptPath = NodePath.join(import.meta.dirname, "../testFixtures/.collab-script.json");
-const peerPath = NodePath.join(import.meta.dirname, "../testFixtures/codexCollabMockPeer.sh");
+const peerSourcePath = NodePath.join(
+  import.meta.dirname,
+  "../testFixtures/codexCollabMockPeer.mjs",
+);
+const peerFixtureSourcePath = NodePath.join(
+  import.meta.dirname,
+  "../testFixtures/codexMultiAgentWire.json",
+);
+let peerTempDir = "";
+let peerPath = "";
+
+beforeAll(() => {
+  peerTempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-codex-collab-peer-"));
+  peerPath = NodePath.join(peerTempDir, "codexCollabMockPeer.mjs");
+  NodeFS.copyFileSync(peerSourcePath, peerPath);
+  NodeFS.copyFileSync(
+    peerFixtureSourcePath,
+    NodePath.join(peerTempDir, "codexMultiAgentWire.json"),
+  );
+  NodeFS.chmodSync(peerPath, 0o700);
+});
+
+afterAll(() => {
+  NodeFS.rmSync(peerTempDir, { recursive: true, force: true });
+});
 
 describe("CodexSessionRuntime collab integration", () => {
   it.effect("looks up child model metadata once after activity registration", () =>

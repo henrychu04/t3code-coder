@@ -72,11 +72,9 @@ const CodexUserInputAnswerObject = Schema.Struct({
 const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 const isCodexUserInputAnswerObject = Schema.is(CodexUserInputAnswerObject);
 
-// TODO: Verify `packages/effect-codex-app-server/scripts/generate.ts` so the generated
-// `V2TurnStartParams` schema includes `collaborationMode` directly. Caveat: regenerating
-// with the pinned `@effect/openapi-generator` build currently emits output that differs
-// from the committed `src/_generated` bindings, so regenerated files must be diffed and
-// the full test suite run before adopting them.
+// The checked-in upstream `V2TurnStartParams` binding does not include
+// `collaborationMode`, so extend that one schema locally until the upstream
+// generated binding includes it directly.
 const CodexTurnStartParamsWithCollaborationMode = EffectCodexSchema.V2TurnStartParams.pipe(
   Schema.fieldsAssign({
     collaborationMode: Schema.optionalKey(EffectCodexSchema.V2TurnStartParams__CollaborationMode),
@@ -149,9 +147,6 @@ export interface CodexSessionRuntimeShape {
   readonly rollbackThread: (
     numTurns: number,
   ) => Effect.Effect<CodexThreadSnapshot, CodexSessionRuntimeError>;
-  readonly uploadFeedback: (
-    reason?: string,
-  ) => Effect.Effect<EffectCodexSchema.V2FeedbackUploadResponse, CodexSessionRuntimeError>;
   readonly respondToRequest: (
     requestId: ApprovalRequestId,
     decision: ProviderApprovalDecision,
@@ -2081,16 +2076,6 @@ export const makeCodexSessionRuntime = (
             activeTurnId: undefined,
           });
           return parseThreadSnapshot(response);
-        }),
-      uploadFeedback: (reason) =>
-        Effect.gen(function* () {
-          const providerThreadId = yield* readProviderThreadId;
-          return yield* client.request("feedback/upload", {
-            classification: "bug",
-            includeLogs: true,
-            ...(reason ? { reason } : {}),
-            threadId: providerThreadId,
-          });
         }),
       respondToRequest: (requestId, decision) =>
         Effect.gen(function* () {

@@ -25,16 +25,13 @@
     }
   },
   "scripts": {
-    "generate": "node scripts/generate.ts",
     "typecheck": "tsgo --noEmit",
-    "test": "vp test run",
-    "probe": "node test/examples/codex-app-server-probe.ts"
+    "test": "vp test run"
   },
   "dependencies": {
     "effect": "catalog:"
   },
   "devDependencies": {
-    "@effect/openapi-generator": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@types/node": "catalog:",

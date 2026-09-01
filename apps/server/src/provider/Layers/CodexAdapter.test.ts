@@ -102,10 +102,6 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     return this.readThread;
   }
 
-  uploadFeedback(_reason?: string) {
-    return Effect.succeed({ threadId: "provider-thread-1" });
-  }
-
   respondToRequest(_requestId: ApprovalRequestId, _decision: ProviderApprovalDecision) {
     return Effect.void;
   }
