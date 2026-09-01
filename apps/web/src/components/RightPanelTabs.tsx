@@ -34,6 +34,8 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 interface RightPanelTabsProps {
   readonly mode: "inline" | "sheet";
   readonly maximized?: boolean;
+  readonly widthStorageKey?: string;
+  readonly defaultWidth?: number;
   readonly layoutControls?: ReactNode;
   readonly surfaces: readonly RightPanelSurface[];
   readonly activeSurfaceId: string | null;
@@ -45,6 +47,7 @@ interface RightPanelTabsProps {
   readonly onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
   readonly onCloseAllSurfaces: () => void;
   readonly onCopyFilePath: (relativePath: string) => void;
+  readonly onAddBrowser?: () => void;
   readonly onAddTerminal: () => void;
   readonly onAddDiff: () => void;
   readonly onAddFiles: () => void;
@@ -55,6 +58,9 @@ interface RightPanelTabsProps {
   readonly filesAvailable: boolean;
   readonly pullRequestAvailable: boolean;
   readonly agentsAvailable: boolean;
+  readonly browserAvailable?: boolean;
+  readonly previewSessions?: Readonly<Record<string, unknown>>;
+  readonly desktopByTabId?: Readonly<Record<string, unknown>>;
   readonly pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   readonly liveAgentCount: number;
   readonly children: ReactNode;
@@ -463,8 +469,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const { defaultWidth, maxWidth } = useClampedRightPanelWidths(hostRef, resizable);
   const { width, handlers } = useResizableWidth({
-    storageKey: RIGHT_PANEL_WIDTH_STORAGE_KEY,
-    defaultWidth,
+    storageKey: props.widthStorageKey ?? RIGHT_PANEL_WIDTH_STORAGE_KEY,
+    defaultWidth: props.defaultWidth ?? defaultWidth,
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     maxWidth,
     edge: "left",
