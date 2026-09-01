@@ -203,11 +203,12 @@ function SourceControlPreferences() {
           </div>
         }
       />
-      {style.mode !== DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle.mode ||
-      fetchSeconds !==
-        Math.round(
-          Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval) / 1_000,
-        ) ? (
+      {usesDedicatedModel ||
+        style.mode !== DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle.mode ||
+        fetchSeconds !==
+          Math.round(
+            Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval) / 1_000,
+          ) ? (
         <SettingsRow
           id="reset-source-control-defaults"
           title="Reset source control defaults"
@@ -219,6 +220,8 @@ function SourceControlPreferences() {
                 updateSettings({
                   automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
                   sourceControlWritingStyle: DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle,
+                  sourceControlWriterModelSelection:
+                    DEFAULT_UNIFIED_SETTINGS.sourceControlWriterModelSelection,
                 })
               }
             >
