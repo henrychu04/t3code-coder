@@ -16,7 +16,7 @@ describe("ThreadSyncStatusPill", () => {
     expect(markup).toContain('data-composer-banner-surface="attached"');
     expect(markup).toContain('data-composer-banner-row="true"');
     expect(markup).not.toContain("chat-composer-drawer-surface");
+    expect(markup).toContain("motion-safe:animate-spin");
     expect(markup).toContain(label);
-    expect(markup).not.toContain("animate-");
   });
 });

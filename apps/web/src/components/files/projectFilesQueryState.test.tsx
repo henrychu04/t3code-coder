@@ -90,6 +90,7 @@ function file(contents: string): ProjectReadFileResult {
     contents,
     byteLength: contents.length,
     truncated: false,
+    revision: `revision-${contents}`,
   };
 }
 

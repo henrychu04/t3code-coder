@@ -18,11 +18,11 @@ const ENVIRONMENT_ID = EnvironmentId.make("environment-1");
 const PROJECT_ID = ProjectId.make("project-1");
 const FALLBACK_PROJECT_ID = ProjectId.make("project-2");
 const PROJECT_DEFAULT_SELECTION: ModelSelection = {
-  instanceId: ProviderInstanceId.make("codex"),
+  instanceId: ProviderInstanceId.make("claudeAgent"),
   model: "project-default",
 };
 const CARRIED_SELECTION: ModelSelection = {
-  instanceId: ProviderInstanceId.make("codex"),
+  instanceId: ProviderInstanceId.make("claudeAgent"),
   model: "carried-model",
 };
 

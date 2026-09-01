@@ -11,7 +11,7 @@ export function ThreadSyncStatusPill({ phase }: { readonly phase: ThreadSyncPhas
       <ComposerBanner.Root aria-label={label} className="pointer-events-none" role="status">
         <ComposerBanner.Row>
           <ComposerBanner.Icon>
-            <LoaderCircleIcon />
+            <LoaderCircleIcon className="motion-safe:animate-spin" />
           </ComposerBanner.Icon>
           <ComposerBanner.Content className="truncate font-medium">{label}</ComposerBanner.Content>
         </ComposerBanner.Row>
