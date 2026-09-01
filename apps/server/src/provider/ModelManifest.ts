@@ -6,7 +6,7 @@
  * request. The file is updated when upstream changes are carried into the
  * fork.
  */
-import type { ProviderDriverKind, ServerProviderModel } from "@t3tools/contracts";
+import { ProviderDriverKind, type ServerProviderModel } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 import bundledManifestJson from "./model-manifest.json" with { type: "json" };
@@ -21,6 +21,8 @@ export type ModelManifestData = typeof ModelManifestSchema.Type;
 export const BUNDLED_MODEL_MANIFEST: ModelManifestData =
   Schema.decodeUnknownSync(ModelManifestSchema)(bundledManifestJson);
 
+const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
+
 export function isLegacyModel(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
@@ -28,7 +30,12 @@ export function isLegacyModel(
 ): boolean {
   const currentModels = manifest.currentModels[driverKind];
   if (!currentModels) return false;
-  return !currentModels.includes(slug);
+  if (currentModels.includes(slug)) return false;
+  const codexAlias =
+    driverKind === CODEX_DRIVER_KIND && slug.endsWith("-codex")
+      ? slug.slice(0, -"-codex".length)
+      : undefined;
+  return codexAlias === undefined || !currentModels.includes(codexAlias);
 }
 
 export function classifyModels(

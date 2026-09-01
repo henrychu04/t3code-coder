@@ -1,5 +1,6 @@
 import type { RuntimeMode } from "@t3tools/contracts";
-import type * as CodexSchema from "effect-codex-app-server/schema";
+import * as CodexSchema from "effect-codex-app-server/schema";
+import * as Schema from "effect/Schema";
 
 import { ALL_RUNTIME_MODES, SAFE_RUNTIME_MODES } from "./runtimeModeCapabilities.ts";
 
@@ -9,6 +10,36 @@ export type CodexRuntimeModeConfig = {
   readonly approvalsReviewer: CodexSchema.V2ThreadStartParams__ApprovalsReviewer;
   readonly turnSandboxPolicy: CodexSchema.V2TurnStartParams__SandboxPolicy;
 };
+
+const CodexRuntimeRequirements = Schema.Struct({
+  allowedApprovalPolicies: Schema.optionalKey(
+    Schema.Union([
+      Schema.Array(CodexSchema.V2ConfigRequirementsReadResponse__AskForApproval),
+      Schema.Null,
+    ]),
+  ),
+  allowedApprovalsReviewers: Schema.optionalKey(
+    Schema.Union([
+      Schema.Array(CodexSchema.V2ConfigRequirementsReadResponse__ApprovalsReviewer),
+      Schema.Null,
+    ]),
+  ),
+  allowedSandboxModes: Schema.optionalKey(
+    Schema.Union([
+      Schema.Array(CodexSchema.V2ConfigRequirementsReadResponse__SandboxMode),
+      Schema.Null,
+    ]),
+  ),
+});
+
+const CodexRuntimeRequirementsResponse = Schema.Struct({
+  requirements: Schema.optionalKey(Schema.Union([CodexRuntimeRequirements, Schema.Null])),
+});
+
+export type CodexRuntimeRequirementsResponse = typeof CodexRuntimeRequirementsResponse.Type;
+export const decodeCodexRuntimeRequirementsResponse = Schema.decodeUnknownEffect(
+  CodexRuntimeRequirementsResponse,
+);
 
 export const CODEX_RUNTIME_MODE_CONFIG = {
   "approval-required": {
@@ -42,7 +73,7 @@ export function getCodexRuntimeModeConfig(runtimeMode: RuntimeMode): CodexRuntim
 }
 
 export function resolveCodexSupportedRuntimeModes(
-  response: CodexSchema.V2ConfigRequirementsReadResponse | undefined,
+  response: CodexRuntimeRequirementsResponse | undefined,
 ): ReadonlyArray<RuntimeMode> {
   if (response === undefined) return SAFE_RUNTIME_MODES;
   const requirements = response.requirements;
@@ -56,6 +87,9 @@ export function resolveCodexSupportedRuntimeModes(
     const sandboxAllowed =
       requirements.allowedSandboxModes == null ||
       requirements.allowedSandboxModes.includes(config.sandbox);
-    return approvalAllowed && sandboxAllowed;
+    const reviewerAllowed =
+      requirements.allowedApprovalsReviewers == null ||
+      requirements.allowedApprovalsReviewers.includes(config.approvalsReviewer);
+    return approvalAllowed && sandboxAllowed && reviewerAllowed;
   });
 }

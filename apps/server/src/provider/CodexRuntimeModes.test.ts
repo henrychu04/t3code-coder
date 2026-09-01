@@ -1,7 +1,9 @@
 import { assert, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
 
 import {
   CODEX_RUNTIME_MODE_CONFIG,
+  decodeCodexRuntimeRequirementsResponse,
   resolveCodexSupportedRuntimeModes,
 } from "./CodexRuntimeModes.ts";
 
@@ -54,6 +56,22 @@ it("filters modes using Codex approval and sandbox requirements", () => {
     ["auto-accept-edits", "auto"],
   );
 });
+
+it.effect("preserves and enforces Codex's experimental reviewer requirements", () =>
+  Effect.gen(function* () {
+    const response = yield* decodeCodexRuntimeRequirementsResponse({
+      requirements: {
+        allowedApprovalPolicies: ["on-request"],
+        allowedApprovalsReviewers: ["user"],
+        allowedSandboxModes: ["workspace-write"],
+        ignoredFutureRequirement: true,
+      },
+    });
+
+    assert.deepStrictEqual(response.requirements?.allowedApprovalsReviewers, ["user"]);
+    assert.deepStrictEqual(resolveCodexSupportedRuntimeModes(response), ["auto-accept-edits"]);
+  }),
+);
 
 it("fails closed when requirements cannot be read", () => {
   assert.deepStrictEqual(resolveCodexSupportedRuntimeModes(undefined), [

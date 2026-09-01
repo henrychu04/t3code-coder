@@ -9,27 +9,37 @@ const CLAUDE = ProviderDriverKind.make("claudeAgent");
 describe("bundled model manifest", () => {
   it("matches upstream's current Codex classification", () => {
     assert.deepStrictEqual(
-      ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol", "gpt-5.4"].map((model) => [
-        model,
-        isLegacyModel(BUNDLED_MODEL_MANIFEST, CODEX, model),
-      ]),
+      [
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-5.6-sol-codex",
+        "gpt-5.4",
+        "gpt-5.4-codex",
+      ].map((model) => [model, isLegacyModel(BUNDLED_MODEL_MANIFEST, CODEX, model)]),
       [
         ["gpt-5.6-luna", false],
         ["gpt-5.6-terra", false],
         ["gpt-5.6-sol", false],
+        ["gpt-5.6-sol-codex", false],
         ["gpt-5.4", true],
+        ["gpt-5.4-codex", true],
       ],
     );
   });
 
   it("matches upstream's current Claude classification", () => {
     assert.deepStrictEqual(
-      ["claude-fable-5", "claude-opus-5", "claude-sonnet-5", "claude-opus-4-8"].map((model) => [
-        model,
-        isLegacyModel(BUNDLED_MODEL_MANIFEST, CLAUDE, model),
-      ]),
+      [
+        "claude-fable-5",
+        "claude-fable-5-codex",
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-opus-4-8",
+      ].map((model) => [model, isLegacyModel(BUNDLED_MODEL_MANIFEST, CLAUDE, model)]),
       [
         ["claude-fable-5", false],
+        ["claude-fable-5-codex", true],
         ["claude-opus-5", false],
         ["claude-sonnet-5", false],
         ["claude-opus-4-8", true],

@@ -31,7 +31,10 @@ import {
   CodexIntegrationPolicyError,
   discoverCodexMcpServerNames,
 } from "./CodexIntegrationPolicy.ts";
-import { resolveCodexSupportedRuntimeModes } from "../CodexRuntimeModes.ts";
+import {
+  decodeCodexRuntimeRequirementsResponse,
+  resolveCodexSupportedRuntimeModes,
+} from "../CodexRuntimeModes.ts";
 import { attachSupportedRuntimeModes } from "../runtimeModeCapabilities.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
@@ -212,9 +215,18 @@ function parseCodexModelListResponse(
 export function applyPreferredCodexDefaultModel(
   models: ReadonlyArray<ServerProviderModel>,
 ): ReadonlyArray<ServerProviderModel> {
-  const preferredSlug = PREFERRED_DEFAULT_CODEX_MODELS.find((slug) =>
-    models.some((model) => model.slug === slug && !model.isCustom),
-  );
+  let preferredSlug: string | undefined;
+  for (const canonicalSlug of PREFERRED_DEFAULT_CODEX_MODELS) {
+    const preferredModel = models.find(
+      (model) =>
+        !model.isCustom &&
+        (model.slug === canonicalSlug || model.slug === `${canonicalSlug}-codex`),
+    );
+    if (preferredModel) {
+      preferredSlug = preferredModel.slug;
+      break;
+    }
+  }
   if (!preferredSlug) {
     return models;
   }
@@ -404,9 +416,10 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
         cwds: [input.cwd],
       }),
       requestAllCodexModels(client),
-      client
-        .request("configRequirements/read", undefined)
-        .pipe(Effect.catch(() => Effect.succeed(undefined))),
+      client.raw.request("configRequirements/read").pipe(
+        Effect.flatMap(decodeCodexRuntimeRequirementsResponse),
+        Effect.catch(() => Effect.succeed(undefined)),
+      ),
     ],
     { concurrency: "unbounded" },
   );
