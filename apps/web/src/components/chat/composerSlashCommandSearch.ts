@@ -13,6 +13,13 @@ type SlashSearchItem = Extract<
   { type: "slash-command" | "provider-slash-command" | "skill" }
 >;
 
+export function slashCommandItemsForPromptPosition(
+  items: ReadonlyArray<SlashSearchItem>,
+  isAtPromptStart: boolean,
+): SlashSearchItem[] {
+  return isAtPromptStart ? [...items] : items.filter((item) => item.type !== "skill");
+}
+
 export function mergeProviderSlashCommands(
   base: ReadonlyArray<ServerProviderSlashCommand>,
   scoped: ReadonlyArray<ServerProviderSlashCommand>,

@@ -2079,94 +2079,6 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("keeps a resumed replacement session during slow stop cleanup", () => {
-    const queries: FakeClaudeQuery[] = [];
-    let signalUsageStarted: () => void = () => undefined;
-    const usageStarted = new Promise<void>((resolve) => {
-      signalUsageStarted = resolve;
-    });
-    const layer = Layer.effect(
-      ClaudeAdapter,
-      Effect.gen(function* () {
-        const claudeConfig = decodeClaudeSettings({});
-        return yield* makeClaudeAdapter(claudeConfig, {
-          createQuery: () => {
-            const query = new FakeClaudeQuery();
-            if (queries.length === 0) {
-              Object.assign(query, {
-                getContextUsage: async () => {
-                  signalUsageStarted();
-                  return await new Promise<never>(() => undefined);
-                },
-              });
-            }
-            queries.push(query);
-            return query;
-          },
-        });
-      }),
-    ).pipe(
-      Layer.provideMerge(ServerConfig.layerTest("/tmp/claude-adapter-test", "/tmp")),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
-      Layer.provideMerge(NodeServices.layer),
-    );
-
-    return Effect.gen(function* () {
-      const adapter = yield* ClaudeAdapter;
-      const runtimeEventsFiber = yield* Stream.take(adapter.streamEvents, 8).pipe(
-        Stream.runCollect,
-        Effect.forkChild,
-      );
-      const firstSession = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-      });
-      yield* adapter.sendTurn({
-        threadId: firstSession.threadId,
-        input: "hello",
-      });
-
-      const interruptFiber = yield* adapter
-        .interruptTurn(firstSession.threadId)
-        .pipe(Effect.forkChild);
-      yield* Effect.promise(() => usageStarted);
-      assert.equal(queries[0]?.closeCalls, 1);
-
-      const replacement = yield* adapter.startSession({
-        threadId: THREAD_ID,
-        provider: ProviderDriverKind.make("claudeAgent"),
-        runtimeMode: "full-access",
-        resumeCursor: firstSession.resumeCursor,
-      });
-      yield* TestClock.adjust("1 second");
-      yield* Fiber.join(interruptFiber);
-
-      const activeSessions = yield* adapter.listSessions();
-      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      assert.equal(queries.length, 2);
-      assert.equal(queries[1]?.closeCalls, 0);
-      assert.equal(activeSessions.length, 1);
-      assert.deepEqual(activeSessions[0]?.resumeCursor, replacement.resumeCursor);
-      assert.deepEqual(
-        runtimeEvents
-          .filter((event) => event.type.startsWith("session."))
-          .map((event) => event.type),
-        [
-          "session.started",
-          "session.configured",
-          "session.state.changed",
-          "session.started",
-          "session.configured",
-          "session.state.changed",
-        ],
-      );
-    }).pipe(
-      Effect.provideService(Random.Random, makeDeterministicRandomService()),
-      Effect.provide(layer),
-    );
-  });
-
   it.effect("workflow member coalescing: identical snapshots suppress, changes emit", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
@@ -3108,9 +3020,7 @@ describe("ClaudeAdapterLive", () => {
       harness.query.finish();
 
       const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const usageEvent = runtimeEvents.find(
-        (event) => event.type === "thread.token-usage.updated",
-      );
+      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
       assert.equal(usageEvent?.type, "thread.token-usage.updated");
       if (usageEvent?.type === "thread.token-usage.updated") {
         assert.equal(usageEvent.payload.usage.maxTokens, 200_000);
@@ -3158,9 +3068,7 @@ describe("ClaudeAdapterLive", () => {
       harness.query.finish();
 
       const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const usageEvent = runtimeEvents.find(
-        (event) => event.type === "thread.token-usage.updated",
-      );
+      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
       assert.equal(usageEvent?.type, "thread.token-usage.updated");
       if (usageEvent?.type === "thread.token-usage.updated") {
         assert.equal(usageEvent.payload.usage.maxTokens, 200_000);
@@ -3216,9 +3124,7 @@ describe("ClaudeAdapterLive", () => {
       harness.query.finish();
 
       const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const usageEvent = runtimeEvents.find(
-        (event) => event.type === "thread.token-usage.updated",
-      );
+      const usageEvent = runtimeEvents.find((event) => event.type === "thread.token-usage.updated");
       assert.equal(usageEvent?.type, "thread.token-usage.updated");
       if (usageEvent?.type === "thread.token-usage.updated") {
         assert.equal(usageEvent.payload.usage.maxTokens, 1_000_000);
@@ -3393,93 +3299,78 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect(
-    "uses authoritative context usage instead of task and result totals",
-    () => {
-      const harness = makeHarness();
-      Object.assign(harness.query, {
-        getContextUsage: async () => ({
-          totalTokens: 80_000,
-          maxTokens: 200_000,
-          isAutoCompactEnabled: true,
-        }),
+  it.effect("uses assistant usage without querying current context usage", () => {
+    const harness = makeHarness();
+    let getContextUsageCalls = 0;
+    Object.assign(harness.query, {
+      getContextUsage: async () => {
+        getContextUsageCalls += 1;
+        return { totalTokens: 999, maxTokens: 200000, isAutoCompactEnabled: true };
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const runtimeEventsFiber = yield* Stream.takeUntil(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runCollect, Effect.forkChild);
+
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
       });
-      return Effect.gen(function* () {
-        const adapter = yield* ClaudeAdapter;
+      yield* adapter.sendTurn({ threadId: THREAD_ID, input: "hello" });
+      harness.query.emit({
+        type: "assistant",
+        session_id: "sdk-session-result-usage",
+        uuid: "assistant-result-usage",
+        parent_tool_use_id: null,
+        message: {
+          id: "assistant-message-result-usage",
+          role: "assistant",
+          content: [],
+          usage: { input_tokens: 180, output_tokens: 20 },
+        },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        duration_ms: 1234,
+        duration_api_ms: 1200,
+        num_turns: 1,
+        result: "done",
+        stop_reason: "end_turn",
+        session_id: "sdk-session-result-usage",
+        usage: { input_tokens: 400, output_tokens: 50 },
+        modelUsage: {
+          "claude-opus-4-6": { contextWindow: 200000, maxOutputTokens: 64000 },
+        },
+      } as unknown as SDKMessage);
+      harness.query.finish();
 
-        const runtimeEventsFiber = yield* Stream.takeUntil(
-          adapter.streamEvents,
-          (event) => event.type === "turn.completed",
-        ).pipe(Stream.runCollect, Effect.forkChild);
-
-        yield* adapter.startSession({
-          threadId: THREAD_ID,
-          provider: ProviderDriverKind.make("claudeAgent"),
-          runtimeMode: "full-access",
-        });
-
-        yield* adapter.sendTurn({
-          threadId: THREAD_ID,
-          input: "hello",
-        });
-
-        harness.query.emit({
-          type: "system",
-          subtype: "task_progress",
-          task_id: "task-usage-clamped",
-          description: "Thinking through the patch",
-          usage: {
-            total_tokens: 190000,
-          },
-          session_id: "sdk-session-task-usage-clamped",
-          uuid: "task-usage-progress-clamped",
-        } as unknown as SDKMessage);
-
-        harness.query.emit({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          duration_ms: 1234,
-          duration_api_ms: 1200,
-          num_turns: 1,
-          result: "done",
-          stop_reason: "end_turn",
-          session_id: "sdk-session-result-usage-clamped-after-progress",
-          usage: {
-            total_tokens: 535000,
-          },
-          modelUsage: {
-            "claude-opus-4-6": {
-              contextWindow: 200000,
-              maxOutputTokens: 64000,
-            },
-          },
-        } as unknown as SDKMessage);
-        harness.query.finish();
-
-        const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-        const usageEvents = runtimeEvents.filter(
-          (event) => event.type === "thread.token-usage.updated",
-        );
-        const finalUsageEvent = usageEvents.at(-1);
-        assert.equal(finalUsageEvent?.type, "thread.token-usage.updated");
-        if (finalUsageEvent?.type === "thread.token-usage.updated") {
-          assert.deepEqual(finalUsageEvent.payload, {
-            usage: {
-              usedTokens: 80_000,
-              lastUsedTokens: 80_000,
-              totalProcessedTokens: 535000,
-              maxTokens: 200000,
-              compactsAutomatically: true,
-            },
-          });
-        }
-      }).pipe(
-        Effect.provideService(Random.Random, makeDeterministicRandomService()),
-        Effect.provide(harness.layer),
+      const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
+      assert.equal(getContextUsageCalls, 0);
+      const usageEvent = runtimeEvents.findLast(
+        (event) => event.type === "thread.token-usage.updated",
       );
-    },
-  );
+      assert.equal(usageEvent?.type, "thread.token-usage.updated");
+      if (usageEvent?.type === "thread.token-usage.updated") {
+        assert.deepEqual(usageEvent.payload.usage, {
+          usedTokens: 200,
+          lastUsedTokens: 200,
+          totalProcessedTokens: 450,
+          inputTokens: 180,
+          outputTokens: 20,
+          maxTokens: 200000,
+        });
+      }
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
 
   it.effect(
     "emits completion only after turn result when assistant frames arrive before deltas",

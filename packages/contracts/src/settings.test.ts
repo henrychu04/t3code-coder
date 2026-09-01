@@ -1,10 +1,25 @@
 import { describe, expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
 
-import { ClaudeSettings, ServerSettingsPatch } from "./settings.ts";
+import {
+  ClaudeSettings,
+  ClientSettingsSchema,
+  ClientSettingsPatch,
+  ServerSettingsPatch,
+} from "./settings.ts";
 
 const decodeClaudeSettings = Schema.decodeUnknownSync(ClaudeSettings);
 const decodeServerSettingsPatch = Schema.decodeUnknownSync(ServerSettingsPatch);
+const decodeClientSettings = Schema.decodeUnknownSync(ClientSettingsSchema);
+const decodeClientSettingsPatch = Schema.decodeUnknownSync(ClientSettingsPatch);
+
+describe("Client settings", () => {
+  it("keeps unpin confirmation opt-in and patchable", () => {
+    expect(decodeClientSettings({}).confirmThreadUnpin).toBe(false);
+    expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
+    expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
+  });
+});
 
 describe("Claude auto-compaction settings", () => {
   it("accepts disabled, lower-bound, and upper-bound values", () => {

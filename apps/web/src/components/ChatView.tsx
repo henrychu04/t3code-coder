@@ -40,7 +40,6 @@ import {
   createModelSelection,
   resolvePromptInjectedEffort,
 } from "@t3tools/shared/model";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
 import { terminalCwd, terminalRuntimeEnv } from "@t3tools/shared/terminalEnvironment";
 import { truncate } from "@t3tools/shared/String";
 import {
@@ -87,14 +86,17 @@ import {
   deriveTimelineEntries,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
-  deriveTurnPlans,
   findLatestProposedPlan,
   deriveWorkLogEntries,
   hasActionableProposedPlan,
   isLatestTurnSettled,
 } from "../session-logic";
 import { type LegendListRef } from "@legendapp/list/react";
-import { getAnchoredTurnMetrics, type TimelineScrollMode } from "./chat/timelineScrollAnchoring";
+import {
+  CHAT_TIMELINE_ANCHOR_OFFSET,
+  getAnchoredTurnMetrics,
+  type TimelineScrollMode,
+} from "./chat/timelineScrollAnchoring";
 import {
   buildPendingUserInputAnswers,
   derivePendingUserInputProgress,
@@ -103,6 +105,10 @@ import {
   type PendingUserInputDraftAnswer,
 } from "../pendingUserInput";
 import { useUiStateStore } from "../uiStateStore";
+import {
+  latestWorkspaceMutationId,
+  useWorkspaceMutationRefresh,
+} from "../hooks/useWorkspaceMutationRefresh";
 import {
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
@@ -241,8 +247,8 @@ import {
   shouldShowThreadErrorBanner,
   ThreadErrorBanner,
 } from "./chat/ThreadErrorBanner";
-import { ComposerBannerStack, type ComposerBannerStackItem } from "./chat/ComposerBannerStack";
-import { ThreadSyncStatusPill } from "./chat/ThreadSyncStatusPill";
+import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
+import { ComposerSurface } from "./chat/ComposerSurface";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -381,6 +387,9 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 }
 const DiffPanel = lazy(() => import("./DiffPanel"));
 const FilePreviewPanel = lazy(() => import("./files/FilePreviewPanel"));
+const FileSearchDialogs = lazy(() =>
+  import("./files/FilePreviewPanel").then((module) => ({ default: module.FileSearchDialogs })),
+);
 type FileViewerGlobalCommand = "filePicker.toggle" | "projectSearch.toggle";
 interface FileViewerCommandRequest {
   readonly id: number;
@@ -1173,7 +1182,7 @@ function ChatViewContent(props: ChatViewProps) {
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
   const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
-  const { settleThread, pinThread, unpinThread } = useThreadActions();
+  const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
   const routeThreadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
@@ -1781,12 +1790,18 @@ function ChatViewContent(props: ChatViewProps) {
   const selectedProvider: ProviderDriverKind = lockedProvider ?? unlockedSelectedProvider;
   const phase = derivePhase(activeThread?.session ?? null);
   const threadActivities = activeThread?.activities ?? EMPTY_ACTIVITIES;
+  const latestCheckpointCompletedAt = activeThread?.checkpoints.at(-1)?.completedAt ?? null;
+  const workspaceMutationId = useMemo(() => {
+    const activityId = latestWorkspaceMutationId(threadActivities);
+    return activityId === null && latestCheckpointCompletedAt === null
+      ? null
+      : JSON.stringify([activityId, latestCheckpointCompletedAt]);
+  }, [latestCheckpointCompletedAt, threadActivities]);
   const activeContextWindow = useMemo(
     () => deriveLatestContextWindowSnapshot(threadActivities),
     [threadActivities],
   );
   const workLogEntries = useMemo(() => deriveWorkLogEntries(threadActivities), [threadActivities]);
-  const turnPlans = useMemo(() => deriveTurnPlans(threadActivities), [threadActivities]);
   // Native subagent fold: memoized by activity-list identity, shared by the
   // Agents surface, live strip, and workflow cards. v2Projection is null
   // until orchestration-v2 lands (source precedence lives in the derive).
@@ -1853,21 +1868,6 @@ function ChatViewContent(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  // Current step for the in-chat working row: only for the running turn's own
-  // plan (deriveActivePlanState falls back to older turns' plans, which must
-  // not label fresh work). Falls back to the first pending step so an
-  // all-pending freshly written plan labels the row, matching the chip and
-  // the server's planProgress.
-  const workingStepLabel = useMemo(() => {
-    if (!activePlan || activePlan.turnId !== (activeLatestTurn?.turnId ?? null)) {
-      return null;
-    }
-    return (
-      activePlan.steps.find((step) => step.status === "inProgress")?.step ??
-      activePlan.steps.find((step) => step.status === "pending")?.step ??
-      null
-    );
-  }, [activeLatestTurn?.turnId, activePlan]);
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
     interactionMode === "plan" &&
@@ -1912,13 +1912,8 @@ function ChatViewContent(props: ChatViewProps) {
   }, [displayServerMessages, optimisticUserMessages]);
   const timelineEntries = useMemo(
     () =>
-      deriveTimelineEntries(
-        timelineMessages,
-        activeThread?.proposedPlans ?? [],
-        workLogEntries,
-        turnPlans,
-      ),
-    [activeThread?.proposedPlans, timelineMessages, turnPlans, workLogEntries],
+      deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
+    [activeThread?.proposedPlans, timelineMessages, workLogEntries],
   );
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
@@ -1993,6 +1988,12 @@ function ChatViewContent(props: ChatViewProps) {
           input: { cwd: gitStatusCwd },
         }),
   );
+  useWorkspaceMutationRefresh({
+    enabled: gitStatusCwd !== null,
+    mutationId: workspaceMutationId,
+    refresh: gitStatusQuery.refresh,
+    resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
+  });
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   // Prefer an instance-id match so a custom Claude instance (e.g.
   // `claude_personal`) surfaces its own status/message in the banner rather
@@ -2392,15 +2393,6 @@ function ChatViewContent(props: ChatViewProps) {
   const requestFileViewerCommand = useCallback(
     (command: FileViewerGlobalCommand) => {
       if (!activeThreadRef || !activeThreadKey || !filesAvailable) return;
-      const fileViewerActive =
-        activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file";
-      if (fileViewerActive) {
-        if (!rightPanelOpen) {
-          useRightPanelStore.getState().toggleVisibility(activeThreadRef);
-        }
-      } else {
-        useRightPanelStore.getState().open(activeThreadRef, "files");
-      }
       fileViewerCommandRequestIdRef.current += 1;
       setFileViewerCommandRequest({
         id: fileViewerCommandRequestIdRef.current,
@@ -2408,13 +2400,7 @@ function ChatViewContent(props: ChatViewProps) {
         command,
       });
     },
-    [
-      activeRightPanelSurface?.kind,
-      activeThreadKey,
-      activeThreadRef,
-      filesAvailable,
-      rightPanelOpen,
-    ],
+    [activeThreadKey, activeThreadRef, filesAvailable],
   );
   const handleFileViewerCommandRequest = useCallback((id: number) => {
     setFileViewerCommandRequest((current) => (current?.id === id ? null : current));
@@ -2863,7 +2849,7 @@ function ChatViewContent(props: ChatViewProps) {
         state,
         anchorIndex,
         composerOverlayHeight,
-        anchorOffset: CHAT_LIST_ANCHOR_OFFSET,
+        anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
       });
     },
     [composerOverlayHeight],
@@ -2891,7 +2877,7 @@ function ChatViewContent(props: ChatViewProps) {
       const realContentBottom = lastRowTop + Math.max(1, lastRowHeight);
       const visibleScrollLength = Math.max(
         0,
-        (state.scrollLength ?? 0) - composerOverlayHeight - CHAT_LIST_ANCHOR_OFFSET,
+        (state.scrollLength ?? 0) - composerOverlayHeight - CHAT_TIMELINE_ANCHOR_OFFSET,
       );
       return realContentBottom > visibleScrollLength;
     },
@@ -3083,7 +3069,7 @@ function ChatViewContent(props: ChatViewProps) {
             index: anchorIndex,
             animated: true,
             viewPosition: 0,
-            viewOffset: CHAT_LIST_ANCHOR_OFFSET,
+            viewOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
           })
           .then(() => {
             if (positionedTimelineAnchorRef.current !== messageId) {
@@ -3363,10 +3349,20 @@ function ChatViewContent(props: ChatViewProps) {
   // partition (same shell, same capability gate, same PR auto-settle input)
   // so the banner and the sidebar row never disagree.
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
-  const activeComposerTasksProgress =
-    activeLatestTurn !== null && !latestTurnSettled
-      ? (activeThreadShell?.planProgress ?? null)
-      : null;
+  const activeComposerTasksProgress = useMemo(() => {
+    if (!activeLatestTurn || latestTurnSettled || activePlan?.turnId !== activeLatestTurn.turnId) {
+      return null;
+    }
+    const currentStep =
+      activePlan.steps.find((step) => step.status === "inProgress") ??
+      activePlan.steps.find((step) => step.status === "pending");
+    if (!currentStep) return null;
+    return {
+      step: currentStep.step,
+      completedSteps: activePlan.steps.filter((step) => step.status === "completed").length,
+      totalSteps: activePlan.steps.length,
+    };
+  }, [activeLatestTurn, activePlan, latestTurnSettled]);
   const activeComposerTaskSteps =
     activeComposerTasksProgress && activePlan && activePlan.turnId === activeLatestTurn?.turnId
       ? activePlan.steps
@@ -3658,6 +3654,7 @@ function ChatViewContent(props: ChatViewProps) {
     return {
       id: `background-liveness:${activeThread.id}`,
       variant: "default",
+      priority: "activity",
       icon: (
         <span
           className={cn("size-1.5 rounded-full bg-foreground", working && "animate-status-pulse")}
@@ -3704,13 +3701,6 @@ function ChatViewContent(props: ChatViewProps) {
       onDismiss: acknowledgeActiveThreadWoke,
     };
   }, [acknowledgeActiveThreadWoke, activeThread?.id, activeThreadWokeVisible]);
-  // The stack renders items[0] front-most and tucks the rest behind hover, so
-  // ordering is priority: urgent system banners (error/warning variants plus
-  // calm-styled live states flagged `urgent`, like update progress), then
-  // background liveness — its Stop button is the only stop affordance for
-  // settled turns, so a passive "update available" notice must not cover it —
-  // then calm system banners, the woke and branch-mismatch notices, and the
-  // informational parked-thread banner last — it must never cover another.
   const parkedThreadBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (!activeThreadSnoozed && !activeThreadSettled) {
       return null;
@@ -3858,10 +3848,6 @@ function ChatViewContent(props: ChatViewProps) {
     void handleSwitchCheckoutToThread();
   }, [gitStatusQuery.data?.hasWorkingTreeChanges, handleSwitchCheckoutToThread]);
   const composerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
-    const isUrgentSystemItem = (item: ComposerBannerStackItem) =>
-      item.urgent === true || item.variant === "error" || item.variant === "warning";
-    const urgentSystemItems = systemComposerBannerItems.filter(isUrgentSystemItem);
-    const calmSystemItems = systemComposerBannerItems.filter((item) => !isUrgentSystemItem(item));
     const backgroundLivenessItems =
       backgroundLivenessBannerItem === null ? [] : [backgroundLivenessBannerItem];
     const wokeThreadItems = wokeThreadBannerItem === null ? [] : [wokeThreadBannerItem];
@@ -3870,18 +3856,16 @@ function ChatViewContent(props: ChatViewProps) {
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     if (!checkoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
-        ...urgentSystemItems,
+        ...systemComposerBannerItems,
         ...backgroundLivenessItems,
-        ...calmSystemItems,
         ...resumeCompactionItems,
         ...wokeThreadItems,
         ...parkedThreadItems,
       ];
     }
     return [
-      ...urgentSystemItems,
+      ...systemComposerBannerItems,
       ...backgroundLivenessItems,
-      ...calmSystemItems,
       ...resumeCompactionItems,
       ...wokeThreadItems,
       {
@@ -4130,17 +4114,19 @@ function ChatViewContent(props: ChatViewProps) {
         event.stopPropagation();
         if (!isServerThread || !activeThreadRef || !supportsPinning) return;
         const pinned = activeThreadPinned;
-        void (pinned ? unpinThread(activeThreadRef) : pinThread(activeThreadRef)).then((result) => {
-          if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
-          const error = squashAtomCommandFailure(result);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: pinned ? "Failed to unpin thread" : "Failed to pin thread",
-              description: chatActionErrorMessage(error),
-            }),
-          );
-        });
+        void (pinned ? confirmAndUnpinThread(activeThreadRef) : pinThread(activeThreadRef)).then(
+          (result) => {
+            if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: pinned ? "Failed to unpin thread" : "Failed to pin thread",
+                description: chatActionErrorMessage(error),
+              }),
+            );
+          },
+        );
         return;
       }
 
@@ -4268,7 +4254,7 @@ function ChatViewContent(props: ChatViewProps) {
     requestFileViewerCommand,
     rightPanelOpen,
     supportsPinning,
-    unpinThread,
+    confirmAndUnpinThread,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -5350,6 +5336,7 @@ function ChatViewContent(props: ChatViewProps) {
       setComposerDraftModelSelection(
         scopeThreadRef(activeThread.environmentId, activeThread.id),
         nextModelSelection,
+        { explicit: true },
       );
       setStickyComposerModelSelection(nextModelSelection);
       scheduleComposerFocus();
@@ -5502,6 +5489,7 @@ function ChatViewContent(props: ChatViewProps) {
           composerDraftTarget={composerDraftTarget}
           initialGitScope={initialDiffPanelGitScope}
           onOpenFile={openFileSurface}
+          workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
     ) : activeRightPanelSurface?.kind === "agents" ? (
@@ -5531,20 +5519,17 @@ function ChatViewContent(props: ChatViewProps) {
           revealRequestId={
             activeRightPanelSurface.kind === "file" ? activeRightPanelSurface.revealRequestId : 0
           }
-          commandRequest={
-            fileViewerCommandRequest?.threadKey === activeThreadKey
-              ? fileViewerCommandRequest
-              : null
-          }
-          onCommandRequestHandled={handleFileViewerCommandRequest}
           onOpenFile={openFileSurface}
           onPendingChange={updateFilePending}
+          selectedFilePending={
+            activeRightPanelSurface.kind === "file" &&
+            pendingFileSurfaceIds.has(activeRightPanelSurface.id)
+          }
+          workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
     ) : null
   ) : null;
-  const externalComposerDrawerAttached =
-    composerBannerItems.length > 0 || Boolean(threadSyncPhase && !activeEnvironmentUnavailable);
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
@@ -5599,7 +5584,6 @@ function ChatViewContent(props: ChatViewProps) {
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
                 isWorking={isWorking}
-                workingStepLabel={workingStepLabel}
                 activeTurnStartedAt={activeWorkStartedAt}
                 listRef={legendListRef}
                 timelineEntries={timelineEntries}
@@ -5662,7 +5646,7 @@ function ChatViewContent(props: ChatViewProps) {
                 ref={attachDraftHeroTransitionGroupRef}
                 className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
-                <div className="pointer-events-auto relative z-10">
+                <div className="group/composer-stack pointer-events-auto relative z-10">
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
@@ -5680,13 +5664,7 @@ function ChatViewContent(props: ChatViewProps) {
                           activeProjectTitle={activeProject?.title ?? null}
                         />
                       </div>
-                      <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
                     </div>
-                  ) : (
-                    <ComposerBannerStack className="relative z-0" items={composerBannerItems} />
-                  )}
-                  {threadSyncPhase && !activeEnvironmentUnavailable ? (
-                    <ThreadSyncStatusPill phase={threadSyncPhase} />
                   ) : null}
                   <div
                     className="relative"
@@ -5696,14 +5674,8 @@ function ChatViewContent(props: ChatViewProps) {
                         : undefined
                     }
                   >
-                    <div
-                      className={cn(
-                        "chat-composer-glass-shell relative mx-auto w-full max-w-3xl",
-                        externalComposerDrawerAttached && "chat-composer-glass-shell-attached",
-                        showComposerContextStrip && "chat-composer-glass-shell-with-context",
-                      )}
-                    >
-                      <div className="chat-composer-glass-host relative z-10 w-full rounded-[22px]">
+                    <ComposerSurface.Shell contextStrip={showComposerContextStrip}>
+                      <ComposerSurface.Host>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
                             composerRef={composerRef}
@@ -5724,7 +5696,8 @@ function ChatViewContent(props: ChatViewProps) {
                             isSendBusy={isSendBusy}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
-                            externalDrawerAttached={externalComposerDrawerAttached}
+                            bannerItems={composerBannerItems}
+                            threadSyncPhase={activeEnvironmentUnavailable ? null : threadSyncPhase}
                             environmentUnavailable={activeEnvironmentUnavailableState}
                             activePendingApproval={activePendingApproval}
                             pendingApprovals={pendingApprovals}
@@ -5777,7 +5750,7 @@ function ChatViewContent(props: ChatViewProps) {
                             scheduleComposerFocus={scheduleComposerFocus}
                           />
                         </div>
-                      </div>
+                      </ComposerSurface.Host>
                       <div className="min-h-0">
                         <div
                           data-terminal-open={terminalUiState.terminalOpen ? "true" : undefined}
@@ -5812,7 +5785,7 @@ function ChatViewContent(props: ChatViewProps) {
                           )}
                         </div>
                       </div>
-                    </div>
+                    </ComposerSurface.Shell>
                     <div
                       aria-hidden
                       className="h-[calc(env(safe-area-inset-bottom)+1rem)] sm:h-[calc(env(safe-area-inset-bottom)+1.25rem)]"
@@ -5875,6 +5848,25 @@ function ChatViewContent(props: ChatViewProps) {
           />
         ))}
       </div>
+
+      {activeThreadRef && activeProject && activeWorkspaceRoot && filesAvailable ? (
+        <Suspense fallback={null}>
+          <FileSearchDialogs
+            key={activeThreadKey}
+            commandRequest={
+              fileViewerCommandRequest?.threadKey === activeThreadKey
+                ? fileViewerCommandRequest
+                : null
+            }
+            onCommandRequestHandled={handleFileViewerCommandRequest}
+            environmentId={activeProject.environmentId}
+            cwd={activeWorkspaceRoot}
+            projectName={activeProject.title}
+            threadRef={activeThreadRef}
+            onOpenFile={openFileSurface}
+          />
+        </Suspense>
+      ) : null}
 
       {!shouldUseRightPanelSheet && rightPanelOpen && activeThreadRef ? (
         <RightPanelTabs

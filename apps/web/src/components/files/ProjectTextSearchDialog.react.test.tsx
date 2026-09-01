@@ -89,7 +89,7 @@ vi.mock("./projectFilesQueryState", () => ({
   useProjectFileQuery: () => ({ data: null, error: null }),
 }));
 
-import { FileSearchDialog, ProjectTextSearchDialog } from "./FilePreviewPanel";
+import { FileSearchDialog, FileSearchDialogs, ProjectTextSearchDialog } from "./FilePreviewPanel";
 
 const threadRef = scopeThreadRef(
   EnvironmentId.make("test-environment"),
@@ -293,5 +293,26 @@ describe("ProjectTextSearchDialog", () => {
     expect(selectedResult?.className).not.toContain("bg-primary");
     expect(unselectedResult?.className).toContain("hover:bg-foreground/[0.06]");
     expect(container.querySelector("[data-slot=command-footer]")).not.toBeNull();
+  });
+
+  it("opens shortcut search dialogs without a file viewer surface", async () => {
+    const handled: number[] = [];
+    await act(async () =>
+      root.render(
+        <FileSearchDialogs
+          commandRequest={{ id: 1, command: "filePicker.toggle" }}
+          onCommandRequestHandled={(id) => handled.push(id)}
+          environmentId={EnvironmentId.make("test-environment")}
+          threadRef={threadRef}
+          cwd="/workspace/project"
+          projectName="project"
+          onOpenFile={(relativePath) => openedFiles.push({ relativePath, line: undefined })}
+        />,
+      ),
+    );
+
+    expect(container.querySelector("[data-file-viewer]")).toBeNull();
+    expect(container.querySelector("[aria-label='Search Files']")).not.toBeNull();
+    expect(handled).toEqual([1]);
   });
 });

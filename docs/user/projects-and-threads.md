@@ -17,7 +17,8 @@ you always know where work is running.
 Threads move through four states in the sidebar:
 
 - **Pinned** — kept above your active work, independent of project grouping. Pin or unpin from the
-  thread's context menu, or press `mod+shift+p`. Drag to reorder.
+  thread's context menu, or press `mod+shift+p`. Drag to reorder. Enable **Settings → Preferences
+  → Confirm before unpinning** if you want every unpin action to ask first.
 - **Active** — everything you are working on now.
 - **Snoozed** — out of the way until a wake time you pick from the thread's menu (later today,
   tomorrow morning, next week, and so on). Snoozed threads return to active on their own and a

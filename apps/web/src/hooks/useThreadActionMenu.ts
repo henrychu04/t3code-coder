@@ -71,7 +71,7 @@ export function useThreadActionMenu(input: {
     snoozeThread,
     unsnoozeThread,
     pinThread,
-    unpinThread,
+    confirmAndUnpinThread,
     archiveThread,
     deleteThread,
   } = useThreadActions();
@@ -216,7 +216,7 @@ export function useThreadActionMenu(input: {
             await reportFailure("Failed to pin thread", () => pinThread(threadRef));
             return;
           case "unpin":
-            await reportFailure("Failed to unpin thread", () => unpinThread(threadRef));
+            await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
             return;
           case "rename":
             onStartRename();
@@ -328,7 +328,7 @@ export function useThreadActionMenu(input: {
       snoozeThread,
       threadRef,
       timestampFormat,
-      unpinThread,
+      confirmAndUnpinThread,
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,
