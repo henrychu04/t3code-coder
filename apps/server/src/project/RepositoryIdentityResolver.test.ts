@@ -52,4 +52,58 @@ describe("repositoryPathFromRemoteUrl", () => {
       });
     }),
   );
+
+  it.effect("reuses the cached Git root for repeated workspace lookups", () =>
+    Effect.gen(function* () {
+      const calls: ReadonlyArray<string>[] = [];
+      const process = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.sync(() => {
+            calls.push(input.args);
+            return input.args.includes("--show-toplevel")
+              ? output("/workspace/project\n")
+              : output("origin https://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+          }),
+      });
+      const resolver = yield* make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, process),
+      );
+
+      const first = yield* resolver.resolve("/workspace/project/src");
+      const second = yield* resolver.resolve("/workspace/project/src");
+
+      expect(second).toEqual(first);
+      expect(calls).toEqual([
+        ["-C", "/workspace/project/src", "rev-parse", "--show-toplevel"],
+        ["-C", "/workspace/project", "remote", "-v"],
+      ]);
+    }),
+  );
+
+  it.effect("retries Git root discovery after a failed lookup", () =>
+    Effect.gen(function* () {
+      let rootAttempts = 0;
+      const process = ProcessRunner.ProcessRunner.of({
+        run: (input) =>
+          Effect.sync(() => {
+            if (!input.args.includes("--show-toplevel")) {
+              return output("origin https://gitlab.example.gs.com/goldman/smoke.git (fetch)\n");
+            }
+            rootAttempts += 1;
+            return rootAttempts === 1
+              ? { ...output(""), code: ChildProcessSpawner.ExitCode(1) }
+              : output("/workspace/project\n");
+          }),
+      });
+      const resolver = yield* make().pipe(
+        Effect.provideService(ProcessRunner.ProcessRunner, process),
+      );
+
+      expect(yield* resolver.resolve("/workspace/project/src")).toBeNull();
+      expect((yield* resolver.resolve("/workspace/project/src"))?.rootPath).toBe(
+        "/workspace/project",
+      );
+      expect(rootAttempts).toBe(2);
+    }),
+  );
 });
