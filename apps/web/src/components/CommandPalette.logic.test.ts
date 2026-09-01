@@ -75,4 +75,57 @@ describe("filterCommandPaletteGroups", () => {
   it("limits a > query to actions", () => {
     expect(filterCommandPaletteGroups({ groups, query: ">new" })).toEqual([groups[0]]);
   });
+
+  it("matches multi-word queries independent of token order", () => {
+    const settingsGroup: CommandPaletteGroup = {
+      value: "settings-search",
+      label: "Settings",
+      items: [
+        {
+          kind: "action",
+          value: "setting:merge-request-templates",
+          searchTerms: ["Follow merge request templates", "GitLab source control"],
+          title: "Follow merge request templates",
+          icon: null,
+          run: async () => undefined,
+        },
+      ],
+    };
+
+    expect(
+      filterCommandPaletteGroups({ groups: [settingsGroup], query: "templates merge" })[0]?.items[0]
+        ?.value,
+    ).toBe("setting:merge-request-templates");
+  });
+
+  it("ranks a title containing every token above a split contextual match", () => {
+    const settingsGroup: CommandPaletteGroup = {
+      value: "settings-search",
+      label: "Settings",
+      items: [
+        {
+          kind: "action",
+          value: "setting:context",
+          searchTerms: ["GitLab settings", "write probe"],
+          title: "Context match",
+          icon: null,
+          run: async () => undefined,
+        },
+        {
+          kind: "action",
+          value: "setting:write-probe",
+          searchTerms: ["GitLab write probe", "Source control"],
+          title: "GitLab write probe",
+          icon: null,
+          run: async () => undefined,
+        },
+      ],
+    };
+
+    expect(
+      filterCommandPaletteGroups({ groups: [settingsGroup], query: "probe gitlab" })[0]?.items.map(
+        (item) => item.value,
+      ),
+    ).toEqual(["setting:write-probe", "setting:context"]);
+  });
 });

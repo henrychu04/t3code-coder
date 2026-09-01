@@ -86,22 +86,30 @@ export function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-function rankSearchFieldMatch(field: string, normalizedQuery: string): number {
+function rankSearchFieldMatch(
+  field: string,
+  normalizedQuery: string,
+  queryTokens: ReadonlyArray<string>,
+): number {
   const normalizedField = normalizeSearchText(field);
-  if (normalizedField.length === 0 || !normalizedField.includes(normalizedQuery)) {
+  if (
+    normalizedField.length === 0 ||
+    !queryTokens.every((token) => normalizedField.includes(token))
+  ) {
     return Number.NEGATIVE_INFINITY;
   }
   if (normalizedField === normalizedQuery) return 3;
   if (normalizedField.startsWith(normalizedQuery)) return 2;
-  return 1;
+  return normalizedField.includes(normalizedQuery) ? 1 : 0;
 }
 
 function rankCommandPaletteItemMatch(
   item: CommandPaletteActionItem | CommandPaletteSubmenuItem,
   normalizedQuery: string,
+  queryTokens: ReadonlyArray<string>,
 ): number {
   for (const [index, field] of item.searchTerms.entries()) {
-    const fieldRank = rankSearchFieldMatch(field, normalizedQuery);
+    const fieldRank = rankSearchFieldMatch(field, normalizedQuery, queryTokens);
     if (fieldRank !== Number.NEGATIVE_INFINITY) {
       return 1_000 - index * 100 + fieldRank;
     }
@@ -119,13 +127,14 @@ export function filterCommandPaletteGroups(input: {
     ? input.groups.filter((group) => group.value === "actions")
     : input.groups;
   if (normalizedQuery.length === 0) return [...groups];
+  const queryTokens = normalizedQuery.split(" ");
 
   return groups.flatMap((group) => {
     const items = group.items
       .flatMap((item, index) => {
         const haystack = normalizeSearchText(item.searchTerms.join(" "));
-        return haystack.includes(normalizedQuery)
-          ? [{ item, index, rank: rankCommandPaletteItemMatch(item, normalizedQuery) }]
+        return queryTokens.every((token) => haystack.includes(token))
+          ? [{ item, index, rank: rankCommandPaletteItemMatch(item, normalizedQuery, queryTokens) }]
           : [];
       })
       .toSorted((left, right) => right.rank - left.rank || left.index - right.index)

@@ -51,6 +51,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         description="Choose how new work starts inside the selected Coder workspace."
       >
         <SettingsRow
+          id="default-checkout-mode"
           title="Default checkout mode"
           description="Work in the project checkout or create a dedicated Git worktree."
           control={
@@ -69,6 +70,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
           }
         />
         <SettingsRow
+          id="worktrees-from-origin"
           title="Start worktrees from origin"
           description="Base new worktrees on the remote tracking branch instead of the local branch."
           control={
@@ -100,6 +102,7 @@ function GeneralSettingsView() {
 
       <SettingsSection title="Sidebar" description="Control project grouping and thread ordering.">
         <SettingsRow
+          id="project-grouping"
           title="Group projects"
           description="Choose when checkouts of the same repository appear together."
           control={
@@ -121,6 +124,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="project-order"
           title="Project order"
           control={
             <SettingsSelect
@@ -141,6 +145,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="thread-order"
           title="Thread order"
           control={
             <SettingsSelect
@@ -160,6 +165,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="visible-threads-per-project"
           title="Visible threads per project"
           description={`Show between ${MIN_SIDEBAR_THREAD_PREVIEW_COUNT} and ${MAX_SIDEBAR_THREAD_PREVIEW_COUNT} threads before expanding a project.`}
           control={
@@ -185,6 +191,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="auto-settle-inactive-threads"
           title="Auto-settle inactive threads"
           description="Move inactive threads into the settled shelf after this many days."
           control={
@@ -221,6 +228,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="auto-settle-merged-threads"
           title="Auto-settle merged threads"
           description="Settle a thread automatically when its branch is merged."
           control={
@@ -237,6 +245,7 @@ function GeneralSettingsView() {
 
       <SettingsSection title="Editor and history">
         <SettingsRow
+          id="time-format"
           title="Time format"
           control={
             <SettingsSelect
@@ -255,6 +264,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="diff-layout"
           title="Diff layout"
           description="Choose how diffs are displayed by default."
           control={
@@ -273,6 +283,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="wrap-long-lines"
           title="Wrap long lines"
           description="Wrap long lines in diffs and file views by default."
           control={
@@ -284,6 +295,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="ignore-diff-whitespace"
           title="Ignore whitespace in diffs"
           control={
             <Switch
@@ -296,6 +308,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="confirm-thread-unpin"
           title="Confirm before unpinning"
           control={
             <Switch
@@ -308,6 +321,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="confirm-thread-archive"
           title="Confirm before archiving"
           control={
             <Switch
@@ -320,6 +334,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="confirm-thread-delete"
           title="Confirm before deleting"
           control={
             <Switch

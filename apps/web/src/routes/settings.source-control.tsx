@@ -73,6 +73,7 @@ function SourceControlPreferences() {
       description="Configure automatic GitLab refreshes and the text generated for commits and merge requests."
     >
       <SettingsRow
+        id="git-fetch-interval"
         title="Fetch interval"
         description="Refresh remote branch and merge request status in the background. Set to 0 to disable."
         control={
@@ -97,6 +98,7 @@ function SourceControlPreferences() {
         }
       />
       <SettingsRow
+        id="source-control-writing-style"
         title="Source control writing style"
         description={
           style.mode === "repo_conventions"
@@ -146,6 +148,7 @@ function SourceControlPreferences() {
         ) : null}
       </SettingsRow>
       <SettingsRow
+        id="follow-merge-request-templates"
         title="Follow merge request templates"
         description="Use the repository's merge request template when generating a description."
         control={
@@ -161,6 +164,7 @@ function SourceControlPreferences() {
         }
       />
       <SettingsRow
+        id="source-control-writer-model"
         title="Source control writer model"
         description="Optionally use a separate model for commit messages, branch names, and merge request content."
         control={
@@ -205,6 +209,7 @@ function SourceControlPreferences() {
           Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval) / 1_000,
         ) ? (
         <SettingsRow
+          id="reset-source-control-defaults"
           title="Reset source control defaults"
           control={
             <Button
@@ -384,7 +389,7 @@ function SourceControlSettingsView() {
 
       <SourceControlPreferences />
 
-      <section className="space-y-3">
+      <section className="space-y-3" id="gitlab-workspace-status">
         <div className="px-3 sm:px-4">
           <h2 className="text-lg font-semibold tracking-tight">Connected workspaces</h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">

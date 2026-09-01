@@ -183,7 +183,7 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
 
   return (
     <div className="space-y-12">
-      <div className="space-y-2 px-3 sm:px-4">
+      <div className="space-y-2 px-3 sm:px-4" id="keyboard-shortcuts">
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
           IntelliJ-inspired defaults are stored in the selected Coder workspace. Click a shortcut,
           then press the replacement. For Search project files, press Shift twice to assign the

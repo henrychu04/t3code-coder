@@ -136,6 +136,7 @@ function CoderSettingsView() {
   return (
     <SettingsPage>
       <SettingsSection
+        id="coder-connections"
         title="Coder connections"
         description="Add each Coder domain once. Authentication happens in the terminal that is running T3 Coder; project setup only asks you to choose a domain, workspace, and folder."
         unframed

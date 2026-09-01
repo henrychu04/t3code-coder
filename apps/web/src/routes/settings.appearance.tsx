@@ -67,6 +67,7 @@ function AppearanceSettingsView() {
     <SettingsPage>
       <SettingsSection title="Appearance">
         <SettingsRow
+          id="color-mode"
           title="Color mode"
           description="Follow the operating system or keep the interface light or dark."
           control={
@@ -86,6 +87,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="appearance-contrast"
           title="Contrast"
           description="Adjust the contrast of colors and borders across the interface."
           control={
@@ -116,6 +118,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="glass-opacity"
           title="Glass opacity"
           description="Adjust the opacity of menus, dialogs, and the composer."
           control={
@@ -146,6 +149,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="environment-identification"
           title="Environment identification"
           description="Show environment artwork, a version pill, or no environment marker."
           control={
@@ -167,6 +171,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="font-smoothing"
           title="Font smoothing"
           description="Use thinner grayscale font smoothing on macOS."
           control={
@@ -184,6 +189,7 @@ function AppearanceSettingsView() {
         description="Use a font family name or a CSS fallback list. Leave blank for the app default."
       >
         <SettingsRow
+          id="interface-font"
           title="Interface font"
           control={
             <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
@@ -204,6 +210,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="prompt-font"
           title="Prompt font"
           control={
             <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
@@ -224,6 +231,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="code-font"
           title="Code font"
           control={
             <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
@@ -244,6 +252,7 @@ function AppearanceSettingsView() {
           }
         />
         <SettingsRow
+          id="terminal-font"
           title="Terminal font"
           control={
             <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">

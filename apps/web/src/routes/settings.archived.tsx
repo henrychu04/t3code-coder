@@ -60,53 +60,55 @@ function ArchivedThreadsView() {
 
   return (
     <SettingsPage>
-      {groups.length === 0 ? (
-        <SettingsSection title="Archived threads">
-          <SettingsRow
-            title={
-              isLoading
-                ? "Loading archived threads"
-                : error
-                  ? "Could not load archived threads"
-                  : "No archived threads"
-            }
-            description={
-              isLoading
-                ? "Checking connected Coder workspaces."
-                : (error ?? "Archived threads will appear here.")
-            }
-            control={
-              isLoading ? (
-                <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground" />
-              ) : (
-                <ArchiveIcon className="size-4 text-muted-foreground" />
-              )
-            }
-          />
-        </SettingsSection>
-      ) : (
-        groups.map(({ environmentId, project, threads }) => (
-          <SettingsSection key={`${environmentId}:${project.id}`} title={project.title}>
-            {threads.map((thread) => (
-              <SettingsRow
-                key={thread.id}
-                title={thread.title}
-                description={`Archived ${formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}`}
-                control={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void handleUnarchive(environmentId, thread.id)}
-                  >
-                    <ArchiveRestoreIcon />
-                    Unarchive
-                  </Button>
-                }
-              />
-            ))}
+      <div className="contents" id="archived-threads">
+        {groups.length === 0 ? (
+          <SettingsSection title="Archived threads">
+            <SettingsRow
+              title={
+                isLoading
+                  ? "Loading archived threads"
+                  : error
+                    ? "Could not load archived threads"
+                    : "No archived threads"
+              }
+              description={
+                isLoading
+                  ? "Checking connected Coder workspaces."
+                  : (error ?? "Archived threads will appear here.")
+              }
+              control={
+                isLoading ? (
+                  <LoaderCircleIcon className="size-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <ArchiveIcon className="size-4 text-muted-foreground" />
+                )
+              }
+            />
           </SettingsSection>
-        ))
-      )}
+        ) : (
+          groups.map(({ environmentId, project, threads }) => (
+            <SettingsSection key={`${environmentId}:${project.id}`} title={project.title}>
+              {threads.map((thread) => (
+                <SettingsRow
+                  key={thread.id}
+                  title={thread.title}
+                  description={`Archived ${formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}`}
+                  control={
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => void handleUnarchive(environmentId, thread.id)}
+                    >
+                      <ArchiveRestoreIcon />
+                      Unarchive
+                    </Button>
+                  }
+                />
+              ))}
+            </SettingsSection>
+          ))
+        )}
+      </div>
     </SettingsPage>
   );
 }

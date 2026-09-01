@@ -71,6 +71,7 @@ import {
   type CommandPaletteSubmenuItem,
 } from "./CommandPalette.logic";
 import { CommandPaletteResults } from "./CommandPaletteResults";
+import { SETTINGS_SEARCH_ITEMS } from "./settings/settingsSearch";
 import { Button } from "./ui/button";
 import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { Input } from "./ui/input";
@@ -235,6 +236,24 @@ function CoderCommandPaletteDialog(props: {
       })),
     [handleNewThread, projectPickerEntries],
   );
+  const settingsItems = useMemo<CommandPaletteActionItem[]>(
+    () =>
+      SETTINGS_SEARCH_ITEMS.map((item) => ({
+        kind: "action",
+        value: `setting:${item.id}`,
+        searchTerms: [item.title, item.section, ...item.searchTerms],
+        title: item.title,
+        description: item.section,
+        icon: <SettingsIcon className="size-4 shrink-0 text-icon-muted" />,
+        run: async () => {
+          await navigate({
+            to: item.to,
+            hash: item.targetId ?? item.id,
+          });
+        },
+      })),
+    [navigate],
+  );
   const projectViewGroups = useMemo<CommandPaletteGroup[]>(
     () =>
       projectItems.length > 0
@@ -391,6 +410,9 @@ function CoderCommandPaletteDialog(props: {
     { value: "actions", label: "Actions", items: actionItems },
     ...(query.trim().length > 0 && projectItems.length > 0
       ? [{ value: "projects-search", label: "Projects", items: projectItems }]
+      : []),
+    ...(query.trim().length > 0
+      ? [{ value: "settings-search", label: "Settings", items: settingsItems }]
       : []),
     ...(threadItems.length > 0
       ? [
