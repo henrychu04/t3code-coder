@@ -50,3 +50,10 @@ to work. Settings shows a bounded diagnostic category for failed or indeterminat
 a missing CLI, timeout, network/TLS failure, HTTP rejection, or unrecognized exit status. Raw
 `glab` output is never sent to the browser. T3 Coder does not register GitHub, Bitbucket, Azure
 DevOps, or another hosted provider.
+
+## Merge-request list
+
+The **Pull requests** page can keep several merge requests open as right-panel tabs. Filter loaded
+results by author or labels, see label and change-size context on each row, and sort by update
+time, creation time, or change size. Command-click (Control-click on Windows and Linux) a merge
+request number to open it on GitLab instead of inside T3 Coder.
