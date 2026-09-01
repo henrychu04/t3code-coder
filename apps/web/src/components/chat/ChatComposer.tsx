@@ -2382,7 +2382,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               </ComposerBanner.Root>
             </ComposerBanner.Attachment>
           ) : null}
-          {isTasksDrawerOpen &&
+          {!activityStackItem &&
+          isTasksDrawerOpen &&
           !hasBlockingComposerTopDrawer &&
           visibleTasksProgress &&
           visibleTaskSteps ? (

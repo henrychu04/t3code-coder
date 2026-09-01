@@ -1356,6 +1356,8 @@ function normalizePersistedDraftThreads(
           environmentId: projectRef.environmentId,
           projectId: projectRef.projectId,
           logicalProjectKey,
+          branch: null,
+          worktreePath: null,
         };
       }
     }
@@ -1703,7 +1705,10 @@ function normalizeCurrentPersistedComposerDraftStoreState(
       stickyModelSelection,
       nextStickyModelOptions,
     );
-    stickyActiveProvider = normalizeProviderInstanceId(normalizedPersistedState.stickyProvider);
+    stickyActiveProvider =
+      normalizeProviderInstanceId(normalizedPersistedState.stickyProvider) ??
+      normalizedStickyModelSelection?.instanceId ??
+      null;
   }
 
   return {
