@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import type {
   KeybindingCommand,
   KeybindingShortcut,
@@ -26,9 +25,10 @@ import { KeybindingWhenEditor } from "../components/settings/KeybindingWhenEdito
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Kbd } from "../components/ui/kbd";
-import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import { serverEnvironment } from "../state/server";
+import type { EnvironmentPresentation } from "../state/environments";
 import { useAtomCommand } from "../state/use-atom-command";
+import { WorkspaceSettingsTarget } from "../components/settings/WorkspaceSettingsTarget";
 
 const CATEGORIES = ["Files", "Navigation", "Panels", "Chat", "Terminal", "Scripts"] as const;
 
@@ -65,9 +65,9 @@ function sameRule(
   return JSON.stringify(ruleInput(left)) === JSON.stringify(ruleInput(right));
 }
 
-function ShortcutsSettingsView() {
-  const environmentId = usePrimaryEnvironmentId();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPresentation }) {
+  const environmentId = props.environment.environmentId;
+  const keybindings = props.environment.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding);
   const removeKeybinding = useAtomCommand(serverEnvironment.removeKeybinding);
   const [query, setQuery] = useState("");
@@ -130,7 +130,6 @@ function ShortcutsSettingsView() {
     replace: ResolvedKeybindingRule | null,
     when: string,
   ) => {
-    if (environmentId === null) return;
     const normalizedWhen = when.trim();
     if (normalizedWhen && !parseKeybindingWhenExpression(normalizedWhen)) {
       setError("Invalid when expression. Use variables with !, &&, ||, and parentheses.");
@@ -157,7 +156,6 @@ function ShortcutsSettingsView() {
   };
 
   const remove = async (binding: ResolvedKeybindingRule) => {
-    if (environmentId === null) return;
     setBusy(binding.command);
     setError(null);
     const result = await removeKeybinding({ environmentId, input: ruleInput(binding) });
@@ -168,7 +166,6 @@ function ShortcutsSettingsView() {
   };
 
   const reset = async (command: KeybindingCommand) => {
-    if (environmentId === null) return;
     setBusy(command);
     setError(null);
     const current = bindingsByCommand.get(command) ?? [];
@@ -199,11 +196,10 @@ function ShortcutsSettingsView() {
   };
 
   return (
-    <SettingsPage>
+    <div className="space-y-12">
       <div className="space-y-2 px-3 sm:px-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Keyboard shortcuts</h1>
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          IntelliJ-inspired defaults are stored in the active Coder workspace. Click a shortcut,
+          IntelliJ-inspired defaults are stored in the selected Coder workspace. Click a shortcut,
           then press the replacement. For Search project files, press Shift twice to assign the
           Search Everywhere gesture.
         </p>
@@ -219,9 +215,6 @@ function ShortcutsSettingsView() {
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
         </div>
-        {environmentId === null ? (
-          <p className="text-xs text-warning-foreground">Connect a workspace to edit shortcuts.</p>
-        ) : null}
         {error ? <p className="text-xs text-destructive">{error}</p> : null}
       </div>
 
@@ -302,7 +295,7 @@ function ShortcutsSettingsView() {
                               variant="outline"
                               className="w-28 shrink-0"
                               data-keybinding-capture=""
-                              disabled={environmentId === null || busy !== null}
+                              disabled={busy !== null}
                               onClick={() => {
                                 setPending(null);
                                 setCapturing({ command: action.command, replace: target });
@@ -379,7 +372,7 @@ function ShortcutsSettingsView() {
                               )}
                             </Button>
                             <KeybindingWhenEditor
-                              disabled={!editableShortcut || environmentId === null || busy !== null}
+                              disabled={!editableShortcut || busy !== null}
                               value={targetWhen}
                               onChange={(when) => {
                                 if (!editableShortcut) return;
@@ -401,7 +394,7 @@ function ShortcutsSettingsView() {
                                 variant="ghost"
                                 className="shrink-0"
                                 aria-label={`Remove ${action.label} binding`}
-                                disabled={environmentId === null || busy !== null}
+                                disabled={busy !== null}
                                 onClick={() => void remove(target)}
                               >
                                 <Trash2Icon />
@@ -429,36 +422,36 @@ function ShortcutsSettingsView() {
                         </div>
                       ) : null}
                     </div>
-                  <div className="flex shrink-0 items-center gap-1">
-                    {current.length > 0 ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {current.length > 0 ? (
+                        <Button
+                          type="button"
+                          size="icon-sm"
+                          variant="ghost"
+                          className="shrink-0"
+                          aria-label={`Add another ${action.label} binding`}
+                          disabled={busy !== null}
+                          onClick={() => {
+                            setPending(null);
+                            setCapturing({ command: action.command, replace: null });
+                            firstShiftAt.current = null;
+                          }}
+                        >
+                          <PlusIcon />
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="icon-sm"
                         variant="ghost"
                         className="shrink-0"
-                        aria-label={`Add another ${action.label} binding`}
-                        disabled={environmentId === null || busy !== null}
-                        onClick={() => {
-                          setPending(null);
-                          setCapturing({ command: action.command, replace: null });
-                          firstShiftAt.current = null;
-                        }}
+                        aria-label={`Reset ${action.label}`}
+                        disabled={busy !== null}
+                        onClick={() => void reset(action.command)}
                       >
-                        <PlusIcon />
+                        <RotateCcwIcon />
                       </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      className="shrink-0"
-                      aria-label={`Reset ${action.label}`}
-                      disabled={environmentId === null || busy !== null}
-                      onClick={() => void reset(action.command)}
-                    >
-                      <RotateCcwIcon />
-                    </Button>
-                  </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -472,6 +465,20 @@ function ShortcutsSettingsView() {
           <SearchIcon className="size-4" /> No matching actions.
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ShortcutsSettingsView() {
+  return (
+    <SettingsPage>
+      <SettingsSection title="Keyboard shortcuts" unframed>
+        <WorkspaceSettingsTarget ariaLabel="Keyboard shortcuts workspace">
+          {(environment) => (
+            <WorkspaceShortcutsSettings key={environment.environmentId} environment={environment} />
+          )}
+        </WorkspaceSettingsTarget>
+      </SettingsSection>
     </SettingsPage>
   );
 }

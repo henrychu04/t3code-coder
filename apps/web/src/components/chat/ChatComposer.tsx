@@ -2619,6 +2619,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     </Button>
                   ) : (
                     <ProviderModelPicker
+                      environmentId={environmentId}
                       compact={isComposerFooterCompact}
                       activeInstanceId={selectedInstanceId}
                       model={selectedModelForPickerWithCustomFallback}

@@ -1,6 +1,5 @@
 "use client";
 
-import { useAtomValue } from "@effect/atom-react";
 import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
@@ -14,10 +13,10 @@ import {
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { useState } from "react";
 
-import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
-import { primaryServerProvidersAtom } from "../../state/server";
+import type { EnvironmentPresentation } from "../../state/environments";
 import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
 import { SettingResetButton, SettingsSection } from "./SettingsPage";
@@ -32,6 +31,7 @@ import {
   type ProviderStatusKey,
 } from "./providerStatus";
 import { shouldResetTextGenerationSelectionOnDisable } from "./WorkspaceProviderSettings.logic";
+import { WorkspaceSettingsTarget } from "./WorkspaceSettingsTarget";
 
 const CODEX = ProviderDriverKind.make("codex");
 const CLAUDE = ProviderDriverKind.make("claudeAgent");
@@ -291,10 +291,13 @@ function withoutProviderKey<V>(
   return next;
 }
 
-export function WorkspaceProviderSettings() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const providers = useAtomValue(primaryServerProvidersAtom);
+function WorkspaceProviderSettingsForEnvironment(props: {
+  readonly environment: EnvironmentPresentation;
+}) {
+  const environmentId = props.environment.environmentId;
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const providers = props.environment.serverConfig?.providers ?? [];
   const [selectedInstanceId, setSelectedInstanceId] = useState<ProviderInstanceId>(
     defaultInstanceIdForDriver(CODEX),
   );
@@ -393,66 +396,76 @@ export function WorkspaceProviderSettings() {
   };
 
   return (
-    <SettingsSection title="Providers" unframed>
-      <div className="space-y-1">
-        <div className="mx-3 overflow-hidden rounded-lg border border-border/70 sm:mx-4 lg:grid lg:h-[min(38rem,calc(100dvh-16rem))] lg:min-h-[30rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
-          <div className="border-b border-border/70 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
-            <ScrollArea scrollFade chainVerticalScroll className="lg:min-h-0 lg:flex-1">
-              <div className="divide-y divide-border/60">
-                {rows.map((row) => (
-                  <div key={row.instanceId} className="p-1">
-                    <WorkspaceProviderListRow
-                      row={row}
-                      selected={selectedRow?.instanceId === row.instanceId}
-                      onSelect={() => setSelectedInstanceId(row.instanceId)}
-                      onEnabledChange={(enabled) =>
-                        updateProvider(row, { ...row.instance, enabled })
-                      }
-                    />
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
+    <div className="space-y-1">
+      <div className="mx-3 overflow-hidden rounded-lg border border-border/70 sm:mx-4 lg:grid lg:h-[min(38rem,calc(100dvh-16rem))] lg:min-h-[30rem] lg:grid-cols-[20rem_minmax(0,1fr)]">
+        <div className="border-b border-border/70 lg:flex lg:min-h-0 lg:flex-col lg:border-r lg:border-b-0">
+          <ScrollArea scrollFade chainVerticalScroll className="lg:min-h-0 lg:flex-1">
+            <div className="divide-y divide-border/60">
+              {rows.map((row) => (
+                <div key={row.instanceId} className="p-1">
+                  <WorkspaceProviderListRow
+                    row={row}
+                    selected={selectedRow?.instanceId === row.instanceId}
+                    onSelect={() => setSelectedInstanceId(row.instanceId)}
+                    onEnabledChange={(enabled) => updateProvider(row, { ...row.instance, enabled })}
+                  />
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
 
-          <div className="min-w-0 lg:min-h-0">
-            {selectedRow ? (
-              <WorkspaceProviderEditor
-                key={selectedRow.instanceId}
-                row={selectedRow}
-                hiddenModels={
-                  settings.providerModelPreferences?.[selectedRow.instanceId]?.hiddenModels ?? []
-                }
-                favoriteModels={(settings.favorites ?? [])
-                  .filter((favorite) => favorite.provider === selectedRow.instanceId)
-                  .map((favorite) => favorite.model)}
-                modelOrder={
-                  settings.providerModelPreferences?.[selectedRow.instanceId]?.modelOrder ?? []
-                }
-                onUpdate={(next) => updateProvider(selectedRow, next)}
-                onHiddenModelsChange={(hiddenModels) =>
-                  updateModelPreferences(selectedRow.instanceId, {
-                    hiddenModels,
-                    modelOrder:
-                      settings.providerModelPreferences?.[selectedRow.instanceId]?.modelOrder ?? [],
-                  })
-                }
-                onFavoriteModelsChange={(models) =>
-                  updateFavoriteModels(selectedRow.instanceId, models)
-                }
-                onModelOrderChange={(modelOrder) =>
-                  updateModelPreferences(selectedRow.instanceId, {
-                    hiddenModels:
-                      settings.providerModelPreferences?.[selectedRow.instanceId]?.hiddenModels ??
-                      [],
-                    modelOrder,
-                  })
-                }
-              />
-            ) : null}
-          </div>
+        <div className="min-w-0 lg:min-h-0">
+          {selectedRow ? (
+            <WorkspaceProviderEditor
+              key={selectedRow.instanceId}
+              row={selectedRow}
+              hiddenModels={
+                settings.providerModelPreferences?.[selectedRow.instanceId]?.hiddenModels ?? []
+              }
+              favoriteModels={(settings.favorites ?? [])
+                .filter((favorite) => favorite.provider === selectedRow.instanceId)
+                .map((favorite) => favorite.model)}
+              modelOrder={
+                settings.providerModelPreferences?.[selectedRow.instanceId]?.modelOrder ?? []
+              }
+              onUpdate={(next) => updateProvider(selectedRow, next)}
+              onHiddenModelsChange={(hiddenModels) =>
+                updateModelPreferences(selectedRow.instanceId, {
+                  hiddenModels,
+                  modelOrder:
+                    settings.providerModelPreferences?.[selectedRow.instanceId]?.modelOrder ?? [],
+                })
+              }
+              onFavoriteModelsChange={(models) =>
+                updateFavoriteModels(selectedRow.instanceId, models)
+              }
+              onModelOrderChange={(modelOrder) =>
+                updateModelPreferences(selectedRow.instanceId, {
+                  hiddenModels:
+                    settings.providerModelPreferences?.[selectedRow.instanceId]?.hiddenModels ?? [],
+                  modelOrder,
+                })
+              }
+            />
+          ) : null}
         </div>
       </div>
+    </div>
+  );
+}
+
+export function WorkspaceProviderSettings() {
+  return (
+    <SettingsSection title="Providers" unframed>
+      <WorkspaceSettingsTarget ariaLabel="Provider settings workspace">
+        {(environment) => (
+          <WorkspaceProviderSettingsForEnvironment
+            key={environment.environmentId}
+            environment={environment}
+          />
+        )}
+      </WorkspaceSettingsTarget>
     </SettingsSection>
   );
 }

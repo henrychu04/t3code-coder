@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import { useAtomCommand } from "../state/use-atom-command";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -52,12 +51,11 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
-import { useEnvironment, useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
-import { useProjects, useThreadShells } from "../state/entities";
+import { useEnvironment, useEnvironmentKeybindings, useEnvironments } from "../state/environments";
+import { useActiveEnvironmentId, useProjects, useThreadShells } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
 import { useThreadSearch } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
-import { primaryServerKeybindingsAtom } from "../state/server";
 import { buildThreadRouteParams } from "../threadRoutes";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { ChatComposerHandle } from "./chat/ChatComposer";
@@ -83,7 +81,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
     mode: "command",
     openIntent: null,
   });
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
 
   useEffect(
@@ -154,11 +152,11 @@ function CoderCommandPaletteDialog(props: {
   readonly setOpen: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const activeEnvironmentId = useActiveEnvironmentId();
+  const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
   const projects = useProjects();
   const threads = useThreadShells();
   const { environments } = useEnvironments();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -184,10 +182,10 @@ function CoderCommandPaletteDialog(props: {
       buildSidebarProjectSnapshots({
         projects,
         settings: groupingSettings,
-        primaryEnvironmentId,
+        preferredEnvironmentId: activeEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
       }),
-    [environmentLabelById, groupingSettings, primaryEnvironmentId, projects],
+    [activeEnvironmentId, environmentLabelById, groupingSettings, projects],
   );
   const contextualProjectRef = useMemo(
     () =>

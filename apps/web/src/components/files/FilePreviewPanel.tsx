@@ -74,7 +74,7 @@ import { cn } from "~/lib/utils";
 import { buildFileReviewComment } from "~/reviewCommentContext";
 import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch, useProjectTextSearch } from "~/state/queries";
-import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useEnvironmentKeybindings } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import FileBrowserPanel from "./FileBrowserPanel";
@@ -1604,7 +1604,7 @@ function RenderedMarkdownSurface(props: {
 
 export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   const { resolvedTheme } = useTheme();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const keybindings = useEnvironmentKeybindings(props.environmentId);
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
   const file = useProjectFileQuery(
     props.environmentId,

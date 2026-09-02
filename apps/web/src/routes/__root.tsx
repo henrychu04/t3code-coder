@@ -1,4 +1,9 @@
-import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ServerConfig,
+  ServerConfigStreamEvent,
+  ServerLifecycleWelcomePayload,
+} from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import {
   Outlet,
@@ -7,7 +12,7 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 
 import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "../branding";
 import { resolveServerBackedAppDisplayName } from "../branding.logic";
@@ -33,12 +38,8 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { useAtomValue } from "@effect/atom-react";
-import {
-  primaryServerConfigAtom,
-  primaryServerConfigEventAtom,
-  primaryServerWelcomeAtom,
-} from "../state/server";
-import { readProject, setActiveEnvironmentId } from "../state/entities";
+import { environmentServerStatesAtom } from "../state/server";
+import { readProject } from "../state/entities";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -142,13 +143,14 @@ function FontAppearanceSync() {
 }
 
 function DocumentTitleSync() {
-  const primaryServerVersion =
-    useAtomValue(primaryServerConfigAtom)?.environment.serverVersion ?? null;
+  const serverStates = useAtomValue(environmentServerStatesAtom);
   const title = resolveServerBackedAppDisplayName({
     baseName: APP_BASE_NAME,
     fallbackDisplayName: APP_DISPLAY_NAME,
     fallbackStageLabel: APP_STAGE_LABEL,
-    primaryServerVersion,
+    serverVersions: [...serverStates.values()].map(
+      ({ config }) => config?.environment.serverVersion,
+    ),
   });
 
   useEffect(() => {
@@ -233,100 +235,121 @@ function EventRouter() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
-  const serverConfig = useAtomValue(primaryServerConfigAtom);
-  const serverConfigEvent = useAtomValue(primaryServerConfigEventAtom);
-  const serverWelcome = useAtomValue(primaryServerWelcomeAtom);
+  const serverStates = useAtomValue(environmentServerStatesAtom);
   const readPathname = useEffectEvent(() => pathname);
-  const handledBootstrapThreadIdRef = useRef<string | null>(null);
-  const handledConfigEventRef = useRef(serverConfigEvent);
-  const [keybindingsToastController] = useState<KeybindingsUpdateToastController>(() =>
-    createKeybindingsUpdateToastController({}),
+  const handledBootstrapThreadsRef = useRef(new Set<string>());
+  const rootBootstrapNavigationStartedRef = useRef(false);
+  const handledConfigEventsRef = useRef(new Map<EnvironmentId, ServerConfigStreamEvent | null>());
+  const keybindingsToastControllersRef = useRef(
+    new Map<EnvironmentId, KeybindingsUpdateToastController>(),
   );
 
-  const handleWelcome = useEffectEvent((payload: ServerLifecycleWelcomePayload | null) => {
-    if (!payload) return;
+  const handleWelcome = useEffectEvent(
+    (payload: ServerLifecycleWelcomePayload | null, serverConfig: ServerConfig | null) => {
+      if (!payload) return;
 
-    setActiveEnvironmentId(payload.environment.environmentId);
-    void (async () => {
-      if (!payload.bootstrapProjectId || !payload.bootstrapThreadId) {
-        return;
-      }
-      const bootstrapProject = readProject(
-        scopeProjectRef(payload.environment.environmentId, payload.bootstrapProjectId),
-      );
-      const bootstrapProjectKey =
-        (bootstrapProject
-          ? deriveLogicalProjectKeyFromSettings(bootstrapProject, projectGroupingSettings)
-          : null) ??
-        (serverConfig?.cwd
-          ? derivePhysicalProjectKeyFromPath(payload.environment.environmentId, serverConfig.cwd)
-          : null) ??
-        scopedProjectKey(
+      void (async () => {
+        if (!payload.bootstrapProjectId || !payload.bootstrapThreadId) {
+          return;
+        }
+        const environmentId = payload.environment.environmentId;
+        const bootstrapThreadKey = `${environmentId}:${payload.bootstrapThreadId}`;
+        if (handledBootstrapThreadsRef.current.has(bootstrapThreadKey)) {
+          return;
+        }
+        handledBootstrapThreadsRef.current.add(bootstrapThreadKey);
+
+        const bootstrapProject = readProject(
           scopeProjectRef(payload.environment.environmentId, payload.bootstrapProjectId),
         );
-      useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
+        const bootstrapProjectKey =
+          (bootstrapProject
+            ? deriveLogicalProjectKeyFromSettings(bootstrapProject, projectGroupingSettings)
+            : null) ??
+          (serverConfig?.cwd
+            ? derivePhysicalProjectKeyFromPath(payload.environment.environmentId, serverConfig.cwd)
+            : null) ??
+          scopedProjectKey(
+            scopeProjectRef(payload.environment.environmentId, payload.bootstrapProjectId),
+          );
+        useUiStateStore.getState().setProjectExpanded(bootstrapProjectKey, true);
 
-      if (readPathname() !== "/") {
+        if (readPathname() !== "/" || rootBootstrapNavigationStartedRef.current) {
+          return;
+        }
+        rootBootstrapNavigationStartedRef.current = true;
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId: payload.environment.environmentId,
+            threadId: payload.bootstrapThreadId,
+          },
+          replace: true,
+        });
+      })().catch(() => undefined);
+    },
+  );
+
+  const handleServerConfigUpdated = useEffectEvent(
+    (environmentId: EnvironmentId, serverConfigEvent: ServerConfigStreamEvent) => {
+      let controller = keybindingsToastControllersRef.current.get(environmentId);
+      if (!controller) {
+        controller = createKeybindingsUpdateToastController({});
+        keybindingsToastControllersRef.current.set(environmentId, controller);
+      }
+      const decision = controller.handle(serverConfigEvent);
+      if (!decision) {
         return;
       }
-      if (handledBootstrapThreadIdRef.current === payload.bootstrapThreadId) {
+
+      if (decision._tag === "Success") {
+        toastManager.add({
+          type: "success",
+          title: "Keybindings updated",
+          description: "Keybindings configuration reloaded successfully.",
+        });
         return;
       }
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: {
-          environmentId: payload.environment.environmentId,
-          threadId: payload.bootstrapThreadId,
-        },
-        replace: true,
-      });
-      handledBootstrapThreadIdRef.current = payload.bootstrapThreadId;
-    })().catch(() => undefined);
-  });
 
-  const handleServerConfigUpdated = useEffectEvent(() => {
-    const decision = keybindingsToastController.handle(serverConfigEvent);
-    if (!decision) {
-      return;
-    }
-
-    if (decision._tag === "Success") {
-      toastManager.add({
-        type: "success",
-        title: "Keybindings updated",
-        description: "Keybindings configuration reloaded successfully.",
-      });
-      return;
-    }
-
-    toastManager.add(
-      stackedThreadToast({
-        type: "warning",
-        title: "Invalid keybindings configuration",
-        description: decision.message,
-      }),
-    );
-  });
+      toastManager.add(
+        stackedThreadToast({
+          type: "warning",
+          title: "Invalid keybindings configuration",
+          description: decision.message,
+        }),
+      );
+    },
+  );
 
   useEffect(() => {
-    if (!serverConfig) {
-      return;
+    for (const { config, welcome } of serverStates.values()) {
+      handleWelcome(welcome, config);
     }
-
-    setActiveEnvironmentId(serverConfig.environment.environmentId);
-  }, [serverConfig]);
+  }, [serverStates]);
 
   useEffect(() => {
-    handleWelcome(serverWelcome);
-  }, [serverWelcome]);
-
-  useEffect(() => {
-    if (serverConfigEvent === null || handledConfigEventRef.current === serverConfigEvent) {
-      return;
+    for (const [environmentId, { latestEvent }] of serverStates) {
+      if (!handledConfigEventsRef.current.has(environmentId)) {
+        handledConfigEventsRef.current.set(environmentId, latestEvent);
+        continue;
+      }
+      if (
+        latestEvent === null ||
+        handledConfigEventsRef.current.get(environmentId) === latestEvent
+      ) {
+        continue;
+      }
+      handledConfigEventsRef.current.set(environmentId, latestEvent);
+      handleServerConfigUpdated(environmentId, latestEvent);
     }
-    handledConfigEventRef.current = serverConfigEvent;
-    handleServerConfigUpdated();
-  }, [serverConfigEvent]);
+
+    for (const environmentId of handledConfigEventsRef.current.keys()) {
+      if (!serverStates.has(environmentId)) {
+        handledConfigEventsRef.current.delete(environmentId);
+        keybindingsToastControllersRef.current.delete(environmentId);
+      }
+    }
+  }, [serverStates]);
 
   return null;
 }

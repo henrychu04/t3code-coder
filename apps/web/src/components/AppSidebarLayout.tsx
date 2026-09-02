@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
@@ -11,7 +10,8 @@ import { useLocation } from "@tanstack/react-router";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { cn } from "../lib/utils";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import { useActiveEnvironmentId } from "../state/entities";
+import { useEnvironmentKeybindings } from "../state/environments";
 import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
@@ -60,7 +60,7 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function SidebarControl() {
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();

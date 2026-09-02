@@ -7,7 +7,6 @@ import {
   FolderGitIcon,
   FolderIcon,
   HistoryIcon,
-  MonitorIcon,
 } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
@@ -104,12 +103,11 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
       ? resolveEnvModeLabel("worktree")
       : resolveCurrentWorkspaceLabel(activeWorktreePath);
   const isLocked = envLocked || envModeLocked;
-  const EnvironmentIcon = activeEnvironment?.isPrimary ? MonitorIcon : CloudIcon;
   const icon = showEnvironmentIndicator ? (
     // Button's base styles apply `-mx-0.5` to descendant SVGs, which eats 4px
     // out of whatever gap we set. mx-0! cancels that so gap-0.5 reads as 2px.
     <span className="inline-flex shrink-0 items-center gap-0.5">
-      <EnvironmentIcon className="size-3 shrink-0 mx-0!" />
+      <CloudIcon className="size-3 shrink-0 mx-0!" />
       <WorkspaceIcon className="size-3 shrink-0 mx-0!" />
     </span>
   ) : (
@@ -151,7 +149,6 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
                 onValueChange={(value) => onEnvironmentChange(value as EnvironmentId)}
               >
                 {availableEnvironments.map((env) => {
-                  const Icon = env.isPrimary ? MonitorIcon : CloudIcon;
                   return (
                     <MenuRadioItem
                       key={env.environmentId}
@@ -159,7 +156,7 @@ const MobileRunContextSelector = memo(function MobileRunContextSelector({
                       value={env.environmentId}
                     >
                       <span className="flex min-w-0 items-center gap-1.5">
-                        <Icon className="size-3" />
+                        <CloudIcon className="size-3" />
                         <span className="min-w-0 truncate">{env.label}</span>
                       </span>
                     </MenuRadioItem>

@@ -9,7 +9,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 export function SettingsPage({ children }: { readonly children: ReactNode }) {
   return (
     <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-      <WorkspacePageContainer className="gap-10 py-8">{children}</WorkspacePageContainer>
+      <WorkspacePageContainer className="gap-12">{children}</WorkspacePageContainer>
     </div>
   );
 }
@@ -27,7 +27,7 @@ export function SettingsSection({
 }) {
   return (
     <section className="space-y-3">
-      <div className={cn("px-3 sm:px-4", unframed && "flex min-h-8 items-center")}>
+      <div className={cn("px-3 sm:px-4", unframed && "min-h-8")}>
         <h2
           className={cn(
             "text-lg font-semibold tracking-tight",

@@ -16,7 +16,7 @@ import {
   AVAILABLE_CONNECTION_STATE,
   ConnectionBlockedError,
   ConnectionTransientError,
-  PrimaryConnectionTarget,
+  ConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
@@ -40,7 +40,7 @@ import {
   squashAtomCommandFailure,
 } from "./runtime.ts";
 
-const QUERY_ENVIRONMENT = new PrimaryConnectionTarget({
+const QUERY_ENVIRONMENT = new ConnectionTarget({
   environmentId: EnvironmentId.make("query-environment"),
   label: "Query environment",
   httpBaseUrl: "https://query.example.test",

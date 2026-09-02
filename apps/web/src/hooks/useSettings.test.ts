@@ -1,12 +1,17 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   ProviderDriverKind,
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts/settings";
 import { describe, expect, it } from "vite-plus/test";
 
-import { mergeEnvironmentSettings, resolveEnvironmentIdentificationMode } from "./useSettings";
+import {
+  applyEnvironmentClientSettingsPatch,
+  mergeEnvironmentSettings,
+  resolveEnvironmentIdentificationMode,
+} from "./useSettings";
 
 describe("resolveEnvironmentIdentificationMode", () => {
   it("keeps identification hidden until client settings hydrate", () => {
@@ -75,5 +80,61 @@ describe("mergeEnvironmentSettings", () => {
 
     expect(settings.providerInstances).toBe(serverSettings.providerInstances);
     expect(settings.favorites).toBe(clientSettings.favorites);
+  });
+
+  it("isolates provider preferences by environment and falls back to legacy preferences", () => {
+    const workspaceA = EnvironmentId.make("workspace-a");
+    const workspaceB = EnvironmentId.make("workspace-b");
+    const legacyFavorite = {
+      provider: ProviderInstanceId.make("codex"),
+      model: "legacy-model",
+    };
+    const scopedFavorite = {
+      provider: ProviderInstanceId.make("codex"),
+      model: "workspace-a-model",
+    };
+    const clientSettings = {
+      ...DEFAULT_CLIENT_SETTINGS,
+      favorites: [legacyFavorite],
+      providerPreferencesByEnvironment: {
+        [workspaceA]: {
+          favorites: [scopedFavorite],
+          providerModelPreferences: {},
+        },
+      },
+    };
+
+    expect(
+      mergeEnvironmentSettings(DEFAULT_SERVER_SETTINGS, clientSettings, workspaceA).favorites,
+    ).toEqual([scopedFavorite]);
+    expect(
+      mergeEnvironmentSettings(DEFAULT_SERVER_SETTINGS, clientSettings, workspaceB).favorites,
+    ).toEqual([legacyFavorite]);
+  });
+
+  it("migrates legacy provider preferences when an environment first changes them", () => {
+    const environmentId = EnvironmentId.make("workspace-a");
+    const legacyPreferences = {
+      [ProviderInstanceId.make("codex")]: {
+        hiddenModels: ["hidden"],
+        modelOrder: ["first"],
+      },
+    };
+    const next = applyEnvironmentClientSettingsPatch(
+      {
+        ...DEFAULT_CLIENT_SETTINGS,
+        providerModelPreferences: legacyPreferences,
+      },
+      {
+        favorites: [{ provider: ProviderInstanceId.make("codex"), model: "gpt-5.4" }],
+      },
+      environmentId,
+    );
+
+    expect(next.favorites).toEqual([]);
+    expect(next.providerPreferencesByEnvironment[environmentId]).toEqual({
+      favorites: [{ provider: ProviderInstanceId.make("codex"), model: "gpt-5.4" }],
+      providerModelPreferences: legacyPreferences,
+    });
   });
 });

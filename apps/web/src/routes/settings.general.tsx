@@ -17,6 +17,7 @@ import {
 import { CoderWorkspaceDiagnostics } from "../components/CoderWorkspaceDiagnostics";
 import { formatCoderAutostop } from "../components/CoderWorkspaceLatency";
 import { PortForwardSettings } from "../components/settings/PortForwardSettings";
+import { SettingsPage, SettingsSection } from "../components/settings/SettingsPage";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -133,92 +134,90 @@ function CoderSettingsView() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-background px-6 py-10 text-foreground">
-      <div className="mx-auto max-w-3xl space-y-8">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight">Coder connections</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Add each Coder domain once. Authentication happens in the terminal that is running T3
-            Coder; project setup only asks you to choose a domain, workspace, and folder.
-          </p>
-        </header>
-
-        {error ? (
-          <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive-foreground">
-            {error}
-          </p>
-        ) : null}
-
-        <section className="space-y-3">
-          {config.deployments.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
-              No Coder domains have been added yet.
-            </div>
-          ) : null}
-          {config.deployments.map((deployment) => (
-            <DeploymentCard
-              authStatus={authByDeployment[deployment.id] ?? "checking"}
-              authenticationBusy={authenticating !== null}
-              authenticating={authenticating === deployment.id}
-              deployment={deployment}
-              hasWorkspaces={config.workspaces.some(
-                (workspace) => workspace.deploymentId === deployment.id,
-              )}
-              key={deployment.id}
-              onLogin={() => void login(deployment.id)}
-              onRefreshAuth={() => void refreshAuth(deployment.id)}
-              onRemove={async () => {
-                setError(null);
-                try {
-                  await saveConfig({
-                    ...config,
-                    deployments: config.deployments.filter((entry) => entry.id !== deployment.id),
-                  });
-                } catch (cause) {
-                  setError(cause instanceof Error ? cause.message : "Could not remove domain.");
-                }
-              }}
-              onSave={async (next) => {
-                setError(null);
-                try {
-                  await saveConfig({
-                    ...config,
-                    deployments: config.deployments.map((entry) =>
-                      entry.id === deployment.id ? next : entry,
-                    ),
-                  });
-                  await refreshAuth(deployment.id);
-                } catch (cause) {
-                  setError(cause instanceof Error ? cause.message : "Could not save domain.");
-                  throw cause;
-                }
-              }}
-            />
-          ))}
-        </section>
-
-        <AddDeploymentForm
-          onAdd={async (deployment) => {
-            setError(null);
-            try {
-              await saveConfig({
-                ...config,
-                deployments: [...config.deployments, deployment],
-              });
-            } catch (cause) {
-              setError(cause instanceof Error ? cause.message : "Could not add domain.");
-              throw cause;
-            }
-          }}
-        />
-
-        <section className="space-y-3 border-t pt-7">
-          <div>
-            <h2 className="text-lg font-semibold">Workspace connections</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Workspaces are added automatically when you select a project folder.
+    <SettingsPage>
+      <SettingsSection
+        title="Coder connections"
+        description="Add each Coder domain once. Authentication happens in the terminal that is running T3 Coder; project setup only asks you to choose a domain, workspace, and folder."
+        unframed
+      >
+        <div className="space-y-8">
+          {error ? (
+            <p className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive-foreground">
+              {error}
             </p>
-          </div>
+          ) : null}
+
+          <section className="space-y-3">
+            {config.deployments.length === 0 ? (
+              <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+                No Coder domains have been added yet.
+              </div>
+            ) : null}
+            {config.deployments.map((deployment) => (
+              <DeploymentCard
+                authStatus={authByDeployment[deployment.id] ?? "checking"}
+                authenticationBusy={authenticating !== null}
+                authenticating={authenticating === deployment.id}
+                deployment={deployment}
+                hasWorkspaces={config.workspaces.some(
+                  (workspace) => workspace.deploymentId === deployment.id,
+                )}
+                key={deployment.id}
+                onLogin={() => void login(deployment.id)}
+                onRefreshAuth={() => void refreshAuth(deployment.id)}
+                onRemove={async () => {
+                  setError(null);
+                  try {
+                    await saveConfig({
+                      ...config,
+                      deployments: config.deployments.filter((entry) => entry.id !== deployment.id),
+                    });
+                  } catch (cause) {
+                    setError(cause instanceof Error ? cause.message : "Could not remove domain.");
+                  }
+                }}
+                onSave={async (next) => {
+                  setError(null);
+                  try {
+                    await saveConfig({
+                      ...config,
+                      deployments: config.deployments.map((entry) =>
+                        entry.id === deployment.id ? next : entry,
+                      ),
+                    });
+                    await refreshAuth(deployment.id);
+                  } catch (cause) {
+                    setError(cause instanceof Error ? cause.message : "Could not save domain.");
+                    throw cause;
+                  }
+                }}
+              />
+            ))}
+          </section>
+
+          <AddDeploymentForm
+            onAdd={async (deployment) => {
+              setError(null);
+              try {
+                await saveConfig({
+                  ...config,
+                  deployments: [...config.deployments, deployment],
+                });
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : "Could not add domain.");
+                throw cause;
+              }
+            }}
+          />
+        </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Workspace connections"
+        description="Workspaces are added automatically when you select a project folder."
+        unframed
+      >
+        <div className="space-y-3">
           {config.workspaces.length === 0 ? (
             <p className="rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
               No workspaces are connected.
@@ -420,22 +419,22 @@ function CoderSettingsView() {
               );
             })
           )}
-        </section>
+        </div>
+      </SettingsSection>
 
-        <PortForwardSettings
-          config={config}
-          workspaceRuntime={workspaceRuntime}
-          onError={setError}
-          onSaveConfig={saveConfig}
-        />
+      <PortForwardSettings
+        config={config}
+        workspaceRuntime={workspaceRuntime}
+        onError={setError}
+        onSaveConfig={saveConfig}
+      />
 
-        <aside className="rounded-xl border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
-          Coder 2.25.3 stores each session token in a plaintext Coder config file. T3 Coder gives
-          each domain a separate profile directory so multiple domains remain signed in, but it
-          never reads, copies, logs, or displays those token files.
-        </aside>
-      </div>
-    </div>
+      <aside className="rounded-xl border bg-muted/30 p-4 text-xs leading-5 text-muted-foreground">
+        Coder 2.25.3 stores each session token in a plaintext Coder config file. T3 Coder gives each
+        domain a separate profile directory so multiple domains remain signed in, but it never
+        reads, copies, logs, or displays those token files.
+      </aside>
+    </SettingsPage>
   );
 }
 

@@ -326,10 +326,9 @@ describe("resolveCheckoutBranchMismatch", () => {
 });
 
 describe("resolveEnvironmentOptionLabel", () => {
-  it("prefers the primary environment's machine label", () => {
+  it("prefers the workspace runtime label", () => {
     expect(
       resolveEnvironmentOptionLabel({
-        isPrimary: true,
         environmentId: localEnvironmentId,
         runtimeLabel: "Julius's Mac mini",
         savedLabel: "Local environment",
@@ -337,21 +336,19 @@ describe("resolveEnvironmentOptionLabel", () => {
     ).toBe("Julius's Mac mini");
   });
 
-  it("falls back to 'This device' for generic primary labels", () => {
+  it("falls back to the saved workspace label", () => {
     expect(
       resolveEnvironmentOptionLabel({
-        isPrimary: true,
         environmentId: localEnvironmentId,
         runtimeLabel: "Local environment",
         savedLabel: "Local",
       }),
-    ).toBe("This device");
+    ).toBe("Local environment");
   });
 
-  it("keeps configured labels for non-primary environments", () => {
+  it("keeps configured workspace labels", () => {
     expect(
       resolveEnvironmentOptionLabel({
-        isPrimary: false,
         environmentId: remoteEnvironmentId,
         runtimeLabel: null,
         savedLabel: "Build box",
@@ -364,25 +361,16 @@ describe("shouldShowEnvironmentIndicator", () => {
   it("shows the indicator whenever multiple environments are pickable", () => {
     expect(
       shouldShowEnvironmentIndicator({
-        activeEnvironment: { isPrimary: true },
+        activeEnvironment: {},
         canPickEnvironment: true,
       }),
     ).toBe(true);
   });
 
-  it("shows a sole remote environment so the user knows where the project runs", () => {
+  it("hides the indicator when only one workspace is available", () => {
     expect(
       shouldShowEnvironmentIndicator({
-        activeEnvironment: { isPrimary: false },
-        canPickEnvironment: false,
-      }),
-    ).toBe(true);
-  });
-
-  it("hides a sole primary (this-device) environment", () => {
-    expect(
-      shouldShowEnvironmentIndicator({
-        activeEnvironment: { isPrimary: true },
+        activeEnvironment: {},
         canPickEnvironment: false,
       }),
     ).toBe(false);

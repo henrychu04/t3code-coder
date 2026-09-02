@@ -1,20 +1,18 @@
 import * as Schema from "effect/Schema";
 
-import { PrimaryConnectionTarget, type ConnectionTarget } from "./model.ts";
+import { ConnectionTarget } from "./model.ts";
 
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
 }
 
-export class PrimaryConnectionRegistration extends Schema.TaggedClass<PrimaryConnectionRegistration>()(
-  "PrimaryConnectionRegistration",
-  { target: PrimaryConnectionTarget },
+export class ConnectionRegistration extends Schema.TaggedClass<ConnectionRegistration>()(
+  "ConnectionRegistration",
+  { target: ConnectionTarget },
 ) {}
 
-export const ConnectionRegistration = PrimaryConnectionRegistration;
-export type ConnectionRegistration = typeof ConnectionRegistration.Type;
-export const PlatformConnectionRegistration = PrimaryConnectionRegistration;
-export type PlatformConnectionRegistration = typeof PlatformConnectionRegistration.Type;
+export const PlatformConnectionRegistration = ConnectionRegistration;
+export type PlatformConnectionRegistration = ConnectionRegistration;
 
 export function connectionRegistrationTarget(
   registration: ConnectionRegistration,

@@ -4,11 +4,11 @@ import {
   type EnvironmentPresentation as BaseEnvironmentPresentation,
 } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { environmentPresentations, useEnvironmentPresentation } from "./presentation";
-import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { useEnvironmentQuery } from "./query";
 
 export interface EnvironmentPresentation extends BaseEnvironmentPresentation {
@@ -50,10 +50,6 @@ export function useEnvironments() {
   };
 }
 
-export function usePrimaryEnvironmentId(): EnvironmentId | null {
-  return useAtomValue(primaryEnvironmentIdAtom);
-}
-
 export function useEnvironment(
   environmentId: EnvironmentId | null,
 ): EnvironmentPresentation | null {
@@ -67,8 +63,8 @@ export function useEnvironment(
   );
 }
 
-export function usePrimaryEnvironment(): EnvironmentPresentation | null {
-  return useEnvironment(usePrimaryEnvironmentId());
+export function useEnvironmentKeybindings(environmentId: EnvironmentId | null) {
+  return useEnvironment(environmentId)?.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
 }
 
 export function useEnvironmentConnectionState(environmentId: EnvironmentId) {

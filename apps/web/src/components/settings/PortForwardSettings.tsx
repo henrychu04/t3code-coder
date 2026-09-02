@@ -23,6 +23,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+import { SettingsSection } from "./SettingsPage";
 
 type StatusById = Readonly<Record<string, CoderPortForwardRuntimeStatus>>;
 const EMPTY_PORT_FORWARDS: readonly CoderPortForwardProfile[] = [];
@@ -85,124 +86,125 @@ export function PortForwardSettings({
   }, [rules]);
 
   return (
-    <section className="space-y-4 border-t pt-7">
-      <div>
-        <h2 className="text-lg font-semibold">Port forwarding</h2>
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
-          Saved forwards start automatically with T3 Coder and bind only to 127.0.0.1 on this
-          computer.
-        </p>
-      </div>
-
-      {rules.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
-          <NetworkIcon className="size-4 shrink-0" />
-          No ports are forwarded yet.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {rules.map((rule) => {
-            const workspace = config.workspaces.find((entry) => entry.id === rule.workspaceId);
-            if (workspace === undefined) return null;
-            const status = statuses[rule.id];
-            const workspaceStatus = workspaceRuntime[workspace.id];
-            const workspaceStatusUnavailable = workspaceStatus?.status === "unavailable";
-            const workspaceInactive =
-              workspaceStatus?.status === "stopped" || workspaceStatus?.status === "starting";
-            const checkingWorkspaceStatus = workspaceStatus === undefined;
-            const displayError =
-              (workspaceStatusUnavailable ? workspaceStatus.error : undefined) ??
-              statusError ??
-              (status?.status === "error" ? status.error : undefined);
-            return (
-              <div className="rounded-xl border bg-card p-4" key={rule.id}>
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium">{workspace.name}</p>
-                      <PortForwardStatusBadge
-                        status={checkingWorkspaceStatus ? undefined : status}
-                        unavailable={statusError !== null || workspaceStatusUnavailable}
-                      />
+    <SettingsSection
+      title="Port forwarding"
+      description="Saved forwards start automatically with T3 Coder and bind only to 127.0.0.1 on this computer."
+      unframed
+    >
+      <div className="space-y-4">
+        {rules.length === 0 ? (
+          <div className="flex items-center gap-3 rounded-xl border border-dashed p-5 text-sm text-muted-foreground">
+            <NetworkIcon className="size-4 shrink-0" />
+            No ports are forwarded yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {rules.map((rule) => {
+              const workspace = config.workspaces.find((entry) => entry.id === rule.workspaceId);
+              if (workspace === undefined) return null;
+              const status = statuses[rule.id];
+              const workspaceStatus = workspaceRuntime[workspace.id];
+              const workspaceStatusUnavailable = workspaceStatus?.status === "unavailable";
+              const workspaceInactive =
+                workspaceStatus?.status === "stopped" || workspaceStatus?.status === "starting";
+              const checkingWorkspaceStatus = workspaceStatus === undefined;
+              const displayError =
+                (workspaceStatusUnavailable ? workspaceStatus.error : undefined) ??
+                statusError ??
+                (status?.status === "error" ? status.error : undefined);
+              return (
+                <div className="rounded-xl border bg-card p-4" key={rule.id}>
+                  <div className="flex flex-wrap items-start gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium">{workspace.name}</p>
+                        <PortForwardStatusBadge
+                          status={checkingWorkspaceStatus ? undefined : status}
+                          unavailable={statusError !== null || workspaceStatusUnavailable}
+                        />
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                        <span className="uppercase">{rule.protocol}</span>
+                        <span>127.0.0.1:{rule.localPort}</span>
+                        <ArrowRightIcon className="size-3" />
+                        <span>
+                          {workspace.workspace}:{rule.remotePort}
+                        </span>
+                      </div>
+                      {displayError ? (
+                        <p className="mt-2 text-xs text-destructive-foreground">{displayError}</p>
+                      ) : null}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                      <span className="uppercase">{rule.protocol}</span>
-                      <span>127.0.0.1:{rule.localPort}</span>
-                      <ArrowRightIcon className="size-3" />
-                      <span>
-                        {workspace.workspace}:{rule.remotePort}
-                      </span>
-                    </div>
-                    {displayError ? (
-                      <p className="mt-2 text-xs text-destructive-foreground">{displayError}</p>
-                    ) : null}
+                    <Button
+                      aria-label="Restart port forward"
+                      disabled={
+                        status === undefined ||
+                        statusError !== null ||
+                        checkingWorkspaceStatus ||
+                        workspaceInactive ||
+                        workspaceStatusUnavailable
+                      }
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await restartCoderPortForward(rule.id);
+                          await refreshStatuses();
+                        } catch (cause) {
+                          onError(
+                            cause instanceof Error
+                              ? cause.message
+                              : "Could not restart port forward.",
+                          );
+                        }
+                      }}
+                    >
+                      <RotateCwIcon /> Restart
+                    </Button>
+                    <Button
+                      aria-label="Remove port forward"
+                      size="sm"
+                      variant="ghost"
+                      onClick={async () => {
+                        try {
+                          await onSaveConfig({
+                            ...config,
+                            portForwards: rules.filter((entry) => entry.id !== rule.id),
+                          });
+                        } catch (cause) {
+                          onError(
+                            cause instanceof Error
+                              ? cause.message
+                              : "Could not remove port forward.",
+                          );
+                        }
+                      }}
+                    >
+                      <Trash2Icon /> Remove
+                    </Button>
                   </div>
-                  <Button
-                    aria-label="Restart port forward"
-                    disabled={
-                      status === undefined ||
-                      statusError !== null ||
-                      checkingWorkspaceStatus ||
-                      workspaceInactive ||
-                      workspaceStatusUnavailable
-                    }
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        await restartCoderPortForward(rule.id);
-                        await refreshStatuses();
-                      } catch (cause) {
-                        onError(
-                          cause instanceof Error
-                            ? cause.message
-                            : "Could not restart port forward.",
-                        );
-                      }
-                    }}
-                  >
-                    <RotateCwIcon /> Restart
-                  </Button>
-                  <Button
-                    aria-label="Remove port forward"
-                    size="sm"
-                    variant="ghost"
-                    onClick={async () => {
-                      try {
-                        await onSaveConfig({
-                          ...config,
-                          portForwards: rules.filter((entry) => entry.id !== rule.id),
-                        });
-                      } catch (cause) {
-                        onError(
-                          cause instanceof Error ? cause.message : "Could not remove port forward.",
-                        );
-                      }
-                    }}
-                  >
-                    <Trash2Icon /> Remove
-                  </Button>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
 
-      <AddPortForwardForm
-        existingRules={rules}
-        workspaces={config.workspaces}
-        onAdd={async (rule) => {
-          try {
-            await onSaveConfig({ ...config, portForwards: [...rules, rule] });
-          } catch (cause) {
-            const message = cause instanceof Error ? cause.message : "Could not add port forward.";
-            onError(message);
-            throw cause;
-          }
-        }}
-      />
-    </section>
+        <AddPortForwardForm
+          existingRules={rules}
+          workspaces={config.workspaces}
+          onAdd={async (rule) => {
+            try {
+              await onSaveConfig({ ...config, portForwards: [...rules, rule] });
+            } catch (cause) {
+              const message =
+                cause instanceof Error ? cause.message : "Could not add port forward.";
+              onError(message);
+              throw cause;
+            }
+          }}
+        />
+      </div>
+    </SettingsSection>
   );
 }
 

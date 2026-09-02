@@ -5,9 +5,8 @@
  * `settings.json` on the server, fetched via `server.getConfig`) and
  * client-only settings (persisted in localStorage).
  *
- * Live server settings always require an environment id. Primary-environment
- * access is intentionally named as such so environment-sensitive consumers
- * cannot silently read the wrong server's settings.
+ * Live server settings always require an explicit environment id so
+ * environment-sensitive consumers cannot silently read the wrong server.
  */
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useAtomValue } from "@effect/atom-react";
@@ -34,8 +33,7 @@ import {
   themeAllowsSidebarArtwork,
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
-import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
-import { usePrimaryEnvironmentId } from "~/state/environments";
+import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
 
@@ -215,19 +213,31 @@ function useClientSettingsValue(): ClientSettings {
 export function mergeEnvironmentSettings(
   serverSettings: ServerSettings,
   clientSettings: ClientSettings,
+  environmentId: EnvironmentId | null = null,
 ): UnifiedSettings {
-  return { ...serverSettings, ...clientSettings };
+  const providerPreferences =
+    environmentId === null
+      ? undefined
+      : clientSettings.providerPreferencesByEnvironment[environmentId];
+  return {
+    ...serverSettings,
+    ...clientSettings,
+    favorites: providerPreferences?.favorites ?? clientSettings.favorites,
+    providerModelPreferences:
+      providerPreferences?.providerModelPreferences ?? clientSettings.providerModelPreferences,
+  };
 }
 
 function useMergedSettings<T>(
   serverSettings: ServerSettings,
+  environmentId: EnvironmentId | null,
   selector: ((settings: UnifiedSettings) => T) | undefined,
 ): T {
   const clientSettings = useClientSettingsValue();
 
   const merged = useMemo<UnifiedSettings>(
-    () => mergeEnvironmentSettings(serverSettings, clientSettings),
-    [clientSettings, serverSettings],
+    () => mergeEnvironmentSettings(serverSettings, clientSettings, environmentId),
+    [clientSettings, environmentId, serverSettings],
   );
 
   return useMemo(() => (selector ? selector(merged) : (merged as T)), [merged, selector]);
@@ -295,14 +305,42 @@ export function useEnvironmentSettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
   const serverSettings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
-  return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector);
+  return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, environmentId, selector);
 }
 
-/** Primary-only settings access for the settings UI and other explicitly global surfaces. */
-export function usePrimarySettings<T = UnifiedSettings>(
-  selector?: (settings: UnifiedSettings) => T,
-): T {
-  return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
+export function applyEnvironmentClientSettingsPatch(
+  current: ClientSettings,
+  patch: ClientSettingsPatch,
+  environmentId: EnvironmentId | null,
+): ClientSettings {
+  if (
+    environmentId === null ||
+    (!("favorites" in patch) && !("providerModelPreferences" in patch))
+  ) {
+    return { ...current, ...patch };
+  }
+
+  const existing = current.providerPreferencesByEnvironment[environmentId];
+  const scoped = {
+    favorites: existing?.favorites ?? current.favorites,
+    providerModelPreferences:
+      existing?.providerModelPreferences ?? current.providerModelPreferences,
+  };
+  const unscopedPatch = { ...patch };
+  delete unscopedPatch.favorites;
+  delete unscopedPatch.providerModelPreferences;
+
+  return {
+    ...current,
+    ...unscopedPatch,
+    providerPreferencesByEnvironment: {
+      ...current.providerPreferencesByEnvironment,
+      [environmentId]: {
+        favorites: patch.favorites ?? scoped.favorites,
+        providerModelPreferences: patch.providerModelPreferences ?? scoped.providerModelPreferences,
+      },
+    },
+  };
 }
 
 /**
@@ -329,10 +367,13 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
         }
       }
       if (Object.keys(clientPatch).length > 0) {
-        persistClientSettings({
-          ...getClientSettingsSnapshot(),
-          ...clientPatch,
-        });
+        persistClientSettings(
+          applyEnvironmentClientSettingsPatch(
+            getClientSettingsSnapshot(),
+            clientPatch,
+            environmentId,
+          ),
+        );
       }
     },
     [environmentId, persistServerSettings],
@@ -343,10 +384,6 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
 
 export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
   return useUpdateSettingsTarget(environmentId);
-}
-
-export function useUpdatePrimarySettings() {
-  return useUpdateSettingsTarget(usePrimaryEnvironmentId());
 }
 
 export function useUpdateClientSettings() {

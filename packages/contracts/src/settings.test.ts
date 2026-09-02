@@ -22,6 +22,26 @@ describe("Client settings", () => {
     expect(decodeClientSettingsPatch({ confirmThreadUnpin: true }).confirmThreadUnpin).toBe(true);
     expect(() => decodeClientSettingsPatch({ confirmThreadUnpin: "yes" })).toThrow();
   });
+
+  it("defaults workspace provider preferences and decodes scoped values", () => {
+    expect(decodeClientSettings({}).providerPreferencesByEnvironment).toEqual({});
+
+    const providerPreferencesByEnvironment = {
+      "workspace-a": {
+        favorites: [{ provider: "codex", model: "gpt-5.6-sol" }],
+        providerModelPreferences: {
+          codex: { hiddenModels: ["gpt-5.4"], modelOrder: ["gpt-5.6-sol"] },
+        },
+      },
+    };
+    expect(
+      decodeClientSettings({ providerPreferencesByEnvironment }).providerPreferencesByEnvironment,
+    ).toEqual(providerPreferencesByEnvironment);
+    expect(
+      decodeClientSettingsPatch({ providerPreferencesByEnvironment })
+        .providerPreferencesByEnvironment,
+    ).toEqual(providerPreferencesByEnvironment);
+  });
 });
 
 describe("Codex settings", () => {
