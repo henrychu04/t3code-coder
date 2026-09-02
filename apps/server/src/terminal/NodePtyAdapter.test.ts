@@ -32,6 +32,16 @@ const testLayer = NodePtyAdapter.layer.pipe(
   ),
 );
 
+const linuxTestLayer = NodePtyAdapter.layer.pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      NodeServices.layer,
+      Layer.succeed(HostProcessPlatform, "linux"),
+      Layer.succeed(HostProcessArchitecture, "x64"),
+    ),
+  ),
+);
+
 it.effect("spawns through the public adapter with the provided host references", () =>
   Effect.gen(function* () {
     spawn.mockClear();
@@ -90,6 +100,33 @@ it.effect("preserves a caller-provided TERM in the spawn env on win32", () =>
       },
     ]);
   }).pipe(Effect.provide(testLayer)),
+);
+
+it.effect("spawns on linux-x64 without rewriting the environment", () =>
+  Effect.gen(function* () {
+    spawn.mockClear();
+    const adapter = yield* PtyAdapter.PtyAdapter;
+    yield* adapter.spawn({
+      shell: "/bin/bash",
+      cwd: "/workspace",
+      cols: 80,
+      rows: 24,
+      env: { PATH: "/usr/bin", TERM: "xterm-direct" },
+    });
+
+    assert.equal(spawn.mock.calls.length, 1);
+    assert.deepEqual(spawn.mock.calls[0], [
+      "/bin/bash",
+      [],
+      {
+        cwd: "/workspace",
+        cols: 80,
+        rows: 24,
+        env: { PATH: "/usr/bin", TERM: "xterm-direct" },
+        name: "xterm-256color",
+      },
+    ]);
+  }).pipe(Effect.provide(linuxTestLayer)),
 );
 
 it.effect("reports native module load failures as structured startup defects", () =>

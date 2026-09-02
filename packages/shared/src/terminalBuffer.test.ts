@@ -21,6 +21,17 @@ describe("truncateTerminalBufferToBytes", () => {
     });
   });
 
+  it("accepts BEL as a terminator only for OSC sequences", () => {
+    expect(truncateTerminalBufferToBytes("aa\u001b]title\u0007zz", 2)).toMatchObject({
+      buffer: "zz",
+      droppedCodeUnits: 10,
+    });
+    expect(truncateTerminalBufferToBytes("aa\u001bPpayload\u0007zz", 2)).toMatchObject({
+      buffer: "",
+      droppedCodeUnits: 14,
+    });
+  });
+
   it("prefers the next complete line for history replay", () => {
     expect(
       truncateTerminalBufferToBytes("old line\nnew line\nlast", 15, {

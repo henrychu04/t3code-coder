@@ -12,10 +12,14 @@ function isCsiFinalByte(codePoint: number): boolean {
   return codePoint >= 0x40 && codePoint <= 0x7e;
 }
 
-function findStringTerminatorIndex(input: string, start: number): number | null {
+function findStringTerminatorIndex(
+  input: string,
+  start: number,
+  allowBell: boolean,
+): number | null {
   for (let index = start; index < input.length; index += 1) {
     const codePoint = input.charCodeAt(index);
-    if (codePoint === 0x07 || codePoint === 0x9c) return index + 1;
+    if ((allowBell && codePoint === 0x07) || codePoint === 0x9c) return index + 1;
     if (codePoint === 0x1b && input.charCodeAt(index + 1) === 0x5c) return index + 2;
   }
   return null;
@@ -46,20 +50,20 @@ function terminalTokenEnd(input: string, start: number): number {
     const next = input.charCodeAt(start + 1);
     if (Number.isNaN(next)) return input.length;
     if (next === 0x5b) return findCsiEndIndex(input, start + 2) ?? input.length;
-    if (next === 0x5d || next === 0x50 || next === 0x58 || next === 0x5e || next === 0x5f) {
-      return findStringTerminatorIndex(input, start + 2) ?? input.length;
+    if (next === 0x5d) {
+      return findStringTerminatorIndex(input, start + 2, true) ?? input.length;
+    }
+    if (next === 0x50 || next === 0x58 || next === 0x5e || next === 0x5f) {
+      return findStringTerminatorIndex(input, start + 2, false) ?? input.length;
     }
     return findEscapeEndIndex(input, start + 1) ?? input.length;
   }
   if (codePoint === 0x9b) return findCsiEndIndex(input, start + 1) ?? input.length;
-  if (
-    codePoint === 0x9d ||
-    codePoint === 0x90 ||
-    codePoint === 0x98 ||
-    codePoint === 0x9e ||
-    codePoint === 0x9f
-  ) {
-    return findStringTerminatorIndex(input, start + 1) ?? input.length;
+  if (codePoint === 0x9d) {
+    return findStringTerminatorIndex(input, start + 1, true) ?? input.length;
+  }
+  if (codePoint === 0x90 || codePoint === 0x98 || codePoint === 0x9e || codePoint === 0x9f) {
+    return findStringTerminatorIndex(input, start + 1, false) ?? input.length;
   }
   const scalar = input.codePointAt(start);
   return start + (scalar !== undefined && scalar > 0xffff ? 2 : 1);

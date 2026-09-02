@@ -37,7 +37,6 @@ Inside each Linux Coder workspace:
 - Codex or Claude Code, already authenticated for the provider you intend to use
 - Git
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)
-- the standard Linux `script` utility
 
 T3 Coder does not install or authenticate a provider. A missing or unauthenticated provider is
 shown as unavailable while another ready provider remains usable.
