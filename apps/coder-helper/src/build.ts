@@ -15,6 +15,13 @@ const nativePackagesByTarget: Record<HelperNativeTarget, readonly [fff: string, 
   "win32-x64": ["@ff-labs/fff-bin-win32-x64", "@yuuang/ffi-rs-win32-x64-msvc"],
 };
 
+const nodePtyPrebuildByTarget: Record<HelperNativeTarget, string> = {
+  "darwin-arm64": "darwin-arm64",
+  "darwin-x64": "darwin-x64",
+  "linux-x64-gnu": "linux-x64",
+  "win32-x64": "win32-x64",
+};
+
 export function currentHelperNativeTarget(): HelperNativeTarget {
   if (process.platform === "darwin" && process.arch === "arm64") return "darwin-arm64";
   if (process.platform === "darwin" && process.arch === "x64") return "darwin-x64";
@@ -58,6 +65,33 @@ async function copyRuntimePackages(
       await NodeFS.cp(NodePath.dirname(packageJson), destination, { recursive: true });
     }),
   );
+
+  const requireFromServer = createRequire(
+    fileURLToPath(new URL("../../server/package.json", import.meta.url)),
+  );
+  const nodePtyPackageJson = await NodeFS.realpath(
+    requireFromServer.resolve("node-pty/package.json"),
+  );
+  const nodePtySource = NodePath.dirname(nodePtyPackageJson);
+  const nodePtyDestination = NodePath.join(outputDirectory, "node_modules", "node-pty");
+  const prebuild = nodePtyPrebuildByTarget[nativeTarget];
+
+  await NodeFS.mkdir(NodePath.join(nodePtyDestination, "prebuilds"), { recursive: true });
+  await Promise.all([
+    NodeFS.copyFile(nodePtyPackageJson, NodePath.join(nodePtyDestination, "package.json")),
+    NodeFS.copyFile(
+      NodePath.join(nodePtySource, "LICENSE"),
+      NodePath.join(nodePtyDestination, "LICENSE"),
+    ),
+    NodeFS.cp(NodePath.join(nodePtySource, "lib"), NodePath.join(nodePtyDestination, "lib"), {
+      recursive: true,
+    }),
+    NodeFS.cp(
+      NodePath.join(nodePtySource, "prebuilds", prebuild),
+      NodePath.join(nodePtyDestination, "prebuilds", prebuild),
+      { recursive: true },
+    ),
+  ]);
 }
 
 export async function buildCoderHelper(
@@ -70,7 +104,7 @@ export async function buildCoderHelper(
     entryPoints: [entryPoint],
     outfile: NodePath.join(outputDirectory, "index.mjs"),
     bundle: true,
-    external: ["@ff-labs/fff-node"],
+    external: ["@ff-labs/fff-node", "node-pty"],
     platform: "node",
     format: "esm",
     target: "node24",

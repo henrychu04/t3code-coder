@@ -34,7 +34,7 @@ import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReap
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
-import * as ScriptPtyAdapter from "./terminal/ScriptPtyAdapter.ts";
+import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
@@ -104,7 +104,7 @@ const CoderCheckpointingLive = CheckpointDiffQuery.layer.pipe(
 );
 
 const CoderTerminalLive = TerminalManager.layer.pipe(
-  Layer.provideMerge(ScriptPtyAdapter.layer),
+  Layer.provideMerge(NodePtyAdapter.layer),
   Layer.provideMerge(ProcessRunner.layer),
 );
 

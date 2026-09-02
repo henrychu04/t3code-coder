@@ -1,8 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, strictEqual } from "node:assert";
+import { deepStrictEqual, match, strictEqual } from "node:assert";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import * as NodeFS from "node:fs/promises";
+import { createRequire } from "node:module";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { it } from "node:test";
@@ -30,10 +31,68 @@ function readNdjsonLine(stream: NodeJS.ReadableStream): Promise<unknown> {
   });
 }
 
+async function verifyBundledPtyResize(outputDirectory: string, cwd: string): Promise<void> {
+  if (process.platform === "win32") return;
+
+  const requireFromBundle = createRequire(NodePath.join(outputDirectory, "index.mjs"));
+  const nodePty = requireFromBundle("node-pty") as typeof import("node-pty");
+  const pty = nodePty.spawn("/bin/sh", [], {
+    cwd,
+    cols: 80,
+    rows: 24,
+    env: { ...process.env, TERM: "xterm-256color" },
+  });
+  let output = "";
+  let didExit = false;
+  const onData = pty.onData((data) => {
+    output += data;
+  });
+
+  try {
+    pty.resize(132, 44);
+    pty.write("printf '__T3_SIZE__'; stty size; printf '__T3_END__\\n'; exit\n");
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        pty.onExit(() => {
+          didExit = true;
+          resolve();
+        });
+      }),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(
+          () => reject(new Error("Bundled node-pty resize smoke test timed out.")),
+          5_000,
+        ).unref();
+      }),
+    ]);
+    match(output, /__T3_SIZE__44 132\r?\n__T3_END__/u);
+  } finally {
+    onData.dispose();
+    if (!didExit) pty.kill();
+  }
+}
+
 it("runs the bundled ESM helper under Node", async () => {
   const testRoot = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-bundle-"));
   const outputDirectory = NodePath.join(testRoot, "workspace-helper");
   await buildCoderHelper(outputDirectory, currentHelperNativeTarget());
+
+  const expectedNodePtyPrebuild = `${process.platform}-${process.arch}`;
+  deepStrictEqual(
+    await NodeFS.readdir(NodePath.join(outputDirectory, "node_modules", "node-pty", "prebuilds")),
+    [expectedNodePtyPrebuild],
+  );
+  await NodeFS.access(
+    NodePath.join(
+      outputDirectory,
+      "node_modules",
+      "node-pty",
+      "prebuilds",
+      expectedNodePtyPrebuild,
+      process.platform === "win32" ? "conpty.node" : "pty.node",
+    ),
+  );
+  await verifyBundledPtyResize(outputDirectory, testRoot);
 
   const helper = spawn(process.execPath, [NodePath.join(outputDirectory, "index.mjs")], {
     env: {

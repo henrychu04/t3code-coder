@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:ff3f3b50-3104-4fcc-81f0-d02cb473193c",
+  "serialNumber": "urn:uuid:4c1af06b-dac5-4c8e-b269-cbe1363a6692",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-08-22T15:05:08.726Z",
+    "timestamp": "2026-09-02T18:04:27.377Z",
     "lifecycles": [
       {
         "phase": "pre-build"
@@ -36,25 +36,6 @@
     }
   },
   "components": [
-    {
-      "type": "library",
-      "name": "ws",
-      "version": "8.21.0",
-      "purl": "pkg:npm/ws@8.21.0",
-      "bom-ref": "pkg:npm/ws@8.21.0",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/ws/-/ws-8.21.0.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "56ca76f1bec345c8a6150bebaaed967a4df3d626310c25aa1d807c42c9e4fd2e117da090ccf18fc8136e563255ddc77a5222ad52da7ab0d33bee05afcdc087fa"
-            }
-          ]
-        }
-      ]
-    },
     {
       "type": "library",
       "name": "platform-node",
@@ -562,6 +543,444 @@
     },
     {
       "type": "library",
+      "name": "ws",
+      "version": "8.21.0",
+      "purl": "pkg:npm/ws@8.21.0",
+      "bom-ref": "pkg:npm/ws@8.21.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ws/-/ws-8.21.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "56ca76f1bec345c8a6150bebaaed967a4df3d626310c25aa1d807c42c9e4fd2e117da090ccf18fc8136e563255ddc77a5222ad52da7ab0d33bee05afcdc087fa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-node",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-node@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-node@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-node/-/fff-node-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c94a61c3371506e36b835884004e5754f3967c22eeabf044d6c714c6d1cc98ba3e7b52ae2960518122855c68cd05f2fc955ddce551b02202bae9a06a9a1a9505"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs",
+      "version": "1.3.7",
+      "purl": "pkg:npm/ffi-rs@1.3.7",
+      "bom-ref": "pkg:npm/ffi-rs@1.3.7",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/ffi-rs/-/ffi-rs-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "e4c319412dadffa7ff79cdecc747f9d6005c28664f19fa253c05b4e25bcb392627afb82638ab3c6331f5461fb7e1618ef95b5c81c4eec5a514a092dc4784e2ae"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-android-arm64",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-android-arm64@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-android-arm64@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-android-arm64/-/ffi-rs-android-arm64-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b7a5b1dd7965e9cd3b36e934937c6766cc4a17196c866f768b453f0624c773a9106efbbe7cc245fa02ac8f8c848fcf3a8c7e7508cdc4a994fd5dd86af4275457"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-darwin-arm64",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-darwin-arm64@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-darwin-arm64@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-darwin-arm64/-/ffi-rs-darwin-arm64-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "3ae7819541414fd2300fda509e862cd14b334411324ac91fac43d75dfbca7c68cbfc35e77e7ea4521790de820feac4a6b21546350530ad308fa3a7de01ae108c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-darwin-x64",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-darwin-x64@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-darwin-x64@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-darwin-x64/-/ffi-rs-darwin-x64-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c789b15ce2b04a0c18c7a38100aad6f8e729f2e9b62a83e9530683d19dad991e847a4a11bc518deecfde10ad5abea0b172c2cdeff33318e9c2085c86a4e55f3c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-linux-arm-gnueabihf",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-linux-arm-gnueabihf@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-linux-arm-gnueabihf@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-linux-arm-gnueabihf/-/ffi-rs-linux-arm-gnueabihf-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "f6bfff674db6418568200638e7c0e993c1d6922b24ff2e0d242ddde7646591db0b0fef69d339f470a292a0c17fc54b0e58315298e7fe73053f5da762ff0c4531"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-linux-arm64-gnu",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-linux-arm64-gnu@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-linux-arm64-gnu@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-linux-arm64-gnu/-/ffi-rs-linux-arm64-gnu-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "9eb5b8325165c902277f14ec239c2d708a5b5782a51cb5a8d810a4e021c81139544fe3d4b29345a8383e072cbb332de1a426655e9d16b0c54fff73742e5c9b37"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-linux-arm64-musl",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-linux-arm64-musl@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-linux-arm64-musl@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-linux-arm64-musl/-/ffi-rs-linux-arm64-musl-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "78b2f1e0ff03ccd9ee3e27f5f6702f28f69ff3c9527fa2856c37ad1f79c021166f238f798748e280df37e40cabeee0000ecb288467cef4c3cc1f7dc35e6144ac"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-linux-x64-gnu",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-linux-x64-gnu@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-linux-x64-gnu@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-linux-x64-gnu/-/ffi-rs-linux-x64-gnu-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "ba9133d50f7c4f9d71d889fcef67ec8e01c225b1377bcafd2718490fee4dbd2324e81a62798591a1d4dbb0cc55ea829699f975da5a0ac05da3e0e05258a97494"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-linux-x64-musl",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-linux-x64-musl@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-linux-x64-musl@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-linux-x64-musl/-/ffi-rs-linux-x64-musl-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "60e70e908c15bc8869c2e189e36f21d79be91342a74f7b5e146d20d89df516b071ad587d207e077931978de948de5f522398328990e70f83d09d0d54ea8a9370"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-win32-arm64-msvc",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-win32-arm64-msvc@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-win32-arm64-msvc@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-win32-arm64-msvc/-/ffi-rs-win32-arm64-msvc-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "65f6332d5d70ecc87387d5d149c10ca70f686b32048b03bed3e4d81c744bf3cd9de680f443df588a499185d89fb281c209079f2a6585ff805709e164ce0f0d14"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-win32-ia32-msvc",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-win32-ia32-msvc@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-win32-ia32-msvc@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-win32-ia32-msvc/-/ffi-rs-win32-ia32-msvc-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "89f633f9ffa088aa53dfd94a583aeefa89ba42703d27b27de779eceb4c47801e3a11266f3ddfd8d96e7e3deb11342f54faf9c51222d9f42342f91ddf0560b5a6"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "ffi-rs-win32-x64-msvc",
+      "version": "1.3.7",
+      "purl": "pkg:npm/%40yuuang/ffi-rs-win32-x64-msvc@1.3.7",
+      "bom-ref": "pkg:npm/%40yuuang/ffi-rs-win32-x64-msvc@1.3.7",
+      "group": "@yuuang",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@yuuang/ffi-rs-win32-x64-msvc/-/ffi-rs-win32-x64-msvc-1.3.7.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "1f7b38c0e2ed66d2ad9ae3e350d13e6e19d22b1c695dcbb11bbd23442f1d50c1ea226e620af7686785d80deabbfee51897249ead716644be1d015097fd350d4e"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-darwin-arm64",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-darwin-arm64@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-darwin-arm64@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-darwin-arm64/-/fff-bin-darwin-arm64-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c728afbb6c41fbe3b9c570f1e509b9d09b14d9a5edf188179465611ff1c4ed43180eb13a2fa7f5458758b3c6346e7d03dc3d3e6c506b37910b3ecccaf44e166f"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-darwin-x64",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-darwin-x64@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-darwin-x64@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-darwin-x64/-/fff-bin-darwin-x64-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c4ba280210a74c30a2a4f48c319cfb906177961447c7a68fe5f6fa0c9d08a72c3fc3f51625bfb1213245b33525fd09c806827faa30dcf77fc564ca35764ea054"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-linux-arm64-gnu",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-linux-arm64-gnu@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-linux-arm64-gnu@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-linux-arm64-gnu/-/fff-bin-linux-arm64-gnu-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "9b9fbcbc0fb5bde694516a27c2f6b55ac53a9b51d19bc0a9614cebd3a28307ae667b09663dbab3efe161ee18c47e20fc0b89875477ba472b142ef007d7286c77"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-linux-arm64-musl",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-linux-arm64-musl@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-linux-arm64-musl@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-linux-arm64-musl/-/fff-bin-linux-arm64-musl-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "10c7969bb0924d5922cf2e191335242c33f4db8b5571b094b6176eb8885e9054110ec89a0337b461ba08ca559bf47047242665082a19ad6025e279c96ec5fb00"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-linux-x64-gnu",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-linux-x64-gnu@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-linux-x64-gnu@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-linux-x64-gnu/-/fff-bin-linux-x64-gnu-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "a60944d2e2e4867944e9b4ad5ea7e05236134a3fb6b15c1768f7e8034424b22740b10a2be8d46df34d389b28330bd0cfb9b807ab907d41eccf7c4c2280a68ff5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-linux-x64-musl",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-linux-x64-musl@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-linux-x64-musl@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-linux-x64-musl/-/fff-bin-linux-x64-musl-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "54d2b1825f2ab376937d75625fb96a44ad5a2eedf5d61f1db4116a1b849cbfef4e8bb5a9af26d4a792fb219f2cc4a11168301a8893171e87576b573dd1074af3"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-win32-arm64",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-win32-arm64@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-win32-arm64@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-win32-arm64/-/fff-bin-win32-arm64-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b8512dd1a34be78bd0c6ad62be3c51ba8fad867852e302ea6b820d9785579d72549b0078d975f10fe82c8fbbf38412cbc787057f4696832ffe4d50d1f328d9b5"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "fff-bin-win32-x64",
+      "version": "0.9.4",
+      "purl": "pkg:npm/%40ff-labs/fff-bin-win32-x64@0.9.4",
+      "bom-ref": "pkg:npm/%40ff-labs/fff-bin-win32-x64@0.9.4",
+      "group": "@ff-labs",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/@ff-labs/fff-bin-win32-x64/-/fff-bin-win32-x64-0.9.4.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "61dd84cb18feb255affb44035bdff1069bbd157abe8700f4ad7403e75f38ffcf1dfb1c1608b2a110fdb0f08e8e3bd5c283e90b4fbf5425bfa4d16c1752d06d33"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "diffs",
       "version": "1.3.0-beta.10",
       "purl": "pkg:npm/%40pierre/diffs@1.3.0-beta.10",
@@ -1005,44 +1424,6 @@
             {
               "alg": "SHA-512",
               "content": "f4df48a2667f62e18665999079cd4c6e0c6d960a2e8314e8755c03cf3128b8f2a8dea156bf29851d67270e2dafcd5d5f7fa91ab3db9c5bea37cb324af5807501"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "micromark-util-character",
-      "version": "2.1.1",
-      "purl": "pkg:npm/micromark-util-character@2.1.1",
-      "bom-ref": "pkg:npm/micromark-util-character@2.1.1",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/micromark-util-character/-/micromark-util-character-2.1.1.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "c2ff2d7544c9ded8521451492ada5828e62218fdbebfde87be4e13bbc2a9080b1332ceb28be9d5986875b32bd20ac6b1cf8e49e896f0fbd0c3ea0f7bf8d57aed"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "micromark-util-types",
-      "version": "2.0.2",
-      "purl": "pkg:npm/micromark-util-types@2.0.2",
-      "bom-ref": "pkg:npm/micromark-util-types@2.0.2",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/micromark-util-types/-/micromark-util-types-2.0.2.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "630d04092a49a15885d6a4d4e030ba370b42e1a586b75124cda401f0a3cfc82451f33f5359e5741db1051933be658d70076db39b19c9aa13f24e93950a97874c"
             }
           ]
         }
@@ -1540,6 +1921,44 @@
             {
               "alg": "SHA-512",
               "content": "6f0ad5465274c14859c406d576f05bbf64d30bdc8bb21e02fc83b939fcf44fc3109ed803bf256791b8f0f6f8b9d2bd64c7b4422097672678d9030980b1714b65"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "node-pty",
+      "version": "1.2.0-beta.14",
+      "purl": "pkg:npm/node-pty@1.2.0-beta.14",
+      "bom-ref": "pkg:npm/node-pty@1.2.0-beta.14",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/node-pty/-/node-pty-1.2.0-beta.14.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "5ce454f41420a71560aabed68af8c9d7b98b7a738752028a5b3b9964d6b0dcd0d880773fc0f2503126a82c3ae9120a95e9a5359cdc22975a3f3aa623ea55a650"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "node-addon-api",
+      "version": "7.1.1",
+      "purl": "pkg:npm/node-addon-api@7.1.1",
+      "bom-ref": "pkg:npm/node-addon-api@7.1.1",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/node-addon-api/-/node-addon-api-7.1.1.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "e66ddbb32ae3156135c5fee7cfb61774de2e76756d5caebf61f827e6a9da84be9b0a47f6c8ab789379ee4ca02d4f8af7206f09351da772c20c759b80cc98c741"
             }
           ]
         }
@@ -3578,6 +3997,25 @@
     },
     {
       "type": "library",
+      "name": "micromark-util-types",
+      "version": "2.0.2",
+      "purl": "pkg:npm/micromark-util-types@2.0.2",
+      "bom-ref": "pkg:npm/micromark-util-types@2.0.2",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/micromark-util-types/-/micromark-util-types-2.0.2.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "630d04092a49a15885d6a4d4e030ba370b42e1a586b75124cda401f0a3cfc82451f33f5359e5741db1051933be658d70076db39b19c9aa13f24e93950a97874c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
       "name": "mdast-util-to-markdown",
       "version": "2.1.2",
       "purl": "pkg:npm/mdast-util-to-markdown@2.1.2",
@@ -3883,25 +4321,6 @@
     },
     {
       "type": "library",
-      "name": "remark-parse",
-      "version": "11.0.0",
-      "purl": "pkg:npm/remark-parse@11.0.0",
-      "bom-ref": "pkg:npm/remark-parse@11.0.0",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/remark-parse/-/remark-parse-11.0.0.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "142c6528b3469274b96daff5966a588a3314cd7d9eb315b9c50aa35b1c3678715f4b631275a1d520d166863a3ea8dd5685984d8a6ab475901337da47d080eba4"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
       "name": "remark-rehype",
       "version": "11.1.2",
       "purl": "pkg:npm/remark-rehype@11.1.2",
@@ -3914,101 +4333,6 @@
             {
               "alg": "SHA-512",
               "content": "0e1ee5e7b89a9da128229cdba743c2f542807424959250fc139469c3b1137db4e5dc5a9c38e82ae6ad8b54386018291a06fee9db82578a43ddbe18661ef28cb3"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "unified",
-      "version": "11.0.5",
-      "purl": "pkg:npm/unified@11.0.5",
-      "bom-ref": "pkg:npm/unified@11.0.5",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/unified/-/unified-11.0.5.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "c4abc684f5b0de4f3842387c6c8dd97898ea9f269d2be18416d6b349f66ffeb29e4e44e3389868ea616a87648cf7a888719a24c623a983bf066b34d283cf8a1c"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "bail",
-      "version": "2.0.2",
-      "purl": "pkg:npm/bail@2.0.2",
-      "bom-ref": "pkg:npm/bail@2.0.2",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/bail/-/bail-2.0.2.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "d313ba99877b241d987acc432a995a7d1a6c88eccfb7d574d9d74f08b6d8d716063ce5f6e0d4f2379d2a9d4c6008f712a183212a902e0538d0a1164202450347"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "extend",
-      "version": "3.0.2",
-      "purl": "pkg:npm/extend@3.0.2",
-      "bom-ref": "pkg:npm/extend@3.0.2",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/extend/-/extend-3.0.2.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "7e3aae0b9f5c0fb0b25babab3572b4141b9f9197288861bcd304ee3ee8d7e7dd1c0794ed967db4136501e12fd601156a8577df665d8b3604be81074f2088a6fe"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "is-plain-obj",
-      "version": "4.1.0",
-      "purl": "pkg:npm/is-plain-obj@4.1.0",
-      "bom-ref": "pkg:npm/is-plain-obj@4.1.0",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/is-plain-obj/-/is-plain-obj-4.1.0.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "f8f822faf32e50d909c84c62301b792251683322a7af9ce127852ca73e7c58e841179428219905c8d1c86c102d1f0cd502093946d9dd54db0344deb5fe6983aa"
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "library",
-      "name": "trough",
-      "version": "2.2.0",
-      "purl": "pkg:npm/trough@2.2.0",
-      "bom-ref": "pkg:npm/trough@2.2.0",
-      "externalReferences": [
-        {
-          "type": "distribution",
-          "url": "https://registry.npmjs.org/trough/-/trough-2.2.0.tgz",
-          "hashes": [
-            {
-              "alg": "SHA-512",
-              "content": "b663292b4d018d9894c95cafac12bb9277ab3609a0bdc57f28b572ba66bf482f9340dd7aec6acc45c880353cf4f7e937cd6f0bf2deb48d63b51a97e465d8d36b"
             }
           ]
         }
@@ -4659,16 +4983,189 @@
           ]
         }
       ]
+    },
+    {
+      "type": "library",
+      "name": "mdast-util-directive",
+      "version": "3.1.0",
+      "purl": "pkg:npm/mdast-util-directive@3.1.0",
+      "bom-ref": "pkg:npm/mdast-util-directive@3.1.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/mdast-util-directive/-/mdast-util-directive-3.1.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "2377cd16df831e6a56098013eeaba833a9477fdc2eaad23ea0239fbc82e7a2270d22a8e1e44ddd1095a25ee60c13680d7bcbe5d62310c325076bb6e01666a4e9"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "micromark-extension-directive",
+      "version": "4.0.0",
+      "purl": "pkg:npm/micromark-extension-directive@4.0.0",
+      "bom-ref": "pkg:npm/micromark-extension-directive@4.0.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/micromark-extension-directive/-/micromark-extension-directive-4.0.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "fc2da7a959975e68ac7924ae09d22d08c868ef26f0c28a7a46bad13e4d0a6ce1d6db524aa0295d0bef2b14e6ae9dd0e8441516067249731780fcabe2df85905e"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "micromark-util-character",
+      "version": "2.1.1",
+      "purl": "pkg:npm/micromark-util-character@2.1.1",
+      "bom-ref": "pkg:npm/micromark-util-character@2.1.1",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/micromark-util-character/-/micromark-util-character-2.1.1.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c2ff2d7544c9ded8521451492ada5828e62218fdbebfde87be4e13bbc2a9080b1332ceb28be9d5986875b32bd20ac6b1cf8e49e896f0fbd0c3ea0f7bf8d57aed"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "remark-parse",
+      "version": "11.0.0",
+      "purl": "pkg:npm/remark-parse@11.0.0",
+      "bom-ref": "pkg:npm/remark-parse@11.0.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/remark-parse/-/remark-parse-11.0.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "142c6528b3469274b96daff5966a588a3314cd7d9eb315b9c50aa35b1c3678715f4b631275a1d520d166863a3ea8dd5685984d8a6ab475901337da47d080eba4"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "unified",
+      "version": "11.0.5",
+      "purl": "pkg:npm/unified@11.0.5",
+      "bom-ref": "pkg:npm/unified@11.0.5",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/unified/-/unified-11.0.5.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "c4abc684f5b0de4f3842387c6c8dd97898ea9f269d2be18416d6b349f66ffeb29e4e44e3389868ea616a87648cf7a888719a24c623a983bf066b34d283cf8a1c"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "bail",
+      "version": "2.0.2",
+      "purl": "pkg:npm/bail@2.0.2",
+      "bom-ref": "pkg:npm/bail@2.0.2",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/bail/-/bail-2.0.2.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "d313ba99877b241d987acc432a995a7d1a6c88eccfb7d574d9d74f08b6d8d716063ce5f6e0d4f2379d2a9d4c6008f712a183212a902e0538d0a1164202450347"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "extend",
+      "version": "3.0.2",
+      "purl": "pkg:npm/extend@3.0.2",
+      "bom-ref": "pkg:npm/extend@3.0.2",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/extend/-/extend-3.0.2.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "7e3aae0b9f5c0fb0b25babab3572b4141b9f9197288861bcd304ee3ee8d7e7dd1c0794ed967db4136501e12fd601156a8577df665d8b3604be81074f2088a6fe"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "is-plain-obj",
+      "version": "4.1.0",
+      "purl": "pkg:npm/is-plain-obj@4.1.0",
+      "bom-ref": "pkg:npm/is-plain-obj@4.1.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/is-plain-obj/-/is-plain-obj-4.1.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "f8f822faf32e50d909c84c62301b792251683322a7af9ce127852ca73e7c58e841179428219905c8d1c86c102d1f0cd502093946d9dd54db0344deb5fe6983aa"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "name": "trough",
+      "version": "2.2.0",
+      "purl": "pkg:npm/trough@2.2.0",
+      "bom-ref": "pkg:npm/trough@2.2.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://registry.npmjs.org/trough/-/trough-2.2.0.tgz",
+          "hashes": [
+            {
+              "alg": "SHA-512",
+              "content": "b663292b4d018d9894c95cafac12bb9277ab3609a0bdc57f28b572ba66bf482f9340dd7aec6acc45c880353cf4f7e937cd6f0bf2deb48d63b51a97e465d8d36b"
+            }
+          ]
+        }
+      ]
     }
   ],
   "dependencies": [
     {
       "ref": "pkg:npm/t3code-coder@0.0.0",
       "dependsOn": [
-        "pkg:npm/ws@8.21.0",
         "pkg:npm/%40effect/platform-node@4.0.0-beta.103",
         "pkg:npm/effect@4.0.0-beta.103",
+        "pkg:npm/ws@8.21.0",
+        "pkg:npm/%40ff-labs/fff-node@0.9.4",
         "pkg:npm/%40pierre/diffs@1.3.0-beta.10",
+        "pkg:npm/node-pty@1.2.0-beta.14",
         "pkg:npm/yaml@2.9.0",
         "pkg:npm/%40base-ui/react@1.5.0",
         "pkg:npm/%40dnd-kit/core@6.3.1",
@@ -4695,28 +5192,38 @@
         "pkg:npm/remark-breaks@4.0.0",
         "pkg:npm/remark-gfm@4.0.1",
         "pkg:npm/tailwind-merge@3.6.0",
-        "pkg:npm/zustand@5.0.14"
+        "pkg:npm/zustand@5.0.14",
+        "pkg:npm/mdast-util-directive@3.1.0",
+        "pkg:npm/micromark-extension-directive@4.0.0",
+        "pkg:npm/micromark-util-character@2.1.1",
+        "pkg:npm/remark-parse@11.0.0",
+        "pkg:npm/unified@11.0.5"
       ]
     },
     {
-      "ref": "pkg:npm/ws@8.21.0",
-      "dependsOn": []
-    },
-    {
       "ref": "pkg:npm/%40effect/platform-node@4.0.0-beta.103",
-      "dependsOn": ["pkg:npm/%40effect/platform-node-shared@4.0.0-beta.103", "pkg:npm/mime@4.1.0"]
+      "dependsOn": [
+        "pkg:npm/%40effect/platform-node-shared@4.0.0-beta.103",
+        "pkg:npm/mime@4.1.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40effect/platform-node-shared@4.0.0-beta.103",
-      "dependsOn": ["pkg:npm/%40types/ws@8.18.1"]
+      "dependsOn": [
+        "pkg:npm/%40types/ws@8.18.1"
+      ]
     },
     {
       "ref": "pkg:npm/%40types/ws@8.18.1",
-      "dependsOn": ["pkg:npm/%40types/node@24.12.4"]
+      "dependsOn": [
+        "pkg:npm/%40types/node@24.12.4"
+      ]
     },
     {
       "ref": "pkg:npm/%40types/node@24.12.4",
-      "dependsOn": ["pkg:npm/undici-types@7.16.0"]
+      "dependsOn": [
+        "pkg:npm/undici-types@7.16.0"
+      ]
     },
     {
       "ref": "pkg:npm/undici-types@7.16.0",
@@ -4746,7 +5253,9 @@
     },
     {
       "ref": "pkg:npm/fast-check@4.9.0",
-      "dependsOn": ["pkg:npm/pure-rand@8.4.0"]
+      "dependsOn": [
+        "pkg:npm/pure-rand@8.4.0"
+      ]
     },
     {
       "ref": "pkg:npm/pure-rand@8.4.0",
@@ -4766,7 +5275,9 @@
     },
     {
       "ref": "pkg:npm/msgpackr@2.0.4",
-      "dependsOn": ["pkg:npm/msgpackr-extract@3.0.4"]
+      "dependsOn": [
+        "pkg:npm/msgpackr-extract@3.0.4"
+      ]
     },
     {
       "ref": "pkg:npm/msgpackr-extract@3.0.4",
@@ -4782,7 +5293,9 @@
     },
     {
       "ref": "pkg:npm/node-gyp-build-optional-packages@5.2.2",
-      "dependsOn": ["pkg:npm/detect-libc@2.1.2"]
+      "dependsOn": [
+        "pkg:npm/detect-libc@2.1.2"
+      ]
     },
     {
       "ref": "pkg:npm/detect-libc@2.1.2",
@@ -4825,6 +5338,116 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/ws@8.21.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-node@0.9.4",
+      "dependsOn": [
+        "pkg:npm/ffi-rs@1.3.7",
+        "pkg:npm/%40ff-labs/fff-bin-darwin-arm64@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-darwin-x64@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-linux-arm64-gnu@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-linux-arm64-musl@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-linux-x64-gnu@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-linux-x64-musl@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-win32-arm64@0.9.4",
+        "pkg:npm/%40ff-labs/fff-bin-win32-x64@0.9.4"
+      ]
+    },
+    {
+      "ref": "pkg:npm/ffi-rs@1.3.7",
+      "dependsOn": [
+        "pkg:npm/%40yuuang/ffi-rs-android-arm64@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-darwin-arm64@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-darwin-x64@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-linux-arm-gnueabihf@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-linux-arm64-gnu@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-linux-arm64-musl@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-linux-x64-gnu@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-linux-x64-musl@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-win32-arm64-msvc@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-win32-ia32-msvc@1.3.7",
+        "pkg:npm/%40yuuang/ffi-rs-win32-x64-msvc@1.3.7"
+      ]
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-android-arm64@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-darwin-arm64@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-darwin-x64@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-linux-arm-gnueabihf@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-linux-arm64-gnu@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-linux-arm64-musl@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-linux-x64-gnu@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-linux-x64-musl@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-win32-arm64-msvc@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-win32-ia32-msvc@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40yuuang/ffi-rs-win32-x64-msvc@1.3.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-darwin-arm64@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-darwin-x64@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-linux-arm64-gnu@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-linux-arm64-musl@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-linux-x64-gnu@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-linux-x64-musl@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-win32-arm64@0.9.4",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/%40ff-labs/fff-bin-win32-x64@0.9.4",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/%40pierre/diffs@1.3.0-beta.10",
       "dependsOn": [
         "pkg:npm/%40pierre/theme@1.1.0",
@@ -4842,15 +5465,22 @@
     },
     {
       "ref": "pkg:npm/%40pierre/theming@0.0.2",
-      "dependsOn": ["pkg:npm/%40shikijs/themes@4.2.0"]
+      "dependsOn": [
+        "pkg:npm/%40shikijs/themes@4.2.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40shikijs/themes@4.2.0",
-      "dependsOn": ["pkg:npm/%40shikijs/types@4.2.0"]
+      "dependsOn": [
+        "pkg:npm/%40shikijs/types@4.2.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40shikijs/types@4.2.0",
-      "dependsOn": ["pkg:npm/%40shikijs/vscode-textmate@10.0.2", "pkg:npm/%40types/hast@3.0.4"]
+      "dependsOn": [
+        "pkg:npm/%40shikijs/vscode-textmate@10.0.2",
+        "pkg:npm/%40types/hast@3.0.4"
+      ]
     },
     {
       "ref": "pkg:npm/%40shikijs/vscode-textmate@10.0.2",
@@ -4858,7 +5488,9 @@
     },
     {
       "ref": "pkg:npm/%40types/hast@3.0.4",
-      "dependsOn": ["pkg:npm/%40types/unist@3.0.3"]
+      "dependsOn": [
+        "pkg:npm/%40types/unist@3.0.3"
+      ]
     },
     {
       "ref": "pkg:npm/%40types/unist@3.0.3",
@@ -4866,11 +5498,15 @@
     },
     {
       "ref": "pkg:npm/%40shikijs/transformers@4.2.0",
-      "dependsOn": ["pkg:npm/%40shikijs/core@4.2.0"]
+      "dependsOn": [
+        "pkg:npm/%40shikijs/core@4.2.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40shikijs/core@4.2.0",
-      "dependsOn": ["pkg:npm/%40shikijs/primitive@4.2.0"]
+      "dependsOn": [
+        "pkg:npm/%40shikijs/primitive@4.2.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40shikijs/primitive@4.2.0",
@@ -4933,7 +5569,9 @@
     },
     {
       "ref": "pkg:npm/devlop@1.1.0",
-      "dependsOn": ["pkg:npm/dequal@2.0.3"]
+      "dependsOn": [
+        "pkg:npm/dequal@2.0.3"
+      ]
     },
     {
       "ref": "pkg:npm/dequal@2.0.3",
@@ -4942,18 +5580,9 @@
     {
       "ref": "pkg:npm/micromark-util-sanitize-uri@2.0.1",
       "dependsOn": [
-        "pkg:npm/micromark-util-character@2.1.1",
         "pkg:npm/micromark-util-encode@2.0.1",
         "pkg:npm/micromark-util-symbol@2.0.1"
       ]
-    },
-    {
-      "ref": "pkg:npm/micromark-util-character@2.1.1",
-      "dependsOn": ["pkg:npm/micromark-util-types@2.0.2"]
-    },
-    {
-      "ref": "pkg:npm/micromark-util-types@2.0.2",
-      "dependsOn": []
     },
     {
       "ref": "pkg:npm/micromark-util-encode@2.0.1",
@@ -4973,7 +5602,10 @@
     },
     {
       "ref": "pkg:npm/unist-util-visit@5.1.0",
-      "dependsOn": ["pkg:npm/unist-util-is@6.0.1", "pkg:npm/unist-util-visit-parents@6.0.2"]
+      "dependsOn": [
+        "pkg:npm/unist-util-is@6.0.1",
+        "pkg:npm/unist-util-visit-parents@6.0.2"
+      ]
     },
     {
       "ref": "pkg:npm/unist-util-is@6.0.1",
@@ -4985,11 +5617,15 @@
     },
     {
       "ref": "pkg:npm/vfile@6.0.3",
-      "dependsOn": ["pkg:npm/vfile-message@4.0.3"]
+      "dependsOn": [
+        "pkg:npm/vfile-message@4.0.3"
+      ]
     },
     {
       "ref": "pkg:npm/vfile-message@4.0.3",
-      "dependsOn": ["pkg:npm/unist-util-stringify-position@4.0.0"]
+      "dependsOn": [
+        "pkg:npm/unist-util-stringify-position@4.0.0"
+      ]
     },
     {
       "ref": "pkg:npm/unist-util-stringify-position@4.0.0",
@@ -5036,7 +5672,9 @@
     },
     {
       "ref": "pkg:npm/%40shikijs/engine-javascript@4.2.0",
-      "dependsOn": ["pkg:npm/oniguruma-to-es@4.3.6"]
+      "dependsOn": [
+        "pkg:npm/oniguruma-to-es@4.3.6"
+      ]
     },
     {
       "ref": "pkg:npm/oniguruma-to-es@4.3.6",
@@ -5052,7 +5690,9 @@
     },
     {
       "ref": "pkg:npm/regex@6.1.0",
-      "dependsOn": ["pkg:npm/regex-utilities@2.3.0"]
+      "dependsOn": [
+        "pkg:npm/regex-utilities@2.3.0"
+      ]
     },
     {
       "ref": "pkg:npm/regex-utilities@2.3.0",
@@ -5068,6 +5708,16 @@
     },
     {
       "ref": "pkg:npm/%40shikijs/langs@4.2.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/node-pty@1.2.0-beta.14",
+      "dependsOn": [
+        "pkg:npm/node-addon-api@7.1.1"
+      ]
+    },
+    {
+      "ref": "pkg:npm/node-addon-api@7.1.1",
       "dependsOn": []
     },
     {
@@ -5091,7 +5741,9 @@
     },
     {
       "ref": "pkg:npm/%40base-ui/utils@0.2.9",
-      "dependsOn": ["pkg:npm/reselect@5.2.0"]
+      "dependsOn": [
+        "pkg:npm/reselect@5.2.0"
+      ]
     },
     {
       "ref": "pkg:npm/reselect@5.2.0",
@@ -5099,11 +5751,15 @@
     },
     {
       "ref": "pkg:npm/%40floating-ui/react-dom@2.1.8",
-      "dependsOn": ["pkg:npm/%40floating-ui/dom@1.7.6"]
+      "dependsOn": [
+        "pkg:npm/%40floating-ui/dom@1.7.6"
+      ]
     },
     {
       "ref": "pkg:npm/%40floating-ui/dom@1.7.6",
-      "dependsOn": ["pkg:npm/%40floating-ui/core@1.7.5"]
+      "dependsOn": [
+        "pkg:npm/%40floating-ui/core@1.7.5"
+      ]
     },
     {
       "ref": "pkg:npm/%40floating-ui/core@1.7.5",
@@ -5119,7 +5775,9 @@
     },
     {
       "ref": "pkg:npm/%40types/react@19.2.16",
-      "dependsOn": ["pkg:npm/csstype@3.2.3"]
+      "dependsOn": [
+        "pkg:npm/csstype@3.2.3"
+      ]
     },
     {
       "ref": "pkg:npm/csstype@3.2.3",
@@ -5127,7 +5785,10 @@
     },
     {
       "ref": "pkg:npm/%40dnd-kit/core@6.3.1",
-      "dependsOn": ["pkg:npm/%40dnd-kit/accessibility@3.1.1", "pkg:npm/tslib@2.8.1"]
+      "dependsOn": [
+        "pkg:npm/%40dnd-kit/accessibility@3.1.1",
+        "pkg:npm/tslib@2.8.1"
+      ]
     },
     {
       "ref": "pkg:npm/%40dnd-kit/accessibility@3.1.1",
@@ -5151,7 +5812,9 @@
     },
     {
       "ref": "pkg:npm/%40effect/atom-react@4.0.0-beta.103",
-      "dependsOn": ["pkg:npm/scheduler@0.27.0"]
+      "dependsOn": [
+        "pkg:npm/scheduler@0.27.0"
+      ]
     },
     {
       "ref": "pkg:npm/scheduler@0.27.0",
@@ -5190,7 +5853,9 @@
     },
     {
       "ref": "pkg:npm/%40floating-ui/react@0.27.19",
-      "dependsOn": ["pkg:npm/tabbable@6.4.0"]
+      "dependsOn": [
+        "pkg:npm/tabbable@6.4.0"
+      ]
     },
     {
       "ref": "pkg:npm/tabbable@6.4.0",
@@ -5198,11 +5863,15 @@
     },
     {
       "ref": "pkg:npm/%40lexical/devtools-core@0.41.0",
-      "dependsOn": ["pkg:npm/%40lexical/html@0.41.0"]
+      "dependsOn": [
+        "pkg:npm/%40lexical/html@0.41.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40lexical/html@0.41.0",
-      "dependsOn": ["pkg:npm/%40lexical/selection@0.41.0"]
+      "dependsOn": [
+        "pkg:npm/%40lexical/selection@0.41.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40lexical/selection@0.41.0",
@@ -5214,7 +5883,9 @@
     },
     {
       "ref": "pkg:npm/%40lexical/extension@0.41.0",
-      "dependsOn": ["pkg:npm/%40preact/signals-core@1.14.2"]
+      "dependsOn": [
+        "pkg:npm/%40preact/signals-core@1.14.2"
+      ]
     },
     {
       "ref": "pkg:npm/%40preact/signals-core@1.14.2",
@@ -5242,11 +5913,15 @@
     },
     {
       "ref": "pkg:npm/%40lexical/markdown@0.41.0",
-      "dependsOn": ["pkg:npm/%40lexical/code@0.41.0"]
+      "dependsOn": [
+        "pkg:npm/%40lexical/code@0.41.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40lexical/code@0.41.0",
-      "dependsOn": ["pkg:npm/prismjs@1.30.0"]
+      "dependsOn": [
+        "pkg:npm/prismjs@1.30.0"
+      ]
     },
     {
       "ref": "pkg:npm/prismjs@1.30.0",
@@ -5258,7 +5933,9 @@
     },
     {
       "ref": "pkg:npm/%40lexical/plain-text@0.41.0",
-      "dependsOn": ["pkg:npm/%40lexical/clipboard@0.41.0"]
+      "dependsOn": [
+        "pkg:npm/%40lexical/clipboard@0.41.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40lexical/clipboard@0.41.0",
@@ -5282,7 +5959,9 @@
     },
     {
       "ref": "pkg:npm/%40lexical/yjs@0.41.0",
-      "dependsOn": ["pkg:npm/%40lexical/offset@0.41.0"]
+      "dependsOn": [
+        "pkg:npm/%40lexical/offset@0.41.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40lexical/offset@0.41.0",
@@ -5294,7 +5973,10 @@
     },
     {
       "ref": "pkg:npm/%40pierre/trees@1.0.0-beta.4",
-      "dependsOn": ["pkg:npm/preact@11.0.0-beta.0", "pkg:npm/preact-render-to-string@6.6.5"]
+      "dependsOn": [
+        "pkg:npm/preact@11.0.0-beta.0",
+        "pkg:npm/preact-render-to-string@6.6.5"
+      ]
     },
     {
       "ref": "pkg:npm/preact@11.0.0-beta.0",
@@ -5306,7 +5988,10 @@
     },
     {
       "ref": "pkg:npm/%40tanstack/react-pacer@0.19.4",
-      "dependsOn": ["pkg:npm/%40tanstack/pacer@0.18.0", "pkg:npm/%40tanstack/react-store@0.8.1"]
+      "dependsOn": [
+        "pkg:npm/%40tanstack/pacer@0.18.0",
+        "pkg:npm/%40tanstack/react-store@0.8.1"
+      ]
     },
     {
       "ref": "pkg:npm/%40tanstack/pacer@0.18.0",
@@ -5342,7 +6027,9 @@
     },
     {
       "ref": "pkg:npm/%40tanstack/react-store@0.9.3",
-      "dependsOn": ["pkg:npm/%40tanstack/store@0.9.3"]
+      "dependsOn": [
+        "pkg:npm/%40tanstack/store@0.9.3"
+      ]
     },
     {
       "ref": "pkg:npm/%40tanstack/store@0.9.3",
@@ -5374,7 +6061,9 @@
     },
     {
       "ref": "pkg:npm/class-variance-authority@0.7.1",
-      "dependsOn": ["pkg:npm/clsx@2.1.1"]
+      "dependsOn": [
+        "pkg:npm/clsx@2.1.1"
+      ]
     },
     {
       "ref": "pkg:npm/clsx@2.1.1",
@@ -5409,9 +6098,7 @@
       "dependsOn": [
         "pkg:npm/hast-util-to-jsx-runtime@2.3.6",
         "pkg:npm/html-url-attributes@3.0.1",
-        "pkg:npm/remark-parse@11.0.0",
-        "pkg:npm/remark-rehype@11.1.2",
-        "pkg:npm/unified@11.0.5"
+        "pkg:npm/remark-rehype@11.1.2"
       ]
     },
     {
@@ -5453,12 +6140,15 @@
         "pkg:npm/micromark@4.0.2",
         "pkg:npm/micromark-util-decode-numeric-character-reference@2.0.2",
         "pkg:npm/micromark-util-decode-string@2.0.1",
-        "pkg:npm/micromark-util-normalize-identifier@2.0.1"
+        "pkg:npm/micromark-util-normalize-identifier@2.0.1",
+        "pkg:npm/micromark-util-types@2.0.2"
       ]
     },
     {
       "ref": "pkg:npm/decode-named-character-reference@1.3.0",
-      "dependsOn": ["pkg:npm/character-entities@2.0.2"]
+      "dependsOn": [
+        "pkg:npm/character-entities@2.0.2"
+      ]
     },
     {
       "ref": "pkg:npm/character-entities@2.0.2",
@@ -5483,7 +6173,9 @@
     },
     {
       "ref": "pkg:npm/%40types/debug@4.1.13",
-      "dependsOn": ["pkg:npm/%40types/ms@2.1.0"]
+      "dependsOn": [
+        "pkg:npm/%40types/ms@2.1.0"
+      ]
     },
     {
       "ref": "pkg:npm/%40types/ms@2.1.0",
@@ -5491,7 +6183,9 @@
     },
     {
       "ref": "pkg:npm/debug@4.4.3",
-      "dependsOn": ["pkg:npm/ms@2.1.3"]
+      "dependsOn": [
+        "pkg:npm/ms@2.1.3"
+      ]
     },
     {
       "ref": "pkg:npm/ms@2.1.3",
@@ -5565,8 +6259,15 @@
       "dependsOn": []
     },
     {
+      "ref": "pkg:npm/micromark-util-types@2.0.2",
+      "dependsOn": []
+    },
+    {
       "ref": "pkg:npm/mdast-util-to-markdown@2.1.2",
-      "dependsOn": ["pkg:npm/longest-streak@3.1.0", "pkg:npm/mdast-util-phrasing@4.1.0"]
+      "dependsOn": [
+        "pkg:npm/longest-streak@3.1.0",
+        "pkg:npm/mdast-util-phrasing@4.1.0"
+      ]
     },
     {
       "ref": "pkg:npm/longest-streak@3.1.0",
@@ -5578,7 +6279,9 @@
     },
     {
       "ref": "pkg:npm/mdast-util-mdx-jsx@3.2.0",
-      "dependsOn": ["pkg:npm/parse-entities@4.0.2"]
+      "dependsOn": [
+        "pkg:npm/parse-entities@4.0.2"
+      ]
     },
     {
       "ref": "pkg:npm/parse-entities@4.0.2",
@@ -5600,7 +6303,9 @@
     },
     {
       "ref": "pkg:npm/is-alphanumerical@2.0.1",
-      "dependsOn": ["pkg:npm/is-alphabetical@2.0.1"]
+      "dependsOn": [
+        "pkg:npm/is-alphabetical@2.0.1"
+      ]
     },
     {
       "ref": "pkg:npm/is-alphabetical@2.0.1",
@@ -5620,11 +6325,15 @@
     },
     {
       "ref": "pkg:npm/style-to-js@1.1.21",
-      "dependsOn": ["pkg:npm/style-to-object@1.0.14"]
+      "dependsOn": [
+        "pkg:npm/style-to-object@1.0.14"
+      ]
     },
     {
       "ref": "pkg:npm/style-to-object@1.0.14",
-      "dependsOn": ["pkg:npm/inline-style-parser@0.2.7"]
+      "dependsOn": [
+        "pkg:npm/inline-style-parser@0.2.7"
+      ]
     },
     {
       "ref": "pkg:npm/inline-style-parser@0.2.7",
@@ -5635,41 +6344,14 @@
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/remark-parse@11.0.0",
-      "dependsOn": []
-    },
-    {
       "ref": "pkg:npm/remark-rehype@11.1.2",
       "dependsOn": []
     },
     {
-      "ref": "pkg:npm/unified@11.0.5",
-      "dependsOn": [
-        "pkg:npm/bail@2.0.2",
-        "pkg:npm/extend@3.0.2",
-        "pkg:npm/is-plain-obj@4.1.0",
-        "pkg:npm/trough@2.2.0"
-      ]
-    },
-    {
-      "ref": "pkg:npm/bail@2.0.2",
-      "dependsOn": []
-    },
-    {
-      "ref": "pkg:npm/extend@3.0.2",
-      "dependsOn": []
-    },
-    {
-      "ref": "pkg:npm/is-plain-obj@4.1.0",
-      "dependsOn": []
-    },
-    {
-      "ref": "pkg:npm/trough@2.2.0",
-      "dependsOn": []
-    },
-    {
       "ref": "pkg:npm/rehype-raw@7.0.0",
-      "dependsOn": ["pkg:npm/hast-util-raw@9.1.0"]
+      "dependsOn": [
+        "pkg:npm/hast-util-raw@9.1.0"
+      ]
     },
     {
       "ref": "pkg:npm/hast-util-raw@9.1.0",
@@ -5682,11 +6364,16 @@
     },
     {
       "ref": "pkg:npm/hast-util-from-parse5@8.0.3",
-      "dependsOn": ["pkg:npm/hastscript@9.0.1", "pkg:npm/vfile-location@5.0.3"]
+      "dependsOn": [
+        "pkg:npm/hastscript@9.0.1",
+        "pkg:npm/vfile-location@5.0.3"
+      ]
     },
     {
       "ref": "pkg:npm/hastscript@9.0.1",
-      "dependsOn": ["pkg:npm/hast-util-parse-selector@4.0.0"]
+      "dependsOn": [
+        "pkg:npm/hast-util-parse-selector@4.0.0"
+      ]
     },
     {
       "ref": "pkg:npm/hast-util-parse-selector@4.0.0",
@@ -5702,7 +6389,9 @@
     },
     {
       "ref": "pkg:npm/parse5@7.3.0",
-      "dependsOn": ["pkg:npm/entities@6.0.1"]
+      "dependsOn": [
+        "pkg:npm/entities@6.0.1"
+      ]
     },
     {
       "ref": "pkg:npm/entities@6.0.1",
@@ -5714,7 +6403,9 @@
     },
     {
       "ref": "pkg:npm/rehype-sanitize@6.0.0",
-      "dependsOn": ["pkg:npm/hast-util-sanitize@5.0.2"]
+      "dependsOn": [
+        "pkg:npm/hast-util-sanitize@5.0.2"
+      ]
     },
     {
       "ref": "pkg:npm/hast-util-sanitize@5.0.2",
@@ -5722,15 +6413,21 @@
     },
     {
       "ref": "pkg:npm/remark-breaks@4.0.0",
-      "dependsOn": ["pkg:npm/mdast-util-newline-to-break@2.0.0"]
+      "dependsOn": [
+        "pkg:npm/mdast-util-newline-to-break@2.0.0"
+      ]
     },
     {
       "ref": "pkg:npm/mdast-util-newline-to-break@2.0.0",
-      "dependsOn": ["pkg:npm/mdast-util-find-and-replace@3.0.2"]
+      "dependsOn": [
+        "pkg:npm/mdast-util-find-and-replace@3.0.2"
+      ]
     },
     {
       "ref": "pkg:npm/mdast-util-find-and-replace@3.0.2",
-      "dependsOn": ["pkg:npm/escape-string-regexp@5.0.0"]
+      "dependsOn": [
+        "pkg:npm/escape-string-regexp@5.0.0"
+      ]
     },
     {
       "ref": "pkg:npm/escape-string-regexp@5.0.0",
@@ -5768,7 +6465,9 @@
     },
     {
       "ref": "pkg:npm/mdast-util-gfm-table@2.0.0",
-      "dependsOn": ["pkg:npm/markdown-table@3.0.4"]
+      "dependsOn": [
+        "pkg:npm/markdown-table@3.0.4"
+      ]
     },
     {
       "ref": "pkg:npm/markdown-table@3.0.4",
@@ -5823,6 +6522,47 @@
     },
     {
       "ref": "pkg:npm/zustand@5.0.14",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/mdast-util-directive@3.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/micromark-extension-directive@4.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/micromark-util-character@2.1.1",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/remark-parse@11.0.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/unified@11.0.5",
+      "dependsOn": [
+        "pkg:npm/bail@2.0.2",
+        "pkg:npm/extend@3.0.2",
+        "pkg:npm/is-plain-obj@4.1.0",
+        "pkg:npm/trough@2.2.0"
+      ]
+    },
+    {
+      "ref": "pkg:npm/bail@2.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/extend@3.0.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/is-plain-obj@4.1.0",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/trough@2.2.0",
       "dependsOn": []
     }
   ]

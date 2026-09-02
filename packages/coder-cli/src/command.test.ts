@@ -145,7 +145,6 @@ describe("Coder CLI command construction", () => {
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v codex/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /requires Claude Code or Codex/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /script -qefc true/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/attachments/u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");

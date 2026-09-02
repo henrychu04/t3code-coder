@@ -57,12 +57,13 @@ The first connection to each workspace runs a preflight that verifies the worksp
 anything starts:
 
 - Linux x86-64 architecture
-- Git, Claude Code, and `script(1)` present
+- Git and at least one of Codex or Claude Code present
 - the pinned Node.js 24 runtime available through Nix (downloaded once if missing)
 
-After preflight, T3 Coder installs a version-matched helper into the workspace and runs it for the
-duration of the connection. This one-time setup can take a minute; later connections reuse it and
-are quick. Progress for every phase is visible in **Settings → Coder connections**.
+After preflight, T3 Coder installs a version-matched helper, including its native terminal runtime,
+into the workspace and runs it for the duration of the connection. This one-time setup can take a
+minute; later connections reuse it and are quick. Progress for every phase is visible in
+**Settings → Coder connections**.
 
 ## Day to day
 
