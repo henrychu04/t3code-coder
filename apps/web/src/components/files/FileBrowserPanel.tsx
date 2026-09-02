@@ -15,6 +15,7 @@ import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
+import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useProjectEntriesQuery } from "./projectFilesQueryState";
 
 const TREE_UNSAFE_CSS = `
@@ -82,7 +83,7 @@ export default function FileBrowserPanel(props: {
     () => entries.filter((entry) => entry.kind === "directory").map(treePath),
     [entries],
   );
-  const previousTreePathsRef = useRef<readonly string[]>([]);
+  const previousTreePathsRef = useRef<readonly string[] | null>(null);
   const syncingSelectionRef = useRef(false);
   const handledRevealRef = useRef<{ path: string; revealId: number } | null>(null);
   const contextMenuPointerRef = useRef<{ x: number; y: number; at: number } | null>(null);
@@ -156,11 +157,18 @@ export default function FileBrowserPanel(props: {
     search.isOpen && search.value.trim().length > 0 && search.matchingPaths.length === 0;
 
   useEffect(() => {
+    if (entriesQuery.data === null) return;
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
+    const previousTreePaths = previousTreePathsRef.current;
     previousTreePathsRef.current = treePaths;
-    model.resetPaths(treePaths);
-  }, [entryKinds, model, treePaths]);
+    if (previousTreePaths === null) {
+      model.resetPaths(treePaths);
+      return;
+    }
+    const updates = buildFileTreePathUpdates(previousTreePaths, treePaths);
+    if (updates.length > 0) model.batch(updates);
+  }, [entriesQuery.data, entryKinds, model, treePaths]);
 
   useEffect(() => {
     const selectedPath = props.selectedPath;
