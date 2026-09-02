@@ -65,6 +65,7 @@ import {
   type TerminalContextDraft,
   type TerminalContextSelection,
   INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
+  ensureInlineTerminalContextPlaceholders,
   insertInlineTerminalContextPlaceholder,
   removeInlineTerminalContextPlaceholder,
 } from "../../lib/terminalContext";
@@ -2050,11 +2051,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
     }
 
-    // Only the prompt is cleared — terminal contexts, review comments, and
-    // model selections are not stashable, so destroying them here would be
-    // unrecoverable or simply wrong to carry along.
-    promptRef.current = "";
-    setComposerDraftPrompt(composerDraftTarget, "");
+    // Only the prompt text is cleared — review comments and model selections
+    // are not stashable, so destroying them would be unrecoverable or simply
+    // wrong to carry along. Terminal contexts stay too, but their placeholders
+    // are re-inserted so they keep rendering inline instead of silently
+    // re-attaching to whatever the user types next (same as the draft
+    // store's clear behavior).
+    promptRef.current = ensureInlineTerminalContextPlaceholders(
+      "",
+      composerTerminalContexts.length,
+    );
+    setComposerDraftPrompt(composerDraftTarget, promptRef.current);
     setComposerCursor(0);
     setComposerTrigger(null);
     pulseStashBadge();
@@ -2069,6 +2076,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   }, [
     composerDraftTarget,
+    composerTerminalContexts.length,
     environmentId,
     pulseStashBadge,
     promptRef,
@@ -2099,8 +2107,25 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const promptChanged = nextPrompt !== currentPrompt;
       if (promptChanged) {
         promptRef.current = nextPrompt;
-        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-        setComposerCursor(collapseExpandedComposerCursor(nextPrompt, nextPrompt.length));
+        const nextCursor = collapseExpandedComposerCursor(nextPrompt, nextPrompt.length);
+        const nextExpandedCursor = expandCollapsedComposerCursor(nextPrompt, nextCursor);
+        // While a pending user input is active the composer's text is the
+        // question's custom answer, so the restore must go through the same
+        // path applyPromptReplacement uses — writing only the draft would be
+        // clobbered by the answer sync and never submitted.
+        const activePendingQuestion = activePendingProgress?.activeQuestion;
+        if (activePendingQuestion && activePendingUserInput) {
+          onChangeActivePendingUserInputCustomAnswer(
+            activePendingQuestion.id,
+            nextPrompt,
+            nextCursor,
+            nextExpandedCursor,
+            false,
+          );
+        } else {
+          setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+        }
+        setComposerCursor(nextCursor);
         setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
       }
 
@@ -2126,9 +2151,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       }
     },
     [
+      activePendingProgress?.activeQuestion,
+      activePendingUserInput,
       composerDraftTarget,
       composerEditorRef,
       environmentId,
+      onChangeActivePendingUserInputCustomAnswer,
       promptRef,
       setComposerDraftPrompt,
       takeStashEntry,
