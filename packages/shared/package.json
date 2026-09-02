@@ -115,6 +115,10 @@
       "types": "./src/terminalLabels.ts",
       "import": "./src/terminalLabels.ts"
     },
+    "./terminalBuffer": {
+      "types": "./src/terminalBuffer.ts",
+      "import": "./src/terminalBuffer.ts"
+    },
     "./filePreview": {
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"

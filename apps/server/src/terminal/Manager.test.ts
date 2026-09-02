@@ -1107,8 +1107,25 @@ it.layer(
 
       const reopened = yield* manager.open(openInput());
       expect(Buffer.byteLength(reopened.history, "utf8")).toBeLessThanOrEqual(512 * 1024);
+      expect(reopened.history.startsWith("\r\n")).toBe(true);
       expect(reopened.history.endsWith("x".repeat(128))).toBe(true);
       expect(reopened.history.startsWith("prefix-")).toBe(false);
+    }),
+  );
+
+  it.effect("does not start capped terminal history inside an ANSI sequence", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      yield* manager.open(openInput());
+      const process = ptyAdapter.processes[0];
+      expect(process).toBeDefined();
+      if (!process) return;
+
+      process.emitData(`prefix\u001b]8;;${"u".repeat(600 * 1024)}\u001b\\tail`);
+      yield* manager.close({ threadId: "thread-1" });
+
+      const reopened = yield* manager.open(openInput());
+      expect(reopened.history).toBe("\r\ntail");
     }),
   );
 

@@ -35,6 +35,7 @@ import {
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import { truncateTerminalBufferToBytes } from "@t3tools/shared/terminalBuffer";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -796,13 +797,12 @@ function capHistory(
     lines.length <= maxLines
       ? history
       : `${lines.slice(lines.length - maxLines).join("\n")}${hasTrailingNewline ? "\n" : ""}`;
-  const encoded = Buffer.from(lineCapped, "utf8");
-  if (encoded.byteLength <= maxBytes) return lineCapped;
-  let start = encoded.byteLength - maxBytes;
-  while (start < encoded.byteLength && (encoded[start]! & 0b1100_0000) === 0b1000_0000) {
-    start += 1;
-  }
-  return encoded.subarray(start).toString("utf8");
+  if (Buffer.byteLength(lineCapped, "utf8") <= maxBytes) return lineCapped;
+  const prefix = "\r\n";
+  const truncated = truncateTerminalBufferToBytes(lineCapped, maxBytes - prefix.length, {
+    preferLineBoundary: true,
+  });
+  return truncated.startsAtLineBoundary ? truncated.buffer : `${prefix}${truncated.buffer}`;
 }
 
 function isCsiFinalByte(codePoint: number): boolean {

@@ -71,9 +71,9 @@ credentials, and provider credentials remain in the workspace.
 
 ## Troubleshooting
 
-**The page says the workspace failed preflight.** Preflight verifies Linux x86-64, Git, Nix,
-`script(1)`, the managed Node.js runtime, and at least one supported provider. Fix the missing piece
-in the workspace and reconnect — the diagnostics timeline shows which check failed and when.
+**The page says the workspace failed preflight.** Preflight verifies Linux x86-64, Git, Nix, the
+managed Node.js runtime, and at least one supported provider. Fix the missing piece in the
+workspace and reconnect — the diagnostics timeline shows which check failed and when.
 
 **Codex or Claude Code is missing or not authenticated.** Install or sign in to that provider in
 the workspace itself. T3 Coder uses what the workspace provides. The other provider remains usable

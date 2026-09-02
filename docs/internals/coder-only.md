@@ -156,11 +156,11 @@ feature installed, so local paths and processes must use Node platform APIs and 
 spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
 remote OS and architecture, realizes a Node.js 24 package from the workspace's configured
-`nixpkgs` only when that runtime is not already available, and checks Git, Codex or Claude Code, `script(1)`,
-and the workspace state directory. The helper is launched
-with the Nix package's absolute Node path without changing `PATH`, so workspace shells and helper
-children retain the workspace's default Node.js version. Platform and protocol versions are then
-negotiated before a helper is used.
+`nixpkgs` only when that runtime is not already available, and checks Git, Codex or Claude Code,
+and the workspace state directory. The helper carries its locked Linux x86-64 `node-pty` runtime
+and is launched with the Nix package's absolute Node path without changing `PATH`, so workspace
+shells and helper children retain the workspace's default Node.js version. Platform and protocol
+versions are then negotiated before a helper is used.
 
 ## Network and transfer constraints
 
@@ -263,9 +263,9 @@ are not exposed by T3.
 ## Distribution
 
 `npm start` builds the web client and a Linux x86-64 helper bundle from the checked-out source and
-lockfile, including the locked native runtime packages needed by workspace search, then starts the
-local gateway without opening a browser. Connecting never installs from npm or downloads an
-application update. The first connection may download the pinned Node.js package through Nix if it
-is not already in the workspace's Nix store. On the first connection to a workspace in each local
-gateway session, the gateway replaces the remote helper directory with that locally built bundle
-through Coder before starting it in the foreground.
+lockfile, including the locked native runtime packages needed by terminals and workspace search,
+then starts the local gateway without opening a browser. Connecting never installs from npm or
+downloads an application update. The first connection may download the pinned Node.js package
+through Nix if it is not already in the workspace's Nix store. On the first connection to a
+workspace in each local gateway session, the gateway replaces the remote helper directory with
+that locally built bundle through Coder before starting it in the foreground.

@@ -8,6 +8,7 @@ import {
   combineTerminalSessionState,
   EMPTY_TERMINAL_BUFFER_STATE,
   selectRunningSubprocessTerminalIds,
+  terminalBufferAppend,
 } from "./terminalSession.ts";
 
 const TARGET = {
@@ -206,5 +207,70 @@ describe("terminal session reducers", () => {
     );
 
     expect(state.buffer).toBe("🙂");
+  });
+
+  it("preserves the live append after the retained buffer starts sliding", () => {
+    const full = applyTerminalAttachStreamEvent(
+      EMPTY_TERMINAL_BUFFER_STATE,
+      {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "xxxx",
+      },
+      4,
+    );
+    const sliding = applyTerminalAttachStreamEvent(
+      full,
+      {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "xx",
+      },
+      4,
+    );
+
+    expect(sliding).toMatchObject({ buffer: "xxxx", bufferOffset: 2 });
+    expect(terminalBufferAppend(full, sliding)).toBe("xx");
+  });
+
+  it("requires a replay when an update exceeds the entire retained window", () => {
+    const previous = applyTerminalAttachStreamEvent(
+      EMPTY_TERMINAL_BUFFER_STATE,
+      {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "ab",
+      },
+      2,
+    );
+    const current = applyTerminalAttachStreamEvent(
+      previous,
+      {
+        type: "output",
+        threadId: TARGET.threadId,
+        terminalId: TARGET.terminalId,
+        data: "cdef",
+      },
+      2,
+    );
+
+    expect(terminalBufferAppend(previous, current)).toBeNull();
+  });
+
+  it("requires a replay after a snapshot replaces the buffer", () => {
+    const previous = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
+      type: "snapshot",
+      snapshot: BASE_SNAPSHOT,
+    });
+    const current = applyTerminalAttachStreamEvent(previous, {
+      type: "snapshot",
+      snapshot: { ...BASE_SNAPSHOT, history: "hello again" },
+    });
+
+    expect(current.bufferEpoch).toBe(previous.bufferEpoch + 1);
+    expect(terminalBufferAppend(previous, current)).toBeNull();
   });
 });
