@@ -1,11 +1,10 @@
 import { Outlet, createFileRoute } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { useClientSettings } from "../hooks/useSettings";
-import { useProjects } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import { useActiveEnvironmentId, useProjects } from "../state/entities";
+import { useEnvironmentKeybindings } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -14,26 +13,25 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
-import { primaryServerKeybindingsAtom } from "~/state/server";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
-  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const activeEnvironmentId = useActiveEnvironmentId();
+  const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
         projects,
         settings: projectGroupingSettings,
-        primaryEnvironmentId,
+        preferredEnvironmentId: activeEnvironmentId,
         resolveEnvironmentLabel: () => null,
       }).length,
-    [primaryEnvironmentId, projectGroupingSettings, projects],
+    [activeEnvironmentId, projectGroupingSettings, projects],
   );
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef

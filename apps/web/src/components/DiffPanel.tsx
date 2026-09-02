@@ -333,7 +333,7 @@ export default function DiffPanel({
         cacheKey: selectedGitSource.diffHash,
       },
       (fileDiff, maxBytes) => {
-        const fileKey = buildFileDiffRenderKey(fileDiff);
+        const fileKey = buildFileDiffIdentityKey(fileDiff);
         setDiffFileExpansionErrors((current) => {
           const errorsByFileKey = new Map(
             current.scopeKey === diffFileContentsScopeKey ? current.errorsByFileKey : [],

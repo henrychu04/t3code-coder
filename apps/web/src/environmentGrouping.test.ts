@@ -330,11 +330,10 @@ describe("environment grouping", () => {
       repositoryIdentity,
     });
     const destinationRepositoryIdentity = {
-      canonicalKey: "github.com/example/destination",
+      canonicalKey: "workspace:/work/destination",
       locator: {
-        source: "git-remote" as const,
-        remoteName: "origin",
-        remoteUrl: "https://github.com/example/destination.git",
+        source: "workspace-path" as const,
+        path: "/work/destination",
       },
     };
     const destinationPrimary = makeProject({
@@ -364,7 +363,7 @@ describe("environment grouping", () => {
         fallbackPrimary,
       ],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: () => null,
     });
 
@@ -385,7 +384,7 @@ describe("environment grouping", () => {
       id: destinationRemote.id,
     });
     expect(fallback?.targetProject).toMatchObject({
-      environmentId: primaryEnvironmentId,
+      environmentId: preferredEnvironmentId,
       id: fallbackPrimary.id,
     });
   });

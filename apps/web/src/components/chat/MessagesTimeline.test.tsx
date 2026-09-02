@@ -1228,7 +1228,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('data-timeline-row-kind="thinking"');
   });
 
-  it("aligns the iconless Thinking row with the working timer", () => {
+  it("aligns the Thinking row with the working timer", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -1240,7 +1240,7 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Working for");
     expect(markup).toContain("Thinking");
-    expect(markup).toContain("gap-1.5 py-0.5 px-1");
+    expect(markup).toContain("gap-1.5 py-0.5 px-0.5");
   });
 
   it("renders review comment contexts as structured cards instead of raw tags", () => {

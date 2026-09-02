@@ -294,6 +294,7 @@ export function estimateMessagesTimelineRowHeight(row: MessagesTimelineRow): num
     case "turn-fold":
       return 56;
     case "working":
+    case "thinking":
       return 40;
     case "proposed-plan":
       return (
