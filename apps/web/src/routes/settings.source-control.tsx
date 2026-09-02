@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useAtomValue } from "@effect/atom-react";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import { useRef, useState } from "react";
@@ -20,21 +19,21 @@ import {
   SettingsSection,
   SettingsSelect,
 } from "../components/settings/SettingsPage";
+import { WorkspaceSettingsTarget } from "../components/settings/WorkspaceSettingsTarget";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../hooks/useSettings";
+import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../hooks/useSettings";
 import { getModelOptionsByInstance, resolveAppModelSelectionState } from "../modelSelection";
 import {
   applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
+  deriveCoderProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import { useEnvironments, type EnvironmentPresentation } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
-import { primaryServerProvidersAtom } from "../state/server";
 import { useAtomCommand } from "../state/use-atom-command";
 
 const WRITING_STYLE_LABELS: Record<SourceControlWritingStyleMode, string> = {
@@ -43,10 +42,11 @@ const WRITING_STYLE_LABELS: Record<SourceControlWritingStyleMode, string> = {
   custom: "Custom instructions",
 };
 
-function SourceControlPreferences() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const providers = useAtomValue(primaryServerProvidersAtom);
+function SourceControlPreferences({ environment }: { environment: EnvironmentPresentation }) {
+  const environmentId = environment.environmentId;
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const providers = environment.serverConfig?.providers ?? [];
   const customInstructionsRef = useRef<HTMLTextAreaElement>(null);
   const style = settings.sourceControlWritingStyle;
   const defaultSelection = resolveAppModelSelectionState(settings, providers);
@@ -57,7 +57,7 @@ function SourceControlPreferences() {
       ? defaultSelection
       : resolvedWriterSelection;
   const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
+    applyProviderInstanceSettings(deriveCoderProviderInstanceEntries(providers), settings),
   );
   const modelOptionsByInstance = getModelOptionsByInstance(
     settings,
@@ -171,6 +171,7 @@ function SourceControlPreferences() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             {usesDedicatedModel ? (
               <ProviderModelPicker
+                environmentId={environmentId}
                 activeInstanceId={activeSelection.instanceId}
                 model={activeSelection.model}
                 lockedProvider={null}
@@ -390,7 +391,11 @@ function SourceControlSettingsView() {
         />
       </SettingsSection>
 
-      <SourceControlPreferences />
+      <WorkspaceSettingsTarget ariaLabel="Source control settings workspace">
+        {(environment) => (
+          <SourceControlPreferences key={environment.environmentId} environment={environment} />
+        )}
+      </WorkspaceSettingsTarget>
 
       <section className="space-y-3" id="gitlab-workspace-status">
         <div className="px-3 sm:px-4">

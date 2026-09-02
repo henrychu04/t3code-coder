@@ -115,14 +115,14 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     id: "auto-settle-inactive-threads",
     title: "Auto-settle inactive threads",
     to: "/settings/preferences",
-    section: "General",
+    section: "Thread settlement",
     searchTerms: ["sidebar inactivity days no activity automatically"],
   },
   {
     id: "auto-settle-merged-threads",
     title: "Auto-settle merged threads",
     to: "/settings/preferences",
-    section: "General",
+    section: "Thread settlement",
     searchTerms: ["gitlab merge request merged closed automatically sidebar"],
   },
   {

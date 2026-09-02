@@ -13,7 +13,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import {
   AVAILABLE_CONNECTION_STATE,
-  PrimaryConnectionTarget,
+  ConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
@@ -22,7 +22,7 @@ import type { WsRpcProtocolClient } from "./protocol.ts";
 import type * as RpcSession from "./session.ts";
 import { subscribe } from "./client.ts";
 
-const TARGET = new PrimaryConnectionTarget({
+const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
   httpBaseUrl: "https://environment.example.test",

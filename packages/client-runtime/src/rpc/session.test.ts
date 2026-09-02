@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as Socket from "effect/unstable/socket/Socket";
 
-import { PrimaryConnectionTarget, type PreparedConnection } from "../connection/model.ts";
+import { ConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import * as RpcSession from "./session.ts";
 
 type SocketEventType = "open" | "message" | "close" | "error";
@@ -74,7 +74,7 @@ class TestWebSocket {
   }
 }
 
-const TARGET = new PrimaryConnectionTarget({
+const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
   httpBaseUrl: "https://environment.example.test",

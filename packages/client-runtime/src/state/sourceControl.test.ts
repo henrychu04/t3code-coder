@@ -13,7 +13,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   AVAILABLE_CONNECTION_STATE,
-  PrimaryConnectionTarget,
+  ConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
@@ -26,7 +26,7 @@ import type { RpcSession } from "../rpc/session.ts";
 import { createSourceControlEnvironmentAtoms } from "./sourceControl.ts";
 import { vcsRefsCacheStateAtom } from "./vcsRefInvalidation.ts";
 
-const TARGET = new PrimaryConnectionTarget({
+const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
   httpBaseUrl: "https://environment.example.test",

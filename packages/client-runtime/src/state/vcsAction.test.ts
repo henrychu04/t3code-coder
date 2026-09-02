@@ -16,7 +16,7 @@ import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
 import {
   AVAILABLE_CONNECTION_STATE,
-  PrimaryConnectionTarget,
+  ConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
@@ -73,7 +73,7 @@ const result: GitRunStackedActionResult = {
   },
 };
 
-const target = new PrimaryConnectionTarget({
+const target = new ConnectionTarget({
   environmentId,
   label: "Test environment",
   httpBaseUrl: "https://environment.example.test",

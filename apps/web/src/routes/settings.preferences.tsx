@@ -84,6 +84,63 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
           }
         />
       </SettingsSection>
+
+      <SettingsSection
+        title="Thread settlement"
+        description="Choose when this workspace moves inactive or merged threads into the settled shelf."
+      >
+        <SettingsRow
+          id="auto-settle-inactive-threads"
+          title="Auto-settle inactive threads"
+          description="Move inactive threads into the settled shelf after this many days."
+          control={
+            <SettingsSelect
+              ariaLabel="Auto-settle inactive threads"
+              value={
+                settings.sidebarAutoSettleAfterDays === null
+                  ? "off"
+                  : String(settings.sidebarAutoSettleAfterDays)
+              }
+              onChange={(value) => {
+                if (value === "off") {
+                  updateSettings({ sidebarAutoSettleAfterDays: null });
+                  return;
+                }
+                const days = Number(value);
+                if (
+                  Number.isFinite(days) &&
+                  days >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
+                  days <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
+                ) {
+                  updateSettings({ sidebarAutoSettleAfterDays: days });
+                }
+              }}
+            >
+              <option value="off">Off</option>
+              <option value="1">After 1 day</option>
+              <option value="3">After 3 days</option>
+              <option value="7">After 7 days</option>
+              <option value="14">After 14 days</option>
+              <option value="30">After 30 days</option>
+              <option value="90">After 90 days</option>
+            </SettingsSelect>
+          }
+        />
+        <SettingsRow
+          id="auto-settle-merged-threads"
+          title="Auto-settle merged threads"
+          description="Settle a thread automatically when its branch is merged."
+          control={
+            <Switch
+              aria-label="Auto-settle merged threads"
+              checked={settings.sidebarAutoSettleOnMerge}
+              onCheckedChange={(checked) =>
+                updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
+              }
+            />
+          }
+        />
+      </SettingsSection>
     </>
   );
 }
@@ -187,57 +244,6 @@ function GeneralSettingsView() {
                   updateSettings({ sidebarThreadPreviewCount: count });
                 }
               }}
-            />
-          }
-        />
-        <SettingsRow
-          id="auto-settle-inactive-threads"
-          title="Auto-settle inactive threads"
-          description="Move inactive threads into the settled shelf after this many days."
-          control={
-            <SettingsSelect
-              ariaLabel="Auto-settle inactive threads"
-              value={
-                settings.sidebarAutoSettleAfterDays === null
-                  ? "off"
-                  : String(settings.sidebarAutoSettleAfterDays)
-              }
-              onChange={(value) => {
-                if (value === "off") {
-                  updateSettings({ sidebarAutoSettleAfterDays: null });
-                  return;
-                }
-                const days = Number(value);
-                if (
-                  Number.isFinite(days) &&
-                  days >= MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS &&
-                  days <= MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS
-                ) {
-                  updateSettings({ sidebarAutoSettleAfterDays: days });
-                }
-              }}
-            >
-              <option value="off">Off</option>
-              <option value="1">After 1 day</option>
-              <option value="3">After 3 days</option>
-              <option value="7">After 7 days</option>
-              <option value="14">After 14 days</option>
-              <option value="30">After 30 days</option>
-              <option value="90">After 90 days</option>
-            </SettingsSelect>
-          }
-        />
-        <SettingsRow
-          id="auto-settle-merged-threads"
-          title="Auto-settle merged threads"
-          description="Settle a thread automatically when its branch is merged."
-          control={
-            <Switch
-              aria-label="Auto-settle merged threads"
-              checked={settings.sidebarAutoSettleOnMerge}
-              onCheckedChange={(checked) =>
-                updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
-              }
             />
           }
         />
