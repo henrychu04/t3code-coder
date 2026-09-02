@@ -4,17 +4,26 @@ import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 
 import * as CoderBackgroundPolicy from "./coderBackgroundPolicy.ts";
+import * as ServerConfig from "./config.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
+import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
+import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
+import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as Keybindings from "./keybindings.ts";
 import { RuntimeReceiptBusLive } from "./orchestration/Layers/RuntimeReceiptBus.ts";
 import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRuntimeIngestion.ts";
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import { CheckpointReactor } from "./orchestration/Services/CheckpointReactor.ts";
@@ -24,6 +33,7 @@ import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionRe
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
 import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
+import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
@@ -66,6 +76,10 @@ const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
   Layer.provideMerge(ScreenshotArtifacts.layer),
 );
 
+const CoderTextGenerationLive = TextGeneration.layer.pipe(
+  Layer.provide(CoderProviderInstancesLive),
+);
+
 const CoderProviderLive = ProviderServiceLive.pipe(
   Layer.provide(ProviderAdapterRegistryLive),
   Layer.provideMerge(CoderProviderSessionDirectoryLive),
@@ -81,18 +95,56 @@ const CoderVcsDriverRegistryLive = VcsDriverRegistry.layer.pipe(
   Layer.provide(VcsProjectConfig.layer),
 );
 
-const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(Layer.provide(GitVcsDriver.layer));
+const CoderSourceControlLive = SourceControlProviderRegistry.layer.pipe(
+  Layer.provideMerge(GitLabCli.layer),
+  Layer.provideMerge(CoderVcsDriverRegistryLive),
+);
+
+const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
+  Layer.provideMerge(CoderSourceControlLive),
+);
+
+const CoderTerminalLive = TerminalManager.layer.pipe(
+  Layer.provideMerge(NodePtyAdapter.layer),
+  Layer.provideMerge(ProcessRunner.layer),
+);
+
+const CoderProjectSetupScriptRunnerLive = ProjectSetupScriptRunner.layer.pipe(
+  Layer.provideMerge(CoderOrchestrationLayerLive),
+  Layer.provideMerge(CoderTerminalLive),
+);
+
+const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(
+  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(CoderSourceControlLive),
+  Layer.provideMerge(CoderTextGenerationLive),
+  Layer.provideMerge(CoderSettingsLive),
+  Layer.provideMerge(CoderProjectSetupScriptRunnerLive),
+);
+
+const CoderSourceControlRepositoriesLive = SourceControlRepositoryService.layer.pipe(
+  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(CoderSourceControlLive),
+);
 
 const CoderVcsLive = Layer.mergeAll(
   GitVcsDriver.layer,
   CoderVcsDriverRegistryLive,
   VcsProvisioningService.layer.pipe(Layer.provide(CoderVcsDriverRegistryLive)),
   CoderGitWorkflowLive,
+  CoderSourceControlRepositoriesLive,
   CoderVcsStatus.layer.pipe(Layer.provide(CoderGitWorkflowLive)),
   ReviewService.layer.pipe(
     Layer.provideMerge(GitVcsDriver.layer),
     Layer.provideMerge(CoderVcsDriverRegistryLive),
   ),
+);
+
+const CoderPullRequestsLive = PullRequestService.layer.pipe(
+  Layer.provideMerge(PullRequestProviderRegistry.layer),
+  Layer.provideMerge(CoderSourceControlLive),
+  Layer.provideMerge(SourceControlRateLimit.layer),
+  Layer.provideMerge(CoderOrchestrationLayerLive),
 );
 
 const CoderCheckpointStoreLive = CheckpointStore.layer.pipe(
@@ -101,11 +153,6 @@ const CoderCheckpointStoreLive = CheckpointStore.layer.pipe(
 
 const CoderCheckpointingLive = CheckpointDiffQuery.layer.pipe(
   Layer.provideMerge(CoderCheckpointStoreLive),
-);
-
-const CoderTerminalLive = TerminalManager.layer.pipe(
-  Layer.provideMerge(NodePtyAdapter.layer),
-  Layer.provideMerge(ProcessRunner.layer),
 );
 
 const CoderWorkspaceEntriesLive = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
@@ -120,6 +167,8 @@ const CoderRuntimeCoreLive = Layer.empty.pipe(
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(CoderVcsLive),
+  Layer.provideMerge(CoderPullRequestsLive),
+  Layer.provideMerge(CoderSourceControlDiscoveryLive),
   Layer.provideMerge(CoderCheckpointingLive),
   Layer.provideMerge(CoderTerminalLive),
   Layer.provideMerge(WorkspacePaths.layer),
@@ -138,6 +187,7 @@ const CoderRuntimeFeaturesLive = Layer.mergeAll(
   ProviderCommandReactorLive,
   CheckpointReactorLive,
   ThreadDeletionReactorLive,
+  ThreadSettlementReactor.layer,
 ).pipe(
   Layer.provideMerge(TextGeneration.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -155,6 +205,8 @@ const CoderRuntimeStartupLive = Layer.effect(
     const settings = yield* ServerSettings.ServerSettingsService;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
     const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
+    const gitLabCli = yield* GitLabCli.GitLabCli;
+    const config = yield* ServerConfig.ServerConfig;
     const commandGate = yield* CoderRuntimeStartup.makeCommandGate;
     const reactorScope = yield* Scope.make("sequential");
 
@@ -163,6 +215,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
+    yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
     yield* commandGate.signalReady;
 
     return CoderRuntimeStartup.CoderRuntimeStartup.of({
@@ -178,6 +231,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
     const providerCommandReactor = yield* ProviderCommandReactor;
     const checkpointReactor = yield* CheckpointReactor;
     const threadDeletionReactor = yield* ThreadDeletionReactor;
+    const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
 
     return OrchestrationReactor.OrchestrationReactor.of({
       start: Effect.fn("coderOrchestrationReactor.start")(function* () {
@@ -185,6 +239,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
         yield* providerCommandReactor.start();
         yield* checkpointReactor.start();
         yield* threadDeletionReactor.start();
+        yield* threadSettlementReactor.start();
       }),
     });
   }),

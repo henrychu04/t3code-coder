@@ -1,5 +1,6 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Undo2Icon } from "lucide-react";
+import { useLocation } from "@tanstack/react-router";
 
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
@@ -7,6 +8,12 @@ import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 export function SettingsPage({ children }: { readonly children: ReactNode }) {
+  const hash = useLocation({ select: (location) => location.hash });
+  useEffect(() => {
+    if (!hash) return;
+    const target = document.getElementById(hash.replace(/^#/u, ""));
+    target?.scrollIntoView({ block: "center" });
+  }, [hash]);
   return (
     <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
       <WorkspacePageContainer className="gap-12">{children}</WorkspacePageContainer>
@@ -17,16 +24,18 @@ export function SettingsPage({ children }: { readonly children: ReactNode }) {
 export function SettingsSection({
   children,
   description,
+  id,
   title,
   unframed = false,
 }: {
   readonly children: ReactNode;
   readonly description?: string;
+  readonly id?: string;
   readonly title: string;
   readonly unframed?: boolean;
 }) {
   return (
-    <section className="space-y-3">
+    <section className="space-y-3" id={id}>
       <div className={cn("px-3 sm:px-4", unframed && "min-h-8")}>
         <h2
           className={cn(
@@ -58,6 +67,7 @@ export function SettingsRow({
   className,
   control,
   description,
+  id,
   resetAction,
   title,
 }: {
@@ -65,11 +75,13 @@ export function SettingsRow({
   readonly className?: string;
   readonly control?: ReactNode;
   readonly description?: string;
+  readonly id?: string;
   readonly resetAction?: ReactNode;
   readonly title: string;
 }) {
   return (
     <div
+      id={id}
       className={cn(
         "flex flex-col gap-3 px-4 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-8",
         className,

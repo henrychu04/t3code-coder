@@ -27,7 +27,6 @@ import {
 import { wasBootstrapThreadDeleted } from "@t3tools/client-runtime/errors";
 import { type CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import {
-  effectiveSettled,
   effectiveSnoozed,
   threadWokeAt,
 } from "@t3tools/client-runtime/state/thread-settled";
@@ -137,10 +136,16 @@ import {
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
+  isPullRequestSurface,
   type RightPanelSurface,
+  updatePullRequestTabStatus,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { RightPanelTabs } from "./RightPanelTabs";
+import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
+import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
+import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
+import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
+import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
 import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
@@ -251,6 +256,11 @@ import {
 } from "./chat/ThreadErrorBanner";
 import type { ComposerBannerStackItem } from "./chat/ComposerBannerStack";
 import { ComposerSurface } from "./chat/ComposerSurface";
+import {
+  resolveDisplayedThreadPr,
+  threadChangeRequestSnapshotsAtom,
+  useLinkedThreadPullRequest,
+} from "./ThreadStatusIndicators";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
   DRAFT_HERO_TRANSITION_DURATION_MS,
@@ -1562,6 +1572,18 @@ function ChatViewContent(props: ChatViewProps) {
   const activeRightPanelSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, activeThreadRef),
   );
+  const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
+  const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
+    Readonly<Record<string, PullRequestTabStatus>>
+  >({});
+  const handlePullRequestTabStatusChange = useCallback(
+    (surfaceId: string, status: PullRequestTabStatus) => {
+      setPullRequestTabStatuses((current) =>
+        updatePullRequestTabStatus<PullRequestTabStatus>(current, surfaceId, status),
+      );
+    },
+    [],
+  );
   const fileViewerCommandRequestIdRef = useRef(0);
   const lastShiftAtRef = useRef<number | null>(null);
   const [fileViewerCommandRequest, setFileViewerCommandRequest] =
@@ -2041,10 +2063,39 @@ function ChatViewContent(props: ChatViewProps) {
     hasProject: activeProject !== null,
     hasWorkspaceRoot: activeWorkspaceRoot !== undefined,
   });
+  const repositoryIdentity = activeProject?.repositoryIdentity;
+  const gitLabRepository =
+    repositoryIdentity?.locator.source === "git-remote" &&
+    (repositoryIdentity.provider === "gitlab" || repositoryIdentity.provider === "unknown")
+      ? (repositoryIdentity.displayName ?? null)
+      : null;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Default true while loading to avoid toolbar flicker.
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
+  const pullRequestsCapabilityKnown = serverConfig !== null;
+  const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const linkedThreadPullRequest = activeThread?.linkedPullRequest ?? null;
+  const activeProjectRepository = gitLabRepository;
+  const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
+  const linkedPullRequestStatus = useLinkedThreadPullRequest(
+    activeThreadRef?.environmentId ?? null,
+    linkedThreadPullRequest,
+  );
+  const activeThreadPr = resolveDisplayedThreadPr({
+    threadBranch: activeThread?.branch ?? null,
+    gitStatus: gitStatusQuery.data ?? null,
+    snapshot: activeThreadKey ? changeRequestSnapshotByKey.get(activeThreadKey) : undefined,
+    retainTerminalOnBranchMismatch: activeThread?.worktreePath === null,
+    linkedPullRequest: linkedThreadPullRequest,
+    linkedPullRequestStatus,
+  });
+  const pullRequestAvailable =
+    isServerThread &&
+    isGitRepo &&
+    supportsPullRequests &&
+    activeThreadPr !== null &&
+    threadRepository !== null;
   const showComposerContextStrip = shouldShowComposerContextStrip({
     hasActiveProject: activeProject !== null,
     isGitRepo,
@@ -2405,6 +2456,37 @@ function ChatViewContent(props: ChatViewProps) {
     if (!activeThreadRef) return;
     useRightPanelStore.getState().open(activeThreadRef, "agents");
   }, [activeThreadRef]);
+  const addPullRequestSurface = useCallback(() => {
+    if (!activeThreadRef || !pullRequestAvailable || !activeThreadPr) return;
+    const projectId = linkedThreadPullRequest?.projectId ?? activeProject?.id;
+    const repository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
+    if (projectId === undefined || repository === null) return;
+    useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+      environmentId: activeThreadRef.environmentId,
+      projectId,
+      repository,
+      number: activeThreadPr.number,
+    });
+  }, [
+    activeProject?.id,
+    activeProjectRepository,
+    activeThreadPr,
+    activeThreadRef,
+    linkedThreadPullRequest,
+    pullRequestAvailable,
+  ]);
+  const openProjectPullRequest = useCallback(
+    (number: number) => {
+      if (!activeThreadRef || !activeProject || !activeProjectRepository) return;
+      useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+        environmentId: activeThreadRef.environmentId,
+        projectId: activeProject.id,
+        repository: activeProjectRepository,
+        number,
+      });
+    },
+    [activeProject, activeProjectRepository, activeThreadRef],
+  );
   const addFilesSurface = useCallback(() => {
     if (!activeThreadRef || !filesAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "files");
@@ -3364,9 +3446,7 @@ function ChatViewContent(props: ChatViewProps) {
         : null,
     [activeThreadBranch, activeWorktreePath, envMode, gitStatusQuery.data?.refName, isServerThread],
   );
-  // Settled state of the open thread, resolved exactly like the sidebar
-  // partition (same shell, same capability gate, same PR auto-settle input)
-  // so the banner and the sidebar row never disagree.
+  // The server-projected settled state keeps the banner and sidebar in sync.
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const activeComposerTasksProgress = useMemo(() => {
     if (!activeLatestTurn || latestTurnSettled || activePlan?.turnId !== activeLatestTurn.turnId) {
@@ -3386,9 +3466,6 @@ function ChatViewContent(props: ChatViewProps) {
     activeComposerTasksProgress && activePlan && activePlan.turnId === activeLatestTurn?.turnId
       ? activePlan.steps
       : null;
-  const autoSettleAfterDays = useClientSettings((settings) => settings.sidebarAutoSettleAfterDays);
-  const autoSettleOnMerge = false;
-  const activeThreadChangeRequest = null;
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const supportsSnooze = serverConfig?.environment.capabilities.threadSnooze === true;
   const supportsPinning = serverConfig?.environment.capabilities.threadPinning === true;
@@ -3443,22 +3520,8 @@ function ChatViewContent(props: ChatViewProps) {
     );
     return lastVisitedMs < wokeAtMs;
   }, [activeLatestTurn?.completedAt, activeThreadLastVisitedAt, activeThreadWokeAt]);
-  const activeThreadSettled = useMemo(() => {
-    if (activeThreadShell === null || !supportsSettlement) return false;
-    return effectiveSettled(activeThreadShell, {
-      now: `${nowMinute}:00.000Z`,
-      autoSettleAfterDays,
-      autoSettleOnMerge,
-      changeRequest: activeThreadChangeRequest,
-    });
-  }, [
-    activeThreadChangeRequest,
-    activeThreadShell,
-    autoSettleAfterDays,
-    autoSettleOnMerge,
-    nowMinute,
-    supportsSettlement,
-  ]);
+  const activeThreadSettled =
+    supportsSettlement && activeThreadShell?.settledOverride === "settled";
   const unsettleThreadMutation = useAtomCommand(threadEnvironment.unsettle, {
     reportFailure: false,
   });
@@ -5529,6 +5592,47 @@ function ChatViewContent(props: ChatViewProps) {
         environmentId={activeThreadRef.environmentId}
         threadId={activeThreadRef.threadId}
       />
+    ) : activeRightPanelSurface?.kind === "pull-request" && !pullRequestsCapabilityKnown ? (
+      <PullRequestDetailGhost />
+    ) : activeRightPanelSurface?.kind === "pull-request" && !supportsPullRequests ? (
+      <PullRequestsUnavailableState
+        title="Merge requests unavailable"
+        error="Update this Coder workspace's T3 server to browse GitLab merge requests."
+      />
+    ) : isPullRequestSurface(activeRightPanelSurface) ? (
+      <PullRequestDetailPanel
+        key={`${activeRightPanelSurface.repository}#${activeRightPanelSurface.number}`}
+        environmentId={
+          activeRightPanelSurface.environmentId
+            ? (activeRightPanelSurface.environmentId as EnvironmentId)
+            : activeThreadRef.environmentId
+        }
+        reference={{
+          projectId: activeRightPanelSurface.projectId as ProjectId,
+          repository: activeRightPanelSurface.repository,
+          number: activeRightPanelSurface.number,
+        }}
+        context={
+          isThreadOwnPullRequest(
+            {
+              projectId: linkedThreadPullRequest?.projectId ?? activeProject?.id ?? null,
+              repository: threadRepository,
+              number: activeThreadPr?.number ?? null,
+            },
+            {
+              projectId: activeRightPanelSurface.projectId,
+              repository: activeRightPanelSurface.repository,
+              number: activeRightPanelSurface.number,
+            },
+          )
+            ? "thread"
+            : "page"
+        }
+        composerDraftTarget={composerDraftTarget}
+        onStateChange={(status) =>
+          handlePullRequestTabStatusChange(activeRightPanelSurface.id, status)
+        }
+      />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       filesAvailable &&
       activeProject &&
@@ -5582,10 +5686,16 @@ function ChatViewContent(props: ChatViewProps) {
             isServerThread={isServerThread}
             activeProjectName={activeProject?.title}
             activeProjectCwd={activeProject?.workspaceRoot ?? null}
+            gitCwd={gitStatusCwd}
+            {...(draftId ? { draftId } : {})}
             activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             keybindings={keybindings}
             rightPanelOpen={rightPanelOpen}
             onNewThreadInProject={handleNewThreadInActiveProject}
+            {...(activeProject && activeProjectRepository
+              ? { onOpenPullRequest: openProjectPullRequest }
+              : {})}
+            onOpenFile={openFileSurface}
           />
         </WorkspacePageHeader>
 
@@ -5917,10 +6027,13 @@ function ChatViewContent(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
+          pullRequestAvailable={pullRequestAvailable}
+          pullRequestStatuses={pullRequestTabStatuses}
           agentsAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -5949,10 +6062,13 @@ function ChatViewContent(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}
+            pullRequestAvailable={pullRequestAvailable}
+            pullRequestStatuses={pullRequestTabStatuses}
             agentsAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >

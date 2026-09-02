@@ -321,11 +321,17 @@ describe("CheckpointReactor", () => {
         }).pipe(
           Effect.as({
             isRepo: true,
+            hasPrimaryRemote: false,
             isDefaultRef: true,
             refName:
               options?.localStatusRefName !== undefined ? options.localStatusRefName : "main",
             hasWorkingTreeChanges: false,
             workingTree: { files: [], insertions: 0, deletions: 0 },
+            hasUpstream: false,
+            aheadCount: 0,
+            behindCount: 0,
+            aheadOfDefaultCount: 0,
+            pr: null,
           }),
         ),
       stream: () => Stream.empty,

@@ -209,9 +209,8 @@ export class ServerSettingsService extends Context.Service<
 
 const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
   Effect.gen(function* () {
-    const initialSettings = yield* normalizeServerSettings(
-      deepMerge(DEFAULT_SERVER_SETTINGS, overrides),
-    );
+    const merged = deepMerge(DEFAULT_SERVER_SETTINGS, overrides);
+    const initialSettings = yield* normalizeServerSettings(merged);
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
 
     return {
@@ -244,10 +243,17 @@ const decodeServerSettingsJsonExit = Schema.decodeUnknownExit(ServerSettingsJson
 const resolveTextGenerationProvider = (settings: ServerSettings): ServerSettings => settings;
 
 // Values under these keys are compared as a whole — never stripped field-by-field.
-const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set(["textGenerationModelSelection"]);
+const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
+  "textGenerationModelSelection",
+  "sourceControlWriterModelSelection",
+]);
 
 function stripDefaultServerSettings(current: unknown, defaults: unknown): unknown | undefined {
   if (Array.isArray(current) || Array.isArray(defaults)) {
+    return Equal.equals(current, defaults) ? undefined : current;
+  }
+
+  if (Equal.isEqual(current) || Equal.isEqual(defaults)) {
     return Equal.equals(current, defaults) ? undefined : current;
   }
 

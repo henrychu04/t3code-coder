@@ -9,9 +9,15 @@ import * as NodePath from "node:path";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_SERVER_SETTINGS, EnvironmentId, TrimmedNonEmptyString } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
+  ServerSettings,
+  TrimmedNonEmptyString,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import {
   connectCoderHelper as connectCoderHelperEffect,
@@ -20,6 +26,7 @@ import {
 import { CODER_HELPER_INFO_METHOD, CODER_HELPER_PROTOCOL_VERSION } from "./rpc.ts";
 
 const helperPath = fileURLToPath(new URL("../../../apps/coder-helper/src/bin.ts", import.meta.url));
+const encodedDefaultServerSettings = Schema.encodeSync(ServerSettings)(DEFAULT_SERVER_SETTINGS);
 
 async function connectCoderHelper(...args: Parameters<typeof connectCoderHelperEffect>) {
   const scope = await Effect.runPromise(Scope.make("sequential"));
@@ -116,7 +123,7 @@ function makeFakeHelperProcess(options?: { readonly ignoreSigterm?: boolean }) {
                   keybindings: [],
                   issues: [],
                   providers: [],
-                  settings: DEFAULT_SERVER_SETTINGS,
+                  settings: encodedDefaultServerSettings,
                 },
               },
             })}\n`,

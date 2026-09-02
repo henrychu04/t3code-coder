@@ -9,6 +9,18 @@ let cachedApi: LocalApi | undefined;
 
 function createBrowserLocalApi(): LocalApi {
   return {
+    shell: {
+      openExternal: async (url) => {
+        let parsed: URL;
+        try {
+          parsed = new URL(url.trim());
+        } catch {
+          return;
+        }
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return;
+        window.open(parsed.href, "_blank", "noopener,noreferrer");
+      },
+    },
     dialogs: {
       confirm: async (message, options?: ConfirmDialogOptions) => {
         return requestConfirmDialog(message, options) ?? false;

@@ -7,6 +7,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import {
   type VcsError,
   VcsProcessExitError,
+  type VcsProcessExitFailureKind,
   VcsProcessMissingExitCodeError,
   VcsProcessOutputLimitError,
   VcsProcessOutputReadError,
@@ -28,6 +29,10 @@ export interface VcsProcessInput {
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
   readonly appendTruncationMarker?: boolean;
+  /** Classifies a non-zero result before stderr is discarded at the process boundary. */
+  readonly classifyNonZeroExit?: (stderr: string) => VcsProcessExitFailureKind | undefined;
+  readonly onStdoutLine?: (line: string) => Effect.Effect<void, never>;
+  readonly onStderrLine?: (line: string) => Effect.Effect<void, never>;
 }
 
 export interface VcsProcessOutput {
@@ -51,6 +56,36 @@ export class VcsProcess extends Context.Service<
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
+
+const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
+  const normalized = stderr.toLowerCase();
+  if (
+    normalized.includes("authentication failed") ||
+    normalized.includes("not logged in") ||
+    normalized.includes("glab auth login") ||
+    normalized.includes("no oauth token") ||
+    normalized.includes("unauthorized")
+  ) {
+    return "authentication";
+  }
+  if (
+    normalized.includes("api rate limit") ||
+    normalized.includes("rate limit exceeded") ||
+    normalized.includes("too many requests") ||
+    normalized.includes("http 429")
+  ) {
+    return "rate-limited";
+  }
+  if (
+    command === "glab" &&
+    (normalized.includes("merge request not found") ||
+      normalized.includes("not found") ||
+      normalized.includes("404"))
+  ) {
+    return "not-found";
+  }
+  return "command-failed";
+};
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
@@ -76,6 +111,8 @@ export const make = Effect.gen(function* () {
         outputMode: "truncate",
         truncatedMarker: input.appendTruncationMarker ? OUTPUT_TRUNCATED_MARKER : "",
         timeoutBehavior: "error",
+        ...(input.onStdoutLine ? { onStdoutLine: input.onStdoutLine } : {}),
+        ...(input.onStderrLine ? { onStderrLine: input.onStderrLine } : {}),
       })
       .pipe(
         Effect.mapError(
@@ -119,7 +156,8 @@ export const make = Effect.gen(function* () {
           stderr: result.stderr,
           stderrTruncated: result.stderrTruncated,
         },
-        "command-failed",
+        input.classifyNonZeroExit?.(result.stderr) ??
+          classifyNonZeroExit(input.command, result.stderr),
       );
     }
 

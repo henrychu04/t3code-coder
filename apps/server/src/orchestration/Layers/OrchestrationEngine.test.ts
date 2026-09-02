@@ -20,6 +20,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
+import { OrchestrationCommandReceiptRepository } from "../../persistence/Services/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
 import {
@@ -56,10 +57,10 @@ async function createOrchestrationSystem() {
     ),
     OrchestrationProjectionSnapshotQueryLive,
   ).pipe(
-    Layer.provide(ThreadBackgroundLiveness.layer),
+    Layer.provideMerge(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provide(OrchestrationEventStoreLive),
-    Layer.provide(OrchestrationCommandReceiptRepositoryLive),
+    Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
     Layer.provide(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
@@ -68,8 +69,14 @@ async function createOrchestrationSystem() {
   const runtime = ManagedRuntime.make(orchestrationLayer);
   const engine = await runtime.runPromise(Effect.service(OrchestrationEngineService));
   const snapshotQuery = await runtime.runPromise(Effect.service(ProjectionSnapshotQuery));
+  const receipts = await runtime.runPromise(Effect.service(OrchestrationCommandReceiptRepository));
+  const backgroundLiveness = await runtime.runPromise(
+    Effect.service(ThreadBackgroundLiveness.ThreadBackgroundLivenessService),
+  );
   return {
     engine,
+    receipts,
+    backgroundLiveness,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     dispose: () => runtime.dispose(),
@@ -94,6 +101,7 @@ describe("OrchestrationEngine", () => {
           return savedEvent;
         }),
       readFromSequence: () => Stream.empty,
+      hasEventAfter: () => Effect.succeed(false),
       readAll: () =>
         Stream.fail(
           new PersistenceSqlError({
@@ -205,6 +213,7 @@ describe("OrchestrationEngine", () => {
         } satisfies OrchestrationProjectionPipelineShape),
       ),
       Layer.provide(Layer.succeed(OrchestrationEventStore, eventStore)),
+      Layer.provide(ThreadBackgroundLiveness.layer),
       Layer.provide(OrchestrationCommandReceiptRepositoryLive),
       Layer.provide(SqlitePersistenceMemory),
       Layer.provideMerge(NodeServices.layer),
@@ -228,6 +237,184 @@ describe("OrchestrationEngine", () => {
     expect(fullSnapshotReadCount).toBe(0);
 
     await runtime.dispose();
+  });
+
+  it("preserves blocked settlement errors and records a rejected receipt", async () => {
+    const system = await createOrchestrationSystem();
+    const projectId = ProjectId.make("project-blocked-settle");
+    const threadId = ThreadId.make("thread-blocked-settle");
+    const commandId = CommandId.make("cmd-blocked-settle");
+    const createdAt = now();
+
+    await system.run(
+      system.engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-blocked-settle-project-create"),
+        projectId,
+        title: "Project",
+        workspaceRoot: "/tmp/project-blocked-settle",
+        createdAt,
+      }),
+    );
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("cmd-blocked-settle-thread-create"),
+        threadId,
+        projectId,
+        title: "Thread",
+        modelSelection: {
+          instanceId: ProviderInstanceId.make("claude"),
+          model: "sonnet",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "full-access",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      }),
+    );
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-blocked-settle-session-set"),
+        threadId,
+        createdAt,
+        session: {
+          threadId,
+          status: "running",
+          providerName: "claude",
+          runtimeMode: "full-access",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+      }),
+    );
+
+    const sequence = await system.run(system.engine.latestSequence);
+    await expect(
+      system.run(system.engine.dispatch({ type: "thread.settle", commandId, threadId })),
+    ).rejects.toMatchObject({
+      _tag: "OrchestrationThreadSettleBlockedError",
+      threadId,
+      message: "This thread still needs attention. Resolve or interrupt it first, then try again.",
+    });
+    const receipt = Option.getOrNull(
+      await system.run(system.receipts.getByCommandId({ commandId })),
+    );
+    expect(receipt).toMatchObject({
+      commandId,
+      aggregateKind: "thread",
+      aggregateId: threadId,
+      status: "rejected",
+      resultSequence: sequence,
+    });
+    expect(await system.run(system.engine.latestSequence)).toBe(sequence);
+    await system.dispose();
+  });
+
+  it("rejects stale automatic settlement and live background work", async () => {
+    const system = await createOrchestrationSystem();
+    const projectId = ProjectId.make("project-auto-settle-guard");
+    const guardedThreadId = ThreadId.make("thread-auto-settle-guarded");
+    const unrelatedThreadId = ThreadId.make("thread-auto-settle-unrelated");
+    const liveThreadId = ThreadId.make("thread-auto-settle-live");
+
+    await system.run(
+      system.engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-auto-settle-guard-project"),
+        projectId,
+        title: "Project",
+        workspaceRoot: "/tmp/project-auto-settle-guard",
+        createdAt: now(),
+      }),
+    );
+    for (const threadId of [guardedThreadId, unrelatedThreadId, liveThreadId]) {
+      await system.run(
+        system.engine.dispatch({
+          type: "thread.create",
+          commandId: CommandId.make(`cmd-create-${threadId}`),
+          threadId,
+          projectId,
+          title: "Thread",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claude"),
+            model: "sonnet",
+          },
+          interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+          runtimeMode: "full-access",
+          branch: null,
+          worktreePath: null,
+          createdAt: now(),
+        }),
+      );
+    }
+
+    const snapshotSequence = (await system.readModel()).snapshotSequence;
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-auto-settle-guard-meta"),
+        threadId: guardedThreadId,
+        branch: "new-branch",
+      }),
+    );
+    await expect(
+      system.run(
+        system.engine.dispatch({
+          type: "thread.auto-settle",
+          commandId: CommandId.make("cmd-auto-settle-stale-snapshot"),
+          threadId: guardedThreadId,
+          snapshotSequence,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
+
+    const livenessSnapshotSequence = await system.run(system.engine.latestSequence);
+    system.backgroundLiveness.recordTaskLiveness({
+      threadId: liveThreadId,
+      taskId: "task-working",
+      taskType: "subagent",
+      status: undefined,
+      kind: "started",
+    });
+    await expect(
+      system.run(
+        system.engine.dispatch({
+          type: "thread.auto-settle",
+          commandId: CommandId.make("cmd-auto-settle-live-background"),
+          threadId: liveThreadId,
+          snapshotSequence: livenessSnapshotSequence,
+        }),
+      ),
+    ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
+    system.backgroundLiveness.clearThreadLiveness(liveThreadId);
+
+    const freshSnapshotSequence = await system.run(system.engine.latestSequence);
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("cmd-auto-settle-unrelated-meta"),
+        threadId: unrelatedThreadId,
+        title: "Unrelated update",
+      }),
+    );
+    await system.run(
+      system.engine.dispatch({
+        type: "thread.auto-settle",
+        commandId: CommandId.make("cmd-auto-settle-after-unrelated-update"),
+        threadId: guardedThreadId,
+        snapshotSequence: freshSnapshotSequence,
+      }),
+    );
+
+    const settled = await system.readModel();
+    expect(settled.threads.find((thread) => thread.id === guardedThreadId)?.settledOverride).toBe(
+      "settled",
+    );
+    await system.dispose();
   });
 
   it("persists deterministic read models for repeated snapshot reads", async () => {
@@ -710,6 +897,9 @@ describe("OrchestrationEngine", () => {
       readAll() {
         return Stream.fromIterable(events);
       },
+      hasEventAfter() {
+        return Effect.succeed(false);
+      },
     };
 
     const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
@@ -944,6 +1134,9 @@ describe("OrchestrationEngine", () => {
       },
       readAll() {
         return Stream.fromIterable(events);
+      },
+      hasEventAfter() {
+        return Effect.succeed(false);
       },
     };
 

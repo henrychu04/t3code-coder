@@ -84,8 +84,13 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
       helper stdio RPC only after explicit UI expansion. Do not expose arbitrary paths,
       download/export actions, local persistence, or a general file-reading API.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
-- Git is repository-local in the workspace. Do not add fetch, pull, push, pull-request, or hosted
-  source-control integrations.
+- Git and hosted source-control operations run only in the Linux workspace through the existing
+  helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and
+  remote-management commands, and may invoke the workspace-installed `glab` CLI to discover
+  authentication, create or publish repositories, and read, create, update, or check out merge
+  requests. Keep the UI and provider registry GitLab-only. GitLab owns authentication; T3 must
+  never ask for, read, persist, or log its tokens. Do not add GitHub, Azure DevOps, Bitbucket, or
+  another hosted provider, and do not move Git or `glab` execution into the local gateway.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
   OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
   forwarding, arbitrary tunnels, or providers other than Codex and Claude. OpenSSH use is limited

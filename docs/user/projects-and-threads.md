@@ -26,6 +26,16 @@ Threads move through four states in the sidebar:
 - **Settled** — finished work. Settle with the thread menu or `mod+shift+s`. Un-settling returns a
   thread to the top of the active list so you can find it immediately; timestamps do not change.
 
+Each workspace owns its automatic settlement settings. The workspace helper checks them even when
+no browser is connected. By default, it settles threads after three days without activity and when
+their GitLab merge request merges. An eligible idle thread also settles when its merge request
+closes, while an open merge request blocks inactivity settlement. Active work, pending input, and
+live background work keep the thread active. A closed or merged merge request triggers immediate
+settlement only when its update timestamp is not older than the user's latest activity; otherwise
+the inactivity rule can still apply. Manually un-settling a thread keeps it active until new work
+clears that choice. Change these rules in **Settings → Preferences**. A settings change affects
+future settlement and does not reopen an already settled thread.
+
 ## Archiving
 
 Archive a thread from its menu to retire it without deleting it. Archived threads live in

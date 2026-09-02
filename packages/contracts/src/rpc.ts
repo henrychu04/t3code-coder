@@ -5,7 +5,15 @@ import { KeybindingsConfigError } from "./keybindings.ts";
 
 import {
   GitCommandError,
+  GitActionProgressEvent,
   GitManagerServiceError,
+  GitPullRequestRefInput,
+  GitPreparePullRequestThreadInput,
+  GitPreparePullRequestThreadResult,
+  GitResolvePullRequestResult,
+  GitRunStackedActionInput,
+  VcsPullInput,
+  VcsPullResult,
   VcsCreateRefInput,
   VcsCreateRefResult,
   VcsCreateWorktreeInput,
@@ -96,6 +104,46 @@ import {
 } from "./terminal.ts";
 import { VcsError } from "./vcs.ts";
 import {
+  PullRequestActionInput,
+  PullRequestActivity,
+  PullRequestCommentInput,
+  PullRequestCommentUpdateInput,
+  PullRequestDetail,
+  PullRequestDiffFileContentsInput,
+  PullRequestDiffFileContentsResult,
+  PullRequestDiffInput,
+  PullRequestDiffResult,
+  PullRequestInvalidateInput,
+  PullRequestListInput,
+  PullRequestListResult,
+  PullRequestListStatsInput,
+  PullRequestListStatsResult,
+  PullRequestOperationError,
+  PullRequestReactionInput,
+  PullRequestRef,
+  PullRequestReviewerCandidateList,
+  PullRequestReviewerRequestInput,
+  PullRequestSubmitReviewInput,
+  PullRequestThreadCommentsInput,
+  PullRequestThreadCommentsResult,
+  PullRequestThreadReplyInput,
+  PullRequestThreadResolutionInput,
+  PullRequestUnavailableError,
+  PullRequestUpdateInput,
+} from "./pullRequest.ts";
+import {
+  SourceControlCloneRepositoryInput,
+  SourceControlCloneRepositoryResult,
+  SourceControlDiscoveryResult,
+  SourceControlPublishRepositoryInput,
+  SourceControlPublishRepositoryResult,
+  SourceControlProbeWriteAccessInput,
+  SourceControlRepositoryError,
+  SourceControlRepositoryInfo,
+  SourceControlRepositoryLookupInput,
+  SourceControlWriteAccess,
+} from "./sourceControl.ts";
+import {
   ScreenshotArtifactChunk,
   ScreenshotArtifactReadError,
   ScreenshotArtifactReadInput,
@@ -110,6 +158,12 @@ export const WS_METHODS = {
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   providerListSlashCommands: "provider.listSlashCommands",
+  serverDiscoverSourceControl: "server.discoverSourceControl",
+  sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
+  sourceControlLookupRepository: "sourceControl.lookupRepository",
+  sourceControlCloneRepository: "sourceControl.cloneRepository",
+  sourceControlPublishRepository: "sourceControl.publishRepository",
+  vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -118,6 +172,27 @@ export const WS_METHODS = {
   vcsSwitchRef: "vcs.switchRef",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   vcsInit: "vcs.init",
+  gitRunStackedAction: "git.runStackedAction",
+  gitResolvePullRequest: "git.resolvePullRequest",
+  gitPreparePullRequestThread: "git.preparePullRequestThread",
+  pullRequestsList: "pullRequests.list",
+  pullRequestsListStats: "pullRequests.listStats",
+  pullRequestsDetail: "pullRequests.detail",
+  pullRequestsActivity: "pullRequests.activity",
+  pullRequestsThreadComments: "pullRequests.threadComments",
+  pullRequestsDiff: "pullRequests.diff",
+  pullRequestsDiffFileContents: "pullRequests.diffFileContents",
+  pullRequestsRunAction: "pullRequests.runAction",
+  pullRequestsUpdate: "pullRequests.update",
+  pullRequestsComment: "pullRequests.comment",
+  pullRequestsUpdateComment: "pullRequests.updateComment",
+  pullRequestsSubmitReview: "pullRequests.submitReview",
+  pullRequestsReplyToThread: "pullRequests.replyToThread",
+  pullRequestsSetThreadResolution: "pullRequests.setThreadResolution",
+  pullRequestsSetReaction: "pullRequests.setReaction",
+  pullRequestsInvalidate: "pullRequests.invalidate",
+  pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
+  pullRequestsRequestReviewers: "pullRequests.requestReviewers",
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
   reviewReadDiffFileChunk: "review.readDiffFileChunk",
@@ -284,6 +359,151 @@ const WsVcsInitRpc = Rpc.make(WS_METHODS.vcsInit, {
   error: VcsError,
 });
 
+const WsServerDiscoverSourceControlRpc = Rpc.make(WS_METHODS.serverDiscoverSourceControl, {
+  success: SourceControlDiscoveryResult,
+});
+
+const WsSourceControlProbeWriteAccessRpc = Rpc.make(WS_METHODS.sourceControlProbeWriteAccess, {
+  payload: SourceControlProbeWriteAccessInput,
+  success: SourceControlWriteAccess,
+});
+
+const WsSourceControlLookupRepositoryRpc = Rpc.make(WS_METHODS.sourceControlLookupRepository, {
+  payload: SourceControlRepositoryLookupInput,
+  success: SourceControlRepositoryInfo,
+  error: SourceControlRepositoryError,
+});
+
+const WsSourceControlCloneRepositoryRpc = Rpc.make(WS_METHODS.sourceControlCloneRepository, {
+  payload: SourceControlCloneRepositoryInput,
+  success: SourceControlCloneRepositoryResult,
+  error: SourceControlRepositoryError,
+});
+
+const WsSourceControlPublishRepositoryRpc = Rpc.make(WS_METHODS.sourceControlPublishRepository, {
+  payload: SourceControlPublishRepositoryInput,
+  success: SourceControlPublishRepositoryResult,
+  error: SourceControlRepositoryError,
+});
+
+const WsVcsPullRpc = Rpc.make(WS_METHODS.vcsPull, {
+  payload: VcsPullInput,
+  success: VcsPullResult,
+  error: GitCommandError,
+});
+
+const WsGitRunStackedActionRpc = Rpc.make(WS_METHODS.gitRunStackedAction, {
+  payload: GitRunStackedActionInput,
+  success: GitActionProgressEvent,
+  error: GitManagerServiceError,
+  stream: true,
+});
+
+const WsGitResolvePullRequestRpc = Rpc.make(WS_METHODS.gitResolvePullRequest, {
+  payload: GitPullRequestRefInput,
+  success: GitResolvePullRequestResult,
+  error: GitManagerServiceError,
+});
+
+const WsGitPreparePullRequestThreadRpc = Rpc.make(WS_METHODS.gitPreparePullRequestThread, {
+  payload: GitPreparePullRequestThreadInput,
+  success: GitPreparePullRequestThreadResult,
+  error: GitManagerServiceError,
+});
+
+const PullRequestRpcError = Schema.Union([PullRequestUnavailableError, PullRequestOperationError]);
+
+const WsPullRequestsListRpc = Rpc.make(WS_METHODS.pullRequestsList, {
+  payload: PullRequestListInput,
+  success: PullRequestListResult,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsListStatsRpc = Rpc.make(WS_METHODS.pullRequestsListStats, {
+  payload: PullRequestListStatsInput,
+  success: PullRequestListStatsResult,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsDetailRpc = Rpc.make(WS_METHODS.pullRequestsDetail, {
+  payload: PullRequestRef,
+  success: PullRequestDetail,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsActivityRpc = Rpc.make(WS_METHODS.pullRequestsActivity, {
+  payload: PullRequestRef,
+  success: PullRequestActivity,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsThreadCommentsRpc = Rpc.make(WS_METHODS.pullRequestsThreadComments, {
+  payload: PullRequestThreadCommentsInput,
+  success: PullRequestThreadCommentsResult,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsDiffRpc = Rpc.make(WS_METHODS.pullRequestsDiff, {
+  payload: PullRequestDiffInput,
+  success: PullRequestDiffResult,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsDiffFileContentsRpc = Rpc.make(WS_METHODS.pullRequestsDiffFileContents, {
+  payload: PullRequestDiffFileContentsInput,
+  success: PullRequestDiffFileContentsResult,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsRunActionRpc = Rpc.make(WS_METHODS.pullRequestsRunAction, {
+  payload: PullRequestActionInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsUpdateRpc = Rpc.make(WS_METHODS.pullRequestsUpdate, {
+  payload: PullRequestUpdateInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsCommentRpc = Rpc.make(WS_METHODS.pullRequestsComment, {
+  payload: PullRequestCommentInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsUpdateCommentRpc = Rpc.make(WS_METHODS.pullRequestsUpdateComment, {
+  payload: PullRequestCommentUpdateInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsSubmitReviewRpc = Rpc.make(WS_METHODS.pullRequestsSubmitReview, {
+  payload: PullRequestSubmitReviewInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsReplyToThreadRpc = Rpc.make(WS_METHODS.pullRequestsReplyToThread, {
+  payload: PullRequestThreadReplyInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsSetThreadResolutionRpc = Rpc.make(WS_METHODS.pullRequestsSetThreadResolution, {
+  payload: PullRequestThreadResolutionInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsSetReactionRpc = Rpc.make(WS_METHODS.pullRequestsSetReaction, {
+  payload: PullRequestReactionInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsInvalidateRpc = Rpc.make(WS_METHODS.pullRequestsInvalidate, {
+  payload: PullRequestInvalidateInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsReviewerCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsReviewerCandidates, {
+  payload: PullRequestRef,
+  success: PullRequestReviewerCandidateList,
+  error: PullRequestRpcError,
+});
+const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsRequestReviewers, {
+  payload: PullRequestReviewerRequestInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+
 const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   payload: ReviewDiffPreviewInput,
   success: ReviewDiffPreviewResult,
@@ -353,7 +573,7 @@ const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMeta
   stream: true,
 });
 
-const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
+export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
   payload: Schema.Struct({}),
   success: ServerConfigStreamEvent,
   error: ServerSettingsError,
@@ -440,8 +660,14 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
+  WsServerDiscoverSourceControlRpc,
+  WsSourceControlProbeWriteAccessRpc,
+  WsSourceControlLookupRepositoryRpc,
+  WsSourceControlCloneRepositoryRpc,
+  WsSourceControlPublishRepositoryRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeVcsRefStatusRpc,
+  WsVcsPullRpc,
   WsVcsRefreshStatusRpc,
   WsVcsListRefsRpc,
   WsVcsCreateWorktreeRpc,
@@ -450,6 +676,27 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsVcsSwitchRefRpc,
   WsVcsRenameThreadBranchRpc,
   WsVcsInitRpc,
+  WsGitRunStackedActionRpc,
+  WsGitResolvePullRequestRpc,
+  WsGitPreparePullRequestThreadRpc,
+  WsPullRequestsListRpc,
+  WsPullRequestsListStatsRpc,
+  WsPullRequestsDetailRpc,
+  WsPullRequestsActivityRpc,
+  WsPullRequestsThreadCommentsRpc,
+  WsPullRequestsDiffRpc,
+  WsPullRequestsDiffFileContentsRpc,
+  WsPullRequestsRunActionRpc,
+  WsPullRequestsUpdateRpc,
+  WsPullRequestsCommentRpc,
+  WsPullRequestsUpdateCommentRpc,
+  WsPullRequestsSubmitReviewRpc,
+  WsPullRequestsReplyToThreadRpc,
+  WsPullRequestsSetThreadResolutionRpc,
+  WsPullRequestsSetReactionRpc,
+  WsPullRequestsInvalidateRpc,
+  WsPullRequestsReviewerCandidatesRpc,
+  WsPullRequestsRequestReviewersRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewOpenDiffFileContentsRpc,
   WsReviewReadDiffFileChunkRpc,

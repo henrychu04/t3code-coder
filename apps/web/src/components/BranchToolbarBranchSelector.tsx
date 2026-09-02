@@ -28,8 +28,12 @@ import {
 
 import { useComposerDraftStore, type DraftId } from "../composerDraftStore";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { readLocalApi } from "../localApi";
 import type { ContextMenuItem } from "../localApiTypes";
+import { parsePullRequestReference } from "../pullRequestReference";
+import { useRightPanelStore } from "../rightPanelStore";
+import { GitLabIcon } from "./Icons";
 import { shouldLoadNextBranchPageAfterScroll } from "../state/paginatedBranches";
 import { usePaginatedBranches } from "../state/queries";
 import { useProject, useThread } from "../state/entities";
@@ -40,6 +44,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
 import {
   deriveLocalBranchNameFromRemoteRef,
+  resolveBranchToolbarPrBranch,
   resolveBranchTriggerLabel,
   resolveBranchSelectionTarget,
   resolveBranchToolbarValue,
@@ -48,6 +53,11 @@ import {
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
 } from "./BranchToolbar.logic";
+import {
+  ChangeRequestStatusIcon,
+  prStatusIndicator,
+  resolveThreadPr,
+} from "./ThreadStatusIndicators";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import {
@@ -87,6 +97,7 @@ interface BranchToolbarBranchSelectorProps {
   onActiveThreadBranchOverrideChange?: (refName: string | null) => void;
   startFromOrigin: boolean;
   onStartFromOriginChange: (startFromOrigin: boolean) => void;
+  onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest?: () => void;
 }
 
@@ -105,6 +116,7 @@ export function BranchToolbarBranchSelector({
   onActiveThreadBranchOverrideChange,
   startFromOrigin,
   onStartFromOriginChange,
+  onCheckoutPullRequestRequest,
   onComposerFocusRequest,
 }: BranchToolbarBranchSelectorProps) {
   const startFromOriginSwitchId = useId();
@@ -265,6 +277,7 @@ export function BranchToolbarBranchSelector({
     [refs],
   );
   const normalizedDeferredBranchQuery = deferredTrimmedBranchQuery.toLowerCase();
+  const pullRequestReference = parsePullRequestReference(trimmedBranchQuery);
   const isSelectingWorktreeBase =
     effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
   const canCreateBranch = !isSelectingWorktreeBase && trimmedBranchQuery.length > 0;
@@ -276,13 +289,18 @@ export function BranchToolbarBranchSelector({
   const createBranchItemValue = canCreateBranch
     ? `__create_new_branch__:${trimmedBranchQuery}`
     : null;
+  const checkoutPullRequestItemValue =
+    pullRequestReference && onCheckoutPullRequestRequest
+      ? `__checkout_merge_request__:${pullRequestReference}`
+      : null;
   const branchPickerItems = useMemo(() => {
     const items = [...branchNames];
     if (createBranchItemValue && !hasExactBranchMatch) {
       items.push(createBranchItemValue);
     }
+    if (checkoutPullRequestItemValue) items.unshift(checkoutPullRequestItemValue);
     return items;
-  }, [branchNames, createBranchItemValue, hasExactBranchMatch]);
+  }, [branchNames, checkoutPullRequestItemValue, createBranchItemValue, hasExactBranchMatch]);
   const filteredBranchPickerItems = useMemo(
     () =>
       normalizedDeferredBranchQuery.length === 0
@@ -292,9 +310,15 @@ export function BranchToolbarBranchSelector({
               itemValue,
               normalizedQuery: normalizedDeferredBranchQuery,
               createBranchItemValue,
+              checkoutPullRequestItemValue,
             }),
           ),
-    [branchPickerItems, createBranchItemValue, normalizedDeferredBranchQuery],
+    [
+      branchPickerItems,
+      checkoutPullRequestItemValue,
+      createBranchItemValue,
+      normalizedDeferredBranchQuery,
+    ],
   );
   const [resolvedActiveBranch, setOptimisticBranch] = useOptimistic(
     canonicalActiveBranch,
@@ -670,8 +694,64 @@ export function BranchToolbarBranchSelector({
     resolvedActiveBranchIsRemote,
     startFromOrigin,
   });
+  const branchPr = resolveThreadPr({
+    threadBranch: resolveBranchToolbarPrBranch({
+      activeThreadBranch,
+      resolvedActiveBranch,
+    }),
+    gitStatus: branchStatusQuery.data ?? null,
+  });
+  const branchPrStatus = prStatusIndicator(branchPr, branchStatusQuery.data?.sourceControlProvider);
+  const branchPrTooltip = branchPr
+    ? `Open merge request #${branchPr.number} (${branchPr.state})`
+    : "";
+  const openBranchPullRequest = (event: ReactMouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!branchPr || !activeProject) return;
+    const repository =
+      (serverThread?.linkedPullRequest?.number === branchPr.number
+        ? serverThread.linkedPullRequest.repository
+        : null) ??
+      activeProject.repositoryIdentity?.displayName ??
+      parseChangeRequestUrl(branchPr.url)?.repository ??
+      null;
+    if (repository === null) return;
+    useRightPanelStore.getState().openPullRequest(threadRef, {
+      environmentId,
+      projectId: activeProject.id,
+      repository,
+      number: branchPr.number,
+    });
+  };
 
   function renderPickerItem(itemValue: string, index: number) {
+    if (checkoutPullRequestItemValue && itemValue === checkoutPullRequestItemValue) {
+      return (
+        <ComboboxItem
+          hideIndicator
+          key={itemValue}
+          index={index}
+          value={itemValue}
+          className="pe-2"
+          onClick={() => {
+            if (!pullRequestReference || !onCheckoutPullRequestRequest) return;
+            setIsBranchMenuOpen(false);
+            setBranchQuery("");
+            onComposerFocusRequest?.();
+            onCheckoutPullRequestRequest(pullRequestReference);
+          }}
+        >
+          <div className="flex min-w-0 items-center gap-2 py-1">
+            <GitLabIcon className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex min-w-0 flex-col items-start">
+              <span className="truncate font-medium">Check out GitLab merge request</span>
+              <span className="truncate text-muted-foreground text-xs">{pullRequestReference}</span>
+            </span>
+          </div>
+        </ComboboxItem>
+      );
+    }
     if (createBranchItemValue && itemValue === createBranchItemValue) {
       return (
         <ComboboxItem
@@ -742,6 +822,27 @@ export function BranchToolbarBranchSelector({
         className={cn("flex min-w-0 items-center gap-1", className)}
         data-composer-context-control
       >
+        {branchPr && branchPrStatus ? (
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  type="button"
+                  aria-label={branchPrTooltip}
+                  onClick={openBranchPullRequest}
+                  className={cn(
+                    "inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] font-medium tabular-nums transition-colors hover:bg-muted/60",
+                    branchPrStatus.colorClass,
+                  )}
+                />
+              }
+            >
+              <ChangeRequestStatusIcon className="size-3" />
+              <span>#{branchPr.number}</span>
+            </TooltipTrigger>
+            <TooltipPopup side="top">{branchPrTooltip}</TooltipPopup>
+          </Tooltip>
+        ) : null}
         {/* Context menu lives on the wrapper: the disabled Button has
             pointer-events-none, so the trigger itself never sees right-clicks
             while refs are loading or a branch action is pending. */}
@@ -798,7 +899,11 @@ export function BranchToolbarBranchSelector({
                 data={filteredBranchPickerItems}
                 keyExtractor={(item) => item}
                 getItemType={(item) =>
-                  item === createBranchItemValue ? "create-branch" : "branch"
+                  item === checkoutPullRequestItemValue
+                    ? "checkout-pull-request"
+                    : item === createBranchItemValue
+                      ? "create-branch"
+                      : "branch"
                 }
                 renderItem={({ item, index }) => renderPickerItem(item, index)}
                 estimatedItemSize={28}

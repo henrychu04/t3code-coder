@@ -279,6 +279,95 @@ it.effect("GitVcsDriver renames a checked-out branch and moves its worktree", ()
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
 
+it.effect("GitVcsDriver adds a remote and pushes the current branch with upstream tracking", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-push-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const remote = path.join(fixtureRoot, "remote.git");
+    yield* fileSystem.makeDirectory(repo);
+    yield* fileSystem.makeDirectory(remote);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "fixture\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Initial"]);
+    yield* runGit(remote, ["init", "--bare", "--initial-branch=main"]);
+
+    const remoteName = yield* driver.ensureRemote({
+      cwd: repo,
+      preferredName: "origin",
+      url: remote,
+    });
+    const pushed = yield* driver.pushCurrentBranch(repo, null, { remoteName });
+
+    assert.strictEqual(remoteName, "origin");
+    assert.strictEqual(pushed.branch, "main");
+    assert.strictEqual(pushed.upstreamBranch, "origin/main");
+    assert.strictEqual(pushed.setUpstream, true);
+    assert.strictEqual(
+      yield* readGit(remote, ["rev-parse", "refs/heads/main"]),
+      yield* readGit(repo, ["rev-parse", "HEAD"]),
+    );
+    assert.strictEqual(
+      yield* driver.ensureRemote({ cwd: repo, preferredName: "origin", url: remote }),
+      "origin",
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect("GitVcsDriver pushes to an explicitly requested remote instead of an old upstream", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-git-republish-" });
+    const repo = path.join(fixtureRoot, "repo");
+    const oldRemote = path.join(fixtureRoot, "old.git");
+    const requestedRemote = path.join(fixtureRoot, "requested.git");
+    yield* fileSystem.makeDirectory(repo);
+    yield* fileSystem.makeDirectory(oldRemote);
+    yield* fileSystem.makeDirectory(requestedRemote);
+    yield* runGit(repo, ["init", "--initial-branch=main"]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "first\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "First"]);
+    yield* runGit(oldRemote, ["init", "--bare", "--initial-branch=main"]);
+    yield* runGit(requestedRemote, ["init", "--bare", "--initial-branch=main"]);
+    yield* driver.ensureRemote({ cwd: repo, preferredName: "origin", url: oldRemote });
+    yield* driver.pushCurrentBranch(repo, null, { remoteName: "origin" });
+    const oldHead = yield* readGit(oldRemote, ["rev-parse", "refs/heads/main"]);
+
+    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "second\n");
+    yield* runGit(repo, ["add", "README.md"]);
+    yield* runGit(repo, ["commit", "-m", "Second"]);
+    const remoteName = yield* driver.ensureRemote({
+      cwd: repo,
+      preferredName: "published",
+      url: requestedRemote,
+    });
+    const pushed = yield* driver.pushCurrentBranch(repo, null, { remoteName });
+
+    assert.strictEqual(remoteName, "published");
+    assert.strictEqual(pushed.upstreamBranch, "published/main");
+    assert.strictEqual(pushed.setUpstream, true);
+    assert.strictEqual(yield* readGit(oldRemote, ["rev-parse", "refs/heads/main"]), oldHead);
+    assert.strictEqual(
+      yield* readGit(requestedRemote, ["rev-parse", "refs/heads/main"]),
+      yield* readGit(repo, ["rev-parse", "HEAD"]),
+    );
+    assert.strictEqual(
+      yield* readGit(repo, ["rev-parse", "--abbrev-ref", "@{upstream}"]),
+      "published/main",
+    );
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
 it.effect("GitVcsDriver uses the remote HEAD when determining the default branch", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

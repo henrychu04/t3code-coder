@@ -25,9 +25,16 @@ import {
 } from "../provider/Layers/CodexIntegrationPolicy.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { buildBranchNamePrompt, buildThreadTitlePrompt } from "./TextGenerationPrompts.ts";
+import {
+  buildBranchNamePrompt,
+  buildCommitMessagePrompt,
+  buildPrContentPrompt,
+  buildThreadTitlePrompt,
+} from "./TextGenerationPrompts.ts";
 import {
   normalizeCliError,
+  sanitizeCommitSubject,
+  sanitizePrTitle,
   sanitizeThreadTitle,
   toJsonSchemaObject,
 } from "./TextGenerationUtils.ts";
@@ -57,7 +64,11 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, commandSpawner)));
 
   const readStreamAsString = <E>(
-    operation: "generateBranchName" | "generateThreadTitle",
+    operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadTitle",
     stream: Stream.Stream<Uint8Array, E>,
   ): Effect.Effect<string, TextGenerationError> =>
     stream.pipe(
@@ -72,7 +83,11 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
 
   const writeTempFile = (
-    operation: "generateBranchName" | "generateThreadTitle",
+    operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadTitle",
     prefix: string,
     content: string,
   ): Effect.Effect<string, TextGenerationError, Scope.Scope> =>
@@ -89,7 +104,11 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
 
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>(input: {
-    readonly operation: "generateBranchName" | "generateThreadTitle";
+    readonly operation:
+      | "generateCommitMessage"
+      | "generatePrContent"
+      | "generateBranchName"
+      | "generateThreadTitle";
     readonly cwd: string;
     readonly prompt: string;
     readonly outputSchemaJson: S;
@@ -229,6 +248,38 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
   });
 
+  const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
+    Effect.fn("CodexTextGeneration.generateCommitMessage")(function* (input) {
+      const { prompt, outputSchema } = buildCommitMessagePrompt(input);
+      const generated = yield* runCodexJson({
+        operation: "generateCommitMessage",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return {
+        subject: sanitizeCommitSubject(generated.subject),
+        body: generated.body.trim(),
+      };
+    });
+
+  const generatePrContent: TextGeneration.TextGeneration["Service"]["generatePrContent"] =
+    Effect.fn("CodexTextGeneration.generatePrContent")(function* (input) {
+      const { prompt, outputSchema } = buildPrContentPrompt(input);
+      const generated = yield* runCodexJson({
+        operation: "generatePrContent",
+        cwd: input.cwd,
+        prompt,
+        outputSchemaJson: outputSchema,
+        modelSelection: input.modelSelection,
+      });
+      return {
+        title: sanitizePrTitle(generated.title),
+        body: generated.body.trim(),
+      };
+    });
+
   const resolveImagePaths = Effect.fn("CodexTextGeneration.resolveImagePaths")(function* (
     input: TextGeneration.BranchNameGenerationInput,
     operation: "generateBranchName" | "generateThreadTitle",
@@ -292,6 +343,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     });
 
   return {
+    generateCommitMessage,
+    generatePrContent,
     generateBranchName,
     generateThreadTitle,
   } satisfies TextGeneration.TextGeneration["Service"];

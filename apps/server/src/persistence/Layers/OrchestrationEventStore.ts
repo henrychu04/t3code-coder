@@ -15,6 +15,7 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
@@ -63,6 +64,12 @@ const OrchestrationEventPersistedRowSchema = Schema.Struct({
 const ReadFromSequenceRequestSchema = Schema.Struct({
   sequenceExclusive: NonNegativeInt,
   limit: Schema.Number,
+});
+const HasEventAfterRequestSchema = Schema.Struct({
+  aggregateKind: Schema.String,
+  aggregateId: Schema.String,
+  type: Schema.optional(Schema.String),
+  sequenceExclusive: NonNegativeInt,
 });
 const DEFAULT_READ_FROM_SEQUENCE_LIMIT = 1_000;
 const READ_PAGE_SIZE = 500;
@@ -181,6 +188,22 @@ const makeEventStore = Effect.gen(function* () {
       `,
   });
 
+  const findEventAfter = SqlSchema.findOneOption({
+    Request: HasEventAfterRequestSchema,
+    Result: Schema.Struct({ sequence: Schema.Number }),
+    execute: (request) => sql`
+      SELECT sequence
+      FROM orchestration_events
+      WHERE aggregate_kind = ${request.aggregateKind}
+        AND stream_id = ${request.aggregateId}
+        AND ${sql.and([
+          sql`sequence > ${request.sequenceExclusive}`,
+          ...(request.type === undefined ? [] : [sql`event_type = ${request.type}`]),
+        ])}
+      LIMIT 1
+    `,
+  });
+
   const append: OrchestrationEventStoreShape["append"] = (event) =>
     appendEventRow({
       eventId: event.eventId,
@@ -260,10 +283,22 @@ const makeEventStore = Effect.gen(function* () {
     return readPage(sequenceExclusive, normalizedLimit);
   };
 
+  const hasEventAfter: OrchestrationEventStoreShape["hasEventAfter"] = (input) =>
+    findEventAfter(input).pipe(
+      Effect.map(Option.isSome),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "OrchestrationEventStore.hasEventAfter:query",
+          "OrchestrationEventStore.hasEventAfter:decodeRow",
+        ),
+      ),
+    );
+
   return {
     append,
     readFromSequence,
     readAll: () => readFromSequence(0, Number.MAX_SAFE_INTEGER),
+    hasEventAfter,
   } satisfies OrchestrationEventStoreShape;
 });
 

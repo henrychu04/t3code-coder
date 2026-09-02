@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
+import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings.shortcuts'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as ChatPullRequestsRouteImport } from './routes/_chat.pull-requests'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
@@ -34,6 +36,11 @@ const ChatIndexRoute = ChatIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ChatRoute,
+} as any)
+const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
+  id: '/source-control',
+  path: '/source-control',
+  getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
   id: '/shortcuts',
@@ -65,6 +72,11 @@ const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   path: '/appearance',
   getParentRoute: () => SettingsRoute,
 } as any)
+const ChatPullRequestsRoute = ChatPullRequestsRouteImport.update({
+  id: '/pull-requests',
+  path: '/pull-requests',
+  getParentRoute: () => ChatRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
@@ -80,23 +92,27 @@ const ChatEnvironmentIdThreadIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof ChatIndexRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/pull-requests': typeof ChatPullRequestsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/source-control': typeof SettingsSourceControlRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
 }
 export interface FileRoutesByTo {
   '/settings': typeof SettingsRouteWithChildren
+  '/pull-requests': typeof ChatPullRequestsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/source-control': typeof SettingsSourceControlRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -105,12 +121,14 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_chat': typeof ChatRouteWithChildren
   '/settings': typeof SettingsRouteWithChildren
+  '/_chat/pull-requests': typeof ChatPullRequestsRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
+  '/settings/source-control': typeof SettingsSourceControlRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
@@ -120,23 +138,27 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/settings'
+    | '/pull-requests'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
     | '/settings/providers'
     | '/settings/shortcuts'
+    | '/settings/source-control'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/settings'
+    | '/pull-requests'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
     | '/settings/providers'
     | '/settings/shortcuts'
+    | '/settings/source-control'
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
@@ -144,12 +166,14 @@ export interface FileRouteTypes {
     | '__root__'
     | '/_chat'
     | '/settings'
+    | '/_chat/pull-requests'
     | '/settings/appearance'
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
     | '/settings/providers'
     | '/settings/shortcuts'
+    | '/settings/source-control'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
@@ -182,6 +206,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof ChatIndexRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/settings/source-control': {
+      id: '/settings/source-control'
+      path: '/source-control'
+      fullPath: '/settings/source-control'
+      preLoaderRoute: typeof SettingsSourceControlRouteImport
+      parentRoute: typeof SettingsRoute
     }
     '/settings/shortcuts': {
       id: '/settings/shortcuts'
@@ -225,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAppearanceRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/_chat/pull-requests': {
+      id: '/_chat/pull-requests'
+      path: '/pull-requests'
+      fullPath: '/pull-requests'
+      preLoaderRoute: typeof ChatPullRequestsRouteImport
+      parentRoute: typeof ChatRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
@@ -243,12 +281,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface ChatRouteChildren {
+  ChatPullRequestsRoute: typeof ChatPullRequestsRoute
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
+  ChatPullRequestsRoute: ChatPullRequestsRoute,
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
@@ -263,6 +303,7 @@ interface SettingsRouteChildren {
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
+  SettingsSourceControlRoute: typeof SettingsSourceControlRoute
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
@@ -272,6 +313,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsPreferencesRoute: SettingsPreferencesRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
+  SettingsSourceControlRoute: SettingsSourceControlRoute,
 }
 
 const SettingsRouteWithChildren = SettingsRoute._addFileChildren(

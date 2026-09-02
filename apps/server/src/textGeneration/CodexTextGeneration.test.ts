@@ -94,6 +94,59 @@ function withFakeCodex<A, E, R>(
 }
 
 it.layer(NodeServices.layer)("CodexTextGeneration", (it) => {
+  it.effect("generates commit messages through workspace Codex", () =>
+    withFakeCodex(
+      {
+        output: JSON.stringify({
+          subject: "  Add GitLab write probing.\nignored suffix",
+          body: "\n- probe once per workspace\n",
+        }),
+      },
+      ({ textGeneration }) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/gitlab-probe",
+            stagedSummary: "M apps/server/src/sourceControl/GitLabWriteProbe.ts",
+            stagedPatch: "diff --git a/probe.ts b/probe.ts",
+            modelSelection: DEFAULT_SELECTION,
+          });
+
+          expect(generated).toEqual({
+            subject: "Add GitLab write probing",
+            body: "- probe once per workspace",
+          });
+        }),
+    ),
+  );
+
+  it.effect("generates merge request content through workspace Codex", () =>
+    withFakeCodex(
+      {
+        output: JSON.stringify({
+          title: "  Restore GitLab merge requests\nignored suffix",
+          body: "\n## Summary\n- restore merge requests\n\n## Testing\n- pnpm test:coder\n",
+        }),
+      },
+      ({ textGeneration }) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generatePrContent({
+            cwd: process.cwd(),
+            baseBranch: "coder-only",
+            headBranch: "feature/gitlab-mr",
+            commitSummary: "feat(gitlab): restore merge requests",
+            diffSummary: "10 files changed",
+            diffPatch: "diff --git a/mr.ts b/mr.ts",
+            modelSelection: DEFAULT_SELECTION,
+          });
+
+          expect(generated.title).toBe("Restore GitLab merge requests");
+          expect(generated.body).toContain("## Summary");
+          expect(generated.body.endsWith("\n")).toBe(false);
+        }),
+    ),
+  );
+
   it.effect("generates branch names through workspace Codex with safe exec arguments", () =>
     withFakeCodex(
       {

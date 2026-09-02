@@ -76,6 +76,17 @@ and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetche
 renderer asks to expand omitted context; completed contents stay in a bounded browser cache.
 Opening a file above the expansion limit returns a typed `tooLarge` outcome, not an RPC failure, so
 the browser can keep the diff usable and render the limit notice without error-level diagnostics.
+GitLab merge-request diffs are paged by file and capped below the gateway's 8 MiB RPC-frame limit;
+host-backed full-file expansion is capped at 1 MiB of CLI output. These reads remain in browser or
+helper memory and are not persisted by the gateway.
+
+Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
+settings at startup, after relevant settings changes, and once per minute, including while no
+browser is connected. It resolves saved branches to GitLab merge requests without changing the
+checkout and dispatches a guarded internal settlement command through the normal orchestration
+engine. The engine rejects settlement if the thread changed after the reactor snapshot or still
+has live background work. Clients render the resulting persisted settlement state instead of
+deriving it from local timers or merge-request data.
 
 T3 reads `coder list --output json` to distinguish stopped, starting, and running workspaces and to
 report whether a template update is available. It does not implicitly connect to a stopped
@@ -113,6 +124,8 @@ removed, or the gateway exits.
 
 ```text
 browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> codex / claude
+browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> git -> Git remote
+browser -> 127.0.0.1 gateway -> coder ssh stdio -> workspace helper -> glab -> GitLab
 browser -> 127.0.0.1 gateway -> coder ssh -> coder stat in connected workspace
 local client -> 127.0.0.1:configured port -> coder port-forward -> workspace service
 ```
@@ -132,6 +145,10 @@ per-server disable override for every name, and disables app integrations. Faile
 fail-closed and prevents the managed process from starting.
 T3 passes an empty strict MCP configuration and disables connected claude.ai MCP servers for
 managed Claude sessions. Both provider connections remain owned by their workspace executables.
+The helper also starts repository-scoped Git commands and the workspace-installed `glab`
+executable with argument-array spawning and `shell: false` for GitLab source-control operations.
+GitLab authentication and network policy remain owned by the workspace CLI; T3 never asks for,
+reads, copies, persists, or logs its token.
 
 ## Authentication
 
@@ -256,9 +273,25 @@ their final generated filename after successful transfer. Failed or incomplete t
 removed. Image bytes, local paths, Coder credentials, and SCP configuration must not be logged.
 Any temporary SSH configuration must contain no credentials and must be removed after the transfer.
 
-Source-control UI is limited to repository-local operations such as status, diffs, branches,
-worktrees, commits, and checkpoints. Fetch, pull, push, pull-request, and provider-hosted operations
-are not exposed by T3.
+Source-control UI restores upstream's Git action control and merge-request detail experience with a
+GitLab-only provider registry. Repository status, fetch, pull, commit, push, repository publishing,
+merge-request creation, and MR checkout all travel over the existing helper stdio RPC and execute
+inside the Linux workspace. The helper uses repository-scoped Git commands and the
+workspace-installed `glab` CLI to read MR summary, activity, discussions, checks, reviewers, and
+diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
+state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
+default sends an incomplete merge-request creation request to the impossible project ID `0`; a
+normal GitLab validation or not-found response with a GitLab-specific response fingerprint proves
+the request reached GitLab, while neither a project nor an MR can be changed. A generic proxy 404,
+failed probe, or indeterminate response disables every GitLab mutation
+while leaving reads, Git operations, and MR checkout available. The Source Control settings surface
+shows the structured result and can explicitly rerun the probe. A later mutation that matches the
+configured GS policy-block response immediately downgrades the cached workspace result. Generated
+commit and MR content is
+produced by the workspace Claude CLI using bounded Git summaries and patches; repository MR
+templates are read from the committed base tree. The gateway never runs Git or `glab`, never
+connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other
+hosted providers remain unavailable.
 
 ## Distribution
 

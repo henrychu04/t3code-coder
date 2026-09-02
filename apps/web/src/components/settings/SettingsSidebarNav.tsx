@@ -1,6 +1,7 @@
 import {
   ArchiveIcon,
   BotIcon,
+  GitPullRequestIcon,
   KeyboardIcon,
   PaletteIcon,
   ServerIcon,
@@ -25,6 +26,7 @@ const SETTINGS_NAV_ITEMS = [
   { label: "Keyboard shortcuts", to: "/settings/shortcuts", icon: KeyboardIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Coder connections", to: "/settings/general", icon: ServerIcon },
+  { label: "GitLab source control", to: "/settings/source-control", icon: GitPullRequestIcon },
   { label: "Archived threads", to: "/settings/archived", icon: ArchiveIcon },
 ] as const;
 

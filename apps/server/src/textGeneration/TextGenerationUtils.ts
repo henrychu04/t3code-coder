@@ -19,6 +19,16 @@ export function limitSection(value: string, maxChars: number): string {
   return `${truncated}\n\n[truncated]`;
 }
 
+export function sanitizeCommitSubject(raw: string): string {
+  const subject = raw.trim().split(/\r?\n/u)[0]?.trim().replace(/\.$/u, "") ?? "";
+  return (subject || "Update project files").slice(0, 72).trimEnd();
+}
+
+export function sanitizePrTitle(raw: string): string {
+  const title = raw.trim().split(/\r?\n/u)[0]?.trim() ?? "";
+  return (title || "Update project").slice(0, 200).trimEnd();
+}
+
 /** Normalise a raw thread title to a compact single-line sidebar-safe label. */
 export function sanitizeThreadTitle(raw: string): string {
   const normalized = raw

@@ -1,4 +1,5 @@
 import * as Effect from "effect/Effect";
+import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { EnvironmentId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
@@ -206,10 +207,6 @@ export const ClientSettingsSchema = Schema.Struct({
   // old keys, so everyone, including prior beta opt-outs, resets to the new
   // default sidebar.
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
-    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
-  ),
-  sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -394,6 +391,26 @@ export const ClaudeSettings = makeProviderSettingsSchema(
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
+export const SourceControlWritingStyleMode = Schema.Literals([
+  "repo_conventions",
+  "conventional_commits",
+  "custom",
+]);
+export type SourceControlWritingStyleMode = typeof SourceControlWritingStyleMode.Type;
+
+export const SourceControlWritingStyleSettings = Schema.Struct({
+  mode: SourceControlWritingStyleMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("repo_conventions" as const)),
+  ),
+  customInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  followChangeRequestTemplates: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(true)),
+  ),
+});
+export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyleSettings.Type;
+
+export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(15);
+
 export const ServerSettings = Schema.Struct({
   enableLegacyTokenStreaming: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
@@ -403,6 +420,11 @@ export const ServerSettings = Schema.Struct({
   ),
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  automaticGitFetchInterval: Schema.DurationFromMillis.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed(Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
+    ),
   ),
   textGenerationModelSelection: ModelSelection.pipe(
     Schema.withDecodingDefault(
@@ -418,6 +440,16 @@ export const ServerSettings = Schema.Struct({
       }),
     ),
   ),
+  sourceControlWritingStyle: SourceControlWritingStyleSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
+  sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  sidebarAutoSettleAfterDays: Schema.NullOr(SidebarAutoSettleAfterDays).pipe(
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_AUTO_SETTLE_AFTER_DAYS)),
+  ),
+  sidebarAutoSettleOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   providers: Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
@@ -543,7 +575,18 @@ export const ServerSettingsPatch = Schema.Struct({
   enableLegacyTokenStreaming: Schema.optionalKey(Schema.Boolean),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.optionalKey(Schema.Boolean),
+  automaticGitFetchInterval: Schema.optionalKey(Schema.DurationFromMillis),
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
+  sourceControlWritingStyle: Schema.optionalKey(
+    Schema.Struct({
+      mode: Schema.optionalKey(SourceControlWritingStyleMode),
+      customInstructions: Schema.optionalKey(TrimmedString),
+      followChangeRequestTemplates: Schema.optionalKey(Schema.Boolean),
+    }),
+  ),
+  sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
+  sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   providers: Schema.optionalKey(
     Schema.Struct({
       codex: Schema.optionalKey(CodexSettingsPatch),
@@ -578,8 +621,6 @@ export const ClientSettingsPatch = Schema.Struct({
   ),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
-  sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
-  sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

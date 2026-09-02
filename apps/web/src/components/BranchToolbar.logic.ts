@@ -175,6 +175,13 @@ export function resolveBranchTriggerLabel(input: {
   return resolvedActiveBranch;
 }
 
+export function resolveBranchToolbarPrBranch(input: {
+  activeThreadBranch: string | null;
+  resolvedActiveBranch: string | null;
+}): string | null {
+  return input.activeThreadBranch === input.resolvedActiveBranch ? input.activeThreadBranch : null;
+}
+
 export function resolveCheckoutBranchMismatch(input: {
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
@@ -243,14 +250,19 @@ export function shouldIncludeBranchPickerItem(input: {
   itemValue: string;
   normalizedQuery: string;
   createBranchItemValue: string | null;
+  checkoutPullRequestItemValue?: string | null;
 }): boolean {
-  const { itemValue, normalizedQuery, createBranchItemValue } = input;
+  const { itemValue, normalizedQuery, createBranchItemValue, checkoutPullRequestItemValue } = input;
 
   if (normalizedQuery.length === 0) {
     return true;
   }
 
   if (createBranchItemValue && itemValue === createBranchItemValue) {
+    return true;
+  }
+
+  if (checkoutPullRequestItemValue && itemValue === checkoutPullRequestItemValue) {
     return true;
   }
 

@@ -25,6 +25,7 @@ import {
   shouldShowEnvironmentIndicator,
 } from "./BranchToolbar.logic";
 import { BranchToolbarBranchSelector } from "./BranchToolbarBranchSelector";
+import { PullRequestThreadDialog } from "./PullRequestThreadDialog";
 import { BranchToolbarEnvironmentSelector } from "./BranchToolbarEnvironmentSelector";
 import { BranchToolbarEnvModeSelector } from "./BranchToolbarEnvModeSelector";
 import { Button } from "./ui/button";
@@ -413,6 +414,37 @@ export const BranchToolbar = memo(function BranchToolbar({
       draftThreadEnvMode: draftThread?.envMode,
     });
   const envModeLocked = envLocked || (serverThread !== null && activeWorktreePath !== null);
+  const [pullRequestDialogState, setPullRequestDialogState] = useState<{
+    readonly key: number;
+    readonly initialReference: string | null;
+  } | null>(null);
+  const canCheckoutPullRequest = draftThread !== null && serverThread === null;
+  const openPullRequestDialog = useCallback(
+    (reference: string) => {
+      if (!canCheckoutPullRequest) return;
+      setPullRequestDialogState({ key: Date.now(), initialReference: reference });
+    },
+    [canCheckoutPullRequest],
+  );
+  const handlePreparedPullRequest = useCallback(
+    (input: { branch: string; worktreePath: string | null }) => {
+      if (!activeProjectRef) return;
+      setDraftThreadContext(draftId ?? threadRef, {
+        branch: input.branch,
+        worktreePath: input.worktreePath,
+        envMode: input.worktreePath === null ? "local" : "worktree",
+        projectRef: activeProjectRef,
+      });
+      onComposerFocusRequest?.();
+    },
+    [
+      activeProjectRef,
+      draftId,
+      onComposerFocusRequest,
+      setDraftThreadContext,
+      threadRef,
+    ],
+  );
 
   // "Previous worktree" hops a draft into the most recently active worktree
   // of this project — the "keep going where I just was" follow-up flow. Only
@@ -464,10 +496,11 @@ export const BranchToolbar = memo(function BranchToolbar({
   if (!hasActiveThread || !activeProject) return null;
 
   return (
-    <ComposerSurface.ContextStrip
-      ref={setStripElement}
-      data-compact={labelsOverflow ? "" : undefined}
-    >
+    <>
+      <ComposerSurface.ContextStrip
+        ref={setStripElement}
+        data-compact={labelsOverflow ? "" : undefined}
+      >
       {isMobile && showGitControls ? (
         <MobileRunContextSelector
           envLocked={envLocked}
@@ -527,9 +560,27 @@ export const BranchToolbar = memo(function BranchToolbar({
           {...(onActiveThreadBranchOverrideChange ? { onActiveThreadBranchOverrideChange } : {})}
           startFromOrigin={startFromOrigin}
           onStartFromOriginChange={onStartFromOriginChange}
+          {...(canCheckoutPullRequest
+            ? { onCheckoutPullRequestRequest: openPullRequestDialog }
+            : {})}
           {...(onComposerFocusRequest ? { onComposerFocusRequest } : {})}
         />
       ) : null}
-    </ComposerSurface.ContextStrip>
+      </ComposerSurface.ContextStrip>
+      {pullRequestDialogState ? (
+        <PullRequestThreadDialog
+          key={pullRequestDialogState.key}
+          open
+          environmentId={environmentId}
+          threadId={threadId}
+          cwd={activeProject.workspaceRoot}
+          initialReference={pullRequestDialogState.initialReference}
+          onOpenChange={(open) => {
+            if (!open) setPullRequestDialogState(null);
+          }}
+          onPrepared={handlePreparedPullRequest}
+        />
+      ) : null}
+    </>
   );
 });

@@ -291,6 +291,13 @@ export function createVcsEnvironmentAtoms<R, E>(
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.subscribeVcsRefStatus>) =>
         subscribe(WS_METHODS.subscribeVcsRefStatus, input).pipe(Stream.map((event) => event.local)),
     }),
+    pull: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:pull",
+      tag: WS_METHODS.vcsPull,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
     refreshStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:refresh-status",
       tag: WS_METHODS.vcsRefreshStatus,
@@ -340,8 +347,17 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    preparePullRequestThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:git:prepare-pull-request-thread",
+      tag: WS_METHODS.gitPreparePullRequestThread,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
   };
 }
 
+export * from "./gitActions.ts";
+export * from "./vcsAction.ts";
 export * from "./vcsRef.ts";
 export * from "./vcsStatus.ts";

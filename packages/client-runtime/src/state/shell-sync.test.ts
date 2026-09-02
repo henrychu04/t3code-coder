@@ -50,6 +50,7 @@ function session(client: WsRpcProtocolClient): RpcSession.RpcSession {
   return {
     client,
     initialConfig: Effect.succeed({} as never),
+    subscribeServerConfig: () => Stream.empty,
     ready: Effect.void,
     probe: Effect.void,
     closed: Effect.never,

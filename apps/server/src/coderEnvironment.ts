@@ -48,12 +48,15 @@ export const layer = Layer.effect(
         serverVersion: packageJson.version,
         capabilities: {
           repositoryIdentity: true,
+          pullRequests: true,
           connectionProbe: true,
           threadSettlement: true,
+          threadAutoSettlement: true,
           threadSnooze: true,
           threadPinning: true,
           threadPinReorder: true,
           threadTitleRegeneration: true,
+          threadPullRequestLinking: true,
         },
       },
     });

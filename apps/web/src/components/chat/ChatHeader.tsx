@@ -27,12 +27,14 @@ import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { CoderWorkspaceLatency } from "../CoderWorkspaceLatency";
+import GitActionsControl from "../GitActionsControl";
 import {
   WorkspaceBreadcrumb,
   WorkspaceBreadcrumbItem,
   WorkspaceBreadcrumbSeparator,
 } from "../WorkspaceBreadcrumb";
 import { cn } from "~/lib/utils";
+import type { DraftId } from "~/composerDraftStore";
 
 interface ChatHeaderProps {
   activeThreadEnvironmentId: EnvironmentId;
@@ -42,10 +44,14 @@ interface ChatHeaderProps {
   isServerThread: boolean;
   activeProjectName: string | undefined;
   activeProjectCwd: string | null;
+  gitCwd: string | null;
+  draftId?: DraftId;
   activeProjectFaviconPath: string | null;
   keybindings: ResolvedKeybindingsConfig;
   rightPanelOpen: boolean;
   onNewThreadInProject: () => void;
+  onOpenPullRequest?: (number: number) => void;
+  onOpenFile?: (relativePath: string) => void;
 }
 
 /**
@@ -77,10 +83,14 @@ export const ChatHeader = memo(function ChatHeader({
   isServerThread,
   activeProjectName,
   activeProjectCwd,
+  gitCwd,
+  draftId,
   activeProjectFaviconPath,
   keybindings,
   rightPanelOpen,
   onNewThreadInProject,
+  onOpenPullRequest,
+  onOpenFile,
 }: ChatHeaderProps) {
   const activeThreadRef = useMemo(
     () => scopeThreadRef(activeThreadEnvironmentId, activeThreadId),
@@ -130,7 +140,6 @@ export const ChatHeader = memo(function ChatHeader({
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
     projectCwd: activeProjectCwd,
-    changeRequest: null,
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -312,6 +321,13 @@ export const ChatHeader = memo(function ChatHeader({
           rightPanelOpen ? "pr-0" : "pr-16",
         )}
       >
+        <GitActionsControl
+          gitCwd={gitCwd}
+          activeThreadRef={activeThreadRef}
+          {...(draftId ? { draftId } : {})}
+          {...(onOpenPullRequest ? { onOpenPullRequest } : {})}
+          {...(onOpenFile ? { onOpenFile } : {})}
+        />
         <CoderWorkspaceLatency
           key={activeThreadEnvironmentId}
           environmentId={activeThreadEnvironmentId}

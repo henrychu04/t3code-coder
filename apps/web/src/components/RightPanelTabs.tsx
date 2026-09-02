@@ -1,4 +1,5 @@
-import { Bot, FileDiff, Files, Plus, TerminalSquare } from "lucide-react";
+import type { PullRequestState } from "@t3tools/contracts";
+import { Bot, FileDiff, Files, GitPullRequest, Plus, TerminalSquare } from "lucide-react";
 import {
   type ReactElement,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -33,6 +34,8 @@ import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 interface RightPanelTabsProps {
   readonly mode: "inline" | "sheet";
   readonly maximized?: boolean;
+  readonly widthStorageKey?: string;
+  readonly defaultWidth?: number;
   readonly layoutControls?: ReactNode;
   readonly surfaces: readonly RightPanelSurface[];
   readonly activeSurfaceId: string | null;
@@ -44,14 +47,21 @@ interface RightPanelTabsProps {
   readonly onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
   readonly onCloseAllSurfaces: () => void;
   readonly onCopyFilePath: (relativePath: string) => void;
+  readonly onAddBrowser?: () => void;
   readonly onAddTerminal: () => void;
   readonly onAddDiff: () => void;
   readonly onAddFiles: () => void;
+  readonly onAddPullRequest: () => void;
   readonly onAddAgents: () => void;
   readonly terminalAvailable: boolean;
   readonly diffAvailable: boolean;
   readonly filesAvailable: boolean;
+  readonly pullRequestAvailable: boolean;
   readonly agentsAvailable: boolean;
+  readonly browserAvailable?: boolean;
+  readonly previewSessions?: Readonly<Record<string, unknown>>;
+  readonly desktopByTabId?: Readonly<Record<string, unknown>>;
+  readonly pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
   readonly liveAgentCount: number;
   readonly children: ReactNode;
 }
@@ -60,6 +70,7 @@ const SURFACE_DISABLED_REASONS = {
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
+  pullRequest: "GitLab merge requests are only available from GitLab project threads.",
   agents: "Agents are only available from a thread.",
 } as const;
 
@@ -79,8 +90,17 @@ const SURFACE_UNAVAILABLE_HINTS = {
   terminal: "Available when a project is open.",
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
+  pullRequest: "Available for GitLab project threads.",
   agents: "Available from a thread.",
 } as const;
+
+export interface PullRequestTabStatus {
+  projectId: string;
+  repository: string;
+  number: number;
+  state: PullRequestState;
+  isDraft: boolean;
+}
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
 
@@ -173,10 +193,12 @@ function RightPanelEmptyState(props: {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  onAddPullRequest: () => void;
   onAddAgents: () => void;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
+  pullRequestAvailable: boolean;
   agentsAvailable: boolean;
   liveAgentCount: number;
 }) {
@@ -211,6 +233,16 @@ function RightPanelEmptyState(props: {
       available: props.diffAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
       onClick: props.onAddDiff,
+      badgeCount: 0,
+    },
+    {
+      label: "GitLab MR",
+      description: "View the current GitLab merge request.",
+      icon: GitPullRequest,
+      shortcut: "P",
+      available: props.pullRequestAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
+      onClick: props.onAddPullRequest,
       badgeCount: 0,
     },
     {
@@ -384,6 +416,8 @@ function surfaceLabel(
   if (surface.kind === "files") return "Files";
   if (surface.kind === "file")
     return surface.relativePath.split("/").at(-1) ?? surface.relativePath;
+  if (surface.kind === "pull-request")
+    return "number" in surface ? `MR !${surface.number}` : "GitLab MR";
   if (surface.kind === "agents") return "Agents";
   return terminalLabels.get(surface.activeTerminalId) ?? "Terminal";
 }
@@ -391,9 +425,11 @@ function surfaceLabel(
 function SurfaceIcon({
   surface,
   theme,
+  pullRequestStatuses,
 }: {
   readonly surface: RightPanelSurface;
   readonly theme: "light" | "dark";
+  readonly pullRequestStatuses: Readonly<Record<string, PullRequestTabStatus>> | undefined;
 }) {
   if (surface.kind === "diff") return <FileDiff className="size-3.5" />;
   if (surface.kind === "files") return <Files className="size-3.5" />;
@@ -407,6 +443,20 @@ function SurfaceIcon({
       />
     );
   }
+  if (surface.kind === "pull-request") {
+    const status = pullRequestStatuses?.[surface.id] ?? null;
+    const toneClassName =
+      status?.state === "merged"
+        ? "text-violet-600 dark:text-violet-300/90"
+        : status?.state === "closed"
+          ? "text-red-600 dark:text-red-300/90"
+          : status?.isDraft
+            ? "text-zinc-500 dark:text-zinc-400/80"
+            : status?.state === "open"
+              ? "text-emerald-600 dark:text-emerald-300/90"
+              : "text-muted-foreground";
+    return <GitPullRequest className={cn("size-3.5", toneClassName)} />;
+  }
   if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
 }
@@ -419,8 +469,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const { defaultWidth, maxWidth } = useClampedRightPanelWidths(hostRef, resizable);
   const { width, handlers } = useResizableWidth({
-    storageKey: RIGHT_PANEL_WIDTH_STORAGE_KEY,
-    defaultWidth,
+    storageKey: props.widthStorageKey ?? RIGHT_PANEL_WIDTH_STORAGE_KEY,
+    defaultWidth: props.defaultWidth ?? defaultWidth,
     minWidth: RIGHT_PANEL_MIN_WIDTH,
     maxWidth,
     edge: "left",
@@ -450,6 +500,14 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.diffAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.diff,
       onClick: props.onAddDiff,
+    },
+    {
+      label: "GitLab MR",
+      icon: GitPullRequest,
+      shortcut: "P",
+      available: props.pullRequestAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
+      onClick: props.onAddPullRequest,
     },
     {
       label: "Agents",
@@ -580,7 +638,11 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   label={`Close ${title}`}
                   onClick={() => props.onCloseSurface(surface)}
                 >
-                  <SurfaceIcon surface={surface} theme={resolvedTheme} />
+                  <SurfaceIcon
+                    surface={surface}
+                    theme={resolvedTheme}
+                    pullRequestStatuses={props.pullRequestStatuses}
+                  />
                   {pending ? (
                     <span
                       className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
@@ -653,10 +715,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           onAddTerminal={props.onAddTerminal}
           onAddDiff={props.onAddDiff}
           onAddFiles={props.onAddFiles}
+          onAddPullRequest={props.onAddPullRequest}
           onAddAgents={props.onAddAgents}
           terminalAvailable={props.terminalAvailable}
           diffAvailable={props.diffAvailable}
           filesAvailable={props.filesAvailable}
+          pullRequestAvailable={props.pullRequestAvailable}
           agentsAvailable={props.agentsAvailable}
           liveAgentCount={props.liveAgentCount}
         />

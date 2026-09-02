@@ -51,6 +51,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         description="Choose how new work starts inside the selected Coder workspace."
       >
         <SettingsRow
+          id="default-checkout-mode"
           title="Default checkout mode"
           description="Work in the project checkout or create a dedicated Git worktree."
           control={
@@ -69,6 +70,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
           }
         />
         <SettingsRow
+          id="worktrees-from-origin"
           title="Start worktrees from origin"
           description="Base new worktrees on the remote tracking branch instead of the local branch."
           control={
@@ -82,109 +84,13 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
           }
         />
       </SettingsSection>
-    </>
-  );
-}
 
-function GeneralSettingsView() {
-  const settings = useClientSettings();
-  const updateSettings = useUpdateClientSettings();
-
-  return (
-    <SettingsPage>
-      <WorkspaceSettingsTarget ariaLabel="General settings workspace">
-        {(environment) => (
-          <WorkspaceGeneralSettings key={environment.environmentId} environment={environment} />
-        )}
-      </WorkspaceSettingsTarget>
-
-      <SettingsSection title="Sidebar" description="Control project grouping and thread ordering.">
+      <SettingsSection
+        title="Thread settlement"
+        description="Choose when this workspace moves inactive or merged threads into the settled shelf."
+      >
         <SettingsRow
-          title="Group projects"
-          description="Choose when checkouts of the same repository appear together."
-          control={
-            <SettingsSelect
-              ariaLabel="Project grouping"
-              value={settings.sidebarProjectGroupingMode}
-              onChange={(value) => {
-                if (value === "repository" || value === "repository_path" || value === "separate") {
-                  updateSettings({
-                    sidebarProjectGroupingMode: value satisfies SidebarProjectGroupingMode,
-                  });
-                }
-              }}
-            >
-              <option value="repository">By repository</option>
-              <option value="repository_path">By repository path</option>
-              <option value="separate">Keep separate</option>
-            </SettingsSelect>
-          }
-        />
-        <SettingsRow
-          title="Project order"
-          control={
-            <SettingsSelect
-              ariaLabel="Project order"
-              value={settings.sidebarProjectSortOrder}
-              onChange={(value) => {
-                if (value === "updated_at" || value === "created_at" || value === "manual") {
-                  updateSettings({
-                    sidebarProjectSortOrder: value satisfies SidebarProjectSortOrder,
-                  });
-                }
-              }}
-            >
-              <option value="updated_at">Recently active</option>
-              <option value="created_at">Recently added</option>
-              <option value="manual">Manual</option>
-            </SettingsSelect>
-          }
-        />
-        <SettingsRow
-          title="Thread order"
-          control={
-            <SettingsSelect
-              ariaLabel="Thread order"
-              value={settings.sidebarThreadSortOrder}
-              onChange={(value) => {
-                if (value === "updated_at" || value === "created_at") {
-                  updateSettings({
-                    sidebarThreadSortOrder: value satisfies SidebarThreadSortOrder,
-                  });
-                }
-              }}
-            >
-              <option value="updated_at">Recently active</option>
-              <option value="created_at">Recently created</option>
-            </SettingsSelect>
-          }
-        />
-        <SettingsRow
-          title="Visible threads per project"
-          description={`Show between ${MIN_SIDEBAR_THREAD_PREVIEW_COUNT} and ${MAX_SIDEBAR_THREAD_PREVIEW_COUNT} threads before expanding a project.`}
-          control={
-            <Input
-              aria-label="Visible threads per project"
-              className="w-24"
-              inputMode="numeric"
-              max={MAX_SIDEBAR_THREAD_PREVIEW_COUNT}
-              min={MIN_SIDEBAR_THREAD_PREVIEW_COUNT}
-              type="number"
-              value={String(settings.sidebarThreadPreviewCount)}
-              onValueChange={(value) => {
-                const count = Number(value);
-                if (
-                  Number.isInteger(count) &&
-                  count >= MIN_SIDEBAR_THREAD_PREVIEW_COUNT &&
-                  count <= MAX_SIDEBAR_THREAD_PREVIEW_COUNT
-                ) {
-                  updateSettings({ sidebarThreadPreviewCount: count });
-                }
-              }}
-            />
-          }
-        />
-        <SettingsRow
+          id="auto-settle-inactive-threads"
           title="Auto-settle inactive threads"
           description="Move inactive threads into the settled shelf after this many days."
           control={
@@ -221,6 +127,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="auto-settle-merged-threads"
           title="Auto-settle merged threads"
           description="Settle a thread automatically when its branch is merged."
           control={
@@ -234,9 +141,117 @@ function GeneralSettingsView() {
           }
         />
       </SettingsSection>
+    </>
+  );
+}
+
+function GeneralSettingsView() {
+  const settings = useClientSettings();
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsPage>
+      <WorkspaceSettingsTarget ariaLabel="General settings workspace">
+        {(environment) => (
+          <WorkspaceGeneralSettings key={environment.environmentId} environment={environment} />
+        )}
+      </WorkspaceSettingsTarget>
+
+      <SettingsSection title="Sidebar" description="Control project grouping and thread ordering.">
+        <SettingsRow
+          id="project-grouping"
+          title="Group projects"
+          description="Choose when checkouts of the same repository appear together."
+          control={
+            <SettingsSelect
+              ariaLabel="Project grouping"
+              value={settings.sidebarProjectGroupingMode}
+              onChange={(value) => {
+                if (value === "repository" || value === "repository_path" || value === "separate") {
+                  updateSettings({
+                    sidebarProjectGroupingMode: value satisfies SidebarProjectGroupingMode,
+                  });
+                }
+              }}
+            >
+              <option value="repository">By repository</option>
+              <option value="repository_path">By repository path</option>
+              <option value="separate">Keep separate</option>
+            </SettingsSelect>
+          }
+        />
+        <SettingsRow
+          id="project-order"
+          title="Project order"
+          control={
+            <SettingsSelect
+              ariaLabel="Project order"
+              value={settings.sidebarProjectSortOrder}
+              onChange={(value) => {
+                if (value === "updated_at" || value === "created_at" || value === "manual") {
+                  updateSettings({
+                    sidebarProjectSortOrder: value satisfies SidebarProjectSortOrder,
+                  });
+                }
+              }}
+            >
+              <option value="updated_at">Recently active</option>
+              <option value="created_at">Recently added</option>
+              <option value="manual">Manual</option>
+            </SettingsSelect>
+          }
+        />
+        <SettingsRow
+          id="thread-order"
+          title="Thread order"
+          control={
+            <SettingsSelect
+              ariaLabel="Thread order"
+              value={settings.sidebarThreadSortOrder}
+              onChange={(value) => {
+                if (value === "updated_at" || value === "created_at") {
+                  updateSettings({
+                    sidebarThreadSortOrder: value satisfies SidebarThreadSortOrder,
+                  });
+                }
+              }}
+            >
+              <option value="updated_at">Recently active</option>
+              <option value="created_at">Recently created</option>
+            </SettingsSelect>
+          }
+        />
+        <SettingsRow
+          id="visible-threads-per-project"
+          title="Visible threads per project"
+          description={`Show between ${MIN_SIDEBAR_THREAD_PREVIEW_COUNT} and ${MAX_SIDEBAR_THREAD_PREVIEW_COUNT} threads before expanding a project.`}
+          control={
+            <Input
+              aria-label="Visible threads per project"
+              className="w-24"
+              inputMode="numeric"
+              max={MAX_SIDEBAR_THREAD_PREVIEW_COUNT}
+              min={MIN_SIDEBAR_THREAD_PREVIEW_COUNT}
+              type="number"
+              value={String(settings.sidebarThreadPreviewCount)}
+              onValueChange={(value) => {
+                const count = Number(value);
+                if (
+                  Number.isInteger(count) &&
+                  count >= MIN_SIDEBAR_THREAD_PREVIEW_COUNT &&
+                  count <= MAX_SIDEBAR_THREAD_PREVIEW_COUNT
+                ) {
+                  updateSettings({ sidebarThreadPreviewCount: count });
+                }
+              }}
+            />
+          }
+        />
+      </SettingsSection>
 
       <SettingsSection title="Editor and history">
         <SettingsRow
+          id="time-format"
           title="Time format"
           control={
             <SettingsSelect
@@ -255,6 +270,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="diff-layout"
           title="Diff layout"
           description="Choose how diffs are displayed by default."
           control={
@@ -273,6 +289,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="wrap-long-lines"
           title="Wrap long lines"
           description="Wrap long lines in diffs and file views by default."
           control={
@@ -284,6 +301,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="ignore-diff-whitespace"
           title="Ignore whitespace in diffs"
           control={
             <Switch
@@ -296,6 +314,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="confirm-thread-unpin"
           title="Confirm before unpinning"
           control={
             <Switch
@@ -308,6 +327,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="confirm-thread-archive"
           title="Confirm before archiving"
           control={
             <Switch
@@ -320,6 +340,7 @@ function GeneralSettingsView() {
           }
         />
         <SettingsRow
+          id="confirm-thread-delete"
           title="Confirm before deleting"
           control={
             <Switch

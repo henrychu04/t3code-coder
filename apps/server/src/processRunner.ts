@@ -33,6 +33,8 @@ export interface ProcessRunInput {
    * Partial stdout/stderr are not preserved.
    */
   readonly timeoutBehavior?: "error" | "timedOutResult" | undefined;
+  readonly onStdoutLine?: ((line: string) => Effect.Effect<void, never>) | undefined;
+  readonly onStderrLine?: ((line: string) => Effect.Effect<void, never>) | undefined;
 }
 
 export interface ProcessRunOutput {
@@ -182,6 +184,7 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
   readonly maxOutputBytes: number;
   readonly outputMode: "error" | "truncate";
   readonly truncatedMarker: string;
+  readonly onLine?: ((line: string) => Effect.Effect<void, never>) | undefined;
 }) {
   const stream = input.stream.pipe(
     Stream.mapError(
@@ -197,7 +200,7 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
     ),
   );
 
-  if (input.outputMode === "truncate") {
+  if (input.onLine === undefined && input.outputMode === "truncate") {
     return yield* collectUint8StreamText({
       stream,
       maxBytes: input.maxOutputBytes,
@@ -205,21 +208,52 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
     });
   }
 
-  return yield* stream.pipe(
+  const decoder = new TextDecoder();
+  let lineBuffer = "";
+  const emitLines = Effect.fn("processRunner.emitLines")(function* (flush: boolean) {
+    let newlineIndex = lineBuffer.indexOf("\n");
+    while (newlineIndex >= 0) {
+      const line = lineBuffer.slice(0, newlineIndex).replace(/\r$/, "");
+      lineBuffer = lineBuffer.slice(newlineIndex + 1);
+      if (line.length > 0 && input.onLine) yield* input.onLine(line);
+      newlineIndex = lineBuffer.indexOf("\n");
+    }
+    if (flush) {
+      const trailing = lineBuffer.replace(/\r$/, "");
+      lineBuffer = "";
+      if (trailing.length > 0 && input.onLine) yield* input.onLine(trailing);
+    }
+  });
+
+  const collected = yield* stream.pipe(
     Stream.runFoldEffect<
       {
         readonly chunks: Uint8Array<ArrayBufferLike>[];
         readonly bytes: number;
+        readonly truncated: boolean;
       },
       Uint8Array<ArrayBufferLike>,
       ProcessOutputLimitError | ProcessReadError,
       never
     >(
-      () => ({ chunks: [], bytes: 0 }),
-      (state, chunk) => {
+      () => ({ chunks: [], bytes: 0, truncated: false }),
+      (state, chunk) => Effect.gen(function* () {
         const remainingBytes = input.maxOutputBytes - state.bytes;
         if (chunk.byteLength > remainingBytes) {
-          return Effect.fail(
+          if (input.outputMode === "truncate") {
+            const retained = chunk.subarray(0, Math.max(0, remainingBytes));
+            if (retained.byteLength > 0) {
+              state.chunks.push(retained);
+              lineBuffer += decoder.decode(retained, { stream: true });
+              yield* emitLines(false);
+            }
+            return {
+              chunks: state.chunks,
+              bytes: input.maxOutputBytes,
+              truncated: true,
+            };
+          }
+          return yield* Effect.fail(
             new ProcessOutputLimitError({
               command: input.command,
               argumentCount: input.args.length,
@@ -233,20 +267,27 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
         }
 
         state.chunks.push(chunk);
-        return Effect.succeed({
+        lineBuffer += decoder.decode(chunk, { stream: true });
+        yield* emitLines(false);
+        return {
           chunks: state.chunks,
           bytes: state.bytes + chunk.byteLength,
-        });
-      },
-    ),
-    Effect.map(
-      (state): CollectedUint8StreamText => ({
-        ...decodeUtf8(Buffer.concat(state.chunks, state.bytes)),
-        bytes: state.bytes,
-        truncated: false,
+          truncated: state.truncated,
+        };
       }),
     ),
   );
+  lineBuffer += decoder.decode();
+  yield* emitLines(true);
+  const decoded = decodeUtf8(Buffer.concat(collected.chunks, collected.bytes));
+  return {
+    ...decoded,
+    text: collected.truncated
+      ? `${decoded.text}${input.truncatedMarker}`
+      : decoded.text,
+    bytes: collected.bytes,
+    truncated: collected.truncated,
+  } satisfies CollectedUint8StreamText;
 });
 
 function finalizeRunProcess<R>(
@@ -361,6 +402,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
         maxOutputBytes,
         outputMode,
         truncatedMarker,
+        ...(input.onStdoutLine ? { onLine: input.onStdoutLine } : {}),
       }),
       collectText({
         command: input.command,
@@ -372,6 +414,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
         maxOutputBytes,
         outputMode,
         truncatedMarker,
+        ...(input.onStderrLine ? { onLine: input.onStderrLine } : {}),
       }),
       writeStdin,
     ],

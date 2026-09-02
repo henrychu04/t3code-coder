@@ -38,6 +38,20 @@ export const VcsListWorkspaceFilesResult = Schema.Struct({
 });
 export type VcsListWorkspaceFilesResult = typeof VcsListWorkspaceFilesResult.Type;
 
+export const VcsRemote = Schema.Struct({
+  name: TrimmedNonEmptyString,
+  url: TrimmedNonEmptyString,
+  pushUrl: Schema.Option(TrimmedNonEmptyString),
+  isPrimary: Schema.Boolean,
+});
+export type VcsRemote = typeof VcsRemote.Type;
+
+export const VcsListRemotesResult = Schema.Struct({
+  remotes: Schema.Array(VcsRemote),
+  freshness: VcsFreshness,
+});
+export type VcsListRemotesResult = typeof VcsListRemotesResult.Type;
+
 export interface VcsProcessErrorContext {
   readonly operation: string;
   readonly command: string;
@@ -53,7 +67,13 @@ export interface VcsProcessTimeoutFailure {
   readonly timeoutMs: number;
 }
 
-export const VcsProcessExitFailureKind = Schema.Literal("command-failed");
+export const VcsProcessExitFailureKind = Schema.Literals([
+  "authentication",
+  "not-found",
+  "rate-limited",
+  "policy-blocked",
+  "command-failed",
+]);
 export type VcsProcessExitFailureKind = typeof VcsProcessExitFailureKind.Type;
 
 export interface VcsProcessExitFailure {
@@ -107,10 +127,22 @@ export class VcsProcessExitError extends Schema.TaggedErrorClass<VcsProcessExitE
     error: VcsProcessExitFailure,
     failureKind: VcsProcessExitFailureKind,
   ) {
+    const detail =
+      failureKind === "authentication"
+        ? "Authentication failed."
+        : failureKind === "rate-limited"
+          ? "API rate limit exceeded."
+          : failureKind === "not-found"
+            ? context.command === "glab"
+              ? "Merge request not found."
+              : "VCS resource not found."
+            : failureKind === "policy-blocked"
+              ? "Write operation blocked by workspace policy."
+              : "Process exited with a non-zero status.";
     return new VcsProcessExitError({
       ...context,
       exitCode: error.exitCode,
-      detail: "Process exited with a non-zero status.",
+      detail,
       failureKind,
       stderrLength: error.stderr.length,
       stderrTruncated: error.stderrTruncated,

@@ -2,7 +2,11 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { useRightPanelStore } from "./rightPanelStore";
+import {
+  pullRequestSurface,
+  updatePullRequestTabStatus,
+  useRightPanelStore,
+} from "./rightPanelStore";
 
 const threadRef = scopeThreadRef(
   EnvironmentId.make("test-environment"),
@@ -30,5 +34,62 @@ describe("rightPanelStore files", () => {
       revealLine: 20,
       revealRequestId: 2,
     });
+  });
+
+  it("opens arbitrary GitLab merge requests as independent surfaces", () => {
+    const store = useRightPanelStore.getState();
+    store.openPullRequest(threadRef, {
+      projectId: "project-1",
+      repository: "group/project",
+      number: 41,
+    });
+    store.openPullRequest(threadRef, {
+      projectId: "project-1",
+      repository: "group/project",
+      number: 42,
+    });
+
+    const state = Object.values(useRightPanelStore.getState().byThreadKey)[0]!;
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      "pull-request:project-1:group%2Fproject:41",
+      "pull-request:project-1:group%2Fproject:42",
+    ]);
+    expect(state.activeSurfaceId).toBe("pull-request:project-1:group%2Fproject:42");
+  });
+
+  it("keeps the same merge request from two Coder workspaces in separate tabs", () => {
+    const store = useRightPanelStore.getState();
+    store.openPullRequest(threadRef, {
+      environmentId: "workspace-a",
+      projectId: "project-1",
+      repository: "group/project",
+      number: 42,
+    });
+    store.openPullRequest(threadRef, {
+      environmentId: "workspace-b",
+      projectId: "project-1",
+      repository: "group/project",
+      number: 42,
+    });
+
+    const state = Object.values(useRightPanelStore.getState().byThreadKey)[0]!;
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      "pull-request:workspace-a:project-1:group%2Fproject:42",
+      "pull-request:workspace-b:project-1:group%2Fproject:42",
+    ]);
+  });
+
+  it("keys a tab status by the concrete merge-request surface id", () => {
+    const surface = pullRequestSurface({
+      environmentId: "workspace-a",
+      projectId: "project-1",
+      repository: "group/project",
+      number: 42,
+    });
+    const status = { state: "merged" as const, isDraft: false };
+    const statuses = updatePullRequestTabStatus({}, surface.id, status);
+
+    expect(statuses).toEqual({ [surface.id]: status });
+    expect(updatePullRequestTabStatus(statuses, surface.id, status)).toBe(statuses);
   });
 });

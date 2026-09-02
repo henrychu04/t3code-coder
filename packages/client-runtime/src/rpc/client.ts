@@ -50,7 +50,7 @@ export type EnvironmentSubscriptionRpcTag =
   | typeof WS_METHODS.subscribeVcsRefStatus
   | typeof WS_METHODS.terminalAttach;
 
-export type EnvironmentStreamCommandRpcTag = never;
+export type EnvironmentStreamCommandRpcTag = typeof WS_METHODS.gitRunStackedAction;
 
 export type EnvironmentStreamRpcTag =
   | EnvironmentSubscriptionRpcTag
@@ -196,7 +196,11 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
           Option.match({
             onNone: () => Stream.empty,
             onSome: (session) => {
-              const method = session.client[tag] as (
+              const method = (
+                tag === WS_METHODS.subscribeServerConfig
+                  ? session.subscribeServerConfig
+                  : session.client[tag]
+              ) as (
                 input: EnvironmentRpcInput<TTag>,
               ) => Stream.Stream<
                 EnvironmentRpcStreamValue<TTag>,

@@ -15,6 +15,8 @@ import {
   CoderWsRpcGroup,
   CommandId,
   GitCommandError,
+  type GitActionProgressEvent,
+  type GitManagerServiceError,
   type OrchestrationCommand,
   OrchestrationDispatchCommandError,
   type OrchestrationEvent,
@@ -56,12 +58,17 @@ import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as PullRequestService from "./pullRequest/PullRequestService.ts";
+import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
+import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
+import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as Keybindings from "./keybindings.ts";
 import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
 import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import { isOrchestrationCommandRejection } from "./orchestration/Errors.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
@@ -85,6 +92,18 @@ const SHELL_CURSOR_MAX_EVENT_GAP = 250;
 
 interface ThreadSnapshotProjectionQueries {
   readonly getThreadDetailSnapshot: ProjectionSnapshotQuery.ProjectionSnapshotQueryShape["getThreadDetailSnapshot"];
+}
+
+export function toCoderDispatchError(
+  cause: unknown,
+  fallbackMessage: string,
+): OrchestrationDispatchCommandError {
+  return isDispatchError(cause)
+    ? cause
+    : new OrchestrationDispatchCommandError({
+        message: isOrchestrationCommandRejection(cause) ? cause.message : fallbackMessage,
+        cause,
+      });
 }
 
 export const getProjectedThreadSnapshotWithinBudget = Effect.fn(
@@ -377,12 +396,16 @@ export const layer = CoderWsRpcGroup.toLayer(
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
+    const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
+    const sourceControlRepositories =
+      yield* SourceControlRepositoryService.SourceControlRepositoryService;
+    const gitLabCli = yield* GitLabCli.GitLabCli;
+    const pullRequests = yield* PullRequestService.PullRequestService;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
     const review = yield* ReviewService.ReviewService;
     const terminals = yield* TerminalManager.TerminalManager;
 
-    const toDispatchError = (cause: unknown, message: string) =>
-      isDispatchError(cause) ? cause : new OrchestrationDispatchCommandError({ message, cause });
+    const toDispatchError = toCoderDispatchError;
     const randomUuid = crypto.randomUUIDv4.pipe(
       Effect.mapError((cause) => toDispatchError(cause, "Failed to create a command identifier.")),
     );
@@ -904,9 +927,22 @@ export const layer = CoderWsRpcGroup.toLayer(
               : Effect.succeed([]);
           }),
         ),
+      [WS_METHODS.serverDiscoverSourceControl]: () => sourceControlDiscovery.discover,
+      [WS_METHODS.sourceControlProbeWriteAccess]: (input) =>
+        gitLabCli.reprobeWriteAccess({ cwd: config.cwd }),
+      [WS_METHODS.sourceControlLookupRepository]: (input) =>
+        sourceControlRepositories.lookupRepository(input),
+      [WS_METHODS.sourceControlCloneRepository]: (input) =>
+        sourceControlRepositories.cloneRepository(input),
+      [WS_METHODS.sourceControlPublishRepository]: (input) =>
+        sourceControlRepositories
+          .publishRepository(input)
+          .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.refStream(cwd),
       [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),
+      [WS_METHODS.vcsPull]: (input) =>
+        git.pull(input).pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.vcsListRefs]: (input) => git.listRefs(input),
       [WS_METHODS.vcsCreateWorktree]: (input) =>
         git.createWorktree(input).pipe(
@@ -947,6 +983,47 @@ export const layer = CoderWsRpcGroup.toLayer(
           ),
           Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
         ),
+      [WS_METHODS.gitRunStackedAction]: (input) =>
+        Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
+          git
+            .runStackedAction(input, {
+              publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
+            })
+            .pipe(
+              Effect.matchCauseEffect({
+                onFailure: (cause) => Queue.failCause(queue, cause),
+                onSuccess: () =>
+                  vcsStatus
+                    .refresh(input.cwd)
+                    .pipe(Effect.ignore, Effect.andThen(Queue.end(queue).pipe(Effect.asVoid))),
+              }),
+            ),
+        ),
+      [WS_METHODS.gitResolvePullRequest]: (input) => git.resolvePullRequest(input),
+      [WS_METHODS.gitPreparePullRequestThread]: (input) =>
+        git
+          .preparePullRequestThread(input)
+          .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
+      [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
+      [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
+      [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
+      [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
+      [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
+      [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
+      [WS_METHODS.pullRequestsDiffFileContents]: (input) => pullRequests.diffFileContents(input),
+      [WS_METHODS.pullRequestsRunAction]: (input) => pullRequests.runAction(input),
+      [WS_METHODS.pullRequestsUpdate]: (input) => pullRequests.update(input),
+      [WS_METHODS.pullRequestsComment]: (input) => pullRequests.comment(input),
+      [WS_METHODS.pullRequestsUpdateComment]: (input) => pullRequests.updateComment(input),
+      [WS_METHODS.pullRequestsSubmitReview]: (input) => pullRequests.submitReview(input),
+      [WS_METHODS.pullRequestsReplyToThread]: (input) => pullRequests.replyToThread(input),
+      [WS_METHODS.pullRequestsSetThreadResolution]: (input) =>
+        pullRequests.setThreadResolution(input),
+      [WS_METHODS.pullRequestsSetReaction]: (input) => pullRequests.setReaction(input),
+      [WS_METHODS.pullRequestsInvalidate]: (input) => pullRequests.invalidate(input),
+      [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
+        pullRequests.reviewerCandidates(input),
+      [WS_METHODS.pullRequestsRequestReviewers]: (input) => pullRequests.requestReviewers(input),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
       [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
       [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),

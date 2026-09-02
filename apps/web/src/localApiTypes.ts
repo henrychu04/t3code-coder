@@ -17,6 +17,9 @@ export interface ConfirmDialogOptions {
 }
 
 export interface LocalApi {
+  readonly shell: {
+    readonly openExternal: (url: string) => Promise<void>;
+  };
   readonly dialogs: {
     readonly confirm: (message: string, options?: ConfirmDialogOptions) => Promise<boolean>;
   };

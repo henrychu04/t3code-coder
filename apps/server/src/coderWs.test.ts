@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@effect/vitest";
-import type { OrchestrationEvent, OrchestrationThreadDetailSnapshot } from "@t3tools/contracts";
+import {
+  ThreadId,
+  type OrchestrationEvent,
+  type OrchestrationThreadDetailSnapshot,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
@@ -10,9 +14,22 @@ import {
   isShellMaterialEvent,
   projectLiveShellEvents,
   projectShellEvent,
+  toCoderDispatchError,
 } from "./coderWs.ts";
+import { OrchestrationThreadSettleBlockedError } from "./orchestration/Errors.ts";
 
 describe("Coder WebSocket boundary", () => {
+  it("preserves the safe settlement rejection message across RPC", () => {
+    const error = toCoderDispatchError(
+      new OrchestrationThreadSettleBlockedError({ threadId: ThreadId.make("thread-one") }),
+      "Failed to dispatch the command.",
+    );
+
+    expect(error.message).toBe(
+      "This thread still needs attention. Resolve or interrupt it first, then try again.",
+    );
+  });
+
   it.effect("removes a created worktree before deleting a failed bootstrap thread", () =>
     Effect.gen(function* () {
       const compensationOrder: string[] = [];

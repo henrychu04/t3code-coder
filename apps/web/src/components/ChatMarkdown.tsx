@@ -1,4 +1,14 @@
-import type { ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ScopedThreadRef,
+  ServerProviderSkill,
+  ThreadLinkedPullRequest,
+} from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -30,6 +40,7 @@ import {
   isValidElement,
   memo,
   type ReactNode,
+  type MouseEvent as ReactMouseEvent,
   use,
   useCallback,
   useEffect,
@@ -63,6 +74,15 @@ import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
 import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "../markdown-links";
 import { useRightPanelStore } from "../rightPanelStore";
+import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
+import {
+  findProjectForGitLabMergeRequest,
+  matchesLinkedPullRequestUrl,
+  parseGitLabMergeRequestUrl,
+} from "../lib/openPullRequestLink";
+import { readLocalApi } from "../localApi";
+import { threadEnvironment } from "../state/threads";
+import { useAtomCommand } from "../state/use-atom-command";
 import {
   chatMarkdownClipboardPayload,
   serializeTableElementToCsv,
@@ -75,6 +95,7 @@ import { renderSkillInlineMarkdownChildren } from "./chat/SkillInlineText";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { stackedThreadToast, toastManager } from "./ui/toast";
 
 interface ChatMarkdownProps {
   readonly text: string;
@@ -82,17 +103,21 @@ interface ChatMarkdownProps {
   readonly cwd: string | undefined;
   /** Opens contained project file links in the in-browser Files surface. */
   readonly threadRef?: ScopedThreadRef | undefined;
+  /** Environment used to resolve internal MR links outside a thread. */
+  readonly environmentId?: EnvironmentId | undefined;
   readonly onTaskListChange?: (input: { markerOffset: number; checked: boolean }) => void;
   readonly isStreaming?: boolean;
   readonly skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   readonly className?: string;
   readonly lineBreaks?: boolean;
   readonly parseRawHtml?: boolean;
+  readonly extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   /** Append a prompt that invokes a newly created artifact-template skill. */
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
 }
 
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
+const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
 const ARTIFACT_TEMPLATE_ICON_BY_KIND = {
   document: FileTextIcon,
@@ -172,6 +197,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
+    a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -597,6 +623,7 @@ function ChatMarkdown({
   text,
   cwd,
   threadRef,
+  environmentId,
   onTaskListChange,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
@@ -604,8 +631,15 @@ function ChatMarkdown({
   lineBreaks = false,
   parseRawHtml = true,
   onUseArtifactTemplate,
+  extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
+  const navigate = useNavigate();
+  const projects = useProjects();
+  const serverConfigs = useServerConfigs();
+  const updateThreadMetadata = useAtomCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
   const handleCopy = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
     const selection = window.getSelection();
@@ -616,6 +650,54 @@ function ChatMarkdown({
     event.clipboardData.setData("text/plain", payload.text);
     event.clipboardData.setData("text/html", payload.html);
   }, []);
+  const handleMergeRequestContextMenu = useCallback(
+    async (
+      event: ReactMouseEvent<HTMLElement>,
+      href: string,
+      linkedPullRequest: ThreadLinkedPullRequest,
+    ) => {
+      if (
+        threadRef === undefined ||
+        serverConfigs.get(threadRef.environmentId)?.environment.capabilities
+          .threadPullRequestLinking !== true
+      ) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const api = readLocalApi();
+      if (!api) return;
+      const current = readThreadShell(threadRef)?.linkedPullRequest;
+      const unlink = current != null && matchesLinkedPullRequestUrl(current, href);
+      const action = await api.contextMenu.show(
+        [
+          {
+            id: unlink ? "unlink" : "link",
+            label: unlink ? "Unlink merge request from thread" : "Link merge request to thread",
+          },
+        ] as const,
+        { x: event.clientX, y: event.clientY },
+      );
+      if (action === null) return;
+      const result = await updateThreadMetadata({
+        environmentId: threadRef.environmentId,
+        input: {
+          threadId: threadRef.threadId,
+          linkedPullRequest: action === "unlink" ? null : linkedPullRequest,
+        },
+      });
+      if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+      const error = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: unlink ? "Unable to unlink merge request" : "Unable to link merge request",
+          description: error instanceof Error ? error.message : "The request failed.",
+        }),
+      );
+    },
+    [serverConfigs, threadRef, updateThreadMetadata],
+  );
 
   const markdownComponents = useMemo<Components>(
     () => ({
@@ -693,9 +775,22 @@ function ChatMarkdown({
         );
       },
       a({ node: _node, href, children, title: _title, ...props }) {
+        const pullRequestAutolink = String(
+          (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
+        );
+        const pullRequestCopy =
+          pullRequestAutolink === "commit"
+            ? /\/-\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
+            : pullRequestAutolink === "merge-request" || pullRequestAutolink === "issue"
+              ? nodeToPlainText(children)
+              : undefined;
+        const autolinkProps = {
+          className: cn(props.className, pullRequestAutolink === "commit" && "font-mono"),
+          ...(pullRequestCopy === undefined ? {} : { "data-markdown-copy": pullRequestCopy }),
+        };
         if (href?.startsWith("#")) {
           return (
-            <a {...props} href={href}>
+            <a {...props} {...autolinkProps} href={href}>
               {children}
             </a>
           );
@@ -705,7 +800,8 @@ function ChatMarkdown({
           return (
             <button
               type="button"
-              className={cn(props.className, "cursor-pointer text-primary underline")}
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
               onClick={() =>
                 useRightPanelStore
                   .getState()
@@ -716,7 +812,76 @@ function ChatMarkdown({
             </button>
           );
         }
-        return <span className={cn(props.className, "text-primary underline")}>{children}</span>;
+        const mergeRequest = href ? parseGitLabMergeRequestUrl(href) : null;
+        const targetHref = href ?? "";
+        const project = mergeRequest
+          ? findProjectForGitLabMergeRequest(
+              environmentId === undefined
+                ? projects
+                : projects.filter((candidate) => candidate.environmentId === environmentId),
+              mergeRequest,
+            )
+          : undefined;
+        if (threadRef && mergeRequest && project) {
+          const linkedPullRequest: ThreadLinkedPullRequest = {
+            projectId: project.id,
+            repository: project.repositoryIdentity?.displayName ?? mergeRequest.repository,
+            number: mergeRequest.number,
+            url: targetHref,
+          };
+          return (
+            <button
+              type="button"
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
+              onContextMenu={(event) =>
+                void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
+              }
+              onClick={() =>
+                useRightPanelStore.getState().openPullRequest(threadRef, {
+                  environmentId: project.environmentId,
+                  projectId: project.id,
+                  repository: linkedPullRequest.repository,
+                  number: mergeRequest.number,
+                })
+              }
+            >
+              {children}
+            </button>
+          );
+        }
+        if (mergeRequest && project) {
+          return (
+            <button
+              type="button"
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
+              onClick={() =>
+                void navigate({
+                  to: "/pull-requests",
+                  search: {
+                    involvement: "all",
+                    state: "all",
+                    repository: mergeRequest.repository,
+                    number: mergeRequest.number,
+                    selectedProjectId: project.id,
+                    selectedEnvironmentId: project.environmentId,
+                  },
+                })
+              }
+            >
+              {children}
+            </button>
+          );
+        }
+        return (
+          <span
+            className={cn(autolinkProps.className, "text-primary underline")}
+            data-markdown-copy={pullRequestCopy}
+          >
+            {children}
+          </span>
+        );
       },
       img({ node: _node, title: _title, src: _src, alt }) {
         return <InertMarkdownImage alt={alt ?? ""} />;
@@ -779,13 +944,25 @@ function ChatMarkdown({
     [
       cwd,
       diffThemeName,
+      environmentId,
+      handleMergeRequestContextMenu,
       isStreaming,
+      navigate,
       onTaskListChange,
       onUseArtifactTemplate,
+      projects,
       skills,
       text,
       threadRef,
     ],
+  );
+
+  const remarkPlugins = useMemo(
+    () => [
+      ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
+      ...extraRemarkPlugins,
+    ],
+    [extraRemarkPlugins, lineBreaks],
   );
 
   return (
@@ -797,9 +974,7 @@ function ChatMarkdown({
       onCopy={handleCopy}
     >
       <ReactMarkdown
-        remarkPlugins={
-          lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS
-        }
+        remarkPlugins={remarkPlugins}
         rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
         skipHtml={false}
         components={markdownComponents}

@@ -5,6 +5,9 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
+  PullRequestDiffFileContentsInput,
+  PullRequestDiffFileContentsResult,
+  PullRequestRef,
   ReviewDiffFileChunkInput,
   ReviewDiffFileChunkResult,
   ReviewDiffFileContentsInput,
@@ -35,6 +38,18 @@ type ReadDiffFileChunk<E> = (request: {
   readonly environmentId: EnvironmentId;
   readonly input: ReviewDiffFileChunkInput;
 }) => Promise<AtomCommandResult<ReviewDiffFileChunkResult, E>>;
+
+type GetPullRequestDiffFileContents<E> = (request: {
+  readonly environmentId: EnvironmentId;
+  readonly input: PullRequestDiffFileContentsInput;
+}) => Promise<AtomCommandResult<PullRequestDiffFileContentsResult, E>>;
+
+interface PullRequestDiffFileContentsSource {
+  readonly environmentId: EnvironmentId;
+  readonly reference: PullRequestRef;
+  readonly commit: string | null;
+  readonly cacheKey: string;
+}
 
 const DIFF_FILE_CONTENTS_CACHE_BYTES = 64 * 1024 * 1024;
 const DIFF_FILE_CONTENTS_CACHE_ENTRIES = 128;
@@ -211,6 +226,56 @@ export function createChunkedGitDiffFileContentsLoader<E>(
         name: oldPath,
         contents: contents.oldContents,
         cacheKey: `${cacheNamespace}:old:${oldPath}`,
+      },
+      newFile,
+    };
+  };
+}
+
+/** Loads GitLab-backed files at the exact revisions used for the merge-request patch. */
+export function createPullRequestDiffFileContentsLoader<E>(
+  getDiffFileContents: GetPullRequestDiffFileContents<E>,
+  source: PullRequestDiffFileContentsSource,
+): FileDiffContentsLoader {
+  return async (fileDiff) => {
+    const newPath = resolveFileDiffPath(fileDiff);
+    const oldPath = fileDiff.prevName
+      ? resolveFileDiffPath({ ...fileDiff, name: fileDiff.prevName })
+      : newPath;
+    const cacheKey = JSON.stringify([
+      source.environmentId,
+      source.cacheKey,
+      fileDiff.type,
+      oldPath,
+      newPath,
+    ]);
+    let contents = readCachedDiffFileContents(cacheKey);
+    if (contents === null) {
+      const result = await getDiffFileContents({
+        environmentId: source.environmentId,
+        input: {
+          ...source.reference,
+          ...(source.commit === null ? {} : { commit: source.commit }),
+          changeType: fileDiff.type,
+          oldPath,
+          newPath,
+        },
+      });
+      if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+      contents = result.value;
+      cacheDiffFileContents(cacheKey, contents);
+    }
+    const newFile = {
+      name: newPath,
+      contents: contents.newContents,
+      cacheKey: `${source.cacheKey}:new:${newPath}`,
+    };
+    if (fileDiff.type === "rename-pure") return { oldFile: null, newFile };
+    return {
+      oldFile: {
+        name: oldPath,
+        contents: contents.oldContents,
+        cacheKey: `${source.cacheKey}:old:${oldPath}`,
       },
       newFile,
     };

@@ -1,10 +1,11 @@
-import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
+import { useEnvironments } from "../../state/environments";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -140,8 +141,14 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
         ? "settings"
         : /^\/projects\/[^/]+\/?$/.test(location.pathname)
           ? "project-settings"
-          : null,
+          : location.pathname === "/pull-requests"
+            ? "pull-requests"
+            : null,
   });
+  const { environments } = useEnvironments();
+  const pullRequestsSupported = environments.some(
+    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+  );
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -150,6 +157,10 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const handleSettingsClick = useCallback(() => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
+  }, [closeMobileSidebar, navigate]);
+  const handlePullRequestsClick = useCallback(() => {
+    closeMobileSidebar();
+    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
   }, [closeMobileSidebar, navigate]);
 
   const handleBackClick = useCallback(() => {
@@ -177,6 +188,13 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             label="Settings"
             onClick={handleSettingsClick}
           />
+          {pullRequestsSupported ? (
+            <SidebarUtilityItem
+              icon={<GitPullRequestIcon />}
+              label="Merge Requests"
+              onClick={handlePullRequestsClick}
+            />
+          ) : null}
         </>
       )}
     </SidebarMenu>

@@ -66,6 +66,32 @@ layer("OrchestrationEventStore", (it) => {
       assert.equal(replayed.length, 1);
       assert.equal(replayed[0]?.type, "project.created");
       assert.equal(replayed[0]?.metadata.adapterKey, "codex");
+
+      assert.equal(
+        yield* eventStore.hasEventAfter({
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-roundtrip"),
+          sequenceExclusive: 0,
+        }),
+        true,
+      );
+      assert.equal(
+        yield* eventStore.hasEventAfter({
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-roundtrip"),
+          sequenceExclusive: appended.sequence,
+        }),
+        false,
+      );
+      assert.equal(
+        yield* eventStore.hasEventAfter({
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-roundtrip"),
+          sequenceExclusive: 0,
+          type: "project.meta-updated",
+        }),
+        false,
+      );
     }),
   );
 
