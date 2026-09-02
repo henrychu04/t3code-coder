@@ -39,7 +39,7 @@ import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { useAtomValue } from "@effect/atom-react";
 import { environmentServerStatesAtom } from "../state/server";
-import { readProject } from "../state/entities";
+import { initializeActiveEnvironmentId, readProject } from "../state/entities";
 import {
   createKeybindingsUpdateToastController,
   type KeybindingsUpdateToastController,
@@ -247,12 +247,13 @@ function EventRouter() {
   const handleWelcome = useEffectEvent(
     (payload: ServerLifecycleWelcomePayload | null, serverConfig: ServerConfig | null) => {
       if (!payload) return;
+      const environmentId = payload.environment.environmentId;
+      initializeActiveEnvironmentId(environmentId);
 
       void (async () => {
         if (!payload.bootstrapProjectId || !payload.bootstrapThreadId) {
           return;
         }
-        const environmentId = payload.environment.environmentId;
         const bootstrapThreadKey = `${environmentId}:${payload.bootstrapThreadId}`;
         if (handledBootstrapThreadsRef.current.has(bootstrapThreadKey)) {
           return;
