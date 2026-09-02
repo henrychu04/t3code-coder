@@ -39,20 +39,10 @@ it.effect("uses a state-free workspace-level mutation canary", () =>
         command: "glab",
         cwd: "/repo",
         allowNonZeroExit: true,
-        args: [
-          "api",
-          "--method",
-          "POST",
-          "--input",
-          "-",
-          "--header",
-          "Content-Type: application/json",
-          "--include",
-          "projects/0/merge_requests",
-        ],
-        stdin: "{}",
+        args: ["api", "--method", "POST", "projects/0/merge_requests"],
       }),
     );
+    expect(mockedRun.mock.calls[0]?.[0]).not.toHaveProperty("stdin");
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
@@ -74,6 +64,28 @@ it.effect("fails closed when GitLab returns an unrecognized response", () =>
       writable: false,
       detail:
         "The GitLab CLI exited with status 7, but its response did not match a known GitLab, authentication, or workspace-policy result.",
+    });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
+it.effect("reports when the installed GitLab CLI rejects the probe syntax", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(Effect.succeed(output(1, "accepts 1 arg(s), received 8")));
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/repo" });
+
+    expect(result).toEqual({
+      status: "indeterminate",
+      writable: false,
+      detail:
+        "The installed GitLab CLI rejected the write probe command syntax. Reconnect after updating T3 Coder, or update glab in the workspace.",
     });
   }).pipe(
     Effect.provide(

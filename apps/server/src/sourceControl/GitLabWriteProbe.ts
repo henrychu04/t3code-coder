@@ -61,6 +61,10 @@ const TLS_FAILURE_PATTERNS = [
   /tls handshake/i,
   /x509:/i,
 ] as const;
+const CLI_USAGE_FAILURE_PATTERNS = [
+  /accepts?\s+\d+\s+arg(?:ument)?\(s\), received \d+/i,
+  /unknown (?:shorthand )?flag:/i,
+] as const;
 const RATE_LIMIT_PATTERN = /HTTP(?:\/\d(?:\.\d)?)?\s+429\b|glab:\s*429\b|too many requests/i;
 const FORBIDDEN_PATTERN = /HTTP(?:\/\d(?:\.\d)?)?\s+403\b|glab:\s*403\b|\bforbidden\b/i;
 const SERVER_FAILURE_PATTERN =
@@ -92,6 +96,9 @@ function unrecognizedResponseDetail(output: VcsProcess.VcsProcessOutput): string
   }
   if (matchesAny(response, TLS_FAILURE_PATTERNS)) {
     return "The GitLab CLI could not establish a trusted TLS connection to GitLab.";
+  }
+  if (matchesAny(response, CLI_USAGE_FAILURE_PATTERNS)) {
+    return "The installed GitLab CLI rejected the write probe command syntax. Reconnect after updating T3 Coder, or update glab in the workspace.";
   }
   if (RATE_LIMIT_PATTERN.test(response)) {
     return "GitLab rate-limited the write probe. Writes remain disabled until a later probe succeeds.";
@@ -136,18 +143,7 @@ function processFailureDetail(error: VcsError): string {
  */
 export const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
   request: () => ({
-    args: [
-      "api",
-      "--method",
-      "POST",
-      "--input",
-      "-",
-      "--header",
-      "Content-Type: application/json",
-      "--include",
-      "projects/0/merge_requests",
-    ],
-    stdin: "{}",
+    args: ["api", "--method", "POST", "projects/0/merge_requests"],
   }),
   classifyProbe: (output) => {
     const response = `${output.stdout}\n${output.stderr}`;
