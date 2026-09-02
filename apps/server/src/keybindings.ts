@@ -59,8 +59,6 @@ export {
 };
 
 const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
-  { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
-  { key: "mod+o", command: "editor.openFavorite" },
   {
     key: "mod+shift+f",
     command: "projectSearch.toggle",
@@ -79,6 +77,20 @@ const RETIRED_CODER_DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
 ];
 
 const LEGACY_FILE_SEARCH_COMMAND = "fileViewer.searchFiles";
+
+/**
+ * Commands that no longer exist. Persisted rules for them are dropped
+ * silently on load instead of surfacing as configuration issues; the file
+ * itself is rewritten without them on the next config write.
+ */
+const RETIRED_KEYBINDING_COMMANDS = new Set<string>(["themeEditor.toggle", "editor.openFavorite"]);
+
+function isRetiredKeybindingCommand(command: unknown): boolean {
+  return (
+    typeof command === "string" &&
+    (RETIRED_KEYBINDING_COMMANDS.has(command) || command.startsWith("script."))
+  );
+}
 
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(
   Schema.decodeTo(
@@ -204,12 +216,16 @@ const decodeResolvedKeybindingFromConfigExit = Schema.decodeExit(ResolvedKeybind
 const decodeRawKeybindingsEntriesExit = Schema.decodeUnknownExit(RawKeybindingsEntries);
 const encodeKeybindingsConfigPrettyJson = Schema.encodeEffect(KeybindingsConfigPrettyJson);
 
-function normalizeLegacyKeybindingEntry(entry: unknown): unknown {
+function normalizeLegacyKeybindingEntry(entry: unknown): unknown | null {
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return entry;
   const record = entry as Record<string, unknown>;
-  return record.command === LEGACY_FILE_SEARCH_COMMAND
-    ? { ...record, command: "filePicker.toggle" }
-    : entry;
+  if (record.command === LEGACY_FILE_SEARCH_COMMAND) {
+    return { ...record, command: "filePicker.toggle" };
+  }
+  if (isRetiredKeybindingCommand(record.command)) {
+    return null;
+  }
+  return entry;
 }
 
 export interface KeybindingsConfigState {
@@ -381,7 +397,9 @@ const make = Effect.gen(function* () {
 
     return yield* Effect.forEach(rawConfig, (entry) =>
       Effect.gen(function* () {
-        const decodedRule = decodeKeybindingRuleExit(normalizeLegacyKeybindingEntry(entry));
+        const normalizedEntry = normalizeLegacyKeybindingEntry(entry);
+        if (normalizedEntry === null) return null;
+        const decodedRule = decodeKeybindingRuleExit(normalizedEntry);
         if (decodedRule._tag === "Failure") {
           yield* Effect.logWarning("ignoring invalid keybinding entry", {
             path: keybindingsConfigPath,
@@ -428,7 +446,9 @@ const make = Effect.gen(function* () {
     const keybindings: KeybindingRule[] = [];
     const issues: ServerConfigIssue[] = [];
     for (const [index, entry] of decodedEntries.value.entries()) {
-      const decodedRule = decodeKeybindingRuleExit(normalizeLegacyKeybindingEntry(entry));
+      const normalizedEntry = normalizeLegacyKeybindingEntry(entry);
+      if (normalizedEntry === null) continue;
+      const decodedRule = decodeKeybindingRuleExit(normalizedEntry);
       if (decodedRule._tag === "Failure") {
         const detail = Cause.pretty(decodedRule.cause);
         issues.push(invalidEntryIssue(index, detail));

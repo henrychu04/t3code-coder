@@ -467,14 +467,6 @@ export function isChatNewLocalShortcut(
   return matchesCommandShortcut(event, keybindings, "chat.newLocal", options);
 }
 
-export function isOpenFavoriteEditorShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "editor.openFavorite", options);
-}
-
 export function isTerminalClearShortcut(
   event: ShortcutEventLike,
   platform = navigator.platform,

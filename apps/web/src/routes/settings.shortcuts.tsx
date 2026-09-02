@@ -30,7 +30,7 @@ import type { EnvironmentPresentation } from "../state/environments";
 import { useAtomCommand } from "../state/use-atom-command";
 import { WorkspaceSettingsTarget } from "../components/settings/WorkspaceSettingsTarget";
 
-const CATEGORIES = ["Files", "Navigation", "Panels", "Chat", "Terminal", "Scripts"] as const;
+const CATEGORIES = ["Files", "Navigation", "Panels", "Chat", "Terminal"] as const;
 
 function shortcutFromEvent(
   event: React.KeyboardEvent<HTMLButtonElement>,
@@ -102,21 +102,7 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
     return result;
   }, []);
 
-  const actions = useMemo(() => {
-    const result = [...KEYBINDING_ACTIONS];
-    const known = new Set(result.map((action) => action.command));
-    for (const binding of keybindings) {
-      if (known.has(binding.command) || !binding.command.startsWith("script.")) continue;
-      const scriptId = binding.command.slice("script.".length, -".run".length);
-      result.push({
-        command: binding.command,
-        label: `Run ${scriptId.replaceAll("-", " ")}`,
-        category: "Scripts",
-      });
-      known.add(binding.command);
-    }
-    return result;
-  }, [keybindings]);
+  const actions = KEYBINDING_ACTIONS;
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleActions = actions.filter(
     (action) =>

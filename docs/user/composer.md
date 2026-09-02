@@ -29,9 +29,13 @@ find and add a skill.
 
 ## Prompt stash
 
-Press `mod+s` to stash the current draft, including attachments, and start a clean composer.
-Restore the entry later from the stash menu. This is useful when a long prompt is blocked on
-something else — stash it, ask your question, then bring it back.
+Press `mod+s` to stash the current draft and start a clean composer. Restore the entry later from
+the stash menu. This is useful when a long prompt is blocked on something else — stash it, ask
+your question, then bring it back.
+
+The stash is per-browser and holds up to 20 entries. Pasted images are workspace file links, so
+they ride along in the prompt text; restoring an entry into another workspace warns that its
+image links may not resolve there.
 
 ## Model and mode
 

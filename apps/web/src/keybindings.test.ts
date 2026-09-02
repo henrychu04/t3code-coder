@@ -13,7 +13,6 @@ import {
   isDiffToggleShortcut,
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
-  isOpenFavoriteEditorShortcut,
   isTerminalClearShortcut,
   isTerminalCloseShortcut,
   isTerminalNewShortcut,
@@ -156,10 +155,6 @@ const DEFAULT_BINDINGS = compile([
       whenAnd(whenIdentifier("fileOpen"), whenIdentifier("fileViewerFocus")),
       whenNot(whenIdentifier("terminalFocus")),
     ),
-  },
-  {
-    shortcut: modShortcut("t", { altKey: true, shiftKey: true }),
-    command: "themeEditor.toggle",
   },
   {
     shortcut: modShortcut("m", { shiftKey: true }),
@@ -428,10 +423,6 @@ describe("shortcutLabelForCommand", () => {
       "Ctrl+Shift+M",
     );
     assert.strictEqual(
-      shortcutLabelForCommand(DEFAULT_BINDINGS, "editor.openFavorite", "Linux"),
-      null,
-    );
-    assert.strictEqual(
       shortcutLabelForCommand(DEFAULT_BINDINGS, "thread.jump.3", "MacIntel"),
       "⌘3",
     );
@@ -595,19 +586,6 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("does not ship an editor.openFavorite shortcut", () => {
-    assert.isFalse(
-      isOpenFavoriteEditorShortcut(event({ key: "o", metaKey: true }), DEFAULT_BINDINGS, {
-        platform: "MacIntel",
-      }),
-    );
-    assert.isFalse(
-      isOpenFavoriteEditorShortcut(event({ key: "o", ctrlKey: true }), DEFAULT_BINDINGS, {
-        platform: "Linux",
-      }),
-    );
-  });
-
   it("matches commandPalette.toggle shortcut outside terminal focus", () => {
     assert.strictEqual(
       resolveShortcutCommand(event({ key: "k", metaKey: true }), DEFAULT_BINDINGS, {
@@ -717,25 +695,6 @@ describe("chat/editor shortcuts", () => {
     );
   });
 
-  it("matches themeEditor.toggle on macOS and Windows", () => {
-    assert.strictEqual(
-      resolveShortcutCommand(
-        event({ key: "t", metaKey: true, altKey: true, shiftKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "MacIntel" },
-      ),
-      "themeEditor.toggle",
-    );
-    assert.strictEqual(
-      resolveShortcutCommand(
-        event({ key: "t", ctrlKey: true, altKey: true, shiftKey: true }),
-        DEFAULT_BINDINGS,
-        { platform: "Win32" },
-      ),
-      "themeEditor.toggle",
-    );
-  });
-
   it("matches diff.toggle shortcut outside terminal focus", () => {
     assert.isTrue(
       isDiffToggleShortcut(event({ key: "d", metaKey: true }), DEFAULT_BINDINGS, {
@@ -815,17 +774,6 @@ describe("cross-command precedence", () => {
 });
 
 describe("resolveShortcutCommand", () => {
-  it("returns dynamic script commands", () => {
-    const keybindings = compile([{ shortcut: modShortcut("r"), command: "script.setup.run" }]);
-
-    assert.strictEqual(
-      resolveShortcutCommand(event({ key: "r", ctrlKey: true }), keybindings, {
-        platform: "Linux",
-      }),
-      "script.setup.run",
-    );
-  });
-
   it("resolves a custom right panel maximize binding", () => {
     const keybindings = compile([
       {

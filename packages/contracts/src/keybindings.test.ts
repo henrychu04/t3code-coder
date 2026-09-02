@@ -78,12 +78,6 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedProjectSearch.command, "projectSearch.toggle");
 
-    const parsedThemeEditor = yield* decode(KeybindingRule, {
-      key: "mod+alt+shift+t",
-      command: "themeEditor.toggle",
-    });
-    assert.strictEqual(parsedThemeEditor.command, "themeEditor.toggle");
-
     const parsedLocal = yield* decode(KeybindingRule, {
       key: "mod+shift+n",
       command: "chat.newLocal",
@@ -133,16 +127,6 @@ it.effect("rejects invalid command values", () =>
       }),
     );
     assert.strictEqual(retiredAlias._tag, "Failure");
-  }),
-);
-
-it.effect("accepts dynamic script run commands", () =>
-  Effect.gen(function* () {
-    const parsed = yield* decode(KeybindingRule, {
-      key: "mod+r",
-      command: "script.setup.run",
-    });
-    assert.strictEqual(parsed.command, "script.setup.run");
   }),
 );
 
