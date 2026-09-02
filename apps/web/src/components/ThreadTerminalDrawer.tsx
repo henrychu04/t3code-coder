@@ -2,7 +2,10 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { type TerminalSessionState } from "@t3tools/client-runtime/state/terminal";
+import {
+  terminalBufferAppend,
+  type TerminalSessionState,
+} from "@t3tools/client-runtime/state/terminal";
 import {
   Plus,
   SquareSplitHorizontal,
@@ -420,6 +423,8 @@ export function TerminalViewport({
     }),
   );
   const terminalBuffer = terminalSession.buffer;
+  const terminalBufferOffset = terminalSession.bufferOffset;
+  const terminalBufferEpoch = terminalSession.bufferEpoch;
   const terminalError = terminalSession.error;
   const terminalStatus = terminalSession.status;
   const synchronizedStatusRef = useRef<TerminalSessionState["status"]>("closed");
@@ -443,6 +448,8 @@ export function TerminalViewport({
   const terminalVersion = terminalSession.version;
   const previousSessionRef = useRef({
     buffer: terminalBuffer,
+    bufferOffset: terminalBufferOffset,
+    bufferEpoch: terminalBufferEpoch,
     error: terminalError,
     status: terminalStatus,
     version: terminalVersion,
@@ -450,6 +457,8 @@ export function TerminalViewport({
   const latestSessionRef = useRef(previousSessionRef.current);
   latestSessionRef.current = {
     buffer: terminalBuffer,
+    bufferOffset: terminalBufferOffset,
+    bufferEpoch: terminalBufferEpoch,
     error: terminalError,
     status: terminalStatus,
     version: terminalVersion,
@@ -871,6 +880,8 @@ export function TerminalViewport({
     const terminal = terminalRef.current;
     const current = {
       buffer: terminalBuffer,
+      bufferOffset: terminalBufferOffset,
+      bufferEpoch: terminalBufferEpoch,
       error: terminalError,
       status: terminalStatus,
       version: terminalVersion,
@@ -882,15 +893,13 @@ export function TerminalViewport({
 
     const previous = previousSessionRef.current;
     synchronizeTerminalStatus(terminal, current.status);
-    if (current.version === previous.version) {
+    if (current.version === previous.version && current.bufferEpoch === previous.bufferEpoch) {
       return;
     }
 
-    if (
-      current.buffer.length >= previous.buffer.length &&
-      current.buffer.startsWith(previous.buffer)
-    ) {
-      terminal.write(current.buffer.slice(previous.buffer.length));
+    const appended = terminalBufferAppend(previous, current);
+    if (appended !== null) {
+      terminal.write(appended);
     } else {
       writeTerminalBuffer(terminal, current.buffer);
     }
@@ -906,7 +915,15 @@ export function TerminalViewport({
       });
     }
     previousSessionRef.current = current;
-  }, [autoFocus, terminalBuffer, terminalError, terminalStatus, terminalVersion]);
+  }, [
+    autoFocus,
+    terminalBuffer,
+    terminalBufferEpoch,
+    terminalBufferOffset,
+    terminalError,
+    terminalStatus,
+    terminalVersion,
+  ]);
 
   useEffect(() => {
     if (!autoFocus) return;
