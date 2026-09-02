@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
@@ -23,6 +24,7 @@ const repositoryRoot = NodePath.dirname(NodePath.dirname(fileURLToPath(import.me
 const helperPath = NodePath.join(repositoryRoot, "apps", "coder-helper", "src", "bin.ts");
 const fixturePath = NodePath.join(repositoryRoot, "scripts", "coder-pr-smoke-glab.mjs");
 const staticDir = NodePath.join(repositoryRoot, "apps", "web", "dist");
+const smokeProjectId = "00000000-0000-4000-8000-000000000045";
 
 function run(executable, args, cwd) {
   const result = spawnSync(executable, args, {
@@ -110,6 +112,48 @@ async function connectLocalHelper(environment) {
   }
 }
 
+async function seedProject(environment, repository) {
+  const connection = await connectLocalHelper(environment);
+  const requestId = "smoke-project-create";
+  try {
+    const response = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        reject(new Error("Timed out while seeding the smoke project through RPC."));
+      }, 10_000);
+      const unsubscribe = connection.onRpcMessage((message) => {
+        if (message?._tag !== "Exit" || message.requestId !== requestId) return;
+        clearTimeout(timeout);
+        unsubscribe();
+        if (message.exit?._tag === "Success") {
+          resolve(message.exit.value);
+          return;
+        }
+        reject(new Error("The workspace helper rejected the smoke project."));
+      });
+    });
+    connection.sendRpc({
+      _tag: "Request",
+      id: requestId,
+      tag: "orchestration.dispatchCommand",
+      payload: {
+        type: "project.create",
+        commandId: randomUUID(),
+        projectId: smokeProjectId,
+        title: "GitLab MR smoke repo",
+        workspaceRoot: repository,
+        createWorkspaceRootIfMissing: false,
+        createdAt: new Date().toISOString(),
+      },
+      headers: [],
+    });
+    await response;
+  } finally {
+    connection.close();
+    await connection.closed;
+  }
+}
+
 const smokeRoot = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-pr-smoke-"));
 const helperHome = NodePath.join(smokeRoot, "home");
 const fakeBin = NodePath.join(smokeRoot, "bin");
@@ -155,6 +199,8 @@ const helperEnvironment = {
   T3_CODER_SMOKE_GLAB_STATE: statePath,
 };
 
+await seedProject(helperEnvironment, repository);
+
 const gateway = await startLocalCoderGateway({
   configPath,
   staticDir,
@@ -179,13 +225,16 @@ const gateway = await startLocalCoderGateway({
 });
 
 console.log(`T3 Coder GitLab MR smoke gateway listening on ${gateway.url}`);
+console.log(
+  `Open the seeded merge request: ${gateway.url}/pull-requests?repository=goldman%2Fsmoke&number=42&selectedProjectId=${smokeProjectId}&host=gitlab.example.gs.com`,
+);
 console.log(`Smoke repository: ${repository}`);
 console.log(`Mutable glab state: ${statePath}`);
 console.log(`glab command trace: ${commandLogPath}`);
 console.log(
   'Change writeAccess in the mutable state to "writable", "policy-blocked", or "indeterminate", then use Reprobe in GitLab source control settings.',
 );
-console.log("Add the smoke-repo project, then open Merge Requests in the sidebar.");
+console.log("The smoke project is already configured; open Merge Requests in the sidebar.");
 
 await new Promise((resolve, reject) => {
   let closing = false;
