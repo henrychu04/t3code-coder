@@ -41,7 +41,6 @@ it.effect("uses a state-free workspace-level mutation canary", () =>
         allowNonZeroExit: true,
         args: [
           "api",
-          "projects/0/merge_requests",
           "--method",
           "POST",
           "--input",
@@ -49,6 +48,7 @@ it.effect("uses a state-free workspace-level mutation canary", () =>
           "--header",
           "Content-Type: application/json",
           "--include",
+          "projects/0/merge_requests",
         ],
         stdin: "{}",
       }),

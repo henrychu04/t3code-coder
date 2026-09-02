@@ -138,7 +138,6 @@ export const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
   request: () => ({
     args: [
       "api",
-      "projects/0/merge_requests",
       "--method",
       "POST",
       "--input",
@@ -146,6 +145,7 @@ export const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
       "--header",
       "Content-Type: application/json",
       "--include",
+      "projects/0/merge_requests",
     ],
     stdin: "{}",
   }),

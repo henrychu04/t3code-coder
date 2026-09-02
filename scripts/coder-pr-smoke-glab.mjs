@@ -114,6 +114,25 @@ function optionValue(args, flag) {
   return index === -1 ? null : (args[index + 1] ?? null);
 }
 
+function apiPath(args) {
+  const valueFlags = new Set([
+    "--field",
+    "--header",
+    "--hostname",
+    "--input",
+    "--method",
+    "--raw-field",
+  ]);
+  for (let index = 1; index < args.length; index += 1) {
+    if (valueFlags.has(args[index])) {
+      index += 1;
+      continue;
+    }
+    if (!args[index].startsWith("-")) return args[index];
+  }
+  return null;
+}
+
 const args = process.argv.slice(2);
 // The real process runner leaves an unused stdin stream open. `glab api --input -` is the only
 // command in this fixture that consumes it, so reads must not wait for EOF on ordinary GETs.
@@ -175,7 +194,7 @@ if (args[0] !== "api") {
   process.exit(2);
 }
 
-const path = args[1];
+const path = apiPath(args);
 const method = optionValue(args, "--method") ?? "GET";
 let body = null;
 if (stdin.trim()) body = JSON.parse(stdin);
