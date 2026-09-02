@@ -243,7 +243,7 @@ export function orderedListGutterStyle(
   const firstNumber = Number.isNaN(parsedStart) ? 1 : parsedStart;
   const lastNumber = firstNumber + Math.max(itemCount - 1, 0);
   const markerWidth = Math.max(String(firstNumber).length, String(lastNumber).length);
-  return markerWidth <= 2 ? undefined : { "--list-gutter": `${markerWidth + 1}ch` };
+  return markerWidth <= 1 ? undefined : { "--list-gutter": `${markerWidth + 1}ch` };
 }
 
 function findTaskListMarkerOffset(markdown: string, listItemStart: number): number | null {
