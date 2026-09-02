@@ -309,6 +309,25 @@ it.effect("reports a bounded HTTP rejection without exposing response contents",
   ),
 );
 
+it.effect("recognizes the GS write-route rejection as a workspace policy block", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed(output(1, "glab: no Route matched with those values (HTTP 404)")),
+    );
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    const result = yield* probe.check({ cwd: "/workspace" });
+
+    expect(result).toEqual({ status: "policy-blocked", writable: false });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
 it.effect("reprobes explicitly and replaces the workspace result", () =>
   Effect.gen(function* () {
     mockedRun

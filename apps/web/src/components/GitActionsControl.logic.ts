@@ -95,6 +95,7 @@ export function buildMenuItems(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
   hasPrimaryRemote = true,
+  canCreateChangeRequest = true,
 ): GitActionMenuItem[] {
   if (!gitStatus) return [];
   const terminology = resolveChangeRequestTerminology(gitStatus);
@@ -113,6 +114,7 @@ export function buildMenuItems(
     gitStatus.aheadCount > 0 &&
     (gitStatus.hasUpstream || canPushWithoutUpstream);
   const canCreatePr =
+    canCreateChangeRequest &&
     !isBusy &&
     hasBranch &&
     !hasChanges &&
@@ -169,6 +171,7 @@ export function resolveQuickAction(
   isBusy: boolean,
   isDefaultRef = false,
   hasPrimaryRemote = true,
+  canCreateChangeRequest = true,
 ): GitQuickAction {
   if (isBusy) {
     return { label: "Commit", disabled: true, kind: "show_hint", hint: "Git action in progress." };
@@ -205,7 +208,7 @@ export function resolveQuickAction(
     if (!gitStatus.hasUpstream && !hasPrimaryRemote) {
       return { label: "Commit", disabled: false, kind: "run_action", action: "commit" };
     }
-    if (hasOpenPr || isDefaultRef) {
+    if (hasOpenPr || isDefaultRef || !canCreateChangeRequest) {
       return { label: "Commit & push", disabled: false, kind: "run_action", action: "commit_push" };
     }
     return {
@@ -238,7 +241,7 @@ export function resolveQuickAction(
         hint: "No local commits to push.",
       };
     }
-    if (hasOpenPr || isDefaultRef) {
+    if (hasOpenPr || isDefaultRef || !canCreateChangeRequest) {
       return {
         label: "Push",
         disabled: false,
@@ -272,7 +275,7 @@ export function resolveQuickAction(
   }
 
   if (isAhead) {
-    if (hasOpenPr || isDefaultRef) {
+    if (hasOpenPr || isDefaultRef || !canCreateChangeRequest) {
       return {
         label: "Push",
         disabled: false,
@@ -293,6 +296,14 @@ export function resolveQuickAction(
   }
 
   if (hasDefaultBranchDelta && !isDefaultRef) {
+    if (!canCreateChangeRequest) {
+      return {
+        label: `Create ${terminology.shortLabel}`,
+        disabled: true,
+        kind: "show_hint",
+        hint: "GitLab write access is unavailable in this workspace.",
+      };
+    }
     return {
       label: `Create ${terminology.shortLabel}`,
       disabled: false,

@@ -30,6 +30,8 @@ const getChangeRequest = vi.fn(() =>
 );
 const listChangeRequests =
   vi.fn<SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"]>();
+const probeWriteAccess =
+  vi.fn<SourceControlProvider.SourceControlProvider["Service"]["probeWriteAccess"]>();
 const checkoutChangeRequest = vi.fn(() => Effect.void);
 const getRepositoryCloneUrls = vi.fn(() =>
   Effect.succeed({
@@ -40,6 +42,7 @@ const getRepositoryCloneUrls = vi.fn(() =>
 );
 const provider = {
   kind: "gitlab" as const,
+  probeWriteAccess,
   getChangeRequest,
   listChangeRequests,
   checkoutChangeRequest,
@@ -86,6 +89,8 @@ beforeEach(() => {
   getRepositoryCloneUrls.mockClear();
   getChangeRequest.mockClear();
   listChangeRequests.mockReset();
+  probeWriteAccess.mockReset();
+  probeWriteAccess.mockReturnValue(Effect.succeed({ status: "writable", writable: true }));
   listChangeRequests.mockReturnValue(
     Effect.succeed([
       {
@@ -123,6 +128,36 @@ const layer = it.layer(
     ),
   ),
 );
+
+layer("GitWorkflowService.runStackedAction", (it) => {
+  it.effect(
+    "rejects MR workflows before changing the repository when GitLab writes are blocked",
+    () =>
+      Effect.gen(function* () {
+        probeWriteAccess.mockReturnValueOnce(
+          Effect.succeed({ status: "policy-blocked", writable: false }),
+        );
+        const service = yield* GitWorkflowService.GitWorkflowService;
+
+        const error = yield* service
+          .runStackedAction({
+            actionId: "blocked-action",
+            cwd: "/repo",
+            action: "commit_push_pr",
+            commitMessage: "Must not commit",
+          })
+          .pipe(Effect.flip);
+
+        expect(error).toMatchObject({
+          _tag: "SourceControlProviderError",
+          provider: "gitlab",
+          operation: "createChangeRequest",
+          detail: "GitLab write operations are blocked by this workspace.",
+        });
+        expect(execute).not.toHaveBeenCalled();
+      }),
+  );
+});
 
 layer("GitWorkflowService.preparePullRequestThread", (it) => {
   it.effect("checks an MR out in the project checkout", () =>
@@ -912,6 +947,7 @@ it.effect("commits, pushes, and creates a GitLab merge request through the workf
   };
   const workflowProvider = {
     kind: "gitlab" as const,
+    probeWriteAccess: () => Effect.succeed({ status: "writable" as const, writable: true }),
     listChangeRequests: () => {
       listCalls += 1;
       return Effect.succeed(listCalls === 1 ? [] : [mergeRequest]);

@@ -1,4 +1,3 @@
-import { useAtomValue } from "@effect/atom-react";
 import { type ScopedThreadRef } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
@@ -240,11 +239,13 @@ function getMenuActionDisabledReason({
   gitStatus,
   isBusy,
   hasPrimaryRemote,
+  canCreateChangeRequest,
 }: {
   item: GitActionMenuItem;
   gitStatus: VcsStatusResult | null;
   isBusy: boolean;
   hasPrimaryRemote: boolean;
+  canCreateChangeRequest: boolean;
 }): string | null {
   if (!item.disabled) return null;
   if (isBusy) return "Git action in progress.";
@@ -285,6 +286,9 @@ function getMenuActionDisabledReason({
 
   if (hasOpenPr) {
     return `View ${terminology.singular} is currently unavailable.`;
+  }
+  if (!canCreateChangeRequest) {
+    return "GitLab writes are disabled because the workspace write probe did not succeed.";
   }
   if (!hasBranch) {
     return `Detached HEAD: checkout a refName before creating a ${terminology.singular}.`;
@@ -1057,6 +1061,14 @@ export default function GitActionsControl({
         })
       : null,
   );
+  const sourceControlDiscovery = useEnvironmentQuery(
+    activeEnvironmentId === null
+      ? null
+      : sourceControlEnvironment.discovery({
+          environmentId: activeEnvironmentId,
+          input: undefined,
+        }),
+  );
   const refreshVcsStatus = useAtomCommand(vcsEnvironment.refreshStatus, {
     reportFailure: false,
   });
@@ -1070,6 +1082,10 @@ export default function GitActionsControl({
   // Default to true while loading so we don't flash init controls.
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
+  const canCreateChangeRequest =
+    sourceControlDiscovery.data?.sourceControlProviders.find(
+      (provider) => provider.kind === "gitlab",
+    )?.writeAccess?.writable === true;
   const gitStatusForActions = gitStatus;
 
   const allFiles = gitStatusForActions?.workingTree.files ?? [];
@@ -1117,13 +1133,31 @@ export default function GitActionsControl({
   }, [gitStatusForActions?.isDefaultRef]);
 
   const gitActionMenuItems = useMemo(
-    () => buildMenuItems(gitStatusForActions, isGitActionRunning, hasPrimaryRemote),
-    [gitStatusForActions, hasPrimaryRemote, isGitActionRunning],
+    () =>
+      buildMenuItems(
+        gitStatusForActions,
+        isGitActionRunning,
+        hasPrimaryRemote,
+        canCreateChangeRequest,
+      ),
+    [canCreateChangeRequest, gitStatusForActions, hasPrimaryRemote, isGitActionRunning],
   );
   const quickAction = useMemo(
     () =>
-      resolveQuickAction(gitStatusForActions, isGitActionRunning, isDefaultRef, hasPrimaryRemote),
-    [gitStatusForActions, hasPrimaryRemote, isDefaultRef, isGitActionRunning],
+      resolveQuickAction(
+        gitStatusForActions,
+        isGitActionRunning,
+        isDefaultRef,
+        hasPrimaryRemote,
+        canCreateChangeRequest,
+      ),
+    [
+      canCreateChangeRequest,
+      gitStatusForActions,
+      hasPrimaryRemote,
+      isDefaultRef,
+      isGitActionRunning,
+    ],
   );
   const quickActionDisabledReason = quickAction.disabled
     ? (quickAction.hint ?? "This action is currently unavailable.")
@@ -1694,6 +1728,7 @@ export default function GitActionsControl({
                   gitStatus: gitStatusForActions,
                   isBusy: isGitActionRunning,
                   hasPrimaryRemote,
+                  canCreateChangeRequest,
                 });
                 if (item.disabled && disabledReason) {
                   return (

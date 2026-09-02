@@ -9,7 +9,6 @@ import type {
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
   GitRunStackedActionResult,
-  SourceControlProviderError,
   ServerSettings as ServerSettingsValue,
   VcsCreateRefInput,
   VcsCreateRefResult,
@@ -28,7 +27,7 @@ import type {
   VcsSwitchRefInput,
   VcsSwitchRefResult,
 } from "@t3tools/contracts";
-import { GitCommandError, GitManagerError } from "@t3tools/contracts";
+import { GitCommandError, GitManagerError, SourceControlProviderError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Cache from "effect/Cache";
 import * as Duration from "effect/Duration";
@@ -785,6 +784,26 @@ export const layer = Layer.effect(
       ];
       yield* report({ ...base, kind: "action_started", phases });
 
+      const changeRequestProvider = wantsPr ? yield* sourceControls.get("gitlab") : null;
+      if (changeRequestProvider !== null) {
+        const writeAccess = yield* changeRequestProvider.probeWriteAccess({ cwd: input.cwd });
+        if (!writeAccess.writable) {
+          const detail =
+            writeAccess.detail ??
+            (writeAccess.status === "policy-blocked"
+              ? "GitLab write operations are blocked by this workspace."
+              : writeAccess.status === "unauthenticated"
+                ? "The GitLab CLI is not authenticated."
+                : "GitLab write access could not be verified for this workspace.");
+          return yield* new SourceControlProviderError({
+            provider: "gitlab",
+            operation: "createChangeRequest",
+            cwd: input.cwd,
+            detail,
+          });
+        }
+      }
+
       let branchStatus: GitRunStackedActionResult["branch"] = {
         status: "skipped_not_requested",
       };
@@ -988,7 +1007,14 @@ export const layer = Layer.effect(
             detail: "A checked-out branch is required before creating a merge request.",
           });
         }
-        const provider = yield* sourceControls.get("gitlab");
+        const provider = changeRequestProvider;
+        if (provider === null) {
+          return yield* new GitManagerError({
+            operation: "runStackedAction",
+            cwd: input.cwd,
+            detail: "The GitLab source control provider is unavailable.",
+          });
+        }
         const baseBranch = (yield* resolveDefaultBranch(input.cwd)) ?? "main";
         const existing = yield* provider.listChangeRequests({
           cwd: input.cwd,

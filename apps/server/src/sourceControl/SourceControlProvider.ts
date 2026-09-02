@@ -6,6 +6,7 @@ import type {
   SourceControlProviderError,
   SourceControlProviderInfo,
   SourceControlProviderKind,
+  SourceControlWriteAccess,
   SourceControlRepositoryCloneUrls,
   SourceControlRepositoryVisibility,
 } from "@t3tools/contracts";
@@ -83,6 +84,9 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
+    readonly probeWriteAccess: (input: {
+      readonly cwd: string;
+    }) => Effect.Effect<SourceControlWriteAccess>;
     readonly listChangeRequests: (input: {
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;

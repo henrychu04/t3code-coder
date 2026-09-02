@@ -38,6 +38,7 @@ const POLICY_BLOCK_PATTERNS = [
   /write operations?.*(?:blocked|disabled)/i,
   /(?:blocked|denied) by (?:workspace|network|security) policy/i,
   /workspace.*(?:read[- ]only|writes? disabled)/i,
+  /no route matched with those values/i,
 ] as const;
 
 const EXPECTED_GITLAB_REJECTION =

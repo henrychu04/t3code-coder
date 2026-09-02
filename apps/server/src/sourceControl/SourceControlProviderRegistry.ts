@@ -64,6 +64,12 @@ function unsupportedProvider(
 ): SourceControlProvider.SourceControlProvider["Service"] {
   return SourceControlProvider.SourceControlProvider.of({
     kind,
+    probeWriteAccess: () =>
+      Effect.succeed({
+        status: "indeterminate",
+        writable: false,
+        detail: `No ${kind} source control provider is registered.`,
+      }),
     listChangeRequests: (input) =>
       new SourceControlProviderError({
         provider: kind,
@@ -150,6 +156,7 @@ function bindProviderContext(
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: provider.kind,
+    probeWriteAccess: provider.probeWriteAccess,
     listChangeRequests: (input) =>
       provider.listChangeRequests({
         ...input,

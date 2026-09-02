@@ -278,6 +278,75 @@ describe("when: source control provider uses merge requests", () => {
       label: "Create MR",
     });
   });
+
+  it("keeps Git actions available but disables MR creation when workspace writes are blocked", () => {
+    const gitlabStatus = status({
+      aheadCount: 2,
+      sourceControlProvider: {
+        kind: "gitlab",
+        name: "GitLab",
+        baseUrl: "https://gitlab.example.com",
+      },
+    });
+
+    const quick = resolveQuickAction(gitlabStatus, false, false, true, false);
+    const items = buildMenuItems(gitlabStatus, false, true, false);
+
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "push",
+      label: "Push",
+      disabled: false,
+    });
+    assert.deepInclude(
+      items.find((item) => item.id === "pr"),
+      {
+        label: "Create MR",
+        disabled: true,
+      },
+    );
+  });
+
+  it("removes MR creation from the combined commit action when workspace writes are blocked", () => {
+    const quick = resolveQuickAction(
+      status({ hasWorkingTreeChanges: true }),
+      false,
+      false,
+      true,
+      false,
+    );
+
+    assert.deepInclude(quick, {
+      kind: "run_action",
+      action: "commit_push",
+      label: "Commit & push",
+      disabled: false,
+    });
+  });
+
+  it("explains why an already-pushed branch cannot create an MR", () => {
+    const quick = resolveQuickAction(
+      status({
+        aheadOfDefaultCount: 1,
+        sourceControlProvider: {
+          kind: "gitlab",
+          name: "GitLab",
+          baseUrl: "https://gitlab.example.com",
+        },
+      }),
+      false,
+      false,
+      true,
+      false,
+    );
+
+    assert.deepEqual(quick, {
+      label: "Create MR",
+      disabled: true,
+      kind: "show_hint",
+      hint: "GitLab write access is unavailable in this workspace.",
+    });
+  });
 });
 
 describe("when: ref is clean, up to date, and has no open PR", () => {
