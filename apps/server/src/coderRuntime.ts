@@ -105,7 +105,7 @@ const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
 );
 
 const CoderTerminalLive = TerminalManager.layer.pipe(
-  Layer.provideMerge(ScriptPtyAdapter.layer),
+  Layer.provideMerge(NodePtyAdapter.layer),
   Layer.provideMerge(ProcessRunner.layer),
 );
 
@@ -153,11 +153,6 @@ const CoderCheckpointStoreLive = CheckpointStore.layer.pipe(
 
 const CoderCheckpointingLive = CheckpointDiffQuery.layer.pipe(
   Layer.provideMerge(CoderCheckpointStoreLive),
-);
-
-const CoderTerminalLive = TerminalManager.layer.pipe(
-  Layer.provideMerge(NodePtyAdapter.layer),
-  Layer.provideMerge(ProcessRunner.layer),
 );
 
 const CoderWorkspaceEntriesLive = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
