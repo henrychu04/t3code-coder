@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
+import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL } from "@t3tools/contracts";
 import * as ServerConfig from "./config.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
@@ -17,7 +18,7 @@ const settingsLayer = ServerSettings.layer.pipe(
 );
 
 it.layer(NodeServices.layer)("server settings persistence", (it) => {
-  it.effect("writes a non-default automatic Git fetch interval", () =>
+  it.effect("writes and clears a non-default automatic Git fetch interval", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
       const fileSystem = yield* FileSystem.FileSystem;
@@ -32,6 +33,19 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
       assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
         automaticGitFetchInterval: 30_000,
       });
+
+      const reset = yield* settings.updateSettings({
+        automaticGitFetchInterval: DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
+      });
+
+      assert.strictEqual(
+        Duration.toMillis(reset.automaticGitFetchInterval),
+        Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL),
+      );
+      assert.deepStrictEqual(
+        JSON.parse(yield* fileSystem.readFileString(config.settingsPath)),
+        {},
+      );
     }).pipe(Effect.provide(settingsLayer)),
   );
 });

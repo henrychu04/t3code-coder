@@ -244,13 +244,16 @@ const resolveTextGenerationProvider = (settings: ServerSettings): ServerSettings
 
 // Values under these keys are compared as a whole — never stripped field-by-field.
 const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
-  "automaticGitFetchInterval",
   "textGenerationModelSelection",
   "sourceControlWriterModelSelection",
 ]);
 
 function stripDefaultServerSettings(current: unknown, defaults: unknown): unknown | undefined {
   if (Array.isArray(current) || Array.isArray(defaults)) {
+    return Equal.equals(current, defaults) ? undefined : current;
+  }
+
+  if (Equal.isEqual(current) || Equal.isEqual(defaults)) {
     return Equal.equals(current, defaults) ? undefined : current;
   }
 
