@@ -74,6 +74,15 @@ are distinct from MCP and app integrations.
 
 ## Provider settings
 
+The Providers page always shows which workspace you are editing. On the first visit it selects the
+workspace from your current conversation when possible, otherwise the first configured workspace.
+It remembers an explicit selection while T3 Coder remains open and lets you switch workspaces at
+any time. A stopped or unavailable workspace remains selected and must be started from Coder
+connections before its provider settings can be read or changed.
+
+Provider configuration and text-generation defaults are stored in the selected workspace. Model
+favorites, hidden models, and model ordering are also kept separately for each workspace.
+
 The default Codex and Claude settings use the workspace's standard executables, provider homes,
 and existing logins. Most users should leave them unchanged. Each provider can be enabled or
 disabled independently.

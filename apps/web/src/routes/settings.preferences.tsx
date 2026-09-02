@@ -9,7 +9,6 @@ import {
   type SidebarThreadSortOrder,
   type TimestampFormat,
 } from "@t3tools/contracts/settings";
-import { useAtomValue } from "@effect/atom-react";
 import { createFileRoute } from "@tanstack/react-router";
 
 import {
@@ -20,18 +19,26 @@ import {
 } from "../components/settings/SettingsPage";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useEnvironmentSettings,
+  useUpdateClientSettings,
+  useUpdateEnvironmentSettings,
+} from "../hooks/useSettings";
 import { TextGenerationModelSettings } from "../components/settings/TextGenerationModelSettings";
-import { primaryServerProvidersAtom } from "../state/server";
+import type { EnvironmentPresentation } from "../state/environments";
+import { WorkspaceSettingsTarget } from "../components/settings/WorkspaceSettingsTarget";
 
-function GeneralSettingsView() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
-  const providers = useAtomValue(primaryServerProvidersAtom);
+function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPresentation }) {
+  const environmentId = props.environment.environmentId;
+  const settings = useEnvironmentSettings(environmentId);
+  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const providers = props.environment.serverConfig?.providers ?? [];
 
   return (
-    <SettingsPage>
+    <>
       <TextGenerationModelSettings
+        environmentId={environmentId}
         settings={settings}
         providers={providers}
         onChange={(textGenerationModelSelection) =>
@@ -75,6 +82,21 @@ function GeneralSettingsView() {
           }
         />
       </SettingsSection>
+    </>
+  );
+}
+
+function GeneralSettingsView() {
+  const settings = useClientSettings();
+  const updateSettings = useUpdateClientSettings();
+
+  return (
+    <SettingsPage>
+      <WorkspaceSettingsTarget ariaLabel="General settings workspace">
+        {(environment) => (
+          <WorkspaceGeneralSettings key={environment.environmentId} environment={environment} />
+        )}
+      </WorkspaceSettingsTarget>
 
       <SettingsSection title="Sidebar" description="Control project grouping and thread ordering.">
         <SettingsRow

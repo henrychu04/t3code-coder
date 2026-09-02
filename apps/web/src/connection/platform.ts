@@ -3,9 +3,9 @@ import {
   PlatformConnectionSource,
 } from "@t3tools/client-runtime/platform";
 import {
+  ConnectionRegistration,
+  ConnectionTarget,
   Connectivity,
-  PrimaryConnectionRegistration,
-  PrimaryConnectionTarget,
   Wakeups,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
@@ -57,8 +57,8 @@ const platformConnectionSourceLayer = Layer.effect(
         const socketUrl = new URL(window.location.origin);
         socketUrl.protocol = socketUrl.protocol === "https:" ? "wss:" : "ws:";
         socketUrl.pathname = `/api/workspaces/${encodeURIComponent(workspaceId)}/rpc`;
-        return new PrimaryConnectionRegistration({
-          target: new PrimaryConnectionTarget({
+        return new ConnectionRegistration({
+          target: new ConnectionTarget({
             environmentId: descriptor.environmentId,
             label: descriptor.label,
             httpBaseUrl: window.location.origin,
@@ -67,7 +67,7 @@ const platformConnectionSourceLayer = Layer.effect(
         });
       });
     return PlatformConnectionSource.of({
-      registrations: Stream.callback<ReadonlyArray<PrimaryConnectionRegistration>>((queue) =>
+      registrations: Stream.callback<ReadonlyArray<ConnectionRegistration>>((queue) =>
         Effect.acquireRelease(
           Effect.sync(() => {
             Queue.offerUnsafe(queue, registrations());

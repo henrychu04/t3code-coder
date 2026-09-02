@@ -1,8 +1,13 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
-import { resolveThreadDetailRef } from "./entities";
+import {
+  initializeActiveEnvironmentId,
+  readActiveEnvironmentId,
+  resolveThreadDetailRef,
+  setActiveEnvironmentId,
+} from "./entities";
 
 const threadRef = scopeThreadRef(EnvironmentId.make("environment-1"), ThreadId.make("thread-1"));
 
@@ -32,5 +37,27 @@ describe("resolveThreadDetailRef", () => {
         waitForShell: false,
       }),
     ).toBe(threadRef);
+  });
+});
+
+describe("initializeActiveEnvironmentId", () => {
+  beforeEach(() => setActiveEnvironmentId(null));
+  afterEach(() => setActiveEnvironmentId(null));
+
+  it("initializes an unset active environment", () => {
+    const environmentId = EnvironmentId.make("environment-1");
+
+    initializeActiveEnvironmentId(environmentId);
+
+    expect(readActiveEnvironmentId()).toBe(environmentId);
+  });
+
+  it("does not replace the active environment", () => {
+    const activeEnvironmentId = EnvironmentId.make("environment-1");
+    setActiveEnvironmentId(activeEnvironmentId);
+
+    initializeActiveEnvironmentId(EnvironmentId.make("environment-2"));
+
+    expect(readActiveEnvironmentId()).toBe(activeEnvironmentId);
   });
 });

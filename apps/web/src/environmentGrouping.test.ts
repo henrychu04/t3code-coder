@@ -17,7 +17,7 @@ import { orderItemsByPreferredIds } from "./components/Sidebar.logic";
 import { legacyProjectCwdPreferenceKey } from "./uiStateStore";
 import type { Project } from "./types";
 
-const primaryEnvironmentId = EnvironmentId.make("env-primary");
+const preferredEnvironmentId = EnvironmentId.make("env-preferred");
 const remoteEnvironmentId = EnvironmentId.make("env-remote");
 const repositoryIdentity = {
   canonicalKey: "workspace:/work/shared-repo",
@@ -34,7 +34,7 @@ const defaultGroupingSettings = {
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: ProjectId.make("project-1"),
-    environmentId: primaryEnvironmentId,
+    environmentId: preferredEnvironmentId,
     title: "shared-repo",
     workspaceRoot: "/tmp/shared-repo",
     repositoryIdentity: null,
@@ -73,7 +73,7 @@ describe("environment grouping", () => {
     const projectGroupCount = buildSidebarProjectSnapshots({
       projects: [primary, remote],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: () => null,
     }).length;
 
@@ -167,7 +167,7 @@ describe("environment grouping", () => {
     const snapshots = buildSidebarProjectSnapshots({
       projects: [primary, duplicate, remote],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: (environmentId) =>
         environmentId === remoteEnvironmentId ? "remote" : "primary",
     });
@@ -197,7 +197,7 @@ describe("environment grouping", () => {
     const snapshots = buildSidebarProjectSnapshots({
       projects: [staleDuplicate, canonical],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: () => "primary",
     });
 
@@ -226,7 +226,7 @@ describe("environment grouping", () => {
     const snapshots = buildSidebarProjectSnapshots({
       projects: [staleWithoutRepositoryIdentity, canonical, remote],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: (environmentId) =>
         environmentId === remoteEnvironmentId ? "remote" : "primary",
     });
@@ -239,17 +239,17 @@ describe("environment grouping", () => {
     ]);
     expect(snapshots[0]?.memberProjectRefs).toEqual([
       {
-        environmentId: primaryEnvironmentId,
+        environmentId: preferredEnvironmentId,
         projectId: staleWithoutRepositoryIdentity.id,
       },
-      { environmentId: primaryEnvironmentId, projectId: canonical.id },
+      { environmentId: preferredEnvironmentId, projectId: canonical.id },
       { environmentId: remoteEnvironmentId, projectId: remote.id },
     ]);
 
     const [pickerEntry] = buildSidebarProjectPickerEntries({
       groups: snapshots,
       preferredProjectRef: {
-        environmentId: primaryEnvironmentId,
+        environmentId: preferredEnvironmentId,
         projectId: staleWithoutRepositoryIdentity.id,
       },
     });
@@ -272,7 +272,7 @@ describe("environment grouping", () => {
     const physicalToLogicalKey = buildPhysicalToLogicalProjectKeyMap({
       projects: [staleWithoutRepositoryIdentity, canonical],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
     });
 
     expect(physicalToLogicalKey.get(derivePhysicalProjectKey(staleWithoutRepositoryIdentity))).toBe(
@@ -300,7 +300,7 @@ describe("environment grouping", () => {
     const groups = buildSidebarProjectSnapshots({
       projects: [separate, primary, remote],
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: () => null,
     });
 
@@ -347,7 +347,7 @@ describe("environment grouping", () => {
     const groups = buildSidebarProjectSnapshots({
       projects: orderedProjects,
       settings: defaultGroupingSettings,
-      primaryEnvironmentId,
+      preferredEnvironmentId,
       resolveEnvironmentLabel: () => null,
     });
 

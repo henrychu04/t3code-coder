@@ -80,6 +80,11 @@ export function setActiveEnvironmentId(environmentId: EnvironmentId | null): voi
   appAtomRegistry.set(activeEnvironmentIdAtom, environmentId);
 }
 
+export function initializeActiveEnvironmentId(environmentId: EnvironmentId): void {
+  if (readActiveEnvironmentId() !== null) return;
+  setActiveEnvironmentId(environmentId);
+}
+
 export function useProjectRefs(): ReadonlyArray<ScopedProjectRef> {
   return useAtomValue(environmentProjects.projectRefsAtom);
 }

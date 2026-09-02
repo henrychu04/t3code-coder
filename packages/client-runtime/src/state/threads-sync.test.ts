@@ -23,7 +23,7 @@ import * as TestClock from "effect/testing/TestClock";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
   AVAILABLE_CONNECTION_STATE,
-  PrimaryConnectionTarget,
+  ConnectionTarget,
   type PreparedConnection,
   type SupervisorConnectionState,
 } from "../connection/model.ts";
@@ -38,7 +38,7 @@ import {
   type EnvironmentThreadState,
 } from "./threads.ts";
 
-const TARGET = new PrimaryConnectionTarget({
+const TARGET = new ConnectionTarget({
   environmentId: EnvironmentId.make("environment-1"),
   label: "Test environment",
   httpBaseUrl: "https://environment.example.test",

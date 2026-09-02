@@ -1,4 +1,9 @@
-import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
@@ -45,6 +50,7 @@ describe("text generation model settings", () => {
   it("shows the resolved workspace model used for generated names", () => {
     const markup = renderToStaticMarkup(
       <TextGenerationModelSettings
+        environmentId={EnvironmentId.make("workspace")}
         settings={{
           ...DEFAULT_UNIFIED_SETTINGS,
           textGenerationModelSelection: {

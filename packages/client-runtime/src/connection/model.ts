@@ -1,18 +1,13 @@
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-export class PrimaryConnectionTarget extends Schema.TaggedClass<PrimaryConnectionTarget>()(
-  "PrimaryConnectionTarget",
-  {
-    environmentId: EnvironmentId,
-    label: Schema.String,
-    httpBaseUrl: Schema.String,
-    wsBaseUrl: Schema.String,
-  },
-) {}
+export class ConnectionTarget extends Schema.TaggedClass<ConnectionTarget>()("ConnectionTarget", {
+  environmentId: EnvironmentId,
+  label: Schema.String,
+  httpBaseUrl: Schema.String,
+  wsBaseUrl: Schema.String,
+}) {}
 
-export const ConnectionTarget = PrimaryConnectionTarget;
-export type ConnectionTarget = typeof ConnectionTarget.Type;
 export type ConnectionTargetKind = ConnectionTarget["_tag"];
 export type NetworkStatus = "unknown" | "offline" | "online";
 

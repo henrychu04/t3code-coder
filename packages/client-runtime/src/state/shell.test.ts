@@ -4,7 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/unstable/reactivity";
 
-import { PrimaryConnectionTarget } from "../connection/model.ts";
+import { ConnectionTarget } from "../connection/model.ts";
 import type { EnvironmentShellState } from "./shell.ts";
 import { createEnvironmentServerConfigsAtom, createEnvironmentShellSummaryAtom } from "./shell.ts";
 
@@ -13,7 +13,7 @@ const OTHER_ENVIRONMENT_ID = EnvironmentId.make("environment-2");
 
 function environmentEntry(environmentId: EnvironmentId, label: string) {
   return {
-    target: new PrimaryConnectionTarget({
+    target: new ConnectionTarget({
       environmentId,
       label,
       httpBaseUrl: `https://${environmentId}.example.test`,

@@ -1,4 +1,9 @@
-import { ProviderDriverKind, type ModelSelection, type ServerProvider } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  ProviderDriverKind,
+  type ModelSelection,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contracts/settings";
 import { createModelSelection } from "@t3tools/shared/model";
 import * as Equal from "effect/Equal";
@@ -16,6 +21,7 @@ import { SettingResetButton, SettingsRow, SettingsSection } from "./SettingsPage
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
 
 export function TextGenerationModelSettings(props: {
+  readonly environmentId: EnvironmentId;
   readonly settings: UnifiedSettings;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly onChange: (selection: ModelSelection) => void;
@@ -59,6 +65,7 @@ export function TextGenerationModelSettings(props: {
         control={
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
+              environmentId={props.environmentId}
               activeInstanceId={selection.instanceId}
               model={selection.model}
               lockedProvider={null}

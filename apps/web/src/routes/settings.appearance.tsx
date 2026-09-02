@@ -23,7 +23,7 @@ import {
 } from "../components/settings/SettingsPage";
 import { Input } from "../components/ui/input";
 import { Switch } from "../components/ui/switch";
-import { usePrimarySettings, useUpdatePrimarySettings } from "../hooks/useSettings";
+import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 
 function FontSizeInput({
@@ -59,8 +59,8 @@ function FontSizeInput({
 }
 
 function AppearanceSettingsView() {
-  const settings = usePrimarySettings();
-  const updateSettings = useUpdatePrimarySettings();
+  const settings = useClientSettings();
+  const updateSettings = useUpdateClientSettings();
   const { appearanceMode, setAppearanceMode } = useTheme();
 
   return (

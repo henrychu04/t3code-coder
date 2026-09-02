@@ -10,7 +10,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
 
-import { PrimaryConnectionTarget } from "../connection/model.ts";
+import { ConnectionTarget } from "../connection/model.ts";
 import {
   InvalidScopedProjectKeyError,
   InvalidScopedProjectRefCollectionKeyError,
@@ -162,7 +162,7 @@ function makeHarness() {
       [
         ENVIRONMENT_ID,
         {
-          target: new PrimaryConnectionTarget({
+          target: new ConnectionTarget({
             environmentId: ENVIRONMENT_ID,
             label: "Environment",
             httpBaseUrl: "https://example.test",
