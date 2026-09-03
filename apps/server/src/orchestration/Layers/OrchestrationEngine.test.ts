@@ -352,6 +352,7 @@ describe("OrchestrationEngine", () => {
       );
     }
 
+    const lastActivityAt = "2025-12-20T00:00:00.000Z";
     const snapshotSequence = (await system.readModel()).snapshotSequence;
     await system.run(
       system.engine.dispatch({
@@ -368,6 +369,7 @@ describe("OrchestrationEngine", () => {
           commandId: CommandId.make("cmd-auto-settle-stale-snapshot"),
           threadId: guardedThreadId,
           snapshotSequence,
+          settledAt: lastActivityAt,
         }),
       ),
     ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
@@ -387,6 +389,7 @@ describe("OrchestrationEngine", () => {
           commandId: CommandId.make("cmd-auto-settle-live-background"),
           threadId: liveThreadId,
           snapshotSequence: livenessSnapshotSequence,
+          settledAt: lastActivityAt,
         }),
       ),
     ).rejects.toMatchObject({ _tag: "OrchestrationCommandInvariantError" });
@@ -407,12 +410,16 @@ describe("OrchestrationEngine", () => {
         commandId: CommandId.make("cmd-auto-settle-after-unrelated-update"),
         threadId: guardedThreadId,
         snapshotSequence: freshSnapshotSequence,
+        settledAt: lastActivityAt,
       }),
     );
 
     const settled = await system.readModel();
     expect(settled.threads.find((thread) => thread.id === guardedThreadId)?.settledOverride).toBe(
       "settled",
+    );
+    expect(settled.threads.find((thread) => thread.id === guardedThreadId)?.settledAt).toBe(
+      lastActivityAt,
     );
     await system.dispose();
   });

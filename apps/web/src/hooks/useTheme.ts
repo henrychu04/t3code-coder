@@ -296,8 +296,7 @@ function applyTheme(theme: Theme, suppressTransitions = false) {
   syncBrowserChromeTheme();
   if (suppressTransitions) {
     // Force a reflow so the no-transitions class takes effect before removal
-    // oxlint-disable-next-line no-unused-expressions
-    document.documentElement.offsetHeight;
+    void document.documentElement.offsetHeight;
     requestAnimationFrame(() => {
       document.documentElement.classList.remove("no-transitions");
     });
