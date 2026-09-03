@@ -58,6 +58,7 @@ import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -588,69 +589,66 @@ export const layer = CoderWsRpcGroup.toLayer(
           );
       }
 
-      let branchRenamed = false;
       let worktreeMoved = false;
-      const mutate = Effect.gen(function* () {
-        yield* git.renameBranch({
+      const mutate = renameBranchWithCompensation({
+        rename: git.renameBranch({
           cwd: currentCwd,
           oldBranch: input.expectedBranch,
           newBranch: input.newBranch,
-        });
-        branchRenamed = input.expectedBranch !== input.newBranch;
+        }),
+        afterRename: () =>
+          Effect.gen(function* () {
+            if (
+              input.renameWorktreeFolder &&
+              thread.worktreePath &&
+              nextWorktreePath &&
+              thread.worktreePath !== nextWorktreePath
+            ) {
+              yield* git.moveWorktree({
+                cwd: project.workspaceRoot,
+                oldPath: thread.worktreePath,
+                newPath: nextWorktreePath,
+              });
+              worktreeMoved = true;
+            }
 
-        if (
-          input.renameWorktreeFolder &&
-          thread.worktreePath &&
-          nextWorktreePath &&
-          thread.worktreePath !== nextWorktreePath
-        ) {
-          yield* git.moveWorktree({
-            cwd: project.workspaceRoot,
-            oldPath: thread.worktreePath,
-            newPath: nextWorktreePath,
-          });
-          worktreeMoved = true;
-        }
-
-        yield* orchestration.dispatch({
-          type: "thread.meta.update",
-          commandId: yield* commandId("thread-branch-rename"),
-          threadId: thread.id,
-          branch: input.newBranch,
-          expectedBranch: input.expectedBranch,
-          worktreePath: nextWorktreePath,
-        });
+            yield* orchestration.dispatch({
+              type: "thread.meta.update",
+              commandId: yield* commandId("thread-branch-rename"),
+              threadId: thread.id,
+              branch: input.newBranch,
+              expectedBranch: input.expectedBranch,
+              worktreePath: nextWorktreePath,
+            });
+          }),
+        rollback: () =>
+          Effect.gen(function* () {
+            if (worktreeMoved && thread.worktreePath && nextWorktreePath) {
+              yield* git
+                .moveWorktree({
+                  cwd: project.workspaceRoot,
+                  oldPath: nextWorktreePath,
+                  newPath: thread.worktreePath,
+                })
+                .pipe(Effect.ignore);
+            }
+            yield* git
+              .renameBranch({
+                cwd: project.workspaceRoot,
+                oldBranch: input.newBranch,
+                newBranch: input.expectedBranch,
+              })
+              .pipe(Effect.ignore);
+          }),
       });
 
       yield* mutate.pipe(
         Effect.catchCause((cause) =>
-          Effect.uninterruptible(
-            Effect.gen(function* () {
-              if (worktreeMoved && thread.worktreePath && nextWorktreePath) {
-                yield* git
-                  .moveWorktree({
-                    cwd: project.workspaceRoot,
-                    oldPath: nextWorktreePath,
-                    newPath: thread.worktreePath,
-                  })
-                  .pipe(Effect.ignore);
-              }
-              if (branchRenamed) {
-                yield* git
-                  .renameBranch({
-                    cwd: project.workspaceRoot,
-                    oldBranch: input.newBranch,
-                    newBranch: input.expectedBranch,
-                  })
-                  .pipe(Effect.ignore);
-              }
-              return yield* Effect.fail(
-                renameThreadBranchError(
-                  "Could not rename the branch and worktree.",
-                  Cause.squash(cause),
-                ),
-              );
-            }),
+          Effect.fail(
+            renameThreadBranchError(
+              "Could not rename the branch and worktree.",
+              Cause.squash(cause),
+            ),
           ),
         ),
       );

@@ -9,6 +9,7 @@ import {
   ProviderSession,
   ProviderDriverKind,
   ProviderInstanceId,
+  type ServerProvider,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import {
@@ -38,6 +39,7 @@ import { ProviderAdapterRequestError } from "../../provider/Errors.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { SqlitePersistenceMemory } from "../../persistence/Layers/Sqlite.ts";
+import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import {
   ProviderService,
   type ProviderServiceShape,
@@ -148,6 +150,11 @@ describe("ProviderCommandReactor", () => {
     readonly threadModelSelection?: ModelSelection;
     readonly sessionModelSwitch?: "unsupported" | "in-session";
     readonly requiresNewThreadForModelChange?: boolean;
+    readonly providerSnapshots?: ReadonlyArray<ServerProvider>;
+    readonly generatedNameModelSelection?: ModelSelection;
+    readonly generatedBranchMetadataDispatchFailures?: number;
+    readonly generatedBranchMetadataDispatchDefect?: boolean;
+    readonly generatedTitleMetadataDispatchFailures?: number;
     readonly titleRegenerationCompletionDispatchFailures?: number;
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly interruptTurnEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
@@ -310,7 +317,7 @@ describe("ProviderCommandReactor", () => {
         }),
       ),
     );
-    const providerSnapshots = [
+    const defaultProviderSnapshots = [
       {
         instanceId: modelSelection.instanceId,
         ...(input?.requiresNewThreadForModelChange === true
@@ -374,6 +381,8 @@ describe("ProviderCommandReactor", () => {
       Layer.provide(SqlitePersistenceMemory),
     );
     let titleRegenerationCompletionDispatchAttempts = 0;
+    let generatedBranchMetadataDispatchAttempts = 0;
+    let generatedTitleMetadataDispatchAttempts = 0;
     const reactorOrchestrationLayer = Layer.effect(
       OrchestrationEngineService,
       Effect.gen(function* () {
@@ -381,6 +390,41 @@ describe("ProviderCommandReactor", () => {
         return {
           readEvents: engine.readEvents,
           dispatch: (command) => {
+            if (
+              command.type === "thread.meta.update" &&
+              String(command.commandId).includes("worktree-branch-rename")
+            ) {
+              generatedBranchMetadataDispatchAttempts += 1;
+              if (input?.generatedBranchMetadataDispatchDefect === true) {
+                return Effect.die(new Error("Injected generated branch metadata defect"));
+              }
+              if (
+                generatedBranchMetadataDispatchAttempts <=
+                (input?.generatedBranchMetadataDispatchFailures ?? 0)
+              ) {
+                return Effect.fail(
+                  new PersistenceSqlError({
+                    operation: "test.generatedBranchMetadata",
+                  }),
+                );
+              }
+            }
+            if (
+              command.type === "thread.meta.update" &&
+              String(command.commandId).includes("thread-title-rename")
+            ) {
+              generatedTitleMetadataDispatchAttempts += 1;
+              if (
+                generatedTitleMetadataDispatchAttempts <=
+                (input?.generatedTitleMetadataDispatchFailures ?? 0)
+              ) {
+                return Effect.fail(
+                  new PersistenceSqlError({
+                    operation: "test.generatedTitleMetadata",
+                  }),
+                );
+              }
+            }
             if (command.type === "thread.title.regeneration.complete") {
               titleRegenerationCompletionDispatchAttempts += 1;
               if (
@@ -404,7 +448,9 @@ describe("ProviderCommandReactor", () => {
       Layer.provideMerge(reactorOrchestrationLayer),
       Layer.provideMerge(projectionSnapshotLayer),
       Layer.provideMerge(Layer.succeed(ProviderService, service)),
-      Layer.provideMerge(makeProviderRegistryLayer(providerSnapshots as never)),
+      Layer.provideMerge(
+        makeProviderRegistryLayer((input?.providerSnapshots ?? defaultProviderSnapshots) as never),
+      ),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService)({
           renameBranch,
@@ -426,7 +472,13 @@ describe("ProviderCommandReactor", () => {
           generateThreadTitle,
         }),
       ),
-      Layer.provideMerge(ServerSettingsService.layerTest()),
+      Layer.provideMerge(
+        ServerSettingsService.layerTest(
+          input?.generatedNameModelSelection
+            ? { textGenerationModelSelection: input.generatedNameModelSelection }
+            : {},
+        ),
+      ),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
       Layer.provideMerge(NodeServices.layer),
     );
@@ -526,7 +578,52 @@ describe("ProviderCommandReactor", () => {
       get titleRegenerationCompletionDispatchAttempts() {
         return titleRegenerationCompletionDispatchAttempts;
       },
+      get generatedBranchMetadataDispatchAttempts() {
+        return generatedBranchMetadataDispatchAttempts;
+      },
+      get generatedTitleMetadataDispatchAttempts() {
+        return generatedTitleMetadataDispatchAttempts;
+      },
     };
+  }
+
+  async function startFirstTurnForGeneratedNames(
+    harness: Awaited<ReturnType<typeof createHarness>>,
+    input: {
+      readonly id: string;
+      readonly messageText: string;
+      readonly title?: string;
+      readonly titleSeed?: string;
+      readonly branch?: string;
+      readonly worktreePath?: string;
+    },
+  ) {
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make(`cmd-generated-name-seed-${input.id}`),
+        threadId: ThreadId.make("thread-1"),
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.branch !== undefined ? { branch: input.branch } : {}),
+        ...(input.worktreePath !== undefined ? { worktreePath: input.worktreePath } : {}),
+      }),
+    );
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make(`cmd-generated-name-turn-${input.id}`),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId(`user-message-${input.id}`),
+          role: "user",
+          text: input.messageText,
+        },
+        ...(input.titleSeed !== undefined ? { titleSeed: input.titleSeed } : {}),
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
   }
 
   it("reacts to thread.turn.start by ensuring session and sending provider turn", async () => {
@@ -736,6 +833,99 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.title).toBe("Generated title");
     expect(attempts).toBe(2);
+  });
+
+  it("retries the generated thread title metadata update", async () => {
+    const harness = await createHarness({ generatedTitleMetadataDispatchFailures: 1 });
+    const seededTitle = "Investigate names that remain unchanged";
+    harness.generateThreadTitle.mockReturnValue(
+      Effect.succeed({ title: "Repair generated names" }),
+    );
+
+    await startFirstTurnForGeneratedNames(harness, {
+      id: "title-metadata-retry",
+      messageText: seededTitle,
+      title: seededTitle,
+      titleSeed: seededTitle,
+    });
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return (
+        readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.title ===
+        "Repair generated names"
+      );
+    });
+    expect(harness.generatedTitleMetadataDispatchAttempts).toBe(2);
+  });
+
+  it("uses live Luna availability to generate and persist first-turn names", async () => {
+    const lunaSelection = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.6-luna");
+    const providerSnapshot = (input: {
+      readonly instanceId: "codex" | "claudeAgent";
+      readonly status: ServerProvider["status"];
+      readonly model: string;
+    }): ServerProvider => ({
+      instanceId: ProviderInstanceId.make(input.instanceId),
+      driver: ProviderDriverKind.make(input.instanceId),
+      enabled: true,
+      installed: true,
+      version: "1.0.0",
+      status: input.status,
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [
+        {
+          slug: input.model,
+          name: input.model,
+          isCustom: false,
+          isDefault: true,
+          capabilities: null,
+        },
+      ],
+      slashCommands: [],
+      skills: [],
+    });
+    const harness = await createHarness({
+      generatedNameModelSelection: createModelSelection(
+        ProviderInstanceId.make("claudeAgent"),
+        "claude-sonnet-4-6",
+      ),
+      providerSnapshots: [
+        providerSnapshot({
+          instanceId: "claudeAgent",
+          status: "error",
+          model: "claude-sonnet-4-6",
+        }),
+        providerSnapshot({ instanceId: "codex", status: "ready", model: "gpt-5.6-luna" }),
+      ],
+    });
+    const seededTitle = "Please repair generated names with Luna";
+    const worktreePath = NodePath.join(harness.stateDir, "worktrees", "luna-generated-names");
+    harness.generateThreadTitle.mockReturnValue(Effect.succeed({ title: "Repair Luna names" }));
+    harness.generateBranchName.mockReturnValue(Effect.succeed({ branch: "repair-luna-names" }));
+
+    await startFirstTurnForGeneratedNames(harness, {
+      id: "luna-generated-names",
+      messageText: seededTitle,
+      title: seededTitle,
+      titleSeed: seededTitle,
+      branch: "t3code/1234abcd",
+      worktreePath,
+    });
+
+    await waitFor(async () => {
+      const thread = (await harness.readModel()).threads.find(
+        (entry) => entry.id === ThreadId.make("thread-1"),
+      );
+      return thread?.title === "Repair Luna names" && thread.branch === "t3code/repair-luna-names";
+    });
+    expect(harness.generateThreadTitle).toHaveBeenCalledWith(
+      expect.objectContaining({ modelSelection: lunaSelection }),
+    );
+    expect(harness.generateBranchName).toHaveBeenCalledWith(
+      expect.objectContaining({ modelSelection: lunaSelection }),
+    );
   });
 
   it("regenerates a thread title from the current conversation", async () => {
@@ -1340,6 +1530,117 @@ describe("ProviderCommandReactor", () => {
     const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
     expect(thread?.branch).toBe("t3code/safer-reconnect-backoff");
     expect(thread?.worktreePath).toBe(initialWorktreePath);
+  });
+
+  it("retries worktree branch generation after a transient failure", async () => {
+    const harness = await createHarness();
+    const worktreePath = NodePath.join(harness.stateDir, "worktrees", "branch-generation-retry");
+    let attempts = 0;
+    harness.generateBranchName.mockReturnValue(
+      Effect.suspend(() => {
+        attempts += 1;
+        return attempts === 1
+          ? Effect.fail(
+              new TextGenerationError({
+                operation: "generateBranchName",
+                detail: "Codex CLI request timed out.",
+              }),
+            )
+          : Effect.succeed({ branch: "retry-branch-generation" });
+      }),
+    );
+
+    await startFirstTurnForGeneratedNames(harness, {
+      id: "branch-generation-retry",
+      messageText: "Retry transient branch generation failures.",
+      branch: "t3code/1234abcd",
+      worktreePath,
+    });
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return (
+        readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.branch ===
+        "t3code/retry-branch-generation"
+      );
+    });
+    expect(attempts).toBe(2);
+  });
+
+  it("retries the generated branch metadata update without renaming twice", async () => {
+    const harness = await createHarness({ generatedBranchMetadataDispatchFailures: 1 });
+    const worktreePath = NodePath.join(harness.stateDir, "worktrees", "branch-metadata-retry");
+    harness.generateBranchName.mockReturnValue(
+      Effect.succeed({ branch: "repair-generated-names" }),
+    );
+
+    await startFirstTurnForGeneratedNames(harness, {
+      id: "branch-metadata-retry",
+      messageText: "Repair generated names.",
+      branch: "t3code/1234abcd",
+      worktreePath,
+    });
+
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return (
+        readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"))?.branch ===
+        "t3code/repair-generated-names"
+      );
+    });
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.branch).toBe("t3code/repair-generated-names");
+    expect(harness.generatedBranchMetadataDispatchAttempts).toBe(2);
+    expect(harness.renameBranch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rolls back a generated branch when its metadata cannot be persisted", async () => {
+    const harness = await createHarness({ generatedBranchMetadataDispatchFailures: 3 });
+    const worktreePath = NodePath.join(harness.stateDir, "worktrees", "branch-metadata-rollback");
+    harness.generateBranchName.mockReturnValue(Effect.succeed({ branch: "unpersisted-name" }));
+
+    await startFirstTurnForGeneratedNames(harness, {
+      id: "branch-metadata-rollback",
+      messageText: "Keep branch metadata consistent.",
+      branch: "t3code/1234abcd",
+      worktreePath,
+    });
+
+    await waitFor(() => harness.renameBranch.mock.calls.length === 2);
+    expect(harness.generatedBranchMetadataDispatchAttempts).toBe(3);
+    expect(harness.renameBranch.mock.calls[1]?.[0]).toEqual({
+      cwd: worktreePath,
+      oldBranch: "t3code/unpersisted-name",
+      newBranch: "t3code/1234abcd",
+    });
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === ThreadId.make("thread-1"));
+    expect(thread?.branch).toBe("t3code/1234abcd");
+  });
+
+  it("does not retry a generated branch metadata defect", async () => {
+    const harness = await createHarness({ generatedBranchMetadataDispatchDefect: true });
+    const worktreePath = NodePath.join(harness.stateDir, "worktrees", "branch-metadata-defect");
+    harness.generateBranchName.mockReturnValue(Effect.succeed({ branch: "defective-name" }));
+
+    await startFirstTurnForGeneratedNames(harness, {
+      id: "branch-metadata-defect",
+      messageText: "Do not retry programming defects.",
+      branch: "t3code/1234abcd",
+      worktreePath,
+    });
+
+    await waitFor(() => harness.renameBranch.mock.calls.length === 2);
+    expect(harness.generatedBranchMetadataDispatchAttempts).toBe(1);
+    await waitFor(async () => {
+      const readModel = await harness.readModel();
+      return (
+        readModel.threads
+          .find((entry) => entry.id === ThreadId.make("thread-1"))
+          ?.activities.some((activity) => activity.kind === "generated.branch-name.failed") ?? false
+      );
+    });
   });
 
   it("recreates a missing worktree from the thread branch before starting a turn", async () => {
