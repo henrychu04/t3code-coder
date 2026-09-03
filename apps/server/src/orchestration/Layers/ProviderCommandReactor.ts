@@ -10,9 +10,11 @@ import {
   ThreadId,
   type ProviderSession,
   type RuntimeMode,
+  type TextGenerationError,
   type TurnId,
 } from "@t3tools/contracts";
 import { buildGeneratedWorktreeBranchName, isTemporaryWorktreeBranch } from "@t3tools/shared/git";
+import { resolveCoderTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -44,8 +46,12 @@ import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts"
 import { ServerSettingsService } from "../../serverSettings.ts";
 import { CoderVcsStatus } from "../../coderVcsStatus.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
+import { renameBranchWithCompensation } from "../../git/renameBranchWithCompensation.ts";
+import { PersistenceSqlError } from "../../persistence/Errors.ts";
+import type { OrchestrationDispatchError } from "../Errors.ts";
 const isProviderAdapterRequestError = Schema.is(ProviderAdapterRequestError);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
+const isPersistenceSqlError = Schema.is(PersistenceSqlError);
 
 type ProviderIntentEvent = Extract<
   OrchestrationEvent,
@@ -90,11 +96,34 @@ const turnStartKeyForEvent = (event: ProviderIntentEvent): string =>
 
 const HANDLED_TURN_START_KEY_MAX = 10_000;
 const HANDLED_TURN_START_KEY_TTL = Duration.minutes(30);
+const GENERATED_METADATA_UPDATE_RETRIES = 2;
+const GENERATED_NAME_RETRIES = 2;
 const DEFAULT_RUNTIME_MODE: RuntimeMode = "full-access";
 const MAX_THREAD_TITLE_CONTEXT_CHARS = 8_000;
 const MAX_FIRST_USER_TITLE_CONTEXT_CHARS = 2_000;
 const THREAD_TITLE_CONTEXT_TRUNCATION_MARKER = "[Earlier content truncated]\n\n";
 const FIRST_USER_CONTEXT_TRUNCATION_MARKER = "\n[First user message truncated]";
+
+const retryGeneratedName = <A, R>(
+  effect: Effect.Effect<A, TextGenerationError, R>,
+): Effect.Effect<A, TextGenerationError, R> =>
+  effect.pipe(
+    Effect.retry({
+      times: GENERATED_NAME_RETRIES,
+      schedule: Schedule.exponential("2 seconds"),
+    }),
+  );
+
+const retryGeneratedMetadataUpdate = <A, R>(
+  effect: () => Effect.Effect<A, OrchestrationDispatchError, R>,
+): Effect.Effect<A, OrchestrationDispatchError, R> =>
+  Effect.suspend(effect).pipe(
+    Effect.retry({
+      times: GENERATED_METADATA_UPDATE_RETRIES,
+      schedule: Schedule.exponential("100 millis"),
+      while: isPersistenceSqlError,
+    }),
+  );
 
 type ThreadTitleMessage = {
   readonly role: "user" | "assistant" | "system";
@@ -268,14 +297,25 @@ const make = Effect.gen(function* () {
 
   const threadModelSelections = new Map<string, ModelSelection>();
 
-  const appendProviderFailureActivity = (input: {
+  const generatedNameModelSelection = Effect.all({
+    settings: serverSettingsService.getSettings,
+    providers: providerRegistry.getProviders,
+  }).pipe(
+    Effect.map(({ settings, providers }) =>
+      resolveCoderTextGenerationModelSelection(settings.textGenerationModelSelection, providers),
+    ),
+  );
+
+  const appendFailureActivity = (input: {
     readonly threadId: ThreadId;
     readonly kind:
       | "provider.turn.start.failed"
       | "provider.turn.interrupt.failed"
       | "provider.approval.respond.failed"
       | "provider.user-input.respond.failed"
-      | "provider.session.stop.failed";
+      | "provider.session.stop.failed"
+      | "generated.branch-name.failed"
+      | "generated.thread-title.failed";
     readonly summary: string;
     readonly detail: string;
     readonly turnId: TurnId | null;
@@ -307,6 +347,35 @@ const make = Effect.gen(function* () {
         }),
       ),
     );
+
+  const reportGeneratedNameFailure = (input: {
+    readonly threadId: ThreadId;
+    readonly cwd: string;
+    readonly kind: "generated.branch-name.failed" | "generated.thread-title.failed";
+    readonly summary: string;
+    readonly detail: string;
+    readonly createdAt: string;
+    readonly logMessage: string;
+  }) =>
+    Effect.catchCause((cause) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.void;
+      return Effect.logWarning(input.logMessage, {
+        threadId: input.threadId,
+        cwd: input.cwd,
+        cause: Cause.pretty(cause),
+      }).pipe(
+        Effect.andThen(
+          appendFailureActivity({
+            threadId: input.threadId,
+            kind: input.kind,
+            summary: input.summary,
+            detail: input.detail,
+            turnId: null,
+            createdAt: input.createdAt,
+          }).pipe(Effect.ignoreCause({ log: true })),
+        ),
+      );
+    });
 
   const formatFailureDetail = (cause: Cause.Cause<unknown>): string => {
     const failReason = cause.reasons.find(Cause.isFailReason);
@@ -777,6 +846,7 @@ const make = Effect.gen(function* () {
     readonly branch: string | null;
     readonly worktreePath: string | null;
     readonly messageText: string;
+    readonly createdAt: string;
     readonly attachments?: ReadonlyArray<PastedImageAttachment>;
   }) {
     if (!input.branch || !input.worktreePath) {
@@ -789,38 +859,64 @@ const make = Effect.gen(function* () {
     const oldBranch = input.branch;
     const cwd = input.worktreePath;
     yield* Effect.gen(function* () {
-      const settings = yield* serverSettingsService.getSettings;
-      const modelSelection = settings.textGenerationModelSelection;
+      const modelSelection = yield* generatedNameModelSelection;
 
-      const generated = yield* textGeneration.generateBranchName({
-        cwd,
-        message: input.messageText,
-        ...(input.attachments ? { attachments: input.attachments } : {}),
-        modelSelection,
-      });
+      const generated = yield* retryGeneratedName(
+        textGeneration.generateBranchName({
+          cwd,
+          message: input.messageText,
+          ...(input.attachments ? { attachments: input.attachments } : {}),
+          modelSelection,
+        }),
+      );
       if (!generated) return;
 
       const targetBranch = buildGeneratedWorktreeBranchName(generated.branch);
       if (targetBranch === oldBranch) return;
 
-      const renamed = yield* gitWorkflow.renameBranch({ cwd, oldBranch, newBranch: targetBranch });
-      yield* orchestrationEngine.dispatch({
-        type: "thread.meta.update",
-        commandId: yield* serverCommandId("worktree-branch-rename"),
-        threadId: input.threadId,
-        branch: renamed.branch,
-        worktreePath: cwd,
+      yield* renameBranchWithCompensation({
+        rename: gitWorkflow.renameBranch({ cwd, oldBranch, newBranch: targetBranch }),
+        afterRename: (renamed) =>
+          Effect.gen(function* () {
+            const commandId = yield* serverCommandId("worktree-branch-rename");
+            yield* retryGeneratedMetadataUpdate(() =>
+              orchestrationEngine.dispatch({
+                type: "thread.meta.update",
+                commandId,
+                threadId: input.threadId,
+                branch: renamed.branch,
+                worktreePath: cwd,
+              }),
+            );
+          }),
+        rollback: (renamed) =>
+          gitWorkflow.renameBranch({ cwd, oldBranch: renamed.branch, newBranch: oldBranch }).pipe(
+            Effect.asVoid,
+            Effect.catchCause((rollbackCause) =>
+              Effect.logError(
+                "provider command reactor failed to roll back generated worktree branch",
+                {
+                  threadId: input.threadId,
+                  cwd,
+                  oldBranch,
+                  generatedBranch: renamed.branch,
+                  cause: Cause.pretty(rollbackCause),
+                },
+              ),
+            ),
+          ),
       });
       yield* vcsStatus.refresh(cwd).pipe(Effect.ignoreCause({ log: true }));
     }).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("provider command reactor failed to generate or rename worktree branch", {
-          threadId: input.threadId,
-          cwd,
-          oldBranch,
-          cause: Cause.pretty(cause),
-        }),
-      ),
+      reportGeneratedNameFailure({
+        threadId: input.threadId,
+        cwd,
+        kind: "generated.branch-name.failed",
+        summary: "Branch name generation failed",
+        detail: "T3 Code could not generate and save this thread's branch name.",
+        createdAt: input.createdAt,
+        logMessage: "provider command reactor failed to generate or rename worktree branch",
+      }),
     );
   });
 
@@ -829,26 +925,21 @@ const make = Effect.gen(function* () {
       readonly threadId: ThreadId;
       readonly cwd: string;
       readonly messageText: string;
+      readonly createdAt: string;
       readonly titleSeed?: string;
       readonly attachments?: ReadonlyArray<PastedImageAttachment>;
     }) {
       yield* Effect.gen(function* () {
-        const { textGenerationModelSelection: modelSelection } =
-          yield* serverSettingsService.getSettings;
+        const modelSelection = yield* generatedNameModelSelection;
 
-        const generated = yield* textGeneration
-          .generateThreadTitle({
+        const generated = yield* retryGeneratedName(
+          textGeneration.generateThreadTitle({
             cwd: input.cwd,
             message: input.messageText,
             ...(input.attachments ? { attachments: input.attachments } : {}),
             modelSelection,
-          })
-          .pipe(
-            Effect.retry({
-              times: 2,
-              schedule: Schedule.exponential("2 seconds"),
-            }),
-          );
+          }),
+        );
         if (!generated) return;
 
         const thread = yield* resolveThread(input.threadId);
@@ -857,20 +948,25 @@ const make = Effect.gen(function* () {
           return;
         }
 
-        yield* orchestrationEngine.dispatch({
-          type: "thread.meta.update",
-          commandId: yield* serverCommandId("thread-title-rename"),
-          threadId: input.threadId,
-          title: generated.title,
-        });
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("provider command reactor failed to generate or rename thread title", {
+        const commandId = yield* serverCommandId("thread-title-rename");
+        yield* retryGeneratedMetadataUpdate(() =>
+          orchestrationEngine.dispatch({
+            type: "thread.meta.update",
+            commandId,
             threadId: input.threadId,
-            cwd: input.cwd,
-            cause: Cause.pretty(cause),
+            title: generated.title,
           }),
-        ),
+        );
+      }).pipe(
+        reportGeneratedNameFailure({
+          threadId: input.threadId,
+          cwd: input.cwd,
+          kind: "generated.thread-title.failed",
+          summary: "Thread title generation failed",
+          detail: "T3 Code could not generate and save this thread's title.",
+          createdAt: input.createdAt,
+          logMessage: "provider command reactor failed to generate or rename thread title",
+        }),
       );
     },
   );
@@ -903,8 +999,7 @@ const make = Effect.gen(function* () {
         thread,
         projects: project ? [project] : [],
       }) ?? process.cwd();
-    const { textGenerationModelSelection: modelSelection } =
-      yield* serverSettingsService.getSettings;
+    const modelSelection = yield* generatedNameModelSelection;
     const generated = yield* textGeneration.generateThreadTitle({
       cwd,
       message,
@@ -1059,7 +1154,7 @@ const make = Effect.gen(function* () {
 
     const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
     if (!message || message.role !== "user") {
-      yield* appendProviderFailureActivity({
+      yield* appendFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.turn.start.failed",
         summary: "Provider turn start failed",
@@ -1083,6 +1178,7 @@ const make = Effect.gen(function* () {
         }) ?? process.cwd();
       const generationInput = {
         messageText: message.text,
+        createdAt: event.payload.createdAt,
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
           : {}),
@@ -1116,7 +1212,7 @@ const make = Effect.gen(function* () {
         createdAt: event.payload.createdAt,
       }).pipe(
         Effect.flatMap(() =>
-          appendProviderFailureActivity({
+          appendFailureActivity({
             threadId: event.payload.threadId,
             kind: "provider.turn.start.failed",
             summary: "Provider turn start failed",
@@ -1175,7 +1271,7 @@ const make = Effect.gen(function* () {
     }
     const session = thread.session;
     if (!session || session.status === "stopped") {
-      return yield* appendProviderFailureActivity({
+      return yield* appendFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.turn.interrupt.failed",
         summary: "Provider turn interrupt failed",
@@ -1244,7 +1340,7 @@ const make = Effect.gen(function* () {
           },
           createdAt: event.payload.createdAt,
         });
-        yield* appendProviderFailureActivity({
+        yield* appendFailureActivity({
           threadId: event.payload.threadId,
           kind: "provider.turn.interrupt.failed",
           summary: "Provider turn interrupt failed",
@@ -1270,7 +1366,7 @@ const make = Effect.gen(function* () {
     }
     const hasSession = thread.session && thread.session.status !== "stopped";
     if (!hasSession) {
-      return yield* appendProviderFailureActivity({
+      return yield* appendFailureActivity({
         threadId: event.payload.threadId,
         kind: "provider.approval.respond.failed",
         summary: "Provider approval response failed",
@@ -1289,7 +1385,7 @@ const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.catchCause((cause) =>
-          appendProviderFailureActivity({
+          appendFailureActivity({
             threadId: event.payload.threadId,
             kind: "provider.approval.respond.failed",
             summary: "Provider approval response failed",
@@ -1314,7 +1410,7 @@ const make = Effect.gen(function* () {
       }
       const hasSession = thread.session && thread.session.status !== "stopped";
       if (!hasSession) {
-        return yield* appendProviderFailureActivity({
+        return yield* appendFailureActivity({
           threadId: event.payload.threadId,
           kind: "provider.user-input.respond.failed",
           summary: "Provider user input response failed",
@@ -1333,7 +1429,7 @@ const make = Effect.gen(function* () {
         })
         .pipe(
           Effect.catchCause((cause) =>
-            appendProviderFailureActivity({
+            appendFailureActivity({
               threadId: event.payload.threadId,
               kind: "provider.user-input.respond.failed",
               summary: "Provider user input response failed",

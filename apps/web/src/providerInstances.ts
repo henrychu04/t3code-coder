@@ -25,6 +25,7 @@ import {
   type ServerSettings,
   type ServerProviderState,
 } from "@t3tools/contracts";
+import { isCoderProviderInstanceId } from "@t3tools/shared/coderProviders";
 
 import { formatProviderDriverKindLabel } from "./providerModels";
 
@@ -200,8 +201,6 @@ export function deriveProviderInstanceEntries(
   });
 }
 
-const CODER_PROVIDER_INSTANCE_IDS = new Set<string>(["codex", "claudeAgent"]);
-
 /**
  * New selections in T3 Coder are intentionally limited to the workspace's
  * built-in Codex and Claude instances. Keep the broader projection above for
@@ -212,7 +211,7 @@ export function deriveCoderProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
   return deriveProviderInstanceEntries(providers).filter(
-    (entry) => entry.isDefault && CODER_PROVIDER_INSTANCE_IDS.has(entry.instanceId),
+    (entry) => entry.isDefault && isCoderProviderInstanceId(entry.instanceId),
   );
 }
 

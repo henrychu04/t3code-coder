@@ -71,6 +71,10 @@
       "types": "./src/serverSettings.ts",
       "import": "./src/serverSettings.ts"
     },
+    "./coderProviders": {
+      "types": "./src/coderProviders.ts",
+      "import": "./src/coderProviders.ts"
+    },
     "./String": {
       "types": "./src/String.ts",
       "import": "./src/String.ts"

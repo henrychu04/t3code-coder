@@ -8,6 +8,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { createModelSelection, resolveSelectableModel } from "@t3tools/shared/model";
+import { resolveCoderTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import {
@@ -157,10 +158,11 @@ export function resolveAppModelSelectionState(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  const selection = settings.textGenerationModelSelection ?? {
+  const configuredSelection = settings.textGenerationModelSelection ?? {
     instanceId: DEFAULT_TEXT_GENERATION_INSTANCE_ID,
     model: DEFAULT_TEXT_GENERATION_MODEL,
   };
+  const selection = resolveCoderTextGenerationModelSelection(configuredSelection, providers);
   const entries = deriveCoderProviderInstanceEntries(providers);
   const readyEntries = entries.filter(isProviderInstancePickerReady);
   const selectedEntry = readyEntries.find((entry) => entry.instanceId === selection.instanceId);
