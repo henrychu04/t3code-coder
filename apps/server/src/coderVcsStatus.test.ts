@@ -4,12 +4,18 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
-import { DEFAULT_SERVER_SETTINGS, GitCommandError } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  GitCommandError,
+  type OrchestrationProject,
+} from "@t3tools/contracts";
 
 import { CoderVcsStatus, layer } from "./coderVcsStatus.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 const status = (refName: string) => ({
@@ -22,6 +28,44 @@ const status = (refName: string) => ({
 });
 
 describe("CoderVcsStatus", () => {
+  it.effect("automatically pulls an enabled clean default branch when it is behind", () => {
+    let pullCalls = 0;
+    let remoteReads = 0;
+    const testLayer = layer.pipe(
+      Layer.provide(
+        Layer.mock(GitWorkflowService.GitWorkflowService)({
+          invalidateStatus: () => Effect.void,
+          localStatus: () => Effect.succeed(status("main")),
+          remoteStatus: () =>
+            Effect.sync(() => ({
+              hasUpstream: true,
+              aheadCount: 0,
+              behindCount: remoteReads++ === 0 ? 2 : 0,
+              pr: null,
+            })),
+          pull: () =>
+            Effect.sync(() => {
+              pullCalls += 1;
+              return { status: "pulled" as const, refName: "main", upstreamRef: "origin/main" };
+            }),
+        }),
+      ),
+      Layer.provideMerge(
+        Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
+          getActiveProjectByWorkspaceRoot: () =>
+            Effect.succeed(Option.some({ autoPull: true } as OrchestrationProject)),
+        }),
+      ),
+    );
+
+    return Effect.gen(function* () {
+      const vcsStatus = yield* CoderVcsStatus;
+      yield* vcsStatus.refresh("/repo");
+      expect(pullCalls).toBe(1);
+      expect(remoteReads).toBe(2);
+    }).pipe(Effect.provide(testLayer));
+  });
+
   it.effect("retains changes published while the initial snapshot is loading", () =>
     Effect.gen(function* () {
       const snapshotStarted = yield* Deferred.make<void>();

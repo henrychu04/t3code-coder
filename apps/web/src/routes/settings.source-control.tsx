@@ -1,4 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
 import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import { useRef, useState } from "react";
@@ -24,6 +28,7 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Switch } from "../components/ui/switch";
 import { Textarea } from "../components/ui/textarea";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useEnvironmentSettings, useUpdateEnvironmentSettings } from "../hooks/useSettings";
 import { getModelOptionsByInstance, resolveAppModelSelectionState } from "../modelSelection";
 import {
@@ -32,6 +37,8 @@ import {
   sortProviderInstanceEntries,
 } from "../providerInstances";
 import { useEnvironments, type EnvironmentPresentation } from "../state/environments";
+import { useProjects } from "../state/entities";
+import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -205,11 +212,11 @@ function SourceControlPreferences({ environment }: { environment: EnvironmentPre
         }
       />
       {usesDedicatedModel ||
-        style.mode !== DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle.mode ||
-        fetchSeconds !==
-          Math.round(
-            Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval) / 1_000,
-          ) ? (
+      style.mode !== DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle.mode ||
+      fetchSeconds !==
+        Math.round(
+          Duration.toMillis(DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval) / 1_000,
+        ) ? (
         <SettingsRow
           id="reset-source-control-defaults"
           title="Reset source control defaults"
@@ -372,6 +379,79 @@ function EnvironmentSourceControlStatus({ environment }: { environment: Environm
   );
 }
 
+function AutomaticProjectPullSettings() {
+  const projects = useProjects();
+  const { environments } = useEnvironments();
+  const updateProject = useAtomCommand(projectEnvironment.update);
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  const environmentLabels = new Map(
+    environments.map((environment) => [environment.environmentId, environment.label] as const),
+  );
+  const orderedProjects = [...projects].sort((left, right) =>
+    `${environmentLabels.get(left.environmentId) ?? ""}\0${left.title}`.localeCompare(
+      `${environmentLabels.get(right.environmentId) ?? ""}\0${right.title}`,
+    ),
+  );
+
+  const setAutoPull = async (project: (typeof projects)[number], enabled: boolean) => {
+    const key = `${project.environmentId}:${project.id}`;
+    setPending((current) => new Set(current).add(key));
+    const result = await updateProject({
+      environmentId: project.environmentId,
+      input: { projectId: project.id, autoPull: enabled },
+    });
+    setPending((current) => {
+      const next = new Set(current);
+      next.delete(key);
+      return next;
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const cause = squashAtomCommandFailure(result);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Failed to update automatic pull setting",
+          description: cause instanceof Error ? cause.message : "An error occurred.",
+        }),
+      );
+    }
+  };
+
+  return (
+    <SettingsSection
+      title="Automatic project pull"
+      description="Keep default-branch checkouts current in their Coder workspaces."
+    >
+      {orderedProjects.length === 0 ? (
+        <SettingsRow
+          title="No projects"
+          description="Add a project before enabling automatic pull."
+        />
+      ) : (
+        orderedProjects.map((project) => {
+          const key = `${project.environmentId}:${project.id}`;
+          const environmentLabel = environmentLabels.get(project.environmentId);
+          return (
+            <SettingsRow
+              key={key}
+              title={project.title}
+              description={`${environmentLabel ? `${environmentLabel} · ` : ""}Keeps the default branch current in the background when the checkout has no local changes or commits.`}
+              control={
+                <Switch
+                  checked={project.autoPull ?? false}
+                  disabled={pending.has(key)}
+                  aria-label={`Automatically pull ${project.title}`}
+                  onCheckedChange={(checked) => void setAutoPull(project, Boolean(checked))}
+                />
+              }
+            />
+          );
+        })
+      )}
+    </SettingsSection>
+  );
+}
+
 function SourceControlSettingsView() {
   const { environments, isReady } = useEnvironments();
   return (
@@ -396,6 +476,8 @@ function SourceControlSettingsView() {
           <SourceControlPreferences key={environment.environmentId} environment={environment} />
         )}
       </WorkspaceSettingsTarget>
+
+      <AutomaticProjectPullSettings />
 
       <section className="space-y-3" id="gitlab-workspace-status">
         <div className="px-3 sm:px-4">

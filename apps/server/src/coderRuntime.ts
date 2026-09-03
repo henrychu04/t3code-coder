@@ -23,6 +23,7 @@ import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRun
 import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
+import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
@@ -47,6 +48,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import * as ProjectAutoPull from "./vcs/projectAutoPull.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as VcsProjectConfig from "./vcs/VcsProjectConfig.ts";
 import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
@@ -205,6 +207,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     const settings = yield* ServerSettings.ServerSettingsService;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
     const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
+    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const config = yield* ServerConfig.ServerConfig;
     const commandGate = yield* CoderRuntimeStartup.makeCommandGate;
@@ -215,6 +218,12 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
+    yield* projectionSnapshotQuery.getShellSnapshot().pipe(
+      Effect.flatMap((snapshot) => ProjectAutoPull.autoPullProjects(snapshot.projects)),
+      Effect.catch((cause) =>
+        Effect.logWarning("Failed to load projects for automatic pull", { cause }),
+      ),
+    );
     yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
     yield* commandGate.signalReady;
 

@@ -159,11 +159,23 @@ describe("ThreadSettlementReactor", () => {
 
           assert.deepStrictEqual(
             (yield* Ref.get(commands))
-              .map(({ threadId, snapshotSequence }) => ({ threadId, snapshotSequence }))
+              .map(({ threadId, snapshotSequence, settledAt }) => ({
+                threadId,
+                snapshotSequence,
+                settledAt,
+              }))
               .sort((left, right) => left.threadId.localeCompare(right.threadId)),
             [
-              { threadId: ThreadId.make("inactive-one"), snapshotSequence: 7 },
-              { threadId: ThreadId.make("inactive-two"), snapshotSequence: 7 },
+              {
+                threadId: ThreadId.make("inactive-one"),
+                snapshotSequence: 7,
+                settledAt: "2026-08-20T00:00:00.000Z",
+              },
+              {
+                threadId: ThreadId.make("inactive-two"),
+                snapshotSequence: 7,
+                settledAt: "2026-08-20T00:00:00.000Z",
+              },
             ],
           );
           assert.deepStrictEqual(yield* Ref.get(branchCalls), [

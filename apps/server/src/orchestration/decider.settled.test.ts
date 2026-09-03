@@ -81,6 +81,26 @@ function makeSession(status: OrchestrationSession["status"]): OrchestrationSessi
 }
 
 it.layer(NodeServices.layer)("settled thread decider", (it) => {
+  it.effect("preserves the activity stamp when automatically settling", () =>
+    Effect.gen(function* () {
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.auto-settle",
+          commandId: CommandId.make("cmd-auto-settle-inactive"),
+          threadId: ThreadId.make("thread-1"),
+          snapshotSequence: 0,
+          settledAt: SETTLED_AT,
+        },
+        readModel: makeReadModel(null),
+      });
+      const events = Array.isArray(result) ? result : [result];
+      const settled = events.find((event) => event.type === "thread.settled");
+      expect(settled?.payload.settledAt).toBe(SETTLED_AT);
+      expect(settled?.payload.updatedAt).toBe(settled?.occurredAt);
+      expect(settled?.payload.updatedAt).not.toBe(SETTLED_AT);
+    }),
+  );
+
   it.effect("rejects an automatic settle when the thread is pinned active", () =>
     Effect.gen(function* () {
       const error = yield* decideOrchestrationCommand({
@@ -89,6 +109,7 @@ it.layer(NodeServices.layer)("settled thread decider", (it) => {
           commandId: CommandId.make("cmd-auto-settle"),
           threadId: ThreadId.make("thread-1"),
           snapshotSequence: 0,
+          settledAt: SETTLED_AT,
         },
         readModel: makeReadModel("active"),
       }).pipe(Effect.flip);

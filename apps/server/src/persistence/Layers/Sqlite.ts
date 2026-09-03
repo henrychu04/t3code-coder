@@ -16,7 +16,7 @@ type RuntimeSqliteLayerConfig = {
 const makeRuntimeSqliteLayer = Effect.fn("makeRuntimeSqliteLayer")(function* (
   config: RuntimeSqliteLayerConfig,
 ) {
-  const clientModule = yield* Effect.promise(() => import("../NodeSqliteClient.ts"));
+  const clientModule = yield* Effect.promise(() => import("@t3tools/shared/nodeSqliteClient"));
   return clientModule.layer(config);
 }, Layer.unwrap);
 
