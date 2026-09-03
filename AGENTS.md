@@ -18,6 +18,9 @@ Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
 - `origin/main` is a protected, commit-for-commit mirror of `upstream/main`. It must point to the
   same commit as `upstream/main`; do not add fork commits, merge commits, or pull requests to it.
+- The repository ruleset for `main` rejects every normal update and has no persistent bypass.
+  For an explicitly authorized mirror sync, grant a temporary bypass only long enough to move
+  `origin/main` to the verified `upstream/main` commit, then remove the bypass immediately.
 - `coder-only` is the default and product integration branch. All fork changes and upstream-sync
   adaptations must reach the repository through pull requests targeting `coder-only`.
 - Before creating or merging a pull request, verify its base branch explicitly. Never infer the
