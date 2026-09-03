@@ -4,6 +4,18 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Coder ke
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
+In an existing thread, the composer settles into a single-line resting state when it loses focus.
+At wider sizes, scrolling the conversation also rests a focused composer, except when scrolling
+toward the end while already there. When the thread-context strip has room, the model and mode
+controls remain available beside the thread context; otherwise they return when the composer is
+focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
+composer.
+
+At phone-sized browser widths, existing threads animate between compact and expanded layouts.
+Terminal context and other draft details return when the compact composer is expanded. Pasted
+images remain workspace-scoped links in the prompt, consistent with T3 Coder's Coder-only image
+boundary.
+
 ## Images
 
 Paste an image straight into the composer to share it with Claude. PNG, JPEG, and WebP images up

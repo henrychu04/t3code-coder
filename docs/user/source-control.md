@@ -31,8 +31,22 @@ whole. Reviews are built for large changes: big files stay usable, and a file th
 render shows a clear notice instead of an error. File contents load as you expand context and stay
 cached while you keep reading.
 
+Use the file-tree toggle in a thread's **Diff** panel or a merge request's **Code** tab to browse
+changed files as folders and jump directly to a file. T3 Coder remembers the toggle setting.
+
 You can comment on diff lines. Comments annotate the review and can be sent back to Claude as
 part of your next message, which makes "fix this spot" conversations precise.
+
+## Automatic project pull
+
+Turn on **Automatically pull** under **Settings → Source control** to keep a project's
+default-branch checkout current inside its Coder workspace. T3 Coder checks when the workspace
+helper starts and during background source-control refreshes. It uses the branch's configured
+upstream and performs only a fast-forward pull when the checkout has no working-tree changes,
+untracked files, or local commits.
+
+The pull is skipped if the checkout is on another branch, has no upstream, or contains local work.
+Pull failures do not prevent the helper from starting.
 
 ## Checkpoints
 

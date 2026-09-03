@@ -1,6 +1,8 @@
 import type {
   GitManagerServiceError,
   VcsRefStatusStreamEvent,
+  VcsStatusLocalResult,
+  VcsStatusRemoteResult,
   VcsStatusResult,
   VcsStatusStreamEvent,
 } from "@t3tools/contracts";
@@ -15,7 +17,9 @@ import * as Stream from "effect/Stream";
 import { mergeGitStatusParts } from "@t3tools/shared/git";
 
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
+import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import { automaticPullSkipReason } from "./vcs/projectAutoPull.ts";
 
 interface StatusChange {
   readonly cwd: string;
@@ -37,18 +41,62 @@ export const layer = Layer.effect(
   CoderVcsStatus,
   Effect.gen(function* () {
     const workflow = yield* GitWorkflowService.GitWorkflowService;
+    const snapshots = yield* Effect.serviceOption(ProjectionSnapshotQuery.ProjectionSnapshotQuery);
     const settings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
     const changes = yield* PubSub.unbounded<StatusChange>();
     const readLocal = (cwd: string) => workflow.localStatus({ cwd });
     const readRemote = (cwd: string, fetch: boolean) => workflow.remoteStatus({ cwd }, { fetch });
+    const maybeAutoPull = Effect.fn("CoderVcsStatus.maybeAutoPull")(function* (
+      cwd: string,
+      local: VcsStatusLocalResult,
+      remote: VcsStatusRemoteResult | null,
+    ) {
+      return yield* Effect.gen(function* () {
+        const enabled = Option.isSome(snapshots)
+          ? yield* snapshots.value.getActiveProjectByWorkspaceRoot(cwd).pipe(
+              Effect.map((project) => Option.isSome(project) && project.value.autoPull === true),
+              Effect.orElseSucceed(() => false),
+            )
+          : false;
+        if (
+          !enabled ||
+          remote === null ||
+          !remote.hasUpstream ||
+          remote.aheadCount > 0 ||
+          remote.behindCount <= 0
+        ) {
+          return [local, remote] as const;
+        }
+
+        yield* workflow.invalidateStatus(cwd);
+        const freshLocal = yield* readLocal(cwd);
+        if (automaticPullSkipReason(freshLocal, remote) !== null) {
+          return [freshLocal, remote] as const;
+        }
+        yield* workflow.pull({ cwd });
+        yield* workflow.invalidateStatus(cwd);
+        return yield* Effect.all([readLocal(cwd), readRemote(cwd, false)] as const, {
+          concurrency: "unbounded",
+        });
+      }).pipe(
+        Effect.catch(() =>
+          Effect.logWarning("Automatic project pull failed", { cwd }).pipe(
+            Effect.as([local, remote] as const),
+          ),
+        ),
+      );
+    });
+    const readStatus = (cwd: string, fetch: boolean) =>
+      Effect.all([readLocal(cwd), readRemote(cwd, fetch)] as const, {
+        concurrency: "unbounded",
+      }).pipe(Effect.flatMap(([local, remote]) => maybeAutoPull(cwd, local, remote)));
     const refresh = Effect.fn("CoderVcsStatus.refresh")(function* (cwd: string) {
       yield* workflow.invalidateStatus(cwd);
-      const local = yield* readLocal(cwd);
+      const [local, remote] = yield* readStatus(cwd, true);
       yield* PubSub.publish(changes, {
         cwd,
         event: { _tag: "localUpdated" as const, local },
       });
-      const remote = yield* readRemote(cwd, true);
       yield* PubSub.publish(changes, {
         cwd,
         event: { _tag: "remoteUpdated" as const, remote },
@@ -61,8 +109,7 @@ export const layer = Layer.effect(
         Stream.unwrap(
           Effect.gen(function* () {
             const subscription = yield* PubSub.subscribe(changes);
-            const local = yield* readLocal(cwd);
-            const remote = yield* readRemote(cwd, true);
+            const [local, remote] = yield* readStatus(cwd, true);
             const interval = Option.isSome(settings)
               ? yield* settings.value.getSettings.pipe(
                   Effect.map((value) => value.automaticGitFetchInterval),
@@ -79,7 +126,7 @@ export const layer = Layer.effect(
                 : Stream.tick(interval).pipe(
                     Stream.drop(1),
                     Stream.mapEffect(() =>
-                      Effect.all([readLocal(cwd), readRemote(cwd, true)] as const).pipe(
+                      readStatus(cwd, true).pipe(
                         Effect.map(Result.succeed),
                         Effect.catch((cause) =>
                           Effect.logWarning("Coder VCS status polling cycle failed", {

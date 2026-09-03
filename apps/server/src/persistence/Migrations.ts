@@ -50,6 +50,7 @@ import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
 import Migration0041 from "./Migrations/041_ProjectionThreadsUnsettledAt.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
 import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
+import Migration0047 from "./Migrations/047_ProjectionProjectsAutoPull.ts";
 
 /**
  * Migration loader with all migrations defined inline.
@@ -99,6 +100,7 @@ export const migrationEntries = [
   [41, "ProjectionThreadsUnsettledAt", Migration0041],
   [42, "ProjectionThreadLinkedPullRequest", Migration0042],
   [46, "RepairAutomaticSettlementTimestamps", Migration0046],
+  [47, "ProjectionProjectsAutoPull", Migration0047],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
