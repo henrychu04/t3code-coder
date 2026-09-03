@@ -14,6 +14,21 @@ SQLite, projects, threads, sessions, and checkpoints.
 
 Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
+## Branch policy
+
+- `origin/main` is a protected, commit-for-commit mirror of `upstream/main`. It must point to the
+  same commit as `upstream/main`; do not add fork commits, merge commits, or pull requests to it.
+- `coder-only` is the default and product integration branch. All fork changes and upstream-sync
+  adaptations must reach the repository through pull requests targeting `coder-only`.
+- Before creating or merging a pull request, verify its base branch explicitly. Never infer the
+  target from a repository default or a previous pull request.
+- Updating `origin/main` is a mirror operation, not a development push. Only an explicitly
+  authorized mirror sync may move it directly to the exact `upstream/main` commit. Merge
+  `upstream/main` into a branch based on `coder-only`, resolve Coder adaptations there, and target
+  the resulting pull request at `coder-only`.
+- If an upstream sync would remove fork-specific behavior, stop and tell the user before making
+  that removal.
+
 ## Non-negotiable boundary
 
 - Keep the local gateway on IPv4 loopback with an ephemeral port, exact Host/Origin checks, no

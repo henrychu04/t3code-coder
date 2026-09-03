@@ -9,6 +9,23 @@ terminal, checkpoint, and durable orchestration work stays inside Linux Coder wo
 architecture exists to preserve that product promise without using upstream desktop, relay,
 Tailscale, hosted-web, or direct remote-server connection paths.
 
+## Repository branch model
+
+The fork keeps two permanent branches with deliberately different responsibilities:
+
+- `main` is a commit-for-commit mirror of `pingdotgg/t3code`'s `main`. The two refs must resolve to
+  the same commit. No fork commit, merge commit, or pull request belongs on `main`.
+- `coder-only` is the default branch and the T3 Coder product line. Coder adaptations, fixes, and
+  upstream synchronization work are merged through pull requests targeting `coder-only`.
+
+Treat updating `main` as a mirror operation rather than ordinary development. Fetch upstream,
+verify the intended upstream commit, and move `origin/main` directly to that exact commit only when
+the mirror update has been explicitly authorized. To update the product, start from `coder-only`,
+merge `upstream/main` into a temporary sync branch, adapt conflicts at the Coder boundary, and open
+the pull request against `coder-only`. Confirm the pull request base before creating or merging it.
+If adopting upstream would remove fork-specific behavior, notify the maintainer before making that
+removal.
+
 ## Product guarantees
 
 - The browser interface is local-only.
