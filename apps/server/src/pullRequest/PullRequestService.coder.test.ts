@@ -1,6 +1,9 @@
 import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import type {
   OrchestrationProjectShell,
   ProjectId,
@@ -188,5 +191,19 @@ it.effect("refuses a mutation when the fresh viewer permissions reflect a blocke
     assert.strictEqual(error._tag, "PullRequestOperationError");
     expect(error.message).toContain("write access");
     expect(runAction).not.toHaveBeenCalled();
+  }),
+);
+
+it.effect("publishes a refresh revision after a provider turn", () =>
+  Effect.gen(function* () {
+    const pullRequests = yield* service;
+    const nextRefresh = yield* Stream.runHead(pullRequests.subscribeRefreshes).pipe(
+      Effect.forkChild({ startImmediately: true }),
+    );
+    yield* Effect.yieldNow;
+
+    yield* pullRequests.refreshAfterTurn;
+
+    expect(Option.getOrThrow(yield* Fiber.join(nextRefresh))).toBeGreaterThan(0);
   }),
 );

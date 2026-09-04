@@ -160,6 +160,9 @@ const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_PATHS_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+// Rendered patches are parsed using Git's conventional a/ and b/ path prefixes.
+// Override repository or global prefix settings so paths remain parseable.
+const PATCH_RENDER_PREFIX_ARGS = ["--src-prefix=a/", "--dst-prefix=b/"] as const;
 const DEFAULT_BASE_BRANCH_CANDIDATES = ["main", "master"] as const;
 const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "-c",
@@ -917,6 +920,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           "--no-color",
           "--no-ext-diff",
           "--no-textconv",
+          ...PATCH_RENDER_PREFIX_ARGS,
           ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
           `${fromRevision}^{commit}`,
           `${input.toCheckpointRef}^{commit}`,
@@ -1261,6 +1265,7 @@ const makeLocalGitService = Effect.gen(function* () {
             "--no-ext-diff",
             "--no-textconv",
             "--minimal",
+            ...PATCH_RENDER_PREFIX_ARGS,
             "--",
             "/dev/null",
             relativePath,
@@ -1299,6 +1304,7 @@ const makeLocalGitService = Effect.gen(function* () {
         "--no-ext-diff",
         "--no-textconv",
         "--minimal",
+        ...PATCH_RENDER_PREFIX_ARGS,
         ...whitespace,
         "HEAD",
         "--",
@@ -1329,6 +1335,7 @@ const makeLocalGitService = Effect.gen(function* () {
             "--no-ext-diff",
             "--no-textconv",
             "--minimal",
+            ...PATCH_RENDER_PREFIX_ARGS,
             ...whitespace,
             `${baseRef}...HEAD`,
             "--",

@@ -1019,6 +1019,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         pullRequests.setThreadResolution(input),
       [WS_METHODS.pullRequestsSetReaction]: (input) => pullRequests.setReaction(input),
       [WS_METHODS.pullRequestsInvalidate]: (input) => pullRequests.invalidate(input),
+      [WS_METHODS.pullRequestsSubscribeRefreshes]: () => pullRequests.subscribeRefreshes,
       [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
         pullRequests.reviewerCandidates(input),
       [WS_METHODS.pullRequestsRequestReviewers]: (input) => pullRequests.requestReviewers(input),

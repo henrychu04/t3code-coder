@@ -1506,7 +1506,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : null}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-              {changeRequestStatus ? (
+              {changeRequestStatus && changeRequest ? (
                 <Tooltip>
                   <TooltipTrigger
                     render={
@@ -1521,7 +1521,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                       />
                     }
                   >
-                    <ChangeRequestStatusIcon className="size-3" />
+                    <ChangeRequestStatusIcon
+                      state={changeRequest.state}
+                      isDraft={changeRequest.isDraft === true}
+                      className="size-3"
+                    />
                   </TooltipTrigger>
                   <TooltipPopup side="top">
                     <PrStatusTooltipContent status={changeRequestStatus} />

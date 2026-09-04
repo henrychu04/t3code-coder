@@ -5,18 +5,30 @@ import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
+  createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+
+function createPullRequestRefreshAtomFamily<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+) {
+  return createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+    label: "environment-data:pull-requests:turn-refreshes",
+    tag: WS_METHODS.pullRequestsSubscribeRefreshes,
+  });
+}
 
 /** Refresh a linked MR while its thread is visible so merges update the sidebar. */
 export function createLinkedPullRequestDetailAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
+  refreshes = createPullRequestRefreshAtomFamily(runtime),
 ) {
   return createEnvironmentRpcQueryAtomFamily(runtime, {
     label: "environment-data:pull-requests:linked-detail",
     tag: WS_METHODS.pullRequestsDetail,
     staleTimeMs: 15_000,
     refreshIntervalMs: 30_000,
+    refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
   });
 }
 
@@ -30,6 +42,7 @@ export function pullRequestDetailToVcsStatus(
     baseRef: detail.baseBranch,
     headRef: detail.headBranch,
     state: detail.state,
+    ...(detail.isDraft === true ? { isDraft: true } : {}),
     updatedAt: detail.updatedAt,
   };
 }
@@ -38,6 +51,7 @@ export function pullRequestDetailToVcsStatus(
 export function createPullRequestEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
+  const refreshes = createPullRequestRefreshAtomFamily(runtime);
   const commandScheduler = createAtomCommandScheduler();
   const serialPerEnvironment = {
     mode: "serial",
@@ -45,25 +59,31 @@ export function createPullRequestEnvironmentAtoms<R, E>(
   } as const;
 
   return {
+    refreshes,
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list",
       tag: WS_METHODS.pullRequestsList,
       staleTimeMs: 30_000,
+      refreshTrigger: ({ environmentId, input }) =>
+        input.cursors === undefined ? refreshes({ environmentId, input: {} }) : undefined,
     }),
     listStats: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list-stats",
       tag: WS_METHODS.pullRequestsListStats,
       staleTimeMs: 60_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
     detail: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:detail",
       tag: WS_METHODS.pullRequestsDetail,
       staleTimeMs: 15_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
     activity: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:activity",
       tag: WS_METHODS.pullRequestsActivity,
       staleTimeMs: 15_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
     diff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
