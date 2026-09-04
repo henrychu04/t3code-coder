@@ -876,3 +876,67 @@ it.effect("GitVcsDriver checks out the requested commit and records the worktree
     yield* driver.removeWorktree({ cwd: repo, path: worktreePath, force: true });
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
+
+it.effect("GitVcsDriver switchRef resolves remote-tracking refs to local branches", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({
+      prefix: "t3-git-switch-ref-",
+    });
+    const upstream = path.join(fixtureRoot, "upstream");
+    const repo = path.join(fixtureRoot, "repo");
+    yield* fileSystem.makeDirectory(upstream);
+    yield* fileSystem.makeDirectory(repo);
+    yield* runGit(upstream, ["init", "--initial-branch=main"]);
+    yield* runGit(upstream, ["config", "user.email", "test@test.com"]);
+    yield* runGit(upstream, ["config", "user.name", "Test"]);
+    yield* fileSystem.writeFileString(path.join(upstream, "README.md"), "base\n");
+    yield* runGit(upstream, ["add", "README.md"]);
+    yield* runGit(upstream, ["commit", "-m", "Initial"]);
+    yield* runGit(upstream, ["branch", "feature/only-remote"]);
+    yield* runGit(upstream, ["branch", "feature/existing-local"]);
+    yield* runGit(upstream, ["branch", "feature/twin"]);
+    yield* runGit(upstream, ["branch", "feature/untracked"]);
+    yield* runGit(repo, ["clone", upstream, "."]);
+    yield* runGit(repo, ["config", "user.email", "test@test.com"]);
+    yield* runGit(repo, ["config", "user.name", "Test"]);
+    yield* runGit(repo, ["branch", "feature/existing-local", "origin/feature/existing-local"]);
+    yield* runGit(repo, ["branch", "twin-alias", "origin/feature/twin"]);
+    yield* runGit(repo, ["branch", "feature/untracked", "origin/feature/untracked"]);
+    yield* runGit(repo, ["branch", "--unset-upstream", "feature/untracked"]);
+
+    // Remote-only ref: creates and checks out a local branch tracking it.
+    const created = yield* driver.switchRef({ cwd: repo, refName: "origin/feature/only-remote" });
+    assert.strictEqual(created.refName, "feature/only-remote");
+    assert.strictEqual(
+      yield* readGit(repo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]),
+      "origin/feature/only-remote",
+    );
+
+    // Remote ref tracked by a differently-named local branch: checks that out.
+    const alias = yield* driver.switchRef({ cwd: repo, refName: "origin/feature/twin" });
+    assert.strictEqual(alias.refName, "twin-alias");
+
+    // Local twin exists but does not track the remote ref: upstream checks out
+    // the remote ref directly (detached HEAD, so no branch name comes back).
+    const untracked = yield* driver.switchRef({ cwd: repo, refName: "origin/feature/untracked" });
+    assert.strictEqual(untracked.refName, null);
+
+    // Remote ref tracked by a same-named local branch: checks that out.
+    const existing = yield* driver.switchRef({
+      cwd: repo,
+      refName: "origin/feature/existing-local",
+    });
+    assert.strictEqual(existing.refName, "feature/existing-local");
+    assert.strictEqual(
+      yield* readGit(repo, ["symbolic-ref", "--short", "HEAD"]),
+      "feature/existing-local",
+    );
+
+    // Plain local ref: unchanged behavior.
+    const local = yield* driver.switchRef({ cwd: repo, refName: "main" });
+    assert.strictEqual(local.refName, "main");
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
