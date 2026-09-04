@@ -37,7 +37,10 @@ import {
   type VcsStatusInput,
   type VcsStatusResult,
 } from "@t3tools/contracts";
-import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
+import {
+  dedupeRemoteBranchesWithLocalMatches,
+  deriveLocalBranchNameFromRemoteRef,
+} from "@t3tools/shared/git";
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as ServerConfig from "../config.ts";
@@ -362,6 +365,27 @@ function parseRemoteRef(
     const branchName = ref.slice(prefix.length);
     return branchName.length > 0 ? { remoteName, branchName } : null;
   }
+  return null;
+}
+
+// Ported from upstream GitVcsDriverCore.
+function parseTrackingBranchByUpstreamRef(stdout: string, upstreamRef: string): string | null {
+  for (const line of stdout.split("\n")) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.length === 0) {
+      continue;
+    }
+    const [branchNameRaw, upstreamBranchRaw = ""] = trimmedLine.split("\t");
+    const branchName = branchNameRaw?.trim() ?? "";
+    const candidateUpstreamRef = upstreamBranchRaw.trim();
+    if (branchName.length === 0 || candidateUpstreamRef.length === 0) {
+      continue;
+    }
+    if (candidateUpstreamRef === upstreamRef) {
+      return branchName;
+    }
+  }
+
   return null;
 }
 
@@ -1794,7 +1818,57 @@ const makeLocalGitService = Effect.gen(function* () {
 
   const switchRef: GitVcsDriver["Service"]["switchRef"] = Effect.fn("GitVcsDriver.switchRef")(
     function* (input) {
-      yield* run("GitVcsDriver.switchRef", input.cwd, ["switch", input.refName], {
+      // Ported from upstream GitVcsDriverCore.switchRef: the picked ref may be
+      // a local branch or a remote-tracking branch such as "origin/feature",
+      // which git cannot check out directly. Resolve the checkout target the
+      // same way upstream does: prefer the local branch of the same name, then
+      // a local branch that already tracks the remote ref, then a fresh
+      // tracking branch created from the remote ref.
+      const [localInputExists, remoteExists] = yield* Effect.all(
+        [
+          localBranchExists(input.cwd, input.refName),
+          run(
+            "GitVcsDriver.switchRef.remoteExists",
+            input.cwd,
+            ["show-ref", "--verify", "--quiet", `refs/remotes/${input.refName}`],
+            { allowNonZeroExit: true },
+          ).pipe(Effect.map((result) => result.exitCode === 0)),
+        ],
+        { concurrency: "unbounded" },
+      );
+
+      const localTrackingBranch = remoteExists
+        ? yield* run(
+            "GitVcsDriver.switchRef.localTrackingBranch",
+            input.cwd,
+            ["for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads"],
+            { allowNonZeroExit: true },
+          ).pipe(
+            Effect.map((result) =>
+              result.exitCode === 0
+                ? parseTrackingBranchByUpstreamRef(result.stdout, input.refName)
+                : null,
+            ),
+          )
+        : null;
+
+      const localTrackedBranchCandidate = deriveLocalBranchNameFromRemoteRef(input.refName);
+      const localTrackedBranchTargetExists =
+        remoteExists && localTrackedBranchCandidate
+          ? yield* localBranchExists(input.cwd, localTrackedBranchCandidate)
+          : false;
+
+      const checkoutArgs = localInputExists
+        ? ["checkout", input.refName]
+        : remoteExists && !localTrackingBranch && localTrackedBranchTargetExists
+          ? ["checkout", input.refName]
+          : remoteExists && !localTrackingBranch
+            ? ["checkout", "--track", input.refName]
+            : remoteExists && localTrackingBranch
+              ? ["checkout", localTrackingBranch]
+              : ["checkout", input.refName];
+
+      yield* run("GitVcsDriver.switchRef.checkout", input.cwd, checkoutArgs, {
         timeoutMs: 300_000,
       });
       return { refName: yield* currentBranch(input.cwd) };
