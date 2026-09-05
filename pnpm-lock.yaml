@@ -35,6 +35,7 @@ packageExtensionsChecksum: sha256-uRNSOmZGMbxiey/el3j86YmdH2m8/ap2Y34J3dVkBNY=
 
 patchedDependencies:
   '@effect/vitest@4.0.0-beta.103': a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b
+  '@ff-labs/fff-node@0.9.4': e46c6778036022ce6ce97a1b7ceef898a8d56427d3c66da3ea26c8f7c63e4932
   '@legendapp/list@3.3.5': 455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67
   '@pierre/diffs@1.3.0-beta.10': 96db6b586fca73fb188fe278c7bcf722c473945bba9ca7b7b26b124da815aaa2
   effect@4.0.0-beta.103: 05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a
@@ -116,7 +117,7 @@ importers:
         version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@ff-labs/fff-node':
         specifier: 0.9.4
-        version: 0.9.4
+        version: 0.9.4(patch_hash=e46c6778036022ce6ce97a1b7ceef898a8d56427d3c66da3ea26c8f7c63e4932)
       effect:
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
@@ -3447,7 +3448,7 @@ snapshots:
   '@ff-labs/fff-bin-win32-x64@0.9.4':
     optional: true
 
-  '@ff-labs/fff-node@0.9.4':
+  '@ff-labs/fff-node@0.9.4(patch_hash=e46c6778036022ce6ce97a1b7ceef898a8d56427d3c66da3ea26c8f7c63e4932)':
     dependencies:
       ffi-rs: 1.3.7
     optionalDependencies:
