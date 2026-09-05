@@ -576,147 +576,188 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
     }),
   );
 
-  it.effect("keeps the turn running across interim assistant messages until the session ends", () =>
-    Effect.gen(function* () {
-      const projectionPipeline = yield* OrchestrationProjectionPipeline;
-      const eventStore = yield* OrchestrationEventStore;
-      const sql = yield* SqlClient.SqlClient;
-      const now = "2026-01-01T00:00:00.000Z";
-      const threadId = ThreadId.make("thread-turn-lifecycle");
-      const turnId = TurnId.make("turn-lifecycle-1");
+  it.effect.each(["ready", "error", "interrupted"] as const)(
+    "preserves %s turn completion through later checkpoints",
+    (terminalStatus) =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const sql = yield* SqlClient.SqlClient;
+        const now = "2026-01-01T00:00:00.000Z";
+        const threadId = ThreadId.make(`thread-turn-lifecycle-${terminalStatus}`);
+        const turnId = TurnId.make(`turn-lifecycle-1-${terminalStatus}`);
 
-      yield* eventStore.append({
-        type: "thread.created",
-        eventId: EventId.make("evt-tl1"),
-        aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: now,
-        commandId: CommandId.make("cmd-tl1"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-tl1"),
-        metadata: {},
-        payload: {
-          threadId,
-          projectId: ProjectId.make("project-turn-lifecycle"),
-          title: "Turn lifecycle",
-          modelSelection: {
-            instanceId: ProviderInstanceId.make("claude"),
-            model: "claude-opus",
-          },
-          runtimeMode: "full-access",
-          branch: null,
-          worktreePath: null,
-          createdAt: now,
-          updatedAt: now,
-        },
-      });
-
-      yield* eventStore.append({
-        type: "thread.session-set",
-        eventId: EventId.make("evt-tl2"),
-        aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-01-01T00:00:01.000Z",
-        commandId: CommandId.make("cmd-tl2"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-tl2"),
-        metadata: {},
-        payload: {
-          threadId,
-          session: {
+        yield* eventStore.append({
+          type: "thread.created",
+          eventId: EventId.make(`evt-tl1-${terminalStatus}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`cmd-tl1-${terminalStatus}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-tl1-${terminalStatus}`),
+          metadata: {},
+          payload: {
             threadId,
-            status: "running",
-            providerName: "claude",
+            projectId: ProjectId.make("project-turn-lifecycle"),
+            title: "Turn lifecycle",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claude"),
+              model: "claude-opus",
+            },
             runtimeMode: "full-access",
-            activeTurnId: turnId,
-            lastError: null,
-            updatedAt: "2026-01-01T00:00:01.000Z",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
           },
-        },
-      });
+        });
 
-      // Interim assistant message completes mid-turn (commentary between
-      // tool calls) — the turn must stay running and unsettled.
-      yield* eventStore.append({
-        type: "thread.message-sent",
-        eventId: EventId.make("evt-tl3"),
-        aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-01-01T00:00:05.000Z",
-        commandId: CommandId.make("cmd-tl3"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-tl3"),
-        metadata: {},
-        payload: {
-          threadId,
-          messageId: MessageId.make("message-tl-interim"),
-          role: "assistant",
-          text: "interim commentary",
-          turnId,
-          streaming: false,
-          createdAt: "2026-01-01T00:00:05.000Z",
-          updatedAt: "2026-01-01T00:00:05.000Z",
-        },
-      });
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make(`evt-tl2-${terminalStatus}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-01-01T00:00:01.000Z",
+          commandId: CommandId.make(`cmd-tl2-${terminalStatus}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-tl2-${terminalStatus}`),
+          metadata: {},
+          payload: {
+            threadId,
+            session: {
+              threadId,
+              status: "running",
+              providerName: "claude",
+              runtimeMode: "full-access",
+              activeTurnId: turnId,
+              lastError: null,
+              updatedAt: "2026-01-01T00:00:01.000Z",
+            },
+          },
+        });
 
-      yield* projectionPipeline.bootstrap;
+        // Interim assistant message completes mid-turn (commentary between
+        // tool calls) — the turn must stay running and unsettled.
+        yield* eventStore.append({
+          type: "thread.message-sent",
+          eventId: EventId.make(`evt-tl3-${terminalStatus}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-01-01T00:00:05.000Z",
+          commandId: CommandId.make(`cmd-tl3-${terminalStatus}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-tl3-${terminalStatus}`),
+          metadata: {},
+          payload: {
+            threadId,
+            messageId: MessageId.make(`message-tl-interim-${terminalStatus}`),
+            role: "assistant",
+            text: "interim commentary",
+            turnId,
+            streaming: false,
+            createdAt: "2026-01-01T00:00:05.000Z",
+            updatedAt: "2026-01-01T00:00:05.000Z",
+          },
+        });
 
-      const runningRows = yield* sql<{
-        readonly state: string;
-        readonly completedAt: string | null;
-      }>`
+        yield* projectionPipeline.bootstrap;
+
+        const runningRows = yield* sql<{
+          readonly state: string;
+          readonly completedAt: string | null;
+        }>`
         SELECT state, completed_at AS "completedAt"
         FROM projection_turns
         WHERE thread_id = ${threadId} AND turn_id = ${turnId}
       `;
-      assert.deepEqual(runningRows, [{ state: "running", completedAt: null }]);
+        assert.deepEqual(runningRows, [{ state: "running", completedAt: null }]);
 
-      // The session leaving "running" is the turn-end signal.
-      yield* eventStore.append({
-        type: "thread.session-set",
-        eventId: EventId.make("evt-tl4"),
-        aggregateKind: "thread",
-        aggregateId: threadId,
-        occurredAt: "2026-01-01T00:01:00.000Z",
-        commandId: CommandId.make("cmd-tl4"),
-        causationEventId: null,
-        correlationId: CorrelationId.make("cmd-tl4"),
-        metadata: {},
-        payload: {
-          threadId,
-          session: {
+        // The session leaving "running" is the turn-end signal.
+        yield* eventStore.append({
+          type: "thread.session-set",
+          eventId: EventId.make(`evt-tl4-${terminalStatus}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-01-01T00:01:00.000Z",
+          commandId: CommandId.make(`cmd-tl4-${terminalStatus}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-tl4-${terminalStatus}`),
+          metadata: {},
+          payload: {
             threadId,
+            session: {
+              threadId,
+              status: terminalStatus,
+              providerName: "claude",
+              runtimeMode: "full-access",
+              activeTurnId: null,
+              lastError: null,
+              updatedAt: "2026-01-01T00:01:00.000Z",
+            },
+          },
+        });
+
+        yield* projectionPipeline.bootstrap;
+
+        const settledRows = yield* sql<{
+          readonly state: string;
+          readonly completedAt: string | null;
+        }>`
+        SELECT state, completed_at AS "completedAt"
+        FROM projection_turns
+        WHERE thread_id = ${threadId} AND turn_id = ${turnId}
+      `;
+        assert.deepEqual(settledRows, [
+          {
+            state: terminalStatus === "ready" ? "completed" : terminalStatus,
+            completedAt: "2026-01-01T00:01:00.000Z",
+          },
+        ]);
+
+        yield* eventStore.append({
+          type: "thread.turn-diff-completed",
+          eventId: EventId.make(`evt-tl5-${terminalStatus}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: "2026-01-01T00:01:01.000Z",
+          commandId: CommandId.make(`cmd-tl5-${terminalStatus}`),
+          causationEventId: null,
+          correlationId: CorrelationId.make(`cmd-tl5-${terminalStatus}`),
+          metadata: {},
+          payload: {
+            threadId,
+            turnId,
+            checkpointTurnCount: 1,
+            checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-turn-lifecycle/turn/1"),
             status: "ready",
-            providerName: "claude",
-            runtimeMode: "full-access",
-            activeTurnId: null,
-            lastError: null,
-            updatedAt: "2026-01-01T00:01:00.000Z",
+            files: [],
+            assistantMessageId: MessageId.make(`message-tl-interim-${terminalStatus}`),
+            completedAt: "2026-01-01T00:01:00.000Z",
           },
-        },
-      });
-
-      yield* projectionPipeline.bootstrap;
-
-      const settledRows = yield* sql<{
-        readonly state: string;
-        readonly completedAt: string | null;
-      }>`
-        SELECT state, completed_at AS "completedAt"
-        FROM projection_turns
+        });
+        yield* projectionPipeline.bootstrap;
+        const checkpointRows = yield* sql<{
+          readonly state: string;
+          readonly checkpointStatus: string;
+        }>`
+        SELECT state, checkpoint_status AS "checkpointStatus" FROM projection_turns
         WHERE thread_id = ${threadId} AND turn_id = ${turnId}
       `;
-      assert.deepEqual(settledRows, [
-        { state: "completed", completedAt: "2026-01-01T00:01:00.000Z" },
-      ]);
+        assert.deepEqual(checkpointRows, [
+          {
+            state: terminalStatus === "ready" ? "completed" : terminalStatus,
+            checkpointStatus: "ready",
+          },
+        ]);
 
-      const threadRows = yield* sql<{ readonly latestTurnId: string | null }>`
+        const threadRows = yield* sql<{ readonly latestTurnId: string | null }>`
         SELECT latest_turn_id AS "latestTurnId"
         FROM projection_threads
         WHERE thread_id = ${threadId}
       `;
-      assert.deepEqual(threadRows, [{ latestTurnId: turnId }]);
-    }),
+        assert.deepEqual(threadRows, [{ latestTurnId: turnId }]);
+      }),
   );
 
   it.effect("settles a superseded running turn when a new turn becomes active", () =>

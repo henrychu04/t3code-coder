@@ -1877,9 +1877,10 @@ const make = Effect.gen(function* () {
         const proposedPlans = detailedThread?.proposedPlans ?? [];
         const turnId = toTurnId(event.turnId);
         if (turnId) {
-          const userInputActivities = yield* projectionThreadActivityRepository.listByThreadId({
-            threadId: thread.id,
-          });
+          const userInputActivities =
+            yield* projectionThreadActivityRepository.listUserInputLifecycleByThreadId({
+              threadId: thread.id,
+            });
           const pendingRequestIds = new Set<string>();
           for (const activity of userInputActivities) {
             const payload =

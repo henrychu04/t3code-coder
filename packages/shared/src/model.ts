@@ -1,5 +1,6 @@
 import {
   type CustomModelSetting,
+  CustomModelCapabilities,
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
   MODEL_SLUG_ALIASES_BY_PROVIDER,
@@ -267,7 +268,7 @@ export interface CustomModelDefinition {
   readonly capabilities: ModelCapabilities | null;
 }
 
-const decodeCustomModelCapabilities = Schema.decodeUnknownOption(ModelCapabilities);
+const decodeCustomModelCapabilities = Schema.decodeUnknownOption(CustomModelCapabilities);
 
 /**
  * Read a `customModels` setting into resolved definitions. Accepts the typed

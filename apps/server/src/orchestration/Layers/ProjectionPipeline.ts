@@ -1353,7 +1353,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               ...existingTurn.value,
               assistantMessageId: event.payload.assistantMessageId,
               state:
-                turnStillRunning || existingTurn.value.state === "interrupted"
+                turnStillRunning ||
+                existingTurn.value.state === "interrupted" ||
+                existingTurn.value.state === "error"
                   ? existingTurn.value.state
                   : nextState,
               checkpointTurnCount: event.payload.checkpointTurnCount,

@@ -37,6 +37,17 @@ describe("GitLab merge request links", () => {
     };
     expect(gitLabMergeRequestBrowserUrl(identity, "group/nested/project", 42)).toBe(url);
     expect(
+      gitLabMergeRequestBrowserUrl(
+        { ...identity, provider: "unknown" },
+        "group/nested/project",
+        42,
+      ),
+    ).toBe(url);
+    expect(gitLabMergeRequestBrowserUrl(identity, "GROUP/nested/Project", 42)).toBe(
+      "https://code.example:8443/gitlab/GROUP/nested/Project/-/merge_requests/42",
+    );
+    expect(gitLabMergeRequestBrowserUrl(identity, "wrong/project", 42)).toBeNull();
+    expect(
       gitLabMergeRequestBrowserUrl({ ...identity, provider: "github" }, "group/nested/project", 42),
     ).toBeNull();
     expect(gitLabMergeRequestBrowserUrl(identity, "group/../project", 42)).toBeNull();

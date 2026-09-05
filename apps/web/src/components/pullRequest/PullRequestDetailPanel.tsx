@@ -547,7 +547,7 @@ export function PullRequestDetailPanel({
       setRefreshToken((token) => token + 1);
     }
     activityRevision.current = next;
-  }, [activityQuery.refresh, coreDetail, pullRequestKey]);
+  }, [activityQuery.refresh, coreDetail, tabScopeKey]);
   useEffect(() => {
     if (!detail) return;
     onStateChange?.({

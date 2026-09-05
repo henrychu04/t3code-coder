@@ -503,7 +503,9 @@ export function applyThreadDetailEvent(
               state:
                 thread.latestTurn?.state === "interrupted"
                   ? "interrupted"
-                  : checkpointStatusToTurnState(event.payload.status),
+                  : thread.latestTurn?.state === "error"
+                    ? "error"
+                    : checkpointStatusToTurnState(event.payload.status),
               requestedAt: thread.latestTurn?.requestedAt ?? event.payload.completedAt,
               startedAt: thread.latestTurn?.startedAt ?? event.payload.completedAt,
               completedAt: event.payload.completedAt,

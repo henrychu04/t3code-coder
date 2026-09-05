@@ -1,4 +1,4 @@
-import { ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import { EventId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,16 +10,56 @@ import { ProjectionProjectRepositoryLive } from "./ProjectionProjects.ts";
 import { ProjectionThreadRepositoryLive } from "./ProjectionThreads.ts";
 import { ProjectionProjectRepository } from "../Services/ProjectionProjects.ts";
 import { ProjectionThreadRepository } from "../Services/ProjectionThreads.ts";
+import { ProjectionThreadActivityRepositoryLive } from "./ProjectionThreadActivities.ts";
+import { ProjectionThreadActivityRepository } from "../Services/ProjectionThreadActivities.ts";
 
 const projectionRepositoriesLayer = it.layer(
   Layer.mergeAll(
     ProjectionProjectRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionThreadActivityRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     SqlitePersistenceMemory,
   ),
 );
 
 projectionRepositoriesLayer("Projection repositories", (it) => {
+  it.effect("filters user-input lifecycle rows by thread and preserves sequence order", () =>
+    Effect.gen(function* () {
+      const activities = yield* ProjectionThreadActivityRepository;
+      const kinds = [
+        "user-input.resolved",
+        "tool.completed",
+        "user-input.requested",
+        "provider.user-input.respond.failed",
+      ];
+      for (const [index, kind] of kinds.entries()) {
+        yield* activities.upsert({
+          activityId: EventId.make(`lifecycle-${index}`),
+          threadId: ThreadId.make("lifecycle-thread"),
+          turnId: null,
+          tone: "info",
+          kind,
+          summary: "test",
+          payload: { requestId: "request" },
+          sequence: 4 - index,
+          createdAt: "2026-09-05T00:00:00.000Z",
+        });
+      }
+      const rows = yield* activities.listUserInputLifecycleByThreadId({
+        threadId: ThreadId.make("lifecycle-thread"),
+      });
+      assert.deepEqual(
+        rows.map((row) => row.kind),
+        ["provider.user-input.respond.failed", "user-input.requested", "user-input.resolved"],
+      );
+      assert.deepEqual(
+        yield* activities.listUserInputLifecycleByThreadId({
+          threadId: ThreadId.make("another-thread"),
+        }),
+        [],
+      );
+    }),
+  );
   it.effect("stores SQL NULL for missing project model options", () =>
     Effect.gen(function* () {
       const projects = yield* ProjectionProjectRepository;

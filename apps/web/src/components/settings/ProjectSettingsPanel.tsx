@@ -55,6 +55,12 @@ export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
         document.querySelector('[role="dialog"]')
       )
         return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
+      )
+        return;
       event.preventDefault();
       goBack();
     };

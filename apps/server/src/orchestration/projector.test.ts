@@ -372,7 +372,7 @@ describe("orchestration projector", () => {
       }),
   );
 
-  effectIt.effect.each([null, "ready", "interrupted", "stopped"] as const)(
+  effectIt.effect.each([null, "ready", "interrupted", "stopped", "error"] as const)(
     "replaces a missing checkpoint without inventing interruption for a %s session",
     (sessionStatus) =>
       Effect.gen(function* () {
@@ -412,7 +412,11 @@ describe("orchestration projector", () => {
           assistantMessageId: "assistant:placeholder",
           completedAt: now,
         };
-        if (sessionStatus === "interrupted" || sessionStatus === "stopped") {
+        if (
+          sessionStatus === "interrupted" ||
+          sessionStatus === "stopped" ||
+          sessionStatus === "error"
+        ) {
           model = yield* projectEvent(
             model,
             event(2, "thread.session-set", {
@@ -464,7 +468,9 @@ describe("orchestration projector", () => {
         expect(model.threads[0]?.latestTurn?.state).toBe(
           sessionStatus === "interrupted" || sessionStatus === "stopped"
             ? "interrupted"
-            : "completed",
+            : sessionStatus === "error"
+              ? "error"
+              : "completed",
         );
       }),
   );

@@ -953,7 +953,10 @@ const MARKDOWN_COMPONENTS: Components = {
     const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
     return (
       <MarkdownCodeBlock code={codeBlock.code} language={language} fenceTitle={fenceTitle}>
-        <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
+        <RenderErrorBoundary
+          resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
+          fallback={<pre {...props}>{children}</pre>}
+        >
           <Suspense fallback={<pre {...props}>{children}</pre>}>
             <SuspenseShikiCodeBlock
               className={codeBlock.className}

@@ -742,8 +742,9 @@ export function projectEvent(
                   turnId: payload.turnId,
                   state:
                     thread.latestTurn?.turnId === payload.turnId &&
-                    thread.latestTurn.state === "interrupted"
-                      ? "interrupted"
+                    (thread.latestTurn.state === "interrupted" ||
+                      thread.latestTurn.state === "error")
+                      ? thread.latestTurn.state
                       : checkpointStatusToLatestTurnState(payload.status),
                   requestedAt:
                     thread.latestTurn?.turnId === payload.turnId

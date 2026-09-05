@@ -627,6 +627,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
           "provider.cwd.effective": effectiveCwd ?? "",
         });
         if (effectiveCwd !== undefined) {
+          // Match upstream: this preflight identifies missing/non-directory paths.
+          // Other stat errors fall through so the adapter reports the actual failure.
           const workspaceIsDirectory = yield* Effect.promise(() =>
             stat(effectiveCwd).then(
               (entry) => entry.isDirectory(),

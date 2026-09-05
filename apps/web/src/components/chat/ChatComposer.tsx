@@ -3592,6 +3592,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       isComposerModelPickerOpen,
       openModelPicker,
       readComposerSnapshot,
+      restoreAfterTimelineReachedEnd,
       selectedModel,
       selectedModelOptionsForDispatch,
       selectedModelSelection,

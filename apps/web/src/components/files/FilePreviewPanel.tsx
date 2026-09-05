@@ -1894,6 +1894,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
               // switch needs a new key or the previous file's disclosure and
               // wrap state carries into the next document.
               <RenderedMarkdownSurface
+                key={props.relativePath}
                 environmentId={props.environmentId}
                 threadRef={props.threadRef}
                 cwd={props.cwd}

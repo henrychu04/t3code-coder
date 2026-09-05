@@ -80,7 +80,13 @@ export function gitLabMergeRequestBrowserUrl(
   repository: string,
   number: number,
 ): string | null {
-  if (identity?.provider !== "gitlab" || !Number.isSafeInteger(number) || number < 1) return null;
+  if (
+    !identity ||
+    (identity.provider !== "gitlab" && identity.provider !== "unknown") ||
+    !Number.isSafeInteger(number) ||
+    number < 1
+  )
+    return null;
   const repositoryPath = repository.split("/");
   if (
     repositoryPath.length < 2 ||
@@ -100,7 +106,7 @@ export function gitLabMergeRequestBrowserUrl(
         origin = remoteUrl.origin;
         const remotePath = remoteUrl.pathname.replace(/\.git\/?$/u, "").replace(/\/$/u, "");
         const suffix = `/${repository}`;
-        if (!remotePath.endsWith(suffix)) return null;
+        if (!remotePath.toLowerCase().endsWith(suffix.toLowerCase())) return null;
         basePath = remotePath.slice(0, -suffix.length);
       }
     } catch {

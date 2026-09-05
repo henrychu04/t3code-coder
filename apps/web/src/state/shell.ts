@@ -52,4 +52,4 @@ export const allEnvironmentProjectSnapshotsReadyAtom = Atom.make((get) => {
     if (get(environmentShell.stateValueAtom(id)).status !== "live") return false;
   }
   return true;
-});
+}).pipe(Atom.withLabel("web-all-environment-project-snapshots-ready"));

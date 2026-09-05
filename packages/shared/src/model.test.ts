@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { ProviderDriverKind, ProviderInstanceId, type ModelCapabilities } from "@t3tools/contracts";
+import {
+  CustomModelEntry,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ModelCapabilities,
+} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
 import {
   applyClaudePromptEffortPrefix,
@@ -186,6 +192,14 @@ describe("applyClaudePromptEffortPrefix", () => {
 });
 
 describe("readCustomModelEntries", () => {
+  it("does not retain provider runtime modes in custom model settings", () => {
+    const stored = Schema.decodeUnknownSync(CustomModelEntry)({
+      slug: "custom",
+      capabilities: { optionDescriptors: [], supportedRuntimeModes: ["full-access"] },
+    });
+    expect(stored.capabilities).toEqual({ optionDescriptors: [] });
+    expect(readCustomModelEntries([stored])[0]?.capabilities).toEqual({ optionDescriptors: [] });
+  });
   const capabilities: ModelCapabilities = {
     optionDescriptors: [
       {

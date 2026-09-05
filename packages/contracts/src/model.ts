@@ -132,15 +132,16 @@ export const ModelCapabilities = Schema.Struct({
 });
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
-/**
- * A user-authored custom model. `name` and `capabilities` are optional so a
- * bare slug keeps its driver-default presentation; when `capabilities` is
- * set, its descriptors replace the driver default in the model picker.
- */
+/** Custom entries configure options; runtime modes come from the provider snapshot. */
+export const CustomModelCapabilities = Schema.Struct({
+  optionDescriptors: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
+});
+
+/** A user-authored model; optional descriptors replace the driver defaults. */
 export const CustomModelEntry = Schema.Struct({
   slug: TrimmedNonEmptyString,
   name: Schema.optional(TrimmedNonEmptyString),
-  capabilities: Schema.optional(ModelCapabilities),
+  capabilities: Schema.optional(CustomModelCapabilities),
 });
 export type CustomModelEntry = typeof CustomModelEntry.Type;
 
