@@ -43,7 +43,7 @@ client to a browser opened by the user. It stores only non-secret Coder deployme
 targets, structured port-forward rules, and an optional Coder executable path. A clipboard image may
 be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
 copy is deleted immediately after the transfer attempt. Browser UI preferences
-such as theme and panel size may use browser storage; messages, drafts, active workspace projections,
+such as theme and panel size may use browser storage; messages, drafts, prompt stashes, active workspace projections,
 open Files tabs and editor state, provider sessions, and screenshot artifact object URLs are
 memory-only.
 Each active workspace accepts one loopback WebSocket at a time. The workspace helper can outlive
@@ -275,6 +275,12 @@ connections.
 The UI exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
 explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
+
+Workspace attachments and screenshot artifacts currently have no automatic age-based purge.
+Provider session transcripts can retain attachment paths after a browser disconnect or thread
+change, and artifact capture does not record a durable owning thread. Safe reclamation requires
+ownership and reference tracking across those lifetimes; deleting files merely because they are
+old or absent from the current browser snapshot can break resumed sessions and historical turns.
 
 The other user-facing exception displays screenshots produced while a provider verifies a frontend.
 This does not require MCP or a project-specific T3 skill. While a provider turn is active, the helper

@@ -1,24 +1,13 @@
-export interface CoderDeploymentProfile {
-  readonly id: string;
-  readonly name: string;
-  readonly url: string;
-  readonly executable?: string;
-}
-
-export interface CoderWorkspaceProfile {
-  readonly id: string;
-  readonly name: string;
-  readonly deploymentId: string;
-  readonly workspace: string;
-}
-
-export interface CoderPortForwardProfile {
-  readonly id: string;
-  readonly workspaceId: string;
-  readonly protocol: "tcp" | "udp";
-  readonly localPort: number;
-  readonly remotePort: number;
-}
+import type {
+  CoderDeploymentProfile,
+  CoderWorkspaceProfile,
+  CoderPortForwardProfile,
+} from "@t3tools/contracts";
+export type {
+  CoderDeploymentProfile,
+  CoderWorkspaceProfile,
+  CoderPortForwardProfile,
+} from "@t3tools/contracts";
 
 function requireSingleLine(value: string, field: string): string {
   const normalized = value.trim();

@@ -37,6 +37,8 @@ import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as RcMap from "effect/RcMap";
+import * as Semaphore from "effect/Semaphore";
 
 import {
   detectSourceControlProviderFromGitRemoteUrl,
@@ -86,7 +88,10 @@ export class GitWorkflowService extends Context.Service<
       GitManagerServiceError
     >;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
-    readonly pull: (input: VcsPullInput) => Effect.Effect<VcsPullResult, GitCommandError>;
+    readonly pull: (
+      input: VcsPullInput,
+      options?: { readonly automatic?: boolean },
+    ) => Effect.Effect<VcsPullResult, GitCommandError>;
     readonly resolvePullRequest: (
       input: GitPullRequestRefInput,
     ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
@@ -139,26 +144,38 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const git = yield* GitVcsDriver.GitVcsDriver;
     const sourceControls = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-    const textGeneration = yield* Effect.serviceOption(TextGeneration.TextGeneration);
-    const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
-    const fileSystem = yield* Effect.serviceOption(FileSystem.FileSystem);
-    const projectSetupScriptRunner = yield* Effect.serviceOption(
-      ProjectSetupScriptRunner.ProjectSetupScriptRunner,
-    );
-    const readGenerationSettings = (cwd: string) =>
-      Option.isSome(serverSettings)
-        ? serverSettings.value.getSettings.pipe(
-            Effect.mapError(
-              (cause) =>
-                new GitManagerError({
-                  operation: "readGenerationSettings",
-                  cwd,
-                  detail: "Could not read text-generation settings.",
-                  cause,
-                }),
+    const textGeneration = yield* TextGeneration.TextGeneration;
+    const serverSettings = yield* ServerSettings.ServerSettingsService;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
+    const mutationLocks = yield* RcMap.make({ lookup: (_cwd: string) => Semaphore.make(1) });
+    // Keep the complete mutation (including eligibility reads) under the same
+    // permit. Different checkouts remain independent, and idle locks are released.
+    const mutate = <A, E, R>(cwd: string, operation: Effect.Effect<A, E, R>) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const key = yield* fileSystem.realPath(cwd).pipe(Effect.orElseSucceed(() => cwd));
+          const lock = yield* RcMap.get(mutationLocks, key);
+          return yield* lock.withPermits(1)(
+            invalidateStatus(cwd).pipe(
+              Effect.andThen(operation),
+              Effect.ensuring(invalidateStatus(cwd)),
             ),
-          )
-        : Effect.succeed(null);
+          );
+        }),
+      );
+    const readGenerationSettings = (cwd: string) =>
+      serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "readGenerationSettings",
+              cwd,
+              detail: "Could not read text-generation settings.",
+              cause,
+            }),
+        ),
+      );
     const resolveWritingPolicy = Effect.fn("GitWorkflowService.resolveWritingPolicy")(function* (
       cwd: string,
       settings: ServerSettingsValue,
@@ -683,8 +700,37 @@ export const layer = Layer.effect(
       return mergeGitStatusParts(local, remote);
     });
 
-    const pull = Effect.fn("GitWorkflowService.pull")(function* ({ cwd }: VcsPullInput) {
-      const branch = (yield* localStatus({ cwd })).refName;
+    const pull = Effect.fn("GitWorkflowService.pull")(function* (
+      { cwd }: VcsPullInput,
+      options?: { readonly automatic?: boolean },
+    ) {
+      const local = yield* readLocalStatus({ cwd });
+      const branch = local.refName;
+      if (options?.automatic) {
+        if (!local.isRepo || !local.isDefaultRef || local.hasWorkingTreeChanges) {
+          return yield* new GitCommandError({
+            operation: "GitWorkflowService.pull",
+            command: "git pull",
+            cwd,
+            detail: "The checkout is no longer eligible for automatic pull.",
+          });
+        }
+        // Read the current upstream counts after waiting for other mutations.
+        const counts = yield* git.execute({
+          operation: "GitWorkflowService.pull.automaticCounts",
+          cwd,
+          args: ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+        });
+        const [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number);
+        if (ahead !== 0 || behind === undefined || !Number.isSafeInteger(behind) || behind <= 0) {
+          return yield* new GitCommandError({
+            operation: "GitWorkflowService.pull",
+            command: "git pull",
+            cwd,
+            detail: "The checkout is no longer behind its upstream without local commits.",
+          });
+        }
+      }
       if (branch === null) {
         return yield* new GitCommandError({
           operation: "GitWorkflowService.pull",
@@ -832,25 +878,14 @@ export const layer = Layer.effect(
           args: ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
         });
         let preferred = input.commitMessage?.split("\n")[0] ?? "update";
-        if (
-          input.commitMessage === undefined &&
-          Option.isSome(textGeneration) &&
-          Option.isSome(serverSettings)
-        ) {
+        if (input.commitMessage === undefined) {
           const changes = yield* git.execute({
             operation: "GitWorkflowService.runStackedAction.branchContext",
             cwd: input.cwd,
             args: ["status", "--short"],
           });
           const settings = yield* readGenerationSettings(input.cwd);
-          if (settings === null) {
-            return yield* new GitManagerError({
-              operation: "runStackedAction",
-              cwd: input.cwd,
-              detail: "Text-generation settings are unavailable.",
-            });
-          }
-          const generated = yield* textGeneration.value.generateBranchName({
+          const generated = yield* textGeneration.generateBranchName({
             cwd: input.cwd,
             message: changes.stdout.trim() || "Update project files",
             modelSelection: resolveSourceControlWriterModelSelection(settings),
@@ -908,11 +943,7 @@ export const layer = Layer.effect(
             : "Update project files";
           let subject = input.commitMessage?.trim() || fallbackSubject;
           let body = "";
-          if (
-            input.commitMessage === undefined &&
-            Option.isSome(textGeneration) &&
-            Option.isSome(serverSettings)
-          ) {
+          if (input.commitMessage === undefined) {
             yield* report({
               ...base,
               kind: "phase_started",
@@ -935,14 +966,7 @@ export const layer = Layer.effect(
               }),
             ]);
             const settings = yield* readGenerationSettings(input.cwd);
-            if (settings === null) {
-              return yield* new GitManagerError({
-                operation: "runStackedAction",
-                cwd: input.cwd,
-                detail: "Text-generation settings are unavailable.",
-              });
-            }
-            const generated = yield* textGeneration.value.generateCommitMessage({
+            const generated = yield* textGeneration.generateCommitMessage({
               cwd: input.cwd,
               branch: (yield* localStatus({ cwd: input.cwd })).refName,
               stagedSummary: summary.stdout,
@@ -1027,85 +1051,66 @@ export const layer = Layer.effect(
         let request = existing.find((candidate) => candidate.headRefName === branch) ?? null;
         const openedExisting = request !== null;
         if (request === null) {
-          const latestSubject = yield* git.execute({
-            operation: "GitWorkflowService.runStackedAction.mergeRequestTitle",
-            cwd: input.cwd,
-            args: ["log", "-1", "--pretty=%s"],
+          yield* report({
+            ...base,
+            kind: "phase_started",
+            phase: "pr",
+            label: "Generating merge request content...",
           });
-          let title = latestSubject.stdout.trim() || branch.replaceAll("-", " ");
-          let body = "";
-          if (Option.isSome(textGeneration) && Option.isSome(serverSettings)) {
-            yield* report({
-              ...base,
-              kind: "phase_started",
-              phase: "pr",
-              label: "Generating merge request content...",
-            });
-            const baseRef = `origin/${baseBranch}`;
-            const settings = yield* readGenerationSettings(input.cwd);
-            if (settings === null) {
-              return yield* new GitManagerError({
-                operation: "runStackedAction",
-                cwd: input.cwd,
-                detail: "Text-generation settings are unavailable.",
-              });
-            }
-            const [commitSummary, diffSummary, diffPatch, template] = yield* Effect.all([
-              git.execute({
-                operation: "GitWorkflowService.runStackedAction.mergeRequestCommits",
-                cwd: input.cwd,
-                args: ["log", "--oneline", `${baseRef}..HEAD`],
-                maxOutputBytes: 128 * 1024,
-                appendTruncationMarker: true,
-              }),
-              git.execute({
-                operation: "GitWorkflowService.runStackedAction.mergeRequestSummary",
-                cwd: input.cwd,
-                args: ["diff", "--stat", `${baseRef}...HEAD`],
-                maxOutputBytes: 128 * 1024,
-                appendTruncationMarker: true,
-              }),
-              git.execute({
-                operation: "GitWorkflowService.runStackedAction.mergeRequestPatch",
-                cwd: input.cwd,
-                args: ["diff", `${baseRef}...HEAD`],
-                maxOutputBytes: 512 * 1024,
-                appendTruncationMarker: true,
-              }),
-              settings.sourceControlWritingStyle.followChangeRequestTemplates
-                ? detectPrTemplate(input.cwd, baseRef, git.execute)
-                : Effect.succeed(Option.none()),
-            ]);
-            const generated = yield* textGeneration.value.generatePrContent({
+          const baseRef = `origin/${baseBranch}`;
+          const settings = yield* readGenerationSettings(input.cwd);
+          const [commitSummary, diffSummary, diffPatch, template] = yield* Effect.all([
+            git.execute({
+              operation: "GitWorkflowService.runStackedAction.mergeRequestCommits",
               cwd: input.cwd,
-              baseBranch,
-              headBranch: branch,
-              commitSummary: commitSummary.stdout,
-              diffSummary: diffSummary.stdout,
-              diffPatch: diffPatch.stdout,
-              ...(Option.isSome(template) ? { changeRequestTemplate: template.value } : {}),
-              modelSelection: resolveSourceControlWriterModelSelection(settings),
-              policy: yield* resolveWritingPolicy(input.cwd, settings),
-            });
-            title = generated.title;
-            body = generated.body;
-          }
-          const fs = Option.getOrNull(fileSystem);
-          const bodyFile =
-            body && fs
-              ? yield* fs.makeTempFile({ prefix: "t3-gitlab-mr-", suffix: ".md" }).pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new GitManagerError({
-                        operation: "runStackedAction",
-                        cwd: input.cwd,
-                        detail: "Could not create the merge request body file.",
-                        cause,
-                      }),
-                  ),
-                )
-              : "/dev/null";
-          if (bodyFile !== "/dev/null" && fs) {
+              args: ["log", "--oneline", `${baseRef}..HEAD`],
+              maxOutputBytes: 128 * 1024,
+              appendTruncationMarker: true,
+            }),
+            git.execute({
+              operation: "GitWorkflowService.runStackedAction.mergeRequestSummary",
+              cwd: input.cwd,
+              args: ["diff", "--stat", `${baseRef}...HEAD`],
+              maxOutputBytes: 128 * 1024,
+              appendTruncationMarker: true,
+            }),
+            git.execute({
+              operation: "GitWorkflowService.runStackedAction.mergeRequestPatch",
+              cwd: input.cwd,
+              args: ["diff", `${baseRef}...HEAD`],
+              maxOutputBytes: 512 * 1024,
+              appendTruncationMarker: true,
+            }),
+            settings.sourceControlWritingStyle.followChangeRequestTemplates
+              ? detectPrTemplate(input.cwd, baseRef, git.execute)
+              : Effect.succeed(Option.none()),
+          ]);
+          const { title, body } = yield* textGeneration.generatePrContent({
+            cwd: input.cwd,
+            baseBranch,
+            headBranch: branch,
+            commitSummary: commitSummary.stdout,
+            diffSummary: diffSummary.stdout,
+            diffPatch: diffPatch.stdout,
+            ...(Option.isSome(template) ? { changeRequestTemplate: template.value } : {}),
+            modelSelection: resolveSourceControlWriterModelSelection(settings),
+            policy: yield* resolveWritingPolicy(input.cwd, settings),
+          });
+          const fs = fileSystem;
+          const bodyFile = body
+            ? yield* fs.makeTempFile({ prefix: "t3-gitlab-mr-", suffix: ".md" }).pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new GitManagerError({
+                      operation: "runStackedAction",
+                      cwd: input.cwd,
+                      detail: "Could not create the merge request body file.",
+                      cause,
+                    }),
+                ),
+              )
+            : "/dev/null";
+          if (bodyFile !== "/dev/null") {
             yield* fs.writeFileString(bodyFile, body).pipe(
               Effect.mapError(
                 (cause) =>
@@ -1128,9 +1133,7 @@ export const layer = Layer.effect(
             })
             .pipe(
               Effect.ensuring(
-                bodyFile === "/dev/null" || !fs
-                  ? Effect.void
-                  : fs.remove(bodyFile).pipe(Effect.ignore),
+                bodyFile === "/dev/null" ? Effect.void : fs.remove(bodyFile).pipe(Effect.ignore),
               ),
             );
           const created = yield* provider.listChangeRequests({
@@ -1198,9 +1201,7 @@ export const layer = Layer.effect(
         } as const;
 
         const canonicalizeExistingPath = (value: string) =>
-          Option.isSome(fileSystem)
-            ? fileSystem.value.realPath(value).pipe(Effect.orElseSucceed(() => value))
-            : Effect.succeed(value);
+          fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
         const execute = (
           cwd: string,
           operation: string,
@@ -1284,8 +1285,8 @@ export const layer = Layer.effect(
             ),
           );
         const maybeRunSetupScript = (worktreePath: string) => {
-          if (!input.threadId || Option.isNone(projectSetupScriptRunner)) return Effect.void;
-          return projectSetupScriptRunner.value
+          if (!input.threadId) return Effect.void;
+          return projectSetupScriptRunner
             .runForThread({
               threadId: input.threadId,
               projectCwd: input.cwd,
@@ -1498,19 +1499,19 @@ export const layer = Layer.effect(
       status,
       branchPullRequest,
       invalidateStatus,
-      pull,
+      pull: (input, options) => mutate(input.cwd, pull(input, options)),
       resolvePullRequest,
-      runStackedAction,
+      runStackedAction: (input, reporter) => mutate(input.cwd, runStackedAction(input, reporter)),
       localRefStatus: ({ cwd }) => git.refStatusLocal(cwd),
       listRefs: git.listRefs,
-      createWorktree: git.createWorktree,
-      removeWorktree: git.removeWorktree,
-      pruneWorktrees: git.pruneWorktrees,
-      createRef: git.createRef,
-      switchRef: (input) => Effect.scoped(git.switchRef(input)),
-      renameBranch: git.renameBranch,
-      moveWorktree: git.moveWorktree,
-      preparePullRequestThread,
+      createWorktree: (input) => mutate(input.cwd, git.createWorktree(input)),
+      removeWorktree: (input) => mutate(input.cwd, git.removeWorktree(input)),
+      pruneWorktrees: (input) => mutate(input.cwd, git.pruneWorktrees(input)),
+      createRef: (input) => mutate(input.cwd, git.createRef(input)),
+      switchRef: (input) => mutate(input.cwd, git.switchRef(input)),
+      renameBranch: (input) => mutate(input.cwd, git.renameBranch(input)),
+      moveWorktree: (input) => mutate(input.cwd, git.moveWorktree(input)),
+      preparePullRequestThread: (input) => mutate(input.cwd, preparePullRequestThread(input)),
     });
   }),
 );

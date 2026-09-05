@@ -35,9 +35,9 @@ packageExtensionsChecksum: sha256-uRNSOmZGMbxiey/el3j86YmdH2m8/ap2Y34J3dVkBNY=
 
 patchedDependencies:
   '@effect/vitest@4.0.0-beta.103': a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b
-  '@legendapp/list@3.3.5': 064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706
+  '@legendapp/list@3.3.5': 455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67
   '@pierre/diffs@1.3.0-beta.10': 96db6b586fca73fb188fe278c7bcf722c473945bba9ca7b7b26b124da815aaa2
-  effect@4.0.0-beta.103: af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6
+  effect@4.0.0-beta.103: 05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a
 
 importers:
 
@@ -60,16 +60,19 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@t3tools/coder-cli':
         specifier: workspace:*
         version: link:../../packages/coder-cli
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@t3tools/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       ws:
         specifier: 8.21.0
         version: 8.21.0
@@ -80,15 +83,12 @@ importers:
       '@types/ws':
         specifier: 8.18.1
         version: 8.18.1
-      vite-plus:
-        specifier: 'catalog:'
-        version: 0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(yaml@2.9.0)
 
   apps/coder-helper:
     dependencies:
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@t3tools/coder-cli':
         specifier: workspace:*
         version: link:../../packages/coder-cli
@@ -97,7 +97,7 @@ importers:
         version: link:../../packages/contracts
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       t3:
         specifier: workspace:*
         version: link:../server
@@ -108,24 +108,18 @@ importers:
       esbuild:
         specifier: ^0.28.1
         version: 0.28.1
-      vite-plus:
-        specifier: 'catalog:'
-        version: 0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(yaml@2.9.0)
 
   apps/server:
     dependencies:
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@ff-labs/fff-node':
         specifier: 0.9.4
         version: 0.9.4
-      '@pierre/diffs':
-        specifier: 'catalog:'
-        version: 1.3.0-beta.10(patch_hash=96db6b586fca73fb188fe278c7bcf722c473945bba9ca7b7b26b124da815aaa2)(@shikijs/themes@4.2.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       node-pty:
         specifier: 1.2.0-beta.14
         version: 1.2.0-beta.14
@@ -135,7 +129,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -171,13 +165,13 @@ importers:
         version: 3.2.2(react@19.2.6)
       '@effect/atom-react':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))(react@19.2.6)(scheduler@0.27.0)
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))(react@19.2.6)(scheduler@0.27.0)
       '@formkit/auto-animate':
         specifier: ^0.9.0
         version: 0.9.0
       '@legendapp/list':
         specifier: 'catalog:'
-        version: 3.3.5(patch_hash=064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 3.3.5(patch_hash=455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@lexical/react':
         specifier: ^0.41.0
         version: 0.41.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -210,10 +204,7 @@ importers:
         version: 4.0.2
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
-      jsonc-parser:
-        specifier: 3.3.1
-        version: 3.3.1
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       lexical:
         specifier: ^0.41.0
         version: 0.41.0
@@ -248,12 +239,9 @@ importers:
         specifier: ^5.0.11
         version: 5.0.14(@types/react@19.2.16)(react@19.2.6)(use-sync-external-store@1.6.0(react@19.2.6))
     devDependencies:
-      '@effect/platform-node':
-        specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
       '@effect/vitest':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@rolldown/plugin-babel':
         specifier: ^0.2.0
         version: 0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(yaml@2.9.0))
@@ -310,7 +298,7 @@ importers:
         version: link:../shared
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       mdast-util-directive:
         specifier: ^3.1.0
         version: 3.1.0
@@ -329,7 +317,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       micromark-util-types:
         specifier: ^2.0.2
         version: 2.0.2
@@ -344,24 +332,21 @@ importers:
         version: link:../contracts
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
     devDependencies:
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
-      vite-plus:
-        specifier: 'catalog:'
-        version: 0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(yaml@2.9.0)
 
   packages/contracts:
     dependencies:
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(yaml@2.9.0)
@@ -370,14 +355,14 @@ importers:
     dependencies:
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
     devDependencies:
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@effect/vitest':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
@@ -392,17 +377,17 @@ importers:
         version: link:../contracts
       effect:
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+        version: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       yaml:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
       '@effect/platform-node':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@effect/vitest':
         specifier: 4.0.0-beta.103
-        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
+        version: 4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
@@ -2403,9 +2388,6 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  jsonc-parser@3.3.1:
-    resolution: {integrity: sha512-HUgH65KyejrUFPvHFPbqOY0rsFip3Bo5wb4ngvdi1EpCYWUQDC5V+Y7mZws+DLkr4M//zQJoanu1SP+87Dv1oQ==}
-
   knip@6.34.0:
     resolution: {integrity: sha512-bbHIrnGspYwe4EBPjjx+lvkUor0F2qfKQc5BPzPI4SOAImYA+k2ueVpIcF7d/W1LEVT7XoJUPt6zELeGZhXBgA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -3319,33 +3301,33 @@ snapshots:
       react: 19.2.6
       tslib: 2.8.1
 
-  '@effect/atom-react@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))(react@19.2.6)(scheduler@0.27.0)':
+  '@effect/atom-react@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))(react@19.2.6)(scheduler@0.27.0)':
     dependencies:
-      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+      effect: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       react: 19.2.6
       scheduler: 0.27.0
 
-  '@effect/platform-node-shared@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+  '@effect/platform-node-shared@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+      effect: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+  '@effect/platform-node@4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))
-      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+      '@effect/platform-node-shared': 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))
+      effect: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
       mime: 4.1.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/vitest@4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6))':
+  '@effect/vitest@4.0.0-beta.103(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))':
     dependencies:
-      effect: 4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6)
+      effect: 4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a)
 
   '@emnapi/core@1.11.2':
     dependencies:
@@ -3524,7 +3506,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@legendapp/list@3.3.5(patch_hash=064530db83875fa671559a81ae42dc159726dc2dd6ec4c982da44ff7c7a74706)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@legendapp/list@3.3.5(patch_hash=455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       react: 19.2.6
       use-sync-external-store: 1.6.0(react@19.2.6)
@@ -4657,7 +4639,7 @@ snapshots:
 
   dom-accessibility-api@0.5.16: {}
 
-  effect@4.0.0-beta.103(patch_hash=af36b7948b6f9c56623074662b51dade5699880c1a7c71245de73e13c3185fb6):
+  effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a):
     dependencies:
       '@standard-schema/spec': 1.1.0
       fast-check: 4.9.0
@@ -4910,8 +4892,6 @@ snapshots:
   jsesc@3.1.0: {}
 
   json5@2.2.3: {}
-
-  jsonc-parser@3.3.1: {}
 
   knip@6.34.0:
     dependencies:

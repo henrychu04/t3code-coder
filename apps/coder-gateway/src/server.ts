@@ -1,3 +1,15 @@
+import type {
+  DiscoveredCoderWorkspace,
+  CoderWorkspaceResourceUsage,
+  WorkspaceDiagnosticPhase,
+  WorkspaceDiagnosticEvent,
+} from "@t3tools/contracts";
+export type {
+  DiscoveredCoderWorkspace,
+  CoderWorkspaceResourceUsage,
+  WorkspaceDiagnosticPhase,
+  WorkspaceDiagnosticEvent,
+} from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeHttp from "node:http";
 import * as NodeFS from "node:fs/promises";
@@ -76,7 +88,6 @@ const DEFAULT_CODER_PROBE_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_CODER_AUTH_STATUS_TIMEOUT_MS = 15_000;
 const DEFAULT_PROCESS_TERMINATION_GRACE_MS = 5_000;
 const DEFAULT_CODER_WORKSPACE_STATS_TIMEOUT_MS = 15_000;
-const PROMISE_ADAPTER_CLOSE_TIMEOUT_MS = 5_000;
 
 const indexHtml = `<!doctype html>
 <html lang="en">
@@ -147,11 +158,6 @@ async function serveStaticFile(
     if (code !== "ENOENT" && code !== "EISDIR" && code !== "ENOTDIR") throw cause;
     return false;
   }
-}
-
-export interface LocalCoderGateway {
-  readonly url: string;
-  readonly close: () => Promise<void>;
 }
 
 function readJsonBody(request: NodeHttp.IncomingMessage): Promise<unknown> {
@@ -272,22 +278,6 @@ export function runCoderAuthStatus(
   terminationGraceMs = DEFAULT_PROCESS_TERMINATION_GRACE_MS,
 ): Promise<CoderAuthenticationStatus> {
   return Effect.runPromise(checkCoderAuthStatus(invocation, timeoutMs, terminationGraceMs));
-}
-
-export interface DiscoveredCoderWorkspace {
-  readonly name: string;
-  readonly target: string;
-  readonly status: "running" | "starting" | "stopped" | "unknown";
-  readonly updateAvailable: boolean;
-  readonly healthy: boolean | null;
-  readonly autostopAt: string | null;
-  readonly requiredStopAt: string | null;
-}
-
-export interface CoderWorkspaceResourceUsage {
-  readonly cpu: { readonly used: number; readonly total: number; readonly unit: "cores" };
-  readonly memory: { readonly used: number; readonly total: number; readonly unit: "B" };
-  readonly disk: { readonly used: number; readonly total: number; readonly unit: "B" };
 }
 
 function workspaceConnectionIsCurrent(
@@ -570,22 +560,6 @@ function runCoderWorkspaceResourceUsage(
 }
 
 type WorkspaceAction = "start" | "stop" | "restart" | "update";
-
-export type WorkspaceDiagnosticPhase =
-  | "preflight"
-  | "installing_helper"
-  | "negotiating_helper"
-  | "connected"
-  | "disconnected";
-
-export interface WorkspaceDiagnosticEvent {
-  readonly id: number;
-  readonly attempt: number;
-  readonly phase: WorkspaceDiagnosticPhase;
-  readonly status: "running" | "completed" | "failed";
-  readonly startedAt: number;
-  readonly durationMs?: number;
-}
 
 class WorkspaceActionConflictError extends Error {}
 
@@ -2266,261 +2240,4 @@ export function makeLocalCoderGateway(
 
     return { url: `http://${CODER_GATEWAY_HOST}:${address.port}` };
   });
-}
-
-export interface PromiseCoderHelperConnection {
-  readonly info: CoderHelperConnection["info"];
-  readonly closed: Promise<CoderHelperExit>;
-  readonly sendRpc: (message: unknown) => void;
-  readonly onRpcMessage: CoderHelperConnection["onRpcMessage"];
-  readonly close: () => void;
-}
-
-export interface PromiseCoderPortForwardConnection {
-  readonly closed: Promise<CoderPortForwardExit>;
-  readonly close: () => void;
-}
-
-interface LocalCoderGatewayOptions {
-  readonly configPath?: string;
-  readonly connectHelper?: (invocation: CoderInvocation) => Promise<PromiseCoderHelperConnection>;
-  readonly helperBundlePath?: string;
-  readonly staticDir?: string;
-  readonly listWorkspaces?: (
-    invocation: CoderInvocation,
-  ) => Promise<readonly DiscoveredCoderWorkspace[]>;
-  readonly probeWorkspace?: (invocation: CoderInvocation) => Promise<void>;
-  readonly workspaceProbeTimeoutMs?: number;
-  readonly coderAuthStatusTimeoutMs?: number;
-  readonly checkAuthentication?: (
-    invocation: CoderInvocation,
-  ) => Promise<CoderAuthenticationStatus>;
-  readonly startWorkspace?: (invocation: CoderInvocation) => Promise<void>;
-  readonly stopWorkspace?: (invocation: CoderInvocation) => Promise<void>;
-  readonly restartWorkspace?: (invocation: CoderInvocation) => Promise<void>;
-  readonly updateWorkspace?: (invocation: CoderInvocation) => Promise<void>;
-  readonly installHelper?: (
-    input: Parameters<typeof installCoderHelperWithScp>[0],
-  ) => Promise<void>;
-  readonly uploadClipboardImage?: (
-    input: Parameters<typeof uploadCoderClipboardImageWithScp>[0],
-  ) => Promise<string>;
-  readonly connectPortForward?: (
-    invocation: CoderInvocation,
-  ) => Promise<PromiseCoderPortForwardConnection>;
-  readonly readWorkspaceResourceUsage?: (
-    invocation: CoderInvocation,
-  ) => Promise<CoderWorkspaceResourceUsage>;
-  readonly workspaceResourceUsageTimeoutMs?: number;
-}
-
-const fromPromise = <A>(evaluate: () => Promise<A>): Effect.Effect<A, unknown> =>
-  Effect.tryPromise({ try: evaluate, catch: (cause) => cause });
-
-/** Promise adapter for tests and embedders that cannot own an Effect scope. */
-export async function startLocalCoderGateway(
-  options?: LocalCoderGatewayOptions,
-): Promise<LocalCoderGateway> {
-  const scope = await Effect.runPromise(Scope.make("sequential"));
-  const effectOptions: LocalCoderGatewayEffectOptions = {
-    ...(options?.configPath === undefined ? {} : { configPath: options.configPath }),
-    ...(options?.helperBundlePath === undefined
-      ? {}
-      : { helperBundlePath: options.helperBundlePath }),
-    ...(options?.staticDir === undefined ? {} : { staticDir: options.staticDir }),
-    ...(options?.workspaceProbeTimeoutMs === undefined
-      ? {}
-      : { workspaceProbeTimeoutMs: options.workspaceProbeTimeoutMs }),
-    ...(options?.coderAuthStatusTimeoutMs === undefined
-      ? {}
-      : { coderAuthStatusTimeoutMs: options.coderAuthStatusTimeoutMs }),
-    ...(options?.workspaceResourceUsageTimeoutMs === undefined
-      ? {}
-      : { workspaceResourceUsageTimeoutMs: options.workspaceResourceUsageTimeoutMs }),
-    ...(options?.listWorkspaces === undefined
-      ? {}
-      : { listWorkspaces: (invocation) => fromPromise(() => options.listWorkspaces!(invocation)) }),
-    ...(options?.probeWorkspace === undefined
-      ? {}
-      : { probeWorkspace: (invocation) => fromPromise(() => options.probeWorkspace!(invocation)) }),
-    ...(options?.checkAuthentication === undefined
-      ? {}
-      : {
-          checkAuthentication: (invocation) =>
-            fromPromise(() => options.checkAuthentication!(invocation)),
-        }),
-    ...(options?.startWorkspace === undefined
-      ? {}
-      : { startWorkspace: (invocation) => fromPromise(() => options.startWorkspace!(invocation)) }),
-    ...(options?.stopWorkspace === undefined
-      ? {}
-      : { stopWorkspace: (invocation) => fromPromise(() => options.stopWorkspace!(invocation)) }),
-    ...(options?.restartWorkspace === undefined
-      ? {}
-      : {
-          restartWorkspace: (invocation) =>
-            fromPromise(() => options.restartWorkspace!(invocation)),
-        }),
-    ...(options?.updateWorkspace === undefined
-      ? {}
-      : {
-          updateWorkspace: (invocation) => fromPromise(() => options.updateWorkspace!(invocation)),
-        }),
-    ...(options?.installHelper === undefined
-      ? {}
-      : { installHelper: (input) => fromPromise(() => options.installHelper!(input)) }),
-    ...(options?.uploadClipboardImage === undefined
-      ? {}
-      : {
-          uploadClipboardImage: (input) => fromPromise(() => options.uploadClipboardImage!(input)),
-        }),
-    ...(options?.connectPortForward === undefined
-      ? {}
-      : {
-          connectPortForward: (invocation) =>
-            Effect.acquireRelease(
-              Effect.callback<CoderPortForwardConnection, unknown>((resume) => {
-                let interrupted = false;
-                let connecting: Promise<PromiseCoderPortForwardConnection>;
-                try {
-                  connecting = options.connectPortForward!(invocation);
-                } catch (cause) {
-                  resume(Effect.fail(cause));
-                  return;
-                }
-                void connecting.then(
-                  (connection) => {
-                    if (interrupted) {
-                      try {
-                        connection.close();
-                      } catch {
-                        // A late legacy connection is already detached from the gateway.
-                      }
-                      void connection.closed.catch(() => undefined);
-                      return;
-                    }
-                    let closed = false;
-                    void connection.closed.then(
-                      () => {
-                        closed = true;
-                      },
-                      () => {
-                        closed = true;
-                      },
-                    );
-                    resume(
-                      Effect.succeed({
-                        closed: fromPromise(() => connection.closed).pipe(Effect.orDie),
-                        close: Effect.suspend(() =>
-                          closed ? Effect.void : Effect.sync(() => connection.close()),
-                        ),
-                      }),
-                    );
-                  },
-                  (cause) => {
-                    if (!interrupted) resume(Effect.fail(cause));
-                  },
-                );
-                return Effect.sync(() => {
-                  interrupted = true;
-                });
-              }),
-              (connection) =>
-                connection.close.pipe(
-                  Effect.andThen(connection.closed),
-                  Effect.timeoutOrElse({
-                    duration: PROMISE_ADAPTER_CLOSE_TIMEOUT_MS,
-                    orElse: () => Effect.void,
-                  }),
-                  Effect.asVoid,
-                  Effect.catchCause(() => Effect.void),
-                ),
-              { interruptible: true },
-            ),
-        }),
-    ...(options?.readWorkspaceResourceUsage === undefined
-      ? {}
-      : {
-          readWorkspaceResourceUsage: (invocation) =>
-            fromPromise(() => options.readWorkspaceResourceUsage!(invocation)),
-        }),
-    ...(options?.connectHelper === undefined
-      ? {}
-      : {
-          connectHelper: (invocation) =>
-            Effect.acquireRelease(
-              Effect.callback<CoderHelperConnection, unknown>((resume) => {
-                let interrupted = false;
-                let connecting: Promise<PromiseCoderHelperConnection>;
-                try {
-                  connecting = options.connectHelper!(invocation);
-                } catch (cause) {
-                  resume(Effect.fail(cause));
-                  return;
-                }
-                void connecting.then(
-                  (connection) => {
-                    if (interrupted) {
-                      try {
-                        connection.close();
-                      } catch {
-                        // A late legacy connection is already detached from the gateway.
-                      }
-                      void connection.closed.catch(() => undefined);
-                      return;
-                    }
-                    resume(
-                      Effect.succeed({
-                        info: connection.info,
-                        closed: fromPromise(() => connection.closed).pipe(Effect.orDie),
-                        sendRpc: (message) =>
-                          Effect.try({
-                            try: () => connection.sendRpc(message),
-                            catch: (cause) =>
-                              new CoderHelperConnectionError(
-                                "Coder workspace helper RPC request failed.",
-                                { cause },
-                              ),
-                          }),
-                        onRpcMessage: (listener) => connection.onRpcMessage(listener),
-                        close: Effect.sync(() => connection.close()),
-                      }),
-                    );
-                  },
-                  (cause) => {
-                    if (!interrupted) resume(Effect.fail(cause));
-                  },
-                );
-                return Effect.sync(() => {
-                  interrupted = true;
-                });
-              }),
-              (connection) =>
-                connection.close.pipe(
-                  Effect.andThen(connection.closed),
-                  Effect.timeoutOrElse({
-                    duration: PROMISE_ADAPTER_CLOSE_TIMEOUT_MS,
-                    orElse: () => Effect.void,
-                  }),
-                  Effect.asVoid,
-                  Effect.catchCause(() => Effect.void),
-                ),
-              { interruptible: true },
-            ),
-        }),
-  };
-
-  try {
-    const gateway = await Effect.runPromise(
-      makeLocalCoderGateway(effectOptions).pipe(Scope.provide(scope)),
-    );
-    let closePromise: Promise<void> | undefined;
-    return {
-      ...gateway,
-      close: () => (closePromise ??= Effect.runPromise(Scope.close(scope, Exit.void))),
-    };
-  } catch (cause) {
-    await Effect.runPromise(Scope.close(scope, Exit.void));
-    throw cause;
-  }
 }

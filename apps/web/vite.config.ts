@@ -1,3 +1,4 @@
+import { readBuildVersion } from "../../scripts/build-info.ts";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
@@ -17,6 +18,7 @@ const unitTestProject = {
 } satisfies TestProjectInlineConfiguration;
 
 export default defineConfig({
+  define: { "import.meta.env.APP_VERSION": JSON.stringify(readBuildVersion()) },
   assetsInclude: ["**/*.wasm"],
   plugins: [
     tanstackRouter(),

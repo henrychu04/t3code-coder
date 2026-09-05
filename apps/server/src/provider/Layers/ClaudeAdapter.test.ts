@@ -1371,8 +1371,17 @@ describe("ClaudeAdapterLive", () => {
   });
 
   it.effect("captures tool-result and observed screenshots without retaining base64", () => {
-    const capturedInputs: Array<{ dataBase64: string; mimeType: string; name?: string }> = [];
-    const capturedFiles: Array<{ cwd: string; filePath: string }> = [];
+    const capturedInputs: Array<{
+      dataBase64: string;
+      mimeType: string;
+      name?: string;
+      capturedDigests: ReadonlySet<string>;
+    }> = [];
+    const capturedFiles: Array<{
+      cwd: string;
+      filePath: string;
+      capturedDigests: ReadonlySet<string>;
+    }> = [];
     const harness = makeHarness({
       adapterOptions: {
         observeScreenshots: (cwd) => {
@@ -1394,6 +1403,7 @@ describe("ClaudeAdapterLive", () => {
           });
         },
         captureScreenshotBase64: (input) => {
+          if (input.capturedDigests.has("screenshot-digest")) return Effect.succeed(undefined);
           capturedInputs.push(input);
           return Effect.succeed({
             reference: {
@@ -1449,16 +1459,14 @@ describe("ClaudeAdapterLive", () => {
             {
               type: "tool_result",
               tool_use_id: "tool-screenshot-1",
-              content: [
-                {
-                  type: "image",
-                  source: {
-                    type: "base64",
-                    media_type: "image/png",
-                    data: "secret-image-base64",
-                  },
+              content: Array.from({ length: 20 }, () => ({
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: "image/png",
+                  data: "secret-image-base64",
                 },
-              ],
+              })),
             },
           ],
         },
@@ -1496,6 +1504,7 @@ describe("ClaudeAdapterLive", () => {
       }
       assert.deepEqual(capturedInputs, [
         {
+          capturedDigests: new Set(["screenshot-digest", "filesystem-screenshot-digest"]),
           dataBase64: "secret-image-base64",
           mimeType: "image/png",
           name: "test-results/home.png",
@@ -1505,6 +1514,7 @@ describe("ClaudeAdapterLive", () => {
         {
           cwd: "/workspace/repo",
           filePath: "/workspace/repo/test-results/final.webp",
+          capturedDigests: new Set(["screenshot-digest", "filesystem-screenshot-digest"]),
         },
       ]);
       assert.notMatch(JSON.stringify(runtimeEvents), /secret-image-base64/u);

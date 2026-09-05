@@ -45,7 +45,7 @@ export const layer = Layer.effect(
         environmentId,
         label: configuredLabel || path.basename(config.cwd) || "Coder workspace",
         platform: { os: "linux", arch: platformArch() },
-        serverVersion: packageJson.version,
+        serverVersion: process.env.T3_CODER_BUILD_VERSION ?? packageJson.version,
         capabilities: {
           repositoryIdentity: true,
           pullRequests: true,

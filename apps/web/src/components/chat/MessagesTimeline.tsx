@@ -1,3 +1,4 @@
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
   type EnvironmentId,
@@ -69,7 +70,6 @@ import {
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
-  MousePointerClickIcon,
   PaintbrushIcon,
   SearchIcon,
   SquarePenIcon,
@@ -117,7 +117,6 @@ import {
   type ParsedTerminalContextEntry,
 } from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
-import { useUiStateStore } from "~/uiStateStore";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
 
@@ -997,7 +996,6 @@ function TimelineMinimap({
 // ---------------------------------------------------------------------------
 
 type TimelineEntry = ReturnType<typeof deriveTimelineEntries>[number];
-type TimelineMessage = Extract<TimelineEntry, { kind: "message" }>["message"];
 type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["groupedEntries"][number];
 type TimelineRow = MessagesTimelineRow;
 
@@ -1336,10 +1334,6 @@ function LiveActivityRow({
       </div>
     </div>
   );
-}
-
-function ThinkingActivityRow() {
-  return <LiveActivityRow label="Thinking" />;
 }
 
 function LiveActivityContent({
@@ -1834,6 +1828,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
               collapsed: false,
               diffStyle: "unified",
               theme: resolveDiffThemeName(ctx.resolvedTheme),
+              preferredHighlighter: PREFERRED_HIGHLIGHTER,
             }}
           />
         ))}

@@ -1,3 +1,5 @@
+import type { CoderProfileConfig } from "@t3tools/contracts";
+export type { CoderProfileConfig } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off
 import { randomUUID } from "node:crypto";
 import * as NodeFS from "node:fs/promises";
@@ -11,13 +13,6 @@ import {
   type CoderPortForwardProfile,
   type CoderWorkspaceProfile,
 } from "./profile.ts";
-
-export interface CoderProfileConfig {
-  readonly version: 1;
-  readonly deployments: readonly CoderDeploymentProfile[];
-  readonly workspaces: readonly CoderWorkspaceProfile[];
-  readonly portForwards?: readonly CoderPortForwardProfile[];
-}
 
 export const emptyCoderProfileConfig = (): CoderProfileConfig => ({
   version: 1,

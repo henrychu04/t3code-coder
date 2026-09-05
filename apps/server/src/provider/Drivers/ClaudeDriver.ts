@@ -24,7 +24,6 @@ import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
-import * as CoderBackgroundPolicy from "../../coderBackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { ScreenshotArtifacts } from "../../workspace/ScreenshotArtifacts.ts";
 import { ProviderDriverError } from "../Errors.ts";
@@ -50,7 +49,6 @@ const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CAPABILITIES_PROBE_TTL = Duration.minutes(5);
 
 export type ClaudeDriverEnv =
-  | CoderBackgroundPolicy.CoderBackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
   | FileSystem.FileSystem

@@ -1,3 +1,4 @@
+import { detectImageMimeType } from "@t3tools/shared/imageSignature";
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace artifact storage is a Linux filesystem adapter.
 import { createHash, randomUUID } from "node:crypto";
 import { constants as FILE_SYSTEM_CONSTANTS, watch as watchFileSystem } from "node:fs";
@@ -6,6 +7,7 @@ import * as NodePath from "node:path";
 
 import {
   MAX_SCREENSHOT_ARTIFACT_BYTES,
+  MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
   ScreenshotArtifactId,
   ScreenshotArtifactReadError,
@@ -48,31 +50,6 @@ export function isScreenshotCandidatePath(value: string): boolean {
     return false;
   }
   return /\.(?:jpe?g|png|webp)$/i.test(normalized);
-}
-
-function detectScreenshotMimeType(bytes: Buffer): ScreenshotArtifactMimeType | undefined {
-  if (bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
-    return "image/png";
-  }
-  if (
-    bytes.byteLength >= 4 &&
-    bytes[0] === 0xff &&
-    bytes[1] === 0xd8 &&
-    bytes[2] === 0xff &&
-    bytes.at(-2) === 0xff &&
-    bytes.at(-1) === 0xd9
-  ) {
-    return "image/jpeg";
-  }
-  if (
-    bytes.byteLength >= 12 &&
-    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
-    bytes.subarray(8, 12).toString("ascii") === "WEBP" &&
-    bytes.readUInt32LE(4) + 8 === bytes.byteLength
-  ) {
-    return "image/webp";
-  }
-  return undefined;
 }
 
 async function detectStoredScreenshotMimeType(
@@ -134,9 +111,11 @@ export class ScreenshotArtifacts extends Context.Service<
     readonly captureFile: (input: {
       readonly cwd: string;
       readonly filePath: string;
+      readonly capturedDigests?: ReadonlySet<string> | undefined;
     }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
     readonly captureBase64: (input: {
       readonly dataBase64: string;
+      readonly capturedDigests?: ReadonlySet<string> | undefined;
       readonly mimeType: string;
       readonly name?: string;
     }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
@@ -152,23 +131,30 @@ export const make = Effect.gen(function* () {
 
   const persistBytes = Effect.fn("ScreenshotArtifacts.persistBytes")(function* (input: {
     readonly bytes: Buffer;
+    readonly capturedDigests?: ReadonlySet<string> | undefined;
     readonly mimeType?: string;
     readonly name?: string;
   }) {
     if (input.bytes.byteLength === 0 || input.bytes.byteLength > MAX_SCREENSHOT_ARTIFACT_BYTES) {
       return undefined;
     }
-    const detectedMimeType = detectScreenshotMimeType(input.bytes);
+    const detectedMimeType = detectImageMimeType(input.bytes);
     if (!detectedMimeType || (input.mimeType && input.mimeType !== detectedMimeType)) {
       return undefined;
     }
+
+    const digest = createHash("sha256").update(input.bytes).digest("hex");
+    if (
+      input.capturedDigests &&
+      (input.capturedDigests.size >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN ||
+        input.capturedDigests.has(digest))
+    )
+      return undefined;
 
     const id = ScreenshotArtifactId.make(randomUUID());
     const extension = extensionByMimeType[detectedMimeType];
     const finalPath = NodePath.join(config.screenshotArtifactsDir, `${id}.${extension}`);
     const temporaryPath = `${finalPath}.tmp`;
-    const digest = createHash("sha256").update(input.bytes).digest("hex");
-
     const persisted = yield* Effect.tryPromise({
       try: async () => {
         await NodeFS.mkdir(config.screenshotArtifactsDir, { recursive: true, mode: 0o700 });
@@ -223,7 +209,9 @@ export const make = Effect.gen(function* () {
     }).pipe(
       Effect.catch(() => Effect.succeed(undefined)),
       Effect.flatMap((candidate) =>
-        candidate ? persistBytes(candidate) : Effect.succeed(undefined),
+        candidate
+          ? persistBytes({ ...candidate, capturedDigests: input.capturedDigests })
+          : Effect.succeed(undefined),
       ),
     );
   });
@@ -237,6 +225,7 @@ export const make = Effect.gen(function* () {
     const bytes = Buffer.from(input.dataBase64, "base64");
     return yield* persistBytes({
       bytes,
+      capturedDigests: input.capturedDigests,
       mimeType: input.mimeType,
       ...(input.name ? { name: input.name } : {}),
     });

@@ -1,3 +1,4 @@
+import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 // @effect-diagnostics nodeBuiltinImport:off
 import { createHash, randomUUID } from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
@@ -13,6 +14,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as RcMap from "effect/RcMap";
+import * as Semaphore from "effect/Semaphore";
 
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
@@ -119,8 +122,13 @@ function isContained(root: string, target: string): boolean {
 }
 
 export const make = Effect.gen(function* () {
+  const writeLocks = yield* RcMap.make({ lookup: (_path: string) => Semaphore.make(1) });
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
+  const refreshWorker = yield* makeKeyedCoalescingWorker<string, boolean, never, never>({
+    merge: () => true,
+    process: (cwd) => workspaceEntries.refresh(cwd),
+  });
 
   const resolveExisting = Effect.fn("WorkspaceFileSystem.resolveExisting")(function* (input: {
     cwd: string;
@@ -241,41 +249,54 @@ export const make = Effect.gen(function* () {
         cause: new Error(`Workspace text files are limited to ${PROJECT_FILE_MAX_BYTES} bytes.`),
       });
     }
-    const current = yield* readFile({ cwd: input.cwd, relativePath: input.relativePath });
-    if (current.truncated || current.revision !== input.expectedRevision) {
-      return yield* new WorkspaceFileStaleError({
-        workspaceRoot: input.cwd,
-        relativePath: input.relativePath,
-        resolvedPath: realTargetPath,
-      });
-    }
-    const temporaryPath = NodePath.join(
-      NodePath.dirname(realTargetPath),
-      `.${NodePath.basename(realTargetPath)}.t3-${randomUUID()}.tmp`,
+    return yield* Effect.scoped(
+      Effect.gen(function* () {
+        const lock = yield* RcMap.get(writeLocks, realTargetPath);
+        return yield* lock.withPermits(1)(
+          Effect.gen(function* () {
+            const current = yield* readFile({ cwd: input.cwd, relativePath: input.relativePath });
+            if (current.truncated || current.revision !== input.expectedRevision) {
+              return yield* new WorkspaceFileStaleError({
+                workspaceRoot: input.cwd,
+                relativePath: input.relativePath,
+                resolvedPath: realTargetPath,
+              });
+            }
+            const temporaryPath = NodePath.join(
+              NodePath.dirname(realTargetPath),
+              `.${NodePath.basename(realTargetPath)}.t3-${randomUUID()}.tmp`,
+            );
+            // Node filesystem promises cannot be cancelled. Keep ownership of the lock
+            // until the physical write finishes, even if the RPC caller disconnects.
+            yield* Effect.tryPromise({
+              try: async () => {
+                const stat = await NodeFSP.stat(realTargetPath);
+                try {
+                  await NodeFSP.writeFile(temporaryPath, bytes, { mode: stat.mode });
+                  await NodeFSP.rename(temporaryPath, realTargetPath);
+                } catch (error) {
+                  await NodeFSP.rm(temporaryPath, { force: true });
+                  throw error;
+                }
+              },
+              catch: (cause) =>
+                new WorkspaceFileSystemOperationError({
+                  workspaceRoot: input.cwd,
+                  relativePath: input.relativePath,
+                  resolvedPath: target.absolutePath,
+                  operationPath: target.absolutePath,
+                  operation: "write-file",
+                  cause,
+                }),
+            }).pipe(
+              Effect.tap(() => refreshWorker.enqueue(input.cwd, true)),
+              Effect.uninterruptible,
+            );
+            return { relativePath: target.relativePath, revision: revisionOf(bytes) };
+          }),
+        );
+      }),
     );
-    yield* Effect.tryPromise({
-      try: async () => {
-        const stat = await NodeFSP.stat(realTargetPath);
-        try {
-          await NodeFSP.writeFile(temporaryPath, bytes, { mode: stat.mode });
-          await NodeFSP.rename(temporaryPath, realTargetPath);
-        } catch (error) {
-          await NodeFSP.rm(temporaryPath, { force: true });
-          throw error;
-        }
-      },
-      catch: (cause) =>
-        new WorkspaceFileSystemOperationError({
-          workspaceRoot: input.cwd,
-          relativePath: input.relativePath,
-          resolvedPath: target.absolutePath,
-          operationPath: target.absolutePath,
-          operation: "write-file",
-          cause,
-        }),
-    });
-    yield* workspaceEntries.refresh(input.cwd);
-    return { relativePath: target.relativePath, revision: revisionOf(bytes) };
   });
 
   return WorkspaceFileSystem.of({ readFile, writeFile });
