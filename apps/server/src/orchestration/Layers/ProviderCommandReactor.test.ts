@@ -159,6 +159,7 @@ describe("ProviderCommandReactor", () => {
     readonly titleRegenerationBeforeStart?: "one" | "two";
     readonly interruptTurnEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly stopSessionEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
+    readonly compactThreadEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderAdapterRequestError>;
@@ -243,6 +244,9 @@ describe("ProviderCommandReactor", () => {
         threadId: ThreadId.make("thread-1"),
         turnId: asTurnId("turn-1"),
       }),
+    );
+    const compactThread = vi.fn<ProviderServiceShape["compactThread"]>(
+      () => input?.compactThreadEffect?.() ?? Effect.void,
     );
     const interruptTurn = vi.fn((_: unknown) => input?.interruptTurnEffect?.() ?? Effect.void);
     const respondToRequest = vi.fn<ProviderServiceShape["respondToRequest"]>(() => Effect.void);
@@ -330,6 +334,7 @@ describe("ProviderCommandReactor", () => {
     const service: ProviderServiceShape = {
       startSession: startSession as ProviderServiceShape["startSession"],
       sendTurn: sendTurn as ProviderServiceShape["sendTurn"],
+      compactThread,
       interruptTurn: interruptTurn as ProviderServiceShape["interruptTurn"],
       respondToRequest: respondToRequest as ProviderServiceShape["respondToRequest"],
       respondToUserInput: respondToUserInput as ProviderServiceShape["respondToUserInput"],
@@ -560,6 +565,7 @@ describe("ProviderCommandReactor", () => {
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
       startSession,
       sendTurn,
+      compactThread,
       interruptTurn,
       respondToRequest,
       respondToUserInput,
@@ -663,6 +669,106 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("sends an attached /compact as a normal first turn even though projections omit attachments", async () => {
+    const harness = await createHarness();
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("seed-attached-compact"),
+        threadId: ThreadId.make("thread-1"),
+        title: "/compact",
+      }),
+    );
+    const attachments = [
+      { type: "image" as const, id: "12345678-1234-4123-8123-123456789abc.png" },
+    ];
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-attached-compact"),
+        threadId: ThreadId.make("thread-1"),
+        message: { messageId: asMessageId("attached-compact"), role: "user", text: "/compact" },
+        attachments,
+        titleSeed: "/compact",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.compactThread).not.toHaveBeenCalled();
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: "/compact", attachments });
+    await waitFor(() => harness.generateThreadTitle.mock.calls.length === 1);
+  });
+
+  it("routes /compact through provider compaction without starting a normal turn", async () => {
+    const harness = await createHarness();
+    const threadId = ThreadId.make("thread-1");
+    const now = "2026-01-01T00:00:00.000Z";
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-before-compact"),
+        threadId,
+        message: {
+          messageId: asMessageId("message-before-compact"),
+          role: "user",
+          text: "Build the feature",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: now,
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-ready-before-compact"),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: "2026-01-01T00:00:01.000Z",
+        },
+        createdAt: "2026-01-01T00:00:01.000Z",
+      }),
+    );
+
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-compact"),
+        threadId,
+        message: {
+          messageId: asMessageId("message-compact"),
+          role: "user",
+          text: "/compact",
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:02.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.compactThread.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.compactThread).toHaveBeenCalledWith(
+      threadId,
+      undefined,
+      asMessageId("message-compact"),
+    );
+    expect(harness.sendTurn).toHaveBeenCalledTimes(1);
+    await waitFor(async () => (await harness.readModel()).threads[0]?.session?.status === "ready");
   });
 
   effectIt.effect("projects starting before a slow provider session finishes", () =>

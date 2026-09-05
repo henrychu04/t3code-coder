@@ -6,13 +6,17 @@ Claude about that project's work.
 ## Projects
 
 Choose **Add project** in the sidebar, pick a domain and workspace, and select a folder in the
-remote folder picker. The project appears in the sidebar with an icon chosen automatically from
-the repository.
+remote folder picker. The project appears in the sidebar with a built-in icon chosen automatically
+from its name, or its folder name when the project name is blank. Project images are not fetched.
 
 When more than one workspace is connected, the sidebar groups projects and threads by workspace so
 you always know where work is running.
 
 ## Thread states
+
+A thread with unsent composer content shows an amber tint and pen icon after you navigate away
+from it. On an active-list row, hover and choose **X** to discard the draft without opening the
+thread. Draft contents stay in browser memory and are not saved locally.
 
 Threads move through four states in the sidebar:
 

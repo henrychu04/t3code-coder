@@ -194,7 +194,9 @@ export const layer = Layer.effect(
     const STATUS_CACHE_TTL = Duration.seconds(1);
     const STATUS_CACHE_CAPACITY = 2_048;
     const FETCH_CACHE_TTL = Duration.seconds(1);
-    const PR_CACHE_TTL = Duration.minutes(2);
+    // Match the automatic settlement sweep cadence so an external merge is
+    // observed on the next sweep instead of waiting on an older cache entry.
+    const PR_CACHE_TTL = Duration.seconds(60);
     const FAILURE_BASE_TTL = Duration.seconds(20);
     const FAILURE_MAX_TTL = Duration.minutes(15);
     const failureTtl = (failures: number) =>

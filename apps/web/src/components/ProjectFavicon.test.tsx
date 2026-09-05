@@ -7,12 +7,13 @@ import { ProjectFavicon } from "./ProjectFavicon";
 const environmentId = "environment-test" as EnvironmentId;
 
 describe("ProjectFavicon", () => {
-  it("renders the local folder fallback in the Coder-only client", () => {
+  it("derives the upstream icon from the project name without fetching images", () => {
     const html = renderToStaticMarkup(
       <ProjectFavicon
         className="project-icon"
         environmentId={environmentId}
         cwd="/workspace-test"
+        projectName="agent-runtime"
         faviconPath="brand/icon.svg"
       />,
     );
@@ -20,6 +21,8 @@ describe("ProjectFavicon", () => {
     expect(html).toContain("project-icon");
     expect(html).toContain("text-icon-muted");
     expect(html).toContain("<svg");
+    expect(html).toContain("lucide-bot");
+    expect(html).not.toContain("<img");
   });
 
   it("supports a caller-provided fallback icon", () => {

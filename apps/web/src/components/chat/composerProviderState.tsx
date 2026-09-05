@@ -60,10 +60,16 @@ type TraitsRenderInput = {
   onPromptChange: (prompt: string) => void;
   planModeEnabled: boolean;
   size?: ComposerControlSize;
+  hidden?: boolean;
   triggerVariant?: VariantProps<typeof buttonVariants>["variant"];
   triggerClassName?: string;
   isComposerOwned?: boolean;
 };
+
+/** The two retained workspace providers both implement manual compaction. */
+export function providerSupportsManualCompaction(provider: ProviderDriverKind): boolean {
+  return provider === "claudeAgent" || provider === "codex";
+}
 
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
   return isClaudeUltrathinkPrompt(prompt) ? "ultrathink" : "none";
@@ -139,6 +145,7 @@ function renderTraitsControl(
     onPromptChange,
     planModeEnabled,
     size,
+    hidden,
     triggerVariant,
     triggerClassName,
     isComposerOwned,
@@ -170,6 +177,7 @@ function renderTraitsControl(
       onPromptChange={onPromptChange}
       planModeEnabled={planModeEnabled}
       {...(size !== undefined ? { size } : {})}
+      {...(hidden !== undefined ? { hidden } : {})}
       {...(triggerVariant !== undefined ? { triggerVariant } : {})}
       {...(triggerClassName !== undefined ? { triggerClassName } : {})}
       {...(isComposerOwned ? { isComposerOwned } : {})}

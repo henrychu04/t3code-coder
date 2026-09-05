@@ -1,10 +1,15 @@
 import * as Cache from "effect/Cache";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as PubSub from "effect/PubSub";
+import type * as Scope from "effect/Scope";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import {
   PullRequestOperationError,
   PullRequestUnavailableError,
@@ -113,6 +118,10 @@ const DIFF_CACHE_CAPACITY = 128;
 
 export type PullRequestError = PullRequestUnavailableError | PullRequestOperationError;
 
+export interface PullRequestMergeEvent extends PullRequestRef {
+  readonly mergedAt: string;
+}
+
 export class PullRequestService extends Context.Service<
   PullRequestService,
   {
@@ -122,6 +131,11 @@ export class PullRequestService extends Context.Service<
     readonly listStats: (
       input: PullRequestListStatsInput,
     ) => Effect.Effect<PullRequestListStatsResult, PullRequestError>;
+    readonly subscribeMerges: Effect.Effect<
+      Stream.Stream<PullRequestMergeEvent>,
+      never,
+      Scope.Scope
+    >;
     readonly detail: (input: PullRequestRef) => Effect.Effect<PullRequestDetail, PullRequestError>;
     readonly activity: (
       input: PullRequestRef,
@@ -160,6 +174,8 @@ export class PullRequestService extends Context.Service<
       input: PullRequestReviewerRequestInput,
     ) => Effect.Effect<void, PullRequestError>;
     readonly invalidate: (input: PullRequestInvalidateInput) => Effect.Effect<void>;
+    readonly subscribeRefreshes: Stream.Stream<number>;
+    readonly refreshAfterTurn: Effect.Effect<void>;
   }
 >()("t3/pullRequest/PullRequestService") {}
 
@@ -485,6 +501,8 @@ export function repositoryIdentityOf(project: OrchestrationProjectShell): string
 }
 
 export const make = Effect.gen(function* () {
+  const mergedPullRequests = yield* PubSub.sliding<PullRequestMergeEvent>(64);
+  const pullRequestRefreshes = yield* SubscriptionRef.make(0);
   const registry = yield* PullRequestProviderRegistry;
   const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
@@ -1290,9 +1308,9 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  const runAction: PullRequestService["Service"]["runAction"] = (input) =>
+  const runAction = (input: PullRequestActionInput): Effect.Effect<string, PullRequestError> =>
     requireProject(input).pipe(
-      Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
+      Effect.flatMap((project): Effect.Effect<string, PullRequestError> => {
         // The surface hides what a host cannot do, and this refuses it as well: a request that
         // reached here anyway must not be handed to a provider that never claimed the action.
         if (!project.api.capabilities.actions.includes(input.action)) {
@@ -1334,7 +1352,7 @@ export const make = Effect.gen(function* () {
         // have to say yes. The second is asked last, because it costs a request and the checks
         // above do not.
         return viewerPermissionsOf(project, input, "runAction").pipe(
-          Effect.flatMap((viewer): Effect.Effect<void, PullRequestError> => {
+          Effect.flatMap((viewer): Effect.Effect<string, PullRequestError> => {
             if (!viewer.actions.includes(input.action)) {
               return Effect.fail(
                 new PullRequestOperationError({
@@ -1364,7 +1382,10 @@ export const make = Effect.gen(function* () {
                 ...(input.mergeMethod === undefined ? {} : { mergeMethod: input.mergeMethod }),
                 ...(input.updateMethod === undefined ? {} : { updateMethod: input.updateMethod }),
               })
-              .pipe(Effect.mapError(toPullRequestError("runAction")));
+              .pipe(
+                Effect.mapError(toPullRequestError("runAction")),
+                Effect.as(project.repository),
+              );
           }),
         );
       }),
@@ -1853,10 +1874,12 @@ export const make = Effect.gen(function* () {
   // scope re-entering `refEpochs` after eviction can never mint a key an old entry still has.
   let epochCounter = 0;
   let listingsEpoch = 0;
+  let turnRefreshEpoch = 0;
   const refEpochs = new Map<string, number>();
   const REF_EPOCH_CAPACITY = 2_048;
   const refScope = (ref: PullRequestRef) => `${ref.projectId} ${ref.repository} ${ref.number}`;
-  const refEpoch = (ref: PullRequestRef) => refEpochs.get(refScope(ref)) ?? 0;
+  const refEpoch = (ref: PullRequestRef) =>
+    Math.max(turnRefreshEpoch, refEpochs.get(refScope(ref)) ?? 0);
   const bumpRefEpoch = (ref: PullRequestRef) => {
     const scope = refScope(ref);
     if (!refEpochs.has(scope) && refEpochs.size >= REF_EPOCH_CAPACITY) {
@@ -2070,6 +2093,11 @@ export const make = Effect.gen(function* () {
       bumpRefEpoch(input.reference);
     });
 
+  const refreshAfterTurn: PullRequestService["Service"]["refreshAfterTurn"] = Effect.suspend(() => {
+    turnRefreshEpoch = listingsEpoch = ++epochCounter;
+    return SubscriptionRef.set(pullRequestRefreshes, turnRefreshEpoch);
+  });
+
   // A mutation's own client re-reads right after it, and every other client's next read must
   // see the action too — so a write forgets the change request it touched and the listings its
   // state change reorders, for everyone, without any client asking.
@@ -2086,16 +2114,34 @@ export const make = Effect.gen(function* () {
           }),
         ),
       );
+  const runActionAndInvalidate: PullRequestService["Service"]["runAction"] = Effect.fn(
+    "PullRequestService.runActionAndInvalidate",
+  )(function* (input) {
+    const repository = yield* runAction(input);
+    bumpRefEpoch({ ...input, repository });
+    listingsEpoch = ++epochCounter;
+    if (input.action === "merge") {
+      yield* PubSub.publish(mergedPullRequests, {
+        projectId: input.projectId,
+        repository,
+        number: input.number,
+        mergedAt: DateTime.formatIso(yield* DateTime.now),
+      });
+    }
+  });
 
   return PullRequestService.of({
     list,
     listStats,
+    subscribeMerges: PubSub.subscribe(mergedPullRequests).pipe(
+      Effect.map((subscription) => Stream.fromSubscription(subscription)),
+    ),
     detail,
     activity,
     threadComments,
     diff,
     diffFileContents,
-    runAction: invalidatedByMutation(runAction),
+    runAction: runActionAndInvalidate,
     update: invalidatedByMutation(update),
     comment: invalidatedByMutation(comment),
     updateComment: invalidatedByMutation(updateComment),
@@ -2107,6 +2153,10 @@ export const make = Effect.gen(function* () {
     reviewerCandidates,
     requestReviewers: invalidatedByMutation(requestReviewers),
     invalidate,
+    subscribeRefreshes: SubscriptionRef.changes(pullRequestRefreshes).pipe(
+      Stream.filter((revision) => revision > 0),
+    ),
+    refreshAfterTurn,
   });
 });
 

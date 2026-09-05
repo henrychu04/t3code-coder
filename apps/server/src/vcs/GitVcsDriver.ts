@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -44,6 +45,8 @@ import {
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as ServerConfig from "../config.ts";
+
+const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 
 export interface ExecuteGitInput {
   readonly operation: string;
@@ -163,6 +166,9 @@ const CHECKPOINT_DIFF_MAX_OUTPUT_BYTES = 10_000_000;
 const REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_PATHS_MAX_OUTPUT_BYTES = 120_000;
 const REVIEW_UNTRACKED_DIFF_MAX_OUTPUT_BYTES = 80_000;
+// Rendered patches are parsed using Git's conventional a/ and b/ path prefixes.
+// Override repository or global prefix settings so paths remain parseable.
+const PATCH_RENDER_PREFIX_ARGS = ["--src-prefix=a/", "--dst-prefix=b/"] as const;
 const DEFAULT_BASE_BRANCH_CANDIDATES = ["main", "master"] as const;
 const WORKSPACE_GIT_HARDENED_CONFIG_ARGS = [
   "-c",
@@ -941,6 +947,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           "--no-color",
           "--no-ext-diff",
           "--no-textconv",
+          ...PATCH_RENDER_PREFIX_ARGS,
           ...(input.ignoreWhitespace ? ["--ignore-all-space"] : []),
           `${fromRevision}^{commit}`,
           `${input.toCheckpointRef}^{commit}`,
@@ -1285,6 +1292,7 @@ const makeLocalGitService = Effect.gen(function* () {
             "--no-ext-diff",
             "--no-textconv",
             "--minimal",
+            ...PATCH_RENDER_PREFIX_ARGS,
             "--",
             "/dev/null",
             relativePath,
@@ -1323,6 +1331,7 @@ const makeLocalGitService = Effect.gen(function* () {
         "--no-ext-diff",
         "--no-textconv",
         "--minimal",
+        ...PATCH_RENDER_PREFIX_ARGS,
         ...whitespace,
         "HEAD",
         "--",
@@ -1353,6 +1362,7 @@ const makeLocalGitService = Effect.gen(function* () {
             "--no-ext-diff",
             "--no-textconv",
             "--minimal",
+            ...PATCH_RENDER_PREFIX_ARGS,
             ...whitespace,
             `${baseRef}...HEAD`,
             "--",
@@ -1776,7 +1786,9 @@ const makeLocalGitService = Effect.gen(function* () {
   )(function* (input) {
     const args = ["worktree", "remove", ...(input.force ? ["--force"] : []), input.path];
     const result = yield* run("GitVcsDriver.removeWorktree", input.cwd, args, {
-      timeoutMs: 15_000,
+      // Dependency-heavy worktrees can take minutes to remove. Keep the
+      // operation bounded without interrupting git midway through cleanup.
+      timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
       allowNonZeroExit: true,
     });
     if (result.exitCode === 0) {

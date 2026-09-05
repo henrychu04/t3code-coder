@@ -146,6 +146,7 @@ function matchMedia() {
 }
 
 let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
+let buildToolCallExpandedBody: typeof import("./MessagesTimeline").buildToolCallExpandedBody;
 
 beforeAll(async () => {
   const classList = {
@@ -179,7 +180,7 @@ beforeAll(async () => {
     },
   });
 
-  ({ MessagesTimeline } = await import("./MessagesTimeline"));
+  ({ MessagesTimeline, buildToolCallExpandedBody } = await import("./MessagesTimeline"));
 }, 30_000);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
@@ -868,6 +869,24 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Context compacted");
   });
 
+  it("keeps wrapped raw commands expandable when the normalized command is the label", () => {
+    const entry = {
+      id: "wrapped-command",
+      createdAt: "2026-03-17T19:12:28.000Z",
+      label: "pnpm test",
+      command: "pnpm test",
+      rawCommand: "env -C /repo pnpm test",
+      tone: "tool" as const,
+    };
+    expect(buildToolCallExpandedBody(entry, undefined, "pnpm test")).toBe("env -C /repo pnpm test");
+    expect(
+      buildToolCallExpandedBody({ ...entry, detail: "pnpm test" }, undefined, "pnpm test"),
+    ).toBe("env -C /repo pnpm test");
+    expect(
+      buildToolCallExpandedBody({ ...entry, rawCommand: "pnpm test" }, undefined, "pnpm test"),
+    ).toBeNull();
+  });
+
   it("renders screenshot artifacts collapsed without loading image bytes", () => {
     const turnId = TurnId.make("turn-with-artifacts");
     const assistantEntry = buildAssistantTimelineEntry("Verification passed.");
@@ -1397,7 +1416,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("lucide-x");
+    expect(markup).toContain("lucide-circle-alert");
     expect(markup).toContain("text-destructive");
   });
 });

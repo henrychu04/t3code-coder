@@ -1,5 +1,14 @@
 import type { PullRequestState } from "@t3tools/contracts";
-import { Bot, FileDiff, Files, GitPullRequest, Plus, TerminalSquare } from "lucide-react";
+import {
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  FileDiff,
+  Files,
+  GitPullRequest,
+  Plus,
+  TerminalSquare,
+} from "lucide-react";
 import {
   type ReactElement,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -103,6 +112,8 @@ export interface PullRequestTabStatus {
 }
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
+
+const TAB_SCROLL_EDGE_TOLERANCE = 1;
 
 type SurfaceShortcutEvent = Pick<
   KeyboardEvent,
@@ -467,6 +478,35 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   const hostRef = useRef<HTMLElement | null>(null);
   const tabsRef = useRef<HTMLDivElement | null>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
+  const [tabScrollState, setTabScrollState] = useState({
+    hasOverflow: false,
+    canScrollLeft: false,
+    canScrollRight: false,
+  });
+  const updateTabScrollState = useCallback(() => {
+    const viewport = tabsRef.current;
+    if (!viewport) return;
+    const hasOverflow = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE;
+    const canScrollLeft = hasOverflow && viewport.scrollLeft > TAB_SCROLL_EDGE_TOLERANCE;
+    const canScrollRight =
+      hasOverflow &&
+      viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - TAB_SCROLL_EDGE_TOLERANCE;
+    setTabScrollState((current) =>
+      current.hasOverflow === hasOverflow &&
+      current.canScrollLeft === canScrollLeft &&
+      current.canScrollRight === canScrollRight
+        ? current
+        : { hasOverflow, canScrollLeft, canScrollRight },
+    );
+  }, []);
+  const scrollTabs = useCallback((direction: -1 | 1) => {
+    const viewport = tabsRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: direction * Math.max(120, viewport.clientWidth * 0.75),
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  }, []);
   const { defaultWidth, maxWidth } = useClampedRightPanelWidths(hostRef, resizable);
   const { width, handlers } = useResizableWidth({
     storageKey: props.widthStorageKey ?? RIGHT_PANEL_WIDTH_STORAGE_KEY,
@@ -577,9 +617,45 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   );
 
   useEffect(() => {
+    if (!props.activeSurfaceId || !tabScrollState.hasOverflow) return;
     const active = tabsRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [props.activeSurfaceId]);
+  }, [props.activeSurfaceId, tabScrollState.hasOverflow]);
+
+  useLayoutEffect(() => {
+    updateTabScrollState();
+  }, [props.surfaces, props.terminalLabelsById, updateTabScrollState]);
+
+  useEffect(() => {
+    const viewport = tabsRef.current;
+    if (!viewport) return;
+    const resizeObserver = new ResizeObserver(updateTabScrollState);
+    resizeObserver.observe(viewport);
+    viewport.addEventListener("scroll", updateTabScrollState, { passive: true });
+    return () => {
+      resizeObserver.disconnect();
+      viewport.removeEventListener("scroll", updateTabScrollState);
+    };
+  }, [updateTabScrollState]);
+
+  useEffect(() => {
+    const viewport = tabsRef.current;
+    if (!viewport) return;
+    const handleWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return;
+      let delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 16;
+      if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= viewport.clientWidth;
+      if (delta === 0) return;
+      const previousScrollLeft = viewport.scrollLeft;
+      viewport.scrollLeft += delta;
+      if (viewport.scrollLeft === previousScrollLeft) return;
+      event.preventDefault();
+      updateTabScrollState();
+    };
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [updateTabScrollState]);
 
   return (
     <section
@@ -707,6 +783,50 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             </Menu>
           ) : null}
         </div>
+        {tabScrollState.hasOverflow ? (
+          <div
+            className="flex shrink-0 items-center gap-0.5"
+            role="group"
+            aria-label="Scroll panel tabs"
+          >
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="inline-flex">
+                    <Button
+                      aria-label="Scroll tabs left"
+                      disabled={!tabScrollState.canScrollLeft}
+                      onClick={() => scrollTabs(-1)}
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <ChevronLeft />
+                    </Button>
+                  </span>
+                }
+              />
+              <TooltipPopup>Scroll tabs left</TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span className="inline-flex">
+                    <Button
+                      aria-label="Scroll tabs right"
+                      disabled={!tabScrollState.canScrollRight}
+                      onClick={() => scrollTabs(1)}
+                      size="icon-xs"
+                      variant="ghost"
+                    >
+                      <ChevronRight />
+                    </Button>
+                  </span>
+                }
+              />
+              <TooltipPopup>Scroll tabs right</TooltipPopup>
+            </Tooltip>
+          </div>
+        ) : null}
         {props.layoutControls}
       </header>
 

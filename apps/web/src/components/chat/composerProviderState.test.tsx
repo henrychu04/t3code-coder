@@ -12,6 +12,7 @@ import {
   renderProviderTraitsPicker,
   resolveAvailableRuntimeModes,
   resolveComposerRuntimeMode,
+  providerSupportsManualCompaction,
 } from "./composerProviderState";
 
 // Everything in composerProviderState is now data-driven by the model's
@@ -19,6 +20,12 @@ import {
 // vary only the descriptor shape per scenario.
 
 const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("claudeAgent");
+
+it("offers manual compaction for both retained providers, not unconfigured instances", () => {
+  expect(providerSupportsManualCompaction(ProviderDriverKind.make("codex"))).toBe(true);
+  expect(providerSupportsManualCompaction(ProviderDriverKind.make("claudeAgent"))).toBe(true);
+  expect(providerSupportsManualCompaction(ProviderDriverKind.make("unconfigured"))).toBe(false);
+});
 const MODEL = "test-model";
 
 function selectDescriptor(

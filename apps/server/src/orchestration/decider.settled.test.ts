@@ -1,10 +1,12 @@
 import {
+  ApprovalRequestId,
   CommandId,
   EventId,
   MessageId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
   type OrchestrationSession,
@@ -81,6 +83,65 @@ function makeSession(status: OrchestrationSession["status"]): OrchestrationSessi
 }
 
 it.layer(NodeServices.layer)("settled thread decider", (it) => {
+  it.effect("turns async question answers into a resolved activity and user turn", () =>
+    Effect.gen(function* () {
+      const requestId = ApprovalRequestId.make("codex-async:question-1");
+      const result = yield* decideOrchestrationCommand({
+        command: {
+          type: "thread.user-input.respond",
+          commandId: CommandId.make("cmd-answer-async-question"),
+          threadId: ThreadId.make("thread-1"),
+          requestId,
+          answers: { "0": "pnpm", "1": "Example" },
+          createdAt: NOW,
+        },
+        readModel: makeReadModel("active", null, makeSession("running")),
+        userInputActivity: {
+          id: EventId.make("async-question"),
+          kind: "user-input.requested",
+          summary: "User input requested",
+          tone: "info",
+          turnId: TurnId.make("turn-1"),
+          createdAt: NOW,
+          payload: {
+            requestId,
+            responseMode: "message",
+            questions: [
+              {
+                id: "0",
+                header: "Question",
+                question: "Which package manager?",
+                options: [{ label: "pnpm", description: "" }],
+                allowCustomAnswer: true,
+                multiSelect: false,
+              },
+              {
+                id: "1",
+                header: "Question",
+                question: "What should it be named?",
+                options: [],
+                allowCustomAnswer: true,
+                multiSelect: false,
+              },
+            ],
+          },
+        },
+      });
+
+      const events = Array.isArray(result) ? result : [result];
+      expect(events.map((event) => event.type)).toEqual([
+        "thread.activity-appended",
+        "thread.unsettled",
+        "thread.message-sent",
+        "thread.turn-start-requested",
+      ]);
+      const messageEvent = events.find((event) => event.type === "thread.message-sent");
+      expect(messageEvent?.payload.text).toBe(
+        "Which package manager?\npnpm\n\nWhat should it be named?\nExample",
+      );
+    }),
+  );
+
   it.effect("preserves the activity stamp when automatically settling", () =>
     Effect.gen(function* () {
       const result = yield* decideOrchestrationCommand({

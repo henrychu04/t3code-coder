@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { ServerProviderUsageLimits } from "./providerUsageLimits.ts";
 
 import { ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
@@ -98,6 +99,7 @@ export const ServerProviderContinuation = Schema.Struct({ groupKey: TrimmedNonEm
 export type ServerProviderContinuation = typeof ServerProviderContinuation.Type;
 
 export const ServerProvider = Schema.Struct({
+  usageLimits: Schema.optional(ServerProviderUsageLimits),
   instanceId: ProviderInstanceId,
   driver: ProviderDriverKind,
   displayName: Schema.optional(TrimmedNonEmptyString),

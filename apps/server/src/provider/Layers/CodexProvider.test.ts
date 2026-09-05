@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import { CodexIntegrationPolicyError } from "./CodexIntegrationPolicy.ts";
+import { resolveUsageLimitsAfterProbe } from "../providerUsageLimits.ts";
 import {
   applyPreferredCodexDefaultModel,
   checkCodexProviderStatus,
@@ -171,6 +172,86 @@ it("ignores custom models that shadow a preferred slug", () => {
 });
 
 it.layer(NodeServices.layer)("Codex provider availability", (it) => {
+  it.effect("clears previously published quota windows after logout", () =>
+    Effect.gen(function* () {
+      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
+        Effect.succeed({
+          account: { account: null, requiresOpenaiAuth: true },
+          version: "1.0",
+          models: [],
+          skills: [],
+        }),
+      );
+      assert.equal(provider.auth.status, "unauthenticated");
+      assert.equal(provider.usageLimits, undefined);
+      assert.equal(
+        resolveUsageLimitsAfterProbe({
+          published: {
+            checkedAt: "2026-09-04T10:00:00Z",
+            windows: [{ id: "primary", kind: "session", label: "Session", usedPercent: 42 }],
+          },
+          probed: provider.usageLimits,
+        }),
+        undefined,
+      );
+    }),
+  );
+  it.effect("publishes native quota windows with the provider snapshot", () =>
+    Effect.gen(function* () {
+      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
+        Effect.succeed({
+          account: {
+            account: { type: "chatgpt", email: "dev@example.test", planType: "pro" },
+            requiresOpenaiAuth: true,
+          },
+          version: "1.0",
+          models: [],
+          skills: [],
+          rateLimits: { primary: { usedPercent: 42, windowDurationMins: 300 } },
+        }),
+      );
+      assert.equal(provider.status, "ready");
+      assert.deepEqual(provider.usageLimits?.windows, [
+        {
+          id: "primary",
+          kind: "session",
+          label: "Session",
+          usedPercent: 42,
+          windowDurationMins: 300,
+        },
+      ]);
+    }),
+  );
+  it.effect("does not turn a missing quota reading into zero usage or failed authentication", () =>
+    Effect.gen(function* () {
+      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
+        Effect.succeed({
+          account: {
+            account: { type: "chatgpt", email: "dev@example.test", planType: "pro" },
+            requiresOpenaiAuth: true,
+          },
+          version: "1.0",
+          models: [],
+          skills: [],
+        }),
+      );
+      assert.equal(provider.status, "ready");
+      assert.equal(provider.usageLimits?.unavailable?.reason, "probeFailed");
+    }),
+  );
+  it.effect("reports API-key subscription windows as unsupported", () =>
+    Effect.gen(function* () {
+      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
+        Effect.succeed({
+          account: { account: { type: "apiKey" }, requiresOpenaiAuth: false },
+          version: "1.0",
+          models: [],
+          skills: [],
+        }),
+      );
+      assert.equal(provider.usageLimits?.unavailable?.reason, "unsupported");
+    }),
+  );
   it.effect("reports a missing Codex binary as provider-unavailable", () =>
     Effect.gen(function* () {
       const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>

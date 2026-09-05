@@ -39,9 +39,12 @@ import { attachSupportedRuntimeModes } from "../runtimeModeCapabilities.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,
+  COMPACT_SLASH_COMMAND,
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { expandHomePath } from "../../pathExpansion.ts";
+import { codexRateLimitsToLimits, type CodexRateLimitSnapshot } from "./codexUsageLimits.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import packageJson from "../../../package.json" with { type: "json" };
 const isCodexAppServerSpawnError = Schema.is(CodexErrors.CodexAppServerSpawnError);
 
@@ -53,6 +56,7 @@ const CODEX_PRESENTATION = {
 } as const;
 
 export interface CodexAppServerProviderSnapshot {
+  readonly rateLimits?: CodexRateLimitSnapshot;
   readonly account: CodexSchema.V2GetAccountResponse;
   readonly version: string | undefined;
   readonly models: ReadonlyArray<ServerProviderModel>;
@@ -410,7 +414,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     } satisfies CodexAppServerProviderSnapshot;
   }
 
-  const [skillsResponse, models, requirementsResponse] = yield* Effect.all(
+  const [skillsResponse, models, requirementsResponse, rateLimits] = yield* Effect.all(
     [
       client.request("skills/list", {
         cwds: [input.cwd],
@@ -420,6 +424,11 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
         Effect.flatMap(decodeCodexRuntimeRequirementsResponse),
         Effect.catch(() => Effect.succeed(undefined)),
       ),
+      client.request("account/rateLimits/read", undefined).pipe(
+        Effect.map((response) => response.rateLimits),
+        Effect.timeout("1 second"),
+        Effect.catch(() => Effect.succeed(undefined)),
+      ),
     ],
     { concurrency: "unbounded" },
   );
@@ -427,6 +436,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
   const supportedRuntimeModes = resolveCodexSupportedRuntimeModes(requirementsResponse);
 
   return {
+    ...(rateLimits ? { rateLimits } : {}),
     account: accountResponse,
     version,
     models: attachSupportedRuntimeModes(
@@ -620,6 +630,14 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
+  const usageLimits =
+    accountStatus.auth.status === "unauthenticated"
+      ? undefined
+      : snapshot.account.account?.type === "apiKey"
+        ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
+        : snapshot.rateLimits
+          ? codexRateLimitsToLimits({ snapshot: snapshot.rateLimits, checkedAt })
+          : makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
   const runtimeModesUnavailable =
     accountStatus.status === "ready" &&
     snapshot.models.length > 0 &&
@@ -631,11 +649,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     checkedAt,
     models: snapshot.models,
     skills: snapshot.skills,
+    slashCommands: [COMPACT_SLASH_COMMAND],
     probe: {
       installed: true,
       version: snapshot.version ?? null,
       status: runtimeModesUnavailable ? "error" : accountStatus.status,
       auth: accountStatus.auth,
+      ...(usageLimits ? { usageLimits } : {}),
       ...(runtimeModesUnavailable
         ? { message: "Codex workspace policy does not allow any supported access mode." }
         : accountStatus.message

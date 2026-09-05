@@ -8,12 +8,138 @@ import * as Schema from "effect/Schema";
 
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
+  checkClaudeProviderStatus,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
   probeClaudeCapabilities,
   providerModelsFromClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
+
+it.layer(NodeServices.layer)("Claude authentication status", (it) => {
+  for (const testCase of [
+    {
+      name: "signed out despite initialized account metadata",
+      output: '{"loggedIn":false}',
+      code: 1,
+      auth: "unauthenticated",
+      status: "error",
+    },
+    {
+      name: "signed in",
+      output: '{"loggedIn":true}',
+      code: 0,
+      auth: "authenticated",
+      status: "ready",
+    },
+    { name: "missing status", output: "{}", code: 0, auth: "unknown", status: "warning" },
+    {
+      name: "malformed status",
+      output: "private invalid output",
+      code: 0,
+      auth: "unknown",
+      status: "warning",
+    },
+    {
+      name: "failed command with stale signed-in output",
+      output: '{"loggedIn":true}',
+      code: 2,
+      auth: "unknown",
+      status: "warning",
+    },
+    {
+      name: "API-key authentication succeeds",
+      output: '{"loggedIn":true}',
+      code: 0,
+      auth: "authenticated",
+      status: "ready",
+      tokenSource: "apiKey",
+      backendType: "apiKey",
+    },
+    {
+      name: "failed API-key auth retains identity without claiming readiness",
+      output: '{"loggedIn":false}',
+      code: 1,
+      auth: "unauthenticated",
+      status: "error",
+      tokenSource: "apiKey",
+      backendType: "apiKey",
+    },
+    {
+      name: "Bedrock authentication succeeds",
+      output: '{"loggedIn":true}',
+      code: 0,
+      auth: "authenticated",
+      status: "ready",
+      apiProvider: "bedrock",
+      backendType: "bedrock",
+    },
+    {
+      name: "Bedrock auth failure does not suggest OAuth login",
+      output: '{"loggedIn":false}',
+      code: 1,
+      auth: "unauthenticated",
+      status: "error",
+      apiProvider: "bedrock",
+      backendType: "bedrock",
+    },
+    {
+      name: "unknown Bedrock auth retains identity without trusting initialization",
+      output: "{}",
+      code: 0,
+      auth: "unknown",
+      status: "warning",
+      apiProvider: "bedrock",
+      backendType: "bedrock",
+    },
+  ]) {
+    it.effect(testCase.name, () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-auth-" });
+        const executable = path.join(tempDir, "fake-claude.mjs");
+        yield* fs.writeFileString(
+          executable,
+          [
+            "#!/usr/bin/env node",
+            'if (process.argv[2] === "--version") { console.log("2.1.261 (Claude Code)"); process.exit(0); }',
+            'if (process.argv.slice(2).join(" ") !== "auth status") process.exit(3);',
+            `console.log(${JSON.stringify(testCase.output)});`,
+            `process.exit(${testCase.code});`,
+          ].join("\n"),
+        );
+        yield* fs.chmod(executable, 0o755);
+        const result = yield* checkClaudeProviderStatus(
+          decodeClaudeSettings({ binaryPath: executable, homePath: tempDir }),
+          () =>
+            Effect.succeed({
+              email: "stale@example.com",
+              subscriptionType: "pro",
+              tokenSource: "tokenSource" in testCase ? testCase.tokenSource : "oauth",
+              apiProvider: "apiProvider" in testCase ? testCase.apiProvider : "firstParty",
+              models: [],
+              slashCommands: [],
+              autoModeDisabled: true,
+              bypassPermissionsDisabled: true,
+            }),
+          process.env,
+          tempDir,
+        );
+        assert.equal(result.auth.status, testCase.auth);
+        assert.equal(result.status, testCase.status);
+        if (testCase.auth !== "authenticated") assert.equal(result.auth.email, undefined);
+        assert.equal(result.message?.includes("private invalid output") ?? false, false);
+        if ("backendType" in testCase) {
+          assert.equal(result.auth.type, testCase.backendType);
+          assert.equal(result.message?.includes("claude auth login") ?? false, false);
+        } else if (testCase.auth !== "authenticated") {
+          assert.equal(result.auth.type, undefined);
+        }
+      }),
+    );
+  }
+});
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {
   const abortController = new AbortController();
@@ -174,12 +300,23 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           "  return;",
           "  }",
           '  if (message.request?.subtype === "get_settings") {',
+          // The same foreground CLI handles usage; no SDK or HTTP client is involved.
           "    process.stdout.write(JSON.stringify({",
           '      type: "control_response",',
           "      response: {",
           '        subtype: "success",',
           "        request_id: message.request_id,",
           '        response: { effective: { disableAutoMode: "disable", permissions: { disableBypassPermissionsMode: "disable" } } },',
+          "      },",
+          '    }) + "\\n");',
+          "  }",
+          '  if (message.request?.subtype === "get_usage") {',
+          "    process.stdout.write(JSON.stringify({",
+          '      type: "control_response",',
+          "      response: {",
+          '        subtype: "success",',
+          "        request_id: message.request_id,",
+          "        response: { rate_limits_available: true, rate_limits: { five_hour: { utilization: 42, resets_at: null } } },",
           "      },",
           '    }) + "\\n");',
           "  }",
@@ -200,7 +337,14 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         workspaceCwd,
       );
 
+      assert.ok(capabilities?.usageCheckedAt);
+      assert.ok(Number.isFinite(Date.parse(capabilities.usageCheckedAt)));
       assert.deepEqual(capabilities, {
+        usageCheckedAt: capabilities.usageCheckedAt,
+        usage: {
+          rate_limits_available: true,
+          rate_limits: { five_hour: { utilization: 42, resets_at: null } },
+        },
         email: "dev@example.com",
         subscriptionType: "pro",
         tokenSource: "oauth",

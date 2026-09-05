@@ -60,6 +60,11 @@ can differ between Codex and Claude or between workspaces.
 Codex sub-agent activity includes model and reasoning information when Codex reports it. T3 Coder
 leaves missing metadata blank rather than copying the parent agent's settings.
 
+Codex can also surface asynchronous questions while it continues working. Answering one records
+the resolution and starts a follow-up message in the same thread; unanswered questions remain
+available even after a long activity history. Context compaction is available for both Codex and
+Claude through the context meter and `/compact` command.
+
 ## Images
 
 You can paste PNG, JPEG, or WebP images into a message. T3 Coder validates and places them in its
@@ -93,3 +98,13 @@ for both providers, while each provider shows only the choices it supports.
 
 These settings change how T3 Coder uses software and state already present in the workspace. They
 do not install a provider, perform login, or copy provider state to the local computer.
+
+## Subscription limits
+
+The selected workspace provider shows its reported subscription windows, percentage used, and
+reset times. Codex and Claude Code read these through their workspace CLI processes using existing
+logins. API-key accounts may not have subscription windows.
+
+These snapshots refresh with provider health checks, rather than continuously during a turn.
+The **Checked** time identifies the snapshot; an unavailable read is not shown as zero usage.
+There are no external usage hubs, pricing lookups, or reset-credit redemption actions.

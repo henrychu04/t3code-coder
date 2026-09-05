@@ -38,6 +38,7 @@ import type { OrchestrationDispatchError } from "../Errors.ts";
 import { isGitRepository } from "../../git/Utils.ts";
 import { CoderVcsStatus } from "../../coderVcsStatus.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
+import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
@@ -96,6 +97,9 @@ const make = Effect.gen(function* () {
   const receiptBus = yield* RuntimeReceiptBus;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
   const vcsStatus = yield* CoderVcsStatus;
+  const pullRequests = yield* PullRequestService.PullRequestService;
+  const startedTurns = new Map<ThreadId, TurnId>();
+  const pendingTurns = new Set<ThreadId>();
 
   const appendRevertFailureActivity = (input: {
     readonly threadId: ThreadId;
@@ -881,6 +885,9 @@ const make = Effect.gen(function* () {
 
   const processDomainEvent = Effect.fn("processDomainEvent")(function* (event: OrchestrationEvent) {
     if (event.type === "thread.turn-start-requested" || event.type === "thread.message-sent") {
+      if (event.type === "thread.turn-start-requested") {
+        pendingTurns.add(event.payload.threadId);
+      }
       yield* ensurePreTurnBaselineFromDomainTurnStart(event);
       return;
     }
@@ -925,7 +932,22 @@ const make = Effect.gen(function* () {
   const processRuntimeEvent = Effect.fn("processRuntimeEvent")(function* (
     event: ProviderRuntimeEvent,
   ) {
+    if (event.type === "session.exited") {
+      startedTurns.delete(event.threadId);
+      pendingTurns.delete(event.threadId);
+      return;
+    }
+
     if (event.type === "turn.started") {
+      const turnId = toTurnId(event.turnId);
+      const activeTurnId = (yield* providerService.listSessions()).find((session) =>
+        sameId(session.threadId, event.threadId),
+      )?.activeTurnId;
+      const mayReplace = pendingTurns.has(event.threadId) && sameId(activeTurnId, turnId);
+      if (turnId !== null && (!startedTurns.has(event.threadId) || mayReplace)) {
+        startedTurns.set(event.threadId, turnId);
+        pendingTurns.delete(event.threadId);
+      }
       yield* ensurePreTurnBaselineFromTurnStart(event);
       return;
     }
@@ -947,9 +969,30 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    if (event.type === "turn.completed") {
+    if (event.type === "turn.completed" || event.type === "turn.aborted") {
       const turnId = toTurnId(event.turnId);
-      yield* refreshLocalGitStatusAfterAgentCommand(event);
+      const thread = yield* resolveThreadDetail(event.threadId);
+      const startedTurnId = startedTurns.get(event.threadId);
+      const isTrackedTurn = sameId(startedTurnId, turnId);
+      if (isTrackedTurn) {
+        startedTurns.delete(event.threadId);
+      }
+      if (event.type === "turn.completed") {
+        yield* refreshLocalGitStatusAfterAgentCommand(event);
+      }
+      if (
+        turnId !== null &&
+        thread !== undefined &&
+        (isTrackedTurn ||
+          sameId(thread.session?.activeTurnId, turnId) ||
+          (startedTurnId === undefined && !thread.session?.activeTurnId))
+      ) {
+        pendingTurns.delete(event.threadId);
+        yield* pullRequests.refreshAfterTurn;
+      }
+      if (event.type === "turn.aborted") {
+        return;
+      }
       yield* captureCheckpointFromTurnCompletion(event).pipe(
         Effect.catch((error) =>
           Effect.flatMap(nowIso, (createdAt) =>
@@ -1012,6 +1055,8 @@ const make = Effect.gen(function* () {
           event.type !== "turn.started" &&
           event.type !== "session.configured" &&
           event.type !== "turn.completed" &&
+          event.type !== "turn.aborted" &&
+          event.type !== "session.exited" &&
           !(event.type === "item.completed" && event.payload.itemType === "command_execution")
         ) {
           return Effect.void;

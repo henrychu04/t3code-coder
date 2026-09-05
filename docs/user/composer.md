@@ -4,12 +4,17 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Coder ke
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
-In an existing thread, the composer settles into a single-line resting state when it loses focus.
-At wider sizes, scrolling the conversation also rests a focused composer, except when scrolling
-toward the end while already there. When the thread-context strip has room, the model and mode
-controls remain available beside the thread context; otherwise they return when the composer is
-focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
-composer.
+In an existing thread, the composer can settle into a single-line resting state when it loses
+focus. At wider sizes, scrolling the conversation can also rest a focused composer, except when
+scrolling toward the end while already there. Control those behaviors independently under
+**Settings → Preferences**. Selecting text in the composer keeps it expanded until the selection
+is released. When the thread-context strip has room, the model and mode controls remain available
+beside the thread context; otherwise they return when the composer is focused. Focus the composer
+or start typing to expand it again. New-thread layouts keep the full composer.
+
+Pasting plain text while the conversation itself is focused moves that text into the composer.
+Paste remains with a terminal, menu, dialog, editor, or other interactive control when one of those
+surfaces owns focus.
 
 At phone-sized browser widths, existing threads animate between compact and expanded layouts.
 Terminal context and other draft details return when the compact composer is expanded. Pasted
@@ -41,9 +46,10 @@ find and add a skill.
 
 ## Prompt stash
 
-Press `mod+s` to stash the current draft and start a clean composer. Restore the entry later from
-the stash menu. This is useful when a long prompt is blocked on something else — stash it, ask
-your question, then bring it back.
+Press `mod+s` to stash the current draft and start a clean composer. When the composer is empty and
+the stash contains exactly one entry, the same shortcut restores it directly; otherwise restore an
+entry from the stash menu. This is useful when a long prompt is blocked on something else — stash
+it, ask your question, then bring it back.
 
 The stash is per-browser and holds up to 20 entries. Pasted images are workspace file links, so
 they ride along in the prompt text; restoring an entry into another workspace warns that its
@@ -57,7 +63,9 @@ sits next to it — see [Permission modes](./permission-modes.md).
 
 ## Context meter
 
-The context meter shows how much of Claude's context window the conversation uses. As threads grow
-old and large, T3 Coder offers to compact the conversation into a summary before you continue; you
-can also start compaction yourself from the meter. Compaction summarizes history without changing
-the model's context window.
+The context meter stays visible in the composer footer and shows how much of the selected
+provider's context window the conversation uses. As Codex or Claude threads grow old and large,
+T3 Coder offers to compact the conversation into a summary before you continue; you can also start
+compaction yourself from the meter. Compaction runs through the workspace provider session,
+summarizes history without changing the model's context window, and remains visible in the
+conversation even when it is the only activity in that turn.

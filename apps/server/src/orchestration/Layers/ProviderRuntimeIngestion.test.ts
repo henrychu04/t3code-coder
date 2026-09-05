@@ -106,6 +106,7 @@ function createProviderServiceHarness() {
   const service: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
+    compactThread: () => unsupported(),
     interruptTurn: () => unsupported(),
     respondToRequest: () => unsupported(),
     respondToUserInput: () => unsupported(),
@@ -2087,7 +2088,7 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
-  it("flushes and completes buffered assistant text when user input is requested", async () => {
+  it("flushes async question text and preserves message-response routing without item.completed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -2128,6 +2129,7 @@ describe("ProviderRuntimeIngestion", () => {
       turnId: asTurnId("turn-buffered-user-input-flush"),
       requestId: ApprovalRequestId.make("req-buffered-user-input-flush"),
       payload: {
+        responseMode: "message",
         questions: [
           {
             id: "choice",
@@ -2152,6 +2154,12 @@ describe("ProviderRuntimeIngestion", () => {
         entry.id === "assistant:item-buffered-user-input-flush",
     );
     expect(message?.streaming).toBe(false);
+    expect(
+      thread.activities.find(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-user-input-requested-buffered-user-input-flush",
+      )?.payload,
+    ).toMatchObject({ responseMode: "message" });
   });
 
   it("does not create assistant segments for whitespace-only buffered text at approval boundaries", async () => {
@@ -3265,8 +3273,11 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-1"),
+      requestId: "message-compact",
       payload: {
         state: "compacted",
+        beforeTokens: 120_000,
+        afterTokens: 18_000,
         detail: { source: "provider" },
       },
     });
@@ -3280,8 +3291,13 @@ describe("ProviderRuntimeIngestion", () => {
     const activity = thread.activities.find(
       (candidate: ProviderRuntimeTestActivity) => candidate.kind === "context-compaction",
     );
-    expect(activity?.summary).toBe("Context compacted");
+    expect(activity?.summary).toBe("Compacted context 120,000 → 18,000 tokens");
     expect(activity?.tone).toBe("info");
+    expect(activity?.payload).toMatchObject({
+      requestId: "message-compact",
+      beforeTokens: 120_000,
+      afterTokens: 18_000,
+    });
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

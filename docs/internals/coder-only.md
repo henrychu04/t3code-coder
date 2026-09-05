@@ -164,6 +164,14 @@ per-server disable override for every name, and disables app integrations. Faile
 fail-closed and prevents the managed process from starting.
 T3 passes an empty strict MCP configuration and disables connected claude.ai MCP servers for
 managed Claude sessions. Both provider connections remain owned by their workspace executables.
+Native context compaction and asynchronous Codex questions use the same provider stdio sessions
+and orchestration event stream; they do not introduce another listener or transport. The upstream
+usage/cost dashboard is not included: remote pricing aggregation and user-configured CLI-proxy
+sources would add a separate external-data and secret-bearing surface. Read-only native subscription
+windows are shown in workspace provider settings. Codex reads them through its existing app-server
+stdio protocol; Claude sends a bounded `get_usage` control request through its existing foreground
+CLI capability probe. Neither path adds credential access, HTTP clients, listeners, or local
+persistence. These are health-probe snapshots, not live per-turn counters.
 The helper also starts repository-scoped Git commands and the workspace-installed `glab`
 executable with argument-array spawning and `shell: false` for GitLab source-control operations.
 GitLab authentication and network policy remain owned by the workspace CLI; T3 never asks for,

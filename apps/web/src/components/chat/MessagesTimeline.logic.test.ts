@@ -885,6 +885,179 @@ describe("deriveMessagesTimelineRows", () => {
     ]);
   });
 
+  it("keeps a promptless restart in one active visual response", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "user-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:00Z",
+          message: {
+            id: "user-1" as never,
+            role: "user",
+            text: "keep going",
+            turnId: null,
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "old-work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:05Z",
+          entry: {
+            id: "old-work",
+            createdAt: "2026-01-01T00:00:05Z",
+            turnId: "turn-before-restart" as never,
+            label: "Searched files",
+            command: "rg restart",
+            tone: "tool" as const,
+            toolLifecycleStatus: "completed" as const,
+          },
+        },
+        {
+          id: "old-stale-work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:06Z",
+          entry: {
+            id: "old-stale-work",
+            createdAt: "2026-01-01T00:00:06Z",
+            turnId: "turn-before-restart" as never,
+            label: "Running stale command",
+            command: "rg stale",
+            tone: "tool" as const,
+            toolLifecycleStatus: "inProgress" as const,
+          },
+        },
+        {
+          id: "old-commentary-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:08Z",
+          message: {
+            id: "old-commentary" as never,
+            role: "assistant",
+            text: "the server restarted, continuing here.",
+            turnId: "turn-before-restart" as never,
+            createdAt: "2026-01-01T00:00:08Z",
+            updatedAt: "2026-01-01T00:00:08Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "new-work-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:01:05Z",
+          entry: {
+            id: "new-work",
+            createdAt: "2026-01-01T00:01:05Z",
+            turnId: "turn-after-restart" as never,
+            label: "Running tests",
+            command: "vp test run",
+            tone: "tool" as const,
+            toolLifecycleStatus: "inProgress" as const,
+          },
+        },
+      ],
+      latestTurn: {
+        turnId: "turn-after-restart" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:01:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:01:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.some((row) => row.kind === "turn-fold")).toBe(false);
+    expect(rows.filter((row) => row.id === "working-indicator-row")).toHaveLength(1);
+    const priorWorkIndex = rows.findIndex(
+      (row) => row.id === "old-work-entry" || row.id === "work-toggle:old-work-entry",
+    );
+    expect(priorWorkIndex).toBeGreaterThan(-1);
+    expect(rows.findIndex((row) => row.id === "working-indicator-row")).toBeLessThan(
+      priorWorkIndex,
+    );
+    expect(rows.find((row) => row.id === "working-indicator-row")).toMatchObject({
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    expect(rows.find((row) => row.id === "old-commentary-entry")).toMatchObject({
+      showAssistantMeta: false,
+      showAssistantCopyButton: false,
+      assistantCopyStreaming: true,
+    });
+    expect(rows.filter((row) => row.kind === "work-live" && row.active)).toEqual([
+      expect.objectContaining({ entry: expect.objectContaining({ id: "new-work" }) }),
+    ]);
+    expect(rows.some((row) => row.kind === "thinking")).toBe(false);
+  });
+
+  it("does not revive a settled assistant when old-turn work arrives after a steer", () => {
+    const oldTurn = TurnId.make("old");
+    const newTurn = TurnId.make("new");
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      turnId: TurnId | null,
+      second: number,
+    ) => ({
+      id,
+      kind: "message" as const,
+      createdAt: `2026-01-01T00:00:0${second}Z`,
+      message: {
+        id: MessageId.make(id),
+        role,
+        text: id,
+        turnId,
+        streaming: false,
+        createdAt: `2026-01-01T00:00:0${second}Z`,
+        updatedAt: `2026-01-01T00:00:0${second}Z`,
+      },
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("original", "user", null, 0),
+        message("old-assistant", "assistant", oldTurn, 1),
+        message("steer", "user", null, 2),
+        {
+          id: "late-work",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:03Z",
+          entry: {
+            id: "late-work",
+            createdAt: "2026-01-01T00:00:03Z",
+            turnId: oldTurn,
+            tone: "tool",
+            label: "Late result",
+            toolLifecycleStatus: "completed",
+          },
+        },
+        message("new-assistant", "assistant", newTurn, 4),
+      ],
+      latestTurn: {
+        turnId: newTurn,
+        state: "running",
+        startedAt: "2026-01-01T00:00:02Z",
+        completedAt: null,
+      },
+      expandedTurnIds: new Set([oldTurn]),
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:02Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+    expect(rows.find((row) => row.id === "old-assistant")).toMatchObject({
+      showAssistantMeta: true,
+      showAssistantCopyButton: true,
+      assistantCopyStreaming: false,
+    });
+    expect(rows.find((row) => row.id === "new-assistant")).toMatchObject({
+      assistantCopyStreaming: true,
+    });
+  });
+
   it("keeps an actually running tool in the shared activity row", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
