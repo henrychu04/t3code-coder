@@ -19,10 +19,6 @@
       "types": "./src/helperConnection.ts",
       "import": "./src/helperConnection.ts"
     },
-    "./helperLatency": {
-      "types": "./src/helperLatency.ts",
-      "import": "./src/helperLatency.ts"
-    },
     "./profile": {
       "types": "./src/profile.ts",
       "import": "./src/profile.ts"

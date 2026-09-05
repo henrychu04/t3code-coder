@@ -55,13 +55,14 @@ terminate within five seconds, the gateway closes the helper instead of retainin
 The gateway translates frame-delimited browser RPC into newline-delimited helper RPC and does not
 persist those application messages.
 
-When the browser requests latency for a connected workspace, the gateway measures the round-trip
-over the existing helper stdio connection by sending an RPC ping envelope and timing the pong. Each
-read performs at most one in-flight measurement per workspace, and concurrent reads share that
-measurement. The sample is served only through the loopback gateway. The browser retains the last
-sample with a stale marker when updates stop and shows a slow-connection warning only after
-consecutive high-latency samples. No dedicated ping process is started, and no latency traffic
-occurs when the browser is not polling.
+The browser estimates workspace latency by timing `server.probe` RPC round-trips over the
+workspace's existing WebSocket session, so a sample covers the whole path the user's input takes:
+browser, loopback gateway, and workspace helper. Sampling is adaptive — every five seconds per
+connected workspace, every second after a high sample until the connection reads fast again — and
+pauses while the browser tab is hidden, so no probe traffic occurs in the background. At most one
+probe is in flight per workspace. The browser retains the last sample with a stale marker when
+probes stop succeeding and shows a slow-connection warning only after consecutive high-latency
+samples. The gateway exposes no latency endpoint and starts no ping process of its own.
 
 The header's workspace health card reads Coder's workspace health from `coder list --output json`.
 While the card is open, the browser refreshes that health and asks the gateway for workspace-scoped
