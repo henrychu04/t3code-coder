@@ -89,6 +89,68 @@ it.layer(NodeServices.layer)("ScreenshotArtifacts", (it) => {
     }),
   );
 
+  it.effect(
+    "deduplicates tool and observed images before writing and enforces the turn limit",
+    () =>
+      Effect.gen(function* () {
+        const root = yield* Effect.acquireRelease(
+          Effect.promise(() =>
+            NodeFS.mkdtemp(NodePath.join(process.cwd(), ".screenshot-artifacts-")),
+          ),
+          (directory) =>
+            Effect.promise(() => NodeFS.rm(directory, { force: true, recursive: true })).pipe(
+              Effect.orDie,
+            ),
+        );
+        const cwd = NodePath.join(root, "project");
+        const baseDir = NodePath.join(root, ".t3-coder");
+        yield* Effect.promise(() => NodeFS.mkdir(cwd, { recursive: true }));
+        const filePath = NodePath.join(cwd, "result.png");
+        yield* Effect.promise(() => NodeFS.writeFile(filePath, ONE_PIXEL_PNG));
+        yield* Effect.gen(function* () {
+          const artifacts = yield* ScreenshotArtifacts;
+          const capturedDigests = new Set<string>();
+          const input = {
+            dataBase64: ONE_PIXEL_PNG.toString("base64"),
+            mimeType: "image/png",
+            capturedDigests,
+          };
+          const first = yield* artifacts.captureBase64(input);
+          expect(first).toBeDefined();
+          capturedDigests.add(first!.digest);
+          for (let index = 0; index < 20; index++) {
+            expect(yield* artifacts.captureBase64(input)).toBeUndefined();
+            expect(
+              yield* artifacts.captureFile({ cwd, filePath, capturedDigests }),
+            ).toBeUndefined();
+          }
+          const artifactDir = NodePath.join(baseDir, "artifacts");
+          expect(yield* Effect.promise(() => NodeFS.readdir(artifactDir))).toEqual([
+            `${first!.reference.id}.png`,
+          ]);
+          for (let index = 1; index < 10; index++) {
+            const captured = yield* artifacts.captureBase64({
+              ...input,
+              dataBase64: Buffer.concat([ONE_PIXEL_PNG, Buffer.from([index])]).toString("base64"),
+            });
+            expect(captured).toBeDefined();
+            capturedDigests.add(captured!.digest);
+          }
+          expect(
+            yield* artifacts.captureBase64({
+              ...input,
+              dataBase64: Buffer.concat([ONE_PIXEL_PNG, Buffer.from([10])]).toString("base64"),
+            }),
+          ).toBeUndefined();
+          expect(yield* Effect.promise(() => NodeFS.readdir(artifactDir))).toHaveLength(10);
+          // A new turn owns its own set and can capture the same image again.
+          expect(
+            yield* artifacts.captureBase64({ ...input, capturedDigests: new Set() }),
+          ).toBeDefined();
+        }).pipe(Effect.provide(makeLayer(cwd, baseDir)));
+      }),
+  );
+
   it.effect("rejects paths outside the active project and mismatched image content", () =>
     Effect.gen(function* () {
       const root = yield* Effect.acquireRelease(

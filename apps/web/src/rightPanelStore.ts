@@ -1,9 +1,6 @@
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
-import { createJSONStorage, persist } from "zustand/middleware";
-
-import { createMemoryStorage } from "./lib/storage";
 
 export const RIGHT_PANEL_KINDS = [
   "diff",
@@ -195,203 +192,190 @@ const removeSurface = (current: ThreadRightPanelState, surfaceId: string) => {
   };
 };
 
-export const useRightPanelStore = create<RightPanelStoreState>()(
-  persist(
-    (set) => ({
-      byThreadKey: {},
-      open: (ref, kind) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
-            upsert(current, singletonSurface(kind)),
+export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
+  byThreadKey: {},
+  open: (ref, kind) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
+        upsert(current, singletonSurface(kind)),
+      ),
+    })),
+  openPullRequest: (ref, target) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
+        upsert(current, pullRequestSurface(target)),
+      ),
+    })),
+  openFile: (ref, relativePath, line) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
+        const withoutStandaloneExplorer = current.surfaces.filter(
+          (surface) => surface.kind !== "files",
+        );
+        const surfaceId = `file:${relativePath}` as const;
+        const existing = withoutStandaloneExplorer.find(
+          (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
+            surface.id === surfaceId && surface.kind === "file",
+        );
+        const surface = fileSurface(
+          relativePath,
+          normalizeRevealLine(line),
+          (existing?.revealRequestId ?? 0) + 1,
+        );
+        return {
+          isOpen: true,
+          activeSurfaceId: surface.id,
+          surfaces: existing
+            ? withoutStandaloneExplorer.map((entry) => (entry.id === surface.id ? surface : entry))
+            : [...withoutStandaloneExplorer, surface],
+        };
+      }),
+    })),
+  openTerminal: (ref, terminalId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
+        upsert(current, terminalSurface(terminalId)),
+      ),
+    })),
+  splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
+        ...current,
+        isOpen: true,
+        activeSurfaceId: surfaceId,
+        surfaces: current.surfaces.map((surface) =>
+          surface.id === surfaceId && surface.kind === "terminal"
+            ? {
+                ...surface,
+                terminalIds: surface.terminalIds.includes(terminalId)
+                  ? surface.terminalIds
+                  : [...surface.terminalIds, terminalId],
+                activeTerminalId: terminalId,
+                ...(direction === "vertical" ? { splitDirection: "vertical" as const } : {}),
+              }
+            : surface,
+        ),
+      })),
+    })),
+  activateTerminal: (ref, surfaceId, terminalId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
+        ...current,
+        activeSurfaceId: surfaceId,
+        surfaces: current.surfaces.map((surface) =>
+          surface.id === surfaceId &&
+          surface.kind === "terminal" &&
+          surface.terminalIds.includes(terminalId)
+            ? { ...surface, activeTerminalId: terminalId }
+            : surface,
+        ),
+      })),
+    })),
+  closeTerminal: (ref, surfaceId, terminalId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
+        const surface = current.surfaces.find(
+          (entry) => entry.id === surfaceId && entry.kind === "terminal",
+        );
+        if (!surface || surface.kind !== "terminal") return current;
+        const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
+        if (terminalIds.length === 0) return removeSurface(current, surfaceId);
+        return {
+          ...current,
+          surfaces: current.surfaces.map((entry) =>
+            entry.id === surfaceId && entry.kind === "terminal"
+              ? {
+                  ...entry,
+                  terminalIds,
+                  activeTerminalId:
+                    entry.activeTerminalId === terminalId
+                      ? terminalIds[terminalIds.length - 1]!
+                      : entry.activeTerminalId,
+                }
+              : entry,
           ),
-        })),
-      openPullRequest: (ref, target) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
-            upsert(current, pullRequestSurface(target)),
-          ),
-        })),
-      openFile: (ref, relativePath, line) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
-            const withoutStandaloneExplorer = current.surfaces.filter(
-              (surface) => surface.kind !== "files",
-            );
-            const surfaceId = `file:${relativePath}` as const;
-            const existing = withoutStandaloneExplorer.find(
-              (surface): surface is Extract<RightPanelSurface, { kind: "file" }> =>
-                surface.id === surfaceId && surface.kind === "file",
-            );
-            const surface = fileSurface(
-              relativePath,
-              normalizeRevealLine(line),
-              (existing?.revealRequestId ?? 0) + 1,
-            );
-            return {
-              isOpen: true,
-              activeSurfaceId: surface.id,
-              surfaces: existing
-                ? withoutStandaloneExplorer.map((entry) =>
-                    entry.id === surface.id ? surface : entry,
-                  )
-                : [...withoutStandaloneExplorer, surface],
-            };
-          }),
-        })),
-      openTerminal: (ref, terminalId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
-            upsert(current, terminalSurface(terminalId)),
-          ),
-        })),
-      splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
-            ...current,
-            isOpen: true,
-            activeSurfaceId: surfaceId,
-            surfaces: current.surfaces.map((surface) =>
-              surface.id === surfaceId && surface.kind === "terminal"
-                ? {
-                    ...surface,
-                    terminalIds: surface.terminalIds.includes(terminalId)
-                      ? surface.terminalIds
-                      : [...surface.terminalIds, terminalId],
-                    activeTerminalId: terminalId,
-                    ...(direction === "vertical" ? { splitDirection: "vertical" as const } : {}),
-                  }
-                : surface,
-            ),
-          })),
-        })),
-      activateTerminal: (ref, surfaceId, terminalId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
-            ...current,
-            activeSurfaceId: surfaceId,
-            surfaces: current.surfaces.map((surface) =>
-              surface.id === surfaceId &&
-              surface.kind === "terminal" &&
-              surface.terminalIds.includes(terminalId)
-                ? { ...surface, activeTerminalId: terminalId }
-                : surface,
-            ),
-          })),
-        })),
-      closeTerminal: (ref, surfaceId, terminalId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
-            const surface = current.surfaces.find(
-              (entry) => entry.id === surfaceId && entry.kind === "terminal",
-            );
-            if (!surface || surface.kind !== "terminal") return current;
-            const terminalIds = surface.terminalIds.filter((id) => id !== terminalId);
-            if (terminalIds.length === 0) return removeSurface(current, surfaceId);
-            return {
-              ...current,
-              surfaces: current.surfaces.map((entry) =>
-                entry.id === surfaceId && entry.kind === "terminal"
-                  ? {
-                      ...entry,
-                      terminalIds,
-                      activeTerminalId:
-                        entry.activeTerminalId === terminalId
-                          ? terminalIds[terminalIds.length - 1]!
-                          : entry.activeTerminalId,
-                    }
-                  : entry,
-              ),
-            };
-          }),
-        })),
-      activateSurface: (ref, surfaceId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
-            current.surfaces.some((surface) => surface.id === surfaceId)
-              ? { ...current, isOpen: true, activeSurfaceId: surfaceId }
-              : current,
-          ),
-        })),
-      closeSurface: (ref, surfaceId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
-            removeSurface(current, surfaceId),
-          ),
-        })),
-      closeOtherSurfaces: (ref, surfaceId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
-            const surface = current.surfaces.find((entry) => entry.id === surfaceId);
-            return surface
-              ? { isOpen: true, activeSurfaceId: surface.id, surfaces: [surface] }
-              : current;
-          }),
-        })),
-      closeSurfacesToRight: (ref, surfaceId) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
-            const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
-            if (index < 0) return current;
-            const surfaces = current.surfaces.slice(0, index + 1);
-            return {
-              ...current,
-              surfaces,
-              activeSurfaceId: surfaces.some((surface) => surface.id === current.activeSurfaceId)
-                ? current.activeSurfaceId
-                : surfaceId,
-            };
-          }),
-        })),
-      closeAllSurfaces: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, () => EMPTY_THREAD_STATE),
-        })),
-      show: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
-            ...current,
-            isOpen: current.surfaces.length > 0,
-          })),
-        })),
-      close: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
-            ...current,
-            isOpen: false,
-          })),
-        })),
-      toggleVisibility: (ref) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
-            ...current,
-            isOpen: !current.isOpen,
-          })),
-        })),
-      toggle: (ref, kind) =>
-        set((state) => ({
-          byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
-            const active = current.surfaces.find(
-              (surface) => surface.id === current.activeSurfaceId,
-            );
-            return current.isOpen && active?.kind === kind
-              ? { ...current, isOpen: false }
-              : upsert(current, singletonSurface(kind));
-          }),
-        })),
-      removeThread: (ref) =>
-        set((state) => {
-          const key = scopedThreadKey(ref);
-          const { [key]: _removed, ...byThreadKey } = state.byThreadKey;
-          return { byThreadKey };
-        }),
+        };
+      }),
+    })),
+  activateSurface: (ref, surfaceId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
+        current.surfaces.some((surface) => surface.id === surfaceId)
+          ? { ...current, isOpen: true, activeSurfaceId: surfaceId }
+          : current,
+      ),
+    })),
+  closeSurface: (ref, surfaceId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
+        removeSurface(current, surfaceId),
+      ),
+    })),
+  closeOtherSurfaces: (ref, surfaceId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
+        const surface = current.surfaces.find((entry) => entry.id === surfaceId);
+        return surface
+          ? { isOpen: true, activeSurfaceId: surface.id, surfaces: [surface] }
+          : current;
+      }),
+    })),
+  closeSurfacesToRight: (ref, surfaceId) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
+        const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
+        if (index < 0) return current;
+        const surfaces = current.surfaces.slice(0, index + 1);
+        return {
+          ...current,
+          surfaces,
+          activeSurfaceId: surfaces.some((surface) => surface.id === current.activeSurfaceId)
+            ? current.activeSurfaceId
+            : surfaceId,
+        };
+      }),
+    })),
+  closeAllSurfaces: (ref) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, () => EMPTY_THREAD_STATE),
+    })),
+  show: (ref) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
+        ...current,
+        isOpen: current.surfaces.length > 0,
+      })),
+    })),
+  close: (ref) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
+        ...current,
+        isOpen: false,
+      })),
+    })),
+  toggleVisibility: (ref) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
+        ...current,
+        isOpen: !current.isOpen,
+      })),
+    })),
+  toggle: (ref, kind) =>
+    set((state) => ({
+      byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
+        const active = current.surfaces.find((surface) => surface.id === current.activeSurfaceId);
+        return current.isOpen && active?.kind === kind
+          ? { ...current, isOpen: false }
+          : upsert(current, singletonSurface(kind));
+      }),
+    })),
+  removeThread: (ref) =>
+    set((state) => {
+      const key = scopedThreadKey(ref);
+      const { [key]: _removed, ...byThreadKey } = state.byThreadKey;
+      return { byThreadKey };
     }),
-    {
-      name: "t3code:coder-right-panel:v1",
-      storage: createJSONStorage(createMemoryStorage),
-      partialize: (state) => ({ byThreadKey: state.byThreadKey }),
-    },
-  ),
-);
+}));
 
 export function selectThreadRightPanelState(
   byThreadKey: Record<string, ThreadRightPanelState>,

@@ -530,7 +530,14 @@ type PendingControlResponse = {
 };
 
 class AsyncMessageQueue<T> implements AsyncIterable<T> {
-  private readonly values: Array<T> = [];
+  private readonly values: Array<{ value: T; bytes: number }> = [];
+  private queuedBytes = 0;
+  private readonly pause: () => void;
+  private readonly resume: () => void;
+  constructor(pause: () => void, resume: () => void) {
+    this.pause = pause;
+    this.resume = resume;
+  }
   private readonly waiters: Array<{
     readonly resolve: (result: IteratorResult<T>) => void;
     readonly reject: (cause: unknown) => void;
@@ -542,7 +549,14 @@ class AsyncMessageQueue<T> implements AsyncIterable<T> {
     if (this.ended) return;
     const waiter = this.waiters.shift();
     if (waiter) waiter.resolve({ done: false, value });
-    else this.values.push(value);
+    else {
+      const bytes = Buffer.byteLength(JSON.stringify(value));
+      if (this.queuedBytes + bytes > 32 * 1024 * 1024)
+        throw new Error("Claude Code output exceeded the pending message budget.");
+      this.values.push({ value, bytes });
+      this.queuedBytes += bytes;
+      if (this.queuedBytes >= 1024 * 1024 || this.values.length >= 256) this.pause();
+    }
   }
 
   end(): void {
@@ -561,8 +575,12 @@ class AsyncMessageQueue<T> implements AsyncIterable<T> {
   [Symbol.asyncIterator](): AsyncIterator<T> {
     return {
       next: () => {
-        const value = this.values.shift();
-        if (value !== undefined) return Promise.resolve({ done: false, value });
+        const entry = this.values.shift();
+        if (entry !== undefined) {
+          this.queuedBytes -= entry.bytes;
+          if (this.queuedBytes < 512 * 1024 && this.values.length < 128) this.resume();
+          return Promise.resolve({ done: false, value: entry.value });
+        }
         if (this.failure !== undefined) return Promise.reject(this.failure);
         if (this.ended) return Promise.resolve({ done: true, value: undefined });
         return new Promise<IteratorResult<T>>((resolve, reject) => {
@@ -630,7 +648,12 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
 
 class ClaudeCliQuery implements Query {
   private readonly process: ChildProcessWithoutNullStreams;
-  private readonly messages = new AsyncMessageQueue<SDKMessage>();
+  private readonly messages = new AsyncMessageQueue<SDKMessage>(
+    () => {
+      if (this.pendingResponses.size === 0) this.process.stdout.pause();
+    },
+    () => this.process.stdout.resume(),
+  );
   private readonly pendingResponses = new Map<string, PendingControlResponse>();
   private readonly callbackControllers = new Map<string, AbortController>();
   private readonly initialization: Promise<SDKControlInitializeResponse>;
@@ -665,7 +688,7 @@ class ClaudeCliQuery implements Query {
     });
 
     this.process.once("error", (cause) => this.fail(cause));
-    this.process.once("exit", (code, signal) => {
+    this.process.once("close", (code, signal) => {
       if (this.closed) {
         this.messages.end();
         return;
@@ -931,6 +954,7 @@ class ClaudeCliQuery implements Query {
     request: Record<string, unknown>,
     timeoutMs = CONTROL_REQUEST_TIMEOUT_MS,
   ): Promise<Record<string, unknown>> {
+    this.process.stdout.resume();
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
       const timeoutSignal = AbortSignal.timeout(timeoutMs);

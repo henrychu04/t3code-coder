@@ -41,7 +41,7 @@ export const pullProjectIfEligible = Effect.fn("pullProjectIfEligible")(function
     return false;
   }
 
-  const result = yield* workflow.pull({ cwd });
+  const result = yield* workflow.pull({ cwd }, { automatic: true });
   yield* workflow.invalidateStatus(cwd);
   yield* Effect.logDebug("Automatic project pull completed", {
     cwd,
@@ -66,9 +66,7 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
     workspaceRoots,
     (cwd) =>
       pullProjectIfEligible(cwd).pipe(
-        Effect.catch((cause) =>
-          Effect.logWarning("Automatic project pull failed", { cwd, cause }),
-        ),
+        Effect.catch((cause) => Effect.logWarning("Automatic project pull failed", { cwd, cause })),
       ),
     { concurrency: 4, discard: true },
   );

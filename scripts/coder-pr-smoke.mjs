@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-import { startLocalCoderGateway } from "../apps/coder-gateway/src/server.ts";
+import { startLocalCoderGateway } from "../apps/coder-gateway/src/testUtils/gateway.ts";
 import { connectCoderHelper as connectCoderHelperEffect } from "../packages/coder-cli/src/helperConnection.ts";
 import { saveCoderProfileConfig } from "../packages/coder-cli/src/configStore.ts";
 

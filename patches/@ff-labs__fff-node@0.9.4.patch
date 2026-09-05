@@ -1,0 +1,22 @@
+diff --git a/dist/src/ffi.js b/dist/src/ffi.js
+index 82de371ac406d439cc5f93ce58c6080062b6a231..ad0c128db048efc2f0150b9f56a479660f75dba7 100644
+--- a/dist/src/ffi.js
++++ b/dist/src/ffi.js
+@@ -427,7 +427,7 @@ const FFF_GREP_MATCH_STRUCT = {
+     match_ranges_count: DataType.U32,
+     context_before_count: DataType.U32,
+     context_after_count: DataType.U32,
+-    fuzzy_score: DataType.U32, // actually u16 in C, but ffi-rs doesn't so we read it as u32 with padding
++    fuzzy_score: DataType.I16, // Preserve the native u16 width so subsequent boolean fields stay aligned.
+     has_fuzzy_score: DataType.U8,
+     is_binary: DataType.U8,
+     is_definition: DataType.U8,
+@@ -585,7 +585,7 @@ function readGrepMatchFromRaw(raw) {
+         matchRanges,
+     };
+     if (raw.has_fuzzy_score !== 0) {
+-        match.fuzzyScore = raw.fuzzy_score;
++        match.fuzzyScore = raw.fuzzy_score & 0xffff;
+     }
+     if (raw.context_before_count > 0) {
+         match.contextBefore = readCStringArray(raw.context_before, raw.context_before_count);

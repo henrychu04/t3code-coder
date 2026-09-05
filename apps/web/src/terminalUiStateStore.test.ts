@@ -2,11 +2,7 @@ import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environ
 import { ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
-import {
-  migratePersistedTerminalUiStateStoreState,
-  selectThreadTerminalUiState,
-  useTerminalUiStateStore,
-} from "./terminalUiStateStore";
+import { selectThreadTerminalUiState, useTerminalUiStateStore } from "./terminalUiStateStore";
 import { DEFAULT_THREAD_TERMINAL_ID } from "./types";
 
 const THREAD_ID = ThreadId.make("thread-1");
@@ -15,7 +11,6 @@ const OTHER_THREAD_REF = scopeThreadRef("environment-b" as never, THREAD_ID);
 
 describe("terminalUiStateStore actions", () => {
   beforeEach(() => {
-    useTerminalUiStateStore.persist.clearStorage();
     useTerminalUiStateStore.setState({
       terminalUiStateByThreadKey: {},
       suppressedTerminalIdsByThreadKey: {},
@@ -171,45 +166,6 @@ describe("terminalUiStateStore actions", () => {
         OTHER_THREAD_REF,
       ).terminalIds,
     ).toEqual(["env-b-terminal"]);
-  });
-
-  it("drops persisted entries whose thread keys are not valid scoped keys", () => {
-    const migrated = migratePersistedTerminalUiStateStoreState(
-      {
-        terminalStateByThreadKey: {
-          [scopedThreadKey(THREAD_REF)]: {
-            terminalOpen: true,
-            terminalHeight: 320,
-            terminalIds: ["term-1"],
-            activeTerminalId: "term-1",
-            terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
-            activeTerminalGroupId: "group-term-1",
-          },
-          "legacy-thread-id": {
-            terminalOpen: true,
-            terminalHeight: 320,
-            terminalIds: ["term-1"],
-            activeTerminalId: "term-1",
-            terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
-            activeTerminalGroupId: "group-term-1",
-          },
-        },
-      },
-      2,
-    );
-
-    expect(migrated).toEqual({
-      terminalUiStateByThreadKey: {
-        [scopedThreadKey(THREAD_REF)]: {
-          terminalOpen: true,
-          terminalHeight: 320,
-          terminalIds: ["term-1"],
-          activeTerminalId: "term-1",
-          terminalGroups: [{ id: "group-term-1", terminalIds: ["term-1"] }],
-          activeTerminalGroupId: "group-term-1",
-        },
-      },
-    });
   });
 
   it("resets to default and clears persisted entry when closing the last terminal", () => {

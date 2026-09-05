@@ -44,6 +44,7 @@ export const ProjectSearchEntriesResult = Schema.Struct({
 export type ProjectSearchEntriesResult = typeof ProjectSearchEntriesResult.Type;
 
 export const ProjectTextSearchInput = Schema.Struct({
+  cursor: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
   threadId: ThreadId,
   cwd: TrimmedNonEmptyString,
   // Leading and trailing whitespace are meaningful in content queries.
@@ -76,6 +77,7 @@ export const ProjectTextSearchMatch = Schema.Struct({
 export type ProjectTextSearchMatch = typeof ProjectTextSearchMatch.Type;
 
 export const ProjectTextSearchResult = Schema.Struct({
+  nextCursor: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),
   matches: Schema.Array(ProjectTextSearchMatch),
   truncated: Schema.Boolean,
   regexFallbackError: Schema.optional(Schema.String.check(Schema.isMaxLength(1024))),

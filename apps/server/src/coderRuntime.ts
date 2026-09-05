@@ -3,7 +3,6 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 
-import * as CoderBackgroundPolicy from "./coderBackgroundPolicy.ts";
 import * as ServerConfig from "./config.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
@@ -74,7 +73,6 @@ const CoderProviderSessionDirectoryLive = ProviderSessionDirectoryLive.pipe(
 
 const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
   Layer.provideMerge(CoderSettingsLive),
-  Layer.provideMerge(CoderBackgroundPolicy.layer),
   Layer.provideMerge(ScreenshotArtifacts.layer),
 );
 
@@ -210,7 +208,6 @@ const CoderRuntimeStartupLive = Layer.effect(
     const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const config = yield* ServerConfig.ServerConfig;
-    const commandGate = yield* CoderRuntimeStartup.makeCommandGate;
     const reactorScope = yield* Scope.make("sequential");
 
     yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));
@@ -225,11 +222,8 @@ const CoderRuntimeStartupLive = Layer.effect(
       ),
     );
     yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
-    yield* commandGate.signalReady;
 
-    return CoderRuntimeStartup.CoderRuntimeStartup.of({
-      enqueueCommand: commandGate.enqueueCommand,
-    });
+    return CoderRuntimeStartup.CoderRuntimeStartup.of({});
   }),
 );
 

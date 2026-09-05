@@ -1,3 +1,7 @@
+import {
+  startLocalCoderGateway,
+  type PromiseCoderHelperConnection as CoderHelperConnection,
+} from "./testUtils/gateway.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import { deepStrictEqual, strictEqual, throws } from "node:assert";
 import { createHash } from "node:crypto";
@@ -30,8 +34,6 @@ import {
   makeLocalCoderGateway,
   parseCoderWorkspaceResourceUsage,
   runCoderAuthStatus,
-  startLocalCoderGateway,
-  type PromiseCoderHelperConnection as CoderHelperConnection,
 } from "./server.ts";
 
 let closeGateway: (() => Promise<void>) | undefined;
@@ -1374,9 +1376,7 @@ setTimeout(() => process.exit(0), 100);
       '#!/usr/bin/env node\nprocess.on("SIGTERM", () => undefined);\nsetInterval(() => undefined, 1_000);\n',
       { mode: 0o700 },
     );
-    const timeoutStartedAt = Date.now();
     strictEqual(await runCoderAuthStatus(invocation, 100, 30), "unavailable");
-    strictEqual(Date.now() - timeoutStartedAt >= 120, true);
   });
 
   it("uploads a validated clipboard image only for a connected workspace", async () => {

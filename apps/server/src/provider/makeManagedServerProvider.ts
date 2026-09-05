@@ -9,7 +9,6 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
-import * as CoderBackgroundPolicy from "../coderBackgroundPolicy.ts";
 import type { ServerProviderShape } from "./Services/ServerProvider.ts";
 
 interface ProviderSnapshotState {
@@ -32,12 +31,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
   }) => Effect.Effect<void>;
   readonly refreshInterval?: Duration.Input;
-}): Effect.fn.Return<
-  ServerProviderShape,
-  ServerSettingsError,
-  Scope.Scope | CoderBackgroundPolicy.CoderBackgroundPolicy
-> {
-  const backgroundPolicy = yield* CoderBackgroundPolicy.CoderBackgroundPolicy;
+}): Effect.fn.Return<ServerProviderShape, ServerSettingsError, Scope.Scope> {
   const refreshSemaphore = yield* Semaphore.make(1);
   const changesPubSub = yield* Effect.acquireRelease(
     PubSub.unbounded<ServerProvider>(),
@@ -138,16 +132,6 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     return yield* applySnapshot(nextSettings, { forceRefresh: true });
   });
 
-  const hasProviderStatusDemand = Effect.gen(function* () {
-    const state = yield* Ref.get(snapshotStateRef);
-    const instanceId = state.snapshot.instanceId;
-    const [genericDemand, instanceDemand] = yield* Effect.all([
-      backgroundPolicy.shouldRunScopeWork({ type: "provider-status" }),
-      backgroundPolicy.shouldRunScopeWork({ type: "provider-status", instanceId }),
-    ]);
-    return genericDemand || instanceDemand;
-  });
-
   const refreshInterval = input.refreshInterval ?? Duration.minutes(5);
 
   yield* Stream.runForEach(input.streamSettings, (nextSettings) =>
@@ -156,13 +140,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
 
   yield* Effect.forever(
     Effect.sleep(refreshInterval).pipe(
-      Effect.andThen(
-        hasProviderStatusDemand.pipe(
-          Effect.flatMap((shouldRefresh) =>
-            shouldRefresh ? refreshSnapshot().pipe(Effect.asVoid) : Effect.void,
-          ),
-        ),
-      ),
+      Effect.andThen(refreshSnapshot().pipe(Effect.asVoid)),
       Effect.ignoreCause({ log: true }),
     ),
   ).pipe(Effect.forkScoped);

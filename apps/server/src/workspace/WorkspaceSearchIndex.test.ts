@@ -12,6 +12,7 @@ import {
 } from "@ff-labs/fff-node";
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import { vi } from "vite-plus/test";
 
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -107,7 +108,7 @@ it.effect("uses native grep limits and converts UTF-8 byte ranges to string offs
       value: mockFinder({ grep } as Partial<FileFinder>),
     });
 
-    const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
     const result = yield* index.searchText({
       query: "needle",
       limit: 500,
@@ -165,7 +166,7 @@ it.effect(
         value: mockFinder({ grep } as Partial<FileFinder>),
       });
 
-      const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+      const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
       const result = yield* index.searchText({
         query: "needle",
         limit: 20,
@@ -195,7 +196,7 @@ it.effect("reports invalid regex without returning native diagnostic text", () =
       value: mockFinder({ grep } as Partial<FileFinder>),
     });
 
-    const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
     const result = yield* index.searchText({
       query,
       limit: 20,
@@ -230,7 +231,7 @@ it.effect("discards malformed native ranges and line numbers", () =>
       } as Partial<FileFinder>),
     });
 
-    const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
     const result = yield* index.searchText({
       query: "needle",
       limit: 20,
@@ -261,7 +262,7 @@ it.effect("continues cursor pages after whole-word filtering", () =>
       value: mockFinder({ grep } as Partial<FileFinder>),
     });
 
-    const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
     const result = yield* index.searchText({
       query: "needle",
       limit: 1,
@@ -273,6 +274,41 @@ it.effect("continues cursor pages after whole-word filtering", () =>
     expect(result.matches).toHaveLength(1);
     expect(grep).toHaveBeenCalledTimes(2);
     expect(grep.mock.calls[1]?.[1]?.cursor).toBe(nextCursor);
+  }),
+);
+
+it.effect("paging one search does not evict another search's active continuation", () =>
+  Effect.gen(function* () {
+    const root = yield* temporaryDirectory;
+    const realRoot = yield* Effect.promise(() => NodeFSP.realpath(root));
+    yield* Effect.promise(() => NodeFSP.mkdir(NodePath.join(root, "src")));
+    yield* Effect.promise(() => NodeFSP.writeFile(NodePath.join(root, "src/index.ts"), "needle"));
+    let offset = 0;
+    vi.spyOn(FileFinder, "create").mockReturnValueOnce({
+      ok: true,
+      value: mockFinder({
+        grep: () => ({
+          ok: true,
+          value: grepResult([grepMatch()], { __brand: "GrepCursor", _offset: ++offset }),
+        }),
+      }),
+    });
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
+    const input = {
+      query: "needle",
+      limit: 1,
+      caseSensitive: true,
+      wholeWord: false,
+      useRegex: false,
+    };
+    const otherSearch = yield* index.searchText(input);
+    let page = yield* index.searchText(input);
+    for (let count = 0; count < 130; count++) {
+      expect(page.nextCursor).toBeDefined();
+      page = yield* index.searchText({ ...input, cursor: page.nextCursor! });
+    }
+    const resumed = yield* index.searchText({ ...input, cursor: otherSearch.nextCursor! });
+    expect(resumed.matches).toHaveLength(1);
   }),
 );
 
@@ -290,7 +326,7 @@ it.effect("sanitizes native search diagnostics", () =>
       } as Partial<FileFinder>),
     });
 
-    const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
     const error = yield* Effect.flip(
       index.searchText({
         query: secret,
@@ -328,7 +364,7 @@ it.effect("enforces post-validation result and per-file limits", () =>
       } as Partial<FileFinder>),
     });
 
-    const index = yield* Effect.scoped(WorkspaceSearchIndex.make(realRoot, "content"));
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
     const result = yield* index.searchText({
       query: "needle",
       limit: 500,
@@ -339,5 +375,120 @@ it.effect("enforces post-validation result and per-file limits", () =>
 
     expect(result.matches).toHaveLength(100);
     expect(result.truncated).toBe(true);
+  }),
+);
+
+it.effect("rejects an in-flight search when its index is refreshed during validation", () =>
+  Effect.gen(function* () {
+    const root = yield* temporaryDirectory;
+    const realRoot = yield* Effect.promise(() => NodeFSP.realpath(root));
+    yield* Effect.promise(() =>
+      NodeFSP.writeFile(NodePath.join(root, "file.txt"), "needle\nneedle"),
+    );
+    let refresh: (() => Promise<void>) | undefined;
+    let refreshed: Promise<void> | undefined;
+    let refreshOnSearch = true;
+    vi.spyOn(FileFinder, "create").mockReturnValue({
+      ok: true,
+      value: mockFinder({
+        scanFiles: () => ({ ok: true, value: undefined }),
+        grep: () => {
+          // Refresh overlaps the asynchronous path validation after the native read.
+          if (refreshOnSearch) {
+            refreshOnSearch = false;
+            queueMicrotask(() => {
+              refreshed = refresh!();
+            });
+          }
+          return {
+            ok: true,
+            value: grepResult([
+              grepMatch({ relativePath: "file.txt", lineNumber: 1 }),
+              grepMatch({ relativePath: "file.txt", lineNumber: 2 }),
+            ]),
+          };
+        },
+      } as Partial<FileFinder>),
+    });
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
+    refresh = () => Effect.runPromise(index.refresh());
+    const input = {
+      query: "needle",
+      limit: 1,
+      caseSensitive: true,
+      wholeWord: false,
+      useRegex: false,
+    };
+    const first = yield* index.searchText(input).pipe(Effect.result);
+    yield* Effect.promise(() => refreshed!);
+    expect(first._tag).toBe("Failure");
+    if (first._tag === "Failure")
+      expect(first.failure).toBeInstanceOf(WorkspaceSearchIndex.WorkspaceSearchIndexSearchFailed);
+    const retried = yield* index.searchText(input);
+    expect(retried.nextCursor).toBeDefined();
+    const next = yield* index.searchText({ ...input, cursor: retried.nextCursor! });
+    expect(next.matches.map((match) => match.lineNumber)).toEqual([2]);
+    expect(next.nextCursor).toBeUndefined();
+  }),
+);
+
+it.effect("invalidates pages created while a native refresh is still running", () =>
+  Effect.gen(function* () {
+    const root = yield* temporaryDirectory;
+    const realRoot = yield* Effect.promise(() => NodeFSP.realpath(root));
+    yield* Effect.promise(() =>
+      NodeFSP.writeFile(NodePath.join(root, "file.txt"), "needle\nneedle"),
+    );
+    let begin!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => {
+      begin = resolve;
+    });
+    const finish = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let readinessCalls = 0;
+    vi.spyOn(FileFinder, "create").mockReturnValue({
+      ok: true,
+      value: mockFinder({
+        scanFiles: () => ({ ok: true, value: undefined }),
+        waitForIndexReady: async () => {
+          if (++readinessCalls > 1) {
+            begin();
+            await finish;
+          }
+          return { ok: true, value: true };
+        },
+        grep: () => ({
+          ok: true,
+          value: grepResult([
+            grepMatch({ relativePath: "file.txt", lineNumber: 1 }),
+            grepMatch({ relativePath: "file.txt", lineNumber: 2 }),
+          ]),
+        }),
+      } as Partial<FileFinder>),
+    });
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
+    const input = {
+      query: "needle",
+      limit: 1,
+      caseSensitive: true,
+      wholeWord: false,
+      useRegex: false,
+    };
+    try {
+      const refreshing = yield* index.refresh().pipe(Effect.forkChild);
+      yield* Effect.promise(() => started);
+      const page = yield* index.searchText(input);
+      expect(page.nextCursor).toBeDefined();
+      release();
+      yield* Fiber.join(refreshing);
+      const continuation = yield* index
+        .searchText({ ...input, cursor: page.nextCursor! })
+        .pipe(Effect.result);
+      expect(continuation._tag).toBe("Failure");
+    } finally {
+      release();
+    }
   }),
 );

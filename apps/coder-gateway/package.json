@@ -11,12 +11,12 @@
     "@effect/platform-node": "catalog:",
     "@t3tools/coder-cli": "workspace:*",
     "@t3tools/contracts": "workspace:*",
+    "@t3tools/shared": "workspace:*",
     "effect": "catalog:",
     "ws": "8.21.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/ws": "8.18.1",
-    "vite-plus": "catalog:"
+    "@types/ws": "8.18.1"
   }
 }

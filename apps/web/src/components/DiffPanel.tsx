@@ -1,3 +1,4 @@
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { useAtomValue } from "@effect/atom-react";
 import type { FileDiffContentsLoader } from "@pierre/diffs";
 import { useParams } from "@tanstack/react-router";
@@ -1031,6 +1032,7 @@ export default function DiffPanel({
                       lineDiffType: "none",
                       overflow: wordWrap ? "wrap" : "scroll",
                       theme: resolveDiffThemeName(resolvedTheme),
+                      preferredHighlighter: PREFERRED_HIGHLIGHTER,
                       themeType: resolvedTheme as DiffThemeType,
                       stickyHeaders: true,
                       ...(currentLoadDiffFiles ? { loadDiffFiles } : {}),

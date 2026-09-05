@@ -1,7 +1,13 @@
+import * as ServerSettings from "../serverSettings.ts";
+import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import { beforeEach, expect, it, vi } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { ThreadId } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import { TestClock } from "effect/testing";
+import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as FileSystem from "effect/FileSystem";
@@ -107,8 +113,20 @@ beforeEach(() => {
   );
 });
 
+const workflowSupport = Layer.mergeAll(
+  NodeServices.layer,
+  Layer.mock(ServerSettings.ServerSettingsService)({
+    getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+  }),
+  Layer.mock(TextGeneration.TextGeneration)({
+    generatePrContent: () => Effect.succeed({ title: "Restore Git actions", body: "" }),
+  }),
+  Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({ runForThread: runSetupScript }),
+);
+
 const layer = it.layer(
   GitWorkflowService.layer.pipe(
+    Layer.provide(workflowSupport),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(GitVcsDriver.GitVcsDriver)({
@@ -888,6 +906,7 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
 it.effect("coalesces status reads and invalidates them explicitly", () => {
   let statusReads = 0;
   const testLayer = GitWorkflowService.layer.pipe(
+    Layer.provide(workflowSupport),
     Layer.provide(
       Layer.mergeAll(
         Layer.mock(GitVcsDriver.GitVcsDriver)({
@@ -966,6 +985,7 @@ it.effect("commits, pushes, and creates a GitLab merge request through the workf
     Layer.provideMerge(NodeServices.layer),
   );
   const workflowLayer = GitWorkflowService.layer.pipe(
+    Layer.provide(workflowSupport),
     Layer.provideMerge(gitLayer),
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
@@ -1053,3 +1073,145 @@ it.effect("commits, pushes, and creates a GitLab merge request through the workf
     expect(remaining.stdout).toContain("?? excluded.ts");
   }).pipe(Effect.scoped, Effect.provide(workflowLayer), Effect.provide(NodeServices.layer));
 });
+
+it.effect("serializes a branch switch behind an in-flight pull", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    let branch = "main";
+    let pulledBranch = "";
+    const testLayer = GitWorkflowService.layer.pipe(
+      Layer.provide(workflowSupport),
+      Layer.provide(
+        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          get: () => Effect.succeed(provider),
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(GitVcsDriver.GitVcsDriver)({
+          statusDetailsLocal: () =>
+            Effect.succeed({
+              isRepo: true,
+              branch,
+              isDefaultBranch: branch === "main",
+              hasWorkingTreeChanges: false,
+              workingTree: { files: [], insertions: 0, deletions: 0 },
+            } as never),
+          switchRef: (input) =>
+            Effect.sync(() => {
+              if (input.cwd === "/repo") branch = input.refName;
+              return { refName: input.refName };
+            }),
+          execute: (input) => {
+            if (input.operation === "GitWorkflowService.pull.upstream")
+              return Deferred.succeed(started, undefined).pipe(
+                Effect.andThen(Deferred.await(release)),
+                Effect.as(gitOutput("origin/main")),
+              );
+            if (input.args[0] === "pull")
+              return Effect.sync(() => {
+                pulledBranch = branch;
+                return gitOutput();
+              });
+            return Effect.succeed(gitOutput());
+          },
+        }),
+      ),
+    );
+    yield* Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const pulling = yield* workflow.pull({ cwd: "/repo" }).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      const switching = yield* workflow
+        .switchRef({ cwd: "/repo", refName: "feature" })
+        .pipe(Effect.forkChild);
+      yield* TestClock.adjust(Duration.zero);
+      expect(branch).toBe("main");
+      expect((yield* workflow.switchRef({ cwd: "/other", refName: "independent" })).refName).toBe(
+        "independent",
+      );
+      yield* Deferred.succeed(release, undefined);
+      const result = yield* Fiber.join(pulling);
+      yield* Fiber.join(switching);
+      expect(branch).toBe("feature");
+      expect({ pulledBranch, reportedBranch: result.refName }).toEqual({
+        pulledBranch: "main",
+        reportedBranch: "main",
+      });
+    }).pipe(Effect.provide(testLayer));
+  }),
+);
+
+for (const scenario of [
+  { name: "branch changed", branch: "feature", dirty: false, counts: "0 1", allowed: false },
+  { name: "working tree changed", branch: "main", dirty: true, counts: "0 1", allowed: false },
+  { name: "local commits appeared", branch: "main", dirty: false, counts: "1 1", allowed: false },
+  { name: "already current", branch: "main", dirty: false, counts: "0 0", allowed: false },
+  { name: "still eligible", branch: "main", dirty: false, counts: "0 1", allowed: true },
+]) {
+  it.effect(`rechecks automatic pull after a queued mutation: ${scenario.name}`, () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      let changed = false;
+      let pulls = 0;
+      const testLayer = GitWorkflowService.layer.pipe(
+        Layer.provide(workflowSupport),
+        Layer.provide(
+          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            get: () => Effect.succeed(provider),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitVcsDriver.GitVcsDriver)({
+            statusDetailsLocal: () =>
+              Effect.sync(
+                () =>
+                  ({
+                    isRepo: true,
+                    branch: changed ? scenario.branch : "main",
+                    isDefaultBranch: !changed || scenario.branch === "main",
+                    hasWorkingTreeChanges: changed && scenario.dirty,
+                    workingTree: { files: [], insertions: 0, deletions: 0 },
+                  }) as never,
+              ),
+            switchRef: () =>
+              Effect.gen(function* () {
+                yield* Deferred.succeed(started, undefined);
+                yield* Deferred.await(release);
+                changed = true;
+                return { refName: scenario.branch };
+              }),
+            execute: (input) =>
+              Effect.sync(() => {
+                if (input.operation === "GitWorkflowService.pull.automaticCounts")
+                  return gitOutput(scenario.counts);
+                if (input.operation === "GitWorkflowService.pull.upstream")
+                  return gitOutput("origin/main");
+                if (input.args[0] === "pull") pulls++;
+                return gitOutput();
+              }),
+          }),
+        ),
+      );
+      yield* Effect.gen(function* () {
+        const workflow = yield* GitWorkflowService.GitWorkflowService;
+        yield* workflow.localStatus({ cwd: "/repo" });
+        const changing = yield* workflow
+          .switchRef({ cwd: "/repo", refName: scenario.branch })
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(started);
+        const pulling = yield* workflow
+          .pull({ cwd: "/repo" }, { automatic: true })
+          .pipe(Effect.result, Effect.forkChild);
+        yield* TestClock.adjust(Duration.zero);
+        expect(pulls).toBe(0);
+        yield* Deferred.succeed(release, undefined);
+        yield* Fiber.join(changing);
+        const result = yield* Fiber.join(pulling);
+        expect(result._tag).toBe(scenario.allowed ? "Success" : "Failure");
+        expect(pulls).toBe(scenario.allowed ? 1 : 0);
+      }).pipe(Effect.provide(testLayer));
+    }),
+  );
+}

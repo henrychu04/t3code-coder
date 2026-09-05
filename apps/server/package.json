@@ -10,7 +10,6 @@
   "dependencies": {
     "@effect/platform-node": "catalog:",
     "@ff-labs/fff-node": "0.9.4",
-    "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "node-pty": "1.2.0-beta.14",
     "yaml": "catalog:"

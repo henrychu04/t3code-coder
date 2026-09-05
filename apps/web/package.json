@@ -30,7 +30,6 @@
     "class-variance-authority": "^0.7.1",
     "culori": "^4.0.2",
     "effect": "catalog:",
-    "jsonc-parser": "3.3.1",
     "lexical": "^0.41.0",
     "lucide-react": "^0.564.0",
     "react": "19.2.6",
@@ -44,7 +43,6 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
-    "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@rolldown/plugin-babel": "^0.2.0",
     "@tailwindcss/vite": "^4.0.0",

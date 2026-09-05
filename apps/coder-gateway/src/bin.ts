@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 // @effect-diagnostics nodeBuiltinImport:off
 import { spawn } from "node:child_process";
 import * as NodeOS from "node:os";
@@ -21,7 +22,17 @@ const main = Effect.gen(function* () {
       new URL("../../coder-helper/dist/workspace-helper", import.meta.url),
     ),
   });
-  yield* Effect.sync(() => process.stdout.write(`T3 Coder listening on ${gateway.url}\n`));
+  const version = yield* Effect.promise(() =>
+    readFile(
+      new URL("../../coder-helper/dist/workspace-helper/build-info.json", import.meta.url),
+      "utf8",
+    )
+      .then((raw) => (JSON.parse(raw) as { version: string }).version)
+      .catch(() => "development"),
+  );
+  yield* Effect.sync(() =>
+    process.stdout.write(`T3 Coder ${version} listening on ${gateway.url}\n`),
+  );
 
   if (process.argv.includes("--open-browser")) {
     yield* Effect.sync(() => {

@@ -27,6 +27,7 @@ describe("gateway child processes", () => {
   it("hides background processes on Windows while allowing interactive login", async () => {
     const windowsHideValues: Array<boolean | undefined> = [];
     const spawnProcess = (_executable: string, _args: readonly string[], options: SpawnOptions) => {
+      strictEqual(options.shell, false);
       windowsHideValues.push(options.windowsHide);
       const child = makeProcess();
       setImmediate(() => child.emit("exit", 0, null));

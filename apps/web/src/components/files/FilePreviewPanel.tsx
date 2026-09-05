@@ -1,3 +1,4 @@
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import {
   type DiffLineAnnotation,
   type FileContents,
@@ -70,10 +71,8 @@ import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffR
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { cn } from "~/lib/utils";
 import { buildFileReviewComment } from "~/reviewCommentContext";
-import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch, useProjectTextSearch } from "~/state/queries";
 import { useEnvironmentKeybindings } from "~/state/environments";
-import { useAtomCommand } from "~/state/use-atom-command";
 
 import FileBrowserPanel from "./FileBrowserPanel";
 import {
@@ -441,10 +440,6 @@ function useFileLineReveal(
   );
 }
 
-function fileName(path: string): string {
-  return path.slice(path.lastIndexOf("/") + 1);
-}
-
 function SearchFilePreview(props: {
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef;
@@ -495,6 +490,7 @@ function SearchFilePreview(props: {
               disableFileHeader: true,
               overflow: "scroll",
               theme: resolveDiffThemeName(resolvedTheme),
+              preferredHighlighter: PREFERRED_HIGHLIGHTER,
               themeType: resolvedTheme,
               unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
               onPostRender,
@@ -1027,8 +1023,11 @@ export function ProjectTextSearchDialog(props: {
                     Type to search project text.
                   </div>
                 ) : result.error ? (
-                  <div className="flex h-full items-center justify-center text-xs text-destructive">
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-destructive">
                     Project search failed.
+                    <button type="button" onClick={result.restartSearch} className="underline">
+                      Retry search
+                    </button>
                   </div>
                 ) : result.regexFallbackError ? (
                   <div className="flex h-full items-center justify-center text-xs text-destructive">
@@ -1109,6 +1108,16 @@ export function ProjectTextSearchDialog(props: {
                       <div ref={loadMoreRef} className="h-8" aria-hidden="true" />
                     ) : null}
                   </div>
+                )}
+                {result.hasMore && (
+                  <button
+                    type="button"
+                    disabled={result.isPending}
+                    onClick={result.loadMore}
+                    className="px-4 py-2 text-sm"
+                  >
+                    Load more matches
+                  </button>
                 )}
               </div>
               <SearchFilePreview
@@ -1463,6 +1472,7 @@ function EditableFileSurface(props: {
               },
               overflow: props.wordWrap ? "wrap" : "scroll",
               theme: resolveDiffThemeName(props.resolvedTheme),
+              preferredHighlighter: PREFERRED_HIGHLIGHTER,
               themeType: props.resolvedTheme,
               unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
               onPostRender,
@@ -1920,6 +1930,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
                     disableFileHeader: true,
                     overflow: wordWrap ? "wrap" : "scroll",
                     theme: resolveDiffThemeName(resolvedTheme),
+                    preferredHighlighter: PREFERRED_HIGHLIGHTER,
                     themeType: resolvedTheme,
                     unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
                     onPostRender,
