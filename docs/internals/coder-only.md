@@ -84,6 +84,12 @@ data in `synchronizing` state until the item arrives and requests a clean connec
 missing for 15 seconds. These guarantees define helper protocol version 2; older helpers are not
 accepted or adapted.
 
+Live shell and thread subscriptions retain at most 1,000 events and 8 MiB of serialized live data
+per subscription, including batches awaiting an RPC acknowledgement. Overflow detaches that live
+source even if the browser is stalled during snapshot loading or acknowledgement; reconnect uses
+the existing snapshot/replay and synchronization marker. Unused browser thread subscriptions are
+released immediately; settled snapshots remain in the bounded memory-only cache.
+
 The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
 receive a complete capped snapshot. Shell subscriptions coalesce filtered high-frequency activity

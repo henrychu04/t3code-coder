@@ -1,3 +1,4 @@
+import { readThreadReference } from "../lib/threadReference";
 import { scopeProjectRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   type AtomCommandResult,
@@ -88,6 +89,14 @@ export function useThreadActionMenu(input: {
       toastManager.add({ type: "success", title: "Branch copied", description: branch });
     },
     onError: (error) => failureToast("Failed to copy branch", error),
+  });
+  const { copyToClipboard: copyReferenceToClipboard } = useCopyToClipboard({
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "Reference copied" });
+    },
+    onError: () => {
+      toastManager.add({ type: "error", title: "Failed to copy reference" });
+    },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
     onCopy: ({ threadId }) => {
@@ -234,6 +243,9 @@ export function useThreadActionMenu(input: {
               copyBranchToClipboard(thread.branch, { branch: thread.branch });
             }
             return;
+          case "copy-reference":
+            copyReferenceToClipboard(readThreadReference(threadRef));
+            return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
@@ -295,6 +307,7 @@ export function useThreadActionMenu(input: {
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
+      copyReferenceToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,

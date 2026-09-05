@@ -52,7 +52,11 @@ import {
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useCopyToClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
-import { changeRequestRepositoryUrl, gitHubPullRequestBrowserUrl } from "~/lib/openPullRequestLink";
+import {
+  gitLabAuthorProfileUrl,
+  changeRequestRepositoryUrl,
+  gitLabMergeRequestBrowserUrl,
+} from "~/lib/openPullRequestLink";
 import { usePreparePullRequestThreadAction } from "~/lib/sourceControlActions";
 import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
@@ -482,25 +486,14 @@ export function PullRequestDetailPanel({
     target: "branch name",
     timeout: 1600,
   });
-  // The chunk is fetched as soon as the panel exists rather than waiting for the Code tab to be
-  // clicked, so a reader who does click it lands on a chunk already in the module cache.
-  useEffect(() => {
-    void loadCodeTab();
-  }, []);
-
+  // Code is loaded on tab intent (hover/focus) or mount, not for every summary view.
   const detailQuery = useEnvironmentQuery(
     pullRequestEnvironment.detail({ environmentId, input: reference }),
   );
   const activityQuery = useEnvironmentQuery(
     pullRequestEnvironment.activity({ environmentId, input: reference }),
   );
-  // Detail and diff are independent server reads, so the diff for the default view (no commit,
-  // no cursor) is started here too rather than waiting for the Code tab to mount. This is one
-  // extra cached read per opened pull request even for readers who never open the tab, but it
-  // turns the tab's first paint from a cold request into a cache hit.
-  const _diffWarmUpQuery = useEnvironmentQuery(
-    pullRequestEnvironment.diff({ environmentId, input: { ...reference } }),
-  );
+  // The Code tab owns its diff query; summary-only visits must not fetch file diffs.
   const coreDetail = detailQuery.data;
   const activity = activityQuery.data;
   const detail = useMemo(
@@ -611,7 +604,7 @@ export function PullRequestDetailPanel({
     const identity = projects.find(
       (project) => project.id === reference.projectId && project.environmentId === environmentId,
     )?.repositoryIdentity;
-    return gitHubPullRequestBrowserUrl(identity, reference.repository, reference.number);
+    return gitLabMergeRequestBrowserUrl(identity, reference.repository, reference.number);
   }, [environmentId, projects, reference.number, reference.projectId, reference.repository]);
   // Beside a thread there is nothing to pick: the hand-offs land in that thread's composer, and
   // the thread is already on one server's copy of the branch.
@@ -1536,6 +1529,11 @@ export function PullRequestDetailPanel({
                   <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
                     <PullRequestActorLabel
                       actor={detail.author}
+                      profileUrl={gitLabAuthorProfileUrl(
+                        detail.url,
+                        detail.repository,
+                        detail.author?.login ?? "",
+                      )}
                       className="shrink-0 rounded-full"
                       labelClassName="sr-only"
                     />
@@ -1690,7 +1688,15 @@ export function PullRequestDetailPanel({
                   </div>
                 )}
                 <PullRequestMetaLine className="mt-2 text-xs text-muted-foreground">
-                  <PullRequestActorLabel actor={detail.author} className="font-medium" />
+                  <PullRequestActorLabel
+                    actor={detail.author}
+                    profileUrl={gitLabAuthorProfileUrl(
+                      detail.url,
+                      detail.repository,
+                      detail.author?.login ?? "",
+                    )}
+                    className="font-medium"
+                  />
                   <span>updated {formatRelativeTimeLabel(detail.updatedAt)}</span>
                 </PullRequestMetaLine>
 

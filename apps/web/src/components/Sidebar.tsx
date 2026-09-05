@@ -1,3 +1,5 @@
+import { readThreadReference } from "../lib/threadReference";
+import { projectSettingsTarget } from "../projectSettingsTarget";
 import { autoAnimate } from "@formkit/auto-animate";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
@@ -47,6 +49,7 @@ import {
   PinIcon,
   PlusIcon,
   SearchIcon,
+  SettingsIcon,
   ServerIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -1788,6 +1791,18 @@ export default function Sidebar() {
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
   const router = useRouter();
+  const highlightedProjectScopeKeyRef = useRef<string | null>(null);
+  const suppressNextScopeChangeRef = useRef(false);
+  const handleProjectSettings = (
+    event: ReactMouseEvent | ReactKeyboardEvent,
+    project: SidebarProjectSnapshot,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextScopeChangeRef.current = true;
+    dispatchProjectScopeMenu({ type: "project-settings-opened" });
+    void router.navigate(projectSettingsTarget(project));
+  };
   const { isMobile, setOpenMobile } = useSidebar();
   const activeEnvironmentId = useActiveEnvironmentId();
   const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
@@ -1845,6 +1860,14 @@ export default function Sidebar() {
           description: error instanceof Error ? error.message : "An error occurred.",
         }),
       );
+    },
+  });
+  const { copyToClipboard: copyReferenceToClipboard } = useCopyToClipboard({
+    onCopy: () => {
+      toastManager.add({ type: "success", title: "Reference copied" });
+    },
+    onError: () => {
+      toastManager.add({ type: "error", title: "Failed to copy reference" });
     },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
@@ -3268,6 +3291,9 @@ export default function Sidebar() {
               copyBranchToClipboard(thread.branch, { branch: thread.branch });
             }
             return;
+          case "copy-reference":
+            copyReferenceToClipboard(readThreadReference(threadRef));
+            return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
             return;
@@ -3343,6 +3369,7 @@ export default function Sidebar() {
       confirmThreadDelete,
       copyBranchToClipboard,
       copyPathToClipboard,
+      copyReferenceToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
       handleMultiSelectContextMenu,
@@ -3582,9 +3609,19 @@ export default function Sidebar() {
                   itemToStringLabel={(item) => item.label}
                   isItemEqualToValue={(a, b) => a.value === b.value}
                   open={projectScopeMenuState.open}
-                  onOpenChange={(open) => dispatchProjectScopeMenu({ type: "open-changed", open })}
+                  onOpenChange={(open) => {
+                    if (open) suppressNextScopeChangeRef.current = false;
+                    dispatchProjectScopeMenu({ type: "open-changed", open });
+                  }}
+                  onItemHighlighted={(item) => {
+                    highlightedProjectScopeKeyRef.current = item?.value ?? null;
+                  }}
                   value={selectedProjectScopeItem}
                   onValueChange={(item) => {
+                    if (suppressNextScopeChangeRef.current) {
+                      suppressNextScopeChangeRef.current = false;
+                      return;
+                    }
                     if (item) setProjectScopeKey(item.value === "all" ? null : item.value);
                   }}
                 >
@@ -3631,6 +3668,21 @@ export default function Sidebar() {
                           size="sm"
                           unstyled
                           value={projectScopeMenuState.query}
+                          onKeyDown={(event) => {
+                            if (
+                              event.defaultPrevented ||
+                              event.nativeEvent.isComposing ||
+                              event.ctrlKey ||
+                              event.altKey ||
+                              event.metaKey ||
+                              (event.key !== "ContextMenu" &&
+                                !(event.shiftKey && event.key === "F10"))
+                            )
+                              return;
+                            const key = highlightedProjectScopeKeyRef.current;
+                            const project = key ? projectGroupByScopeKey.get(key) : null;
+                            if (project) handleProjectSettings(event, project);
+                          }}
                           onChange={(event) =>
                             dispatchProjectScopeMenu({
                               type: "query-changed",
@@ -3651,6 +3703,9 @@ export default function Sidebar() {
                             value={item}
                             className="h-8 min-h-8 py-0 font-medium"
                             contentClassName="flex min-w-0 items-center gap-2"
+                            onContextMenu={(event) => {
+                              if (project) handleProjectSettings(event, project);
+                            }}
                           >
                             {project ? (
                               <ProjectFavicon
@@ -3664,6 +3719,17 @@ export default function Sidebar() {
                               <FolderIcon className="size-4 shrink-0" />
                             )}
                             <span className="min-w-0 flex-1 truncate text-sm">{item.label}</span>
+                            {project ? (
+                              <Button
+                                size="icon-xs"
+                                variant="ghost"
+                                aria-label={`Project settings for ${project.displayName}`}
+                                onPointerDown={(event) => event.stopPropagation()}
+                                onClick={(event) => handleProjectSettings(event, project)}
+                              >
+                                <SettingsIcon className="size-3.5" />
+                              </Button>
+                            ) : null}
                           </ComboboxItem>
                         );
                       }}

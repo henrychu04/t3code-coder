@@ -1,3 +1,4 @@
+import { projectSettingsTarget } from "../projectSettingsTarget";
 import { createFileRoute } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
@@ -434,6 +435,7 @@ function AutomaticProjectPullSettings() {
           return (
             <SettingsRow
               key={key}
+              id={projectSettingsTarget(project).hash}
               title={project.title}
               description={`${environmentLabel ? `${environmentLabel} · ` : ""}Keeps the default branch current in the background when the checkout has no local changes or commits.`}
               control={

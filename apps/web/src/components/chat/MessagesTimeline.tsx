@@ -90,7 +90,8 @@ import {
 import { MessageCopyButton } from "./MessageCopyButton";
 import {
   computeStableMessagesTimelineRows,
-  deriveMessagesTimelineRows,
+  deriveMessagesTimelineRowsWithState,
+  type MessagesTimelineRowsProjection,
   estimateMessagesTimelineAverageRowHeight,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
@@ -427,9 +428,15 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     });
   }, [latestTurn]);
 
-  const rawRows = useMemo(
-    () =>
-      deriveMessagesTimelineRows({
+  const rowsProjectionRef = useRef<{
+    threadKey: string;
+    workspaceRoot: string | undefined;
+    projection: MessagesTimelineRowsProjection;
+  } | null>(null);
+  const rawRows = useMemo(() => {
+    const previous = rowsProjectionRef.current;
+    const projection = deriveMessagesTimelineRowsWithState(
+      {
         timelineEntries,
         latestTurn,
         runningTurnId,
@@ -439,19 +446,27 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         activeTurnStartedAt,
         turnDiffSummaryByAssistantMessageId,
         revertTurnCountByUserMessageId,
-      }),
-    [
-      timelineEntries,
-      latestTurn,
-      runningTurnId,
-      expandedTurnIds,
-      expandedWorkGroupIds,
-      isWorking,
-      activeTurnStartedAt,
-      turnDiffSummaryByAssistantMessageId,
-      revertTurnCountByUserMessageId,
-    ],
-  );
+      },
+      previous?.threadKey === routeThreadKey && previous.workspaceRoot === workspaceRoot
+        ? previous.projection
+        : null,
+    );
+    rowsProjectionRef.current = { threadKey: routeThreadKey, workspaceRoot, projection };
+    return projection.rows;
+  }, [
+    rowsProjectionRef,
+    routeThreadKey,
+    workspaceRoot,
+    timelineEntries,
+    latestTurn,
+    runningTurnId,
+    expandedTurnIds,
+    expandedWorkGroupIds,
+    isWorking,
+    activeTurnStartedAt,
+    turnDiffSummaryByAssistantMessageId,
+    revertTurnCountByUserMessageId,
+  ]);
   const rows = useStableRows(rawRows);
   const estimatedItemSize = useMemo(() => estimateMessagesTimelineAverageRowHeight(rows), [rows]);
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);

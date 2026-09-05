@@ -12,3 +12,9 @@ adjustment deliberate and documented.
 Run the focused checks listed in the root README before submitting a change. Backend behavior
 changes need focused tests. Do not include credentials, Coder tokens, local configuration,
 generated build output, or work-system data.
+
+Run `pnpm knip:check` to audit unused files and dependencies in the Coder gateway, helper,
+browser, and shared packages. `pnpm knip` also reports unused exports and types. The fork-specific
+configuration excludes removed platform entry points and preserves generated protocol definitions.
+The audit currently reports existing cleanup work; review findings rather than deleting files or
+adding ignores solely to obtain a passing result.

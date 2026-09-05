@@ -1,3 +1,5 @@
+import { shallow } from "zustand/shallow";
+import { projectSettingsTarget } from "../projectSettingsTarget";
 import {
   type ApprovalRequestId,
   DEFAULT_MODEL,
@@ -81,7 +83,8 @@ import {
   derivePendingApprovals,
   derivePendingUserInputs,
   derivePhase,
-  deriveTimelineEntries,
+  deriveTimelineEntriesWithState,
+  type TimelineEntriesProjection,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
   findLatestProposedPlan,
@@ -1985,11 +1988,27 @@ export default function ChatView(props: ChatViewProps) {
     }
     return [...displayServerMessages, ...pendingMessages];
   }, [displayServerMessages, optimisticUserMessages]);
-  const timelineEntries = useMemo(
-    () =>
-      deriveTimelineEntries(timelineMessages, activeThread?.proposedPlans ?? [], workLogEntries),
-    [activeThread?.proposedPlans, timelineMessages, workLogEntries],
-  );
+  const timelineProjectionRef = useRef<{
+    threadKey: string | null;
+    projection: TimelineEntriesProjection;
+  } | null>(null);
+  const timelineEntries = useMemo(() => {
+    const previous = timelineProjectionRef.current;
+    const projection = deriveTimelineEntriesWithState(
+      timelineMessages,
+      activeThread?.proposedPlans ?? [],
+      workLogEntries,
+      previous?.threadKey === activeThreadKey ? previous.projection : null,
+    );
+    timelineProjectionRef.current = { threadKey: activeThreadKey, projection };
+    return projection.entries;
+  }, [
+    timelineProjectionRef,
+    activeThreadKey,
+    activeThread?.proposedPlans,
+    timelineMessages,
+    workLogEntries,
+  ]);
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -2015,6 +2034,7 @@ export default function ChatView(props: ChatViewProps) {
     }
     return byMessageId;
   }, [turnDiffSummaries]);
+  const previousRevertCountsRef = useRef(new Map<MessageId, number>());
   const revertTurnCountByUserMessageId = useMemo(() => {
     const byUserMessageId = new Map<MessageId, number>();
     for (let index = 0; index < timelineEntries.length; index += 1) {
@@ -2045,6 +2065,9 @@ export default function ChatView(props: ChatViewProps) {
       }
     }
 
+    if (shallow(previousRevertCountsRef.current, byUserMessageId))
+      return previousRevertCountsRef.current;
+    previousRevertCountsRef.current = byUserMessageId;
     return byUserMessageId;
   }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
 
@@ -5773,6 +5796,13 @@ export default function ChatView(props: ChatViewProps) {
             keybindings={keybindings}
             rightPanelOpen={rightPanelOpen}
             onNewThreadInProject={handleNewThreadInActiveProject}
+            onOpenProjectSettings={
+              activeProject
+                ? () => {
+                    void navigate(projectSettingsTarget(activeProject));
+                  }
+                : undefined
+            }
             {...(activeProject && activeProjectRepository
               ? { onOpenPullRequest: openProjectPullRequest }
               : {})}

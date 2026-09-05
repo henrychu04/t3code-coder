@@ -1,3 +1,4 @@
+import { bufferLiveEvents } from "./orchestration/BufferedLiveEvents.ts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -1231,7 +1232,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
         Stream.unwrap(
-          orchestration.subscribeDomainEvents.pipe(
+          bufferLiveEvents(orchestration.subscribeDomainEvents).pipe(
             Effect.flatMap((subscribedEvents) =>
               Effect.gen(function* () {
                 if (input.afterSequence !== undefined) {
@@ -1287,7 +1288,20 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
         Stream.unwrap(
-          orchestration.subscribeDomainEvents.pipe(
+          bufferLiveEvents(
+            orchestration.subscribeDomainEvents.pipe(
+              Effect.map((events) =>
+                events.pipe(
+                  Stream.filter(
+                    (event) =>
+                      event.aggregateKind === "thread" &&
+                      event.aggregateId === input.threadId &&
+                      isThreadDetailEvent(event),
+                  ),
+                ),
+              ),
+            ),
+          ).pipe(
             Effect.flatMap((subscribedEvents) =>
               Effect.gen(function* () {
                 const matching = (event: OrchestrationEvent) =>
