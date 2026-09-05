@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "./config.ts";
 import * as Keybindings from "./keybindings.ts";
 import { KeybindingsConfigError } from "@t3tools/contracts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 
 const KeybindingsConfigJson = Schema.fromJsonString(KeybindingsConfig);
 const encodeKeybindingsConfigJson = Schema.encodeEffect(KeybindingsConfigJson);
@@ -385,15 +386,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+f",
         ),
       );
-      assert.isFalse(
-        persisted.some((entry) => String(entry.command) === "themeEditor.toggle"),
-      );
-      assert.isFalse(
-        persisted.some((entry) => String(entry.command) === "editor.openFavorite"),
-      );
-      assert.isFalse(
-        persisted.some((entry) => String(entry.command) === "script.deploy.run"),
-      );
+      assert.isFalse(persisted.some((entry) => String(entry.command) === "themeEditor.toggle"));
+      assert.isFalse(persisted.some((entry) => String(entry.command) === "editor.openFavorite"));
+      assert.isFalse(persisted.some((entry) => String(entry.command) === "script.deploy.run"));
       assert.isTrue(
         persisted.some((entry) => entry.command === "filePicker.toggle" && entry.key === "mod+p"),
       );
@@ -621,7 +616,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
-      assert.deepEqual(persistedView, [{ key: "mod+alt+r", command: "rightPanel.toggleMaximized" }]);
+      assert.deepEqual(persistedView, [
+        { key: "mod+alt+r", command: "rightPanel.toggleMaximized" },
+      ]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
@@ -642,7 +639,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
-      assert.deepEqual(persistedView, [{ key: "mod+shift+r", command: "rightPanel.toggleMaximized" }]);
+      assert.deepEqual(persistedView, [
+        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
+      ]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
@@ -695,31 +694,34 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
-  it.effect("fails when config directory is not writable", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      const { dirname } = yield* Path.Path;
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+j", command: "terminal.toggle" },
-      ]);
-      yield* fs.chmod(dirname(keybindingsConfigPath), 0o500);
+  // chmod cannot make a directory unwritable on Windows, so the write succeeds.
+  it.effect.skipIf(HostProcessPlatform.defaultValue() === "win32")(
+    "fails when config directory is not writable",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
+        const { dirname } = yield* Path.Path;
+        yield* writeKeybindingsConfig(keybindingsConfigPath, [
+          { key: "mod+j", command: "terminal.toggle" },
+        ]);
+        yield* fs.chmod(dirname(keybindingsConfigPath), 0o500);
 
-      const result = yield* Effect.gen(function* () {
-        const keybindings = yield* Keybindings.Keybindings;
-        return yield* keybindings.upsertKeybindingRule({
-          key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
-        });
-      }).pipe(toDetailResult);
-      assertFailure(result, "failed to write keybindings config");
+        const result = yield* Effect.gen(function* () {
+          const keybindings = yield* Keybindings.Keybindings;
+          return yield* keybindings.upsertKeybindingRule({
+            key: "mod+shift+r",
+            command: "rightPanel.toggleMaximized",
+          });
+        }).pipe(toDetailResult);
+        assertFailure(result, "failed to write keybindings config");
 
-      yield* fs.chmod(dirname(keybindingsConfigPath), 0o700);
+        yield* fs.chmod(dirname(keybindingsConfigPath), 0o700);
 
-      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
-      const persistedView = persisted.map(({ key, command }) => ({ key, command }));
-      assert.deepEqual(persistedView, [{ key: "mod+j", command: "terminal.toggle" }]);
-    }).pipe(Effect.provide(makeKeybindingsLayer())),
+        const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
+        const persistedView = persisted.map(({ key, command }) => ({ key, command }));
+        assert.deepEqual(persistedView, [{ key: "mod+j", command: "terminal.toggle" }]);
+      }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
   it.effect("caches loaded resolved config across repeated reads", () =>
@@ -758,7 +760,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         return (yield* keybindings.loadConfigState).keybindings;
       });
 
-      assert.isTrue(loadedAfterUpsert.some((entry) => entry.command === "rightPanel.toggleMaximized"));
+      assert.isTrue(
+        loadedAfterUpsert.some((entry) => entry.command === "rightPanel.toggleMaximized"),
+      );
       assert.isTrue(loadedAfterUpsert.some((entry) => entry.command === "terminal.toggle"));
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );

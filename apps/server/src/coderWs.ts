@@ -1306,20 +1306,27 @@ export const layer = CoderWsRpcGroup.toLayer(
                   const head = yield* orchestration.latestSequence;
                   const gap = head - input.afterSequence;
                   if (gap >= 0 && gap <= RESUME_MAX_GAP) {
-                    const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
-                      Stream.filter(matching),
-                      Stream.map((event) => ({
-                        kind: "event" as const,
-                        event: projectActivityEvent(event),
-                      })),
-                      Stream.mapError(
-                        (cause) =>
-                          new OrchestrationGetSnapshotError({
-                            message: `Failed to resume thread ${input.threadId}`,
-                            cause,
-                          }),
-                      ),
-                    );
+                    const replay = orchestration
+                      .readThreadEvents({
+                        threadId: input.threadId,
+                        fromSequenceExclusive: input.afterSequence,
+                        toSequenceInclusive: head,
+                        limit: gap,
+                      })
+                      .pipe(
+                        Stream.filter(matching),
+                        Stream.map((event) => ({
+                          kind: "event" as const,
+                          event: projectActivityEvent(event),
+                        })),
+                        Stream.mapError(
+                          (cause) =>
+                            new OrchestrationGetSnapshotError({
+                              message: `Failed to resume thread ${input.threadId}`,
+                              cause,
+                            }),
+                        ),
+                      );
                     const live = liveAfter(head);
                     return Stream.concat(
                       replay,

@@ -469,7 +469,11 @@ export function pullRequestStatsKeysToRequest(
     [...enteredKeys].filter((key) => {
       const entry = entriesByKey.get(key);
       return (
-        entry !== undefined && !requested.has(key) && !statsByRow.has(pullRequestDiffStatKey(entry))
+        entry !== undefined &&
+        entry.additions === 0 &&
+        entry.deletions === 0 &&
+        !requested.has(key) &&
+        !statsByRow.has(pullRequestDiffStatKey(entry))
       );
     }),
   );
@@ -1017,10 +1021,9 @@ export function rankPullRequestsByMergeReadiness<Entry extends PullRequestListEn
   return entries.toSorted((left, right) => {
     const byTier = tier(left) - tier(right);
     if (byTier !== 0) return byTier;
-    const byMeasurement = Number(hasMeasuredSize(right)) - Number(hasMeasuredSize(left));
-    if (byMeasurement !== 0) return byMeasurement;
-    const bySize = left.additions + left.deletions - (right.additions + right.deletions);
-    return bySize !== 0 ? bySize : right.updatedAt.localeCompare(left.updatedAt);
+    const measured = Number(hasMeasuredSize(right)) - Number(hasMeasuredSize(left));
+    const sized = left.additions + left.deletions - (right.additions + right.deletions);
+    return measured || sized || right.updatedAt.localeCompare(left.updatedAt);
   });
 }
 

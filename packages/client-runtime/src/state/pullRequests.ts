@@ -76,7 +76,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     detail: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:detail",
       tag: WS_METHODS.pullRequestsDetail,
-      staleTimeMs: 15_000,
+      staleTimeMs: 60_000,
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
     activity: createEnvironmentRpcQueryAtomFamily(runtime, {

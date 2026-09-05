@@ -34,17 +34,21 @@ export function formatWorkspaceRelativePath(
       normalizePathSeparators(trimTrailingPathSeparators(workspaceRoot)),
     );
     const workspaceLabel = basenameOfPath(normalizedWorkspaceRoot);
-    const pathForCompare = normalizedPath.toLowerCase();
-    const workspaceForCompare = normalizedWorkspaceRoot.toLowerCase();
+    const caseInsensitive =
+      /^[A-Za-z]:/.test(normalizedWorkspaceRoot) || workspaceRoot.startsWith("\\\\");
+    const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
+    const workspaceForCompare = caseInsensitive
+      ? normalizedWorkspaceRoot.toLowerCase()
+      : normalizedWorkspaceRoot;
     const workspaceWithSeparator = `${workspaceForCompare}/`;
-    const workspaceLabelWithSeparator = `${workspaceLabel.toLowerCase()}/`;
+    const workspaceLabelWithSeparator = `${caseInsensitive ? workspaceLabel.toLowerCase() : workspaceLabel}/`;
 
     if (pathForCompare === workspaceForCompare) {
       displayPath = workspaceLabel;
     } else if (pathForCompare.startsWith(workspaceWithSeparator)) {
       const relativeSuffix = normalizedPath.slice(normalizedWorkspaceRoot.length + 1);
       displayPath = `${workspaceLabel}/${relativeSuffix}`;
-    } else if (!normalizedPath.startsWith("/")) {
+    } else if (!normalizedPath.startsWith("/") && !/^[A-Za-z]:/.test(normalizedPath)) {
       const relativePath = stripRelativePrefixes(normalizedPath);
       displayPath = pathForCompare.startsWith(workspaceLabelWithSeparator)
         ? normalizedPath

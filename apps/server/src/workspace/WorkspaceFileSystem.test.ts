@@ -11,6 +11,8 @@ import * as Path from "effect/Path";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 const EntriesLayer = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
 const ProjectLayer = WorkspaceFileSystem.layer.pipe(

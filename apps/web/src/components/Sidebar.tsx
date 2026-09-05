@@ -24,6 +24,7 @@ import {
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import {
+  parseScopedThreadKey,
   scopeProjectRef,
   scopeThreadRef,
   scopedThreadKey,
@@ -92,17 +93,26 @@ import {
   type SidebarProjectSnapshot,
 } from "../sidebarProjectGrouping";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";
-import { useThreadSelectionStore } from "../threadSelectionStore";
+import {
+  getThreadKeysToDeselectAfterDelete,
+  useThreadSelectionStore,
+} from "../threadSelectionStore";
 import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
-import { openCommandPalette } from "../commandPaletteBus";
+import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
 import { useEnvironmentKeybindings, useEnvironments } from "../state/environments";
-import { useActiveEnvironmentId, useProjects, useThreadShells } from "../state/entities";
+import {
+  useActiveEnvironmentId,
+  useProjects,
+  useThreadShells,
+  readThreadShell,
+  useAllEnvironmentProjectSnapshotsReady,
+} from "../state/entities";
 import { environmentServerConfigsAtom } from "../state/server";
 import { vcsEnvironment } from "../state/vcs";
 import { threadEnvironment } from "../state/threads";
@@ -121,6 +131,7 @@ import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
 import {
   animatePinnedLayoutChanges,
   buildBulkTitleRegenerationContextMenuItem,
+  buildBulkUnpinContextMenuItem,
   filterSidebarProjectScopeItems,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
@@ -135,6 +146,7 @@ import {
   resolveSidebarThreadStatus,
   searchSidebarThreadsByTitle,
   shouldCreateNewThreadInCurrentProject,
+  shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
   sortLogicalProjectsForSidebar,
   sortPinnedThreadsForSidebar,
@@ -306,7 +318,7 @@ function SidebarThreadTooltip({
       className="max-w-80 text-left whitespace-normal [&_[data-slot=tooltip-viewport]]:p-0"
     >
       <div className="flex min-w-0 max-w-80 flex-col gap-2 p-[var(--floating-content-inset)]">
-        <div className="min-w-0 truncate text-xs leading-none font-medium text-foreground">
+        <div className="min-w-0 truncate text-xs leading-tight font-medium text-foreground">
           {thread.title}
         </div>
         <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
@@ -1155,21 +1167,23 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
         variant === "card"
           ? cn(
               "truncate",
-              isUnread || isWoke
-                ? "text-foreground"
-                : shouldRecede
-                  ? "text-secondary-label"
+              shouldRecede
+                ? "text-secondary-label"
+                : isUnread || isWoke
+                  ? "text-foreground"
                   : status === "failed"
                     ? "text-foreground/95"
                     : "text-foreground/90",
             )
           : cn(
               "truncate group-hover/sidebar-row:text-foreground",
-              props.isActive || isWoke
-                ? "text-foreground"
-                : isUnread
-                  ? "text-muted-foreground"
-                  : "text-secondary-label/70",
+              shouldRecede
+                ? "text-secondary-label/70"
+                : props.isActive || isWoke
+                  ? "text-foreground"
+                  : isUnread
+                    ? "text-muted-foreground"
+                    : "text-secondary-label/70",
             ),
         isRegeneratingTitle && "opacity-[0.55]",
       )}
@@ -1752,7 +1766,7 @@ const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
         <SidebarThreadTooltip
           thread={thread}
           projectTitle={props.projectTitle}
-            projectIconName={props.projectIconName ?? null}
+          projectIconName={props.projectIconName ?? null}
           projectCwd={props.projectCwd}
           projectFaviconPath={props.projectFaviconPath}
           environmentLabel={props.environmentLabel}
@@ -2040,11 +2054,15 @@ export default function Sidebar() {
           ),
     [scopedProjectGroup],
   );
+  // A persisted scope whose project is gone falls back to all projects, but
+  // only after every catalog environment has a live project snapshot. Cached
+  // or disconnected environments cannot establish that the project is gone.
+  const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   useEffect(() => {
-    if (projectScopeKey !== null && scopedProjectGroup === null) {
+    if (projectScopeKey !== null && allProjectSnapshotsReady && scopedProjectGroup === null) {
       setProjectScopeKey(null);
     }
-  }, [projectScopeKey, scopedProjectGroup]);
+  }, [allProjectSnapshotsReady, projectScopeKey, scopedProjectGroup, setProjectScopeKey]);
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
@@ -2857,8 +2875,9 @@ export default function Sidebar() {
       // right now. Selections can outlive their rows (settled-tail paging,
       // thread deletion elsewhere) and the menu labels must count only what
       // the actions will touch.
-      const threadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys].filter(
-        (threadKey) => threadByKeyRef.current.has(threadKey),
+      const selectedThreadKeys = [...useThreadSelectionStore.getState().selectedThreadKeys];
+      const threadKeys = selectedThreadKeys.filter((threadKey) =>
+        threadByKeyRef.current.has(threadKey),
       );
       if (threadKeys.length === 0) return;
       const count = threadKeys.length;
@@ -2886,10 +2905,22 @@ export default function Sidebar() {
         supportedCount: titleRegenerationThreads.length,
         actionableCount: regeneratableTitleThreads.length,
       });
+      // Unpin (k) counts only the pinned rows in pin-capable environments —
+      // on a mixed selection the unpinned rows are untouched, and the item
+      // is omitted entirely when nothing selected is pinned.
+      const pinnedSelectedThreads = selectedThreads.filter(
+        (thread) =>
+          serverConfigs.get(thread.environmentId)?.environment.capabilities.threadPinning ===
+            true && thread.pinnedAt != null,
+      );
+      const unpinMenuItem = buildBulkUnpinContextMenuItem({
+        pinnedCount: pinnedSelectedThreads.length,
+      });
       const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
       const clicked = await settlePromise(() =>
         api.contextMenu.show(
           [
+            ...(unpinMenuItem ? [unpinMenuItem] : []),
             { id: "settle", label: `Settle (${count})` },
             ...(canSnoozeSelection
               ? [
@@ -2971,6 +3002,14 @@ export default function Sidebar() {
         }
         return;
       }
+      if (clicked.value === "unpin") {
+        // Each unpin reports its own failure, like the single-row action.
+        for (const thread of pinnedSelectedThreads) {
+          attemptUnpin(scopeThreadRef(thread.environmentId, thread.id));
+        }
+        clearSelection();
+        return;
+      }
       if (clicked.value === "regenerate-title") {
         for (const thread of regeneratableTitleThreads) {
           const result = await updateThreadMetadata({
@@ -3034,6 +3073,7 @@ export default function Sidebar() {
       // really gone, or the first delete would treat still-alive batch mates
       // as deleted and remove a worktree they still point at.
       const deletedThreadKeys = new Set<string>();
+      let firstError: unknown = null;
       for (const threadKey of threadKeys) {
         const thread = threadByKeyRef.current.get(threadKey);
         if (!thread) continue;
@@ -3041,25 +3081,32 @@ export default function Sidebar() {
           deletedThreadKeys,
         });
         if (result._tag === "Failure") {
-          if (!isAtomCommandInterrupted(result)) {
-            const error = squashAtomCommandFailure(result);
-            toastManager.add(
-              stackedThreadToast({
-                type: "error",
-                title: "Failed to delete threads",
-                description: error instanceof Error ? error.message : "An error occurred.",
-              }),
-            );
-          }
-          return;
+          if (isAtomCommandInterrupted(result)) break;
+          firstError ??= squashAtomCommandFailure(result);
+          continue;
         }
         deletedThreadKeys.add(threadKey);
       }
-      removeFromSelection(threadKeys);
+      if (firstError !== null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Failed to delete threads",
+            description: firstError instanceof Error ? firstError.message : "An error occurred.",
+          }),
+        );
+      }
+      removeFromSelection(
+        getThreadKeysToDeselectAfterDelete(selectedThreadKeys, deletedThreadKeys, (threadKey) => {
+          const threadRef = parseScopedThreadKey(threadKey);
+          return threadRef !== null && readThreadShell(threadRef) !== null;
+        }),
+      );
     },
     [
       attemptSettle,
       attemptSnooze,
+      attemptUnpin,
       clearSelection,
       confirmThreadDelete,
       deleteThread,
@@ -3317,7 +3364,9 @@ export default function Sidebar() {
   );
   useEffect(() => {
     const onWindowKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) return;
+      if (event.defaultPrevented || event.repeat || isCommandPaletteOpen() || isModelPickerOpen()) {
+        return;
+      }
       const command = resolveShortcutCommand(event, keybindings, {
         platform: navigator.platform,
         context: {

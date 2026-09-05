@@ -128,7 +128,6 @@ import {
 } from "./pullRequestProjectAssignment.logic";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
 import {
-  PullRequestActorAvatar,
   PullRequestActorLabel,
   PullRequestDiffStat,
   PullRequestMetaLine,
@@ -208,9 +207,8 @@ const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "code", label: "Code" },
 ];
 
-// The diff viewer pulls in its worker pool, so it stays out of the bundle until Code is opened.
-// Named rather than inlined so the panel can also call it itself, to start the download before
-// anyone has clicked the tab.
+// The diff viewer pulls in its worker pool, so load it only when the reader approaches Code.
+// Start the download on tab hover or focus, before the click, without loading it for every PR.
 const loadCodeTab = () => import("./PullRequestCodeTab");
 const PullRequestCodeTab = lazy(loadCodeTab);
 
@@ -437,14 +435,21 @@ export function PullRequestDetailPanel({
   // summary needs it too — a large description re-parses its whole markdown on every return
   // to the tab. `visibility` keeps boxes, sizes and scroll offsets, and takes hidden content
   // out of the tab order and the accessibility tree.
-  const [mountedTabs, setMountedTabs] = useState<ReadonlySet<DetailTab>>(
-    () => new Set<DetailTab>(["summary"]),
-  );
+  const tabScopeKey = `${environmentId}:${pullRequestKey}`;
+  const [tabMountState, setTabMountState] = useState(() => ({
+    key: tabScopeKey,
+    tabs: new Set<DetailTab>(["summary"]),
+  }));
+  // A previously visited Code tab must not fetch diffs for every later PR while hidden.
+  const mountedTabs =
+    tabMountState.key === tabScopeKey ? tabMountState.tabs : new Set<DetailTab>([tab]);
   useEffect(() => {
-    setMountedTabs((previous) =>
-      previous.has(tab) ? previous : new Set<DetailTab>(previous).add(tab),
-    );
-  }, [tab]);
+    setTabMountState((previous) => {
+      if (previous.key !== tabScopeKey) return { key: tabScopeKey, tabs: new Set([tab]) };
+      if (previous.tabs.has(tab)) return previous;
+      return { key: tabScopeKey, tabs: new Set(previous.tabs).add(tab) };
+    });
+  }, [tab, tabScopeKey]);
   const [chromeCondensed, setChromeCondensed] = useState(false);
   // Each mounted tab remembers its own scroll chrome; short tabs cannot scroll to reopen it.
   const chromeStateByTab = useRef<Partial<Record<DetailTab, boolean>>>({});
@@ -543,9 +548,10 @@ export function PullRequestDetailPanel({
   );
   useEffect(() => {
     if (!coreDetail) return;
-    const next = { key: pullRequestKey, updatedAt: coreDetail.updatedAt };
+    const next = { key: tabScopeKey, updatedAt: coreDetail.updatedAt };
     if (shouldRefreshPullRequestActivity(activityRevision.current, next)) {
       activityQuery.refresh();
+      setRefreshToken((token) => token + 1);
     }
     activityRevision.current = next;
   }, [activityQuery.refresh, coreDetail, pullRequestKey]);
@@ -1528,19 +1534,11 @@ export function PullRequestDetailPanel({
               <div className="col-span-2 min-w-0 px-4 pb-2 pt-1">
                 <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
                   <span className="flex min-w-0 shrink items-center gap-1.5 overflow-hidden text-xs text-muted-foreground">
-                    <Tooltip>
-                      <TooltipTrigger
-                        render={
-                          <span
-                            className="shrink-0 rounded-full"
-                            aria-label={detail.author?.login ?? "ghost"}
-                          />
-                        }
-                      >
-                        <PullRequestActorAvatar actor={detail.author} />
-                      </TooltipTrigger>
-                      <TooltipPopup side="top">{detail.author?.login ?? "ghost"}</TooltipPopup>
-                    </Tooltip>
+                    <PullRequestActorLabel
+                      actor={detail.author}
+                      className="shrink-0 rounded-full"
+                      labelClassName="sr-only"
+                    />
                     <span className="shrink-0">{formatRelativeTimeLabel(detail.updatedAt)}</span>
                   </span>
                   <span aria-hidden className="h-3 w-px shrink-0 bg-border/70" />
@@ -1799,7 +1797,12 @@ export function PullRequestDetailPanel({
               }}
             >
               {visibleTabs.map((item) => (
-                <Toggle key={item.value} value={item.value}>
+                <Toggle
+                  key={item.value}
+                  value={item.value}
+                  onPointerEnter={item.value === "code" ? () => void loadCodeTab() : undefined}
+                  onFocus={item.value === "code" ? () => void loadCodeTab() : undefined}
+                >
                   {item.label}
                 </Toggle>
               ))}

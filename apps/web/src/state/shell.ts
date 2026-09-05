@@ -44,3 +44,12 @@ export const allEnvironmentShellsBootstrappedAtom = Atom.make((get) => {
   }
   return true;
 }).pipe(Atom.withLabel("web-all-environment-shells-bootstrapped"));
+
+export const allEnvironmentProjectSnapshotsReadyAtom = Atom.make((get) => {
+  const catalog = AsyncResult.value(get(environmentCatalog.catalogAtom));
+  if (Option.isNone(catalog)) return false;
+  for (const id of catalog.value.entries.keys()) {
+    if (get(environmentShell.stateValueAtom(id)).status !== "live") return false;
+  }
+  return true;
+});

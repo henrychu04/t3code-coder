@@ -328,6 +328,16 @@ export function estimateMessagesTimelineRowHeight(row: MessagesTimelineRow): num
   }
 }
 
+export function workEntryDisplayLabel(entry: WorkLogEntry, fallback?: string): string {
+  if (
+    (entry.sourceActivityKind === "runtime.error" ||
+      entry.sourceActivityKind === "runtime.warning") &&
+    entry.detail
+  )
+    return entry.detail;
+  return fallback ?? entry.label;
+}
+
 export function estimateMessagesTimelineAverageRowHeight(
   rows: ReadonlyArray<MessagesTimelineRow>,
 ): number {

@@ -1,3 +1,4 @@
+import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
   type EnvironmentId,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
@@ -81,7 +82,6 @@ import {
 import { Button } from "../ui/button";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
-import { shouldAutoExpandChangedFiles } from "./changedFilesPresentation";
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   captureTimelineScrollRestoration,
@@ -260,6 +260,7 @@ interface MessagesTimelineProps {
   onScrollStateChange: (
     isAtEnd: boolean,
     restoration: TimelineScrollRestoration | undefined,
+    overflows?: boolean,
   ) => void;
   onManualNavigation: () => void;
   hideEmptyPlaceholder?: boolean;
@@ -503,6 +504,9 @@ export const MessagesTimeline = memo(function MessagesTimeline({
               : undefined;
           },
         }),
+        scrollNode
+          ? scrollNode.scrollHeight - contentInsetEndAdjustment > scrollNode.clientHeight + 1
+          : false,
       );
     }
     if (!state || minimapItems.length === 0) {
@@ -540,6 +544,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     }
 
     const measure = () => {
+      handleScroll();
       const viewportWidth = timelineViewportElement.getBoundingClientRect().width;
       const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(viewportWidth);
       setMinimapHasPersistentGutter((current) =>
@@ -557,7 +562,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [timelineViewportElement, rows.length]);
+  }, [timelineViewportElement, rows.length, handleScroll]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
@@ -650,6 +655,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
             }
             maintainVisibleContentPosition={maintainVisibleContentPosition}
             onScroll={handleScroll}
+            onItemSizeChanged={handleScroll}
             className={cn(
               "scrollbar-gutter-both h-full min-h-0 overflow-x-hidden overscroll-y-contain px-3 [overflow-anchor:none] sm:px-5",
               topFadeEnabled && "topbar-scroll-fade",
@@ -1489,29 +1495,14 @@ function AssistantChangedFilesSectionInner({
   resolvedTheme: "light" | "dark";
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
 }) {
-  const activity = use(TimelineRowActivityCtx);
-  const isLatestTurn = activity.latestTurnId === turnSummary.turnId;
-  const persistedExpanded = useUiStateStore(
-    (store) => store.threadChangedFilesExpandedById[routeThreadKey]?.[turnSummary.turnId],
-  );
-  const setExpanded = useUiStateStore((store) => store.setThreadChangedFilesExpanded);
-  const [autoExpanded] = useState(() =>
-    shouldAutoExpandChangedFiles(checkpointFiles, isLatestTurn),
-  );
-  const [allDirectoriesExpanded, setAllDirectoriesExpanded] = useState(autoExpanded);
-  const expanded = persistedExpanded ?? (isLatestTurn && autoExpanded);
+  const [allDirectoriesExpanded, setAllDirectoriesExpanded] = useState(true);
 
   return (
     <ChangedFilesCard
       turnId={turnSummary.turnId}
       files={checkpointFiles}
-      expanded={expanded}
-      showCompactPreview={isLatestTurn}
       allDirectoriesExpanded={allDirectoriesExpanded}
       resolvedTheme={resolvedTheme}
-      onExpandedChange={(nextExpanded) =>
-        setExpanded(routeThreadKey, turnSummary.turnId, nextExpanded)
-      }
       onToggleAllDirectories={() => setAllDirectoriesExpanded((current) => !current)}
       onOpenTurnDiff={onOpenTurnDiff}
     />
@@ -2441,7 +2432,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
-  const displayText = workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
+  const displayText = workEntryDisplayLabel(
+    workEntry,
+    workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry),
+  );
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));

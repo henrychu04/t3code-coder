@@ -26,6 +26,7 @@ import {
   ComboboxListVirtualized,
 } from "../ui/combobox";
 import { ModelEsque } from "./providerIconUtils";
+import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import {
   modelPickerJumpCommandForIndex,
   modelPickerJumpIndexFromCommand,
@@ -551,7 +552,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   useEffect(() => {
     const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) {
+      if (event.defaultPrevented || event.repeat || isCommandPaletteOpen()) {
         return;
       }
 
@@ -563,6 +564,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       if (jumpIndex === null) {
         return;
       }
+      event.preventDefault();
+      event.stopPropagation();
 
       const targetModelKey = modelJumpModelKeys[jumpIndex];
       if (!targetModelKey) {
@@ -572,8 +575,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       if (!model) {
         return;
       }
-      event.preventDefault();
-      event.stopPropagation();
       handleModelSelect(model.slug, model.instanceId);
     };
 

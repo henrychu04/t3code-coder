@@ -1352,7 +1352,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             yield* projectionTurnRepository.upsertByTurnId({
               ...existingTurn.value,
               assistantMessageId: event.payload.assistantMessageId,
-              state: turnStillRunning ? existingTurn.value.state : nextState,
+              state:
+                turnStillRunning || existingTurn.value.state === "interrupted"
+                  ? existingTurn.value.state
+                  : nextState,
               checkpointTurnCount: event.payload.checkpointTurnCount,
               checkpointRef: event.payload.checkpointRef,
               checkpointStatus: event.payload.status,
@@ -1620,17 +1623,31 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
         );
 
     const projectEvent: OrchestrationProjectionPipelineShape["projectEvent"] = (event) =>
-      Effect.forEach(projectors, (projector) => runProjectorForEvent(projector, event), {
-        concurrency: 1,
-      }).pipe(
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-        Effect.provideService(Path.Path, path),
-        Effect.provideService(ServerConfig, serverConfig),
-        Effect.asVoid,
-        Effect.catchTag("SqlError", (sqlError) =>
-          Effect.fail(toPersistenceSqlError("ProjectionPipeline.projectEvent:query")(sqlError)),
-        ),
-      );
+      sql
+        .withTransaction(
+          Effect.gen(function* () {
+            yield* Effect.forEach(projectors, (projector) => projector.apply(event), {
+              concurrency: 1,
+              discard: true,
+            });
+            yield* projectionStateRepository.upsertMany(
+              projectors.map((projector) => ({
+                projector: projector.name,
+                lastAppliedSequence: event.sequence,
+                updatedAt: event.occurredAt,
+              })),
+            );
+          }),
+        )
+        .pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(ServerConfig, serverConfig),
+          Effect.asVoid,
+          Effect.catchTag("SqlError", (sqlError) =>
+            Effect.fail(toPersistenceSqlError("ProjectionPipeline.projectEvent:query")(sqlError)),
+          ),
+        );
 
     const bootstrap: OrchestrationProjectionPipelineShape["bootstrap"] = Effect.forEach(
       projectors,

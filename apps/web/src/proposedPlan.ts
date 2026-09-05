@@ -63,8 +63,10 @@ export function buildCollapsedProposedPlanPreviewMarkdown(
   return previewLines.join("\n");
 }
 
+export const PLAN_IMPLEMENTATION_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:\n";
+
 export function buildPlanImplementationPrompt(planMarkdown: string): string {
-  return `PLEASE IMPLEMENT THIS PLAN:\n${planMarkdown.trim()}`;
+  return `${PLAN_IMPLEMENTATION_PROMPT_PREFIX}${planMarkdown.trim()}`;
 }
 
 export function resolvePlanFollowUpSubmission(input: { draftText: string; planMarkdown: string }): {

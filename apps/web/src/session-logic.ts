@@ -907,6 +907,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const requestKind = extractWorkLogRequestKind(payload);
   if (detail) {
     entry.detail = detail;
+  } else if (activity.kind === "runtime.error" || activity.kind === "runtime.warning") {
+    const message = asTrimmedString(payload?.message);
+    if (message && message.trim() !== activity.summary.trim()) entry.detail = message;
   }
   if (commandPreview.command) {
     entry.command = commandPreview.command;

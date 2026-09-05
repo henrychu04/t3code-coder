@@ -18,6 +18,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
+import { makeSqlStatementCounter } from "../../../integration/SqlStatementCounter.integration.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
 import { OrchestrationEventStoreLive } from "../../persistence/Layers/OrchestrationEventStore.ts";
 import {
@@ -25,6 +26,7 @@ import {
   SqlitePersistenceMemory,
 } from "../../persistence/Layers/Sqlite.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
+import { ProjectionStateRepository } from "../../persistence/Services/ProjectionState.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
 import {
@@ -55,6 +57,54 @@ const exists = (filePath: string) =>
   });
 
 const BaseTestLayer = makeProjectionPipelinePrefixedTestLayer("t3-projection-pipeline-test-");
+
+it.layer(Layer.fresh(makeProjectionPipelinePrefixedTestLayer("t3-projection-cursor-batch-")))(
+  "OrchestrationProjectionPipeline cursor batches",
+  (it) => {
+    it.effect("writes a project and all projector cursors in two statements", () =>
+      Effect.gen(function* () {
+        const projectionPipeline = yield* OrchestrationProjectionPipeline;
+        const eventStore = yield* OrchestrationEventStore;
+        const projectionState = yield* ProjectionStateRepository;
+        const counter = makeSqlStatementCounter();
+        const createdAt = "2026-01-01T00:00:00.000Z";
+        const event = yield* eventStore.append({
+          type: "project.created",
+          eventId: EventId.make("evt-cursor-batch-project"),
+          aggregateKind: "project",
+          aggregateId: ProjectId.make("project-cursor-batch"),
+          occurredAt: createdAt,
+          commandId: CommandId.make("cmd-cursor-batch-project"),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            projectId: ProjectId.make("project-cursor-batch"),
+            title: "Cursor batch project",
+            workspaceRoot: "/tmp/project-cursor-batch",
+            defaultModelSelection: null,
+            scripts: [],
+            createdAt,
+            updatedAt: createdAt,
+          },
+        });
+
+        yield* projectionPipeline.projectEvent(event).pipe(Effect.withTracer(counter.tracer));
+        assert.strictEqual(counter.count(), 2);
+        assert.deepEqual(
+          yield* projectionState.listAll(),
+          Object.values(ORCHESTRATION_PROJECTOR_NAMES)
+            .sort()
+            .map((projector) => ({
+              projector,
+              lastAppliedSequence: event.sequence,
+              updatedAt: createdAt,
+            })),
+        );
+      }),
+    );
+  },
+);
 
 it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
   it.effect("bootstraps all projection states and writes projection rows", () =>

@@ -5,12 +5,10 @@ import {
   VirtualizedFile,
 } from "@pierre/diffs";
 import { EditContext, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
-import { useAtomValue } from "@effect/atom-react";
 import {
   type EnvironmentId,
   PROJECT_SEARCH_INPUT_MAX_LENGTH,
   type ProjectTextSearchMatch,
-  type ProjectWriteFileResult,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
@@ -94,7 +92,6 @@ import { getFileSearchMatches } from "./fileSearchMatches";
 import {
   type FileEditorViewAnchor,
   bindFileEditorSession,
-  confirmFileEditorSession,
   discardFileEditorSession,
   getFileEditorSession,
 } from "./fileEditorSessions";
@@ -108,9 +105,8 @@ import {
 } from "./fileLineReveal";
 import { fileBreadcrumbs } from "./filePath";
 import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
-import { FileSaveCoordinator } from "./fileSaveCoordinator";
+import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
 import {
-  confirmProjectFileQueryData,
   discardProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
@@ -137,7 +133,6 @@ type FileSearchCommandRequest = {
   readonly command: "filePicker.toggle" | "projectSearch.toggle";
 };
 
-const FILE_SAVE_DEBOUNCE_MS = 500;
 const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
 const FILE_LINK_REVEAL_UNSAFE_CSS = `
   ${DIFF_SURFACE_THEME_UNSAFE_CSS}
@@ -1240,72 +1235,6 @@ function useRetainedFileViewAnchor(
   );
 }
 
-function useFileSaveCoordinator(input: {
-  environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
-  cwd: string;
-  relativePath: string;
-  revision: string;
-  onPendingChange: (relativePath: string, pending: boolean) => void;
-  onSaveFailed: (relativePath: string) => void;
-}) {
-  const writeFile = useAtomCommand(projectEnvironment.writeFile);
-  const revisionRef = useRef(input.revision);
-  useEffect(() => {
-    revisionRef.current = input.revision;
-  }, [input.revision]);
-  const coordinator = useMemo(
-    () =>
-      new FileSaveCoordinator<ProjectWriteFileResult>({
-        debounceMs: FILE_SAVE_DEBOUNCE_MS,
-        onPendingChange: (pending) => input.onPendingChange(input.relativePath, pending),
-        onFailed: () => input.onSaveFailed(input.relativePath),
-        persist: (contents) =>
-          writeFile({
-            environmentId: input.environmentId,
-            input: {
-              threadId: input.threadRef.threadId,
-              cwd: input.cwd,
-              relativePath: input.relativePath,
-              contents,
-              expectedRevision: revisionRef.current,
-            },
-          }),
-        onConfirmed: (contents, result) => {
-          revisionRef.current = result.revision;
-          confirmFileEditorSession(
-            {
-              threadRef: input.threadRef,
-              cwd: input.cwd,
-              relativePath: input.relativePath,
-            },
-            contents,
-            result.revision,
-          );
-          confirmProjectFileQueryData(
-            input.environmentId,
-            input.threadRef.threadId,
-            input.cwd,
-            input.relativePath,
-            contents,
-            result.revision,
-          );
-        },
-      }),
-    [
-      input.cwd,
-      input.environmentId,
-      input.onPendingChange,
-      input.onSaveFailed,
-      input.relativePath,
-      input.threadRef.threadId,
-      writeFile,
-    ],
-  );
-  useEffect(() => () => coordinator.dispose(), [coordinator]);
-  return coordinator;
-}
-
 function EditableFileSurface(props: {
   environmentId: EnvironmentId;
   threadRef: ScopedThreadRef;
@@ -1961,6 +1890,9 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             </div>
           ) : props.relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (
+              // Markdown reconciles in place across text updates, so a file
+              // switch needs a new key or the previous file's disclosure and
+              // wrap state carries into the next document.
               <RenderedMarkdownSurface
                 environmentId={props.environmentId}
                 threadRef={props.threadRef}

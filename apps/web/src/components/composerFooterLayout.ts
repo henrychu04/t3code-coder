@@ -30,6 +30,8 @@ export function shouldUseRestingComposerLayout(input: {
   isScrollCollapsed: boolean;
   hasExpandedChrome: boolean;
   collapseOnBlur: boolean;
+  /** Whether the timeline has more content than fits above the composer. */
+  timelineOverflows: boolean;
 }): boolean {
   // Passive draft content is deliberately absent here. Resting only clamps
   // the prompt row and overlays its actions; non-image attachment and context
@@ -40,7 +42,13 @@ export function shouldUseRestingComposerLayout(input: {
   // desktop width, and where the strip is missing or too narrow the controls
   // simply return when the composer is focused.
   const collapsed = input.isScrollCollapsed || (input.collapseOnBlur && !input.isFocused);
-  return input.isExistingThread && !input.isMobileViewport && collapsed && !input.hasExpandedChrome;
+  return (
+    input.isExistingThread &&
+    !input.isMobileViewport &&
+    input.timelineOverflows &&
+    collapsed &&
+    !input.hasExpandedChrome
+  );
 }
 
 /** Minimum extra height between the resting and empty expanded composer. */

@@ -376,8 +376,9 @@ function workspaceRelativePath(path: string, workspaceRoot: string | undefined):
     /\/+$/,
     "",
   );
-  const pathForCompare = normalizedPath.toLowerCase();
-  const rootForCompare = normalizedRoot.toLowerCase();
+  const caseInsensitive = /^[A-Za-z]:/.test(normalizedRoot) || workspaceRoot.startsWith("\\\\");
+  const pathForCompare = caseInsensitive ? normalizedPath.toLowerCase() : normalizedPath;
+  const rootForCompare = caseInsensitive ? normalizedRoot.toLowerCase() : normalizedRoot;
   if (!pathForCompare.startsWith(`${rootForCompare}/`)) return null;
   return normalizedPath.slice(normalizedRoot.length + 1);
 }
