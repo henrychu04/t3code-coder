@@ -2343,6 +2343,17 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
         FROM activity_rows
       `;
 
+      for (const activityKinds of [[], ["approval.requested"]]) {
+        const filtered = yield* snapshotQuery.getThreadDetailById(threadW, { activityKinds });
+        assert.equal(filtered._tag, "Some");
+        if (filtered._tag === "Some") assert.deepEqual(filtered.value.activities, []);
+      }
+      const matching = yield* snapshotQuery.getThreadDetailById(threadW, {
+        activityKinds: ["tool.completed"],
+      });
+      assert.equal(matching._tag, "Some");
+      if (matching._tag === "Some") assert.equal(matching.value.activities.length, 500);
+
       const fullDetail = yield* snapshotQuery.getThreadDetailById(threadW);
       assert.equal(fullDetail._tag, "Some");
       if (fullDetail._tag === "Some") {

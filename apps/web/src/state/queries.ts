@@ -13,6 +13,7 @@ import type {
   EnvironmentId,
   OrchestrationThread,
   ProjectEntryKind,
+  ProjectTextSearchMatch,
   ThreadId,
   VcsListRefsResult,
   VcsRef,
@@ -319,6 +320,13 @@ export function useProjectTextSearch(target: {
   readonly wholeWord: boolean;
   readonly useRegex: boolean;
 }) {
+  const identity = JSON.stringify(target);
+  const [page, setPage] = useState<{
+    identity: string;
+    cursor?: string;
+    previous: readonly ProjectTextSearchMatch[];
+  }>({ identity, previous: [] });
+  const currentPage = page.identity === identity ? page : { identity, previous: [] };
   const normalizedTarget = useMemo(
     () => ({
       query: target.query,
@@ -330,12 +338,12 @@ export function useProjectTextSearch(target: {
     [target.caseSensitive, target.fileMask, target.query, target.useRegex, target.wholeWord],
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
-  const result = useEnvironmentQuery(
+  const request =
     target.environmentId !== null &&
-      target.threadId !== null &&
-      target.cwd !== null &&
-      debouncedTarget.query.length > 0
-      ? projectEnvironment.searchText({
+    target.threadId !== null &&
+    target.cwd !== null &&
+    debouncedTarget.query.length > 0
+      ? {
           environmentId: target.environmentId,
           input: {
             threadId: target.threadId,
@@ -347,9 +355,21 @@ export function useProjectTextSearch(target: {
             wholeWord: debouncedTarget.wholeWord,
             useRegex: debouncedTarget.useRegex,
           },
+        }
+      : null;
+  const firstPageAtom = request ? projectEnvironment.searchText(request) : null;
+  const result = useEnvironmentQuery(
+    request && currentPage.cursor
+      ? projectEnvironment.searchText({
+          ...request,
+          input: { ...request.input, cursor: currentPage.cursor },
         })
-      : null,
+      : firstPageAtom,
   );
+  const restartSearch = useCallback(() => {
+    setPage({ identity, previous: [] });
+    if (firstPageAtom) appAtomRegistry.refresh(firstPageAtom);
+  }, [identity, firstPageAtom]);
   const isCurrentQuery =
     normalizedTarget.query === debouncedTarget.query &&
     normalizedTarget.fileMask === debouncedTarget.fileMask &&
@@ -357,8 +377,23 @@ export function useProjectTextSearch(target: {
     normalizedTarget.wholeWord === debouncedTarget.wholeWord &&
     normalizedTarget.useRegex === debouncedTarget.useRegex;
 
+  // A failed continuation may have expired after a save, index eviction, or reconnect.
+  // Restart from fresh data rather than appending to results from an obsolete index.
+  useEffect(() => {
+    if (isCurrentQuery && currentPage.cursor && result.error && !result.isPending) restartSearch();
+  }, [isCurrentQuery, currentPage.cursor, result.error, result.isPending, restartSearch]);
+
+  const matches = isCurrentQuery ? [...currentPage.previous, ...(result.data?.matches ?? [])] : [];
+  const loadMore = () => {
+    if (isCurrentQuery && !result.isPending && result.data?.nextCursor) {
+      setPage({ identity, cursor: result.data.nextCursor, previous: matches });
+    }
+  };
   return {
-    matches: isCurrentQuery ? (result.data?.matches ?? []) : [],
+    matches,
+    loadMore,
+    restartSearch,
+    hasMore: isCurrentQuery && !!result.data?.nextCursor,
     truncated: isCurrentQuery ? (result.data?.truncated ?? false) : false,
     regexFallbackError: isCurrentQuery ? (result.data?.regexFallbackError ?? null) : null,
     error: isCurrentQuery ? result.error : null,

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -274,7 +275,7 @@ function safeRelativeSearchPath(input: string): string | null {
 
 async function validateContentMatchPath(
   realProjectRoot: string,
-  match: GrepMatch,
+  match: Pick<GrepMatch, "relativePath" | "isBinary" | "lineContent">,
 ): Promise<string | null> {
   if (match.isBinary || match.lineContent.includes("\0") || match.lineContent.includes("�")) {
     return null;
@@ -426,22 +427,34 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     return result.value;
   });
 
+  let generation = 0;
   const refresh: WorkspaceSearchIndex["Service"]["refresh"] = Effect.fn(
     "WorkspaceSearchIndex.refresh",
   )(function* () {
-    const result = yield* Effect.try({
-      try: () => finder.scanFiles(),
-      catch: () =>
-        new WorkspaceSearchIndexRefreshFailed({
-          reason: "FileFinder.scanFiles threw unexpectedly.",
-        }),
-    });
-    if (!result.ok) {
-      return yield* new WorkspaceSearchIndexRefreshFailed({
-        reason: "FileFinder.scanFiles returned an error.",
+    generation += 1;
+    continuations.clear();
+    try {
+      const result = yield* Effect.try({
+        try: () => finder.scanFiles(),
+        catch: () =>
+          new WorkspaceSearchIndexRefreshFailed({
+            reason: "FileFinder.scanFiles threw unexpectedly.",
+          }),
       });
+      if (!result.ok) {
+        return yield* new WorkspaceSearchIndexRefreshFailed({
+          reason: "FileFinder.scanFiles returned an error.",
+        });
+      }
+      yield* waitForIndexReady(
+        finder,
+        (reason) => new WorkspaceSearchIndexRefreshFailed({ reason }),
+      );
+    } finally {
+      // Searches may have started while the native scan was in progress.
+      generation += 1;
+      continuations.clear();
     }
-    yield* waitForIndexReady(finder, (reason) => new WorkspaceSearchIndexRefreshFailed({ reason }));
   });
 
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
@@ -489,25 +502,64 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
     return mapMixedSearchResult(result, limit);
   });
 
+  // FFF pages end at file boundaries and can exceed pageSize by up to 99 matches.
+  // Keep that bounded overflow so a UI page never drops matches from its last file.
+  const continuations = new Map<
+    string,
+    {
+      cursor: GrepCursor | null;
+      pending: Array<ProjectTextSearchResult["matches"][number]>;
+      query: string;
+      createdAt: number;
+    }
+  >();
+
   const searchText: WorkspaceSearchIndex["Service"]["searchText"] = Effect.fn(
     "WorkspaceSearchIndex.searchText",
   )(function* (input) {
+    const searchGeneration = generation;
     const limit = Math.min(input.limit, CONTENT_SEARCH_MAX_TOTAL_MATCHES);
     const { searchQuery, regexMode } = buildContentSearchQuery(input);
     const deadline = performance.now() + CONTENT_SEARCH_TIME_BUDGET_MS;
-    const rawPageSize = Math.min(
-      CONTENT_SEARCH_MAX_TOTAL_MATCHES,
-      input.wholeWord ? Math.max(limit, CONTENT_SEARCH_MAX_MATCHES_PER_FILE) : limit,
-    );
+    const rawPageSize = limit;
     const nativeMaskSupported =
       !input.fileMask?.trim() || toFffFileMaskConstraint(input.fileMask) !== undefined;
     const matches: Array<ProjectTextSearchResult["matches"][number]> = [];
     const matchesPerFile = new Map<string, number>();
-    let nextCursor: GrepCursor | null = null;
+    const queryIdentity = JSON.stringify({
+      query: input.query,
+      fileMask: input.fileMask ?? "",
+      caseSensitive: input.caseSensitive,
+      wholeWord: input.wholeWord,
+      useRegex: input.useRegex,
+    });
+    for (const [key, entry] of continuations) {
+      if (Date.now() - entry.createdAt > 15 * 60_000) continuations.delete(key);
+    }
+    const continuation = input.cursor ? continuations.get(input.cursor) : undefined;
+    if (input.cursor && (!continuation || continuation.query !== queryIdentity)) {
+      return yield* new WorkspaceSearchIndexSearchFailed({
+        queryLength: input.query.length,
+        pageSize: limit,
+        reason: "Search continuation expired. Run the search again.",
+      });
+    }
+    let nextCursor: GrepCursor | null = continuation?.cursor ?? null;
     let invalidRegex = false;
     let truncated = false;
 
-    do {
+    for (const match of continuation?.pending ?? []) {
+      const path = yield* Effect.promise(() =>
+        validateContentMatchPath(cwd, {
+          relativePath: match.path,
+          isBinary: false,
+          lineContent: match.lineContent,
+        }),
+      );
+      if (path) matches.push(match);
+    }
+
+    while (matches.length < limit && (!continuation || nextCursor !== null)) {
       const remainingTimeBudgetMs = Math.max(1, Math.ceil(deadline - performance.now()));
       const result = yield* runSearch(input.query, rawPageSize, "grep", () =>
         finder.grep(searchQuery, {
@@ -515,7 +567,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
           smartCase: !input.caseSensitive && !regexMode,
           maxFileSize: 10 * 1024 * 1024,
           maxMatchesPerFile: CONTENT_SEARCH_MAX_MATCHES_PER_FILE,
-          pageSize: rawPageSize,
+          pageSize: Math.max(1, limit - matches.length),
           cursor: nextCursor,
           timeBudgetMs: remainingTimeBudgetMs,
         }),
@@ -527,10 +579,6 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       }
 
       for (const match of result.items) {
-        if (matches.length >= limit) {
-          truncated = true;
-          break;
-        }
         if (
           !nativeMaskSupported &&
           input.fileMask &&
@@ -566,11 +614,32 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         matchesPerFile.set(relativePath, fileMatchCount + 1);
       }
       nextCursor = result.nextCursor;
-    } while (matches.length < limit && nextCursor !== null && performance.now() < deadline);
+      if (nextCursor === null || performance.now() >= deadline) break;
+    }
 
+    if (generation !== searchGeneration) {
+      return yield* new WorkspaceSearchIndexSearchFailed({
+        queryLength: input.query.length,
+        pageSize: limit,
+        reason: "Search index changed. Run the search again.",
+      });
+    }
+    let cursor: string | undefined;
+    const pending = matches.splice(limit);
+    if (nextCursor !== null || pending.length > 0) {
+      if (continuations.size >= 128) continuations.delete(continuations.keys().next().value!);
+      cursor = randomUUID();
+      continuations.set(cursor, {
+        cursor: nextCursor,
+        pending,
+        query: queryIdentity,
+        createdAt: Date.now(),
+      });
+    }
     return {
+      ...(cursor ? { nextCursor: cursor } : {}),
       matches,
-      truncated: truncated || nextCursor !== null,
+      truncated: truncated || cursor !== undefined,
       ...(invalidRegex ? { regexFallbackError: "Invalid regular expression." } : {}),
     };
   });

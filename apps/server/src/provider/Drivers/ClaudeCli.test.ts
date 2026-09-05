@@ -224,3 +224,55 @@ setInterval(() => undefined, 1_000);
     });
   }
 });
+
+it("drains a burst without dropping messages and serves control requests while consumption is paused", async () => {
+  const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-claude-backpressure-"));
+  const executable = NodePath.join(directory, "fake-claude");
+  await NodeFS.writeFile(
+    executable,
+    `#!/usr/bin/env node
+const { createInterface } = require("node:readline");
+const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+for await (const line of createInterface({ input: process.stdin })) {}
+`.replace(
+      "for await (const line of createInterface({ input: process.stdin })) {}",
+      `
+createInterface({ input: process.stdin }).on("line", (line) => {
+  const value = JSON.parse(line);
+  if (value.type !== "control_request") return;
+  send({ type: "control_response", response: { subtype: "success", request_id: value.request_id, response: { ready: true } } });
+  if (value.request.subtype === "initialize") {
+    for (let index = 0; index < 600; index++) send({ type: "assistant", uuid: String(index), message: { content: "x".repeat(4096) } });
+  }
+  if (value.request.subtype === "get_settings") process.stdin.destroy();
+});`,
+    ),
+  );
+  await NodeFS.chmod(executable, 0o700);
+  let finishPrompt!: () => void;
+  const promptFinished = new Promise<void>((resolve) => {
+    finishPrompt = resolve;
+  });
+  const runtime = query({
+    prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
+      await promptFinished;
+    })(),
+    options: { pathToClaudeCodeExecutable: executable, env: process.env },
+  });
+  try {
+    await runtime.initializationResult();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(await runtime.getSettings(2000), { ready: true });
+    finishPrompt();
+    const ids: string[] = [];
+    for await (const message of runtime) if (message.type === "assistant") ids.push(message.uuid);
+    assert.deepEqual(
+      ids,
+      Array.from({ length: 600 }, (_, index) => String(index)),
+    );
+  } finally {
+    finishPrompt();
+    runtime.close();
+    await NodeFS.rm(directory, { force: true, recursive: true });
+  }
+}, 5000);

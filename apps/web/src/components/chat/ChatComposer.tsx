@@ -707,7 +707,6 @@ import {
   LockOpenIcon,
   PenLineIcon,
   SparklesIcon,
-  XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
@@ -2683,39 +2682,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setIsStashMenuOpen((open) => !open);
       return;
     }
-    const { evicted, written, durable } = stashEntryToQueue({
+    const { evicted } = stashEntryToQueue({
       id: randomUUID(),
       createdAt: new Date().toISOString(),
       environmentId,
       prompt: stashedPrompt,
     });
-
-    // Clearing the composer is only safe once the write actually landed.
-    // If it was rejected (quota) the store has already rolled itself back,
-    // so leave the composer untouched rather than making it the second
-    // casualty of a reload.
-    if (!written) {
-      toastManager.add({
-        type: "error",
-        title: "Could not stash this prompt",
-        description:
-          "Browser storage rejected the write, so the composer was left as-is. Free up site data and try again.",
-        data: { hideCopyButton: true },
-      });
-      return;
-    }
-    // Written but only into the in-memory fallback (localStorage blocked):
-    // the entry is visible and restorable this session, so proceed with the
-    // clear, but say it won't survive a reload.
-    if (!durable) {
-      toastManager.add({
-        type: "warning",
-        title: "Stashed prompt will not survive a reload",
-        description:
-          "Browser storage is unavailable, so this stash is kept in memory only for this session.",
-        data: { hideCopyButton: true },
-      });
-    }
 
     // Only the prompt text is cleared — review comments and model selections
     // are not stashable, so destroying them would be unrecoverable or simply
@@ -2753,17 +2725,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const restoreStashEntry = useCallback(
     (entry: PromptStashEntry) => {
       // Remove first so a double activation (click + Enter) can't restore twice.
-      const { entry: taken, durable } = takeStashEntry(entry.id);
+      const { entry: taken } = takeStashEntry(entry.id);
       if (!taken) return;
-      if (!durable) {
-        toastManager.add({
-          type: "warning",
-          title: "Restored prompt may reappear in the stash",
-          description:
-            "Browser storage rejected the update, so this entry could still be there after a reload.",
-          data: { hideCopyButton: true },
-        });
-      }
+
       setIsStashMenuOpen(false);
 
       const currentPrompt = promptRef.current;
@@ -2831,16 +2795,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const deleteStashEntry = useCallback(
     (entry: PromptStashEntry) => {
-      const { durable } = takeStashEntry(entry.id);
-      if (!durable) {
-        toastManager.add({
-          type: "warning",
-          title: "Stash entry may come back",
-          description:
-            "Browser storage rejected the delete, so this prompt could reappear after a reload.",
-          data: { hideCopyButton: true },
-        });
-      }
+      takeStashEntry(entry.id);
     },
     [takeStashEntry],
   );

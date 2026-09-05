@@ -1,11 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import {
-  MAX_STASH_ENTRIES,
-  usePromptStashStore,
-  writePromptStashStorageForTest,
-  type PromptStashEntry,
-} from "./promptStashStore";
+import { MAX_STASH_ENTRIES, usePromptStashStore, type PromptStashEntry } from "./promptStashStore";
 
 function makeEntry(input: { id: string; prompt?: string }): PromptStashEntry {
   return {
@@ -18,7 +13,6 @@ function makeEntry(input: { id: string; prompt?: string }): PromptStashEntry {
 
 function resetPromptStashStore() {
   usePromptStashStore.setState({ entries: [] });
-  writePromptStashStorageForTest("");
 }
 
 describe("promptStashStore", () => {
@@ -50,19 +44,6 @@ describe("promptStashStore", () => {
     expect(entries[0]?.id).toBe("overflow");
   });
 
-  // This test environment has no `localStorage`, so the store runs on its
-  // in-memory fallback — the exact "kept for this session, gone on reload"
-  // case the composer must distinguish from an outright write failure.
-  it("distinguishes a memory-only write (written, not durable) from a failed one", () => {
-    const store = usePromptStashStore.getState();
-    const result = store.stashEntry(makeEntry({ id: "memory-only" }));
-    expect(result.written).toBe(true);
-    expect(result.durable).toBe(false);
-    expect(usePromptStashStore.getState().entries.map((entry) => entry.id)).toEqual([
-      "memory-only",
-    ]);
-  });
-
   it("takeEntry removes and returns the entry; second take returns null", () => {
     const store = usePromptStashStore.getState();
     store.stashEntry(makeEntry({ id: "keep" }));
@@ -72,29 +53,37 @@ describe("promptStashStore", () => {
     const entries = usePromptStashStore.getState().entries;
     expect(entries.map((entry) => entry.id)).toEqual(["keep"]);
   });
+});
 
-  it("rehydrates a persisted v3 payload", () => {
-    writePromptStashStorageForTest(
-      JSON.stringify({
-        version: 3,
-        state: { entries: [makeEntry({ id: "persisted", prompt: "hello there" })] },
-      }),
-    );
-    const entries = usePromptStashStore.getState().entries;
-    expect(entries.map((entry) => entry.id)).toEqual(["persisted"]);
-    expect(entries[0]?.environmentId).toBe("env-1");
-    expect(entries[0]?.prompt).toBe("hello there");
+describe("legacy stash cleanup", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
   });
 
-  it("ignores an unreadable legacy payload seeded under the current key", () => {
-    // The v1 shape (per-provider queues) does not decode as v3; hydration
-    // must fall back to an empty stash rather than throw.
-    writePromptStashStorageForTest(
-      JSON.stringify({
-        version: 1,
-        state: { queuesByScopeKey: { "provider:claudeAgent": [] } },
-      }),
-    );
-    expect(usePromptStashStore.getState().entries).toEqual([]);
+  it("recovers existing text for this session and removes every persisted stash", async () => {
+    const data = new Map([
+      ["t3code:prompt-stash:v1", "legacy"],
+      ["t3code:prompt-stash:v2", "legacy"],
+      [
+        "t3code:prompt-stash:v3",
+        JSON.stringify({ state: { entries: [makeEntry({ id: "old" })] } }),
+      ],
+    ]);
+    const storage = {
+      getItem: (key: string) => data.get(key) ?? null,
+      removeItem: (key: string) => data.delete(key),
+      setItem: vi.fn(),
+    };
+    vi.stubGlobal("localStorage", storage);
+    vi.resetModules();
+    const { usePromptStashStore: migrated } = await import("./promptStashStore");
+    expect(migrated.getState().entries.map((entry) => entry.id)).toEqual(["old"]);
+    expect(data.size).toBe(0);
+    migrated.getState().stashEntry(makeEntry({ id: "new" }));
+    expect(storage.setItem).not.toHaveBeenCalled();
+    vi.resetModules();
+    const { usePromptStashStore: reloaded } = await import("./promptStashStore");
+    expect(reloaded.getState().entries).toEqual([]);
   });
 });

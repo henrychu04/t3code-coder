@@ -339,12 +339,14 @@ export interface ClaudeAdapterLiveOptions {
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
   readonly captureScreenshotFile?: (input: {
+    readonly capturedDigests: ReadonlySet<string>;
     readonly cwd: string;
     readonly filePath: string;
   }) => Effect.Effect<
     { readonly reference: ScreenshotArtifactReference; readonly digest: string } | undefined
   >;
   readonly captureScreenshotBase64?: (input: {
+    readonly capturedDigests: ReadonlySet<string>;
     readonly dataBase64: string;
     readonly mimeType: string;
     readonly name?: string;
@@ -1906,6 +1908,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const captured = yield* options.captureScreenshotFile({
         cwd: context.session.cwd,
         filePath,
+        capturedDigests: turnState.capturedScreenshotDigests,
       });
       appendCapturedScreenshot(turnState, captured);
     }
@@ -2946,6 +2949,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           }
           const captured = yield* options.captureScreenshotBase64({
             ...image,
+            capturedDigests: context.turnState.capturedScreenshotDigests,
             ...(name ? { name } : {}),
           });
           appendCapturedScreenshot(context.turnState, captured);

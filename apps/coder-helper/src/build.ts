@@ -1,3 +1,4 @@
+import { readBuildVersion } from "../../../scripts/build-info.ts";
 import { build } from "esbuild";
 import * as NodeFS from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -100,7 +101,13 @@ export async function buildCoderHelper(
 ): Promise<void> {
   await NodeFS.rm(outputDirectory, { recursive: true, force: true });
   await NodeFS.mkdir(outputDirectory, { recursive: true });
+  const version = readBuildVersion();
+  await NodeFS.writeFile(
+    NodePath.join(outputDirectory, "build-info.json"),
+    JSON.stringify({ version }),
+  );
   await build({
+    define: { "process.env.T3_CODER_BUILD_VERSION": JSON.stringify(version) },
     entryPoints: [entryPoint],
     outfile: NodePath.join(outputDirectory, "index.mjs"),
     bundle: true,

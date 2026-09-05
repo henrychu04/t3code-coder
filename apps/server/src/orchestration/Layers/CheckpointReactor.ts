@@ -175,7 +175,7 @@ const make = Effect.gen(function* () {
 
   const resolveThreadDetail = Effect.fn("resolveThreadDetail")(function* (threadId: ThreadId) {
     return yield* projectionSnapshotQuery
-      .getThreadDetailById(threadId)
+      .getThreadDetailById(threadId, { activityKinds: [] })
       .pipe(Effect.map(Option.getOrUndefined));
   });
 
@@ -494,7 +494,7 @@ const make = Effect.gen(function* () {
     readonly cwd: string;
     readonly followWorktreePath: boolean;
   }) {
-    const local = yield* vcsStatus.refresh(input.cwd).pipe(
+    const local = yield* vcsStatus.refresh(input.cwd, { fetch: false }).pipe(
       Effect.catch((error) =>
         Effect.logWarning("failed to refresh local git status after agent command", {
           threadId: input.event.threadId,

@@ -5,7 +5,6 @@ import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Queue from "effect/Queue";
@@ -383,7 +382,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
     const environment = yield* CoderEnvironment.CoderEnvironment;
-    const startup = yield* CoderRuntimeStartup.CoderRuntimeStartup;
+    yield* CoderRuntimeStartup.CoderRuntimeStartup;
     const orchestration = yield* OrchestrationEngine.OrchestrationEngineService;
     const threadDeletionReactor = yield* ThreadDeletionReactor;
     const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
@@ -746,7 +745,7 @@ export const layer = CoderWsRpcGroup.toLayer(
       });
 
     const dispatch = (command: OrchestrationCommand) =>
-      startup.enqueueCommand(
+      Effect.suspend(() =>
         command.type === "thread.turn.start" && command.bootstrap
           ? dispatchBootstrap(command)
           : orchestration.dispatch(command).pipe(

@@ -17,7 +17,6 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "esbuild": "^0.28.1",
-    "vite-plus": "catalog:"
+    "esbuild": "^0.28.1"
   }
 }

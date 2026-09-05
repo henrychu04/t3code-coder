@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -154,10 +155,14 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const [workspaceRuntime, setWorkspaceRuntime] = useState<
     Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
   >({});
-  const [connectedWorkspaceIds, setConnectedWorkspaceIds] = useState<readonly string[]>([]);
-  const [workspaceNetwork, setWorkspaceNetwork] = useState<
-    Readonly<Record<string, CoderWorkspaceNetworkState>>
-  >(() => readCoderWorkspaceNetwork());
+  const workspaceNetwork = useSyncExternalStore(
+    subscribeCoderWorkspaceNetwork,
+    readCoderWorkspaceNetwork,
+    readCoderWorkspaceNetwork,
+  );
+  const runtimeRequestGeneration = useRef(0);
+  const pendingWorkspaceActions = useRef(new Map<string, number>());
+  const configSaveGeneration = useRef(0);
 
   const reload = useCallback(async () => {
     setLoadError(null);
@@ -174,8 +179,6 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
 
   useEffect(() => {
     startCoderWorkspaceNetworkSampler();
-    setWorkspaceNetwork(readCoderWorkspaceNetwork());
-    return subscribeCoderWorkspaceNetwork(() => setWorkspaceNetwork(readCoderWorkspaceNetwork()));
   }, []);
 
   const connectWorkspace = useCallback(async (workspaceId: string) => {
@@ -191,14 +194,11 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
       const descriptor = await connectCoderWorkspace(workspaceId);
       if (connectionAttemptGenerations.current[workspaceId] !== generation) return descriptor;
       setCoderWorkspaceEnvironment(workspaceId, descriptor);
-      setConnectedWorkspaceIds((current) =>
-        current.includes(workspaceId) ? current : [...current, workspaceId],
-      );
+
       return descriptor;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (connectionAttemptGenerations.current[workspaceId] === generation) {
-        setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
         setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
       }
       throw cause;
@@ -207,9 +207,11 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
 
   const applyWorkspaceRuntime = useCallback(
     (runtime: Readonly<Record<string, CoderWorkspaceRuntimeStatus>>) => {
-      setWorkspaceRuntime(runtime);
-      const inactiveWorkspaceIds = new Set<string>();
-      for (const [workspaceId, status] of Object.entries(runtime)) {
+      const applicableRuntime = Object.fromEntries(
+        Object.entries(runtime).filter(([id]) => !pendingWorkspaceActions.current.has(id)),
+      );
+      setWorkspaceRuntime((current) => ({ ...current, ...applicableRuntime }));
+      for (const [workspaceId, status] of Object.entries(applicableRuntime)) {
         if (
           status.status !== "stopped" &&
           status.status !== "starting" &&
@@ -219,37 +221,45 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
         }
         connectionAttemptGenerations.current[workspaceId] =
           (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
-        inactiveWorkspaceIds.add(workspaceId);
+        removeCoderWorkspaceEnvironment(workspaceId);
       }
-      setConnectedWorkspaceIds((current) =>
-        current.some((workspaceId) => inactiveWorkspaceIds.has(workspaceId))
-          ? current.filter((workspaceId) => !inactiveWorkspaceIds.has(workspaceId))
-          : current,
+
+      setConnectionErrors((current) =>
+        discardInactiveWorkspaceConnectionErrors(current, applicableRuntime),
       );
-      setWorkspaceNetwork((current) => {
-        const next = Object.fromEntries(
-          Object.entries(current).filter(([workspaceId]) => !inactiveWorkspaceIds.has(workspaceId)),
-        );
-        return Object.keys(next).length === Object.keys(current).length ? current : next;
-      });
-      setConnectionErrors((current) => discardInactiveWorkspaceConnectionErrors(current, runtime));
     },
     [],
   );
 
   useEffect(() => {
     if (config === null) return;
-    setCoderWorkspaceOrder(config.workspaces.map((workspace) => workspace.id));
+    const allowedWorkspaceIds = new Set(config.workspaces.map((workspace) => workspace.id));
+    setCoderWorkspaceOrder([...allowedWorkspaceIds]);
+    setWorkspaceRuntime((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => allowedWorkspaceIds.has(id))),
+    );
+    setConnectionErrors((current) =>
+      Object.fromEntries(Object.entries(current).filter(([id]) => allowedWorkspaceIds.has(id))),
+    );
     let cancelled = false;
     let retryTimer: number | undefined;
     let retryCount = 0;
     const connectAvailableWorkspaces = async (): Promise<void> => {
       retryTimer = undefined;
+      const requestGeneration = ++runtimeRequestGeneration.current;
       const runtime = await readWorkspaceRuntime(config);
       if (cancelled) return;
+      if (requestGeneration !== runtimeRequestGeneration.current) {
+        retryTimer = window.setTimeout(
+          () => void connectAvailableWorkspaces(),
+          STABLE_RUNTIME_REFRESH_MS,
+        );
+        return;
+      }
       applyWorkspaceRuntime(runtime);
       let hasPendingWorkspaceStatus = false;
       for (const workspace of config.workspaces) {
+        if (pendingWorkspaceActions.current.has(workspace.id)) continue;
         const status = runtime[workspace.id]?.status;
         if (status === "stopped" || status === "starting" || status === "unavailable") {
           removeCoderWorkspaceEnvironment(workspace.id);
@@ -283,6 +293,11 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     void connectAvailableWorkspaces();
     return () => {
       cancelled = true;
+      runtimeRequestGeneration.current += 1;
+      for (const workspace of config.workspaces) {
+        connectionAttemptGenerations.current[workspace.id] =
+          (connectionAttemptGenerations.current[workspace.id] ?? 0) + 1;
+      }
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
       document.removeEventListener("visibilitychange", wake);
     };
@@ -290,29 +305,28 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
 
   const refreshWorkspaceRuntime = useCallback(async () => {
     if (config === null) return {};
+    const requestGeneration = ++runtimeRequestGeneration.current;
     const runtime = await readWorkspaceRuntime(config);
-    applyWorkspaceRuntime(runtime);
+    if (requestGeneration === runtimeRequestGeneration.current) applyWorkspaceRuntime(runtime);
     return runtime;
   }, [applyWorkspaceRuntime, config]);
 
   const saveConfig = useCallback(async (nextConfig: CoderProfileConfig) => {
+    runtimeRequestGeneration.current += 1;
+    const generation = ++configSaveGeneration.current;
     const saved = await saveCoderConfig(nextConfig);
-    setConfig(saved);
+    if (generation === configSaveGeneration.current) setConfig(saved);
     return saved;
   }, []);
 
   const disconnectWorkspace = useCallback(async (workspaceId: string) => {
-    connectionAttemptGenerations.current[workspaceId] =
-      (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+    runtimeRequestGeneration.current += 1;
+    const generation = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
+    connectionAttemptGenerations.current[workspaceId] = generation;
     await disconnectCoderWorkspace(workspaceId);
+    if (connectionAttemptGenerations.current[workspaceId] !== generation) return;
     removeCoderWorkspaceEnvironment(workspaceId);
-    setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
-    setWorkspaceNetwork((current) => {
-      if (current[workspaceId] === undefined) return current;
-      const next = { ...current };
-      delete next[workspaceId];
-      return next;
-    });
+
     setConnectionErrors((current) => {
       const next = { ...current };
       delete next[workspaceId];
@@ -323,15 +337,11 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const completeWorkspaceAction = useCallback(
     async (workspaceId: string, action: (workspaceId: string) => Promise<void>) => {
       removeCoderWorkspaceEnvironment(workspaceId);
-      setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
-      setWorkspaceNetwork((current) => {
-        if (current[workspaceId] === undefined) return current;
-        const next = { ...current };
-        delete next[workspaceId];
-        return next;
-      });
+
+      runtimeRequestGeneration.current += 1;
       const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
       connectionAttemptGenerations.current[workspaceId] = actionGeneration;
+      pendingWorkspaceActions.current.set(workspaceId, actionGeneration);
       setConnectionErrors((current) => {
         if (current[workspaceId] === undefined) return current;
         const next = { ...current };
@@ -348,6 +358,7 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           requiredStopAt: current[workspaceId]?.requiredStopAt ?? null,
         },
       }));
+      let failed = false;
       try {
         await action(workspaceId);
       } catch (cause) {
@@ -355,8 +366,19 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           const message = cause instanceof Error ? cause.message : String(cause);
           setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
         }
-        void refreshWorkspaceRuntime();
+        failed = true;
         throw cause;
+      } finally {
+        if (pendingWorkspaceActions.current.get(workspaceId) === actionGeneration) {
+          pendingWorkspaceActions.current.delete(workspaceId);
+          runtimeRequestGeneration.current += 1;
+          if (failed && connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
+            void refreshWorkspaceRuntime();
+          }
+        }
+      }
+      if (connectionAttemptGenerations.current[workspaceId] !== actionGeneration) {
+        throw new Error("Workspace action was superseded.");
       }
       try {
         const descriptor = await connectWorkspace(workspaceId);
@@ -377,23 +399,21 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
   const stopWorkspace = useCallback(
     async (workspaceId: string) => {
       removeCoderWorkspaceEnvironment(workspaceId);
-      setConnectedWorkspaceIds((current) => current.filter((entry) => entry !== workspaceId));
-      setWorkspaceNetwork((current) => {
-        if (current[workspaceId] === undefined) return current;
-        const next = { ...current };
-        delete next[workspaceId];
-        return next;
-      });
+
+      runtimeRequestGeneration.current += 1;
       const actionGeneration = (connectionAttemptGenerations.current[workspaceId] ?? 0) + 1;
       connectionAttemptGenerations.current[workspaceId] = actionGeneration;
+      pendingWorkspaceActions.current.set(workspaceId, actionGeneration);
       setConnectionErrors((current) => {
         if (current[workspaceId] === undefined) return current;
         const next = { ...current };
         delete next[workspaceId];
         return next;
       });
+      let failed = false;
       try {
         await stopCoderWorkspace(workspaceId);
+        if (connectionAttemptGenerations.current[workspaceId] !== actionGeneration) return;
         setWorkspaceRuntime((current) => ({
           ...current,
           [workspaceId]: {
@@ -409,8 +429,16 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
           const message = cause instanceof Error ? cause.message : String(cause);
           setConnectionErrors((current) => ({ ...current, [workspaceId]: message }));
         }
-        void refreshWorkspaceRuntime();
+        failed = true;
         throw cause;
+      } finally {
+        if (pendingWorkspaceActions.current.get(workspaceId) === actionGeneration) {
+          pendingWorkspaceActions.current.delete(workspaceId);
+          runtimeRequestGeneration.current += 1;
+          if (failed && connectionAttemptGenerations.current[workspaceId] === actionGeneration) {
+            void refreshWorkspaceRuntime();
+          }
+        }
       }
     },
     [refreshWorkspaceRuntime],

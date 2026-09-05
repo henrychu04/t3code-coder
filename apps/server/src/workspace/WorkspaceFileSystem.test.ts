@@ -4,6 +4,8 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import { vi } from "vite-plus/test";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -11,8 +13,11 @@ import * as Path from "effect/Path";
 import * as WorkspaceEntries from "./WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./WorkspacePaths.ts";
-import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...actual, rename: vi.fn(actual.rename) };
+});
 
 const EntriesLayer = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
 const ProjectLayer = WorkspaceFileSystem.layer.pipe(
@@ -153,6 +158,33 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
       }),
     );
 
+    it.effect("allows only one concurrent write for the same revision", () =>
+      Effect.gen(function* () {
+        const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+        const cwd = yield* makeTempDir;
+        yield* writeTextFile(cwd, "shared.txt", "original");
+        const initial = yield* files.readFile({ cwd, relativePath: "shared.txt" });
+        const results = yield* Effect.all(
+          Array.from({ length: 8 }, (_, index) =>
+            files
+              .writeFile({
+                cwd,
+                relativePath: "shared.txt",
+                expectedRevision: initial.revision,
+                contents: `writer ${index}`,
+              })
+              .pipe(Effect.result),
+          ),
+          { concurrency: "unbounded" },
+        );
+        expect(results.filter((result) => result._tag === "Success")).toHaveLength(1);
+        const failures = results.filter((result) => result._tag === "Failure");
+        expect(failures).toHaveLength(7);
+        for (const result of failures)
+          expect(result.failure).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileStaleError);
+      }),
+    );
+
     it.effect("rejects a stale write and preserves the newer contents", () =>
       Effect.gen(function* () {
         const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
@@ -179,4 +211,92 @@ it.layer(TestLayer)("WorkspaceFileSystem", (it) => {
       }),
     );
   });
+});
+
+it.layer(TestLayer)("write cancellation", (it) => {
+  it.effect("does not let an interrupted save overwrite a newer successful save", () =>
+    Effect.gen(function* () {
+      const files = yield* WorkspaceFileSystem.WorkspaceFileSystem;
+      const refreshSpy = vi.spyOn(yield* WorkspaceEntries.WorkspaceEntries, "refresh");
+      const cwd = yield* makeTempDir;
+      yield* writeTextFile(cwd, "test.txt", "original");
+      const original = yield* files.readFile({ cwd, relativePath: "test.txt" });
+      let started!: () => void;
+      let release!: () => void;
+      let finished!: () => void;
+      const atRename = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      const releaseRename = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const firstFinished = new Promise<void>((resolve) => {
+        finished = resolve;
+      });
+      const rename = (yield* Effect.promise(() =>
+        vi.importActual<typeof import("node:fs/promises")>("node:fs/promises"),
+      )).rename;
+      let calls = 0;
+      const spy = vi.spyOn(NodeFSP, "rename").mockImplementation(async (from, to) => {
+        if (++calls === 1) {
+          started();
+          await releaseRename;
+          await rename(from, to);
+          finished();
+        } else await rename(from, to);
+      });
+      try {
+        const first = yield* files
+          .writeFile({
+            cwd,
+            relativePath: "test.txt",
+            contents: "old save",
+            expectedRevision: original.revision,
+          })
+          .pipe(Effect.forkChild);
+        yield* Effect.promise(() => atRename);
+        let interruptionFinished = false;
+        const interrupt = yield* Fiber.interrupt(first).pipe(
+          Effect.tap(() =>
+            Effect.sync(() => {
+              interruptionFinished = true;
+            }),
+          ),
+          Effect.forkChild,
+        );
+        yield* Effect.forEach(Array.from({ length: 10 }), () => Effect.yieldNow);
+        expect(interruptionFinished).toBe(false);
+        const second = yield* files
+          .writeFile({
+            cwd,
+            relativePath: "test.txt",
+            contents: "new save",
+            expectedRevision: original.revision,
+          })
+          .pipe(Effect.result, Effect.forkChild);
+        release();
+        yield* Fiber.join(interrupt);
+        yield* Effect.forEach(Array.from({ length: 20 }), () => Effect.yieldNow);
+        expect(refreshSpy).toHaveBeenCalled();
+        const secondResult = yield* Fiber.join(second);
+        expect(secondResult._tag).toBe("Failure");
+        if (secondResult._tag === "Failure")
+          expect(secondResult.failure).toBeInstanceOf(WorkspaceFileSystem.WorkspaceFileStaleError);
+        const current = yield* files.readFile({ cwd, relativePath: "test.txt" });
+        yield* files.writeFile({
+          cwd,
+          relativePath: "test.txt",
+          contents: "new save",
+          expectedRevision: current.revision,
+        });
+        yield* Effect.promise(() => firstFinished);
+        const final = yield* files.readFile({ cwd, relativePath: "test.txt" });
+        expect(final.contents).toBe("new save");
+      } finally {
+        release();
+        spy.mockRestore();
+        refreshSpy.mockRestore();
+      }
+    }),
+  );
 });

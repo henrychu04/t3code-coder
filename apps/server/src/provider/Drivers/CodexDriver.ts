@@ -7,7 +7,6 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import * as CoderBackgroundPolicy from "../../coderBackgroundPolicy.ts";
 import { ServerConfig } from "../../config.ts";
 import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
@@ -30,7 +29,6 @@ const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const DRIVER_KIND = ProviderDriverKind.make("codex");
 
 export type CodexDriverEnv =
-  | CoderBackgroundPolicy.CoderBackgroundPolicy
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
   | FileSystem.FileSystem

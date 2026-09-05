@@ -1,3 +1,4 @@
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { WorkerPoolContext, useWorkerPool } from "@pierre/diffs/react";
 import { WorkerPoolManager } from "@pierre/diffs/worker";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
@@ -49,6 +50,7 @@ function acquireDiffWorkerPool(themeName: DiffThemeName, poolSize: number) {
       },
       {
         theme: themeName,
+        preferredHighlighter: PREFERRED_HIGHLIGHTER,
         tokenizeMaxLineLength: 1_000,
         useTokenTransformer: true,
       },
