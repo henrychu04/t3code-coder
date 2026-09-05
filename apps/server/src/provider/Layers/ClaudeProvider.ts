@@ -680,7 +680,7 @@ export function providerModelsFromClaudeCapabilities(input: {
   readonly models: ReadonlyArray<ClaudeModelInfo>;
   readonly autoModeDisabled: boolean;
   readonly bypassPermissionsDisabled: boolean;
-  readonly customModels?: ReadonlyArray<string>;
+  readonly customModels?: ClaudeSettings["customModels"];
 }): ReadonlyArray<ServerProviderModel> {
   const resolved: ServerProviderModel[] = [];
   const seen = new Set<string>();

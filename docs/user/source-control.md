@@ -39,7 +39,7 @@ part of your next message, which makes "fix this spot" conversations precise.
 
 ## Automatic project pull
 
-Turn on **Automatically pull** under **Settings → Source control** to keep a project's
+Turn on **Automatically pull** in [Project settings](./project-settings.md) to keep a project's
 default-branch checkout current inside its Coder workspace. T3 Coder checks when the workspace
 helper starts and during background source-control refreshes. It uses the branch's configured
 upstream and performs only a fast-forward pull when the checkout has no working-tree changes,

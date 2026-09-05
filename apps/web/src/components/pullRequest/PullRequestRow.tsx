@@ -1,4 +1,3 @@
-import { SearchIcon } from "lucide-react";
 import { memo, type RefCallback } from "react";
 
 import { cn } from "~/lib/utils";
@@ -74,7 +73,7 @@ function PullRequestRowImpl({
         // Offscreen rows are skipped for style, layout and paint: a long list costs what the
         // viewport shows, not what the pages have loaded. The intrinsic size keeps the
         // scrollbar honest while a row is skipped.
-        "[contain-intrinsic-block-size:54px] [content-visibility:auto]",
+        "[contain-intrinsic-block-size:66px] [content-visibility:auto]",
         selected ? "bg-accent" : "hover:bg-accent/60",
       )}
     >

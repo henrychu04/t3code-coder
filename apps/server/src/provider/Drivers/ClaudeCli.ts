@@ -41,6 +41,9 @@ export type SDKControlGetUsageResponse = typeof ClaudeUsageResponse.Type;
 export interface SDKRateLimitInfo {
   readonly status?: string;
   readonly rateLimitType?: string;
+  readonly overageStatus?: string;
+  readonly isUsingOverage?: boolean;
+  readonly overageInUse?: boolean;
   readonly utilization?: number;
   readonly resetsAt?: number;
 }
@@ -310,6 +313,7 @@ type SDKAuthStatusMessage = {
 
 type SDKRateLimitMessage = {
   readonly type: "rate_limit_event";
+  readonly rate_limit_info?: SDKRateLimitInfo;
   readonly session_id: string;
   readonly [key: string]: unknown;
 };

@@ -1,4 +1,4 @@
-# Message composer
+# Messages and context
 
 Messages can contain up to 120,000 characters. If a draft is longer, T3 Coder keeps it in the
 composer and shows how many characters need to be removed. Shorten the draft or split it into
@@ -43,6 +43,18 @@ it before sending.
 Type `/` to open the command menu. Commands and skills discovered in the workspace appear here —
 built-in Claude commands such as `/compact` as well as commands your project defines. Type `$` to
 find and add a skill.
+
+## Recall a sent prompt
+
+Press `ArrowUp` in an empty composer to recall the last prompt sent in this thread. Press it
+again to go further back, and `ArrowDown` to move forward. Moving past the newest prompt clears
+the composer. Recall uses only the prompts currently loaded in the thread and restores text,
+not pasted images, terminal context, or appended review comments. Pending questions, approvals,
+and attached terminal context keep their normal keyboard behavior.
+
+In an unedited recalled prompt, recall works from the first visual line with `ArrowUp` or the
+last visual line with `ArrowDown`, including wrapped lines. Elsewhere the keys move the caret.
+Editing a recalled prompt turns it into a normal draft. History stays in browser memory.
 
 ## Prompt stash
 

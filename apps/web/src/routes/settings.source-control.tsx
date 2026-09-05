@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { projectSettingsTarget } from "../projectSettingsTarget";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -38,7 +39,6 @@ import {
 } from "../providerInstances";
 import { useEnvironments, type EnvironmentPresentation } from "../state/environments";
 import { useProjects } from "../state/entities";
-import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -379,74 +379,36 @@ function EnvironmentSourceControlStatus({ environment }: { environment: Environm
   );
 }
 
-function AutomaticProjectPullSettings() {
+function ProjectSettingsLinks() {
   const projects = useProjects();
   const { environments } = useEnvironments();
-  const updateProject = useAtomCommand(projectEnvironment.update);
-  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
-  const environmentLabels = new Map(
-    environments.map((environment) => [environment.environmentId, environment.label] as const),
-  );
-  const orderedProjects = [...projects].sort((left, right) =>
-    `${environmentLabels.get(left.environmentId) ?? ""}\0${left.title}`.localeCompare(
-      `${environmentLabels.get(right.environmentId) ?? ""}\0${right.title}`,
-    ),
-  );
-
-  const setAutoPull = async (project: (typeof projects)[number], enabled: boolean) => {
-    const key = `${project.environmentId}:${project.id}`;
-    setPending((current) => new Set(current).add(key));
-    const result = await updateProject({
-      environmentId: project.environmentId,
-      input: { projectId: project.id, autoPull: enabled },
-    });
-    setPending((current) => {
-      const next = new Set(current);
-      next.delete(key);
-      return next;
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const cause = squashAtomCommandFailure(result);
-      toastManager.add(
-        stackedThreadToast({
-          type: "error",
-          title: "Failed to update automatic pull setting",
-          description: cause instanceof Error ? cause.message : "An error occurred.",
-        }),
-      );
-    }
-  };
-
   return (
     <SettingsSection
-      title="Automatic project pull"
-      description="Keep default-branch checkouts current in their Coder workspaces."
+      title="Project settings"
+      description="Automatic pull and other project defaults live on each project's settings page."
     >
-      {orderedProjects.length === 0 ? (
+      {projects.length === 0 ? (
         <SettingsRow
           title="No projects"
-          description="Add a project before enabling automatic pull."
+          description="Add a project in a Coder workspace to configure its defaults."
         />
       ) : (
-        orderedProjects.map((project) => {
-          const key = `${project.environmentId}:${project.id}`;
-          const environmentLabel = environmentLabels.get(project.environmentId);
-          return (
-            <SettingsRow
-              key={key}
-              title={project.title}
-              description={`${environmentLabel ? `${environmentLabel} · ` : ""}Keeps the default branch current in the background when the checkout has no local changes or commits.`}
-              control={
-                <Switch
-                  checked={project.autoPull ?? false}
-                  disabled={pending.has(key)}
-                  aria-label={`Automatically pull ${project.title}`}
-                  onCheckedChange={(checked) => void setAutoPull(project, Boolean(checked))}
-                />
-              }
-            />
-          );
-        })
+        projects.map((project) => (
+          <SettingsRow
+            key={projectSettingsTarget(project).params.projectKey}
+            title={project.title}
+            description={
+              environments.find(
+                (environment) => environment.environmentId === project.environmentId,
+              )?.label ?? project.environmentId
+            }
+            control={
+              <Link {...projectSettingsTarget(project)} className="text-sm text-primary underline">
+                Open project settings
+              </Link>
+            }
+          />
+        ))
       )}
     </SettingsSection>
   );
@@ -477,7 +439,7 @@ function SourceControlSettingsView() {
         )}
       </WorkspaceSettingsTarget>
 
-      <AutomaticProjectPullSettings />
+      <ProjectSettingsLinks />
 
       <section className="space-y-3" id="gitlab-workspace-status">
         <div className="px-3 sm:px-4">

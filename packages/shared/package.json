@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./testing/*": "./src/testing/*.ts",
     "./themePalettes": {
       "types": "./src/themePalettes.ts",
       "import": "./src/themePalettes.ts"

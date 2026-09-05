@@ -5,6 +5,7 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import type * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { detectPrTemplate } from "./PrTemplateDetection.ts";
+import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
 const defaultObject = "a".repeat(40);
 const alternateObject = "b".repeat(40);

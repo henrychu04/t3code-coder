@@ -28,6 +28,7 @@ export interface VcsProcessInput {
   readonly allowNonZeroExit?: boolean;
   readonly timeoutMs?: number;
   readonly maxOutputBytes?: number;
+  readonly outputMode?: ProcessRunner.ProcessRunInput["outputMode"];
   readonly appendTruncationMarker?: boolean;
   /** Classifies a non-zero result before stderr is discarded at the process boundary. */
   readonly classifyNonZeroExit?: (stderr: string) => VcsProcessExitFailureKind | undefined;
@@ -108,7 +109,7 @@ export const make = Effect.gen(function* () {
         ...(input.env !== undefined ? { env: input.env } : {}),
         timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
         maxOutputBytes: input.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES,
-        outputMode: "truncate",
+        outputMode: input.outputMode ?? "truncate",
         truncatedMarker: input.appendTruncationMarker ? OUTPUT_TRUNCATED_MARKER : "",
         timeoutBehavior: "error",
         ...(input.onStdoutLine ? { onStdoutLine: input.onStdoutLine } : {}),

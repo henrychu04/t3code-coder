@@ -1,0 +1,26 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  // Platform tools, not npm packages. Coder and glab remain user/workspace owned.
+  "ignoreBinaries": ["coder", "glab", "git", "ssh", "scp", "nix"],
+  "workspaces": {
+    ".": {
+      "project": ["*.{js,mjs,cjs,ts,mts,cts}", "scripts/**/*.{mjs,ts}"],
+      "entry": ["scripts/*.mjs"],
+    },
+    "apps/coder-gateway": { "entry": ["src/bin.ts!", "src/*.test.ts"] },
+    "apps/coder-helper": { "entry": ["src/bin.ts!", "src/build.ts", "src/*.test.ts"] },
+    "apps/server": {
+      // The helper imports these source modules directly during bundling.
+      "entry": ["src/coder*.ts!", "src/provider/testFixtures/*.mjs"],
+    },
+    "apps/web": { "entry": ["src/main.tsx!", "src/routes/**/*.tsx!"] },
+    "packages/*": { "includeEntryExports": true },
+    "packages/coder-cli": { "entry": ["src/*.test.ts"] },
+    "packages/effect-codex-app-server": {
+      "includeEntryExports": true,
+      "entry": ["test/fixtures/*.ts"],
+      // Preserve the complete generated upstream protocol.
+      "ignoreIssues": { "src/_generated/**": ["exports", "types"] },
+    },
+  },
+}

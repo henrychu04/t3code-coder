@@ -5,9 +5,54 @@ import {
   findProjectForGitLabMergeRequest,
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
+  gitLabAuthorProfileUrl,
+  gitLabMergeRequestBrowserUrl,
+  changeRequestRepositoryUrl,
 } from "./openPullRequestLink";
 
 describe("GitLab merge request links", () => {
+  it("adapts profile and fallback links to a self-hosted GitLab path prefix", () => {
+    const url = "https://code.example:8443/gitlab/group/nested/project/-/merge_requests/42";
+    expect(gitLabAuthorProfileUrl(url, "group/nested/project", "author.name")).toBe(
+      "https://code.example:8443/gitlab/author.name",
+    );
+    expect(gitLabAuthorProfileUrl(url, "wrong/project", "author")).toBeNull();
+    expect(gitLabAuthorProfileUrl(url, "group/nested/project", "../admin")).toBeNull();
+    expect(
+      gitLabAuthorProfileUrl(
+        "https://secret@code.example/group/project/-/merge_requests/1",
+        "group/project",
+        "author",
+      ),
+    ).toBeNull();
+    const identity = {
+      provider: "gitlab" as const,
+      canonicalKey: "code.example/group/nested/project",
+      displayName: "group/nested/project",
+      locator: {
+        source: "git-remote" as const,
+        remoteName: "origin",
+        remoteUrl: "https://code.example:8443/gitlab/group/nested/project.git",
+      },
+    };
+    expect(gitLabMergeRequestBrowserUrl(identity, "group/nested/project", 42)).toBe(url);
+    expect(
+      gitLabMergeRequestBrowserUrl(
+        { ...identity, provider: "unknown" },
+        "group/nested/project",
+        42,
+      ),
+    ).toBe(url);
+    expect(gitLabMergeRequestBrowserUrl(identity, "GROUP/nested/Project", 42)).toBe(
+      "https://code.example:8443/gitlab/GROUP/nested/Project/-/merge_requests/42",
+    );
+    expect(gitLabMergeRequestBrowserUrl(identity, "wrong/project", 42)).toBeNull();
+    expect(
+      gitLabMergeRequestBrowserUrl({ ...identity, provider: "github" }, "group/nested/project", 42),
+    ).toBeNull();
+    expect(gitLabMergeRequestBrowserUrl(identity, "group/../project", 42)).toBeNull();
+    expect(changeRequestRepositoryUrl("https://github.com/group/project/pull/42")).toBeNull();
+  });
   it("parses nested GitLab repositories", () => {
     expect(
       parseGitLabMergeRequestUrl(

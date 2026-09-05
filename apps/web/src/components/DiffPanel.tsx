@@ -136,7 +136,7 @@ export default function DiffPanel({
       scopeKey: null,
       errorsByFileKey: new Map(),
     });
-  const codeViewRef = useRef<AnnotatableCodeViewHandle>(null);
+  const [codeView, setCodeView] = useState<AnnotatableCodeViewHandle | null>(null);
 
   const routeThreadRef = useParams({
     strict: false,
@@ -485,15 +485,19 @@ export default function DiffPanel({
     : null;
 
   useEffect(() => {
-    if (!selectedDiffFileKey) return;
-    codeViewRef.current?.scrollTo({ type: "item", id: selectedDiffFileKey, align: "start" });
-  }, [codeViewMountKey, selectedDiffFileKey, selectedFileRevealRequestId]);
+    if (!selectedDiffFileKey || !codeView?.getInstance()) return;
+    codeView.scrollTo({ type: "item", id: selectedDiffFileKey, align: "start" });
+  }, [codeView, codeViewMountKey, selectedDiffFileKey, selectedFileRevealRequestId]);
 
   const [treeReveal, setTreeReveal] = useState<{ fileKey: string; id: number } | null>(null);
   useEffect(() => {
     if (treeReveal === null) return;
-    codeViewRef.current?.scrollTo({ type: "item", id: treeReveal.fileKey, align: "start" });
-  }, [treeReveal]);
+    codeView?.scrollTo({ type: "item", id: treeReveal.fileKey, align: "start" });
+  }, [codeView, treeReveal]);
+  const requestTreeReveal = useCallback(
+    (fileKey: string) => setTreeReveal((current) => ({ fileKey, id: (current?.id ?? 0) + 1 })),
+    [],
+  );
   const revealDiffFile = useCallback(
     (filePath: string) => {
       const file = codeViewFiles.find((candidate) => candidate.filePath === filePath);
@@ -505,9 +509,9 @@ export default function DiffPanel({
           return { scopeKey: collapseScopeKey, fileKeys: next };
         });
       }
-      setTreeReveal((current) => ({ fileKey: file.fileKey, id: (current?.id ?? 0) + 1 }));
+      requestTreeReveal(file.fileKey);
     },
-    [codeViewFiles, collapseScopeKey],
+    [codeViewFiles, collapseScopeKey, requestTreeReveal],
   );
 
   const toggleDiffFileCollapsed = useCallback(
@@ -818,10 +822,10 @@ export default function DiffPanel({
             }
           }}
         >
-          <Toggle aria-label="Stacked diff view" value="stacked" variant="ghost">
+          <Toggle aria-label="Stacked diff view" value="stacked">
             <Rows3Icon className="size-3.5" />
           </Toggle>
-          <Toggle aria-label="Split diff view" value="split" variant="ghost">
+          <Toggle aria-label="Split diff view" value="split">
             <Columns2Icon className="size-3.5" />
           </Toggle>
         </ToggleGroup>
@@ -979,7 +983,7 @@ export default function DiffPanel({
                   <DiffFileExpansionErrorNotice errors={visibleDiffFileExpansionErrors} />
                   <AnnotatableCodeView
                     key={collapseScopeKey ?? reviewSectionId}
-                    viewerRef={codeViewRef}
+                    viewerRef={setCodeView}
                     codeViewKey={codeViewMountKey}
                     className="min-h-0 flex-1 overflow-auto"
                     files={codeViewFiles}

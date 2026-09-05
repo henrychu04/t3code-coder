@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import {
   Children,
+  createContext,
+  useContext,
   Suspense,
   type ClipboardEvent as ReactClipboardEvent,
   type ComponentProps,
@@ -619,7 +621,7 @@ function InertMarkdownImage({ alt }: { alt: string }) {
   );
 }
 
-function ChatMarkdown({
+function useChatMarkdownState({
   text,
   cwd,
   threadRef,
@@ -627,11 +629,7 @@ function ChatMarkdown({
   onTaskListChange,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
-  className,
-  lineBreaks = false,
-  parseRawHtml = true,
   onUseArtifactTemplate,
-  extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
@@ -699,264 +697,289 @@ function ChatMarkdown({
     [serverConfigs, threadRef, updateThreadMetadata],
   );
 
-  const markdownComponents = useMemo<Components>(
-    () => ({
-      div({ node, children, ...props }) {
-        const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
-        if (artifactTemplate) {
-          return (
-            <CodexArtifactTemplateCard template={artifactTemplate} onUse={onUseArtifactTemplate} />
-          );
-        }
-        return <div {...props}>{children}</div>;
-      },
-      p({ node: _node, children, ...props }) {
-        return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
-      },
-      blockquote({ node: _node, children, ...props }) {
-        const alert =
-          GITHUB_ALERT_PRESENTATIONS[
-            String((props as Record<string, unknown>)["data-alert"] ?? "")
-          ];
-        if (!alert) return <blockquote {...props}>{children}</blockquote>;
-        return (
-          <div role="note" className={cn("my-1 border-l-2 pl-3", alert.borderClassName)}>
-            <p className={cn("flex items-center gap-1.5 font-medium", alert.titleClassName)}>
-              <alert.Icon aria-hidden className="size-3.5 shrink-0" />
-              {alert.label}
-            </p>
-            {children}
-          </div>
-        );
-      },
-      ol({ node, start, style, ...props }) {
-        const itemCount =
-          node?.children?.filter((child) => child.type === "element" && child.tagName === "li")
-            .length ?? 0;
-        const gutterStyle = orderedListGutterStyle(itemCount, start);
-        return (
-          <ol
-            {...props}
-            start={start}
-            style={{ ...style, ...(gutterStyle as CSSProperties | undefined) }}
-          />
-        );
-      },
-      li({ node, children, ...props }) {
-        const listItemStart = node?.position?.start.offset;
-        const markerOffset =
-          typeof listItemStart === "number" ? findTaskListMarkerOffset(text, listItemStart) : null;
-        return (
-          <li {...props} data-task-marker-offset={markerOffset ?? undefined}>
-            {renderSkillInlineMarkdownChildren(children, skills)}
-          </li>
-        );
-      },
-      input({ node: _node, type, checked, disabled, ...props }) {
-        if (type !== "checkbox" || !onTaskListChange) {
-          return <input {...props} type={type} checked={checked} disabled={disabled} readOnly />;
-        }
-        return (
-          <input
-            {...props}
-            type="checkbox"
-            name="markdown-task"
-            aria-label="Toggle task"
-            checked={checked}
-            onChange={(event) => {
-              const markerOffset = Number(
-                event.currentTarget.closest("li")?.dataset.taskMarkerOffset,
-              );
-              if (Number.isSafeInteger(markerOffset)) {
-                onTaskListChange({ markerOffset, checked: event.currentTarget.checked });
-              }
-            }}
-          />
-        );
-      },
-      a({ node: _node, href, children, title: _title, ...props }) {
-        const pullRequestAutolink = String(
-          (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
-        );
-        const pullRequestCopy =
-          pullRequestAutolink === "commit"
-            ? /\/-\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
-            : pullRequestAutolink === "merge-request" || pullRequestAutolink === "issue"
-              ? nodeToPlainText(children)
-              : undefined;
-        const autolinkProps = {
-          className: cn(props.className, pullRequestAutolink === "commit" && "font-mono"),
-          ...(pullRequestCopy === undefined ? {} : { "data-markdown-copy": pullRequestCopy }),
-        };
-        if (href?.startsWith("#")) {
-          return (
-            <a {...props} {...autolinkProps} href={href}>
-              {children}
-            </a>
-          );
-        }
-        const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
-        if (threadRef && fileLink?.workspaceRelativePath) {
-          return (
-            <button
-              type="button"
-              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
-              data-markdown-copy={pullRequestCopy}
-              onClick={() =>
-                useRightPanelStore
-                  .getState()
-                  .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
-              }
-            >
-              {children}
-            </button>
-          );
-        }
-        const mergeRequest = href ? parseGitLabMergeRequestUrl(href) : null;
-        const targetHref = href ?? "";
-        const project = mergeRequest
-          ? findProjectForGitLabMergeRequest(
-              environmentId === undefined
-                ? projects
-                : projects.filter((candidate) => candidate.environmentId === environmentId),
-              mergeRequest,
-            )
-          : undefined;
-        if (threadRef && mergeRequest && project) {
-          const linkedPullRequest: ThreadLinkedPullRequest = {
-            projectId: project.id,
-            repository: project.repositoryIdentity?.displayName ?? mergeRequest.repository,
-            number: mergeRequest.number,
-            url: targetHref,
-          };
-          return (
-            <button
-              type="button"
-              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
-              data-markdown-copy={pullRequestCopy}
-              onContextMenu={(event) =>
-                void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
-              }
-              onClick={() =>
-                useRightPanelStore.getState().openPullRequest(threadRef, {
-                  environmentId: project.environmentId,
-                  projectId: project.id,
-                  repository: linkedPullRequest.repository,
-                  number: mergeRequest.number,
-                })
-              }
-            >
-              {children}
-            </button>
-          );
-        }
-        if (mergeRequest && project) {
-          return (
-            <button
-              type="button"
-              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
-              data-markdown-copy={pullRequestCopy}
-              onClick={() =>
-                void navigate({
-                  to: "/pull-requests",
-                  search: {
-                    involvement: "all",
-                    state: "all",
-                    repository: mergeRequest.repository,
-                    number: mergeRequest.number,
-                    selectedProjectId: project.id,
-                    selectedEnvironmentId: project.environmentId,
-                  },
-                })
-              }
-            >
-              {children}
-            </button>
-          );
-        }
-        return (
-          <span
-            className={cn(autolinkProps.className, "text-primary underline")}
-            data-markdown-copy={pullRequestCopy}
-          >
-            {children}
-          </span>
-        );
-      },
-      img({ node: _node, title: _title, src: _src, alt }) {
-        return <InertMarkdownImage alt={alt ?? ""} />;
-      },
-      code({ node, children, className: codeClassName, ...props }) {
-        const codeText = nodeToPlainText(children);
-        const fileLink =
-          node?.properties?.dataInlineCode != null
-            ? resolveInlineCodeFileLinkMeta(codeText, cwd)
-            : null;
-        if (threadRef && fileLink?.workspaceRelativePath) {
-          return (
-            <button
-              type="button"
-              className={cn(codeClassName, "cursor-pointer font-mono")}
-              title={fileLink.displayPath}
-              onClick={() =>
-                useRightPanelStore
-                  .getState()
-                  .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
-              }
-            >
-              <code>{children}</code>
-            </button>
-          );
-        }
-        return (
-          <code {...props} className={cn(codeClassName, "font-mono")}>
-            {children}
-          </code>
-        );
-      },
-      table({ node: _node, ...props }) {
-        return <MarkdownTable {...props} />;
-      },
-      details({ node: _node, children, open }) {
-        return <MarkdownDetails open={open}>{children}</MarkdownDetails>;
-      },
-      pre({ node, children, ...props }) {
-        const codeBlock = extractCodeBlock(children);
-        if (!codeBlock) return <pre {...props}>{children}</pre>;
-        const language = extractFenceLanguage(codeBlock.className);
-        const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
-        return (
-          <MarkdownCodeBlock code={codeBlock.code} language={language} fenceTitle={fenceTitle}>
-            <RenderErrorBoundary fallback={<pre {...props}>{children}</pre>}>
-              <Suspense fallback={<pre {...props}>{children}</pre>}>
-                <SuspenseShikiCodeBlock
-                  className={codeBlock.className}
-                  code={codeBlock.code}
-                  themeName={diffThemeName}
-                  isStreaming={isStreaming}
-                />
-              </Suspense>
-            </RenderErrorBoundary>
-          </MarkdownCodeBlock>
-        );
-      },
-    }),
-    [
-      cwd,
-      diffThemeName,
-      environmentId,
-      handleMergeRequestContextMenu,
-      isStreaming,
-      navigate,
-      onTaskListChange,
-      onUseArtifactTemplate,
-      projects,
-      skills,
-      text,
-      threadRef,
-    ],
-  );
+  return {
+    cwd,
+    diffThemeName,
+    environmentId,
+    handleMergeRequestContextMenu,
+    isStreaming,
+    navigate,
+    onTaskListChange,
+    onUseArtifactTemplate,
+    projects,
+    skills,
+    text,
+    threadRef,
+    handleCopy,
+  };
+}
 
+const MarkdownStateContext = createContext<ReturnType<typeof useChatMarkdownState> | null>(null);
+function useMarkdownState() {
+  const value = useContext(MarkdownStateContext);
+  if (!value) throw new Error("Markdown state is unavailable.");
+  return value;
+}
+
+// Renderer identities never change when text or metadata changes.
+const MARKDOWN_COMPONENTS: Components = {
+  div({ node, children, ...props }) {
+    const { onUseArtifactTemplate } = useMarkdownState();
+    const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
+    if (artifactTemplate) {
+      return (
+        <CodexArtifactTemplateCard template={artifactTemplate} onUse={onUseArtifactTemplate} />
+      );
+    }
+    return <div {...props}>{children}</div>;
+  },
+  p({ node: _node, children, ...props }) {
+    const { skills } = useMarkdownState();
+    return <p {...props}>{renderSkillInlineMarkdownChildren(children, skills)}</p>;
+  },
+  blockquote({ node: _node, children, ...props }) {
+    const alert =
+      GITHUB_ALERT_PRESENTATIONS[String((props as Record<string, unknown>)["data-alert"] ?? "")];
+    if (!alert) return <blockquote {...props}>{children}</blockquote>;
+    return (
+      <div role="note" className={cn("my-1 border-l-2 pl-3", alert.borderClassName)}>
+        <p className={cn("flex items-center gap-1.5 font-medium", alert.titleClassName)}>
+          <alert.Icon aria-hidden className="size-3.5 shrink-0" />
+          {alert.label}
+        </p>
+        {children}
+      </div>
+    );
+  },
+  ol({ node, start, style, ...props }) {
+    const itemCount =
+      node?.children?.filter((child) => child.type === "element" && child.tagName === "li")
+        .length ?? 0;
+    const gutterStyle = orderedListGutterStyle(itemCount, start);
+    return (
+      <ol
+        {...props}
+        start={start}
+        style={{ ...style, ...(gutterStyle as CSSProperties | undefined) }}
+      />
+    );
+  },
+  li({ node, children, ...props }) {
+    const { text, skills } = useMarkdownState();
+    const listItemStart = node?.position?.start.offset;
+    const markerOffset =
+      typeof listItemStart === "number" ? findTaskListMarkerOffset(text, listItemStart) : null;
+    return (
+      <li {...props} data-task-marker-offset={markerOffset ?? undefined}>
+        {renderSkillInlineMarkdownChildren(children, skills)}
+      </li>
+    );
+  },
+  input({ node: _node, type, checked, disabled, ...props }) {
+    const { onTaskListChange } = useMarkdownState();
+    if (type !== "checkbox" || !onTaskListChange) {
+      return <input {...props} type={type} checked={checked} disabled={disabled} readOnly />;
+    }
+    return (
+      <input
+        {...props}
+        type="checkbox"
+        name="markdown-task"
+        aria-label="Toggle task"
+        checked={checked}
+        onChange={(event) => {
+          const markerOffset = Number(event.currentTarget.closest("li")?.dataset.taskMarkerOffset);
+          if (Number.isSafeInteger(markerOffset)) {
+            onTaskListChange({ markerOffset, checked: event.currentTarget.checked });
+          }
+        }}
+      />
+    );
+  },
+  a({ node: _node, href, children, title: _title, ...props }) {
+    const { cwd, threadRef, environmentId, projects, navigate, handleMergeRequestContextMenu } =
+      useMarkdownState();
+    const pullRequestAutolink = String(
+      (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
+    );
+    const pullRequestCopy =
+      pullRequestAutolink === "commit"
+        ? /\/-\/commit\/([0-9a-f]{40})$/iu.exec(href ?? "")?.[1]
+        : pullRequestAutolink === "merge-request" || pullRequestAutolink === "issue"
+          ? nodeToPlainText(children)
+          : undefined;
+    const autolinkProps = {
+      className: cn(props.className, pullRequestAutolink === "commit" && "font-mono"),
+      ...(pullRequestCopy === undefined ? {} : { "data-markdown-copy": pullRequestCopy }),
+    };
+    if (href?.startsWith("#")) {
+      return (
+        <a {...props} {...autolinkProps} href={href}>
+          {children}
+        </a>
+      );
+    }
+    const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
+    if (threadRef && fileLink?.workspaceRelativePath) {
+      return (
+        <button
+          type="button"
+          className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+          data-markdown-copy={pullRequestCopy}
+          onClick={() =>
+            useRightPanelStore
+              .getState()
+              .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
+          }
+        >
+          {children}
+        </button>
+      );
+    }
+    const mergeRequest = href ? parseGitLabMergeRequestUrl(href) : null;
+    const targetHref = href ?? "";
+    const project = mergeRequest
+      ? findProjectForGitLabMergeRequest(
+          environmentId === undefined
+            ? projects
+            : projects.filter((candidate) => candidate.environmentId === environmentId),
+          mergeRequest,
+        )
+      : undefined;
+    if (threadRef && mergeRequest && project) {
+      const linkedPullRequest: ThreadLinkedPullRequest = {
+        projectId: project.id,
+        repository: project.repositoryIdentity?.displayName ?? mergeRequest.repository,
+        number: mergeRequest.number,
+        url: targetHref,
+      };
+      return (
+        <button
+          type="button"
+          className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+          data-markdown-copy={pullRequestCopy}
+          onContextMenu={(event) =>
+            void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
+          }
+          onClick={() =>
+            useRightPanelStore.getState().openPullRequest(threadRef, {
+              environmentId: project.environmentId,
+              projectId: project.id,
+              repository: linkedPullRequest.repository,
+              number: mergeRequest.number,
+            })
+          }
+        >
+          {children}
+        </button>
+      );
+    }
+    if (mergeRequest && project) {
+      return (
+        <button
+          type="button"
+          className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+          data-markdown-copy={pullRequestCopy}
+          onClick={() =>
+            void navigate({
+              to: "/pull-requests",
+              search: {
+                involvement: "all",
+                state: "all",
+                repository: mergeRequest.repository,
+                number: mergeRequest.number,
+                selectedProjectId: project.id,
+                selectedEnvironmentId: project.environmentId,
+              },
+            })
+          }
+        >
+          {children}
+        </button>
+      );
+    }
+    return (
+      <span
+        className={cn(autolinkProps.className, "text-primary underline")}
+        data-markdown-copy={pullRequestCopy}
+      >
+        {children}
+      </span>
+    );
+  },
+  img({ node: _node, title: _title, src: _src, alt }) {
+    return <InertMarkdownImage alt={alt ?? ""} />;
+  },
+  code({ node, children, className: codeClassName, ...props }) {
+    const { cwd, threadRef } = useMarkdownState();
+    const codeText = nodeToPlainText(children);
+    const fileLink =
+      node?.properties?.dataInlineCode != null
+        ? resolveInlineCodeFileLinkMeta(codeText, cwd)
+        : null;
+    if (threadRef && fileLink?.workspaceRelativePath) {
+      return (
+        <button
+          type="button"
+          className={cn(codeClassName, "cursor-pointer font-mono")}
+          title={fileLink.displayPath}
+          onClick={() =>
+            useRightPanelStore
+              .getState()
+              .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
+          }
+        >
+          <code>{children}</code>
+        </button>
+      );
+    }
+    return (
+      <code {...props} className={cn(codeClassName, "font-mono")}>
+        {children}
+      </code>
+    );
+  },
+  table({ node: _node, ...props }) {
+    return <MarkdownTable {...props} />;
+  },
+  details({ node: _node, children, open }) {
+    return <MarkdownDetails open={open}>{children}</MarkdownDetails>;
+  },
+  pre({ node, children, ...props }) {
+    const { diffThemeName, isStreaming } = useMarkdownState();
+    const codeBlock = extractCodeBlock(children);
+    if (!codeBlock) return <pre {...props}>{children}</pre>;
+    const language = extractFenceLanguage(codeBlock.className);
+    const fenceTitle = extractFenceTitle(extractPreCodeMeta(node));
+    return (
+      <MarkdownCodeBlock code={codeBlock.code} language={language} fenceTitle={fenceTitle}>
+        <RenderErrorBoundary
+          resetKeys={[codeBlock.code, language, diffThemeName, isStreaming]}
+          fallback={<pre {...props}>{children}</pre>}
+        >
+          <Suspense fallback={<pre {...props}>{children}</pre>}>
+            <SuspenseShikiCodeBlock
+              className={codeBlock.className}
+              code={codeBlock.code}
+              themeName={diffThemeName}
+              isStreaming={isStreaming}
+            />
+          </Suspense>
+        </RenderErrorBoundary>
+      </MarkdownCodeBlock>
+    );
+  },
+};
+
+function ChatMarkdown(props: ChatMarkdownProps) {
+  const state = useChatMarkdownState(props);
+  const {
+    text,
+    className,
+    lineBreaks = false,
+    parseRawHtml = true,
+    extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
+  } = props;
   const remarkPlugins = useMemo(
     () => [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
@@ -971,16 +994,18 @@ function ChatMarkdown({
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
         className,
       )}
-      onCopy={handleCopy}
+      onCopy={state.handleCopy}
     >
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
-        skipHtml={false}
-        components={markdownComponents}
-      >
-        {text}
-      </ReactMarkdown>
+      <MarkdownStateContext value={state}>
+        <ReactMarkdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          skipHtml={false}
+          components={MARKDOWN_COMPONENTS}
+        >
+          {text}
+        </ReactMarkdown>
+      </MarkdownStateContext>
     </div>
   );
 }

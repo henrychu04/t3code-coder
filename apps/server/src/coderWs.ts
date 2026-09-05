@@ -1,3 +1,4 @@
+import { bufferLiveEvents } from "./orchestration/BufferedLiveEvents.ts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -1231,7 +1232,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.subscribeShell]: (input) =>
         Stream.unwrap(
-          orchestration.subscribeDomainEvents.pipe(
+          bufferLiveEvents(orchestration.subscribeDomainEvents).pipe(
             Effect.flatMap((subscribedEvents) =>
               Effect.gen(function* () {
                 if (input.afterSequence !== undefined) {
@@ -1287,7 +1288,20 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
         Stream.unwrap(
-          orchestration.subscribeDomainEvents.pipe(
+          bufferLiveEvents(
+            orchestration.subscribeDomainEvents.pipe(
+              Effect.map((events) =>
+                events.pipe(
+                  Stream.filter(
+                    (event) =>
+                      event.aggregateKind === "thread" &&
+                      event.aggregateId === input.threadId &&
+                      isThreadDetailEvent(event),
+                  ),
+                ),
+              ),
+            ),
+          ).pipe(
             Effect.flatMap((subscribedEvents) =>
               Effect.gen(function* () {
                 const matching = (event: OrchestrationEvent) =>
@@ -1306,20 +1320,27 @@ export const layer = CoderWsRpcGroup.toLayer(
                   const head = yield* orchestration.latestSequence;
                   const gap = head - input.afterSequence;
                   if (gap >= 0 && gap <= RESUME_MAX_GAP) {
-                    const replay = orchestration.readEvents(input.afterSequence, gap).pipe(
-                      Stream.filter(matching),
-                      Stream.map((event) => ({
-                        kind: "event" as const,
-                        event: projectActivityEvent(event),
-                      })),
-                      Stream.mapError(
-                        (cause) =>
-                          new OrchestrationGetSnapshotError({
-                            message: `Failed to resume thread ${input.threadId}`,
-                            cause,
-                          }),
-                      ),
-                    );
+                    const replay = orchestration
+                      .readThreadEvents({
+                        threadId: input.threadId,
+                        fromSequenceExclusive: input.afterSequence,
+                        toSequenceInclusive: head,
+                        limit: gap,
+                      })
+                      .pipe(
+                        Stream.filter(matching),
+                        Stream.map((event) => ({
+                          kind: "event" as const,
+                          event: projectActivityEvent(event),
+                        })),
+                        Stream.mapError(
+                          (cause) =>
+                            new OrchestrationGetSnapshotError({
+                              message: `Failed to resume thread ${input.threadId}`,
+                              cause,
+                            }),
+                        ),
+                      );
                     const live = liveAfter(head);
                     return Stream.concat(
                       replay,

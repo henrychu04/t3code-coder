@@ -96,6 +96,11 @@ Additional provider instances let a workspace expose another Codex or Claude ins
 identity, or configuration without replacing the default. The same settings experience is used
 for both providers, while each provider shows only the choices it supports.
 
+The Models section also lets you add, edit, and remove custom model IDs, give them display names,
+and configure the controls exposed for those models. Existing custom model IDs remain valid
+without conversion. These definitions are stored in the selected workspace; they do not install
+a model or grant access to one that the workspace provider cannot use.
+
 These settings change how T3 Coder uses software and state already present in the workspace. They
 do not install a provider, perform login, or copy provider state to the local computer.
 
@@ -108,3 +113,7 @@ logins. API-key accounts may not have subscription windows.
 These snapshots refresh with provider health checks, rather than continuously during a turn.
 The **Checked** time identifies the snapshot; an unavailable read is not shown as zero usage.
 There are no external usage hubs, pricing lookups, or reset-credit redemption actions.
+
+When Claude reports a blocking usage limit during a turn, the conversation shows a warning.
+Claude's own safety fallback notifications are also shown; T3 Coder does not initiate a provider
+or account switch.

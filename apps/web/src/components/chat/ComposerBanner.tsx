@@ -176,7 +176,7 @@ function Row({
   layout = "inline",
   ...props
 }: useRender.ComponentProps<"div"> & {
-  layout?: "inline" | "wrap-actions";
+  layout?: "inline" | "wrap-actions" | "wrap-actions-narrow";
 }) {
   const rowProps = {
     className: cn(

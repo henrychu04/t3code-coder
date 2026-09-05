@@ -3,6 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "knip": "knip",
+    "knip:check": "knip --include files,dependencies --no-config-hints",
     "build": "pnpm --filter @t3tools/coder-helper build && pnpm --filter @t3tools/web build",
     "coder:live:serve": "pnpm build && node scripts/coder-live-test.mjs serve",
     "coder:live:setup": "node scripts/coder-live-test.mjs setup",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
+    "knip": "6.34.0",
     "vite-plus": "catalog:"
   },
   "engines": {

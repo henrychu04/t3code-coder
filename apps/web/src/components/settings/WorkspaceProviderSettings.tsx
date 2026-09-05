@@ -272,6 +272,11 @@ export function WorkspaceProviderEditor(props: {
         <div className="px-4 py-5 lg:h-full lg:min-h-0" hidden={activeTab !== "models"}>
           <ProviderModelsSection
             instanceId={props.row.instanceId}
+            driverKind={props.row.definition.value}
+            customModels={(props.row.instance.config as Record<string, unknown>)?.customModels}
+            onCustomModelsChange={(next) =>
+              props.onUpdate(withConfigValue(props.row.instance, "customModels", next))
+            }
             models={models}
             hiddenModels={props.hiddenModels}
             favoriteModels={props.favoriteModels}

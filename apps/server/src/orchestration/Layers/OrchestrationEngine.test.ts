@@ -100,6 +100,9 @@ describe("OrchestrationEngine", () => {
           nextSequence += 1;
           return savedEvent;
         }),
+      readAggregateRange: () => Stream.empty,
+      getAggregateReplayStats: () =>
+        Effect.succeed({ eventCount: 0, payloadBytes: 0, hasCreateEvent: false }),
       readFromSequence: () => Stream.empty,
       hasEventAfter: () => Effect.succeed(false),
       readAll: () =>
@@ -201,6 +204,7 @@ describe("OrchestrationEngine", () => {
           getFirstActiveThreadIdByProjectId: () => Effect.succeed(Option.none()),
           getThreadCheckpointContext: () => Effect.succeed(Option.none()),
           getFullThreadDiffContext: () => Effect.succeed(Option.none()),
+          getThreadRuntimeContext: () => Effect.die("unused"),
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -899,6 +903,9 @@ describe("OrchestrationEngine", () => {
         events.push(savedEvent);
         return Effect.succeed(savedEvent);
       },
+      readAggregateRange: () => Stream.empty,
+      getAggregateReplayStats: () =>
+        Effect.succeed({ eventCount: 0, payloadBytes: 0, hasCreateEvent: false }),
       readFromSequence(sequenceExclusive) {
         return Stream.fromIterable(events.filter((event) => event.sequence > sequenceExclusive));
       },
@@ -1137,6 +1144,9 @@ describe("OrchestrationEngine", () => {
         events.push(savedEvent);
         return Effect.succeed(savedEvent);
       },
+      readAggregateRange: () => Stream.empty,
+      getAggregateReplayStats: () =>
+        Effect.succeed({ eventCount: 0, payloadBytes: 0, hasCreateEvent: false }),
       readFromSequence(sequenceExclusive) {
         return Stream.fromIterable(events.filter((event) => event.sequence > sequenceExclusive));
       },

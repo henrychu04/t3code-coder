@@ -27,7 +27,8 @@ export function parseGitLabMergeRequestUrl(targetUrl: string): GitLabMergeReques
   } catch {
     return null;
   }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
+    return null;
   const match = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
   const repository = match?.[1];
   const number = Number(match?.[2]);
@@ -73,42 +74,73 @@ export function findProjectForGitLabMergeRequest(
 
 export const findProjectForChangeRequest = findProjectForGitLabMergeRequest;
 
-/** Builds a GitHub URL that remains available when the pull request API cannot be read. */
-export function gitHubPullRequestBrowserUrl(
+/** Builds a GitLab URL that remains available when the pull request API cannot be read. */
+export function gitLabMergeRequestBrowserUrl(
   identity: RepositoryIdentity | null | undefined,
   repository: string,
   number: number,
 ): string | null {
-  if (identity?.provider !== "github" || !Number.isSafeInteger(number) || number < 1) return null;
+  if (
+    !identity ||
+    (identity.provider !== "gitlab" && identity.provider !== "unknown") ||
+    !Number.isSafeInteger(number) ||
+    number < 1
+  )
+    return null;
   const repositoryPath = repository.split("/");
   if (
-    repositoryPath.length !== 2 ||
-    repositoryPath.some((segment) => segment.length === 0 || segment === "." || segment === "..")
+    repositoryPath.length < 2 ||
+    repositoryPath.some(
+      (segment) => !/^[A-Za-z0-9_.-]+$/u.test(segment) || segment === "." || segment === "..",
+    )
   ) {
     return null;
   }
 
   let origin: string | null = null;
+  let basePath = "";
   if (identity.locator.source === "git-remote") {
     try {
       const remoteUrl = new URL(identity.locator.remoteUrl.trim());
       if (remoteUrl.protocol === "http:" || remoteUrl.protocol === "https:") {
         origin = remoteUrl.origin;
+        const remotePath = remoteUrl.pathname.replace(/\.git\/?$/u, "").replace(/\/$/u, "");
+        const suffix = `/${repository}`;
+        if (!remotePath.toLowerCase().endsWith(suffix.toLowerCase())) return null;
+        basePath = remotePath.slice(0, -suffix.length);
       }
     } catch {
       // SCP-style remotes are read from their normalized identity below.
     }
   }
   const hostname = identity.canonicalKey.split("/")[0];
-  if (origin === null && !hostname) return null;
+  if (origin === null && (!hostname || !/^[A-Za-z0-9.-]+(?::\d+)?$/u.test(hostname))) return null;
 
   try {
     const url = new URL(origin ?? `https://${hostname}`);
-    url.pathname = `/${repositoryPath.join("/")}/pull/${number}`;
+    url.pathname = `${basePath}/${repositoryPath.join("/")}/-/merge_requests/${number}`;
     return url.toString();
   } catch {
     return null;
   }
+}
+
+/** Preserve the deployment's path prefix; never assume gitlab.com. */
+export function gitLabAuthorProfileUrl(
+  targetUrl: string,
+  repository: string,
+  login: string,
+): string | null {
+  if (!/^[A-Za-z0-9_.-]+$/u.test(login) || login === "." || login === "..") return null;
+  if (!parseGitLabMergeRequestUrl(targetUrl)) return null;
+  const url = new URL(targetUrl);
+  const suffix = `/${repository}/-/merge_requests/`;
+  const index = url.pathname.lastIndexOf(suffix);
+  if (index < 0) return null;
+  url.pathname = `${url.pathname.slice(0, index)}/${encodeURIComponent(login)}`;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
 }
 
 /** The repository root behind a recognized change-request URL. */
@@ -120,11 +152,7 @@ export function changeRequestRepositoryUrl(targetUrl: string): string | null {
     return null;
   }
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-  const repositoryPath =
-    /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1] ??
-    /^(.*?)(?:\/pull\/\d+|\/-\/merge_requests\/\d+|\/pull-requests\/\d+|\/pullrequest\/\d+)(?:\/|$)/iu.exec(
-      url.pathname,
-    )?.[1];
+  const repositoryPath = /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1];
   if (!repositoryPath) return null;
   url.pathname = repositoryPath;
   url.search = "";

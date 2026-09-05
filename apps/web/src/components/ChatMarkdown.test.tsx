@@ -47,6 +47,17 @@ describe("orderedListGutterStyle", () => {
 });
 
 describe("ChatMarkdown", () => {
+  it("keeps negative-exponent monetary values as text even when a skill has that name", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/workspace/project"
+        skills={[{ name: "1e-9", displayName: "Numeric skill" }]}
+        text="$1e-9"
+      />,
+    );
+    expect(markup).toContain("$1e-9");
+    expect(markup).not.toContain("Numeric skill");
+  });
   it("restores rich presentation while keeping external resources inert", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown

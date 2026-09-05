@@ -88,6 +88,7 @@ describe("shouldUseRestingComposerLayout", () => {
     isScrollCollapsed: false,
     hasExpandedChrome: false,
     collapseOnBlur: true,
+    timelineOverflows: true,
   };
 
   it("uses the resting layout for an unfocused desktop composer", () => {

@@ -8,7 +8,7 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, SettingsIcon } from "lucide-react";
 import {
   memo,
   useCallback,
@@ -50,6 +50,7 @@ interface ChatHeaderProps {
   keybindings: ResolvedKeybindingsConfig;
   rightPanelOpen: boolean;
   onNewThreadInProject: () => void;
+  onOpenProjectSettings?: (() => void) | undefined;
   onOpenPullRequest?: (number: number) => void;
   onOpenFile?: (relativePath: string) => void;
 }
@@ -89,6 +90,7 @@ export const ChatHeader = memo(function ChatHeader({
   keybindings,
   rightPanelOpen,
   onNewThreadInProject,
+  onOpenProjectSettings,
   onOpenPullRequest,
   onOpenFile,
 }: ChatHeaderProps) {
@@ -259,6 +261,17 @@ export const ChatHeader = memo(function ChatHeader({
                 <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
+            {!isServerThread && onOpenProjectSettings ? (
+              <button
+                type="button"
+                aria-label="Project settings"
+                title="Project settings"
+                className="rounded p-1 text-muted-foreground hover:text-foreground focus-visible:ring-2"
+                onClick={onOpenProjectSettings}
+              >
+                <SettingsIcon className="size-3.5" />
+              </button>
+            ) : null}
             <WorkspaceBreadcrumbSeparator />
           </>
         ) : null}

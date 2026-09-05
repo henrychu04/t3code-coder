@@ -1,16 +1,30 @@
 "use client";
 
 import { ArrowDownIcon, ArrowUpIcon, EyeIcon, EyeOffIcon, InfoIcon, StarIcon } from "lucide-react";
-import { useMemo } from "react";
-import type { ProviderInstanceId, ServerProviderModel } from "@t3tools/contracts";
+import { useMemo, useState } from "react";
+import type {
+  ProviderInstanceId,
+  ServerProviderModel,
+  ProviderDriverKind,
+  CustomModelSetting,
+} from "@t3tools/contracts";
 
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import {
+  readCustomModelEntries,
+  toCustomModelSetting,
+  type CustomModelDefinition,
+} from "@t3tools/shared/model";
+import { CustomModelEditor } from "./CustomModelEditor";
 
 interface ProviderModelsSectionProps {
+  readonly customModels?: unknown;
+  readonly driverKind?: ProviderDriverKind;
+  readonly onCustomModelsChange?: (next: ReadonlyArray<CustomModelSetting>) => void;
   readonly instanceId: ProviderInstanceId;
   readonly models: ReadonlyArray<ServerProviderModel>;
   readonly hiddenModels: ReadonlyArray<string>;
@@ -23,6 +37,9 @@ interface ProviderModelsSectionProps {
 
 export function ProviderModelsSection({
   instanceId,
+  customModels,
+  driverKind,
+  onCustomModelsChange,
   models,
   hiddenModels,
   favoriteModels,
@@ -31,6 +48,8 @@ export function ProviderModelsSection({
   onFavoriteModelsChange,
   onModelOrderChange,
 }: ProviderModelsSectionProps) {
+  const [editing, setEditing] = useState<CustomModelDefinition | null>(null);
+  const customEntries = useMemo(() => readCustomModelEntries(customModels), [customModels]);
   const hiddenModelSet = useMemo(() => new Set(hiddenModels), [hiddenModels]);
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
   const builtInModels = useMemo(() => models.filter((model) => !model.isCustom), [models]);
@@ -70,6 +89,62 @@ export function ProviderModelsSection({
 
   return (
     <div className="lg:flex lg:h-full lg:min-h-0 lg:flex-col">
+      {onCustomModelsChange ? (
+        <div className="mb-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium">Custom models</span>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => setEditing({ slug: "", name: "", capabilities: null })}
+            >
+              Add model
+            </Button>
+          </div>
+          {customEntries.map((entry) => (
+            <div key={entry.slug} className="flex items-center gap-2 text-xs">
+              <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+              <Button size="xs" variant="ghost" onClick={() => setEditing(entry)}>
+                Edit
+              </Button>
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() =>
+                  onCustomModelsChange(
+                    customEntries
+                      .filter((item) => item.slug !== entry.slug)
+                      .map(toCustomModelSetting),
+                  )
+                }
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          {editing ? (
+            <CustomModelEditor
+              key={editing.slug}
+              instanceId={instanceId}
+              driverKind={driverKind ?? null}
+              entry={editing}
+              builtInModels={builtInModels}
+              onCancel={() => setEditing(null)}
+              onSave={(next) => {
+                onCustomModelsChange(
+                  [
+                    ...customEntries.filter(
+                      (entry) => entry.slug !== editing.slug && entry.slug !== next.slug,
+                    ),
+                    next,
+                  ].map(toCustomModelSetting),
+                );
+                setEditing(null);
+              }}
+            />
+          ) : null}
+        </div>
+      ) : null}
       <div className="text-xs font-medium text-foreground">Models</div>
       <div className="mt-1 text-xs text-muted-foreground">
         {builtInModels.length} model{builtInModels.length === 1 ? "" : "s"} available.

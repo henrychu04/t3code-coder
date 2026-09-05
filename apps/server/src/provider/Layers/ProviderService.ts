@@ -9,6 +9,7 @@
  *
  * @module ProviderServiceLive
  */
+import { stat } from "node:fs/promises";
 import {
   EventId,
   MessageId,
@@ -45,6 +46,7 @@ import {
   ProviderAdapterRequestError,
   type ProviderAdapterError,
   ProviderValidationError,
+  ProviderWorkspaceMissingError,
 } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import * as ProviderAdapterRegistry from "../Services/ProviderAdapterRegistry.ts";
@@ -624,6 +626,19 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
                 : "none",
           "provider.cwd.effective": effectiveCwd ?? "",
         });
+        if (effectiveCwd !== undefined) {
+          // Match upstream: this preflight identifies missing/non-directory paths.
+          // Other stat errors fall through so the adapter reports the actual failure.
+          const workspaceIsDirectory = yield* Effect.promise(() =>
+            stat(effectiveCwd).then(
+              (entry) => entry.isDirectory(),
+              (error: NodeJS.ErrnoException) => error.code !== "ENOENT" && error.code !== "ENOTDIR",
+            ),
+          );
+          if (!workspaceIsDirectory) {
+            return yield* new ProviderWorkspaceMissingError({ threadId, cwd: effectiveCwd });
+          }
+        }
         const adapter = yield* registry.getByInstance(resolvedInstanceId);
         const session = yield* adapter.startSession({
           ...input,

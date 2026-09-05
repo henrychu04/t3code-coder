@@ -11,6 +11,7 @@ the update here.
 - [Codex and Claude Code](./user/providers.md)
 - [Coder workspaces](./user/workspaces.md)
 - [Projects and threads](./user/projects-and-threads.md)
+- [Project settings](./user/project-settings.md)
 - [Permission modes](./user/permission-modes.md)
 - [Message composer](./user/composer.md)
 - [Files and search](./user/files-and-search.md)

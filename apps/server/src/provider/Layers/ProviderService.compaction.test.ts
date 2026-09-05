@@ -102,7 +102,14 @@ const harness = (
     const dependencies = Layer.mergeAll(
       Layer.succeed(ProviderAdapterRegistry, {
         getByInstance: () => Effect.succeed(adapter),
-        getInstanceInfo: () => Effect.die("unused"),
+        getInstanceInfo: () =>
+          Effect.succeed({
+            instanceId,
+            driverKind: provider,
+            displayName: undefined,
+            enabled: true,
+            continuationIdentity: { driverKind: provider, continuationKey: "test" },
+          }),
         listInstances: () => Effect.succeed([instanceId]),
         listProviders: () => Effect.succeed([provider]),
         streamChanges: Stream.fromPubSub(changes),
@@ -144,6 +151,23 @@ const harness = (
   });
 
 describe("ProviderService compaction lifecycle", () => {
+  for (const cwd of [import.meta.filename, `${import.meta.filename}/missing-worktree`]) {
+    it.effect(`rejects a non-directory workspace before launching a provider: ${cwd}`, () =>
+      Effect.gen(function* () {
+        const h = yield* harness();
+        const error = yield* h.service
+          .startSession(threadId, {
+            threadId,
+            providerInstanceId: instanceId,
+            cwd,
+            runtimeMode: "approval-required",
+          })
+          .pipe(Effect.flip);
+        assert.equal(error._tag, "ProviderWorkspaceMissingError");
+        assert.include(error.message, "workspace folder no longer exists or is not a directory");
+      }),
+    );
+  }
   for (const event of [
     completed,
     { ...baseEvent, type: "runtime.error", payload: { message: "Transient error" } },

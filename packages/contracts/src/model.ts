@@ -132,6 +132,23 @@ export const ModelCapabilities = Schema.Struct({
 });
 export type ModelCapabilities = typeof ModelCapabilities.Type;
 
+/** Custom entries configure options; runtime modes come from the provider snapshot. */
+export const CustomModelCapabilities = Schema.Struct({
+  optionDescriptors: Schema.optional(Schema.Array(ProviderOptionDescriptor)),
+});
+
+/** A user-authored model; optional descriptors replace the driver defaults. */
+export const CustomModelEntry = Schema.Struct({
+  slug: TrimmedNonEmptyString,
+  name: Schema.optional(TrimmedNonEmptyString),
+  capabilities: Schema.optional(CustomModelCapabilities),
+});
+export type CustomModelEntry = typeof CustomModelEntry.Type;
+
+/** On-disk custom model setting: the legacy bare slug, or a full entry. */
+export const CustomModelSetting = Schema.Union([Schema.String, CustomModelEntry]);
+export type CustomModelSetting = typeof CustomModelSetting.Type;
+
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 
