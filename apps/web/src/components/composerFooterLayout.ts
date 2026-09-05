@@ -27,7 +27,9 @@ export function shouldUseRestingComposerLayout(input: {
   isExistingThread: boolean;
   isMobileViewport: boolean;
   isFocused: boolean;
+  isScrollCollapsed: boolean;
   hasExpandedChrome: boolean;
+  collapseOnBlur: boolean;
 }): boolean {
   // Passive draft content is deliberately absent here. Resting only clamps
   // the prompt row and overlays its actions; non-image attachment and context
@@ -37,12 +39,22 @@ export function shouldUseRestingComposerLayout(input: {
   // deliberately absent here: resting reclaims vertical space at every
   // desktop width, and where the strip is missing or too narrow the controls
   // simply return when the composer is focused.
-  return (
-    input.isExistingThread &&
-    !input.isMobileViewport &&
-    !input.isFocused &&
-    !input.hasExpandedChrome
-  );
+  const collapsed = input.isScrollCollapsed || (input.collapseOnBlur && !input.isFocused);
+  return input.isExistingThread && !input.isMobileViewport && collapsed && !input.hasExpandedChrome;
+}
+
+/** Minimum extra height between the resting and empty expanded composer. */
+export const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;
+
+/** Keep enough timeline space reserved that expanding cannot cover its end. */
+export function resolveComposerTimelineInset(input: {
+  currentInset: number;
+  overlayHeight: number;
+  isResting: boolean;
+}): number {
+  return input.isResting
+    ? Math.max(input.currentInset, input.overlayHeight + COMPOSER_RESTING_EXPANSION_MIN_PX)
+    : input.overlayHeight;
 }
 
 export function shouldAnimateComposerRestingTransition(input: {
@@ -92,6 +104,8 @@ export function resolveRestingComposerControlsNaturalWidth(
   return restingComposerControlsWidth(input, 0);
 }
 
+const RESTING_CONTROLS_SLACK_PX = 1;
+
 /**
  * Decide how many trailing resting control blocks move into the overflow
  * menu, and whether the cluster can show at all, from natural widths.
@@ -101,9 +115,12 @@ export function resolveRestingComposerControlsNaturalWidth(
  * below that the whole cluster hides rather than clipping.
  */
 export function resolveRestingComposerControlsLayout(
-  input: RestingComposerControlsMeasurement & { hostWidth: number },
+  input: RestingComposerControlsMeasurement & {
+    hostWidth: number;
+    previous?: { hiddenCount: number; visible: boolean };
+  },
 ): { hiddenCount: number; visible: boolean } {
-  const { blockWidths, hostWidth } = input;
+  const { blockWidths, hostWidth, previous } = input;
   let hiddenCount = 0;
   while (
     hiddenCount < blockWidths.length &&
@@ -111,7 +128,19 @@ export function resolveRestingComposerControlsLayout(
   ) {
     hiddenCount += 1;
   }
+  if (previous) {
+    const previousHiddenCount = Math.min(previous.hiddenCount, blockWidths.length);
+    while (
+      hiddenCount < previousHiddenCount &&
+      restingComposerControlsWidth(input, hiddenCount) > hostWidth - RESTING_CONTROLS_SLACK_PX
+    ) {
+      hiddenCount += 1;
+    }
+  }
+  const minimumWidth = restingComposerControlsWidth(input, hiddenCount, input.minimumFixedWidth);
   const visible =
-    restingComposerControlsWidth(input, hiddenCount, input.minimumFixedWidth) <= hostWidth;
+    previous && !previous.visible
+      ? minimumWidth <= hostWidth - RESTING_CONTROLS_SLACK_PX
+      : minimumWidth <= hostWidth;
   return { hiddenCount, visible };
 }

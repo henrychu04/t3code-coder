@@ -106,6 +106,7 @@ function createProviderServiceHarness() {
   const service: ProviderServiceShape = {
     startSession: () => unsupported(),
     sendTurn: () => unsupported(),
+    compactThread: () => unsupported(),
     interruptTurn: () => unsupported(),
     respondToRequest: () => unsupported(),
     respondToUserInput: () => unsupported(),
@@ -3265,8 +3266,11 @@ describe("ProviderRuntimeIngestion", () => {
       createdAt: now,
       threadId: asThreadId("thread-1"),
       turnId: asTurnId("turn-1"),
+      requestId: "message-compact",
       payload: {
         state: "compacted",
+        beforeTokens: 120_000,
+        afterTokens: 18_000,
         detail: { source: "provider" },
       },
     });
@@ -3280,8 +3284,13 @@ describe("ProviderRuntimeIngestion", () => {
     const activity = thread.activities.find(
       (candidate: ProviderRuntimeTestActivity) => candidate.kind === "context-compaction",
     );
-    expect(activity?.summary).toBe("Context compacted");
+    expect(activity?.summary).toBe("Compacted context 120,000 → 18,000 tokens");
     expect(activity?.tone).toBe("info");
+    expect(activity?.payload).toMatchObject({
+      requestId: "message-compact",
+      beforeTokens: 120_000,
+      afterTokens: 18_000,
+    });
   });
 
   it("projects Codex task lifecycle chunks into thread activities", async () => {

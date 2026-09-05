@@ -957,4 +957,77 @@ describe("orchestration projector", () => {
     expect(thread?.checkpoints[0]?.turnId).toBe("turn-100");
     expect(thread?.checkpoints.at(-1)?.turnId).toBe("turn-599");
   });
+
+  it("retains unresolved async questions beyond the recent activity window", async () => {
+    const now = "2026-03-01T11:00:00.000Z";
+    let state = await Effect.runPromise(
+      projectEvent(
+        createEmptyReadModel(now),
+        makeEvent({
+          sequence: 1,
+          type: "thread.created",
+          aggregateKind: "thread",
+          aggregateId: "thread-async",
+          occurredAt: now,
+          commandId: "cmd-create-async",
+          payload: {
+            threadId: "thread-async",
+            projectId: "project-1",
+            title: "async",
+            modelSelection: { provider: ProviderDriverKind.make("codex"), model: "gpt-5-codex" },
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now,
+            updatedAt: now,
+          },
+        }),
+      ),
+    );
+
+    const activities = [
+      {
+        id: "async-question",
+        kind: "user-input.requested",
+        summary: "User input requested",
+        tone: "info",
+        payload: { requestId: "async-1", responseMode: "message", questions: [] },
+      },
+      ...Array.from({ length: 501 }, (_, index) => ({
+        id: `work-${index}`,
+        kind: "tool.completed",
+        summary: "Work continued",
+        tone: "tool",
+        payload: {},
+      })),
+    ] as const;
+    for (const [index, activity] of activities.entries()) {
+      state = await Effect.runPromise(
+        projectEvent(
+          state,
+          makeEvent({
+            sequence: index + 2,
+            type: "thread.activity-appended",
+            aggregateKind: "thread",
+            aggregateId: "thread-async",
+            occurredAt: `2026-03-01T11:00:${String(index % 60).padStart(2, "0")}.000Z`,
+            commandId: `cmd-activity-${index}`,
+            payload: {
+              threadId: "thread-async",
+              activity: {
+                ...activity,
+                turnId: "turn-1",
+                createdAt: `2026-03-01T11:00:${String(index % 60).padStart(2, "0")}.000Z`,
+              },
+            },
+          }),
+        ),
+      );
+    }
+
+    expect(state.threads[0]?.activities).toHaveLength(501);
+    expect(state.threads[0]?.activities.some((activity) => activity.id === "async-question")).toBe(
+      true,
+    );
+  });
 });

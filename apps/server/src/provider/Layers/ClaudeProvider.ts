@@ -26,6 +26,7 @@ import {
   type ModelInfo as ClaudeModelInfo,
   type SlashCommand as ClaudeSlashCommand,
   type SDKUserMessage,
+  type SDKControlGetUsageResponse,
   type SettingSource,
 } from "../Drivers/ClaudeCli.ts";
 
@@ -33,7 +34,9 @@ import {
   buildBooleanOptionDescriptor,
   buildSelectOptionDescriptor,
   buildServerProvider,
+  AUTH_PROBE_TIMEOUT_MS,
   DEFAULT_TIMEOUT_MS,
+  extractAuthBoolean,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -41,6 +44,8 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { claudeUsageResponseToLimits } from "./claudeUsageLimits.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import {
   buildSupportedRuntimeModes,
@@ -612,6 +617,8 @@ function nonEmptyProbeString(value: string): string | undefined {
 }
 
 type ClaudeCapabilitiesProbe = {
+  readonly usage?: SDKControlGetUsageResponse;
+  readonly usageCheckedAt?: string;
   readonly email: string | undefined;
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
@@ -791,11 +798,10 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
  * We pass a never-yielding AsyncIterable as the prompt so that no user
  * message is ever written to the subprocess stdin. This means the Claude
  * Code subprocess completes its local initialization IPC (returning
- * account info and slash commands) but never starts an API request to
- * Anthropic. We read the init data and then abort the subprocess.
+ * account info and slash commands) without starting a model turn. The explicit
+ * usage read may contact the provider. We then abort the subprocess.
  *
- * This is used as a fallback when `claude auth status` does not include
- * subscription type information.
+ * Authentication is verified separately through `claude auth status`.
  */
 const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
@@ -823,6 +829,8 @@ const probeClaudeCapabilities = (
       });
       const init = await q.initializationResult();
       const settings = await q.getSettings(CAPABILITIES_SETTINGS_TIMEOUT_MS).catch(() => undefined);
+      // A failed/unsupported quota read must not hide authentication or models.
+      const usage = await q.getUsage(1_000).catch(() => undefined);
       const account = init.account as
         | {
             readonly email?: string;
@@ -845,6 +853,7 @@ const probeClaudeCapabilities = (
           settings === undefined ||
           readClaudePermissionModeDisabled(settings, "disableBypassPermissionsMode"),
         slashCommands: parseClaudeInitializationCommands(init.commands),
+        ...(usage ? { usage, usageCheckedAt: new Date().toISOString() } : {}),
       } satisfies ClaudeCapabilitiesProbe;
     });
   }).pipe(
@@ -991,6 +1000,35 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  // Initialization succeeds even while signed out. Only the CLI's explicit
+  // auth status can confirm authentication; never infer it from cached metadata.
+  const authenticated = yield* runClaudeCommand(
+    claudeSettings,
+    ["auth", "status"],
+    resolvedEnvironment,
+  ).pipe(
+    Effect.flatMap((result) =>
+      Effect.try(() => {
+        const value = extractAuthBoolean(JSON.parse(result.stdout));
+        return result.code === 0 || (result.code === 1 && value === false) ? value : undefined;
+      }),
+    ),
+    Effect.timeout(AUTH_PROBE_TIMEOUT_MS),
+    Effect.orElseSucceed(() => undefined),
+  );
+  const authStatus =
+    authenticated === true
+      ? "authenticated"
+      : authenticated === false
+        ? "unauthenticated"
+        : "unknown";
+  const authMessage =
+    authenticated === false
+      ? "Claude CLI is not authenticated. Run `claude auth login` in the workspace and try again."
+      : authenticated === undefined
+        ? "Could not verify Claude CLI authentication. Retry the provider check."
+        : undefined;
+
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
@@ -1026,9 +1064,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       probe: {
         installed: true,
         version: parsedVersion,
-        status: "warning",
-        auth: { status: "unknown" },
-        message: "Could not initialize Claude capabilities. CLI authentication may still be valid.",
+        status: authenticated === false ? "error" : "warning",
+        auth: { status: authStatus },
+        message:
+          authMessage ??
+          "Could not initialize Claude capabilities. CLI authentication may still be valid.",
       },
     });
   }
@@ -1038,6 +1078,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       subscriptionType: capabilities.subscriptionType,
       authMethod: capabilities.tokenSource,
     }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+  const usageLimits = capabilities.usage
+    ? claudeUsageResponseToLimits({
+        response: capabilities.usage,
+        checkedAt: capabilities.usageCheckedAt ?? checkedAt,
+      }).limits
+    : makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
+  const message = authMessage ?? versionUpgradeMessage;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -1048,13 +1095,14 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probe: {
       installed: true,
       version: parsedVersion,
-      status: "ready",
+      status: authenticated === true ? "ready" : authenticated === false ? "error" : "warning",
       auth: {
-        status: "authenticated",
-        ...(capabilities.email ? { email: capabilities.email } : {}),
-        ...(authMetadata ? authMetadata : {}),
+        status: authStatus,
+        ...(authenticated === true && capabilities.email ? { email: capabilities.email } : {}),
+        ...(authenticated === true && authMetadata ? authMetadata : {}),
       },
-      ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
+      usageLimits,
+      ...(message ? { message } : {}),
     },
   });
 });

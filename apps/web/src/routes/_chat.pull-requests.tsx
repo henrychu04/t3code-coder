@@ -25,6 +25,7 @@ import {
   GitPullRequestClosedIcon,
   GitPullRequestIcon,
   LayersIcon,
+  ListChecksIcon,
   PenLineIcon,
   LoaderIcon,
   Maximize2Icon,
@@ -57,6 +58,7 @@ import {
   pullRequestEntryKey,
   pullRequestEntryViewer,
   rankPullRequestMatches,
+  sortPullRequestGroups,
   pullRequestEnvironmentSetKey,
   readPullRequestListSnapshot,
   resolveProjectScope,
@@ -76,6 +78,13 @@ import {
   type PullRequestStatsScope,
   type PullRequestPartitionsSnapshot,
 } from "../components/pullRequest/pullRequestList.logic";
+import {
+  pullRequestListPreferences,
+  type PullRequestListPreferencePatch,
+  type PullRequestListPreferences,
+  type PullRequestListSort,
+  writePullRequestListPreferences,
+} from "../components/pullRequest/pullRequestListPreferences";
 import { assignProjectsToEnvironments } from "../components/pullRequest/pullRequestProjectAssignment.logic";
 import { PullRequestDetailPanel } from "../components/pullRequest/PullRequestDetailPanel";
 import {
@@ -105,10 +114,10 @@ import { Menu, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "../
 import { SidebarInset } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
-import { toSortableTimestamp } from "../lib/threadSort";
 import {
   selectActiveRightPanelSurface,
   isPullRequestSurface,
+  pullRequestSurface,
   selectSelectedRightPanelSurface,
   selectThreadRightPanelState,
   updatePullRequestTabStatus,
@@ -128,9 +137,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
-export interface PullRequestsSearch {
-  readonly involvement: PullRequestInvolvement;
-  readonly state: PullRequestListState;
+export interface PullRequestsSearch extends PullRequestListPreferences {
   /**
    * Narrows the list to one server. Absent means every connected one, which is the default the
    * page has now — so a link written before servers could be chosen still opens the whole list.
@@ -165,8 +172,6 @@ export interface PullRequestsSearch {
   readonly sort?: PullRequestListSort;
 }
 
-type PullRequestListSort = "updated" | "newest" | "oldest" | "largest" | "smallest";
-
 // The state filters wear the same glyphs the rows do, so the two read as one vocabulary.
 const INVOLVEMENT_TABS = [
   { value: "all", label: "All", Icon: LayersIcon },
@@ -182,6 +187,7 @@ const STATE_TABS = [
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<PullRequestListState>>;
 
 const SORT_OPTIONS = [
+  { value: "ready", label: "Merge readiness", Icon: ListChecksIcon },
   { value: "updated", label: "Recently updated", Icon: ClockIcon },
   { value: "newest", label: "Newest shown", Icon: CalendarArrowDownIcon },
   { value: "oldest", label: "Oldest shown", Icon: CalendarArrowUpIcon },
@@ -219,6 +225,9 @@ const EMPTY_PREVIEW_DESKTOP_STATE = {};
 const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 const MAX_SEARCH_LABEL_CANDIDATES = 100;
+
+const pullRequestListEntryId = (target: Parameters<typeof pullRequestSurface>[0]) =>
+  pullRequestSurface({ ...target, repository: target.repository.toLowerCase() }).id;
 
 function pullRequestSearchLabels(raw: unknown): Partial<Pick<PullRequestsSearch, "labels">> {
   const values = (Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : []).slice(
@@ -286,9 +295,9 @@ export const Route = createFileRoute("/_chat/pull-requests")({
 
 function PullRequestsRouteView() {
   const search = Route.useSearch();
-  const sort = search.sort ?? "updated";
+  const sort = search.sort ?? "ready";
   const statsPolicy: PullRequestStatsPolicy =
-    sort === "largest" || sort === "smallest" ? "eager" : "visible";
+    sort === "ready" || sort === "largest" || sort === "smallest" ? "eager" : "visible";
   const navigate = useNavigate({ from: Route.fullPath });
   const { environments } = useEnvironments();
   // Every connected environment that has said it can list pull requests. Sorted, so the query
@@ -446,8 +455,9 @@ function PullRequestsRouteView() {
   const selectedRightPanelSurface = useRightPanelStore((state) =>
     selectSelectedRightPanelSurface(state.byThreadKey, rightPanelRef),
   );
-  const selectedPullRequestSurface =
-    isPullRequestSurface(selectedRightPanelSurface) ? selectedRightPanelSurface : null;
+  const selectedPullRequestSurface = isPullRequestSurface(selectedRightPanelSurface)
+    ? selectedRightPanelSurface
+    : null;
   const activePullRequestSurface = rightPanelState.isOpen ? selectedPullRequestSurface : null;
   // The open tab names its own server; a link that arrived before any tab was opened names it
   // through the project it selected.
@@ -483,7 +493,7 @@ function PullRequestsRouteView() {
           return {
             involvement: next.involvement ?? previous.involvement,
             state: next.state ?? previous.state,
-            ...(next.sort && next.sort !== "updated" ? { sort: next.sort } : {}),
+            ...(next.sort && next.sort !== "ready" ? { sort: next.sort } : {}),
             ...(next.repository ? { repository: next.repository } : {}),
             ...(next.number ? { number: next.number } : {}),
             ...(next.projectId ? { projectId: next.projectId } : {}),
@@ -506,22 +516,22 @@ function PullRequestsRouteView() {
     [navigate],
   );
 
-  // Changing what the list contains must not leave a selection from the previous view open.
-  // The project filter is untouched: it is the user's scope, not part of the selection.
   const clearedSelection = {
     repository: undefined,
     number: undefined,
     selectedProjectId: undefined,
     selectedEnvironmentId: undefined,
   };
-  const updateListScope = (patch: {
-    [Key in keyof PullRequestsSearch]?: PullRequestsSearch[Key] | undefined;
-  }) => {
-    if (rightPanelRef !== null) {
-      // Hide the old selection while retaining peer PR tabs for parallel reviews.
-      useRightPanelStore.getState().close(rightPanelRef);
-    }
-    updateSearch({ ...patch, ...clearedSelection });
+  // List controls change the rows behind the detail, not the independent selected surface.
+  const updateListScope = (patch: PullRequestListPreferencePatch) => {
+    const currentPreferences = pullRequestListPreferences({
+      ...search,
+      ...patch,
+      involvement: patch.involvement ?? search.involvement,
+      state: patch.state ?? search.state,
+    });
+    writePullRequestListPreferences(currentPreferences);
+    updateSearch(patch);
   };
 
   // Searching asks the hosts, which takes a round trip, so the text is held for a moment before
@@ -1391,35 +1401,23 @@ function PullRequestsRouteView() {
       ...group,
       entries: group.entries.map((entry) => withDiffStat(entry, statsByRow)),
     }));
-    if (sort === "updated") return enriched;
-    const entries = enriched.flatMap((group) => group.entries);
-    const hasSize = (entry: (typeof entries)[number]) =>
-      entry.additions + entry.deletions > 0 || statsByRow.has(pullRequestDiffStatKey(entry));
-    const timestamp = (entry: (typeof entries)[number]) =>
-      toSortableTimestamp(entry.updatedAt) ?? toSortableTimestamp(entry.createdAt) ?? 0;
-    return [
-      {
-        key: "others" as const,
-        label: "",
-        entries: entries.toSorted((left, right) => {
-          if (sort === "newest" || sort === "oldest") {
-            const leftCreated = toSortableTimestamp(left.createdAt);
-            const rightCreated = toSortableTimestamp(right.createdAt);
-            const measured = Number(rightCreated !== null) - Number(leftCreated !== null);
-            const dated = (leftCreated ?? 0) - (rightCreated ?? 0);
-            return (
-              measured || (sort === "newest" ? -dated : dated) || timestamp(right) - timestamp(left)
-            );
-          }
-          const measured = Number(hasSize(right)) - Number(hasSize(left));
-          const sized = left.additions + left.deletions - (right.additions + right.deletions);
-          return (
-            measured || (sort === "largest" ? -sized : sized) || timestamp(right) - timestamp(left)
-          );
-        }),
-      },
-    ];
-  }, [groups, sort, statsByRow]);
+    return sortPullRequestGroups(
+      enriched,
+      sort,
+      typedParsed.text,
+      (entry) =>
+        entry.additions + entry.deletions > 0 || statsByRow.has(pullRequestDiffStatKey(entry)),
+    );
+  }, [groups, sort, statsByRow, typedParsed.text]);
+  const listedPullRequestsBySurface = useMemo(
+    () =>
+      new Map(
+        displayGroups.flatMap((group) =>
+          group.entries.map((entry) => [pullRequestListEntryId(entry), entry] as const),
+        ),
+      ),
+    [displayGroups],
+  );
 
   const linkedSelection = useMemo(
     () =>
@@ -1538,7 +1536,7 @@ function PullRequestsRouteView() {
     <PullRequestSearchInput
       value={search.q ?? ""}
       busy={typedQuery.length > 0 && (!querySettled || showingCarried)}
-      onChange={(query) => updateSearch({ q: query || undefined })}
+      onChange={(query) => updateListScope({ q: query || undefined })}
     />
   );
   const panelToggleControls = (
@@ -1606,7 +1604,7 @@ function PullRequestsRouteView() {
           searching={typedQuery.length > 0 && (!querySettled || showingCarried)}
           canLoadMore={listData?.truncated === true && (canContinue || pageSize < MAX_PAGE_SIZE)}
           loadingMore={loadingMore}
-          onClearQuery={() => updateSearch({ q: undefined })}
+          onClearQuery={() => updateListScope({ q: undefined })}
           onLoadMore={loadMore}
         />
       ) : (
@@ -1710,7 +1708,7 @@ function PullRequestsRouteView() {
       outlined
       value={sort}
       options={SORT_OPTIONS}
-      onChange={(next) => updateSearch({ sort: next })}
+      onChange={(next) => updateListScope({ sort: next })}
     />
   );
   const filtersMenu = (
@@ -1879,6 +1877,10 @@ function PullRequestsRouteView() {
                 repository: activePullRequestSurface.repository,
                 number: activePullRequestSurface.number,
               }}
+              listEntry={
+                listedPullRequestsBySurface.get(pullRequestListEntryId(activePullRequestSurface)) ??
+                null
+              }
               refreshToken={detailRefreshToken}
               // Merging, closing or reopening changes the row this panel was opened from, so
               // the list behind it is out of date the moment the host takes the action.

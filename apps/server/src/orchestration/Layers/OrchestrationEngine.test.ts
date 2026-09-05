@@ -173,6 +173,7 @@ describe("OrchestrationEngine", () => {
       Layer.provide(
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () => Effect.succeed(commandReadModel),
+          getUserInputActivity: () => Effect.die("unused"),
           getSnapshot: () =>
             Effect.sync(() => {
               fullSnapshotReadCount += 1;

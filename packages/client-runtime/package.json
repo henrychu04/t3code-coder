@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./work-log/commandLabel": {
+      "types": "./src/work-log/commandLabel.ts",
+      "default": "./src/work-log/commandLabel.ts"
+    },
     "./connection": {
       "types": "./src/connection/index.ts",
       "default": "./src/connection/index.ts"

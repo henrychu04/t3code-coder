@@ -11,8 +11,9 @@ against these decisions and record new intentional differences here.
 ## Kept from upstream
 
 - The browser-based project, thread, conversation, terminal, review, and settings experience.
-- Codex and Claude Code conversations, including streaming responses, approvals, questions,
-  interruption, resumption, context information, and provider-reported sub-agent activity.
+- Codex and Claude Code conversations, including streaming responses, approvals, asynchronous
+  questions, interruption, resumption, context information, native context compaction, and
+  provider-reported sub-agent activity.
 - Provider-aware model selection. Models, reasoning choices, service tiers, skills, commands, and
   access modes appear when the selected workspace provider reports them.
 - Repository-local Git status, diffs, branches, worktrees, commits, checkpoints, and revert flows.
@@ -58,10 +59,11 @@ T3 Coder shows Coder workspace state, health, latency, resource use, idle-stop t
 updates. Starting, stopping, restarting, or updating a workspace is an explicit user action.
 Configured TCP or UDP forwards are explicit rules and always bind to local loopback.
 
-### Source control stays inside the repository
+### Source control stays inside the workspace
 
-Local Git workflows remain available. Networked source-control actions—fetch, pull, push, creating
-pull requests, and hosted-provider integrations—are left to approved workspace tooling.
+Local Git workflows and GitLab merge-request actions run through repository-scoped Git and `glab`
+inside the workspace. Their credentials never move into the browser or local gateway, and no other
+hosted source-control provider is registered.
 
 ### File access is contained
 
@@ -91,11 +93,15 @@ validated exceptions.
 - Relay, Tailscale, Cloudflare, OAuth, Clerk, generic SSH environments, and public or non-loopback
   application listeners.
 - Providers other than workspace-installed Codex and Claude Code.
+- Upstream's cost dashboard, remote pricing aggregation, and user-configured CLI-proxy usage
+  sources. Native subscription-limit snapshots remain available in workspace provider settings,
+  alongside per-thread context usage.
 - MCP servers, Codex app integrations, the Claude browser integration, and the packaged Anthropic
   Agent SDK.
 - General-purpose uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer,
   and background file synchronization.
-- Git fetch, pull, push, pull-request creation, and hosted source-control integrations.
+- GitHub, Bitbucket, Azure DevOps, and hosted source-control integrations other than workspace
+  GitLab through `glab`.
 - Browser preview, automatic updates, T3-owned telemetry, and automatic browser launch.
 
 These are product boundaries, not temporary error states. Restoring one requires an explicit

@@ -4,7 +4,9 @@ import { resolveContextStripLabelsCompact } from "./BranchToolbar.logic";
 import {
   COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX,
   COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX,
+  COMPOSER_RESTING_EXPANSION_MIN_PX,
   getRestingComposerImagePreviewCounts,
+  resolveComposerTimelineInset,
   resolveRestingComposerControlsLayout,
   resolveRestingComposerControlsNaturalWidth,
   shouldAnimateComposerRestingTransition,
@@ -12,6 +14,26 @@ import {
   shouldUseCompactComposerFooter,
   shouldUseRestingComposerLayout,
 } from "./composerFooterLayout";
+
+describe("resolveComposerTimelineInset", () => {
+  it("follows the expanded overlay height", () => {
+    expect(
+      resolveComposerTimelineInset({ currentInset: 160, overlayHeight: 140, isResting: false }),
+    ).toBe(140);
+  });
+
+  it("holds a larger reservation while resting", () => {
+    expect(
+      resolveComposerTimelineInset({ currentInset: 200, overlayHeight: 60, isResting: true }),
+    ).toBe(200);
+  });
+
+  it("reserves the minimum empty expansion", () => {
+    expect(
+      resolveComposerTimelineInset({ currentInset: 0, overlayHeight: 60, isResting: true }),
+    ).toBe(60 + COMPOSER_RESTING_EXPANSION_MIN_PX);
+  });
+});
 
 describe("getRestingComposerImagePreviewCounts", () => {
   it("shows at most three thumbnails and counts the remainder", () => {
@@ -63,7 +85,9 @@ describe("shouldUseRestingComposerLayout", () => {
     isExistingThread: true,
     isMobileViewport: false,
     isFocused: false,
+    isScrollCollapsed: false,
     hasExpandedChrome: false,
+    collapseOnBlur: true,
   };
 
   it("uses the resting layout for an unfocused desktop composer", () => {
@@ -80,6 +104,17 @@ describe("shouldUseRestingComposerLayout", () => {
 
   it("expands when focus is anywhere in the composer", () => {
     expect(shouldUseRestingComposerLayout({ ...resting, isFocused: true })).toBe(false);
+  });
+
+  it("can keep an unfocused composer expanded while preserving scroll collapse", () => {
+    expect(shouldUseRestingComposerLayout({ ...resting, collapseOnBlur: false })).toBe(false);
+    expect(
+      shouldUseRestingComposerLayout({
+        ...resting,
+        collapseOnBlur: false,
+        isScrollCollapsed: true,
+      }),
+    ).toBe(true);
   });
 
   it("keeps drawers and composer-owned menus expanded", () => {

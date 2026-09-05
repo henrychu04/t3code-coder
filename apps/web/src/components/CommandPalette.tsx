@@ -226,6 +226,7 @@ function CoderCommandPaletteDialog(props: {
           <ProjectFavicon
             className="size-4 shrink-0"
             cwd={targetProject.workspaceRoot}
+            projectName={targetProject.title}
             environmentId={targetProject.environmentId}
             faviconPath={targetProject.faviconPath}
           />

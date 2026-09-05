@@ -4,6 +4,7 @@ import type {
   EnvironmentId,
   PullRequestAction,
   PullRequestMergeMethod,
+  PullRequestListEntry,
   PullRequestUpdateMethod,
   PullRequestRef,
   PullRequestState,
@@ -364,6 +365,7 @@ function PullRequestBaseFreshnessWarning({
 export function PullRequestDetailPanel({
   environmentId,
   reference,
+  listEntry = null,
   refreshToken: forcedRefreshToken = 0,
   onActed,
   onClose,
@@ -373,6 +375,8 @@ export function PullRequestDetailPanel({
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
+  /** Row fields already loaded by the pull-request list, used while richer detail arrives. */
+  listEntry?: PullRequestListEntry | null;
   /**
    * Bumped by whatever holds the panel when a reader asks for everything on screen to be read
    * again. The panel owns its own reads, so the page cannot refresh them for it — it says when,
@@ -407,6 +411,12 @@ export function PullRequestDetailPanel({
   composerDraftTarget?: ScopedThreadRef | DraftId;
 }) {
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
+  const matchingListEntry =
+    listEntry?.projectId === reference.projectId &&
+    listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
+    listEntry.number === reference.number
+      ? listEntry
+      : null;
   const [tab, setTab] = useState<DetailTab>("summary");
   const [timelineOrder, setTimelineOrder] = useState<"newest" | "oldest">("newest");
   const [codeCommitScope, setCodeCommitScope] = useState<{
@@ -1113,7 +1123,7 @@ export function PullRequestDetailPanel({
       : 0;
 
   if (detailQuery.isPending && !detail) {
-    return <PullRequestDetailGhost />;
+    return <PullRequestDetailGhost seed={matchingListEntry} />;
   }
 
   return (

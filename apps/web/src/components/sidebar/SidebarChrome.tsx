@@ -24,6 +24,7 @@ import {
   useSidebar,
 } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 
 export const SidebarChromeHeader = memo(function SidebarChromeHeader() {
   const stageLabel = useEnvironmentStageLabel();
@@ -160,7 +161,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   }, [closeMobileSidebar, navigate]);
   const handlePullRequestsClick = useCallback(() => {
     closeMobileSidebar();
-    void navigate({ to: "/pull-requests", search: { involvement: "all", state: "open" } });
+    void navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
   }, [closeMobileSidebar, navigate]);
 
   const handleBackClick = useCallback(() => {

@@ -1397,7 +1397,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("lucide-x");
+    expect(markup).toContain("lucide-circle-alert");
     expect(markup).toContain("text-destructive");
   });
 });

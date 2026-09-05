@@ -7,7 +7,18 @@
  * both themes) and the single `animate-skeleton` pulse, applied once on the container so any
  * number of bars costs one opacity animation.
  */
+import type { PullRequestListEntry } from "@t3tools/contracts";
+import { ArrowLeftIcon } from "lucide-react";
+
 import { cn } from "~/lib/utils";
+import { formatRelativeTimeLabel } from "~/timestampFormat";
+
+import {
+  PullRequestActorLabel,
+  PullRequestDiffStat,
+  pullRequestChecksStatePresentation,
+  resolvePullRequestState,
+} from "./pullRequestPresentation";
 
 function GhostBar({ className }: { className?: string | undefined }) {
   return <div aria-hidden className={cn("h-3 rounded bg-muted-foreground/15", className)} />;
@@ -60,18 +71,42 @@ export function PullRequestListGhost({
  * boundaries in the ghost prevents the loaded pull request from replacing one layout with
  * another a moment later.
  */
-export function PullRequestDetailGhost() {
+export function PullRequestDetailGhost({ seed }: { seed?: PullRequestListEntry | null }) {
+  const statePresentation = seed
+    ? resolvePullRequestState({ state: seed.state, isDraft: seed.isDraft })
+    : null;
+  const checksPresentation = seed?.checksState
+    ? pullRequestChecksStatePresentation(seed.checksState)
+    : null;
   return (
     <div
       role="status"
       aria-label="Loading pull request"
-      className="motion-safe:animate-skeleton flex h-full min-h-0 flex-col overflow-hidden bg-background"
+      className={cn(
+        "flex h-full min-h-0 flex-col overflow-hidden bg-background",
+        !seed && "motion-safe:animate-skeleton",
+      )}
     >
       <div className="shrink-0 border-b border-border/60">
         <div className="flex h-7 items-center justify-between gap-3 px-4">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <GhostBar className="w-24" />
-            <GhostBar className="w-9" />
+            {seed && statePresentation ? (
+              <>
+                <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+                  {seed.repository}
+                </span>
+                <span
+                  className={cn("shrink-0 text-xs font-medium", statePresentation.toneClassName)}
+                >
+                  #{seed.number}
+                </span>
+              </>
+            ) : (
+              <>
+                <GhostBar className="w-24" />
+                <GhostBar className="w-9" />
+              </>
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-1">
             <GhostBar className="h-5 w-16 rounded-md" />
@@ -80,18 +115,58 @@ export function PullRequestDetailGhost() {
         </div>
 
         <div className="px-4 pb-4 pt-1">
-          <GhostBar className="h-5 w-4/5 max-w-md" />
+          {seed ? (
+            <h1 className="truncate text-base font-semibold leading-snug">{seed.title}</h1>
+          ) : (
+            <GhostBar className="h-5 w-4/5 max-w-md" />
+          )}
           <div className="mt-2 flex items-center gap-1.5">
-            <GhostBar className="size-4 rounded-full" />
-            <GhostBar className="w-24" />
+            {seed ? (
+              <>
+                <PullRequestActorLabel
+                  actor={seed.author}
+                  className="font-medium"
+                  tooltip={false}
+                />
+                <span className="text-xs text-muted-foreground">
+                  updated {formatRelativeTimeLabel(seed.updatedAt)}
+                </span>
+              </>
+            ) : (
+              <>
+                <GhostBar className="size-4 rounded-full" />
+                <GhostBar className="w-24" />
+              </>
+            )}
           </div>
           <div className="mt-4 flex min-w-0 items-center gap-2">
-            <GhostBar className="h-6 w-24 rounded-md" />
-            <GhostBar className="size-3 rounded-full" />
-            <GhostBar className="h-6 w-32 rounded-md" />
+            {seed ? (
+              <span className="flex min-w-0 flex-1 items-center gap-1.5 font-mono text-xs text-muted-foreground/70">
+                <code className="min-w-0 max-w-[40%] shrink-0 truncate">{seed.baseBranch}</code>
+                <ArrowLeftIcon
+                  aria-label="receives changes from"
+                  className="size-3.5 shrink-0 opacity-60"
+                />
+                <code className="min-w-0 flex-1 truncate">{seed.headBranch}</code>
+              </span>
+            ) : (
+              <>
+                <GhostBar className="h-6 w-24 rounded-md" />
+                <GhostBar className="size-3 rounded-full" />
+                <GhostBar className="h-6 w-32 rounded-md" />
+              </>
+            )}
             <div className="ml-auto flex shrink-0 items-center gap-2">
               <GhostBar className="w-10" />
-              <GhostBar className="w-20" />
+              {seed ? (
+                <PullRequestDiffStat
+                  additions={seed.additions}
+                  deletions={seed.deletions}
+                  className="font-mono text-xs"
+                />
+              ) : (
+                <GhostBar className="w-20" />
+              )}
             </div>
           </div>
         </div>
@@ -102,7 +177,19 @@ export function PullRequestDetailGhost() {
             <GhostBar className="h-6 w-16 rounded-md" />
             <GhostBar className="h-6 w-12 rounded-md" />
           </div>
-          <GhostBar className="w-20" />
+          {checksPresentation ? (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 text-xs",
+                checksPresentation.toneClassName,
+              )}
+            >
+              <checksPresentation.Icon aria-hidden className="size-3.5" />
+              {checksPresentation.label}
+            </span>
+          ) : (
+            <GhostBar className="w-20" />
+          )}
         </div>
       </div>
 

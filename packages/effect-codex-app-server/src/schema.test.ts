@@ -8,6 +8,30 @@ const isThreadReadResponse = Schema.is(CodexSchema.V2ThreadReadResponse);
 const isThreadResumeResponse = Schema.is(CodexSchema.V2ThreadResumeResponse);
 const isThreadRollbackResponse = Schema.is(CodexSchema.V2ThreadRollbackResponse);
 
+it("keeps async questions in live notifications and thread history", () => {
+  const item = {
+    type: "agentMessage",
+    id: "question-1",
+    text: "Which package?\n- pnpm\n- npm\n\nWhat should it be named?",
+    phase: "final_answer",
+    delivery: "async",
+    questions: [
+      { title: "Which package manager?", options: ["pnpm", "npm"] },
+      { title: "What should it be named?" },
+    ],
+  } as const;
+
+  for (const schema of [
+    CodexSchema.ServerNotification__ThreadItem,
+    CodexSchema.V2ItemStartedNotification__ThreadItem,
+    CodexSchema.V2ItemCompletedNotification__ThreadItem,
+    CodexSchema.V2ThreadReadResponse__ThreadItem,
+    CodexSchema.V2ThreadResumeResponse__ThreadItem,
+  ]) {
+    assert.deepEqual(Schema.decodeUnknownSync(schema)(item), item);
+  }
+});
+
 it("accepts Codex 0.150 multi-agent values", () => {
   const schemas = [
     CodexSchema.ServerNotification__SubAgentActivityKind,

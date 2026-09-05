@@ -180,9 +180,19 @@ const makeOrchestrationEngine = Effect.gen(function* () {
           });
         }
 
+        // Command snapshots intentionally omit activity bodies. Read this
+        // request's durable state before deciding whether an async answer is
+        // a provider response or a new user turn.
+        const userInputActivity =
+          envelope.command.type === "thread.user-input.respond"
+            ? yield* projectionSnapshotQuery.getUserInputActivity(envelope.command)
+            : Option.none();
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
+          ...(Option.isSome(userInputActivity)
+            ? { userInputActivity: userInputActivity.value }
+            : {}),
         }).pipe(
           Effect.provideService(Crypto.Crypto, crypto),
           Effect.mapError((cause) =>

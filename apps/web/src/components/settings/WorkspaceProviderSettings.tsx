@@ -32,6 +32,7 @@ import {
 } from "./providerStatus";
 import { shouldResetTextGenerationSelectionOnDisable } from "./WorkspaceProviderSettings.logic";
 import { WorkspaceSettingsTarget } from "./WorkspaceSettingsTarget";
+import { ProviderUsageLimits } from "./ProviderUsageLimits";
 
 const CODEX = ProviderDriverKind.make("codex");
 const CLAUDE = ProviderDriverKind.make("claudeAgent");
@@ -201,6 +202,9 @@ export function WorkspaceProviderEditor(props: {
         </div>
       </div>
 
+      {resolveProviderInstanceEnabled(props.row.instance) ? (
+        <ProviderUsageLimits limits={props.row.liveProvider?.usageLimits} />
+      ) : null}
       {hasConfiguration ? (
         <div className="flex h-11 shrink-0 border-b border-border/70 px-1">
           <button

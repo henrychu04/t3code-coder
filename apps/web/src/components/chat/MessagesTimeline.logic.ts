@@ -741,6 +741,16 @@ function deriveTurnFolds(input: {
     if (hiddenEntryIds.size === 0) {
       continue;
     }
+    // A lone compaction row stays visible on its own; it only folds away as
+    // part of a turn that already folds other work.
+    const hidesNonCompactionWork = group.entries.some(
+      (entry) =>
+        hiddenEntryIds.has(entry.id) &&
+        !(entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction"),
+    );
+    if (!hidesNonCompactionWork) {
+      continue;
+    }
 
     const firstEntry = group.entries[0];
     const firstHiddenEntry = group.entries.find((entry) => hiddenEntryIds.has(entry.id));

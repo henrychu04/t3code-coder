@@ -14,6 +14,37 @@ export type PermissionMode =
 
 export type SettingSource = "user" | "project" | "local";
 
+const ClaudeUsageWindow = Schema.Struct({
+  utilization: Schema.NullOr(Schema.Number),
+  resets_at: Schema.NullOr(Schema.String),
+});
+const ClaudeUsageResponse = Schema.Struct({
+  rate_limits_available: Schema.Boolean,
+  rate_limits: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        five_hour: Schema.optional(Schema.NullOr(ClaudeUsageWindow)),
+        seven_day: Schema.optional(Schema.NullOr(ClaudeUsageWindow)),
+        model_scoped: Schema.optional(
+          Schema.Array(
+            Schema.Struct({
+              ...ClaudeUsageWindow.fields,
+              display_name: Schema.String,
+            }),
+          ),
+        ),
+      }),
+    ),
+  ),
+});
+export type SDKControlGetUsageResponse = typeof ClaudeUsageResponse.Type;
+export interface SDKRateLimitInfo {
+  readonly status?: string;
+  readonly rateLimitType?: string;
+  readonly utilization?: number;
+  readonly resetsAt?: number;
+}
+
 export type PermissionUpdateDestination =
   | "userSettings"
   | "projectSettings"
@@ -539,6 +570,7 @@ class AsyncMessageQueue<T> implements AsyncIterable<T> {
 }
 
 export interface Query extends AsyncIterable<SDKMessage> {
+  getUsage(timeoutMs?: number): Promise<SDKControlGetUsageResponse>;
   interrupt(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
   setModel(model?: string): Promise<void>;
@@ -707,6 +739,12 @@ class ClaudeCliQuery implements Query {
   getSettings(timeoutMs?: number): Promise<Record<string, unknown>> {
     return this.request({ subtype: "get_settings" }, timeoutMs).then(
       (response) => response as Record<string, unknown>,
+    );
+  }
+
+  getUsage(timeoutMs?: number): Promise<SDKControlGetUsageResponse> {
+    return this.request({ subtype: "get_usage" }, timeoutMs).then((response) =>
+      Schema.decodeUnknownSync(ClaudeUsageResponse)(response),
     );
   }
 

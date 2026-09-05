@@ -2,6 +2,7 @@ import * as NodeCrypto from "node:crypto";
 
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -44,6 +45,8 @@ import {
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as ServerConfig from "../config.ts";
+
+const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
 
 export interface ExecuteGitInput {
   readonly operation: string;
@@ -1783,7 +1786,9 @@ const makeLocalGitService = Effect.gen(function* () {
   )(function* (input) {
     const args = ["worktree", "remove", ...(input.force ? ["--force"] : []), input.path];
     const result = yield* run("GitVcsDriver.removeWorktree", input.cwd, args, {
-      timeoutMs: 15_000,
+      // Dependency-heavy worktrees can take minutes to remove. Keep the
+      // operation bounded without interrupting git midway through cleanup.
+      timeoutMs: WORKTREE_REMOVE_TIMEOUT_MS,
       allowNonZeroExit: true,
     });
     if (result.exitCode === 0) {

@@ -164,6 +164,7 @@ describe("ProviderSessionReaper", () => {
     const providerService: ProviderServiceShape = {
       startSession: () => unsupported(),
       sendTurn: () => unsupported(),
+      compactThread: () => unsupported(),
       interruptTurn: () => unsupported(),
       respondToRequest: () => unsupported(),
       respondToUserInput: () => unsupported(),
@@ -203,6 +204,7 @@ describe("ProviderSessionReaper", () => {
       Layer.provideMerge(
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () => Effect.die("unused"),
+          getUserInputActivity: () => Effect.die("unused"),
           getSnapshot: () => Effect.die("unused"),
           getShellSnapshot: () => Effect.die("unused"),
           getArchivedShellSnapshot: () => Effect.die("unused"),

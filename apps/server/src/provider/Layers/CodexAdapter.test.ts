@@ -73,6 +73,7 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     (_input: CodexSessionRuntimeSendTurnInput): Promise<ProviderTurnStartResult> =>
       Promise.resolve({ threadId: this.options.threadId, turnId: asTurnId("turn-1") }),
   );
+  readonly compactThreadImpl = vi.fn(() => Promise.resolve(undefined));
   readonly closeImpl = vi.fn(() => Promise.resolve(undefined));
 
   constructor(options: CodexSessionRuntimeOptions) {
@@ -88,6 +89,8 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
   sendTurn(input: CodexSessionRuntimeSendTurnInput) {
     return Effect.promise(() => this.sendTurnImpl(input));
   }
+
+  compactThread = Effect.promise(() => this.compactThreadImpl());
 
   interruptTurn(_turnId?: TurnId) {
     return Effect.void;
@@ -267,6 +270,23 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
     }),
   );
 
+  it.effect("delegates native context compaction to the workspace Codex runtime", () =>
+    Effect.gen(function* () {
+      const factory = makeRuntimeFactory();
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+        resolveMcpServerNames: resolveNoMcpServers,
+      });
+      const threadId = asThreadId("compact-thread");
+      yield* adapter.startSession({ threadId, runtimeMode: "approval-required" });
+
+      yield* adapter.compactThread?.(threadId);
+
+      NodeAssert.equal(factory.lastRuntime?.compactThreadImpl.mock.calls.length, 1);
+      yield* adapter.stopAll();
+    }),
+  );
+
   it.effect("maps turn options only for the adapter's bound instance", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;
@@ -366,6 +386,140 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
       if (event._tag === "Some") {
         NodeAssert.equal(event.value.type, "item.completed");
       }
+    }).pipe(TestClock.withLive),
+  );
+
+  it.effect("maps async agent questions without ending the turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("async-question-thread");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "approval-required",
+      });
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const eventsFiber = yield* Stream.runCollect(Stream.take(adapter.streamEvents, 2)).pipe(
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-async-question"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        payload: {
+          completedAtMs: 0,
+          threadId,
+          turnId: "turn-1",
+          item: {
+            type: "agentMessage",
+            id: "async-question-1",
+            text: "Which package manager?",
+            phase: "final_answer",
+            delivery: "async",
+            questions: [
+              { title: "Which package manager?", options: ["pnpm", "npm"] },
+              { title: "What should it be named?" },
+            ],
+          },
+        },
+      });
+      yield* runtime.emit({
+        id: asEventId("evt-async-continued"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:01.000Z",
+        method: "item/agentMessage/delta",
+        payload: {
+          threadId,
+          turnId: "turn-1",
+          itemId: "message-2",
+          delta: "I will keep working.",
+        },
+      });
+
+      const events = Array.from(yield* Fiber.join(eventsFiber));
+      NodeAssert.equal(events[0]?.type, "user-input.requested");
+      NodeAssert.equal(events[0]?.requestId, `codex-async:${threadId}:async-question-1`);
+      NodeAssert.deepStrictEqual(events[0]?.payload, {
+        responseMode: "message",
+        questions: [
+          {
+            id: "0",
+            header: "Question",
+            question: "Which package manager?",
+            options: [
+              { label: "pnpm", description: "" },
+              { label: "npm", description: "" },
+            ],
+            allowCustomAnswer: true,
+            multiSelect: false,
+          },
+          {
+            id: "1",
+            header: "Question",
+            question: "What should it be named?",
+            options: [],
+            allowCustomAnswer: true,
+            multiSelect: false,
+          },
+        ],
+      });
+      NodeAssert.equal(events[1]?.type, "content.delta");
+    }).pipe(TestClock.withLive),
+  );
+
+  it.effect("maps a completed native compaction item to compacted thread state", () =>
+    Effect.gen(function* () {
+      const factory = makeRuntimeFactory();
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+        resolveMcpServerNames: resolveNoMcpServers,
+      });
+      const threadId = asThreadId("compaction-event-thread");
+      yield* adapter.startSession({ threadId, runtimeMode: "approval-required" });
+      const runtime = factory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const compactedEventFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "thread.state.changed"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+
+      yield* runtime.emit({
+        id: asEventId("evt-compaction-item-completed"),
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        method: "item/completed",
+        threadId,
+        payload: {
+          completedAtMs: 1_778_000_000_000,
+          threadId,
+          turnId: "provider-compact-turn",
+          item: {
+            id: "provider-compact-item",
+            type: "contextCompaction",
+          },
+        },
+      });
+
+      const event = yield* Fiber.join(compactedEventFiber).pipe(Effect.timeout("10 seconds"));
+      NodeAssert.equal(event._tag, "Some");
+      if (event._tag === "Some") {
+        NodeAssert.equal(event.value.type, "thread.state.changed");
+        if (event.value.type === "thread.state.changed") {
+          NodeAssert.equal(event.value.payload.state, "compacted");
+        }
+      }
+      yield* adapter.stopAll();
     }).pipe(TestClock.withLive),
   );
 });
