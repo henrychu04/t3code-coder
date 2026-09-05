@@ -383,7 +383,10 @@ export function useProjectTextSearch(target: {
     if (isCurrentQuery && currentPage.cursor && result.error && !result.isPending) restartSearch();
   }, [isCurrentQuery, currentPage.cursor, result.error, result.isPending, restartSearch]);
 
-  const matches = isCurrentQuery ? [...currentPage.previous, ...(result.data?.matches ?? [])] : [];
+  const matches = useMemo(
+    () => (isCurrentQuery ? [...currentPage.previous, ...(result.data?.matches ?? [])] : []),
+    [isCurrentQuery, currentPage.previous, result.data?.matches],
+  );
   const loadMore = () => {
     if (isCurrentQuery && !result.isPending && result.data?.nextCursor) {
       setPage({ identity, cursor: result.data.nextCursor, previous: matches });

@@ -23,7 +23,7 @@
     "test:server": "vp test run --config vite.coder.config.ts",
     "test:coder": "node --test apps/coder-gateway/src/*.test.ts apps/coder-helper/src/*.test.ts packages/coder-cli/src/*.test.ts && pnpm --filter effect-codex-app-server test && pnpm test:contracts && pnpm test:server && pnpm test:client-runtime && pnpm test:shared:coder && pnpm test:web:coder",
     "test:coder:live": "node scripts/coder-live-test.mjs test",
-    "test:web:coder": "pnpm --filter @t3tools/web test src/coder src/state/projectTextSearch.react.test.tsx src/promptStashStore.test.ts src/composerDraftStore.unsent.test.ts src/rightPanelStore.test.ts src/terminalUiStateStore.test.ts src/components/files src/components/diffs",
+    "test:web:coder": "pnpm --filter @t3tools/web test src/coder src/components/CoderWorkspaceIssues.test.tsx src/components/CoderWorkspaceLatency.react.test.tsx src/components/CoderWorkspaceLatency.test.ts src/state/projectTextSearch.react.test.tsx src/promptStashStore.test.ts src/composerDraftStore.unsent.test.ts src/rightPanelStore.test.ts src/terminalUiStateStore.test.ts src/components/files src/components/diffs",
     "test:client-runtime": "pnpm --filter @t3tools/client-runtime test",
     "test:shared:coder": "vp test run packages/shared/src/imageSignature.test.ts packages/shared/src/KeyedCoalescingWorker.test.ts packages/shared/src/path.test.ts"
   },

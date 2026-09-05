@@ -277,6 +277,41 @@ it.effect("continues cursor pages after whole-word filtering", () =>
   }),
 );
 
+it.effect("paging one search does not evict another search's active continuation", () =>
+  Effect.gen(function* () {
+    const root = yield* temporaryDirectory;
+    const realRoot = yield* Effect.promise(() => NodeFSP.realpath(root));
+    yield* Effect.promise(() => NodeFSP.mkdir(NodePath.join(root, "src")));
+    yield* Effect.promise(() => NodeFSP.writeFile(NodePath.join(root, "src/index.ts"), "needle"));
+    let offset = 0;
+    vi.spyOn(FileFinder, "create").mockReturnValueOnce({
+      ok: true,
+      value: mockFinder({
+        grep: () => ({
+          ok: true,
+          value: grepResult([grepMatch()], { __brand: "GrepCursor", _offset: ++offset }),
+        }),
+      }),
+    });
+    const index = yield* WorkspaceSearchIndex.make(realRoot, "content");
+    const input = {
+      query: "needle",
+      limit: 1,
+      caseSensitive: true,
+      wholeWord: false,
+      useRegex: false,
+    };
+    const otherSearch = yield* index.searchText(input);
+    let page = yield* index.searchText(input);
+    for (let count = 0; count < 130; count++) {
+      expect(page.nextCursor).toBeDefined();
+      page = yield* index.searchText({ ...input, cursor: page.nextCursor! });
+    }
+    const resumed = yield* index.searchText({ ...input, cursor: otherSearch.nextCursor! });
+    expect(resumed.matches).toHaveLength(1);
+  }),
+);
+
 it.effect("sanitizes native search diagnostics", () =>
   Effect.gen(function* () {
     const root = yield* temporaryDirectory;

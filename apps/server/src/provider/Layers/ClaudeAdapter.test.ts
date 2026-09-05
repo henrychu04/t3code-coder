@@ -1391,7 +1391,7 @@ describe("ClaudeAdapterLive", () => {
           });
         },
         captureScreenshotFile: (input) => {
-          capturedFiles.push(input);
+          capturedFiles.push({ ...input, capturedDigests: new Set(input.capturedDigests) });
           return Effect.succeed({
             reference: {
               id: ScreenshotArtifactId.make("5e2df9f0-9e4e-4a68-a812-3024f8f2d4e1"),
@@ -1404,7 +1404,7 @@ describe("ClaudeAdapterLive", () => {
         },
         captureScreenshotBase64: (input) => {
           if (input.capturedDigests.has("screenshot-digest")) return Effect.succeed(undefined);
-          capturedInputs.push(input);
+          capturedInputs.push({ ...input, capturedDigests: new Set(input.capturedDigests) });
           return Effect.succeed({
             reference: {
               id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
@@ -1504,7 +1504,7 @@ describe("ClaudeAdapterLive", () => {
       }
       assert.deepEqual(capturedInputs, [
         {
-          capturedDigests: new Set(["screenshot-digest", "filesystem-screenshot-digest"]),
+          capturedDigests: new Set<string>(),
           dataBase64: "secret-image-base64",
           mimeType: "image/png",
           name: "test-results/home.png",
@@ -1514,7 +1514,7 @@ describe("ClaudeAdapterLive", () => {
         {
           cwd: "/workspace/repo",
           filePath: "/workspace/repo/test-results/final.webp",
-          capturedDigests: new Set(["screenshot-digest", "filesystem-screenshot-digest"]),
+          capturedDigests: new Set(["screenshot-digest"]),
         },
       ]);
       assert.notMatch(JSON.stringify(runtimeEvents), /secret-image-base64/u);

@@ -624,6 +624,8 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
         reason: "Search index changed. Run the search again.",
       });
     }
+    // Retire the consumed page only after validation succeeds so interruption can be retried.
+    if (input.cursor) continuations.delete(input.cursor);
     let cursor: string | undefined;
     const pending = matches.splice(limit);
     if (nextCursor !== null || pending.length > 0) {

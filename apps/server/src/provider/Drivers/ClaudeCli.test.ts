@@ -3,8 +3,10 @@ import { rejects } from "node:assert/strict";
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import { Readable } from "node:stream";
 
 import { assert, describe, it } from "@effect/vitest";
+import { vi } from "vite-plus/test";
 
 import { buildClaudeCliArgs, query, type SDKUserMessage } from "./ClaudeCli.ts";
 
@@ -253,6 +255,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   const promptFinished = new Promise<void>((resolve) => {
     finishPrompt = resolve;
   });
+  const pause = vi.spyOn(Readable.prototype, "pause");
   const runtime = query({
     prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
       await promptFinished;
@@ -261,7 +264,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   });
   try {
     await runtime.initializationResult();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => assert.ok(pause.mock.contexts.some((stream) => stream.isPaused())), {
+      timeout: 2000,
+    });
     assert.deepEqual(await runtime.getSettings(2000), { ready: true });
     finishPrompt();
     const ids: string[] = [];
@@ -273,6 +278,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   } finally {
     finishPrompt();
     runtime.close();
+    pause.mockRestore();
     await NodeFS.rm(directory, { force: true, recursive: true });
   }
 }, 5000);
