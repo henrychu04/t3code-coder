@@ -55,11 +55,6 @@ export interface CoderWorkspaceRuntimeStatus {
   readonly error?: string;
 }
 
-export interface CoderWorkspaceNetworkSample {
-  readonly latencyMs: number;
-  readonly sampledAt: number;
-}
-
 export type WorkspaceDiagnosticPhase =
   | "preflight"
   | "installing_helper"
@@ -172,28 +167,6 @@ export async function disconnectCoderWorkspace(workspaceId: string): Promise<voi
   await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
     method: "DELETE",
   }).then(readResponse);
-}
-
-export async function loadCoderWorkspaceNetworkSample(
-  workspaceId: string,
-): Promise<CoderWorkspaceNetworkSample | null> {
-  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/latency`, {
-    cache: "no-store",
-  }).then(readResponse);
-  const sample = ((await response.json()) as { readonly sample?: unknown }).sample;
-  if (sample === null || sample === undefined) return null;
-  if (typeof sample !== "object" || Array.isArray(sample)) return null;
-  const record = sample as Record<string, unknown>;
-  if (
-    typeof record.latencyMs !== "number" ||
-    !Number.isFinite(record.latencyMs) ||
-    record.latencyMs < 0 ||
-    typeof record.sampledAt !== "number" ||
-    !Number.isFinite(record.sampledAt)
-  ) {
-    return null;
-  }
-  return sample as CoderWorkspaceNetworkSample;
 }
 
 export async function loadCoderWorkspaceDiagnostics(

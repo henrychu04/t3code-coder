@@ -40,8 +40,15 @@ function getSlowRpcAckRequestsValue(): ReadonlyArray<SlowRpcAckRequest> {
   return appAtomRegistry.get(slowRpcAckRequestsAtom);
 }
 
+/**
+ * Subscribe envelopes stream their results, and the workspace network sampler
+ * probes in the background, so neither represents a user-visible operation
+ * worth warning about.
+ */
+const UNTRACKED_RPC_METHODS = new Set(["server.probe"]);
+
 function shouldTrackRpcAck(method: string): boolean {
-  return !method.includes("subscribe");
+  return !method.includes("subscribe") && !UNTRACKED_RPC_METHODS.has(method);
 }
 
 function rpcAckThresholdMs(): number {

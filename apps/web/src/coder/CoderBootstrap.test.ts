@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
   discardInactiveWorkspaceConnectionErrors,
-  nextCoderSlowSampleCount,
   readWorkspaceRuntime,
   workspaceRuntimeRetryDelayMs,
 } from "./CoderBootstrap";
+import { nextCoderSlowSampleCount } from "./workspaceNetwork";
 import type { CoderProfileConfig } from "./api";
 
 const config: CoderProfileConfig = {

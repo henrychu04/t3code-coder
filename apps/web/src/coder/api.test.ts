@@ -5,7 +5,6 @@ import {
   discoverCoderWorkspaces,
   loadCoderWorkspaceDiagnostics,
   loadCoderWorkspaceMetrics,
-  loadCoderWorkspaceNetworkSample,
   restartCoderWorkspace,
   startCoderWorkspace,
   stopCoderWorkspace,
@@ -95,20 +94,6 @@ describe("Coder workspace lifecycle API", () => {
 
     await expect(loadCoderWorkspaceMetrics("workspace one")).resolves.toEqual(usage);
     expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/metrics", {
-      cache: "no-store",
-    });
-  });
-
-  it("loads timestamped network samples", async () => {
-    const sample = {
-      latencyMs: 42,
-      sampledAt: 1_777_000_000_000,
-    } as const;
-    const fetchMock = vi.fn(async () => Response.json({ sample }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(loadCoderWorkspaceNetworkSample("workspace one")).resolves.toEqual(sample);
-    expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/latency", {
       cache: "no-store",
     });
   });

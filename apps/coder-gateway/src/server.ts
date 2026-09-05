@@ -45,10 +45,6 @@ import {
   type CoderPortForwardExit,
 } from "@t3tools/coder-cli/portForward";
 import {
-  measureCoderHelperLatency,
-  type CoderHelperLatencySample,
-} from "@t3tools/coder-cli/helperLatency";
-import {
   installCoderHelperWithScp,
   uploadCoderClipboardImageWithScp,
 } from "@t3tools/coder-cli/scp";
@@ -752,13 +748,6 @@ export function makeLocalCoderGateway(
     const workspaceAttemptCounters = new Map<string, number>();
     let workspaceDiagnosticEventId = 0;
     const workspaceSockets = new Map<string, WebSocket>();
-    const workspaceLatencyMeasurements = new Map<
-      string,
-      {
-        readonly helper: CoderHelperConnection;
-        readonly sample: Promise<CoderHelperLatencySample>;
-      }
-    >();
     const pendingWorkspaceUpgrades = new Set<string>();
     const portForwardLifecycles = new Map<
       string,
@@ -1103,7 +1092,6 @@ export function makeLocalCoderGateway(
         await claim.operation.catch(() => undefined);
         return closeWorkspaceConnection(workspaceId);
       }
-      workspaceLatencyMeasurements.delete(workspaceId);
       if (claim.scope !== undefined) {
         await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
       }
@@ -1113,31 +1101,6 @@ export function makeLocalCoderGateway(
         workspaceAttemptCounters.get(workspaceId) ?? 1,
         "disconnected",
       );
-    };
-
-    const measureWorkspaceLatency = (workspaceId: string): Promise<CoderHelperLatencySample> => {
-      const state = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
-      if (state._tag !== "Connected") {
-        return Promise.reject(new Error("Coder workspace is not connected."));
-      }
-      const helper = state.connection;
-      const existing = workspaceLatencyMeasurements.get(workspaceId);
-      if (existing?.helper === helper) return existing.sample;
-      const sample = runPromise(measureCoderHelperLatency(helper)).then((result) => {
-        const current = SynchronizedRef.getUnsafe(workspaceLifecycle(workspaceId));
-        if (current._tag !== "Connected" || current.connection !== helper) {
-          throw new Error("Coder workspace connection changed.");
-        }
-        return result;
-      });
-      workspaceLatencyMeasurements.set(workspaceId, { helper, sample });
-      const cleanup = () => {
-        if (workspaceLatencyMeasurements.get(workspaceId)?.sample === sample) {
-          workspaceLatencyMeasurements.delete(workspaceId);
-        }
-      };
-      void sample.then(cleanup, cleanup);
-      return sample;
     };
 
     const ensurePortForward = async (
@@ -1467,7 +1430,6 @@ export function makeLocalCoderGateway(
                 ?.filter((entry) => entry.workspaceId === workspaceId)
                 .map((entry) => entry.id) ?? [];
             workspaceSockets.get(workspaceId)?.close(1012, "Coder workspace state is changing.");
-            workspaceLatencyMeasurements.delete(workspaceId);
             if (claim.scope !== undefined) {
               await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
             }
@@ -1630,39 +1592,6 @@ export function makeLocalCoderGateway(
             "application/json; charset=utf-8",
             JSON.stringify({ events: [...diagnosticEventsFor(workspaceId)] }),
           );
-          return;
-        }
-        const latencyRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/latency$/);
-        if (request.method === "GET" && latencyRoute !== null && latencyRoute !== undefined) {
-          let workspaceId: string;
-          try {
-            workspaceId = decodeURIComponent(latencyRoute[1] ?? "");
-          } catch {
-            sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
-            return;
-          }
-          if (!profileConfig.workspaces.some((entry) => entry.id === workspaceId)) {
-            sendText(response, 404, "text/plain; charset=utf-8", "Unknown Coder workspace.");
-            return;
-          }
-          try {
-            const sample = await measureWorkspaceLatency(workspaceId);
-            sendText(
-              response,
-              200,
-              "application/json; charset=utf-8",
-              JSON.stringify({ sample }),
-            );
-          } catch (cause) {
-            const message =
-              cause instanceof Error ? cause.message : "Coder workspace latency failed.";
-            sendText(
-              response,
-              message === "Coder workspace is not connected." ? 409 : 502,
-              "text/plain; charset=utf-8",
-              message,
-            );
-          }
           return;
         }
         const resourceUsageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/metrics$/);
@@ -2281,7 +2210,6 @@ export function makeLocalCoderGateway(
           webSocket.close(1001, "Gateway stopped.");
         }
         workspaceSockets.clear();
-        workspaceLatencyMeasurements.clear();
         workspaceDiagnosticEvents.clear();
         workspaceAttemptCounters.clear();
         pendingWorkspaceUpgrades.clear();
