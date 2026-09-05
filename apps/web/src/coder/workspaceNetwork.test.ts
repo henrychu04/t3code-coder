@@ -68,6 +68,59 @@ describe("Coder workspace network probe cadence", () => {
     });
   });
 
+  it("keeps the fast interval until two consecutive fast results occur", async () => {
+    vi.useFakeTimers();
+    setCoderWorkspaceEnvironment("workspace-one", descriptor("environment-one"));
+    let call = 0;
+    const latencies = [300, 20, 20];
+    const probe = vi.fn(async () => latencies[Math.min(call++, latencies.length - 1)] ?? null);
+    startCoderWorkspaceNetworkSampler({ probe });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(probe).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(FAST_PROBE_INTERVAL_MS);
+    expect(probe).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(FAST_PROBE_INTERVAL_MS);
+    expect(probe).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(FAST_PROBE_INTERVAL_MS);
+    expect(probe).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(NOMINAL_PROBE_INTERVAL_MS);
+    expect(probe).toHaveBeenCalledTimes(4);
+  });
+
+  it("discards in-flight results from a replaced environment", async () => {
+    vi.useFakeTimers();
+    setCoderWorkspaceEnvironment("workspace-one", descriptor("environment-one"));
+    const probeCalls: Array<string | null> = [];
+    let resolveFirst: ((latencyMs: number | null) => void) | undefined;
+    startCoderWorkspaceNetworkSampler({
+      probe: (environmentId) => {
+        probeCalls.push(environmentId);
+        if (probeCalls.length === 1) {
+          return new Promise((resolve) => {
+            resolveFirst = resolve;
+          });
+        }
+        return Promise.resolve(40);
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(probeCalls).toHaveLength(1);
+
+    setCoderWorkspaceEnvironment("workspace-one", descriptor("environment-two"));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(probeCalls).toEqual(["environment-one", "environment-two"]);
+    expect(readCoderWorkspaceNetwork()["workspace-one"]).toMatchObject({ latencyMs: 40 });
+
+    resolveFirst?.(999);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(readCoderWorkspaceNetwork()["workspace-one"]).toMatchObject({ latencyMs: 40 });
+  });
+
   it("keeps the last sample and marks it stale when probes stop succeeding", async () => {
     vi.useFakeTimers();
     setCoderWorkspaceEnvironment("workspace-one", descriptor("environment-one"));

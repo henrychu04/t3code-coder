@@ -28,8 +28,16 @@ export function nextCoderSlowSampleCount(current: number, latencyMs: number): nu
   return latencyMs >= SLOW_NETWORK_LATENCY_MS ? Math.min(2, current + 1) : Math.max(0, current - 1);
 }
 
-export function nextCoderProbeIntervalMs(slowCount: number): number {
-  return slowCount > 0 ? FAST_PROBE_INTERVAL_MS : NOMINAL_PROBE_INTERVAL_MS;
+/**
+ * Number of consecutive fast results still required before probing may return
+ * to the nominal interval. Recovery is tracked separately from the slow-chip
+ * count so one fast result keeps the fast cadence until the connection has
+ * proven itself twice.
+ */
+const FAST_RECOVERY_RESULTS = 2;
+
+export function nextCoderProbeIntervalMs(fastResultsRemaining: number): number {
+  return fastResultsRemaining > 0 ? FAST_PROBE_INTERVAL_MS : NOMINAL_PROBE_INTERVAL_MS;
 }
 
 const probeCommand = createEnvironmentRpcCommand(connectionAtomRuntime, {
@@ -55,6 +63,8 @@ interface WorkspaceSampler {
   sample: CoderWorkspaceNetworkSample | null;
   stale: boolean;
   slowCount: number;
+  fastResultsRemaining: number;
+  generation: number;
   inFlight: boolean;
   timer: ReturnType<typeof setTimeout> | undefined;
 }
@@ -80,10 +90,19 @@ function publish(): void {
   for (const listener of listeners) listener();
 }
 
-function applySample(sampler: WorkspaceSampler, latencyMs: number | null): void {
+function applySample(
+  sampler: WorkspaceSampler,
+  latencyMs: number | null,
+  probedEnvironmentId: EnvironmentId,
+): void {
   if (samplers.get(sampler.workspaceId) !== sampler) return;
+  if (sampler.environmentId !== probedEnvironmentId) return;
   if (latencyMs !== null) {
     sampler.slowCount = nextCoderSlowSampleCount(sampler.slowCount, latencyMs);
+    sampler.fastResultsRemaining =
+      latencyMs >= SLOW_NETWORK_LATENCY_MS
+        ? FAST_RECOVERY_RESULTS
+        : Math.max(0, sampler.fastResultsRemaining - 1);
     sampler.sample = { latencyMs, sampledAt: Date.now() };
     sampler.stale = false;
   } else if (
@@ -117,7 +136,7 @@ function scheduleProbe(sampler: WorkspaceSampler): void {
   sampler.timer = setTimeout(() => {
     sampler.timer = undefined;
     void runProbe(sampler);
-  }, nextCoderProbeIntervalMs(sampler.slowCount));
+  }, nextCoderProbeIntervalMs(sampler.fastResultsRemaining));
 }
 
 async function runProbe(sampler: WorkspaceSampler): Promise<void> {
@@ -130,10 +149,20 @@ async function runProbe(sampler: WorkspaceSampler): Promise<void> {
     return;
   }
   sampler.inFlight = true;
-  const latencyMs = await probe(sampler.environmentId).catch(() => null);
+  const generation = sampler.generation;
+  const probedEnvironmentId = sampler.environmentId;
+  const latencyMs = await probe(probedEnvironmentId).catch(() => null);
+  if (sampler.generation !== generation) return;
   sampler.inFlight = false;
-  applySample(sampler, latencyMs);
+  applySample(sampler, latencyMs, probedEnvironmentId);
   if (samplers.get(sampler.workspaceId) === sampler) scheduleProbe(sampler);
+}
+
+function resetSamplerState(sampler: WorkspaceSampler): void {
+  sampler.sample = null;
+  sampler.stale = false;
+  sampler.slowCount = 0;
+  sampler.fastResultsRemaining = 0;
 }
 
 function syncSamplers(): void {
@@ -142,7 +171,12 @@ function syncSamplers(): void {
     seen.add(entry.workspaceId);
     const existing = samplers.get(entry.workspaceId);
     if (existing !== undefined) {
+      if (existing.environmentId === entry.descriptor.environmentId) continue;
+      existing.generation += 1;
+      existing.inFlight = false;
       existing.environmentId = entry.descriptor.environmentId;
+      resetSamplerState(existing);
+      void runProbe(existing);
       continue;
     }
     const sampler: WorkspaceSampler = {
@@ -151,6 +185,8 @@ function syncSamplers(): void {
       sample: null,
       stale: false,
       slowCount: 0,
+      fastResultsRemaining: 0,
+      generation: 0,
       inFlight: false,
       timer: undefined,
     };
