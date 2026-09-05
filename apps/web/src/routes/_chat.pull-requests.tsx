@@ -80,6 +80,7 @@ import {
 } from "../components/pullRequest/pullRequestList.logic";
 import {
   pullRequestListPreferences,
+  restorePullRequestListPreferences,
   type PullRequestListPreferencePatch,
   type PullRequestListPreferences,
   type PullRequestListSort,
@@ -249,47 +250,52 @@ function pullRequestSearchLabels(raw: unknown): Partial<Pick<PullRequestsSearch,
 }
 
 export const Route = createFileRoute("/_chat/pull-requests")({
-  validateSearch: (raw: Record<string, unknown>): PullRequestsSearch => ({
-    involvement:
-      raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
-    state:
-      raw.state === "closed" || raw.state === "merged" || raw.state === "all" ? raw.state : "open",
-    ...(SORT_OPTIONS.some((option) => option.value === raw.sort)
-      ? { sort: raw.sort as PullRequestListSort }
-      : {}),
-    ...(typeof raw.repository === "string" && raw.repository
-      ? { repository: raw.repository.slice(0, 200) }
-      : {}),
-    ...(typeof raw.number === "number" && Number.isInteger(raw.number) && raw.number > 0
-      ? { number: raw.number }
-      : {}),
-    ...(typeof raw.projectId === "string" && raw.projectId
-      ? { projectId: raw.projectId as ProjectId }
-      : {}),
-    ...(typeof raw.environmentId === "string" && raw.environmentId
-      ? { environmentId: raw.environmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.host === "string" && raw.host ? { host: raw.host.slice(0, 200) } : {}),
-    ...(typeof raw.selectedProjectId === "string" && raw.selectedProjectId
-      ? { selectedProjectId: raw.selectedProjectId as ProjectId }
-      : {}),
-    ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
-      ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
-      : {}),
-    ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
-    ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
-    ...(raw.review === "approved" ||
-    raw.review === "changes-requested" ||
-    raw.review === "review-required" ||
-    raw.review === "none"
-      ? { review: raw.review }
-      : {}),
-    ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
-    ...(typeof raw.author === "string" && raw.author.trim()
-      ? { author: raw.author.trim().slice(0, 200) }
-      : {}),
-    ...pullRequestSearchLabels(raw.labels),
-  }),
+  validateSearch: (input: Record<string, unknown>): PullRequestsSearch => {
+    const raw = restorePullRequestListPreferences(input);
+    return {
+      involvement:
+        raw.involvement === "reviewing" || raw.involvement === "authored" ? raw.involvement : "all",
+      state:
+        raw.state === "closed" || raw.state === "merged" || raw.state === "all"
+          ? raw.state
+          : "open",
+      ...(SORT_OPTIONS.some((option) => option.value === raw.sort)
+        ? { sort: raw.sort as PullRequestListSort }
+        : {}),
+      ...(typeof raw.repository === "string" && raw.repository
+        ? { repository: raw.repository.slice(0, 200) }
+        : {}),
+      ...(typeof raw.number === "number" && Number.isInteger(raw.number) && raw.number > 0
+        ? { number: raw.number }
+        : {}),
+      ...(typeof raw.projectId === "string" && raw.projectId
+        ? { projectId: raw.projectId as ProjectId }
+        : {}),
+      ...(typeof raw.environmentId === "string" && raw.environmentId
+        ? { environmentId: raw.environmentId as EnvironmentId }
+        : {}),
+      ...(typeof raw.host === "string" && raw.host ? { host: raw.host.slice(0, 200) } : {}),
+      ...(typeof raw.selectedProjectId === "string" && raw.selectedProjectId
+        ? { selectedProjectId: raw.selectedProjectId as ProjectId }
+        : {}),
+      ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
+        ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
+        : {}),
+      ...(typeof raw.q === "string" && raw.q ? { q: raw.q.slice(0, 200) } : {}),
+      ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
+      ...(raw.review === "approved" ||
+      raw.review === "changes-requested" ||
+      raw.review === "review-required" ||
+      raw.review === "none"
+        ? { review: raw.review }
+        : {}),
+      ...(raw.checks === "passing" || raw.checks === "failing" ? { checks: raw.checks } : {}),
+      ...(typeof raw.author === "string" && raw.author.trim()
+        ? { author: raw.author.trim().slice(0, 200) }
+        : {}),
+      ...pullRequestSearchLabels(raw.labels),
+    };
+  },
   component: PullRequestsRouteView,
 });
 

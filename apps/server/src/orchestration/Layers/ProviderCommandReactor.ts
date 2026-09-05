@@ -77,7 +77,7 @@ function toNonEmptyProviderInput(value: string | undefined): string | undefined 
 const isCompactCommandMessage = (message: {
   readonly role: string;
   readonly text: string;
-  readonly attachments?: ReadonlyArray<unknown>;
+  readonly attachments?: ReadonlyArray<unknown> | undefined;
 }): boolean =>
   message.role === "user" &&
   (message.attachments?.length ?? 0) === 0 &&
@@ -1178,9 +1178,15 @@ const make = Effect.gen(function* () {
 
     yield* ensureThreadWorktree(thread);
 
-    const isCompactCommand = isCompactCommandMessage(message);
+    // The Coder projection omits attachments; the turn intent owns them.
+    const isCompactCommand = isCompactCommandMessage({
+      ...message,
+      attachments: event.payload.attachments,
+    });
     const nonCompactUserMessageCount = thread.messages.filter(
-      (entry) => entry.role === "user" && !isCompactCommandMessage(entry),
+      (entry) =>
+        entry.role === "user" &&
+        !(entry.id === message.id ? isCompactCommand : isCompactCommandMessage(entry)),
     ).length;
     if (nonCompactUserMessageCount === 1 && !isCompactCommand) {
       const project = yield* resolveProject(thread.projectId);

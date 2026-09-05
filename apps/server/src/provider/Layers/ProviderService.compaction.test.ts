@@ -4,6 +4,7 @@ import {
   MessageId,
   ProviderDriverKind,
   ProviderInstanceId,
+  RuntimeRequestId,
   ThreadId,
   TurnId,
   type ProviderRuntimeEvent,
@@ -133,10 +134,83 @@ const harness = (
     );
     const context = yield* Layer.build(ProviderServiceLive.pipe(Layer.provide(dependencies)));
     const service = Context.get(context, ProviderService);
-    return { service, events, started, starts: () => starts };
+    const published = yield* Queue.unbounded<ProviderRuntimeEvent>();
+    yield* service.streamEvents.pipe(
+      Stream.runForEach((event) => Queue.offer(published, event)),
+      Effect.forkScoped,
+    );
+    yield* Effect.yieldNow;
+    return { service, events, published, started, starts: () => starts };
   });
 
 describe("ProviderService compaction lifecycle", () => {
+  for (const event of [
+    completed,
+    { ...baseEvent, type: "runtime.error", payload: { message: "Transient error" } },
+    { ...baseEvent, turnId, type: "turn.aborted", payload: { reason: "Other turn interrupted" } },
+  ] satisfies ProviderRuntimeEvent[]) {
+    it.effect(
+      `native compaction ignores unrelated ${event.type} and preserves request correlation`,
+      () =>
+        Effect.gen(function* () {
+          const h = yield* harness();
+          const fiber = yield* h.service
+            .compactThread(threadId, undefined, requestId)
+            .pipe(Effect.forkScoped);
+          yield* Deferred.await(h.started);
+          yield* Queue.offer(h.events, event);
+          assert.equal((yield* Queue.take(h.published)).type, event.type);
+          yield* Effect.yieldNow;
+          assert.match(
+            (yield* h.service.sendTurn({ threadId, input: "next" }).pipe(Effect.flip)).message,
+            /compaction may still be running/,
+          );
+          yield* Queue.offer(h.events, compacted);
+          yield* Fiber.join(fiber);
+          assert.equal(
+            (yield* Queue.take(h.published)).requestId,
+            RuntimeRequestId.make(requestId),
+          );
+        }).pipe(Effect.scoped),
+    );
+  }
+
+  for (const providerEmitsCompacted of [false, true]) {
+    it.effect(
+      `fallback publishes one correlated completion (native signal: ${providerEmitsCompacted})`,
+      () =>
+        Effect.gen(function* () {
+          const h = yield* harness({ native: false });
+          const fiber = yield* h.service
+            .compactThread(threadId, undefined, requestId)
+            .pipe(Effect.forkScoped);
+          yield* Deferred.await(h.started);
+          if (providerEmitsCompacted) yield* Queue.offer(h.events, { ...compacted, turnId });
+          yield* Queue.offer(h.events, completed);
+          yield* Fiber.join(fiber);
+          // A subsequent event is a barrier proving all compaction events were published.
+          const barrier = {
+            ...baseEvent,
+            eventId: EventId.make("barrier"),
+            type: "runtime.error",
+            payload: { message: "barrier" },
+          } satisfies ProviderRuntimeEvent;
+          yield* Queue.offer(h.events, barrier);
+          const seen: ProviderRuntimeEvent[] = [];
+          while (true) {
+            const event = yield* Queue.take(h.published);
+            if (event.eventId === barrier.eventId) break;
+            seen.push(event);
+          }
+          const completions = seen.filter(
+            (event) => event.type === "thread.state.changed" && event.payload.state === "compacted",
+          );
+          assert.equal(completions.length, 1);
+          assert.equal(completions[0]?.requestId, RuntimeRequestId.make(requestId));
+        }).pipe(Effect.scoped),
+    );
+  }
+
   it.effect("waits for native completion and rejects overlapping requests", () =>
     Effect.gen(function* () {
       const h = yield* harness();

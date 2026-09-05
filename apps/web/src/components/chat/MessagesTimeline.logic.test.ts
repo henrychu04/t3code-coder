@@ -994,6 +994,70 @@ describe("deriveMessagesTimelineRows", () => {
     expect(rows.some((row) => row.kind === "thinking")).toBe(false);
   });
 
+  it("does not revive a settled assistant when old-turn work arrives after a steer", () => {
+    const oldTurn = TurnId.make("old");
+    const newTurn = TurnId.make("new");
+    const message = (
+      id: string,
+      role: "user" | "assistant",
+      turnId: TurnId | null,
+      second: number,
+    ) => ({
+      id,
+      kind: "message" as const,
+      createdAt: `2026-01-01T00:00:0${second}Z`,
+      message: {
+        id: MessageId.make(id),
+        role,
+        text: id,
+        turnId,
+        streaming: false,
+        createdAt: `2026-01-01T00:00:0${second}Z`,
+        updatedAt: `2026-01-01T00:00:0${second}Z`,
+      },
+    });
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        message("original", "user", null, 0),
+        message("old-assistant", "assistant", oldTurn, 1),
+        message("steer", "user", null, 2),
+        {
+          id: "late-work",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:03Z",
+          entry: {
+            id: "late-work",
+            createdAt: "2026-01-01T00:00:03Z",
+            turnId: oldTurn,
+            tone: "tool",
+            label: "Late result",
+            toolLifecycleStatus: "completed",
+          },
+        },
+        message("new-assistant", "assistant", newTurn, 4),
+      ],
+      latestTurn: {
+        turnId: newTurn,
+        state: "running",
+        startedAt: "2026-01-01T00:00:02Z",
+        completedAt: null,
+      },
+      expandedTurnIds: new Set([oldTurn]),
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:02Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+    expect(rows.find((row) => row.id === "old-assistant")).toMatchObject({
+      showAssistantMeta: true,
+      showAssistantCopyButton: true,
+      assistantCopyStreaming: false,
+    });
+    expect(rows.find((row) => row.id === "new-assistant")).toMatchObject({
+      assistantCopyStreaming: true,
+    });
+  });
+
   it("keeps an actually running tool in the shared activity row", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [

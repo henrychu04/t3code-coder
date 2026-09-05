@@ -47,6 +47,51 @@ it.layer(NodeServices.layer)("Claude authentication status", (it) => {
       auth: "unknown",
       status: "warning",
     },
+    {
+      name: "API-key authentication succeeds",
+      output: '{"loggedIn":true}',
+      code: 0,
+      auth: "authenticated",
+      status: "ready",
+      tokenSource: "apiKey",
+      backendType: "apiKey",
+    },
+    {
+      name: "failed API-key auth retains identity without claiming readiness",
+      output: '{"loggedIn":false}',
+      code: 1,
+      auth: "unauthenticated",
+      status: "error",
+      tokenSource: "apiKey",
+      backendType: "apiKey",
+    },
+    {
+      name: "Bedrock authentication succeeds",
+      output: '{"loggedIn":true}',
+      code: 0,
+      auth: "authenticated",
+      status: "ready",
+      apiProvider: "bedrock",
+      backendType: "bedrock",
+    },
+    {
+      name: "Bedrock auth failure does not suggest OAuth login",
+      output: '{"loggedIn":false}',
+      code: 1,
+      auth: "unauthenticated",
+      status: "error",
+      apiProvider: "bedrock",
+      backendType: "bedrock",
+    },
+    {
+      name: "unknown Bedrock auth retains identity without trusting initialization",
+      output: "{}",
+      code: 0,
+      auth: "unknown",
+      status: "warning",
+      apiProvider: "bedrock",
+      backendType: "bedrock",
+    },
   ]) {
     it.effect(testCase.name, () =>
       Effect.gen(function* () {
@@ -71,8 +116,8 @@ it.layer(NodeServices.layer)("Claude authentication status", (it) => {
             Effect.succeed({
               email: "stale@example.com",
               subscriptionType: "pro",
-              tokenSource: "oauth",
-              apiProvider: "firstParty",
+              tokenSource: "tokenSource" in testCase ? testCase.tokenSource : "oauth",
+              apiProvider: "apiProvider" in testCase ? testCase.apiProvider : "firstParty",
               models: [],
               slashCommands: [],
               autoModeDisabled: true,
@@ -85,6 +130,12 @@ it.layer(NodeServices.layer)("Claude authentication status", (it) => {
         assert.equal(result.status, testCase.status);
         if (testCase.auth !== "authenticated") assert.equal(result.auth.email, undefined);
         assert.equal(result.message?.includes("private invalid output") ?? false, false);
+        if ("backendType" in testCase) {
+          assert.equal(result.auth.type, testCase.backendType);
+          assert.equal(result.message?.includes("claude auth login") ?? false, false);
+        } else if (testCase.auth !== "authenticated") {
+          assert.equal(result.auth.type, undefined);
+        }
       }),
     );
   }

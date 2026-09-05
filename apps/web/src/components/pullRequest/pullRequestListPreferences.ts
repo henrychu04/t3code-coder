@@ -103,6 +103,19 @@ export function readPullRequestListPreferences(
   }
 }
 
+/** Explicit URL controls win as a set; otherwise restore only presentation defaults. */
+export function restorePullRequestListPreferences(
+  search: Record<string, unknown>,
+  storage?: PreferenceStorage,
+): Record<string, unknown> {
+  if (
+    Object.keys(PullRequestListPreferencesSchema.fields).some((key) => search[key] !== undefined)
+  ) {
+    return search;
+  }
+  return { ...readPullRequestListPreferences(storage), ...search };
+}
+
 export function writePullRequestListPreferences(
   preferences: PullRequestListPreferences,
   storage?: PreferenceStorage,

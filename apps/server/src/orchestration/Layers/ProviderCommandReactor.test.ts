@@ -671,6 +671,39 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("sends an attached /compact as a normal first turn even though projections omit attachments", async () => {
+    const harness = await createHarness();
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.meta.update",
+        commandId: CommandId.make("seed-attached-compact"),
+        threadId: ThreadId.make("thread-1"),
+        title: "/compact",
+      }),
+    );
+    const attachments = [
+      { type: "image" as const, id: "12345678-1234-4123-8123-123456789abc.png" },
+    ];
+    await harness.runEffect(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-attached-compact"),
+        threadId: ThreadId.make("thread-1"),
+        message: { messageId: asMessageId("attached-compact"), role: "user", text: "/compact" },
+        attachments,
+        titleSeed: "/compact",
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    await harness.drain();
+    expect(harness.compactThread).not.toHaveBeenCalled();
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({ input: "/compact", attachments });
+    await waitFor(() => harness.generateThreadTitle.mock.calls.length === 1);
+  });
+
   it("routes /compact through provider compaction without starting a normal turn", async () => {
     const harness = await createHarness();
     const threadId = ThreadId.make("thread-1");

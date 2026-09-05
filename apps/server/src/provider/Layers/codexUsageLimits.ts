@@ -14,21 +14,15 @@ import type {
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import type * as CodexErrors from "effect-codex-app-server/errors";
+import type * as CodexSchema from "effect-codex-app-server/schema";
 
 import { clampPercent, makeUsageLimits } from "../providerUsageLimits.ts";
 
-interface CodexRateLimitWindow {
-  readonly usedPercent: number;
-  readonly resetsAt?: number | null;
-  readonly windowDurationMins?: number | null;
-}
-
-/** Structural view of the generated `RateLimitSnapshot`; both messages satisfy it. */
-export interface CodexRateLimitSnapshot {
-  readonly planType?: string | null;
-  readonly primary?: CodexRateLimitWindow | null;
-  readonly secondary?: CodexRateLimitWindow | null;
-}
+/** Derive the consumed fields so generated protocol changes are checked here. */
+export type CodexRateLimitSnapshot = Pick<
+  CodexSchema.V2GetAccountRateLimitsResponse["rateLimits"],
+  "planType" | "primary" | "secondary"
+>;
 
 const SESSION_MINS = 5 * 60;
 const WEEK_MINS = 7 * 24 * 60;

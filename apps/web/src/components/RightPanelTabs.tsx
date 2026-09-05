@@ -624,7 +624,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   useLayoutEffect(() => {
     updateTabScrollState();
-  }, [props.surfaces, updateTabScrollState]);
+  }, [props.surfaces, props.terminalLabelsById, updateTabScrollState]);
 
   useEffect(() => {
     const viewport = tabsRef.current;

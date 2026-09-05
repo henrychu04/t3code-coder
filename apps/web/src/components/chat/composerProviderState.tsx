@@ -66,6 +66,11 @@ type TraitsRenderInput = {
   isComposerOwned?: boolean;
 };
 
+/** The two retained workspace providers both implement manual compaction. */
+export function providerSupportsManualCompaction(provider: ProviderDriverKind): boolean {
+  return provider === "claudeAgent" || provider === "codex";
+}
+
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
   return isClaudeUltrathinkPrompt(prompt) ? "ultrathink" : "none";
 }

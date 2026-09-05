@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   pullRequestListPreferences,
   readPullRequestListPreferences,
+  restorePullRequestListPreferences,
   writePullRequestListPreferences,
 } from "./pullRequestListPreferences";
 
@@ -57,6 +58,36 @@ describe("remembered pull request list controls", () => {
     expect(
       pullRequestListPreferences({ involvement: "all", state: "open", sort: "updated" }),
     ).toEqual({ involvement: "all", state: "open", sort: "updated" });
+  });
+
+  it("restores direct visits without overriding explicit URL controls or restoring content", () => {
+    const storage = makeStorage();
+    storage.setItem(
+      "t3.pullRequests.preferences",
+      JSON.stringify({
+        involvement: "reviewing",
+        state: "merged",
+        sort: "updated",
+        q: "old secret",
+        host: "private",
+      }),
+    );
+    expect(restorePullRequestListPreferences({}, storage)).toEqual({
+      involvement: "reviewing",
+      state: "merged",
+      sort: "updated",
+    });
+    expect(restorePullRequestListPreferences({ q: "current query" }, storage)).toEqual({
+      involvement: "reviewing",
+      state: "merged",
+      sort: "updated",
+      q: "current query",
+    });
+    expect(restorePullRequestListPreferences({ state: "open", sort: "ready" }, storage)).toEqual({
+      state: "open",
+      sort: "ready",
+    });
+    expect(storage.getItem("t3.pullRequests.preferences")).not.toContain("secret");
   });
 
   it("falls back when storage is corrupt or unavailable", () => {

@@ -209,10 +209,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
   const timedOutNativeCompactions = new Set<ThreadId>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
-    Effect.succeed(event).pipe(
-      Effect.flatMap((canonicalEvent) => PubSub.publish(runtimeEventPubSub, canonicalEvent)),
-      Effect.asVoid,
-    );
+    PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
 
   const settleCompaction = (threadId: ThreadId, pending: PendingCompaction, terminal: string) =>
     Effect.gen(function* () {
@@ -341,11 +338,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
       }
       if (pending.native) {
         const compacted = isCompactedEvent(canonicalEvent);
-        const terminal = compacted ? "completed" : compactionTerminal(canonicalEvent);
         yield* publishRuntimeEvent(
           compacted ? withCompactionRequestId(canonicalEvent, pending) : canonicalEvent,
         );
-        if (terminal !== null) yield* settleCompaction(canonicalEvent.threadId, pending, terminal);
+        // Native compaction has no correlated turn id. Ordinary turn/error/abort
+        // events cannot prove it ended. Explicit session stop settles it separately.
+        if (compacted) yield* settleCompaction(canonicalEvent.threadId, pending, "completed");
         return;
       }
       if (

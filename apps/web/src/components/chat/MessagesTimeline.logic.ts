@@ -631,11 +631,13 @@ function deriveActiveVisualResponseTurnIds(input: {
   }
 
   const latestUserMessageIndex = lastUserMessageIndex(input.timelineEntries);
-  for (let index = latestUserMessageIndex + 1; index < input.timelineEntries.length; index += 1) {
+  const seenTurnIds = new Set<TurnId>();
+  for (let index = 0; index < input.timelineEntries.length; index += 1) {
     const turnId = timelineEntryTurnId(input.timelineEntries[index]!);
-    if (turnId !== null) {
-      turnIds.add(turnId);
-    }
+    if (turnId === null || seenTurnIds.has(turnId)) continue;
+    seenTurnIds.add(turnId);
+    // Delayed work from an earlier, steered turn is not a new visual response.
+    if (index > latestUserMessageIndex) turnIds.add(turnId);
   }
   return turnIds;
 }

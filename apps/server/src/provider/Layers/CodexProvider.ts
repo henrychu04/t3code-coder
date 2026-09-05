@@ -631,11 +631,13 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
   const snapshot = probeResult.success.value;
   const accountStatus = accountProbeStatus(snapshot.account);
   const usageLimits =
-    snapshot.account.account?.type === "apiKey"
-      ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
-      : snapshot.rateLimits
-        ? codexRateLimitsToLimits({ snapshot: snapshot.rateLimits, checkedAt })
-        : makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
+    accountStatus.auth.status === "unauthenticated"
+      ? undefined
+      : snapshot.account.account?.type === "apiKey"
+        ? makeUnavailableUsageLimits({ checkedAt, reason: "unsupported" })
+        : snapshot.rateLimits
+          ? codexRateLimitsToLimits({ snapshot: snapshot.rateLimits, checkedAt })
+          : makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
   const runtimeModesUnavailable =
     accountStatus.status === "ready" &&
     snapshot.models.length > 0 &&
@@ -653,7 +655,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
       version: snapshot.version ?? null,
       status: runtimeModesUnavailable ? "error" : accountStatus.status,
       auth: accountStatus.auth,
-      usageLimits,
+      ...(usageLimits ? { usageLimits } : {}),
       ...(runtimeModesUnavailable
         ? { message: "Codex workspace policy does not allow any supported access mode." }
         : accountStatus.message

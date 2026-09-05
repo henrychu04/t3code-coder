@@ -2013,7 +2013,7 @@ function liveWorkEntryLabel(
   return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
 }
 
-function buildToolCallExpandedBody(
+export function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
   visibleLabel: string,
@@ -2030,6 +2030,7 @@ function buildToolCallExpandedBody(
   const raw = workEntryRawCommand(workEntry);
   if (command === visibleLabel.trim()) {
     seen.add(command);
+    addBlock(raw);
   } else {
     addBlock(raw ?? command);
   }

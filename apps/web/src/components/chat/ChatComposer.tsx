@@ -117,6 +117,7 @@ import {
   renderProviderTraitsPicker,
   resolveAvailableRuntimeModes,
   resolveComposerRuntimeMode,
+  providerSupportsManualCompaction,
 } from "./composerProviderState";
 import { ContextWindowMeter } from "./ContextWindowMeter";
 import { resolveContextWindowModelDisplayName } from "./ContextWindowMeter.logic";
@@ -2373,8 +2374,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const compactCommandAvailable = providerSupportsManualCompaction(selectedProvider);
   const compactDisabled =
-    (selectedProvider !== "claudeAgent" && selectedProvider !== "codex") ||
+    !compactCommandAvailable ||
     !activeThreadId ||
     phase === "running" ||
     isComposerBusy ||
@@ -3992,9 +3994,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}
-                    onCompactContext={
-                      selectedProvider === "claudeAgent" ? compactThreadContext : undefined
-                    }
+                    onCompactContext={compactCommandAvailable ? compactThreadContext : undefined}
                     compactDisabled={compactDisabled}
                     compactDisabledReason={compactDisabledReason}
                   />

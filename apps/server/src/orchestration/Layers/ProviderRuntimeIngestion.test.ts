@@ -2088,7 +2088,7 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
-  it("flushes and completes buffered assistant text when user input is requested", async () => {
+  it("flushes async question text and preserves message-response routing without item.completed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -2129,6 +2129,7 @@ describe("ProviderRuntimeIngestion", () => {
       turnId: asTurnId("turn-buffered-user-input-flush"),
       requestId: ApprovalRequestId.make("req-buffered-user-input-flush"),
       payload: {
+        responseMode: "message",
         questions: [
           {
             id: "choice",
@@ -2153,6 +2154,12 @@ describe("ProviderRuntimeIngestion", () => {
         entry.id === "assistant:item-buffered-user-input-flush",
     );
     expect(message?.streaming).toBe(false);
+    expect(
+      thread.activities.find(
+        (activity: ProviderRuntimeTestActivity) =>
+          activity.id === "evt-user-input-requested-buffered-user-input-flush",
+      )?.payload,
+    ).toMatchObject({ responseMode: "message" });
   });
 
   it("does not create assistant segments for whitespace-only buffered text at approval boundaries", async () => {
