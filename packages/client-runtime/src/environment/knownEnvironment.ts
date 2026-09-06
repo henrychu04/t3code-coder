@@ -29,7 +29,7 @@ export function createKnownEnvironment(input: {
   };
 }
 
-export function attachEnvironmentDescriptor(
+function attachEnvironmentDescriptor(
   environment: KnownEnvironment,
   descriptor: ExecutionEnvironmentDescriptor,
 ): KnownEnvironment {

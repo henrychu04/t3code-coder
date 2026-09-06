@@ -46,10 +46,10 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
  * "load earlier" tap fetches 20 more. Sized so first paint on the heaviest
  * observed threads stays around 100K gzipped while median threads load fully.
  */
-export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
-export const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
-export const INITIAL_THREAD_TARGET_BYTES = 512 * 1024;
-export const OLDER_THREAD_PAGE_TARGET_BYTES = 1024 * 1024;
+const INITIAL_THREAD_USER_TURN_LIMIT = 10;
+const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
+const INITIAL_THREAD_TARGET_BYTES = 512 * 1024;
+const OLDER_THREAD_PAGE_TARGET_BYTES = 1024 * 1024;
 
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
@@ -652,7 +652,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   return state;
 });
 
-export function threadStateChanges(environmentId: EnvironmentIdType, threadId: ThreadIdType) {
+function threadStateChanges(environmentId: EnvironmentIdType, threadId: ThreadIdType) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(makeEnvironmentThreadState(threadId).pipe(Effect.map(SubscriptionRef.changes))),

@@ -1,14 +1,14 @@
-export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
+const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;
 
 /** The mobile app's own hand-tuned palette, which is not part of the built-in library. */
-export const MOBILE_DEFAULT_THEME_ID = "t3-code";
+const MOBILE_DEFAULT_THEME_ID = "t3-code";
 
 /**
  * Every palette the mobile app can render. Declared here so host-side tooling
  * (the app-store screenshot harness) can validate a requested theme without
  * importing React Native application code.
  */
-export const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
+const MOBILE_THEME_IDS = [MOBILE_DEFAULT_THEME_ID, ...BUILT_IN_THEME_IDS] as const;
 
 export type BuiltInThemeId = (typeof BUILT_IN_THEME_IDS)[number];
 export type MobileThemeId = (typeof MOBILE_THEME_IDS)[number];
@@ -735,11 +735,11 @@ export const BUILT_IN_THEMES: ReadonlyArray<ThemeDefinition> = [
   IRIS_THEME,
 ];
 
-export function getBuiltInTheme(id: string): ThemeDefinition | null {
+function getBuiltInTheme(id: string): ThemeDefinition | null {
   return BUILT_IN_THEMES.find((theme) => theme.id === id) ?? null;
 }
 
-export function getThemeColorsForAppearance(
+function getThemeColorsForAppearance(
   theme: ThemeDefinition,
   appearance: ThemeAppearance,
 ): ThemeColors | null {

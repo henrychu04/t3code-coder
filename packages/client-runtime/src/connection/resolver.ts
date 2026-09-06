@@ -20,7 +20,7 @@ function primarySocketUrl(wsBaseUrl: string): string {
   return url.toString();
 }
 
-export const make = Effect.succeed(
+const make = Effect.succeed(
   ConnectionResolver.of({
     prepare: Effect.fn("clientRuntime.connection.resolver.prepare")(function* (entry) {
       const target = entry.target;

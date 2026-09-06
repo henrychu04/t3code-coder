@@ -10,7 +10,7 @@ import * as Arr from "effect/Array";
 import * as Result from "effect/Result";
 import { detectSourceControlProviderFromRemoteUrl } from "./sourceControl.ts";
 
-export const WORKTREE_BRANCH_PREFIX = "t3code";
+const WORKTREE_BRANCH_PREFIX = "t3code";
 // Canonical form is `t3code/<8 hex>`. Older mobile builds generated `t3code/<uuid>`
 // via Crypto.randomUUID() (always RFC 4122 v4), so the matcher also accepts exactly
 // that shape — version nibble `4`, variant nibble `[89ab]` — to keep those threads
@@ -158,7 +158,7 @@ export function normalizeGitRemoteUrl(value: string): string {
 /**
  * Best-effort parse of a GitHub `owner/repo` identifier from common remote URL shapes.
  */
-export function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
+function parseGitHubRepositoryNameWithOwnerFromRemoteUrl(url: string | null): string | null {
   const trimmed = url?.trim() ?? "";
   if (trimmed.length === 0) {
     return null;

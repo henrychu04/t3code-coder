@@ -65,7 +65,7 @@ export interface EnvironmentRpcSubscriptionObservation {
   readonly input: unknown;
 }
 
-export class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
+class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
   readonly observe: (
     subscription: EnvironmentRpcSubscriptionObservation,
   ) => Effect.Effect<Effect.Effect<void>>;
@@ -75,7 +75,7 @@ export class EnvironmentRpcSubscriptionObserver extends Context.Reference<{
   }),
 }) {}
 
-export const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
+const isRpcClientError = Schema.is(RpcClientError.RpcClientError);
 
 export type EnvironmentRpcInput<TTag extends EnvironmentRpcTag> = Parameters<RpcMethod<TTag>>[0];
 

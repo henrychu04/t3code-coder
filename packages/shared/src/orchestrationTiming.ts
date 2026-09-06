@@ -39,7 +39,7 @@ function isLatestTurnSettled(
   return true;
 }
 
-export function deriveActiveWorkStartedAt(
+function deriveActiveWorkStartedAt(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
   sendStartedAt: string | null,

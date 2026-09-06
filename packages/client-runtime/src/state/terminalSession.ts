@@ -79,7 +79,7 @@ export const EMPTY_TERMINAL_SESSION_STATE = Object.freeze<TerminalSessionState>(
   version: 0,
 });
 
-export const DEFAULT_MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
+const DEFAULT_MAX_TERMINAL_BUFFER_BYTES = 512 * 1024;
 
 function terminalBufferStateFromSnapshot(
   snapshot: TerminalSessionSnapshot,

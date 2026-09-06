@@ -398,7 +398,7 @@ export function createRuntimeCommand<R, ER, W, A, E>(
   };
 }
 
-export function createRuntimeStreamCommand<R, ER, W, A, E>(
+function createRuntimeStreamCommand<R, ER, W, A, E>(
   runtime: Atom.AtomRuntime<R, ER>,
   options: {
     readonly label: string;
@@ -423,7 +423,7 @@ export function createRuntimeStreamCommand<R, ER, W, A, E>(
   };
 }
 
-export function reportAtomCommandResult(
+function reportAtomCommandResult(
   result: AtomCommandResult<unknown, unknown>,
   options: AtomCommandOptions = {},
   reporter: AtomCommandReporter = console,
@@ -753,11 +753,7 @@ export function createEnvironmentRpcCommand<R, ER, TTag extends EnvironmentUnary
   });
 }
 
-export function createEnvironmentRpcStreamCommand<
-  R,
-  ER,
-  TTag extends EnvironmentStreamCommandRpcTag,
->(
+function createEnvironmentRpcStreamCommand<R, ER, TTag extends EnvironmentStreamCommandRpcTag>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, ER>,
   options: {
     readonly label: string;

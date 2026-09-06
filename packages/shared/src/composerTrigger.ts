@@ -73,7 +73,7 @@ function isWhitespace(char: string): boolean {
  * placeholder characters (e.g. terminal context chips on web) can treat
  * those as token boundaries.
  */
-export function detectComposerTrigger(
+function detectComposerTrigger(
   text: string,
   cursorInput: number,
   isWhitespaceChar?: (char: string) => boolean,
@@ -141,7 +141,7 @@ export function detectComposerTrigger(
   };
 }
 
-export function replaceTextRange(
+function replaceTextRange(
   text: string,
   rangeStart: number,
   rangeEnd: number,

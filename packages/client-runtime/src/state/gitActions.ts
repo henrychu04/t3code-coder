@@ -42,7 +42,7 @@ export type GitActionRequestInput = Pick<
   "action" | "commitMessage" | "featureBranch" | "filePaths"
 >;
 
-export function buildGitActionProgressStages(input: {
+function buildGitActionProgressStages(input: {
   action: GitStackedAction;
   hasCustomCommitMessage: boolean;
   hasWorkingTreeChanges: boolean;
@@ -80,7 +80,7 @@ export function buildGitActionProgressStages(input: {
   return [...branchStages, ...commitStages, pushStage, ...prStages];
 }
 
-export function buildMenuItems(
+function buildMenuItems(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
   hasOriginRemote = true,
@@ -146,7 +146,7 @@ export function buildMenuItems(
   ];
 }
 
-export function resolveQuickAction(
+function resolveQuickAction(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
   isDefaultBranch = false,
@@ -281,7 +281,7 @@ export function resolveQuickAction(
   };
 }
 
-export function getGitActionDisabledReason(input: {
+function getGitActionDisabledReason(input: {
   item: GitActionMenuItem;
   gitStatus: VcsStatusResult | null;
   isBusy: boolean;
@@ -345,7 +345,7 @@ export function getGitActionDisabledReason(input: {
   return "Create PR is currently unavailable.";
 }
 
-export function requiresDefaultBranchConfirmation(
+function requiresDefaultBranchConfirmation(
   action: GitStackedAction,
   isDefaultBranch: boolean,
 ): boolean {
@@ -358,7 +358,7 @@ export function requiresDefaultBranchConfirmation(
   );
 }
 
-export function resolveDefaultBranchActionDialogCopy(input: {
+function resolveDefaultBranchActionDialogCopy(input: {
   action: DefaultBranchConfirmableAction;
   branchName: string;
   includesCommit: boolean;

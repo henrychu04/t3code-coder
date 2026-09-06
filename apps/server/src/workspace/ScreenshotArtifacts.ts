@@ -1,3 +1,4 @@
+import { readImageDimensions } from "@t3tools/shared/imageDimensions";
 import { detectImageMimeType } from "@t3tools/shared/imageSignature";
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace artifact storage is a Linux filesystem adapter.
 import { createHash, randomUUID } from "node:crypto";
@@ -171,6 +172,7 @@ export const make = Effect.gen(function* () {
       ),
     );
     if (!persisted) return undefined;
+    const dimensions = readImageDimensions(input.bytes);
 
     return {
       reference: {
@@ -178,6 +180,7 @@ export const make = Effect.gen(function* () {
         name: safeArtifactName(input.name, detectedMimeType),
         mimeType: detectedMimeType,
         sizeBytes: input.bytes.byteLength,
+        ...(dimensions ? { dimensions } : {}),
       },
       digest,
     } satisfies CapturedScreenshotArtifact;

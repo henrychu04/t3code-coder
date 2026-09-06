@@ -119,7 +119,7 @@ export const decodeJsonResult = <S extends Schema.Codec<unknown, unknown, never,
   };
 };
 
-export const decodeUnknownJsonResult = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decodeUnknownJsonResult = <S extends Schema.Codec<unknown, unknown, never, never>>(
   schema: S,
 ) => {
   const decode = Schema.decodeUnknownExit(Schema.fromJsonString(schema));

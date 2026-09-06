@@ -861,7 +861,7 @@ export function deriveAgentPanelModel({
  * Members ordered by urgency for the capped inline workflow card: running and
  * failed first, then waiting, then most recently updated.
  */
-export function workflowCardMembers(
+function workflowCardMembers(
   group: AgentPanelWorkflowGroup,
   limit: number,
 ): { readonly visible: ReadonlyArray<RuntimeSubagent>; readonly overflow: number } {
@@ -882,7 +882,7 @@ export function workflowCardMembers(
 }
 
 /** Kinds the timeline should not render as generic rows (fold input only). */
-export function isSubagentActivityKind(kind: string): boolean {
+function isSubagentActivityKind(kind: string): boolean {
   return (
     kind === "task.started" ||
     kind === "task.progress" ||
@@ -896,7 +896,7 @@ export function isSubagentActivityKind(kind: string): boolean {
  * Quiet-timeline guarantee: tool rows attributed to an owning agent belong in
  * the Agents surface, not the parent chat. Unattributed rows must stay.
  */
-export function isAgentAttributedToolActivity(activity: OrchestrationThreadActivity): boolean {
+function isAgentAttributedToolActivity(activity: OrchestrationThreadActivity): boolean {
   if (typeof activity.payload !== "object" || activity.payload === null) {
     return false;
   }
@@ -905,7 +905,7 @@ export function isAgentAttributedToolActivity(activity: OrchestrationThreadActiv
 }
 
 /** Timeline-bypassing synthesized child and workflow rows. */
-export function isTimelineBypassActivity(activity: OrchestrationThreadActivity): boolean {
+function isTimelineBypassActivity(activity: OrchestrationThreadActivity): boolean {
   if (typeof activity.payload !== "object" || activity.payload === null) {
     return false;
   }

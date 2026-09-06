@@ -25,11 +25,11 @@ const DEFAULT_TIMESTAMP_FORMAT: TimestampFormat = "locale";
 
 export const SidebarProjectSortOrder = Schema.Literals(["updated_at", "created_at", "manual"]);
 export type SidebarProjectSortOrder = typeof SidebarProjectSortOrder.Type;
-export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
+const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "updated_at";
 
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
-export const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
+const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -75,7 +75,7 @@ export const AppearanceContrast = Schema.Int.check(
   Schema.isBetween({ minimum: MIN_APPEARANCE_CONTRAST, maximum: MAX_APPEARANCE_CONTRAST }),
 );
 export type AppearanceContrast = typeof AppearanceContrast.Type;
-export const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
+const DEFAULT_APPEARANCE_CONTRAST: AppearanceContrast = 100;
 /**
  * Font size preferences, in CSS pixels. The ranges are deliberately narrow:
  * the interface size scales every rem-based dimension in the app, so the
@@ -115,7 +115,7 @@ const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
 export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill", "none"]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
-export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
+const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
 
 const ModelFavorites = Schema.Array(
   Schema.Struct({

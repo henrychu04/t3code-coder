@@ -60,7 +60,7 @@ export function getProviderOptionBooleanSelectionValue(
   return typeof value === "boolean" ? value : undefined;
 }
 
-export function getModelSelectionOptionValue(
+function getModelSelectionOptionValue(
   modelSelection: ModelSelection | null | undefined,
   id: string,
 ): string | boolean | undefined {
@@ -216,7 +216,7 @@ export function buildProviderOptionSelectionsFromDescriptors(
   return nextSelections.length > 0 ? nextSelections : undefined;
 }
 
-export function getModelSelectionOptionDescriptors(
+function getModelSelectionOptionDescriptors(
   modelSelection: ModelSelection | null | undefined,
   caps?: ModelCapabilities | null | undefined,
 ): ReadonlyArray<ProviderOptionDescriptor> {
@@ -367,7 +367,7 @@ function resolveModelSlug(model: string | null | undefined, provider: ProviderDr
   return normalized;
 }
 
-export function resolveModelSlugForProvider(
+function resolveModelSlugForProvider(
   provider: ProviderDriverKind,
   model: string | null | undefined,
 ): string {

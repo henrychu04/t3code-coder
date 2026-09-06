@@ -1,3 +1,4 @@
+import { ScreenshotArtifactPreview } from "./ScreenshotArtifactPreview";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
@@ -2311,20 +2312,7 @@ const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props: {
                 disabled={image?.status !== "loaded"}
                 onClick={() => setSelectedArtifactId(artifact.id)}
               >
-                <div className="flex aspect-video items-center justify-center overflow-hidden bg-background/70">
-                  {image?.status === "loaded" ? (
-                    <img
-                      alt={artifact.name}
-                      className="size-full object-contain"
-                      draggable={false}
-                      src={image.url}
-                    />
-                  ) : image?.status === "error" ? (
-                    <span className="px-2 text-center text-destructive text-xs">Unavailable</span>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">Loading…</span>
-                  )}
-                </div>
+                <ScreenshotArtifactPreview artifact={artifact} image={image} />
                 <span className="block truncate border-t border-border/45 px-2 py-1 text-muted-foreground text-xs">
                   {artifact.name}
                 </span>

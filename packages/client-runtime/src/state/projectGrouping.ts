@@ -74,7 +74,7 @@ export function derivePhysicalProjectKey(
   return derivePhysicalProjectKeyFromPath(project.environmentId, project.workspaceRoot);
 }
 
-export function deriveProjectGroupingOverrideKey(
+function deriveProjectGroupingOverrideKey(
   project: Pick<EnvironmentProject, "environmentId" | "workspaceRoot">,
 ): string {
   return derivePhysicalProjectKey(project);
@@ -152,7 +152,7 @@ export function deriveLogicalProjectKeyFromSettings(
   });
 }
 
-export function deriveProjectGroupLabel(input: {
+function deriveProjectGroupLabel(input: {
   readonly representative: Pick<EnvironmentProject, "title" | "repositoryIdentity">;
   readonly members: ReadonlyArray<Pick<EnvironmentProject, "title" | "repositoryIdentity">>;
 }): string {
