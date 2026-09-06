@@ -1017,8 +1017,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 // Handle exposed to ChatView
 // --------------------------------------------------------------------------
 
-const USAGE_LIMITS_COMMAND = { name: "usage-limits", description: "Show subscription limits" };
-
 export interface ChatComposerHandle {
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
@@ -1089,7 +1087,6 @@ export interface ChatComposerProps {
   sendDisabledReason: string | null;
   isPreparingWorktree: boolean;
   bannerItems: readonly ComposerBannerStackItem[];
-  onUsageLimitsCommand?: (() => void) | undefined;
   threadSyncPhase: ThreadSyncPhase | null;
   environmentUnavailable: {
     readonly label: string;
@@ -1618,16 +1615,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () =>
       mergeProviderSlashCommands(
         selectedProviderStatus?.slashCommands ?? [],
-        props.onUsageLimitsCommand
-          ? [
-              ...(projectSlashCommands.data ?? []).filter(
-                (command) => command.name !== USAGE_LIMITS_COMMAND.name,
-              ),
-              USAGE_LIMITS_COMMAND,
-            ]
-          : (projectSlashCommands.data ?? []),
+        projectSlashCommands.data ?? [],
       ),
-    [projectSlashCommands.data, selectedProviderStatus?.slashCommands, props.onUsageLimitsCommand],
+    [projectSlashCommands.data, selectedProviderStatus?.slashCommands],
   );
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
@@ -2218,7 +2208,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     };
   }, [readComposerSnapshot]);
 
-  const { onUsageLimitsCommand } = props;
   const onSelectComposerItem = useCallback(
     (item: ComposerCommandItem) => {
       if (composerSelectLockRef.current) return;
@@ -2268,17 +2257,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       if (item.type === "provider-slash-command") {
-        if (item.command.name === USAGE_LIMITS_COMMAND.name && onUsageLimitsCommand) {
-          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
-            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
-            focusEditorAfterReplace: false,
-          });
-          if (applied) {
-            setComposerHighlightedItemId(null);
-            onUsageLimitsCommand();
-          }
-          return;
-        }
         const replacement = `/${item.command.name} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
           snapshot.value,
@@ -2315,12 +2293,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
     },
-    [
-      applyPromptReplacement,
-      handleInteractionModeChange,
-      resolveActiveComposerTrigger,
-      onUsageLimitsCommand,
-    ],
+    [applyPromptReplacement, handleInteractionModeChange, resolveActiveComposerTrigger],
   );
 
   const onComposerMenuItemHighlighted = useCallback(

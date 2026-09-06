@@ -1,4 +1,3 @@
-import { usageLimitsBannerItem } from "./chat/ComposerUsageLimits";
 import { shallow } from "zustand/shallow";
 import { projectSettingsTarget } from "../projectSettingsTarget";
 import {
@@ -2118,45 +2117,6 @@ export default function ChatView(props: ChatViewProps) {
     const defaultInstanceId = defaultInstanceIdForDriver(selectedProvider);
     return providerStatuses.find((status) => status.instanceId === defaultInstanceId) ?? null;
   }, [activeProviderInstanceId, providerStatuses, selectedProvider]);
-  const usageLimitsKey =
-    activeProviderStatus === null
-      ? null
-      : [
-          routeThreadKey,
-          activeProviderStatus.instanceId,
-          activeThread?.latestTurn?.turnId ?? "",
-          activePendingApproval?.requestId ?? activePendingUserInput?.requestId ?? "",
-        ].join(":");
-  const [usageLimitsPanel, setUsageLimitsPanel] = useState<{
-    key: string;
-    threadKey: string;
-    openedAt: number;
-  } | null>(null);
-  if (usageLimitsPanel && usageLimitsKey !== null && usageLimitsPanel.key !== usageLimitsKey) {
-    setUsageLimitsPanel(null);
-  }
-  const usageLimitsOffered = activeProviderStatus?.usageLimits !== undefined;
-  const openUsageLimits = useCallback(() => {
-    if (usageLimitsKey !== null && usageLimitsOffered) {
-      setUsageLimitsPanel({ key: usageLimitsKey, threadKey: routeThreadKey, openedAt: Date.now() });
-    }
-  }, [usageLimitsKey, usageLimitsOffered, routeThreadKey]);
-  const usageLimitsBanner = useMemo(
-    () =>
-      usageLimitsPanel &&
-      usageLimitsPanel.key === usageLimitsKey &&
-      activeProviderStatus?.usageLimits
-        ? usageLimitsBannerItem(
-            `usage-limits:${usageLimitsPanel.key}:${usageLimitsPanel.openedAt}`,
-            activeProviderStatus.usageLimits,
-            () => setUsageLimitsPanel(null),
-          )
-        : null,
-    [usageLimitsPanel, usageLimitsKey, activeProviderStatus?.usageLimits],
-  );
-  const clearUsageLimitsFor = useCallback((threadKey: string) => {
-    setUsageLimitsPanel((current) => (current?.threadKey === threadKey ? null : current));
-  }, []);
   const providerStatusBannerKey = getProviderStatusBannerKey(activeProviderStatus);
   const [dismissedProviderStatusBannerKey, setDismissedProviderStatusBannerKey] = useState<
     string | null
@@ -4062,7 +4022,6 @@ export default function ChatView(props: ChatViewProps) {
       resumeCompactionBannerItem === null ? [] : [resumeCompactionBannerItem];
     if (!checkoutBranchMismatch || !showBranchMismatchBanner || !activeBranchMismatchKey) {
       return [
-        ...(usageLimitsBanner ? [usageLimitsBanner] : []),
         ...systemComposerBannerItems,
         ...backgroundLivenessItems,
         ...resumeCompactionItems,
@@ -4071,7 +4030,6 @@ export default function ChatView(props: ChatViewProps) {
       ];
     }
     return [
-      ...(usageLimitsBanner ? [usageLimitsBanner] : []),
       ...systemComposerBannerItems,
       ...backgroundLivenessItems,
       ...resumeCompactionItems,
@@ -4132,7 +4090,6 @@ export default function ChatView(props: ChatViewProps) {
     resumeCompactionBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
-    usageLimitsBanner,
     wokeThreadBannerItem,
   ]);
   useEffect(() => {
@@ -4606,18 +4563,6 @@ export default function ChatView(props: ChatViewProps) {
       terminalContexts: composerTerminalContexts,
       supplementalContextCount: composerReviewComments.length,
     });
-    if (
-      trimmed === "/usage-limits" &&
-      usageLimitsOffered &&
-      composerTerminalContexts.length === 0 &&
-      composerReviewComments.length === 0
-    ) {
-      openUsageLimits();
-      promptRef.current = "";
-      clearComposerDraftContent(composerDraftTarget);
-      composerRef.current?.resetCursorState();
-      return;
-    }
     if (showPlanFollowUpPrompt && activeProposedPlan) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
@@ -4801,7 +4746,6 @@ export default function ChatView(props: ChatViewProps) {
         }),
       );
     }
-    setUsageLimitsPanel(null);
     promptRef.current = "";
     clearComposerDraftContent(composerDraftTarget);
     composerRef.current?.resetCursorState();
@@ -5316,7 +5260,6 @@ export default function ChatView(props: ChatViewProps) {
       }
 
       if (failure === null) {
-        clearUsageLimitsFor(routeThreadKey);
         acknowledgeActiveThreadWoke();
         sendInFlightRef.current = false;
         return;
@@ -5352,8 +5295,6 @@ export default function ChatView(props: ChatViewProps) {
       startThreadTurn,
       environmentId,
       composerRef,
-      clearUsageLimitsFor,
-      routeThreadKey,
     ],
   );
 
@@ -6017,7 +5958,6 @@ export default function ChatView(props: ChatViewProps) {
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
                             bannerItems={composerBannerItems}
-                            onUsageLimitsCommand={usageLimitsOffered ? openUsageLimits : undefined}
                             threadSyncPhase={activeEnvironmentUnavailable ? null : threadSyncPhase}
                             environmentUnavailable={activeEnvironmentUnavailableState}
                             activePendingApproval={activePendingApproval}
