@@ -56,6 +56,7 @@ it.layer(NodeServices.layer)("ScreenshotArtifacts", (it) => {
           name: "result.png",
           mimeType: "image/png",
           sizeBytes: ONE_PIXEL_PNG.byteLength,
+          dimensions: { width: 1, height: 1 },
         });
 
         const first = yield* artifacts.readChunk({

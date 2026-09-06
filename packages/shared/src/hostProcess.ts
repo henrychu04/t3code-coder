@@ -16,7 +16,7 @@ export const HostProcessArchitecture = Context.Reference<NodeJS.Architecture>(
   },
 );
 
-export const HostProcessHostname = Context.Reference<string>(
+const HostProcessHostname = Context.Reference<string>(
   "@t3tools/shared/hostProcess/HostProcessHostname",
   {
     defaultValue: () => NodeOS.hostname(),
@@ -37,14 +37,14 @@ export const HostProcessWorkingDirectory = Context.Reference<string>(
   },
 );
 
-export const HostProcessExecutablePath = Context.Reference<string>(
+const HostProcessExecutablePath = Context.Reference<string>(
   "@t3tools/shared/hostProcess/HostProcessExecutablePath",
   {
     defaultValue: () => process.execPath,
   },
 );
 
-export const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
+const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
   "@t3tools/shared/hostProcess/HostProcessArguments",
   {
     defaultValue: () => process.argv,
@@ -52,7 +52,7 @@ export const HostProcessArguments = Context.Reference<ReadonlyArray<string>>(
 );
 
 /** Undefined on platforms without POSIX uids (Windows). */
-export const HostProcessUserId = Context.Reference<number | undefined>(
+const HostProcessUserId = Context.Reference<number | undefined>(
   "@t3tools/shared/hostProcess/HostProcessUserId",
   {
     defaultValue: () => process.getuid?.(),

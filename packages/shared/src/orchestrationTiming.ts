@@ -28,7 +28,7 @@ export function formatDuration(durationMs: number): string {
   return parts.join(" ");
 }
 
-export function isLatestTurnSettled(
+function isLatestTurnSettled(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
 ): boolean {
@@ -39,7 +39,7 @@ export function isLatestTurnSettled(
   return true;
 }
 
-export function deriveActiveWorkStartedAt(
+function deriveActiveWorkStartedAt(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
   sendStartedAt: string | null,

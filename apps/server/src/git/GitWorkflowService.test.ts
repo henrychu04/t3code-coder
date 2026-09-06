@@ -607,6 +607,22 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         }
         return Effect.succeed(gitOutput());
       });
+      listChangeRequests.mockReturnValueOnce(
+        Effect.succeed([
+          {
+            provider: "gitlab" as const,
+            number: 42,
+            title: "Restore the panel",
+            url: "https://gitlab.example.com/group/project/-/merge_requests/42",
+            baseRefName: "main",
+            headRefName: "feature/panel",
+            state: "merged" as const,
+            updatedAt: Option.none(),
+            closedAt: null,
+            mergedAt: "2026-09-05T10:00:00.000Z",
+          },
+        ]),
+      );
       const service = yield* GitWorkflowService.GitWorkflowService;
 
       const result = yield* service.branchPullRequest({
@@ -614,7 +630,12 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         branch: "feature/panel",
       });
 
-      expect(result).toEqual({ state: "open", updatedAt: null });
+      expect(result).toEqual({
+        state: "merged",
+        updatedAt: null,
+        closedAt: null,
+        mergedAt: "2026-09-05T10:00:00.000Z",
+      });
       expect(listChangeRequests).toHaveBeenCalledWith({
         cwd: "/repo",
         headSelector: "feature/panel",
@@ -725,7 +746,7 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
 
       const result = yield* service.branchPullRequest({ cwd: "/repo", branch: "main" });
 
-      expect(result).toEqual({ state: "merged", updatedAt: null });
+      expect(result).toEqual({ state: "merged", updatedAt: null, closedAt: null, mergedAt: null });
       expect(execute).toHaveBeenCalledWith(
         expect.objectContaining({
           args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/upstream/HEAD"],
@@ -836,7 +857,7 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         branch: "feature/panel",
       });
 
-      expect(result).toEqual({ state: "merged", updatedAt: null });
+      expect(result).toEqual({ state: "merged", updatedAt: null, closedAt: null, mergedAt: null });
     }),
   );
 
@@ -898,7 +919,7 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         branch: "feature/panel",
       });
 
-      expect(result).toEqual({ state: "merged", updatedAt: null });
+      expect(result).toEqual({ state: "merged", updatedAt: null, closedAt: null, mergedAt: null });
     }),
   );
 });

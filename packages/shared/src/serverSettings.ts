@@ -22,7 +22,7 @@ const getProviderSettings = (
 ): ProviderSettings | undefined =>
   (settings.providers as Record<string, ProviderSettings | undefined>)[provider];
 
-export function isModelSelectionProviderEnabled(
+function isModelSelectionProviderEnabled(
   settings: ServerSettings,
   selection: ModelSelection,
 ): boolean {

@@ -8,7 +8,7 @@ interface ProjectScriptRuntimeEnvInput {
   extraEnv?: Record<string, string>;
 }
 
-export function projectScriptCwd(input: {
+function projectScriptCwd(input: {
   project: {
     cwd: string;
   };

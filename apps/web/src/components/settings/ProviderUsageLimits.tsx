@@ -32,11 +32,11 @@ export function ProviderUsageLimits({
           <div key={window.id} className="space-y-1">
             <div className="flex justify-between gap-2">
               <span>{window.label}</span>
-              <span>{Math.round(window.usedPercent)}% used</span>
+              <span>{Math.round(100 - window.usedPercent)}% left</span>
             </div>
             <progress
               aria-label={window.label}
-              value={window.usedPercent}
+              value={100 - window.usedPercent}
               max={100}
               className="h-1.5 w-full accent-primary"
             />

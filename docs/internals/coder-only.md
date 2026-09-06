@@ -289,7 +289,7 @@ returned directly by tool results. Tool-result images are captured as they arriv
 are captured when the turn completes. Both paths signature-validate PNG, JPEG, and WebP content,
 reject files larger than 20 MiB, deduplicate by content, cap capture at 10 images, and copy accepted
 bytes to generated paths beneath `$HOME/.t3-coder/artifacts`. The durable activity event contains
-only an opaque artifact ID, display name, MIME type, and byte count; tool-result base64 is removed
+only an opaque artifact ID, display name, MIME type, byte count, and optional pixel dimensions; tool-result base64 is removed
 before activity and turn history are persisted.
 
 ```text
@@ -298,6 +298,10 @@ provider image tool result -> in-memory image content --------+-> validate/dedup
                                                                 -> metadata-only activity row
 user expands Visual artifacts -> opaque-ID chunk RPC -> browser Blob URL -> thumbnail/lightbox
 ```
+
+The helper derives dimensions from a bounded header of the already validated captured bytes.
+The browser uses that metadata to reserve a bounded image frame while bytes load, and falls back
+to the existing frame for older artifacts without dimensions.
 
 The browser initially renders only a collapsed artifact count. Explicitly expanding it requests
 bounded 512 KiB chunks by opaque ID over the existing browser-to-helper RPC path. The browser joins

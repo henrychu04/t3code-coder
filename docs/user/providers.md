@@ -106,7 +106,7 @@ do not install a provider, perform login, or copy provider state to the local co
 
 ## Subscription limits
 
-The selected workspace provider shows its reported subscription windows, percentage used, and
+The selected workspace provider shows its reported subscription windows, percentage remaining, and
 reset times. Codex and Claude Code read these through their workspace CLI processes using existing
 logins. API-key accounts may not have subscription windows.
 

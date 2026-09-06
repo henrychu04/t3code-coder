@@ -1,8 +1,8 @@
+import { ScreenshotArtifactsRow } from "./ScreenshotArtifactsRow";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
   type EnvironmentId,
-  MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
   type MessageId,
   type ScopedThreadRef,
   type ScreenshotArtifactReference,
@@ -18,7 +18,6 @@ import {
   emptyAgentPanelModel,
   formatSubagentTokenCount,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 
 const EMPTY_AGENT_PANEL_MODEL = emptyAgentPanelModel();
 const NOOP_OPEN_AGENTS = () => {};
@@ -63,14 +62,12 @@ import {
   BrainIcon,
   CheckIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   EyeIcon,
   GlobeIcon,
   HammerIcon,
   MessageCircleIcon,
-  PaintbrushIcon,
   SearchIcon,
   SquarePenIcon,
   TerminalIcon,
@@ -127,9 +124,6 @@ import {
 } from "./userMessageTerminalContexts";
 import { SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
-import { projectEnvironment } from "../../state/projects";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import {
   buildReviewCommentRenderablePatch,
   formatReviewCommentFence,
@@ -2170,245 +2164,14 @@ const AgentSpawnCtaRow = memo(function AgentSpawnCtaRow(props: { workEntry: Time
   );
 });
 
-type ScreenshotImageState =
-  | { readonly status: "loading" }
-  | { readonly status: "error" }
-  | { readonly status: "loaded"; readonly url: string };
-
-function decodeBase64Bytes(value: string): ArrayBuffer {
-  const decoded = window.atob(value);
-  const bytes = new Uint8Array(decoded.length);
-  for (let index = 0; index < decoded.length; index += 1) bytes[index] = decoded.charCodeAt(index);
-  return bytes.buffer;
-}
-
-const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props: {
+function TimelineScreenshotArtifactsRow({
+  artifacts,
+}: {
   artifacts: ReadonlyArray<ScreenshotArtifactReference>;
 }) {
-  const { artifacts } = props;
   const { activeThreadEnvironmentId } = use(TimelineRowCtx);
-  const readArtifact = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
-    reportFailure: false,
-  });
-  const [expanded, setExpanded] = useState(false);
-  const [images, setImages] = useState<Record<string, ScreenshotImageState>>({});
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
-  const objectUrlsRef = useRef(new Set<string>());
-  const requestedArtifactIdsRef = useRef(new Set<string>());
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
-      objectUrlsRef.current.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!expanded) return;
-    for (const artifact of artifacts) {
-      if (requestedArtifactIdsRef.current.has(artifact.id)) continue;
-      requestedArtifactIdsRef.current.add(artifact.id);
-      setImages((current) => ({ ...current, [artifact.id]: { status: "loading" } }));
-      void (async () => {
-        try {
-          const chunks: ArrayBuffer[] = [];
-          let offset = 0;
-          let receivedBytes = 0;
-          while (true) {
-            const result = await readArtifact({
-              environmentId: activeThreadEnvironmentId,
-              input: {
-                artifactId: artifact.id,
-                offset,
-                limit: MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
-              },
-            });
-            if (result._tag !== "Success") throw squashAtomCommandFailure(result);
-            const chunk = decodeBase64Bytes(result.value.dataBase64);
-            const expectedNextOffset = offset + chunk.byteLength;
-            if (
-              result.value.offset !== offset ||
-              result.value.totalBytes !== artifact.sizeBytes ||
-              chunk.byteLength === 0 ||
-              expectedNextOffset > artifact.sizeBytes ||
-              (result.value.nextOffset !== null && result.value.nextOffset !== expectedNextOffset)
-            ) {
-              throw new Error("Invalid screenshot artifact chunk.");
-            }
-            chunks.push(chunk);
-            receivedBytes = expectedNextOffset;
-            if (result.value.nextOffset === null) {
-              if (receivedBytes !== artifact.sizeBytes) {
-                throw new Error("Incomplete screenshot artifact.");
-              }
-              break;
-            }
-            offset = result.value.nextOffset;
-          }
-          const url = URL.createObjectURL(new Blob(chunks, { type: artifact.mimeType }));
-          if (!mountedRef.current) {
-            URL.revokeObjectURL(url);
-            return;
-          }
-          objectUrlsRef.current.add(url);
-          setImages((current) => ({
-            ...current,
-            [artifact.id]: { status: "loaded", url },
-          }));
-        } catch {
-          if (!mountedRef.current) return;
-          setImages((current) => ({ ...current, [artifact.id]: { status: "error" } }));
-        }
-      })();
-    }
-  }, [activeThreadEnvironmentId, artifacts, expanded, readArtifact]);
-
-  const selectedArtifactIndex = artifacts.findIndex(
-    (artifact) => artifact.id === selectedArtifactId,
-  );
-  const selectedArtifact = artifacts[selectedArtifactIndex];
-  const selectedImage = selectedArtifact ? images[selectedArtifact.id] : undefined;
-  const canSelectPrevious = selectedArtifactIndex > 0;
-  const canSelectNext = selectedArtifactIndex >= 0 && selectedArtifactIndex < artifacts.length - 1;
-
-  const selectAdjacentArtifact = (offset: -1 | 1) => {
-    const artifact = artifacts[selectedArtifactIndex + offset];
-    if (artifact) setSelectedArtifactId(artifact.id);
-  };
-
-  return (
-    <div className="rounded-md px-0.5 py-0.5">
-      <button
-        type="button"
-        className="flex min-h-6 w-full items-center gap-1.5 rounded-md text-left text-sm leading-relaxed text-secondary-label transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <PaintbrushIcon className="size-4 stroke-[1.8] opacity-70" />
-        </span>
-        <span className="min-w-0 flex-1 truncate">Visual artifacts · {artifacts.length}</span>
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "me-0.5 size-3 shrink-0 opacity-70 transition-transform duration-200",
-            expanded && "rotate-180",
-          )}
-        />
-      </button>
-      {expanded ? (
-        <div className="ms-7 mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {artifacts.map((artifact) => {
-            const image = images[artifact.id];
-            return (
-              <button
-                key={artifact.id}
-                type="button"
-                className="min-w-0 overflow-hidden rounded-md border border-border/55 bg-muted/25 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:cursor-default"
-                disabled={image?.status !== "loaded"}
-                onClick={() => setSelectedArtifactId(artifact.id)}
-              >
-                <div className="flex aspect-video items-center justify-center overflow-hidden bg-background/70">
-                  {image?.status === "loaded" ? (
-                    <img
-                      alt={artifact.name}
-                      className="size-full object-contain"
-                      draggable={false}
-                      src={image.url}
-                    />
-                  ) : image?.status === "error" ? (
-                    <span className="px-2 text-center text-destructive text-xs">Unavailable</span>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">Loading…</span>
-                  )}
-                </div>
-                <span className="block truncate border-t border-border/45 px-2 py-1 text-muted-foreground text-xs">
-                  {artifact.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-      <Dialog
-        open={selectedArtifact !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setSelectedArtifactId(null);
-        }}
-      >
-        <DialogContent
-          className="max-h-[94vh] max-w-[94vw] overflow-hidden bg-background p-3"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft" && canSelectPrevious) {
-              event.preventDefault();
-              selectAdjacentArtifact(-1);
-            } else if (event.key === "ArrowRight" && canSelectNext) {
-              event.preventDefault();
-              selectAdjacentArtifact(1);
-            }
-          }}
-          showCloseButton
-        >
-          <DialogTitle className="sr-only">{selectedArtifact?.name ?? "Screenshot"}</DialogTitle>
-          <div className="flex min-h-0 flex-col gap-1">
-            <div className="relative flex min-h-48 min-w-64 items-center justify-center overflow-hidden">
-              {selectedImage?.status === "loaded" ? (
-                <img
-                  alt={selectedArtifact?.name ?? "Screenshot"}
-                  className="max-h-[calc(88vh-2.25rem)] w-full object-contain"
-                  draggable={false}
-                  src={selectedImage.url}
-                />
-              ) : (
-                <span className="text-muted-foreground text-sm">
-                  {selectedImage?.status === "error" ? "Screenshot unavailable" : "Loading…"}
-                </span>
-              )}
-              {artifacts.length > 1 ? (
-                <>
-                  <Button
-                    aria-label="Previous screenshot"
-                    className="absolute start-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
-                    disabled={!canSelectPrevious}
-                    onClick={() => selectAdjacentArtifact(-1)}
-                    size="icon-sm"
-                    variant="outline"
-                  >
-                    <ChevronLeftIcon />
-                  </Button>
-                  <Button
-                    aria-label="Next screenshot"
-                    className="absolute end-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
-                    disabled={!canSelectNext}
-                    onClick={() => selectAdjacentArtifact(1)}
-                    size="icon-sm"
-                    variant="outline"
-                  >
-                    <ChevronRightIcon />
-                  </Button>
-                </>
-              ) : null}
-            </div>
-            {artifacts.length > 1 ? (
-              <div
-                aria-live="polite"
-                className="flex min-w-0 items-center justify-center gap-1.5 text-center text-muted-foreground text-xs"
-              >
-                <span className="min-w-0 truncate">{selectedArtifact?.name}</span>
-                <span className="shrink-0">
-                  · {selectedArtifactIndex + 1} of {artifacts.length}
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
-  );
-});
+  return <ScreenshotArtifactsRow environmentId={activeThreadEnvironmentId} artifacts={artifacts} />;
+}
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   workEntry: TimelineWorkEntry;
@@ -2421,7 +2184,7 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }
   if (workEntry.artifacts && workEntry.artifacts.length > 0) {
-    return <ScreenshotArtifactsRow artifacts={workEntry.artifacts} />;
+    return <TimelineScreenshotArtifactsRow artifacts={workEntry.artifacts} />;
   }
   return (
     <PlainWorkEntryRow
@@ -2539,10 +2302,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             )}
             aria-hidden
           >
-            <ChevronDownIcon
+            <ChevronRightIcon
               className={cn(
                 "size-3 shrink-0 text-icon-muted opacity-70 transition-transform duration-200",
-                expanded && "rotate-180",
+                expanded && "rotate-90",
               )}
             />
           </span>

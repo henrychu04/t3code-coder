@@ -37,7 +37,7 @@ function getRawSelectionValueById(
   return selection?.value;
 }
 
-export function getProviderOptionSelectionValue(
+function getProviderOptionSelectionValue(
   selections: ReadonlyArray<ProviderOptionSelection> | null | undefined,
   id: string,
 ): string | boolean | undefined {
@@ -60,7 +60,7 @@ export function getProviderOptionBooleanSelectionValue(
   return typeof value === "boolean" ? value : undefined;
 }
 
-export function getModelSelectionOptionValue(
+function getModelSelectionOptionValue(
   modelSelection: ModelSelection | null | undefined,
   id: string,
 ): string | boolean | undefined {
@@ -216,7 +216,7 @@ export function buildProviderOptionSelectionsFromDescriptors(
   return nextSelections.length > 0 ? nextSelections : undefined;
 }
 
-export function getModelSelectionOptionDescriptors(
+function getModelSelectionOptionDescriptors(
   modelSelection: ModelSelection | null | undefined,
   caps?: ModelCapabilities | null | undefined,
 ): ReadonlyArray<ProviderOptionDescriptor> {
@@ -309,11 +309,6 @@ export function readCustomModelEntries(value: unknown): CustomModelDefinition[] 
   return entries;
 }
 
-/** Slugs of a `customModels` setting, in stored order. */
-export function readCustomModelSlugs(value: unknown): string[] {
-  return readCustomModelEntries(value).map((entry) => entry.slug);
-}
-
 /**
  * Write a definition back to the compact stored shape: a bare slug when it
  * carries nothing custom, otherwise an entry with only the set fields.
@@ -372,7 +367,7 @@ function resolveModelSlug(model: string | null | undefined, provider: ProviderDr
   return normalized;
 }
 
-export function resolveModelSlugForProvider(
+function resolveModelSlugForProvider(
   provider: ProviderDriverKind,
   model: string | null | undefined,
 ): string {
@@ -380,7 +375,7 @@ export function resolveModelSlugForProvider(
 }
 
 /** Trim a string, returning null for empty/missing values. */
-export function trimOrNull<T extends string>(value: T | null | undefined): T | null {
+function trimOrNull<T extends string>(value: T | null | undefined): T | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim() as T;
   return trimmed || null;

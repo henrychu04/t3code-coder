@@ -14,9 +14,7 @@ export class ConnectionRegistration extends Schema.TaggedClass<ConnectionRegistr
 export const PlatformConnectionRegistration = ConnectionRegistration;
 export type PlatformConnectionRegistration = ConnectionRegistration;
 
-export function connectionRegistrationTarget(
-  registration: ConnectionRegistration,
-): ConnectionTarget {
+function connectionRegistrationTarget(registration: ConnectionRegistration): ConnectionTarget {
   return registration.target;
 }
 

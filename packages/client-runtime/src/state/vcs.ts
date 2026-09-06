@@ -47,7 +47,7 @@ function canUseVcsRefsCache(input: VcsListRefsInput): boolean {
   );
 }
 
-export const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh")(function* (
+const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh")(function* (
   registry: AtomRegistry.AtomRegistry,
   cache: EnvironmentCacheStore["Service"],
   input: {
@@ -113,7 +113,7 @@ export const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh"
  * partial result as a complete offline list would make branch selection
  * misleading.
  */
-export const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChanges")(function* (
+const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChanges")(function* (
   input: VcsListRefsInput,
   expectedRevision?: number,
   registry?: AtomRegistry.AtomRegistry,
@@ -211,7 +211,7 @@ export const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChange
   return Stream.concat(cachedRefs, refreshedRefs);
 });
 
-export function cachedVcsRefsChanges(
+function cachedVcsRefsChanges(
   environmentId: EnvironmentId,
   input: VcsListRefsInput,
   expectedRevision: number,
@@ -360,4 +360,3 @@ export function createVcsEnvironmentAtoms<R, E>(
 export * from "./gitActions.ts";
 export * from "./vcsAction.ts";
 export * from "./vcsRef.ts";
-export * from "./vcsStatus.ts";

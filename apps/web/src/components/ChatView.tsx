@@ -1817,6 +1817,9 @@ export default function ChatView(props: ChatViewProps) {
     thread: activeThread,
     selectedProvider: selectedProviderByThreadId,
     threadProvider,
+    providers:
+      (activeThread ? activeEnvironment : routeEnvironment)?.serverConfig?.providers ??
+      EMPTY_PROVIDERS,
   });
   // Once a thread selects an environment, never substitute another
   // environment's config while the selected environment is still loading.

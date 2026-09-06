@@ -73,7 +73,7 @@ function isWhitespace(char: string): boolean {
  * placeholder characters (e.g. terminal context chips on web) can treat
  * those as token boundaries.
  */
-export function detectComposerTrigger(
+function detectComposerTrigger(
   text: string,
   cursorInput: number,
   isWhitespaceChar?: (char: string) => boolean,
@@ -141,19 +141,7 @@ export function detectComposerTrigger(
   };
 }
 
-export function parseStandaloneComposerSlashCommand(
-  text: string,
-): Exclude<ComposerSlashCommand, "model"> | null {
-  const match = /^\/(plan|default)\s*$/i.exec(text.trim());
-  if (!match) {
-    return null;
-  }
-  const command = match[1]?.toLowerCase();
-  if (command === "plan") return "plan";
-  return "default";
-}
-
-export function replaceTextRange(
+function replaceTextRange(
   text: string,
   rangeStart: number,
   rangeEnd: number,

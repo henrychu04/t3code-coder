@@ -30,9 +30,9 @@ import {
   type ServerConfigProjection,
 } from "./serverConfigProjection.ts";
 
-export { applyServerConfigProjection, type ServerConfigProjection };
+export { type ServerConfigProjection };
 
-export function projectServerConfig(
+function projectServerConfig(
   current: Option.Option<ServerConfigProjection>,
   event: ServerConfigStreamEvent,
 ): readonly [Option.Option<ServerConfigProjection>, ReadonlyArray<ServerConfigProjection>] {
@@ -46,7 +46,7 @@ const cachedConfigSnapshotEvent = (config: ServerConfig): ServerConfigStreamEven
   config,
 });
 
-export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
+const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
   function* () {
     const supervisor = yield* EnvironmentSupervisor;
     const cache = yield* EnvironmentCacheStore;
@@ -124,7 +124,7 @@ export const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConf
   },
 );
 
-export function serverConfigStateChanges(environmentId: EnvironmentId) {
+function serverConfigStateChanges(environmentId: EnvironmentId) {
   return followStreamInEnvironment(
     environmentId,
     Stream.unwrap(
@@ -144,7 +144,7 @@ export function serverConfigStateChanges(environmentId: EnvironmentId) {
   );
 }
 
-export function projectServerWelcome(
+function projectServerWelcome(
   current: Option.Option<ServerLifecycleWelcomePayload>,
   event: { readonly type: "welcome" | "ready"; readonly payload: unknown },
 ): readonly [
@@ -156,7 +156,7 @@ export function projectServerWelcome(
   return [Option.some(welcome), [welcome]];
 }
 
-export function resolveServerConfigValue(
+function resolveServerConfigValue(
   projection: ServerConfigProjection | null,
   initialConfig: ServerConfig | null,
 ): ServerConfig | null {

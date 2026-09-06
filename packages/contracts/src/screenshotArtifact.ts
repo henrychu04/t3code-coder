@@ -18,10 +18,17 @@ export const ScreenshotArtifactMimeType = Schema.Literals([
 ]);
 export type ScreenshotArtifactMimeType = typeof ScreenshotArtifactMimeType.Type;
 
+export const ScreenshotArtifactDimensions = Schema.Struct({
+  width: PositiveInt.check(Schema.isLessThanOrEqualTo(0xffff_ffff)),
+  height: PositiveInt.check(Schema.isLessThanOrEqualTo(0xffff_ffff)),
+});
+export type ScreenshotArtifactDimensions = typeof ScreenshotArtifactDimensions.Type;
+
 export const ScreenshotArtifactReference = Schema.Struct({
   id: ScreenshotArtifactId,
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   mimeType: ScreenshotArtifactMimeType,
+  dimensions: Schema.optional(ScreenshotArtifactDimensions),
   sizeBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_BYTES)),
 });
 export type ScreenshotArtifactReference = typeof ScreenshotArtifactReference.Type;

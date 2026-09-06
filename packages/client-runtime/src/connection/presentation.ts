@@ -22,7 +22,7 @@ export interface EnvironmentPresentation {
   readonly serverConfig: ServerConfig | null;
 }
 
-export function presentConnectionState(
+function presentConnectionState(
   state: SupervisorConnectionState,
 ): EnvironmentConnectionPresentation {
   switch (state.phase) {
@@ -53,7 +53,7 @@ export function presentConnectionState(
   }
 }
 
-export function connectionStatusText(connection: EnvironmentConnectionPresentation): string {
+function connectionStatusText(connection: EnvironmentConnectionPresentation): string {
   switch (connection.phase) {
     case "available":
       return "Available";

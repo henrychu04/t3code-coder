@@ -43,7 +43,7 @@ export function scopeThread(
   return { ...thread, environmentId };
 }
 
-export function selectEnvironmentThreadShell(
+function selectEnvironmentThreadShell(
   snapshot: OrchestrationShellSnapshot | null,
   environmentId: EnvironmentId,
   threadId: ThreadId,

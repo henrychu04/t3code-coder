@@ -124,6 +124,7 @@ function awaitThreadState(
 
 const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (options?: {
   readonly cached?: OrchestrationThread;
+  readonly defect?: boolean;
   readonly olderSnapshot?: OrchestrationThreadDetailSnapshot;
   readonly olderSnapshotError?: Error;
   readonly olderSnapshotNever?: boolean;
@@ -144,7 +145,11 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   const streamFrom = (queue: Queue.Queue<TestThreadInput>) =>
     Stream.fromQueue(queue).pipe(
       Stream.mapEffect((input) =>
-        input instanceof Error ? Effect.fail(input) : Effect.succeed(input),
+        input instanceof Error
+          ? options?.defect
+            ? Effect.die(input)
+            : Effect.fail(input)
+          : Effect.succeed(input),
       ),
     );
   const client = {
@@ -726,6 +731,36 @@ describe("EnvironmentThreads", () => {
       expect(yield* Ref.get(harness.subscriptionCount)).toBe(2);
       expect(latest.status).toBe("deleted");
       expect(Option.isNone(latest.data)).toBe(true);
+    }),
+  );
+
+  it.effect("retains a terminated-load diagnostic across connection notifications", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeHarness({ cached: BASE_THREAD, defect: true });
+      yield* Queue.offer(harness.inputs, snapshot(BASE_THREAD));
+      yield* Queue.offer(harness.inputs, new Error("private protocol failure"));
+      const failed = yield* awaitThreadState(harness.observed, (value) =>
+        Option.isSome(value.error),
+      );
+      expect(Option.getOrThrow(failed.error)).toBe("Could not synchronize the thread.");
+      expect(failed.status).toBe("cached");
+      expect(Option.getOrThrow(failed.data)).toEqual(BASE_THREAD);
+      yield* SubscriptionRef.set(harness.supervisorState, {
+        desired: true,
+        network: "online",
+        phase: "connected",
+        stage: null,
+        attempt: 1,
+        generation: 1,
+        lastFailure: null,
+        retryAt: null,
+      });
+      for (let index = 0; index < 10; index += 1) yield* Effect.yieldNow;
+      expect(Option.getOrThrow((yield* Ref.get(harness.latest)).error)).toBe(
+        "Could not synchronize the thread.",
+      );
+      // A defect terminates the subscription; a connection notification must not hide it.
+      expect(yield* Ref.get(harness.subscriptionCount)).toBe(1);
     }),
   );
 

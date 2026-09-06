@@ -1,3 +1,4 @@
+import { useClipboardImageUpload } from "../../coder/useClipboardImageUpload";
 import type {
   ApprovalRequestId,
   EnvironmentId,
@@ -136,8 +137,6 @@ import {
   submitComposerDraft,
 } from "./composerSubmission";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
-import { uploadCoderClipboardImage } from "../../coder/api";
-import { coderWorkspaceIdForEnvironment } from "../../coder/environmentStore";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import {
@@ -1261,8 +1260,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     typeof composerDraftTarget === "string"
       ? `draft:${composerDraftTarget}`
       : `thread:${composerDraftTarget.environmentId}:${composerDraftTarget.threadId}`;
-  const clipboardUploadTargetRef = useRef(clipboardUploadTarget);
-  clipboardUploadTargetRef.current = clipboardUploadTarget;
 
   // ------------------------------------------------------------------
   // Store subscriptions
@@ -1528,7 +1525,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     restoreAfterTimelineReachedEnd,
   } = useComposerFocusState(isMobileViewport);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
-  const [isUploadingClipboardImages, setIsUploadingClipboardImages] = useState(false);
+  const { isUploading: isUploadingClipboardImages, upload: uploadClipboardImages } =
+    useClipboardImageUpload(environmentId, clipboardUploadTarget, setComposerSubmissionError);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -1564,7 +1562,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerScrollCollapseEligibleRef = useRef(false);
   const windowRefocusInFlightRef = useRef(false);
   const composerScrollGestureRef = useRef(createComposerScrollGestureState());
-  const clipboardImageUploadInFlightRef = useRef(false);
   const stashPulseKeyRef = useRef(0);
   const stashPulseTimeoutRef = useRef<number | null>(null);
 
@@ -2897,74 +2894,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
       return;
     }
-    if (clipboardImageUploadInFlightRef.current) {
-      setComposerSubmissionError("Wait for the current pasted image upload to finish.");
-      return;
-    }
     if (isComposerApprovalState || pendingUserInputs.length > 0 || projectSelectionRequired) {
       setComposerSubmissionError("Paste images after resolving the current composer prompt.");
       return;
     }
-    const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
-    if (workspaceId === null) {
-      setComposerSubmissionError("The Coder workspace is not connected.");
-      return;
-    }
     const snapshot = readComposerSnapshot();
-    const uploadTarget = clipboardUploadTarget;
-    for (const file of imageFiles) {
-      if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-        setComposerSubmissionError("Clipboard image must be PNG, JPEG, or WebP.");
-        return;
-      }
-      if (file.size > 20 * 1024 * 1024) {
-        setComposerSubmissionError("Clipboard image exceeds the 20 MiB limit.");
-        return;
-      }
-    }
-    setComposerSubmissionError(null);
-    clipboardImageUploadInFlightRef.current = true;
-    setIsUploadingClipboardImages(true);
-    void (async () => {
-      const paths: string[] = [];
-      const uploadTargetIsActive = () => clipboardUploadTargetRef.current === uploadTarget;
-      const insertUploadedPaths = () => {
-        if (paths.length === 0 || !uploadTargetIsActive()) return;
-        const links = paths.map((path) => serializeComposerFileLink(path)).join(" ");
-        const preceding = snapshot.value.slice(
-          Math.max(0, snapshot.expandedCursor - 1),
-          snapshot.expandedCursor,
-        );
-        const following = snapshot.value.slice(
-          snapshot.expandedCursor,
-          snapshot.expandedCursor + 1,
-        );
-        const replacement = `${preceding.length > 0 && !/\s/u.test(preceding) ? " " : ""}${links}${following.length === 0 || !/\s/u.test(following) ? " " : ""}`;
-        applyPromptReplacement(snapshot.expandedCursor, snapshot.expandedCursor, replacement);
-      };
-      try {
-        for (const file of imageFiles) {
-          paths.push(await uploadCoderClipboardImage(workspaceId, file));
-        }
-        if (!uploadTargetIsActive()) {
-          setComposerSubmissionError("Image upload finished after you left the thread.");
-          return;
-        }
-        insertUploadedPaths();
-      } catch (cause) {
-        if (!uploadTargetIsActive()) {
-          setComposerSubmissionError("Image upload finished after you left the thread.");
-          return;
-        }
-        insertUploadedPaths();
-        setComposerSubmissionError(
-          cause instanceof Error ? cause.message : "Clipboard image upload failed.",
-        );
-      } finally {
-        clipboardImageUploadInFlightRef.current = false;
-        setIsUploadingClipboardImages(false);
-      }
-    })();
+    void uploadClipboardImages(imageFiles, (paths) => {
+      const links = paths.map((path) => serializeComposerFileLink(path)).join(" ");
+      const preceding = snapshot.value.slice(
+        Math.max(0, snapshot.expandedCursor - 1),
+        snapshot.expandedCursor,
+      );
+      const following = snapshot.value.slice(snapshot.expandedCursor, snapshot.expandedCursor + 1);
+      const replacement = `${preceding.length > 0 && !/\s/u.test(preceding) ? " " : ""}${links}${following.length === 0 || !/\s/u.test(following) ? " " : ""}`;
+      applyPromptReplacement(snapshot.expandedCursor, snapshot.expandedCursor, replacement);
+    });
   };
 
   const handleInterruptPrimaryAction = useCallback(() => {

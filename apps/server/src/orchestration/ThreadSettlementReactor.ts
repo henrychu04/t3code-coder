@@ -105,7 +105,7 @@ export const make = Effect.gen(function* () {
         ) {
           return {
             state: "merged",
-            updatedAt: mergedPullRequest.mergedAt,
+            mergedAt: mergedPullRequest.mergedAt,
           } satisfies SettlementPullRequest;
         }
         if (!projects.has(thread.linkedPullRequest.projectId)) {
@@ -116,7 +116,11 @@ export const make = Effect.gen(function* () {
           repository: thread.linkedPullRequest.repository,
           number: thread.linkedPullRequest.number,
         });
-        return { state: detail.state, updatedAt: detail.updatedAt } satisfies SettlementPullRequest;
+        return {
+          state: detail.state,
+          closedAt: detail.closedAt,
+          mergedAt: detail.mergedAt,
+        } satisfies SettlementPullRequest;
       }
       if (thread.branch === null) return null;
       const cwd = lookupCwdByThreadId.get(thread.id);

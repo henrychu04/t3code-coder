@@ -155,6 +155,10 @@
     "./imageSignature": {
       "types": "./src/imageSignature.ts",
       "import": "./src/imageSignature.ts"
+    },
+    "./imageDimensions": {
+      "types": "./src/imageDimensions.ts",
+      "import": "./src/imageDimensions.ts"
     }
   },
   "scripts": {

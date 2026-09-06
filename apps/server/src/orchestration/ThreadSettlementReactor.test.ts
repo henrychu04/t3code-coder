@@ -224,11 +224,12 @@ describe("ThreadSettlementReactor", () => {
           yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
         const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
         const dispatched = yield* Queue.unbounded<AutoSettleCommand>();
+        const settings = { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null };
         const settingsService = ServerSettingsService.of({
           start: Effect.void,
           ready: Effect.void,
-          getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-          updateSettings: () => Effect.succeed(DEFAULT_SERVER_SETTINGS),
+          getSettings: Effect.succeed(settings),
+          updateSettings: () => Effect.succeed(settings),
           streamChanges: Stream.fromPubSub(settingsChanges),
           subscribeChanges: PubSub.subscribe(settingsChanges).pipe(
             Effect.map(Stream.fromSubscription),

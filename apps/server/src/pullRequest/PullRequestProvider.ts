@@ -76,6 +76,8 @@ export interface ProviderChangeRequest {
   readonly additions: number;
   readonly deletions: number;
   readonly createdAt: string;
+  readonly closedAt?: string | null;
+  readonly mergedAt?: string | null;
   readonly updatedAt: string;
   /** Accounts with a review requested. Team-level requests are excluded by each provider. */
   readonly reviewRequestLogins: ReadonlyArray<string>;

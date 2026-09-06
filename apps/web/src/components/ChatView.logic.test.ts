@@ -3,6 +3,7 @@ import {
   MessageId,
   ProjectId,
   ProviderInstanceId,
+  ProviderDriverKind,
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
@@ -21,6 +22,7 @@ import {
   codexArtifactTemplatePromptToAppend,
   createLocalDispatchSnapshot,
   deriveComposerSendState,
+  deriveLockedProvider,
   dismissBranchMismatchForSession,
   ENVIRONMENT_RECONNECT_WARNING_GRACE_MS,
   getStartedThreadModelChangeBlockReason,
@@ -992,5 +994,23 @@ describe("hasServerAcknowledgedLocalDispatch", () => {
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingApproval: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, hasPendingUserInput: true })).toBe(true);
     expect(hasServerAcknowledgedLocalDispatch({ ...common, threadError: "failed" })).toBe(true);
+  });
+});
+
+describe("provider lock for imported history", () => {
+  it("resolves a named provider instance to its driver for a started thread", () => {
+    expect(
+      deriveLockedProvider({
+        thread: makeThread({ latestTurn: completedTurn }),
+        selectedProvider: "codex",
+        threadProvider: "claude_work",
+        providers: [
+          {
+            instanceId: ProviderInstanceId.make("claude_work"),
+            driver: ProviderDriverKind.make("claudeAgent"),
+          },
+        ],
+      }),
+    ).toBe("claudeAgent");
   });
 });
