@@ -1,3 +1,7 @@
+import {
+  derivePendingRequests,
+  requestKindFromRequestType,
+} from "@t3tools/client-runtime/pending-requests";
 import { shallow } from "zustand/vanilla/shallow";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
@@ -340,196 +344,21 @@ export function deriveActiveWorkStartedAt(
   return sendStartedAt;
 }
 
-function requestKindFromRequestType(requestType: unknown): PendingApproval["requestKind"] | null {
-  switch (requestType) {
-    case "command_execution_approval":
-    case "exec_command_approval":
-    case "dynamic_tool_call":
-      return "command";
-    case "file_read_approval":
-      return "file-read";
-    case "file_change_approval":
-    case "apply_patch_approval":
-      return "file-change";
-    default:
-      return null;
-  }
-}
-
-function isStalePendingRequestFailureDetail(detail: string | undefined): boolean {
-  const normalized = detail?.toLowerCase();
-  if (!normalized) {
-    return false;
-  }
-  return (
-    normalized.includes("stale pending approval request") ||
-    normalized.includes("stale pending user-input request") ||
-    normalized.includes("unknown pending approval request") ||
-    normalized.includes("unknown pending permission request") ||
-    normalized.includes("unknown pending user-input request") ||
-    normalized.includes("unknown pending codex user-input request") ||
-    normalized.includes("unknown pending codex user input request") ||
-    normalized.includes("unknown pending user input request")
-  );
-}
-
 export function derivePendingApprovals(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): PendingApproval[] {
-  const openByRequestId = new Map<ApprovalRequestId, PendingApproval>();
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
-
-  for (const activity of ordered) {
-    const payload =
-      activity.payload && typeof activity.payload === "object"
-        ? (activity.payload as Record<string, unknown>)
-        : null;
-    const requestId =
-      payload && typeof payload.requestId === "string"
-        ? ApprovalRequestId.make(payload.requestId)
-        : null;
-    const requestKind =
-      payload &&
-      (payload.requestKind === "command" ||
-        payload.requestKind === "file-read" ||
-        payload.requestKind === "file-change")
-        ? payload.requestKind
-        : payload
-          ? requestKindFromRequestType(payload.requestType)
-          : null;
-    const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
-
-    if (activity.kind === "approval.requested" && requestId && requestKind) {
-      openByRequestId.set(requestId, {
-        requestId,
-        requestKind,
-        createdAt: activity.createdAt,
-        ...(detail ? { detail } : {}),
-      });
-      continue;
-    }
-
-    if (activity.kind === "approval.resolved" && requestId) {
-      openByRequestId.delete(requestId);
-      continue;
-    }
-
-    if (
-      activity.kind === "provider.approval.respond.failed" &&
-      requestId &&
-      isStalePendingRequestFailureDetail(detail)
-    ) {
-      openByRequestId.delete(requestId);
-      continue;
-    }
-  }
-
-  return [...openByRequestId.values()].toSorted((left, right) =>
-    left.createdAt.localeCompare(right.createdAt),
+  return derivePendingRequests(activities).approvals.filter(
+    (approval): approval is PendingApproval =>
+      approval.requestKind === "command" ||
+      approval.requestKind === "file-read" ||
+      approval.requestKind === "file-change",
   );
-}
-
-function parseUserInputQuestions(
-  payload: Record<string, unknown> | null,
-): ReadonlyArray<UserInputQuestion> | null {
-  const questions = payload?.questions;
-  if (!Array.isArray(questions)) {
-    return null;
-  }
-  const parsed = questions
-    .map<UserInputQuestion | null>((entry) => {
-      if (!entry || typeof entry !== "object") return null;
-      const question = entry as Record<string, unknown>;
-      if (
-        typeof question.id !== "string" ||
-        typeof question.header !== "string" ||
-        typeof question.question !== "string" ||
-        !Array.isArray(question.options)
-      ) {
-        return null;
-      }
-      const options = question.options
-        .map<UserInputQuestion["options"][number] | null>((option) => {
-          if (!option || typeof option !== "object") return null;
-          const optionRecord = option as Record<string, unknown>;
-          if (
-            typeof optionRecord.label !== "string" ||
-            typeof optionRecord.description !== "string"
-          ) {
-            return null;
-          }
-          return {
-            label: optionRecord.label,
-            description: optionRecord.description,
-            ...(typeof optionRecord.value === "string" ? { value: optionRecord.value } : {}),
-          };
-        })
-        .filter((option): option is UserInputQuestion["options"][number] => option !== null);
-      if (options.length === 0 && question.allowCustomAnswer === false) {
-        return null;
-      }
-      return {
-        id: question.id,
-        header: question.header,
-        question: question.question,
-        options,
-        multiSelect: question.multiSelect === true,
-        ...(typeof question.allowCustomAnswer === "boolean"
-          ? { allowCustomAnswer: question.allowCustomAnswer }
-          : {}),
-      };
-    })
-    .filter((question): question is UserInputQuestion => question !== null);
-  return parsed.length > 0 ? parsed : null;
 }
 
 export function derivePendingUserInputs(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): PendingUserInput[] {
-  const openByRequestId = new Map<ApprovalRequestId, PendingUserInput>();
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
-
-  for (const activity of ordered) {
-    const payload =
-      activity.payload && typeof activity.payload === "object"
-        ? (activity.payload as Record<string, unknown>)
-        : null;
-    const requestId =
-      payload && typeof payload.requestId === "string"
-        ? ApprovalRequestId.make(payload.requestId)
-        : null;
-    const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
-
-    if (activity.kind === "user-input.requested" && requestId) {
-      const questions = parseUserInputQuestions(payload);
-      if (!questions) {
-        continue;
-      }
-      openByRequestId.set(requestId, {
-        requestId,
-        createdAt: activity.createdAt,
-        questions,
-      });
-      continue;
-    }
-
-    if (activity.kind === "user-input.resolved" && requestId) {
-      openByRequestId.delete(requestId);
-      continue;
-    }
-
-    if (
-      activity.kind === "provider.user-input.respond.failed" &&
-      requestId &&
-      isStalePendingRequestFailureDetail(detail)
-    ) {
-      openByRequestId.delete(requestId);
-    }
-  }
-
-  return [...openByRequestId.values()].toSorted((left, right) =>
-    left.createdAt.localeCompare(right.createdAt),
-  );
+  return derivePendingRequests(activities).userInputs;
 }
 
 function planStateFromActivity(activity: OrchestrationThreadActivity): ActivePlanState | null {
@@ -1661,7 +1490,8 @@ function extractWorkLogRequestKind(
   ) {
     return payload.requestKind;
   }
-  return requestKindFromRequestType(payload?.requestType) ?? undefined;
+  const kind = requestKindFromRequestType(payload?.requestType);
+  return kind === "mcp-elicitation" ? undefined : (kind ?? undefined);
 }
 
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {

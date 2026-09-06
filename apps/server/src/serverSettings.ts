@@ -246,6 +246,7 @@ const resolveTextGenerationProvider = (settings: ServerSettings): ServerSettings
 const ATOMIC_SETTINGS_KEYS: ReadonlySet<string> = new Set([
   "textGenerationModelSelection",
   "sourceControlWriterModelSelection",
+  "defaultModelSelection",
 ]);
 
 function stripDefaultServerSettings(current: unknown, defaults: unknown): unknown | undefined {

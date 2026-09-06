@@ -124,10 +124,8 @@ import {
   type ChatMessage,
   type SessionPhase,
   type Thread,
-  type TurnDiffSummary,
 } from "../types";
 import { useTheme } from "../hooks/useTheme";
-import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { onOpenFileViewerCommand } from "../fileViewerCommandBus";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
@@ -2027,53 +2025,6 @@ export default function ChatView(props: ChatViewProps) {
     attachDraftHeroComposerAnchorRef,
     captureDraftHeroComposerRect,
   ] = useDraftHeroLayoutTransition(isDraftHeroState);
-  const { turnDiffSummaries, inferredCheckpointTurnCountByTurnId } =
-    useTurnDiffSummaries(activeThread);
-  const turnDiffSummaryByAssistantMessageId = useMemo(() => {
-    const byMessageId = new Map<MessageId, TurnDiffSummary>();
-    for (const summary of turnDiffSummaries) {
-      if (!summary.assistantMessageId) continue;
-      byMessageId.set(summary.assistantMessageId, summary);
-    }
-    return byMessageId;
-  }, [turnDiffSummaries]);
-  const previousRevertCountsRef = useRef(new Map<MessageId, number>());
-  const revertTurnCountByUserMessageId = useMemo(() => {
-    const byUserMessageId = new Map<MessageId, number>();
-    for (let index = 0; index < timelineEntries.length; index += 1) {
-      const entry = timelineEntries[index];
-      if (!entry || entry.kind !== "message" || entry.message.role !== "user") {
-        continue;
-      }
-
-      for (let nextIndex = index + 1; nextIndex < timelineEntries.length; nextIndex += 1) {
-        const nextEntry = timelineEntries[nextIndex];
-        if (!nextEntry || nextEntry.kind !== "message") {
-          continue;
-        }
-        if (nextEntry.message.role === "user") {
-          break;
-        }
-        const summary = turnDiffSummaryByAssistantMessageId.get(nextEntry.message.id);
-        if (!summary) {
-          continue;
-        }
-        const turnCount =
-          summary.checkpointTurnCount ?? inferredCheckpointTurnCountByTurnId[summary.turnId];
-        if (typeof turnCount !== "number") {
-          break;
-        }
-        byUserMessageId.set(entry.message.id, Math.max(0, turnCount - 1));
-        break;
-      }
-    }
-
-    if (shallow(previousRevertCountsRef.current, byUserMessageId))
-      return previousRevertCountsRef.current;
-    previousRevertCountsRef.current = byUserMessageId;
-    return byUserMessageId;
-  }, [inferredCheckpointTurnCountByTurnId, timelineEntries, turnDiffSummaryByAssistantMessageId]);
-
   const gitCwd = activeProject
     ? terminalCwd({
         projectRoot: activeProject.workspaceRoot,
@@ -2153,7 +2104,8 @@ export default function ChatView(props: ChatViewProps) {
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
-  const linkedThreadPullRequest = activeThread?.linkedPullRequest ?? null;
+  const linkedThreadPullRequest =
+    activeThread?.linkedPullRequest ?? activeThread?.branchPullRequest ?? null;
   const activeProjectRepository = gitLabRepository;
   const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
@@ -5607,18 +5559,10 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeThreadRef, isServerThread, onDiffPanelOpen],
   );
-  // Both the Map and the revert handler are read from refs at call-time so
-  // the callback reference is fully stable and never busts context identity.
-  const revertTurnCountRef = useRef(revertTurnCountByUserMessageId);
-  revertTurnCountRef.current = revertTurnCountByUserMessageId;
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
   onRevertToTurnCountRef.current = onRevertToTurnCount;
-  const onRevertUserMessage = useCallback((messageId: MessageId) => {
-    const targetTurnCount = revertTurnCountRef.current.get(messageId);
-    if (typeof targetTurnCount !== "number") {
-      return;
-    }
-    void onRevertToTurnCountRef.current(targetTurnCount);
+  const onRevertTimelineTurn = useCallback((turnCount: number) => {
+    void onRevertToTurnCountRef.current(turnCount);
   }, []);
 
   // Empty state: no active thread
@@ -5844,12 +5788,11 @@ export default function ChatView(props: ChatViewProps) {
                 timelineEntries={timelineEntries}
                 latestTurn={activeLatestTurn}
                 runningTurnId={activeRunningTurnId}
-                turnDiffSummaryByAssistantMessageId={turnDiffSummaryByAssistantMessageId}
+                turnDiffSummaries={activeThread.checkpoints}
                 activeThreadEnvironmentId={activeThread.environmentId}
                 routeThreadKey={routeThreadKey}
                 onOpenTurnDiff={onOpenTurnDiff}
-                revertTurnCountByUserMessageId={revertTurnCountByUserMessageId}
-                onRevertUserMessage={onRevertUserMessage}
+                onRevertToTurnCount={onRevertTimelineTurn}
                 onUseArtifactTemplate={useArtifactTemplate}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 markdownCwd={gitCwd ?? undefined}

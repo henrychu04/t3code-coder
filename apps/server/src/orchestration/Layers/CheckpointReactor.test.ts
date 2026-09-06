@@ -1,3 +1,4 @@
+import * as Deferred from "effect/Deferred";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -292,6 +293,7 @@ describe("CheckpointReactor", () => {
     readonly localStatusRefName?: string | null;
     readonly providerSessionCwd?: string;
     readonly providerName?: ProviderDriverKind;
+    readonly pullRequestRefresh?: Effect.Effect<void>;
     readonly gitStatusRefreshCalls?: Array<string>;
   }) {
     const cwd = createGitRepository();
@@ -326,7 +328,9 @@ describe("CheckpointReactor", () => {
       prefix: "t3-checkpoint-reactor-test-",
     });
     const pullRequestRefreshes: number[] = [];
-    const refreshAfterTurn = Effect.sync(() => void pullRequestRefreshes.push(1));
+    const refreshAfterTurn = Effect.sync(() => void pullRequestRefreshes.push(1)).pipe(
+      Effect.andThen(options?.pullRequestRefresh ?? Effect.void),
+    );
     const vcsStatusLayer = Layer.succeed(CoderVcsStatus, {
       refresh: (cwd: string) =>
         Effect.sync(() => {
@@ -582,6 +586,49 @@ describe("CheckpointReactor", () => {
           "README.md",
         ),
       ).toBe("v2\n");
+    }),
+  );
+
+  effectIt.effect("captures files while the pull request lookup is still pending", () =>
+    Effect.gen(function* () {
+      const lookupStarted = yield* Deferred.make<void>();
+      const finishLookup = yield* Deferred.make<void>();
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          seedFilesystemCheckpoints: false,
+          threadBranch: "t3code/feature",
+          localStatusRefName: "t3code/feature",
+          pullRequestRefresh: Deferred.succeed(lookupStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(finishLookup)),
+          ),
+        }),
+      );
+      NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), "completed turn\n");
+      harness.provider.emit({
+        type: "turn.completed",
+        eventId: EventId.make("evt-turn-completed-slow-pr"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId: ThreadId.make("thread-1"),
+        turnId: asTurnId("turn-slow-pr"),
+        payload: { state: "completed" },
+      });
+
+      yield* Deferred.await(lookupStarted);
+      yield* Effect.gen(function* () {
+        expect(yield* harness.nextReceipt).toMatchObject({
+          type: "checkpoint.diff.finalized",
+          turnId: "turn-slow-pr",
+        });
+        expect(
+          gitShowFileAtRef(
+            harness.cwd,
+            checkpointRefForThreadTurn(ThreadId.make("thread-1"), 1),
+            "README.md",
+          ),
+        ).toBe("completed turn\n");
+      }).pipe(Effect.ensuring(Deferred.succeed(finishLookup, undefined)));
+      yield* Effect.promise(harness.drain);
     }),
   );
 

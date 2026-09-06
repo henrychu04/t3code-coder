@@ -66,7 +66,7 @@ const EMPTY_SESSION_ATOM = Atom.make<OrchestrationSession | null>(null).pipe(
   Atom.withLabel("web-thread-session:empty"),
 );
 
-export const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
+const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("web-active-environment-id"),
 );

@@ -637,6 +637,30 @@ const make = Effect.gen(function* () {
     );
   });
 
+  // Workspace status and MR refreshes must not delay checkpoint file capture.
+  const statusRefreshWorker = yield* makeDrainableWorker(
+    ({
+      event,
+      refreshPullRequests,
+    }: {
+      event: Extract<ProviderRuntimeEvent, { type: "turn.completed" | "turn.aborted" }>;
+      refreshPullRequests: boolean;
+    }) =>
+      Effect.gen(function* () {
+        if (event.type === "turn.completed") yield* refreshLocalGitStatusAfterAgentCommand(event);
+        if (refreshPullRequests) yield* pullRequests.refreshAfterTurn;
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning("failed to refresh workspace status after turn completion", {
+                threadId: event.threadId,
+                cause: Cause.pretty(cause),
+              }),
+        ),
+      ),
+  );
+
   const ensurePreTurnBaselineFromDomainTurnStart = Effect.fn(
     "ensurePreTurnBaselineFromDomainTurnStart",
   )(function* (
@@ -902,19 +926,14 @@ const make = Effect.gen(function* () {
       if (isTrackedTurn) {
         startedTurns.delete(event.threadId);
       }
-      if (event.type === "turn.completed") {
-        yield* refreshLocalGitStatusAfterAgentCommand(event);
-      }
-      if (
+      const refreshPullRequests =
         turnId !== null &&
         thread !== undefined &&
         (isTrackedTurn ||
           sameId(thread.session?.activeTurnId, turnId) ||
-          (startedTurnId === undefined && !thread.session?.activeTurnId))
-      ) {
-        pendingTurns.delete(event.threadId);
-        yield* pullRequests.refreshAfterTurn;
-      }
+          (startedTurnId === undefined && !thread.session?.activeTurnId));
+      if (refreshPullRequests) pendingTurns.delete(event.threadId);
+      yield* statusRefreshWorker.enqueue({ event, refreshPullRequests });
       if (
         event.type === "turn.aborted" &&
         !isTrackedTurn &&
@@ -997,7 +1016,7 @@ const make = Effect.gen(function* () {
 
   return {
     start,
-    drain: worker.drain,
+    drain: worker.drain.pipe(Effect.andThen(statusRefreshWorker.drain)),
   } satisfies CheckpointReactorShape;
 });
 

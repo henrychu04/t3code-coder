@@ -80,11 +80,17 @@ export class GitWorkflowService extends Context.Service<
       options?: { readonly fetch?: boolean },
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
     /** Resolve the MR for a saved branch without changing the current checkout. */
-    readonly branchPullRequest: (input: {
-      readonly cwd: string;
-      readonly branch: string;
-    }) => Effect.Effect<
+    readonly branchPullRequest: (
+      input: {
+        readonly cwd: string;
+        readonly branch: string;
+      },
+      options?: { readonly refresh?: boolean },
+    ) => Effect.Effect<
       {
+        readonly number?: number;
+        readonly url?: string;
+        readonly repositoryKey?: string | null;
         readonly state: "open" | "closed" | "merged";
         readonly updatedAt: string | null;
         readonly closedAt?: string | null;
@@ -445,7 +451,7 @@ export const layer = Layer.effect(
 
     const branchPullRequest: GitWorkflowService["Service"]["branchPullRequest"] = Effect.fn(
       "GitWorkflowService.branchPullRequest",
-    )(function* ({ cwd, branch }) {
+    )(function* ({ cwd, branch }, options) {
       const remotes = yield* git.execute({
         operation: "GitWorkflowService.branchPullRequest.remotes",
         cwd,
@@ -564,6 +570,7 @@ export const layer = Layer.effect(
         identity.targetRemoteKey,
         String(prEpochByCwd.get(cwd) ?? 0),
       ].join("\0");
+      if (options?.refresh) yield* Cache.invalidate(branchPrCache, cacheKey);
       const cached = yield* Cache.get(branchPrCache, cacheKey);
       const currentIdentity = yield* readIdentity();
       if (
@@ -582,6 +589,9 @@ export const layer = Layer.effect(
         (defaultBranch === null && (branch === "main" || branch === "master"));
       if (branchIsDefault && cached.request.state !== "open") return null;
       return {
+        number: cached.request.number,
+        url: cached.request.url,
+        repositoryKey: currentIdentity.targetRemoteKey,
         state: cached.request.state,
         closedAt: cached.request.closedAt ?? null,
         mergedAt: cached.request.mergedAt ?? null,

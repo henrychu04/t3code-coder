@@ -74,19 +74,22 @@ const harness = (
           return { threadId, turnId };
         }),
       ...(options.native === false
-        ? {}
+        ? { compaction: { type: "slash-command" as const, command: "/compact" as const } }
         : {
-            compactThread: () =>
-              Effect.gen(function* () {
-                starts++;
-                yield* Deferred.succeed(started, undefined);
-                if (options.startFailure)
-                  return yield* new ProviderAdapterRequestError({
-                    provider,
-                    method: "thread/compact",
-                    detail: "start failed",
-                  });
-              }),
+            compaction: {
+              type: "native" as const,
+              start: () =>
+                Effect.gen(function* () {
+                  starts++;
+                  yield* Deferred.succeed(started, undefined);
+                  if (options.startFailure)
+                    return yield* new ProviderAdapterRequestError({
+                      provider,
+                      method: "thread/compact",
+                      detail: "start failed",
+                    });
+                }),
+            },
           }),
       interruptTurn: () => Effect.void,
       stopSession: () => Effect.void,

@@ -105,6 +105,13 @@ GitLab merge-request diffs are paged by file and capped below the gateway's 8 Mi
 host-backed full-file expansion is capped at 1 MiB of CLI output. These reads remain in browser or
 helper memory and are not persisted by the gateway.
 
+Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLab MR links at
+startup, after relevant thread changes, and periodically without an open browser. It uses the
+existing repository-scoped GitWorkflowService cache and glab-backed MR service, verifies both the
+branch and project repository identity before saving, and rejects updates after the lookup inputs
+change. Migration 048 adds the branch MR projection independently of explicit links. Settled-thread
+backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
+
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
 browser is connected. It resolves saved branches to GitLab merge requests without changing the

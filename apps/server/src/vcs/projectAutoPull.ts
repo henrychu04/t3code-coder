@@ -1,5 +1,8 @@
+import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
+import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import type {
   OrchestrationProjectShell,
+  ServerSettings,
   VcsStatusLocalResult,
   VcsStatusRemoteResult,
 } from "@t3tools/contracts";
@@ -53,11 +56,12 @@ export const pullProjectIfEligible = Effect.fn("pullProjectIfEligible")(function
 
 export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   projects: ReadonlyArray<OrchestrationProjectShell>,
+  settings: ServerSettings = DEFAULT_SERVER_SETTINGS,
 ) {
   const workspaceRoots = [
     ...new Set(
       projects
-        .filter((project) => project.autoPull === true)
+        .filter((project) => resolveProjectAutoPull(settings, project.id, project.autoPull))
         .map((project) => project.workspaceRoot),
     ),
   ];

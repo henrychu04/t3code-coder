@@ -361,6 +361,7 @@ export const OrchestrationThread = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -438,6 +439,7 @@ export const OrchestrationThreadShell = Schema.Struct({
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1045,6 +1047,23 @@ const ThreadTitleRegenerationCompleteCommand = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString),
 });
 
+const ThreadPullRequestSyncCommand = Schema.Struct({
+  type: Schema.Literal("thread.pull-request.sync"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  projectId: ProjectId,
+  snapshotSequence: NonNegativeInt,
+  expected: Schema.Struct({
+    workspaceRoot: TrimmedNonEmptyString,
+    branch: Schema.NullOr(TrimmedNonEmptyString),
+    worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+    linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
+    branchPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
+  }),
+  branchPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
+  linkedPullRequest: Schema.optional(ThreadLinkedPullRequest),
+});
+
 const InternalOrchestrationCommand = Schema.Union([
   ThreadAutoSettleCommand,
   ThreadSessionSetCommand,
@@ -1055,6 +1074,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadActivityAppendCommand,
   ThreadRevertCompleteCommand,
   ThreadTitleRegenerationCompleteCommand,
+  ThreadPullRequestSyncCommand,
 ]);
 export type InternalOrchestrationCommand = typeof InternalOrchestrationCommand.Type;
 
@@ -1226,6 +1246,7 @@ export const ThreadMetaUpdatedPayload = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   worktreePath: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
   linkedPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
+  branchPullRequest: Schema.optional(Schema.NullOr(ThreadLinkedPullRequest)),
   updatedAt: IsoDateTime,
 });
 

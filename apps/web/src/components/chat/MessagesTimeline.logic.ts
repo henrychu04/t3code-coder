@@ -4,6 +4,7 @@ import * as Equal from "effect/Equal";
 import { renderCodexDirectivesForCopy } from "@t3tools/client-runtime/codex-markdown-directives";
 import {
   formatDuration,
+  inferCheckpointTurnCountByTurnId,
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolSuccess,
   workEntryIndicatesToolNeutralStatus,
@@ -1159,7 +1160,68 @@ export function deriveMessagesTimelineRows(input: {
   return nextRows;
 }
 
-type MessagesTimelineRowsInput = Parameters<typeof deriveMessagesTimelineRows>[0];
+/** Match each user message to the next assistant checkpoint. */
+function buildRevertTurnCountByUserMessageId(input: {
+  timelineEntries: ReadonlyArray<TimelineEntry>;
+  turnDiffSummaryByAssistantMessageId: ReadonlyMap<MessageId, TurnDiffSummary>;
+  inferredCheckpointTurnCountByTurnId: Readonly<Record<string, number | undefined>>;
+}): Map<MessageId, number> {
+  const byUserMessageId = new Map<MessageId, number>();
+  const entryCount = input.timelineEntries.length;
+  for (let index = 0; index < entryCount; index += 1) {
+    const entry = input.timelineEntries[index];
+    if (!entry || entry.kind !== "message" || entry.message.role !== "user") {
+      continue;
+    }
+
+    for (let nextIndex = index + 1; nextIndex < input.timelineEntries.length; nextIndex += 1) {
+      const nextEntry = input.timelineEntries[nextIndex];
+      if (!nextEntry || nextEntry.kind !== "message") {
+        continue;
+      }
+      if (nextEntry.message.role === "user") {
+        break;
+      }
+      const summary = input.turnDiffSummaryByAssistantMessageId.get(nextEntry.message.id);
+      if (!summary) {
+        continue;
+      }
+      const turnCount =
+        summary.checkpointTurnCount ?? input.inferredCheckpointTurnCountByTurnId[summary.turnId];
+      if (typeof turnCount !== "number") {
+        break;
+      }
+      byUserMessageId.set(entry.message.id, Math.max(0, turnCount - 1));
+      break;
+    }
+  }
+  return byUserMessageId;
+}
+
+type MessagesTimelineRowsInput = Omit<
+  Parameters<typeof deriveMessagesTimelineRows>[0],
+  "turnDiffSummaryByAssistantMessageId" | "revertTurnCountByUserMessageId"
+> & {
+  turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
+};
+
+function deriveCheckpointRows(input: MessagesTimelineRowsInput): MessagesTimelineRow[] {
+  const turnDiffSummaryByAssistantMessageId = new Map<MessageId, TurnDiffSummary>();
+  for (const summary of input.turnDiffSummaries) {
+    if (summary.assistantMessageId)
+      turnDiffSummaryByAssistantMessageId.set(summary.assistantMessageId, summary);
+  }
+  const revertTurnCountByUserMessageId = buildRevertTurnCountByUserMessageId({
+    timelineEntries: input.timelineEntries,
+    turnDiffSummaryByAssistantMessageId,
+    inferredCheckpointTurnCountByTurnId: inferCheckpointTurnCountByTurnId(input.turnDiffSummaries),
+  });
+  return deriveMessagesTimelineRows({
+    ...input,
+    turnDiffSummaryByAssistantMessageId,
+    revertTurnCountByUserMessageId,
+  });
+}
 
 export interface MessagesTimelineRowsProjection {
   readonly input: MessagesTimelineRowsInput;
@@ -1208,7 +1270,7 @@ export function deriveMessagesTimelineRowsWithState(
     input,
     rows:
       (previous === null ? null : replaceStreamingMessageRows(input, previous)) ??
-      deriveMessagesTimelineRows(input),
+      deriveCheckpointRows(input),
   };
 }
 
