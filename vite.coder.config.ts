@@ -41,6 +41,8 @@ export default defineConfig({
       "apps/server/src/git/*.test.ts",
       "apps/server/src/vcs/*.test.ts",
       "apps/server/src/sourceControl/*.test.ts",
+      "apps/server/src/orchestration/ThreadSettlementPolicy.test.ts",
+      "apps/server/src/orchestration/ThreadSettlementReactor.test.ts",
       "apps/server/src/orchestration/Layers/CheckpointReactor.test.ts",
       "apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.test.ts",
       "apps/server/src/pathExpansion.test.ts",

@@ -20,8 +20,8 @@ describe("workspace subscription limits", () => {
         }}
       />,
     );
-    expect(html).toContain("25% used");
-    expect(html).toContain('value="25"');
+    expect(html).toContain("75% left");
+    expect(html).toContain('value="75"');
     expect(html).toContain("2026-09-04T14:00:00.000Z");
     expect(html).not.toContain("href=");
   });

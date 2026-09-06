@@ -1,3 +1,4 @@
+import { Spinner } from "~/components/ui/spinner";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import {
   type DiffLineAnnotation,
@@ -1896,7 +1897,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             </div>
           ) : props.relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-              <LoaderCircle className="size-5 animate-spin" />
+              <Spinner className="size-5" />
             </div>
           ) : props.relativePath && file.data ? (
             isMarkdown && renderMarkdown ? (

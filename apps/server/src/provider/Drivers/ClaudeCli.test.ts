@@ -264,9 +264,15 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   });
   try {
     await runtime.initializationResult();
-    await vi.waitFor(() => assert.ok(pause.mock.contexts.some((stream) => stream.isPaused())), {
-      timeout: 2000,
-    });
+    await vi.waitFor(
+      () =>
+        assert.ok(
+          pause.mock.contexts.some((stream) => stream instanceof Readable && stream.isPaused()),
+        ),
+      {
+        timeout: 2000,
+      },
+    );
     assert.deepEqual(await runtime.getSettings(2000), { ready: true });
     finishPrompt();
     const ids: string[] = [];

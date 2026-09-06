@@ -106,12 +106,17 @@ do not install a provider, perform login, or copy provider state to the local co
 
 ## Subscription limits
 
-The selected workspace provider shows its reported subscription windows, percentage used, and
+The selected workspace provider shows its reported subscription windows, percentage remaining, and
 reset times. Codex and Claude Code read these through their workspace CLI processes using existing
 logins. API-key accounts may not have subscription windows.
 
 These snapshots refresh with provider health checks, rather than continuously during a turn.
 The **Checked** time identifies the snapshot; an unavailable read is not shown as zero usage.
+Pick `/usage-limits` from the composer command menu, or send it as a message, to see the selected
+provider's limits above the composer. It uses the same workspace snapshot without running the agent
+or refreshing the provider. The command is offered when that provider has a limits snapshot. The
+panel closes when dismissed or when you send your next message.
+
 There are no external usage hubs, pricing lookups, or reset-credit redemption actions.
 
 When Claude reports a blocking usage limit during a turn, the conversation shows a warning.

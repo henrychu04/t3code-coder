@@ -84,7 +84,12 @@ export class GitWorkflowService extends Context.Service<
       readonly cwd: string;
       readonly branch: string;
     }) => Effect.Effect<
-      { readonly state: "open" | "closed" | "merged"; readonly updatedAt: string | null } | null,
+      {
+        readonly state: "open" | "closed" | "merged";
+        readonly updatedAt: string | null;
+        readonly closedAt?: string | null;
+        readonly mergedAt?: string | null;
+      } | null,
       GitManagerServiceError
     >;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
@@ -578,6 +583,8 @@ export const layer = Layer.effect(
       if (branchIsDefault && cached.request.state !== "open") return null;
       return {
         state: cached.request.state,
+        closedAt: cached.request.closedAt ?? null,
+        mergedAt: cached.request.mergedAt ?? null,
         updatedAt: Option.match(cached.request.updatedAt, {
           onNone: () => null,
           onSome: DateTime.formatIso,

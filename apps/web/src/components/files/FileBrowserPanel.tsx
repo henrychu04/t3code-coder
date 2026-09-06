@@ -1,7 +1,9 @@
+import { cn } from "~/lib/utils";
+import { RefreshIcon } from "~/components/ui/refresh-icon";
 import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
 import type { ContextMenuItem, ContextMenuOpenContext } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
-import { ChevronsDownUpIcon, ChevronsUpDownIcon, RotateCw } from "lucide-react";
+import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { Button } from "~/components/ui/button";
@@ -10,7 +12,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { cn } from "~/lib/utils";
 import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
@@ -213,7 +214,7 @@ export default function FileBrowserPanel(props: {
               />
             }
           >
-            <RotateCw className={cn(entriesQuery.isPending && "animate-spin")} />
+            <RefreshIcon refreshing={entriesQuery.isPending} />
           </TooltipTrigger>
           <TooltipPopup>{entriesQuery.isPending ? "Refreshing…" : "Refresh files"}</TooltipPopup>
         </Tooltip>
