@@ -81,3 +81,15 @@ it("does not start or connect if saving fails", async () => {
   expect(state.start).not.toHaveBeenCalled();
   expect(state.connectWorkspace).not.toHaveBeenCalled();
 });
+
+it.each(["starting", "unknown"] as const)(
+  "rejects %s workspaces before saving, starting, or connecting",
+  async (status) => {
+    await expect(connect("deployment", { ...workspace, status })).rejects.toThrow(
+      "Select a running or stopped workspace",
+    );
+    expect(state.saveConfig).not.toHaveBeenCalled();
+    expect(state.start).not.toHaveBeenCalled();
+    expect(state.connectWorkspace).not.toHaveBeenCalled();
+  },
+);

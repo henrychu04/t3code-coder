@@ -6,6 +6,11 @@ import { randomUUID } from "../lib/utils";
 export function useConnectDiscoveredWorkspace() {
   const { config, saveConfig, connectWorkspace } = useCoder();
   return async (deploymentId: string, workspace: DiscoveredCoderWorkspace) => {
+    if (workspace.status !== "running" && workspace.status !== "stopped") {
+      throw new Error(
+        "Select a running or stopped workspace. Refresh the workspace list and try again.",
+      );
+    }
     const existing = config.workspaces.find(
       (entry) => entry.deploymentId === deploymentId && entry.workspace === workspace.target,
     );

@@ -238,7 +238,10 @@ export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => voi
                       {workspaces.map((workspace) => (
                         <button
                           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-accent disabled:opacity-50"
-                          disabled={connectingTarget !== null || workspace.status === "starting"}
+                          disabled={
+                            connectingTarget !== null ||
+                            (workspace.status !== "running" && workspace.status !== "stopped")
+                          }
                           key={workspace.target}
                           onClick={() => void chooseWorkspace(workspace)}
                           type="button"
