@@ -312,3 +312,27 @@ describe("Coder helper connection", () => {
     deepStrictEqual(fake.killSignals, ["SIGTERM"]);
   });
 });
+
+it("does not hide a failed helper stop and retries the captured process", async () => {
+  const { child } = makeFakeHelperProcess();
+  const originalKill = child.kill.bind(child);
+  child.kill = () => false;
+  const scope = await Effect.runPromise(Scope.make("sequential"));
+  const connection = await Effect.runPromise(
+    connectCoderHelperEffect(
+      { executable: "coder", args: [] },
+      {
+        spawnProcess: () => child,
+        terminationGraceMs: 5,
+      },
+    ).pipe(Scope.provide(scope)),
+  );
+  try {
+    await rejects(Effect.runPromise(connection.close), /shutdown was not confirmed/);
+    child.kill = originalKill;
+    await Effect.runPromise(connection.close);
+  } finally {
+    child.kill = originalKill;
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});

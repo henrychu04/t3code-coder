@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, match, strictEqual } from "node:assert";
+import { deepStrictEqual, match, strictEqual, rejects } from "node:assert";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, it } from "node:test";
@@ -123,4 +123,91 @@ describe("Coder port forward process", () => {
 
     deepStrictEqual(signals, ["SIGTERM", "SIGKILL"]);
   });
+});
+
+it("reports an unconfirmed stop and allows retrying the same child", async () => {
+  const child = fakeChild();
+  const originalKill = child.kill;
+  child.kill = () => false;
+  const scope = await Effect.runPromise(Scope.make("sequential"));
+  const connection = await Effect.runPromise(
+    connectCoderPortForward(
+      { executable: "coder", args: [] },
+      {
+        spawnProcess: () => {
+          queueMicrotask(() => child.emit("spawn"));
+          return child as unknown as ChildProcess;
+        },
+        terminationGraceMs: 5,
+      },
+    ).pipe(Scope.provide(scope)),
+  );
+  try {
+    await rejects(Effect.runPromise(connection.close), /shutdown was not confirmed/);
+    strictEqual(child.listenerCount("exit"), 1);
+    child.kill = originalKill;
+    await Effect.runPromise(connection.close);
+    strictEqual((await Effect.runPromise(connection.closed)).expected, true);
+  } finally {
+    child.kill = originalKill;
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
+it("escalates a thrown graceful signal without falsely reporting exit", async () => {
+  const child = fakeChild();
+  const originalKill = child.kill;
+  child.kill = (signal) => {
+    if (signal === "SIGTERM") throw new Error("signal rejected");
+    return originalKill(signal);
+  };
+  const scope = await Effect.runPromise(Scope.make("sequential"));
+  const connection = await Effect.runPromise(
+    connectCoderPortForward(
+      { executable: "coder", args: [] },
+      {
+        spawnProcess: () => {
+          queueMicrotask(() => child.emit("spawn"));
+          return child as unknown as ChildProcess;
+        },
+        terminationGraceMs: 5,
+      },
+    ).pipe(Scope.provide(scope)),
+  );
+  try {
+    await Effect.runPromise(connection.close);
+    strictEqual((await Effect.runPromise(connection.closed)).signal, "SIGKILL");
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
+});
+
+it("does not treat a kill error event as process exit", async () => {
+  const child = fakeChild();
+  const originalKill = child.kill;
+  child.kill = (signal) => {
+    if (signal === "SIGTERM") {
+      child.emit("error", new Error("kill rejected"));
+      return false;
+    }
+    return originalKill(signal);
+  };
+  const scope = await Effect.runPromise(Scope.make("sequential"));
+  const connection = await Effect.runPromise(
+    connectCoderPortForward(
+      { executable: "coder", args: [] },
+      {
+        spawnProcess: () => {
+          queueMicrotask(() => child.emit("spawn"));
+          return child as unknown as ChildProcess;
+        },
+        terminationGraceMs: 5,
+      },
+    ).pipe(Scope.provide(scope)),
+  );
+  try {
+    await Effect.runPromise(connection.close);
+    strictEqual((await Effect.runPromise(connection.closed)).signal, "SIGKILL");
+  } finally {
+    await Effect.runPromise(Scope.close(scope, Exit.void));
+  }
 });

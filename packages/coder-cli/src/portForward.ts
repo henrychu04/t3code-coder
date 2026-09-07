@@ -55,7 +55,12 @@ const terminatePortForwardProcess = (
       process.closeRequested = true;
       if (Deferred.isDoneUnsafe(process.exit)) return Effect.void;
 
-      process.child.kill("SIGTERM");
+      // A failed signal is not an exit. Escalate, then require an exit event.
+      try {
+        process.child.kill("SIGTERM");
+      } catch {
+        /* Still try SIGKILL below. */
+      }
       return Deferred.await(process.exit).pipe(
         Effect.timeoutOption(terminationGraceMs),
         Effect.flatMap((exit) => {
@@ -63,14 +68,22 @@ const terminatePortForwardProcess = (
           if (process.child.exitCode === null && process.child.signalCode === null) {
             process.child.kill("SIGKILL");
           }
-          return Deferred.await(process.exit).pipe(Effect.asVoid);
+          return Deferred.await(process.exit).pipe(
+            Effect.timeoutOrElse({
+              duration: terminationGraceMs,
+              orElse: () =>
+                Effect.die(
+                  new CoderPortForwardError(
+                    "Coder process did not exit after SIGKILL; shutdown was not confirmed.",
+                  ),
+                ),
+            }),
+            Effect.asVoid,
+          );
         }),
       );
     }),
-  ).pipe(
-    Effect.catchCause(() => Effect.void),
-    Effect.ensuring(Effect.sync(process.cleanupListeners)),
-  );
+  ).pipe(Effect.tap(() => Effect.sync(process.cleanupListeners)));
 
 export function connectCoderPortForward(
   invocation: CoderInvocation,
@@ -135,8 +148,10 @@ export function connectCoderPortForward(
         const onSpawn = () => Deferred.doneUnsafe(spawned, Effect.void);
         const onError = (cause: Error) => {
           const error = new CoderPortForwardError("Coder port forward could not start.", { cause });
-          Deferred.doneUnsafe(spawned, Effect.fail(error));
-          completeExit(null, null, cause);
+          if (!Deferred.isDoneUnsafe(spawned)) {
+            Deferred.doneUnsafe(spawned, Effect.fail(error));
+            completeExit(null, null, cause);
+          }
         };
         const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
           if (!Deferred.isDoneUnsafe(spawned)) {

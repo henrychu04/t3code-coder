@@ -634,6 +634,7 @@ type WorkspaceCloseClaim =
       readonly _tag: "Close";
       readonly pending: Promise<WorkspaceConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
+      readonly previous: Extract<WorkspaceLifecycleState, { _tag: "Connected" }> | undefined;
     };
 
 type PortForwardStartClaim =
@@ -649,6 +650,7 @@ type PortForwardStopClaim =
       readonly _tag: "Stop";
       readonly pending: Promise<CoderPortForwardConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
+      readonly previous: Extract<PortForwardLifecycleState, { _tag: "Running" }> | undefined;
     };
 
 type WorkspaceActionClaim =
@@ -658,6 +660,7 @@ type WorkspaceActionClaim =
       readonly _tag: "Start";
       readonly pending: Promise<WorkspaceConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
+      readonly previous: Extract<WorkspaceLifecycleState, { _tag: "Connected" }> | undefined;
     };
 
 interface WorkspaceConnection {
@@ -1042,39 +1045,64 @@ export function makeLocalCoderGateway(
 
     const closeWorkspaceConnection = async (workspaceId: string): Promise<void> => {
       const lifecycle = workspaceLifecycle(workspaceId);
+      const deferred = makeDeferredPromise<void>();
       const claim = await runPromise(
         SynchronizedRef.modify<WorkspaceLifecycleState, WorkspaceCloseClaim>(lifecycle, (state) => {
-          if (state._tag === "Changing") {
-            return [{ _tag: "Changing" as const, operation: state.operation }, state];
-          }
+          if (state._tag === "Changing")
+            return [{ _tag: "Changing", operation: state.operation }, state];
           const generation = state.generation + 1;
-          if (state._tag === "Disconnected") {
-            return [{ _tag: "Closed" as const }, { _tag: "Disconnected", generation }];
-          }
+          if (state._tag === "Disconnected")
+            return [{ _tag: "Closed" }, { _tag: "Disconnected", generation }];
           return [
             {
-              _tag: "Close" as const,
+              _tag: "Close",
               pending: state._tag === "Connecting" ? state.operation : undefined,
               scope: state._tag === "Connected" ? state.scope : undefined,
+              previous: state._tag === "Connected" ? state : undefined,
             },
-            { _tag: "Disconnected", generation },
+            { _tag: "Changing", generation, action: "stop", operation: deferred.promise },
           ];
         }),
       );
       if (claim._tag === "Closed") return;
       if (claim._tag === "Changing") {
-        await claim.operation.catch(() => undefined);
+        await claim.operation;
         return closeWorkspaceConnection(workspaceId);
       }
-      if (claim.scope !== undefined) {
-        await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
-      }
-      if (claim.pending !== undefined) await claim.pending.catch(() => undefined);
-      recordDiagnosticEvent(
-        workspaceId,
-        workspaceAttemptCounters.get(workspaceId) ?? 1,
-        "disconnected",
-      );
+      void (async () => {
+        try {
+          if (claim.previous) await runPromise(claim.previous.connection.close);
+          if (claim.scope)
+            await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
+          if (claim.pending) await claim.pending.catch(() => undefined);
+          await runPromise(
+            SynchronizedRef.update(lifecycle, (state) =>
+              state._tag === "Changing" && state.operation === deferred.promise
+                ? { _tag: "Disconnected" as const, generation: state.generation }
+                : state,
+            ),
+          );
+          recordDiagnosticEvent(
+            workspaceId,
+            workspaceAttemptCounters.get(workspaceId) ?? 1,
+            "disconnected",
+          );
+          deferred.resolve(undefined);
+        } catch (cause) {
+          await runPromise(
+            SynchronizedRef.update(lifecycle, (state) =>
+              state._tag === "Changing" && state.operation === deferred.promise
+                ? (claim.previous ?? {
+                    _tag: "Disconnected" as const,
+                    generation: state.generation,
+                  })
+                : state,
+            ),
+          );
+          deferred.reject(cause);
+        }
+      })();
+      return deferred.promise;
     };
 
     const ensurePortForward = async (
@@ -1248,6 +1276,7 @@ export function makeLocalCoderGateway(
                 _tag: "Stop" as const,
                 pending: state._tag === "Starting" ? state.operation : undefined,
                 scope: state._tag === "Running" ? state.scope : undefined,
+                previous: state._tag === "Running" ? state : undefined,
               },
               { _tag: "Stopping", generation, operation: deferred.promise },
             ];
@@ -1258,6 +1287,7 @@ export function makeLocalCoderGateway(
       if (claim._tag === "Pending") return claim.operation;
       void (async () => {
         try {
+          if (claim.previous) await runPromise(claim.previous.connection.close);
           if (claim.scope !== undefined) {
             await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
           }
@@ -1271,6 +1301,17 @@ export function makeLocalCoderGateway(
           );
           deferred.resolve(undefined);
         } catch (cause) {
+          await runPromise(
+            SynchronizedRef.update(lifecycle, (state) =>
+              state._tag === "Stopping" && state.operation === deferred.promise
+                ? (claim.previous ?? {
+                    _tag: "Failed" as const,
+                    generation: state.generation,
+                    error: "Coder port forward shutdown failed.",
+                  })
+                : state,
+            ),
+          );
           deferred.reject(cause);
         }
       })();
@@ -1365,6 +1406,7 @@ export function makeLocalCoderGateway(
                 _tag: "Start" as const,
                 pending: state._tag === "Connecting" ? state.operation : undefined,
                 scope: state._tag === "Connected" ? state.scope : undefined,
+                previous: state._tag === "Connected" ? state : undefined,
               },
               {
                 _tag: "Changing" as const,
@@ -1389,6 +1431,7 @@ export function makeLocalCoderGateway(
           throw new WorkspaceActionConflictError(`Coder workspace is already ${activeAction}.`);
         }
         void (async () => {
+          let helperClosed = false;
           try {
             const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
             const deployment =
@@ -1404,6 +1447,8 @@ export function makeLocalCoderGateway(
                 ?.filter((entry) => entry.workspaceId === workspaceId)
                 .map((entry) => entry.id) ?? [];
             workspaceSockets.get(workspaceId)?.close(1012, "Coder workspace state is changing.");
+            if (claim.previous) await runPromise(claim.previous.connection.close);
+            helperClosed = true;
             if (claim.scope !== undefined) {
               await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
             }
@@ -1491,7 +1536,9 @@ export function makeLocalCoderGateway(
               await runPromise(
                 SynchronizedRef.update(lifecycle, (state) =>
                   state._tag === "Changing" && state.operation === deferred.promise
-                    ? ({ _tag: "Disconnected", generation: state.generation } as const)
+                    ? !helperClosed && claim.previous
+                      ? claim.previous
+                      : ({ _tag: "Disconnected", generation: state.generation } as const)
                     : state,
                 ),
               );
@@ -1681,7 +1728,6 @@ export function makeLocalCoderGateway(
           try {
             const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
             const savedConfig = await serializeConfigMutation(async () => {
-              if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
               const previousConfig = profileConfig;
               const stalePortForwardIds = new Set(
                 (previousConfig.portForwards ?? [])
@@ -1697,10 +1743,12 @@ export function makeLocalCoderGateway(
                 workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
                 workspaceLifecycles.delete(workspaceId);
               }
-              profileConfig = nextConfig;
-              await Promise.allSettled(
+              // Keep configuration and live handles until every requested stop succeeds.
+              await Promise.all(
                 [...stalePortForwardIds].map((portForwardId) => stopPortForward(portForwardId)),
               );
+              if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
+              profileConfig = nextConfig;
               for (const portForwardId of stalePortForwardIds) {
                 portForwardLifecycles.delete(portForwardId);
               }

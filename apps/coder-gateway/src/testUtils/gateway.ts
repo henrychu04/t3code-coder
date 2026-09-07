@@ -69,8 +69,8 @@ function acquireConnection<C extends { close: () => void; closed: Promise<unknow
                   ...connection,
                   close: () => {
                     if (!closed) {
-                      closed = true;
                       connection.close();
+                      closed = true;
                     }
                   },
                 }),

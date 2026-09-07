@@ -46,3 +46,12 @@ or choosing **Use default** for checkout mode restores inheritance. **Use worksp
 default** and **Use workspace default scripts** reset those individual overrides. Editing inherited
 scripts creates an independent project list; an explicit empty list disables scripts for that
 project. Saving scripts does not execute them.
+
+## Subscription limits across workspaces
+
+**Settings → Providers** includes a read-only overview of native Codex and Claude subscription
+limits from connected workspaces. Accounts with the same provider and reported email appear once,
+using the latest snapshot and listing their workspaces. Accounts without a reported identity stay
+separate. Each subscription retains its own quota windows; percentages are not combined across
+plans. Offline workspaces are omitted. The overview uses the snapshots already received from the
+workspace and does not query accounts from the browser.

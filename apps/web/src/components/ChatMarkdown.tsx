@@ -1,3 +1,4 @@
+import { GitHubIcon } from "./Icons";
 import type {
   EnvironmentId,
   ScopedThreadRef,
@@ -898,11 +899,23 @@ const MARKDOWN_COMPONENTS: Components = {
         </button>
       );
     }
+    let githubLink = false;
+    try {
+      const url = new URL(targetHref);
+      githubLink =
+        (url.protocol === "https:" || url.protocol === "http:") &&
+        (url.hostname === "github.com" || url.hostname.endsWith(".github.com"));
+    } catch {
+      /* Relative and malformed links remain plain inert text. */
+    }
     return (
       <span
         className={cn(autolinkProps.className, "text-primary underline")}
         data-markdown-copy={pullRequestCopy}
       >
+        {githubLink && (
+          <GitHubIcon aria-hidden className="mr-1 inline-block size-3.5 align-text-bottom" />
+        )}
         {children}
       </span>
     );

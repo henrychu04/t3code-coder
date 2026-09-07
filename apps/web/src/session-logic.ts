@@ -646,6 +646,9 @@ function extractWorkLogToolLifecycleStatus(
     return undefined;
   }
   const s = payload.status;
+  if (s === "pending" || s === "running" || s === "waiting") return "inProgress";
+  if (s === "cancelled" || s === "interrupted") return "stopped";
+  if (s === "idle" && payload.taskType === "subagent_batch") return "stopped";
   if (
     s === "inProgress" ||
     s === "completed" ||

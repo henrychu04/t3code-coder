@@ -2334,3 +2334,39 @@ describe("session activity performance", () => {
     expect(performance.now() - startedAt).toBeLessThan(100);
   });
 });
+
+describe("task lifecycle display", () => {
+  it.each([
+    ["pending", "inProgress"],
+    ["running", "inProgress"],
+    ["waiting", "inProgress"],
+    ["cancelled", "stopped"],
+    ["interrupted", "stopped"],
+  ])("maps %s without displaying a successful completion", (status, expected) => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        kind: "task.progress",
+        summary: "Task update",
+        tone: "tool",
+        payload: { status },
+      }),
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.toolLifecycleStatus).toBe(expected);
+    expect(workEntryIndicatesToolSuccess(entries[0]!)).toBe(false);
+  });
+  it("stops idle batches while leaving resumable idle tasks alone", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        kind: "task.progress",
+        summary: "Batch idle",
+        payload: { status: "idle", taskType: "subagent_batch" },
+      }),
+    ]);
+    expect(entries[0]!.toolLifecycleStatus).toBe("stopped");
+    const idle = deriveWorkLogEntries([
+      makeActivity({ kind: "task.progress", summary: "Idle", payload: { status: "idle" } }),
+    ]);
+    expect(idle[0]!.toolLifecycleStatus).toBeUndefined();
+  });
+});
