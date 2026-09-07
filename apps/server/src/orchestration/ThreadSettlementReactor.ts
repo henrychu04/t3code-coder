@@ -152,25 +152,24 @@ export const make = Effect.gen(function* () {
     ) {
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
       if (reference != null) {
-        if (
+        if (!projects.has(reference.projectId)) {
+          return yield* Effect.die(new Error("linked merge request project not found"));
+        }
+        const detail =
           mergedPullRequest !== null &&
           reference.projectId === mergedPullRequest.projectId &&
           reference.repository.toLowerCase() === mergedPullRequest.repository.toLowerCase() &&
           reference.number === mergedPullRequest.number
-        ) {
-          return {
-            state: "merged",
-            mergedAt: mergedPullRequest.mergedAt,
-          } satisfies SettlementPullRequest;
-        }
-        if (!projects.has(reference.projectId)) {
-          return yield* Effect.die(new Error("linked merge request project not found"));
-        }
-        const detail = yield* pullRequests.detail({
-          projectId: reference.projectId,
-          repository: reference.repository,
-          number: reference.number,
-        });
+            ? {
+                state: "merged" as const,
+                mergedAt: mergedPullRequest.mergedAt,
+                closedAt: null,
+              }
+            : yield* pullRequests.detail({
+                projectId: reference.projectId,
+                repository: reference.repository,
+                number: reference.number,
+              });
         // A terminal old MR must not settle a thread whose branch now has an open MR.
         const cwd = lookupCwdByThreadId.get(thread.id);
         const project = projects.get(thread.projectId);

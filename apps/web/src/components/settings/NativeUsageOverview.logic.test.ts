@@ -62,3 +62,15 @@ describe("native usage overview", () => {
     expect(accounts[0]!.limits.unavailable?.reason).toBe("probeFailed");
   });
 });
+it("keeps usable quota when another workspace's newer probe failed", () => {
+  const good = environment("good", "shared@example.com");
+  const failed = environment("failed", "shared@example.com", "2026-09-07T01:00:00Z");
+  Object.assign(failed.serverConfig.providers[0]!.usageLimits, {
+    windows: [],
+    unavailable: { reason: "probeFailed" },
+  });
+  const accounts = collectNativeUsageAccounts([good, failed]);
+  expect(accounts[0]!.limits.windows).toHaveLength(1);
+  expect(accounts[0]!.unavailableWorkspaces).toEqual([{ id: "failed", label: "failed" }]);
+  expect(collectNativeUsageAccounts([failed, good])[0]!.limits.windows).toHaveLength(1);
+});

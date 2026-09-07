@@ -132,3 +132,23 @@ it("renaming a project preserves inherited scripts and automatic pull", async ()
     autoPull: false,
   });
 });
+it("reset does not erase a concurrent script edit", async () => {
+  const root = await mount();
+  mocks.readProject.mockReturnValue({
+    ...project,
+    scripts: [
+      {
+        id: "new",
+        name: "New setup",
+        command: "new command",
+        icon: "play",
+        runOnWorktreeCreate: true,
+      },
+    ],
+  });
+  const button = root
+    .findAllByType("button")
+    .find((node) => node.children.join("") === "Use workspace default scripts")!;
+  await act(async () => button.props.onClick());
+  expect(mocks.update).not.toHaveBeenCalled();
+});

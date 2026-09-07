@@ -65,7 +65,7 @@ export function ProjectsSettings() {
           </p>
         ) : (
           <DefaultsForm
-            key={scope ?? "all"}
+            key={JSON.stringify([scope, targets.map((target) => target.environmentId)])}
             settings={targets[0]!.serverConfig!.settings}
             providers={targets[0]!.serverConfig!.providers}
             disabled={pending}

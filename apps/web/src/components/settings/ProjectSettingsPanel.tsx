@@ -160,8 +160,7 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
     selection.model,
   );
 
-  const save = async () => {
-    if (saving.current || !connected) return;
+  const isCurrent = () => {
     const current = readProject({ environmentId: project.environmentId, projectId: project.id });
     if (
       !current ||
@@ -172,8 +171,13 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
       })
     ) {
       setNotice("Project settings changed elsewhere. Reload settings before saving.");
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const save = async () => {
+    if (saving.current || !connected || !isCurrent()) return;
     const normalized = {
       ...values,
       title: values.title.trim(),
@@ -239,7 +243,7 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
   };
 
   const resetInherited = async (kind: "scripts" | "autoPull") => {
-    if (saving.current || !connected) return;
+    if (saving.current || !connected || !isCurrent()) return;
     saving.current = true;
     setPending(true);
     setNotice(null);

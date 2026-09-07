@@ -30,6 +30,12 @@ export function NativeUsageOverview() {
               </p>
             </div>
             <ProviderUsageLimits limits={account.limits} />
+            {account.unavailableWorkspaces.length > 0 && (
+              <p className="px-4 pb-3 text-xs text-muted-foreground">
+                Usage unavailable from{" "}
+                {account.unavailableWorkspaces.map(({ label }) => label).join(", ")}.
+              </p>
+            )}
           </section>
         ))
       )}

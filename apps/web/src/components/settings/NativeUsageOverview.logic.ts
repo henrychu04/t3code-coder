@@ -21,6 +21,7 @@ export function collectNativeUsageAccounts(
       driver: string;
       label: string;
       workspaces: { id: string; label: string }[];
+      unavailableWorkspaces: { id: string; label: string }[];
       limits: NonNullable<UsageProvider["usageLimits"]>;
     }
   >();
@@ -34,11 +35,19 @@ export function collectNativeUsageAccounts(
         email?.toLowerCase() || [environment.environmentId, provider.instanceId],
       ]);
       const workspace = { id: environment.environmentId, label: environment.label };
+      const usable = !provider.usageLimits.unavailable && provider.usageLimits.windows.length > 0;
       const previous = accounts.get(key);
       if (previous) {
         if (!previous.workspaces.some(({ id }) => id === workspace.id))
           previous.workspaces.push(workspace);
-        if (Date.parse(provider.usageLimits.checkedAt) > Date.parse(previous.limits.checkedAt)) {
+        if (!usable && !previous.unavailableWorkspaces.some(({ id }) => id === workspace.id))
+          previous.unavailableWorkspaces.push(workspace);
+        const previousUsable = !previous.limits.unavailable && previous.limits.windows.length > 0;
+        if (
+          (usable && !previousUsable) ||
+          (usable === previousUsable &&
+            Date.parse(provider.usageLimits.checkedAt) > Date.parse(previous.limits.checkedAt))
+        ) {
           previous.limits = provider.usageLimits;
         }
       } else {
@@ -47,6 +56,7 @@ export function collectNativeUsageAccounts(
           driver: provider.driver,
           label: email || provider.displayName || provider.instanceId,
           workspaces: [workspace],
+          unavailableWorkspaces: usable ? [] : [workspace],
           limits: provider.usageLimits,
         });
       }

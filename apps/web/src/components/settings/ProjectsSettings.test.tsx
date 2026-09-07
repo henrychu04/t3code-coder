@@ -66,3 +66,23 @@ it("reports partial failures without claiming every workspace was updated", asyn
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(JSON.stringify(renderer!.toJSON())).toContain("Could not save defaults in: two");
 });
+it("resets displayed defaults when the source workspace disconnects", async () => {
+  const one = environment("one");
+  const two = {
+    ...environment("two"),
+    serverConfig: {
+      settings: { ...DEFAULT_SERVER_SETTINGS, defaultAutoPull: true },
+      providers: [],
+    },
+  };
+  mocks.environments.mockReturnValue({ environments: [one, two] });
+  const root = await mount();
+  expect(root.findByType("input").props.checked).toBe(false);
+  mocks.environments.mockReturnValue({
+    environments: [{ ...one, connection: { phase: "offline" } }, two],
+  });
+  await act(async () => renderer!.update(<ProjectsSettings />));
+  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
+  expect(mocks.update.mock.calls[0]![0].environmentId).toBe("two");
+  expect(mocks.update.mock.calls[0]![0].input.patch.defaultAutoPull).toBe(true);
+});

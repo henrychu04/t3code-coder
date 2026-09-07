@@ -326,7 +326,7 @@ describe("local Coder gateway", () => {
     strictEqual(invocations.length, 2);
     strictEqual(closeCount, 0);
     const retained = JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body);
-    strictEqual(retained.portForwards[0].status, "running");
+    strictEqual(retained.portForwards[0].status, "error");
     const beforeRemoval = JSON.parse(await NodeFS.readFile(configPath, "utf8"));
     const failedRemoval = await request({
       url: `${gateway.url}/api/config`,
@@ -339,7 +339,7 @@ describe("local Coder gateway", () => {
     strictEqual(
       JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body).portForwards[0]
         .status,
-      "running",
+      "error",
     );
     failClose = false;
 
@@ -570,6 +570,16 @@ describe("local Coder gateway", () => {
       headers: { Origin: gateway.url },
     });
     strictEqual(failedDisconnect.statusCode >= 400, true);
+    const reconnectAfterFailedStop = await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(
+      reconnectAfterFailedStop.statusCode >= 400,
+      true,
+      "A failed-stop helper must not be returned as a healthy connection",
+    );
     const failedRestart = await request({
       url: `${gateway.url}/api/workspaces/project-one/restart`,
       method: "POST",
