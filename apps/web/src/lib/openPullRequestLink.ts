@@ -20,6 +20,29 @@ export async function openPullRequestLink(
   await shell.openExternal(url);
 }
 
+/** Only known GitLab hosts may open external markdown links. */
+export function isGitLabExternalUrl(
+  targetUrl: string,
+  projects: ReadonlyArray<Pick<EnvironmentProject, "repositoryIdentity">>,
+): boolean {
+  let url: URL;
+  try {
+    url = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
+    return false;
+  return (
+    url.hostname === "gitlab.com" ||
+    projects.some(
+      ({ repositoryIdentity }) =>
+        repositoryIdentity?.provider === "gitlab" &&
+        pullRequestHostOf(repositoryIdentity, "gitlab") === url.hostname.toLowerCase(),
+    )
+  );
+}
+
 export function parseGitLabMergeRequestUrl(targetUrl: string): GitLabMergeRequestLink | null {
   let url: URL;
   try {

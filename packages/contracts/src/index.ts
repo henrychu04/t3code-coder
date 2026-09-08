@@ -1,3 +1,4 @@
+export * from "./assistantCitations.ts";
 export * from "./baseSchemas.ts";
 export * from "./environment.ts";
 export * from "./terminal.ts";

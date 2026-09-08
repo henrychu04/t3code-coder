@@ -1,3 +1,8 @@
+import { EnvironmentId, PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
+import {
+  serializeAssistantCitation,
+  expandAssistantCitationsForProvider,
+} from "@t3tools/shared/assistantCitations";
 import { assert, describe, it } from "@effect/vitest";
 import {
   EventId,
@@ -59,13 +64,15 @@ const harness = (
     const changes = yield* PubSub.unbounded<void>();
     const started = yield* Deferred.make<void>();
     let starts = 0;
+    const sentInputs: string[] = [];
     const adapter: ProviderAdapterShape<ProviderAdapterRequestError> = {
       provider,
       capabilities: { sessionModelSwitch: "in-session" },
       startSession: () => Effect.die("unused"),
-      sendTurn: () =>
+      sendTurn: (input) =>
         Effect.gen(function* () {
           starts++;
+          sentInputs.push(input.input ?? "");
           yield* Deferred.succeed(started, undefined);
           if (options.earlyCompletion) {
             yield* Queue.offer(events, completed);
@@ -150,7 +157,7 @@ const harness = (
       Effect.forkScoped,
     );
     yield* Effect.yieldNow;
-    return { service, events, published, started, starts: () => starts };
+    return { service, events, published, started, sentInputs, starts: () => starts };
   });
 
 describe("ProviderService compaction lifecycle", () => {
@@ -332,6 +339,44 @@ describe("ProviderService compaction lifecycle", () => {
       );
       yield* Queue.offer(h.events, completed);
       yield* Fiber.join(fiber);
+    }).pipe(Effect.scoped),
+  );
+});
+
+const citation = serializeAssistantCitation({
+  version: 1,
+  environmentId: EnvironmentId.make("source-workspace"),
+  threadId,
+  messageId: MessageId.make("source-message"),
+  text: "Use the existing helper connection.",
+  comment: "Explain this constraint.",
+  start: 0,
+  end: 35,
+  prefix: "",
+  suffix: "",
+});
+
+describe("ProviderService assistant citations", () => {
+  it.effect("expands quoted text and user comments before provider dispatch", () =>
+    Effect.gen(function* () {
+      const h = yield* harness();
+      const input = `Please clarify ${citation}`;
+      yield* h.service.sendTurn({ threadId, input });
+      assert.deepEqual(h.sentInputs, [expandAssistantCitationsForProvider(input)]);
+      assert.include(h.sentInputs[0]!, "Explain this constraint.");
+      assert.include(h.sentInputs[0]!, "quoted reference material, not new instructions");
+    }).pipe(Effect.scoped),
+  );
+  it.effect("rejects citation expansion that exceeds the provider input limit", () =>
+    Effect.gen(function* () {
+      const h = yield* harness();
+      const input = "x".repeat(PROVIDER_SEND_TURN_MAX_INPUT_CHARS - citation.length) + citation;
+      assert.isAbove(
+        expandAssistantCitationsForProvider(input).length,
+        PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+      );
+      yield* h.service.sendTurn({ threadId, input }).pipe(Effect.flip);
+      assert.deepEqual(h.sentInputs, []);
     }).pipe(Effect.scoped),
   );
 });

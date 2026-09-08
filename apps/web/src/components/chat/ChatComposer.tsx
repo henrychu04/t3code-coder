@@ -1,4 +1,6 @@
-import { usePanelAnimationSettings } from "../../panelAnimations";
+import type { AssistantCitation } from "@t3tools/contracts";
+import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
+import { formatAssistantCitationForComposer } from "../../composer-logic";
 import { useClipboardImageUpload } from "../../coder/useClipboardImageUpload";
 import type {
   ApprovalRequestId,
@@ -172,6 +174,7 @@ type ComposerCommandMenuPosition = {
 
 const COMPOSER_SCROLL_COLLAPSE_THRESHOLD_PX = 24;
 const COMPOSER_SCROLL_GESTURE_RESET_MS = 120;
+const COMPOSER_RESTING_TRANSITION_DURATION_MS = 280;
 const COMPOSER_RESTING_TRANSITION_CLEANUP_BUFFER_MS = 50;
 const COMPOSER_RESTING_TRANSITION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX = 4;
@@ -182,7 +185,6 @@ function useComposerRestingTransition(
   restingControlsRef: React.RefObject<HTMLDivElement | null>,
   onOverlayHeightChange: (height: number) => void,
 ) {
-  const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
   const elementRef = useRef<HTMLDivElement>(null);
   const isCollapsedRef = useRef(isCollapsed);
   const previousCollapsedRef = useRef(isCollapsed);
@@ -285,6 +287,10 @@ function useComposerRestingTransition(
 
       const nextRect = element.getBoundingClientRect();
       const nextHeight = nextRect.height;
+      // The chat view resize-observes the overlay to place the timeline
+      // inset, the scroll-to-end pill, and the mini player. Publishing the
+      // destination height here turns that feedback into one update instead
+      // of a ChatView re-render on every animation frame.
       const overlay = element.closest<HTMLElement>('[data-chat-composer-overlay="true"]');
       const overlayHeight = overlay?.getBoundingClientRect().height ?? null;
       if (overlayHeight !== null) {
@@ -306,26 +312,25 @@ function useComposerRestingTransition(
       if (
         shouldAnimate &&
         !prefersReducedMotion &&
-        panelAnimationsActive &&
         previousHeight !== null &&
         Math.abs(previousHeight - nextHeight) >= 0.5
       ) {
         const remainingDuration =
           typeof interruptedDuration === "number" && interruptedCurrentTime !== null
             ? Math.max(1, interruptedDuration - interruptedCurrentTime)
-            : durationMs;
+            : COMPOSER_RESTING_TRANSITION_DURATION_MS;
         const duration =
-          interruptedHeight !== null && !targetChanged ? remainingDuration : durationMs;
+          interruptedHeight !== null && !targetChanged
+            ? remainingDuration
+            : COMPOSER_RESTING_TRANSITION_DURATION_MS;
         element.style.overflow = "clip";
         surface.style.height = "100%";
 
-        // The chat view resize-observes the overlay to place the timeline
-        // inset, the scroll-to-end pill, and the mini player. Pinning the
-        // overlay at the destination height turns that feedback into one
-        // update instead of a ChatView re-render on every animation frame;
-        // bottom alignment keeps the animating surface glued to the overlay's
-        // stable bottom edge. The pin lasts only for the tween so later
-        // attachment, thread, font, and viewport changes remain natural.
+        // Pinning the overlay at the destination height keeps the resize
+        // observer quiet for the tween; bottom alignment keeps the animating
+        // surface glued to the overlay's stable bottom edge. The pin lasts
+        // only for the tween so later attachment, thread, font, and viewport
+        // changes remain natural.
         if (overlay && overlayHeight !== null) {
           overlay.style.height = `${String(overlayHeight)}px`;
           overlay.style.display = "flex";
@@ -517,13 +522,7 @@ function useComposerRestingTransition(
         actionFromBottom: nextActionTop === null ? null : nextRect.bottom - nextActionTop,
       };
     },
-    [
-      clearTransitionStyles,
-      onOverlayHeightChange,
-      restingControlsRef,
-      panelAnimationsActive,
-      durationMs,
-    ],
+    [clearTransitionStyles, onOverlayHeightChange, restingControlsRef],
   );
 
   useLayoutEffect(() => {
@@ -544,6 +543,10 @@ function useComposerRestingTransition(
     };
   }, [isCollapsed, transitionToCurrentGeometry]);
 
+  // The resting flag can change while the collapsed layout stays the same,
+  // for example when an unfocused thread crosses the phone breakpoint. The
+  // chat view pairs overlay heights with that flag, so republish the natural
+  // height for the new flag. A transition in flight publishes its own.
   useLayoutEffect(() => {
     if (previousRestingRef.current === isResting) return;
     previousRestingRef.current = isResting;
@@ -1031,6 +1034,10 @@ export interface ChatComposerHandle {
   focusAt: (cursor: number) => void;
   restoreAfterTimelineReachedEnd: () => void;
   insertTextAtEnd: (text: string, options?: { ensureLeadingBoundary?: boolean }) => boolean;
+  citeAssistantText: (
+    citation: AssistantCitation,
+    sourceAnchor: AssistantCitationSourceAnchor,
+  ) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   isModelPickerOpen: () => boolean;
@@ -1158,6 +1165,9 @@ export interface ChatComposerProps {
   promptRef: React.RefObject<string>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
   composerRef: React.RefObject<ChatComposerHandle | null>;
+  onPageScrollKeyDown: (key: "PageUp" | "PageDown") => void;
+  onPageScrollKeyUp: (key: string) => void;
+  onPageScrollRelease: () => void;
 
   // Callbacks
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
@@ -1248,6 +1258,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRestingChange,
     promptRef,
     composerRef,
+    onPageScrollKeyDown,
+    onPageScrollKeyUp,
+    onPageScrollRelease,
     composerTerminalContextsRef,
     onSend,
     onInterrupt,
@@ -2022,7 +2035,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setProviderInputSubmissionError(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
-  }, [draftId, activeThreadId, promptRef]);
+    setIsComposerScrollCollapsed(false);
+  }, [draftId, activeThreadId, promptRef, setIsComposerScrollCollapsed]);
 
   // ------------------------------------------------------------------
   // Footer compact layout observation
@@ -2146,7 +2160,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       rangeStart: number,
       rangeEnd: number,
       replacement: string,
-      options?: { expectedText?: string; focusEditorAfterReplace?: boolean },
+      options?: {
+        expectedText?: string;
+        focusEditorAfterReplace?: boolean;
+        citationComment?: { start: number; sourceAnchor: AssistantCitationSourceAnchor };
+      },
     ): boolean => {
       const currentText = promptRef.current;
       const safeStart = Math.max(0, Math.min(currentText.length, rangeStart));
@@ -2160,6 +2178,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
       const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
       const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
+      if (options?.citationComment) {
+        composerEditorRef.current?.requestCitationComment({
+          previousValue: currentText,
+          value: next.text,
+          citationStart: options.citationComment.start,
+          sourceAnchor: options.citationComment.sourceAnchor,
+        });
+      }
       promptRef.current = next.text;
       const activePendingQuestion = activePendingProgress?.activeQuestion;
       if (activePendingQuestion && activePendingUserInput) {
@@ -2416,6 +2442,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       shouldBlurMobileComposerOnSubmit,
     ],
   );
+  const submitCitationAndSend = useCallback(() => {
+    const intent = composerSubmissionIntentForEnter({
+      isMobileViewport,
+      shiftKey: false,
+      modifierKey: true,
+      isDraftThread: routeKind === "draft",
+    });
+    submitComposer(undefined, intent ?? "foreground");
+  }, [isMobileViewport, routeKind, submitComposer]);
   const compactCommandAvailable = providerSupportsManualCompaction(selectedProvider);
   const compactDisabled =
     !compactCommandAvailable ||
@@ -2876,28 +2911,71 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsStashMenuOpen(false);
   }, [prompt]);
 
-  const insertComposerTextAtEnd = (
-    text: string,
-    options?: { ensureLeadingBoundary?: boolean },
-  ): boolean => {
-    if (
-      text.length === 0 ||
-      isConnecting ||
-      isComposerApprovalState ||
-      pendingUserInputs.length > 0 ||
-      projectSelectionRequired
-    ) {
-      return false;
-    }
-    const prompt = promptRef.current;
-    const needsLeadingSpace =
-      (options?.ensureLeadingBoundary ?? false) && prompt.length > 0 && !/\s$/.test(prompt);
-    return applyPromptReplacement(
-      prompt.length,
-      prompt.length,
-      needsLeadingSpace ? ` ${text}` : text,
-    );
-  };
+  const insertComposerText = useCallback(
+    (
+      text: string,
+      position: "cursor" | "end",
+      options?: {
+        ensureLeadingBoundary?: boolean;
+        citationCommentAnchor?: AssistantCitationSourceAnchor;
+      },
+    ): boolean => {
+      if (
+        text.length === 0 ||
+        isConnecting ||
+        isComposerApprovalState ||
+        pendingUserInputs.length > 0 ||
+        projectSelectionRequired ||
+        (options?.citationCommentAnchor && !composerEditorRef.current)
+      ) {
+        return false;
+      }
+      const prompt = promptRef.current;
+      const cursor = position === "cursor" ? readComposerSnapshot().expandedCursor : prompt.length;
+      const needsLeadingSpace =
+        (options?.ensureLeadingBoundary ?? false) &&
+        cursor > 0 &&
+        !/\s/.test(prompt[cursor - 1] ?? "");
+      const rangeEnd = extendReplacementRangeForTrailingSpace(prompt, cursor, text);
+      return applyPromptReplacement(
+        cursor,
+        rangeEnd,
+        needsLeadingSpace ? ` ${text}` : text,
+        options?.citationCommentAnchor
+          ? {
+              citationComment: {
+                start: cursor + (needsLeadingSpace ? 1 : 0),
+                sourceAnchor: options.citationCommentAnchor,
+              },
+              focusEditorAfterReplace: false,
+            }
+          : undefined,
+      );
+    },
+    [
+      applyPromptReplacement,
+      isComposerApprovalState,
+      isConnecting,
+      pendingUserInputs.length,
+      projectSelectionRequired,
+      promptRef,
+      readComposerSnapshot,
+    ],
+  );
+
+  const insertComposerTextAtEnd = useCallback<ChatComposerHandle["insertTextAtEnd"]>(
+    (text, options) => {
+      const inserted = insertComposerText(text, "end", options);
+      if (inserted && isComposerCollapsedMobile) {
+        // The expanded editor is hidden at phone widths, so its scheduled
+        // focus cannot expand the composer by itself. Reveal it before the
+        // focus frame runs to preserve type-to-focus and external inserts.
+        expandMobileComposer();
+      }
+      return inserted;
+    },
+    [expandMobileComposer, insertComposerText, isComposerCollapsedMobile],
+  );
 
   const onComposerPaste = (event: ReactClipboardEvent<HTMLElement>) => {
     const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
@@ -3029,16 +3107,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const canScrollCollapseComposer =
     canTrackComposerScrollGesture &&
     settings.composerCollapseOnScroll &&
+    !hasMultilinePrompt &&
     !composerHasExpandedChrome &&
     !showInlineTasksBadge;
+  // Scrolling only has something to collapse while the composer is expanded,
+  // focused or not, so the wheel handler keys off the resting state rather
+  // than editor focus.
   composerScrollCollapseEligibleRef.current = canScrollCollapseComposer && !isComposerResting;
 
   useEffect(() => {
     if (!canScrollCollapseComposer) {
       setIsComposerScrollCollapsed(false);
     }
-  }, [canScrollCollapseComposer]);
+  }, [canScrollCollapseComposer, setIsComposerScrollCollapsed]);
 
+  // Returning to the window re-fires focus on the element that already held
+  // it. That focus arrives after the window's own event, so a window focus
+  // marks the frame in which it should be ignored by the form's capture.
   useEffect(() => {
     if (!isComposerScrollCollapsed) return;
     let frame: number | null = null;
@@ -3069,7 +3154,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       resetComposerScrollGesture(composerScrollGestureRef.current);
     };
     const handleTimelineWheel = (event: WheelEvent) => {
-      if (event.ctrlKey || !(event.target instanceof Element)) return;
+      if (event.ctrlKey || !(event.target instanceof Element)) {
+        return;
+      }
 
       const scrollNode = getTimelineScrollableNode();
       if (!scrollNode) return;
@@ -3104,7 +3191,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         canScrollInGestureDirection,
         scrollsTowardLogicalEnd: event.deltaY > 0 && isTimelineAtLogicalEnd(),
       });
-      if (shouldCollapse) setIsComposerScrollCollapsed(true);
+      if (!shouldCollapse) {
+        return;
+      }
+
+      setIsComposerScrollCollapsed(true);
     };
 
     document.addEventListener("wheel", handleTimelineWheel, { capture: true, passive: true });
@@ -3117,6 +3208,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     canTrackComposerScrollGesture,
     getTimelineScrollableNode,
     isTimelineAtLogicalEnd,
+    setIsComposerScrollCollapsed,
   ]);
 
   const restingHiddenBlockCount = composerControlsInStrip ? restingControlsHiddenBlockCount : 0;
@@ -3325,6 +3417,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       restoreAfterTimelineReachedEnd,
       insertTextAtEnd: insertComposerTextAtEnd,
+      citeAssistantText: (citation, sourceAnchor) =>
+        insertComposerText(
+          formatAssistantCitationForComposer(citation, citation.comment),
+          "cursor",
+          { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
+        ),
+
       openModelPicker,
       toggleModelPicker: () => {
         if (isComposerModelPickerOpen) {
@@ -3430,6 +3529,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       pendingUserInputs.length,
       projectSelectionRequired,
       applyPromptReplacement,
+      insertComposerText,
+      insertComposerTextAtEnd,
       isComposerModelPickerOpen,
       openModelPicker,
       readComposerSnapshot,
@@ -3814,11 +3915,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       : []
                   }
                   skills={selectedProviderSkills}
-                  {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
+                  containerClassName={cn(isComposerResting && "min-w-0 flex-1")}
+                  className={cn(
+                    showMobilePendingAnswerActions && "max-sm:pb-11",
+                    isComposerResting &&
+                      "max-h-8 min-h-8 overflow-hidden whitespace-pre! leading-8",
+                  )}
+                  placeholderClassName={cn(
+                    isComposerResting &&
+                      "flex items-center overflow-hidden whitespace-nowrap leading-8",
+                  )}
                   onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                   onChange={onPromptChange}
                   onVisibleSelectionChange={expandComposerForEditorChange}
                   onCommandKeyDown={onComposerCommandKey}
+                  onPageScrollKeyDown={onPageScrollKeyDown}
+                  onPageScrollKeyUp={onPageScrollKeyUp}
+                  onPageScrollRelease={onPageScrollRelease}
+                  onCitationSubmitAndSend={submitCitationAndSend}
                   onPaste={onComposerPaste}
                   placeholder={
                     isComposerApprovalState

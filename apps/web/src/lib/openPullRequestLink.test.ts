@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   findProjectForGitLabMergeRequest,
+  isGitLabExternalUrl,
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
   gitLabAuthorProfileUrl,
@@ -110,5 +111,49 @@ describe("GitLab merge request links", () => {
         "https://gitlab.example.com/group/project/-/merge_requests/43",
       ),
     ).toBe(false);
+  });
+});
+
+describe("external GitLab links", () => {
+  const projects = [
+    {
+      repositoryIdentity: {
+        provider: "gitlab" as const,
+        canonicalKey: "code.example/group/project",
+        displayName: "group/project",
+        locator: {
+          source: "git-remote" as const,
+          remoteName: "origin",
+          remoteUrl: "git@code.example:group/project.git",
+        },
+      },
+    },
+  ];
+  it("recognizes GitLab.com and known self-hosted GitLab hosts", () => {
+    expect(isGitLabExternalUrl("https://gitlab.com/explore", [])).toBe(true);
+    expect(isGitLabExternalUrl("https://code.example/group/project/-/issues/1", projects)).toBe(
+      true,
+    );
+    expect(isGitLabExternalUrl("http://code.example:8080/group/project", projects)).toBe(true);
+    expect(isGitLabExternalUrl("https://code.example/group/project", [])).toBe(false);
+    expect(
+      isGitLabExternalUrl("https://code.example/group/project", [
+        { repositoryIdentity: { ...projects[0]!.repositoryIdentity, provider: "unknown" } },
+      ]),
+    ).toBe(false);
+  });
+  it.each([
+    "https://gitlab.com.evil.example/project",
+    "https://gitlab.evil.example/project",
+    "https://gitlab.com@evil.example/project",
+    "https://user:secret@gitlab.com/project",
+    "javascript:alert(1)",
+    "ftp://gitlab.com/project",
+    "//gitlab.com/project",
+    "/group/project",
+    "https://github.com/group/project",
+    "https://example.com/group/project/-/merge_requests/1",
+  ])("keeps unrecognized or unsafe URLs inert: %s", (url) => {
+    expect(isGitLabExternalUrl(url, projects)).toBe(false);
   });
 });

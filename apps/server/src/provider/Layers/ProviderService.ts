@@ -29,6 +29,7 @@ import {
   type ProviderSession,
   type TurnId,
 } from "@t3tools/contracts";
+import { expandAssistantCitationsForProvider } from "@t3tools/shared/assistantCitations";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -684,7 +685,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
     if (!parsed.input) {
       return yield* toValidationError("ProviderService.sendTurn", "Input text is required");
     }
-    const input = parsed;
+    const inputTextWithCitations =
+      parsed.input === undefined ? undefined : expandAssistantCitationsForProvider(parsed.input);
+    if (inputTextWithCitations !== parsed.input) {
+      yield* decodeInputOrValidationError({
+        operation: "ProviderService.sendTurn",
+        schema: ProviderSendTurnInput.fields.input,
+        payload: inputTextWithCitations,
+      });
+    }
+
+    const input = { ...parsed, input: inputTextWithCitations };
     yield* Effect.annotateCurrentSpan({
       "provider.operation": "send-turn",
       "provider.thread_id": input.threadId,

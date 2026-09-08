@@ -1,3 +1,4 @@
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { BookmarkIcon } from "lucide-react";
 import { memo, useEffect, useRef, useState } from "react";
 
@@ -9,7 +10,7 @@ import { ComposerBanner } from "./ComposerBanner";
 const SNIPPET_MAX_CHARS = 90;
 
 function stashEntrySnippet(entry: PromptStashEntry): string {
-  const trimmed = entry.prompt.trim().replace(/\s+/g, " ");
+  const trimmed = assistantCitationsToPlainText(entry.prompt).trim().replace(/\s+/g, " ");
   if (trimmed.length > 0) {
     return trimmed.length > SNIPPET_MAX_CHARS ? `${trimmed.slice(0, SNIPPET_MAX_CHARS)}…` : trimmed;
   }

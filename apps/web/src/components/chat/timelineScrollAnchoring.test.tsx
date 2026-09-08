@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 import {
-  captureTimelineScrollRestoration,
   getAnchoredTurnMetrics,
   getRowBottom,
+  timelineContentOverflowsViewport,
 } from "./timelineScrollAnchoring";
 
 function buildState({
@@ -25,94 +25,38 @@ function buildState({
   };
 }
 
-describe("timeline scroll anchoring", () => {
-  it("stores bottom-follow as intent instead of a stale offset", () => {
-    expect(captureTimelineScrollRestoration(undefined, true)).toEqual({
-      kind: "following-end",
-    });
+describe("timelineContentOverflowsViewport", () => {
+  const inset = { composerInset: 100, anchorOffset: 24 };
+
+  it("reports overflow from the last row, not the inset spacer", () => {
+    const fits = buildState({ positions: [0, 200], sizes: [200, 300], scrollLength: 700 });
+    expect(timelineContentOverflowsViewport(fits, inset)).toBe(false);
+
+    const overflows = buildState({ positions: [0, 200], sizes: [200, 400], scrollLength: 700 });
+    expect(timelineContentOverflowsViewport(overflows, inset)).toBe(true);
   });
 
-  it("anchors history to the first visible row and its viewport offset", () => {
-    const state = {
-      data: [{ id: "first" }, { id: "visible" }, { id: "last" }],
-      scroll: 150,
-      scrollLength: 200,
-      positionAtIndex: (index: number) => [0, 120, 300][index],
-      sizeAtIndex: (index: number) => [100, 100, 100][index],
-    };
-
-    expect(captureTimelineScrollRestoration(state, false)).toEqual({
-      kind: "row",
-      rowId: "visible",
-      viewOffset: -30,
-    });
-  });
-
-  it("uses the viewport scroll offset when LegendList state trails the DOM", () => {
-    const state = {
-      data: [{ id: "visible" }, { id: "next" }],
-      scroll: 180,
-      scrollLength: 200,
-      positionAtIndex: (index: number) => [100, 320][index],
-      sizeAtIndex: (index: number) => [220, 100][index],
-    };
-
-    expect(captureTimelineScrollRestoration(state, false, { scroll: 200 })).toEqual({
-      kind: "row",
-      rowId: "visible",
-      viewOffset: -100,
-    });
-  });
-
-  it("prefers the rendered row offset when list headers use different coordinates", () => {
-    const state = {
-      data: [{ id: "visible" }],
-      scroll: 200,
-      scrollLength: 300,
-      positionAtIndex: () => 100,
-      sizeAtIndex: () => 500,
-    };
-
+  it("treats an empty or unmeasured list as fitting", () => {
+    expect(timelineContentOverflowsViewport(undefined, inset)).toBe(false);
     expect(
-      captureTimelineScrollRestoration(state, false, {
-        scroll: 200,
-        viewOffsetForRow: () => -52,
-      }),
-    ).toEqual({
-      kind: "row",
-      rowId: "visible",
-      viewOffset: -52,
-    });
+      timelineContentOverflowsViewport(
+        buildState({ positions: [0, 200], sizes: [200, 400], scrollLength: 0 }),
+        inset,
+      ),
+    ).toBe(false);
+    expect(timelineContentOverflowsViewport(buildState({ positions: [], sizes: [] }), inset)).toBe(
+      false,
+    );
+    expect(
+      timelineContentOverflowsViewport(
+        buildState({ positions: [0, 200], sizes: [200, Number.NaN] }),
+        inset,
+      ),
+    ).toBe(false);
   });
+});
 
-  it("skips unmeasured rows when capturing a history anchor", () => {
-    const state = {
-      data: [{ id: "unmeasured" }, { id: "visible" }],
-      scroll: 50,
-      scrollLength: 200,
-      positionAtIndex: (index: number) => [Number.NaN, 80][index],
-      sizeAtIndex: (index: number) => [Number.NaN, 40][index],
-    };
-
-    expect(captureTimelineScrollRestoration(state, false)).toEqual({
-      kind: "row",
-      rowId: "visible",
-      viewOffset: 30,
-    });
-  });
-
-  it("does not replace a prior anchor when no measured row is visible", () => {
-    const state = {
-      data: [{ id: "above" }],
-      scroll: 500,
-      scrollLength: 200,
-      positionAtIndex: () => 0,
-      sizeAtIndex: () => 100,
-    };
-
-    expect(captureTimelineScrollRestoration(state, false)).toBeUndefined();
-  });
-
+describe("timeline scroll anchoring", () => {
   it("measures row bottoms from LegendList row position and size", () => {
     const state = buildState({
       positions: [0, 120],

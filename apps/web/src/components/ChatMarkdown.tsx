@@ -1,3 +1,6 @@
+import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
+import { AssistantCitationChip } from "./chat/AssistantCitationChip";
+import { defaultUrlTransform } from "react-markdown";
 import { GitHubIcon } from "./Icons";
 import type {
   EnvironmentId,
@@ -80,6 +83,7 @@ import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore"
 import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 import {
   findProjectForGitLabMergeRequest,
+  isGitLabExternalUrl,
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
 } from "../lib/openPullRequestLink";
@@ -202,6 +206,10 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
     a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
+  },
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -810,6 +818,8 @@ const MARKDOWN_COMPONENTS: Components = {
       navigate,
       handleMergeRequestContextMenu,
     } = useMarkdownState();
+    const citation = href ? parseAssistantCitationHref(href) : null;
+    if (citation) return <AssistantCitationChip citation={citation} />;
     const pullRequestAutolink = String(
       (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
     );
@@ -929,6 +939,19 @@ const MARKDOWN_COMPONENTS: Components = {
         </button>
       );
     }
+    if (isGitLabExternalUrl(targetHref, projects)) {
+      return (
+        <a
+          {...props}
+          {...autolinkProps}
+          href={targetHref}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {children}
+        </a>
+      );
+    }
     let githubLink = false;
     try {
       const url = new URL(targetHref);
@@ -1041,6 +1064,9 @@ function ChatMarkdown(props: ChatMarkdownProps) {
     >
       <MarkdownStateContext value={state}>
         <ReactMarkdown
+          urlTransform={(href) =>
+            parseAssistantCitationHref(href) ? href : defaultUrlTransform(href)
+          }
           remarkPlugins={remarkPlugins}
           rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
           skipHtml={false}
