@@ -1019,4 +1019,76 @@ describe("applyThreadDetailEvent", () => {
       expect(result.kind).toBe("unchanged");
     });
   });
+  it("removes the first live prompt at checkpoint zero", () => {
+    const threadWithLivePrompt: OrchestrationThread = {
+      ...baseThread,
+      messages: [
+        {
+          id: MessageId.make("live-user-message"),
+          role: "user",
+          text: "New work",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T01:00:00.000Z",
+          updatedAt: "2026-04-01T01:00:00.000Z",
+        },
+      ],
+    };
+
+    const result = applyThreadDetailEvent(threadWithLivePrompt, {
+      ...baseEventFields,
+      sequence: 14,
+      occurredAt: "2026-04-01T02:00:00.000Z",
+      aggregateKind: "thread",
+      aggregateId: ThreadId.make("thread-1"),
+      type: "thread.reverted",
+      payload: { threadId: ThreadId.make("thread-1"), turnCount: 0 },
+    });
+
+    expect(result.kind).toBe("updated");
+    if (result.kind === "updated") {
+      expect(result.thread.messages.map((message) => message.text)).toEqual([]);
+    }
+  });
+
+  it("fallback-retains the earliest absolute timestamp across offsets", () => {
+    const threadWithOffsetMessages: OrchestrationThread = {
+      ...baseThread,
+      messages: [
+        {
+          id: MessageId.make("earlier-by-offset"),
+          role: "user",
+          text: "Earlier",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T10:30:00.000+02:00",
+          updatedAt: "2026-04-01T10:30:00.000+02:00",
+        },
+        {
+          id: MessageId.make("later-in-utc"),
+          role: "user",
+          text: "Later",
+          turnId: null,
+          streaming: false,
+          createdAt: "2026-04-01T09:00:00.000Z",
+          updatedAt: "2026-04-01T09:00:00.000Z",
+        },
+      ],
+    };
+
+    const result = applyThreadDetailEvent(threadWithOffsetMessages, {
+      ...baseEventFields,
+      sequence: 14,
+      occurredAt: "2026-04-01T10:00:00.000Z",
+      aggregateKind: "thread",
+      aggregateId: ThreadId.make("thread-1"),
+      type: "thread.reverted",
+      payload: { threadId: ThreadId.make("thread-1"), turnCount: 1 },
+    });
+
+    expect(result.kind).toBe("updated");
+    if (result.kind === "updated") {
+      expect(result.thread.messages.map((message) => message.id)).toEqual(["earlier-by-offset"]);
+    }
+  });
 });

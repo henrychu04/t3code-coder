@@ -2215,7 +2215,7 @@ describe("ProviderRuntimeIngestion", () => {
     expect(message?.streaming).toBe(false);
   });
 
-  it("flushes async question text and preserves message-response routing without item.completed", async () => {
+  it("flushes buffered text before a blocking user question without item.completed", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
 
@@ -2256,7 +2256,6 @@ describe("ProviderRuntimeIngestion", () => {
       turnId: asTurnId("turn-buffered-user-input-flush"),
       requestId: ApprovalRequestId.make("req-buffered-user-input-flush"),
       payload: {
-        responseMode: "message",
         questions: [
           {
             id: "choice",
@@ -2291,7 +2290,7 @@ describe("ProviderRuntimeIngestion", () => {
         (activity: ProviderRuntimeTestActivity) =>
           activity.id === "evt-user-input-requested-buffered-user-input-flush",
       )?.payload,
-    ).toMatchObject({ responseMode: "message" });
+    ).toMatchObject({ questions: [expect.objectContaining({ id: "choice" })] });
   });
 
   it("does not create assistant segments for whitespace-only buffered text at approval boundaries", async () => {
@@ -3862,4 +3861,71 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.status).toBe("error");
     expect(thread.session?.lastError).toBe("runtime still processed");
   });
+  it.each([true, false])(
+    "keeps async questions from splitting assistant text (streaming=%s)",
+    async (enableLegacyTokenStreaming) => {
+      const harness = await createHarness({ serverSettings: { enableLegacyTokenStreaming } });
+      const base = {
+        provider: ProviderDriverKind.make("codex"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        threadId: asThreadId("thread-1"),
+        turnId: asTurnId("turn-async"),
+      };
+      harness.emit({ ...base, type: "turn.started", eventId: asEventId("async-start") });
+      harness.emit({
+        ...base,
+        type: "content.delta",
+        eventId: asEventId("async-before"),
+        itemId: asItemId("message-1"),
+        payload: { streamKind: "assistant_text", delta: "Before. " },
+      });
+      harness.emit({
+        ...base,
+        type: "user-input.requested",
+        eventId: asEventId("async-request"),
+        requestId: ApprovalRequestId.make("codex-async:question-1"),
+        payload: {
+          responseMode: "message",
+          questions: [
+            {
+              id: "0",
+              header: "Question",
+              question: "Which name?",
+              options: [],
+              allowCustomAnswer: true,
+            },
+          ],
+        },
+      });
+      harness.emit({
+        ...base,
+        type: "content.delta",
+        eventId: asEventId("async-after"),
+        itemId: asItemId("message-1"),
+        payload: { streamKind: "assistant_text", delta: "After." },
+      });
+      await harness.drain();
+      const thread = (await harness.readModel()).threads[0];
+      expect(thread?.session?.status).toBe("running");
+      if (enableLegacyTokenStreaming) {
+        expect(thread?.messages).toMatchObject([{ text: "Before. After.", streaming: true }]);
+      } else {
+        expect(thread?.messages).toEqual([]);
+        harness.emit({
+          ...base,
+          type: "item.completed",
+          eventId: asEventId("async-completed"),
+          itemId: asItemId("message-1"),
+          payload: { itemType: "assistant_message", status: "completed" },
+        });
+        await harness.drain();
+        expect((await harness.readModel()).threads[0]?.messages).toMatchObject([
+          { text: "Before. After.", streaming: false },
+        ]);
+      }
+      expect(
+        thread?.activities.find((activity) => activity.kind === "user-input.requested")?.payload,
+      ).toMatchObject({ responseMode: "message", requestId: "codex-async:question-1" });
+    },
+  );
 });

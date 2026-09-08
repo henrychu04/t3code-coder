@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./dateTime": {
+      "types": "./src/dateTime.ts",
+      "import": "./src/dateTime.ts"
+    },
     "./threadReference": "./src/threadReference.ts",
     "./testing/*": "./src/testing/*.ts",
     "./themePalettes": {

@@ -1436,3 +1436,51 @@ describe("toolGroupConsumesUpwardNavigation", () => {
     expect(toolGroupConsumesUpwardNavigation(group)).toBe(false);
   });
 });
+
+// A rejected compaction produces an activity without changing the session.
+it("clears Sending after a first-message compact rejection", () => {
+  const thread = makeThread();
+  const localDispatch = createLocalDispatchSnapshot(thread);
+  const rejected = {
+    localDispatch,
+    phase: "disconnected" as const,
+    latestTurn: null,
+    latestUserMessageId: MessageId.make("compact-request"),
+    session: null,
+    hasPendingApproval: false,
+    hasPendingUserInput: false,
+    threadError: null,
+    latestTurnStartFailureId: "compact-rejected",
+  };
+  expect(hasServerAcknowledgedLocalDispatch(rejected)).toBe(true);
+});
+
+it("acknowledges only a new turn-start failure", () => {
+  const localDispatch = {
+    ...createLocalDispatchSnapshot(makeThread()),
+    latestTurnStartFailureId: "turn-start-failure-old",
+  };
+  const common = {
+    localDispatch,
+    phase: "ready" as const,
+    latestTurn: null,
+    latestUserMessageId: localDispatch.latestUserMessageId,
+    session: null,
+    hasPendingApproval: false,
+    hasPendingUserInput: false,
+    threadError: null,
+  };
+
+  expect(
+    hasServerAcknowledgedLocalDispatch({
+      ...common,
+      latestTurnStartFailureId: "turn-start-failure-old",
+    }),
+  ).toBe(false);
+  expect(
+    hasServerAcknowledgedLocalDispatch({
+      ...common,
+      latestTurnStartFailureId: "turn-start-failure-new",
+    }),
+  ).toBe(true);
+});

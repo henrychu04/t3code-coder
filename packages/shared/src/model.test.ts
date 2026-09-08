@@ -10,6 +10,7 @@ import * as Schema from "effect/Schema";
 import {
   applyClaudePromptEffortPrefix,
   buildProviderOptionSelectionsFromDescriptors,
+  buildExplicitProviderOptionSelectionsFromDescriptors,
   createModelCapabilities,
   createModelSelection,
   getModelSelectionBooleanOptionValue,
@@ -247,4 +248,20 @@ describe("readCustomModelEntries", () => {
       capabilities,
     });
   });
+});
+
+it("builds dispatch options only from explicit selections", () => {
+  const descriptors = getProviderOptionDescriptors({
+    caps: codexCaps,
+    selections: [{ id: "fastMode", value: true }],
+  });
+
+  expect(buildExplicitProviderOptionSelectionsFromDescriptors(descriptors, undefined)).toBe(
+    undefined,
+  );
+  expect(
+    buildExplicitProviderOptionSelectionsFromDescriptors(descriptors, [
+      { id: "fastMode", value: true },
+    ]),
+  ).toEqual([{ id: "fastMode", value: true }]);
 });
