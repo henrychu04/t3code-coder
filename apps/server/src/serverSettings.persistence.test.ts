@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
-import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL } from "@t3tools/contracts";
+import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL, ProjectId } from "@t3tools/contracts";
 import * as ServerConfig from "./config.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
@@ -18,6 +18,30 @@ const settingsLayer = ServerSettings.layer.pipe(
 );
 
 it.layer(NodeServices.layer)("server settings persistence", (it) => {
+  it.effect("persists merge preferences and clears only the selected project's override", () =>
+    Effect.gen(function* () {
+      const config = yield* ServerConfig.ServerConfig;
+      const fileSystem = yield* FileSystem.FileSystem;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      yield* settings.start;
+      const projectA = ProjectId.make("project-a");
+      const projectB = ProjectId.make("project-b");
+      yield* settings.updateSettings({
+        pullRequestMergeMethod: "squash",
+        pullRequestMergeMethodOverrides: { [projectA]: "rebase", [projectB]: "merge" },
+      });
+      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
+        pullRequestMergeMethod: "squash",
+        pullRequestMergeMethodOverrides: { [projectA]: "rebase", [projectB]: "merge" },
+      });
+      yield* settings.updateSettings({ pullRequestMergeMethodOverrides: { [projectA]: null } });
+      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
+        pullRequestMergeMethod: "squash",
+        pullRequestMergeMethodOverrides: { [projectB]: "merge" },
+      });
+    }).pipe(Effect.provide(settingsLayer)),
+  );
+
   it.effect("writes and clears a non-default automatic Git fetch interval", () =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
@@ -42,10 +66,7 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
         Duration.toMillis(reset.automaticGitFetchInterval),
         Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL),
       );
-      assert.deepStrictEqual(
-        JSON.parse(yield* fileSystem.readFileString(config.settingsPath)),
-        {},
-      );
+      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {});
     }).pipe(Effect.provide(settingsLayer)),
   );
 });

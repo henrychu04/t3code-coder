@@ -67,8 +67,6 @@ export function ProjectFavicon(input: {
     input.project?.title ?? "",
     input.project?.workspaceRoot ?? "",
   );
-  const Icon = input.project
-    ? PROJECT_ICONS[selection.icon]
-    : (input.fallbackIcon ?? PROJECT_ICONS[selection.icon]);
+  const Icon = input.fallbackIcon ?? PROJECT_ICONS[selection.icon];
   return <Icon className={cn("size-3.5 shrink-0 text-icon-muted", input.className)} />;
 }

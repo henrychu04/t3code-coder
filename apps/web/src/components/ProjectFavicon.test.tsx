@@ -19,15 +19,15 @@ describe("ProjectFavicon", () => {
     expect(html).not.toContain("<img");
   });
 
-  it("keeps the project icon when a caller supplies a fallback", () => {
+  it("honors a caller-provided fallback even when a project is available", () => {
     const html = renderToStaticMarkup(
       <ProjectFavicon
         project={{ title: "agent-runtime", workspaceRoot: "/workspace-test" }}
         fallbackIcon={() => <span>fallback</span>}
       />,
     );
-    expect(html).toContain("lucide-bot");
-    expect(html).not.toContain("fallback");
+    expect(html).toContain("fallback");
+    expect(html).not.toContain("lucide-bot");
   });
 
   it("supports a caller-provided fallback icon", () => {
