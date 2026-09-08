@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 
 import {
   SourceControlRepositoryError,
+  SourceControlProviderError,
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
   type SourceControlCloneProtocol,
@@ -22,6 +23,9 @@ import {
 import { ServerConfig } from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
+import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
+
+const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
 export class SourceControlRepositoryService extends Context.Service<
@@ -46,7 +50,9 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          detail: "The source control operation could not be completed.",
+          detail: isSourceControlProviderError(cause)
+            ? `GitLab repository operation failed: ${cause.detail}`
+            : "The source control operation could not be completed.",
           cause,
         }),
   );
@@ -173,6 +179,17 @@ export const make = Effect.gen(function* () {
   const cloneRepository = Effect.fn("SourceControlRepositoryService.cloneRepository")(function* (
     input: SourceControlCloneRepositoryInput,
   ) {
+    if (input.remoteUrl) {
+      const source = parseGitLabCloneSource(input.remoteUrl);
+      if (!source || !("remoteUrl" in source)) {
+        return yield* new SourceControlRepositoryError({
+          operation: "cloneRepository",
+          provider: input.provider ?? "gitlab",
+          detail:
+            "Enter an HTTP(S) or SSH GitLab repository URL without credentials, query parameters, or fragments.",
+        });
+      }
+    }
     const preparedDestination = yield* prepareDestination(input.destinationPath);
     let repository: SourceControlRepositoryInfo | null = null;
     let remoteUrl = input.remoteUrl?.trim() ?? null;
@@ -221,7 +238,16 @@ export const make = Effect.gen(function* () {
             .remove(preparedDestination.destinationPath, { force: true, recursive: true })
             .pipe(
               Effect.matchEffect({
-                onSuccess: () => Effect.fail(cause),
+                onSuccess: () =>
+                  Effect.fail(
+                    new SourceControlRepositoryError({
+                      operation: "cloneRepository",
+                      provider,
+                      detail:
+                        "Git clone failed. Check workspace Git credentials, network access, and the repository clone protocol.",
+                      cause,
+                    }),
+                  ),
                 onFailure: (cleanupCause) =>
                   Effect.fail(
                     new SourceControlRepositoryError({

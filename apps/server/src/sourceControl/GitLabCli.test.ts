@@ -467,7 +467,7 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
-  it.effect("keeps non-merge-request not-found failures generic", () =>
+  it.effect("provides safe guidance for repository lookup not-found failures", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({
         operation: "GitLabCli.execute",
@@ -489,6 +489,8 @@ layer("GitLabCli.layer", (it) => {
 
       assert.strictEqual(error._tag, "GitLabCliCommandError");
       assert.strictEqual(error.cause, cause);
+      assert.ok(error.message.includes("Check the repository path"));
+      assert.ok(!error.message.includes(cause.detail));
     }),
   );
 

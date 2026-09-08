@@ -234,3 +234,44 @@ export function detectSourceControlProviderFromRemoteUrl(
     baseUrl: toBaseUrl(host),
   };
 }
+
+/** Route project paths through provider lookup and full URLs directly to workspace Git. */
+export function parseGitLabCloneSource(
+  value: string,
+): { readonly repository: string } | { readonly remoteUrl: string } | null {
+  const input = value.trim();
+  if (/[\s\\\u0000-\u001f\u007f]/u.test(input)) return null;
+  let projectPath = input;
+  let isUrl = false;
+  const scp = /^[a-zA-Z0-9._-]+@([a-zA-Z0-9.-]+):(.+)$/u.exec(input);
+  if (scp) {
+    projectPath = scp[2]!;
+    isUrl = true;
+  } else if (input.includes("://")) {
+    try {
+      const url = new URL(input);
+      if (!["https:", "http:", "ssh:"].includes(url.protocol)) return null;
+      if (url.password || (url.protocol !== "ssh:" && url.username) || url.search || url.hash) {
+        return null;
+      }
+      projectPath = decodeURIComponent(url.pathname.replace(/^\//u, ""));
+      isUrl = true;
+    } catch {
+      return null;
+    }
+  }
+  const segments = projectPath.replace(/\/+$/u, "").split("/");
+  if (
+    segments.length < 2 ||
+    segments.some((segment) => !/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/u.test(segment))
+  ) {
+    return null;
+  }
+  if (isUrl) {
+    const provider = detectSourceControlProviderFromRemoteUrl(input);
+    // Unrecognized hosts may be self-hosted GitLab; known other providers stay unsupported.
+    if (!provider || (provider.kind !== "gitlab" && provider.kind !== "unknown")) return null;
+    return { remoteUrl: input };
+  }
+  return { repository: input };
+}

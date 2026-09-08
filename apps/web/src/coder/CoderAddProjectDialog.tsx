@@ -3,6 +3,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { inferProjectTitleFromPath } from "@t3tools/client-runtime/state/projects";
+import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -387,6 +388,13 @@ function GitLabCloneProject({
 
   const submit = async (): Promise<void> => {
     if (!canClone) return;
+    const source = parseGitLabCloneSource(repository);
+    if (!source) {
+      onError(
+        "Enter a GitLab namespace/project path or an HTTP(S) or SSH repository URL without credentials, query parameters, or fragments.",
+      );
+      return;
+    }
     setCloning(true);
     onError(null);
     try {
@@ -394,7 +402,7 @@ function GitLabCloneProject({
         environmentId,
         input: {
           provider: "gitlab",
-          repository: repository.trim(),
+          ...source,
           destinationPath: destinationPath.trim(),
         },
       });
@@ -422,12 +430,13 @@ function GitLabCloneProject({
         <Input
           id="gitlab-clone-repository"
           nativeInput
-          placeholder="group/project"
+          placeholder="group/project or https://gitlab.example/group/project"
           value={repository}
           onChange={(event) => updateRepository(event.target.value)}
         />
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Uses the workspace&apos;s authenticated glab CLI and its configured GitLab host.
+          Project paths use the workspace&apos;s glab authentication and SSH. GitLab URLs are cloned
+          directly using their protocol and the workspace&apos;s Git credentials.
         </p>
       </div>
       <div>
