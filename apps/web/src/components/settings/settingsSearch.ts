@@ -126,6 +126,13 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     searchTerms: ["gitlab merge request merged closed automatically sidebar"],
   },
   {
+    id: "proactive-panels",
+    title: "Proactive panels",
+    to: "/settings/preferences",
+    section: "Editor and history",
+    searchTerms: ["automatic merge request diff completed turn panel"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/preferences",

@@ -573,8 +573,7 @@ const make = Effect.gen(function* () {
           isTemporaryWorktreeBranch(checkedOutBranch) ||
           thread.branch === null ||
           thread.branch === checkedOutBranch ||
-          thread.worktreePath === null ||
-          isTemporaryWorktreeBranch(thread.branch)
+          thread.worktreePath === null
         ) {
           return;
         }

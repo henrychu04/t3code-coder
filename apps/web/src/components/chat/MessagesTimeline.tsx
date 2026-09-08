@@ -2012,7 +2012,7 @@ export function buildToolCallExpandedBody(
   visibleLabel: string,
 ): string | null {
   const blocks: string[] = [];
-  const seen = new Set<string>();
+  const seen = new Set<string>([visibleLabel.trim()]);
   const addBlock = (value: string | null | undefined) => {
     const text = value?.trim();
     if (!text || seen.has(text)) return;

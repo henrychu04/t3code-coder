@@ -251,15 +251,15 @@ function GeneralSettingsView() {
 
       <SettingsSection title="Editor and history">
         <SettingsRow
-          id="composer-collapse-on-blur"
-          title="Collapse composer when unfocused"
-          description="Rest an existing thread's composer into one line after focus moves elsewhere."
+          id="proactive-panels"
+          title="Proactive panels"
+          description="Automatically open linked merge requests and completed-turn diffs when entering or working in a thread."
           control={
             <Switch
-              aria-label="Collapse composer when unfocused"
-              checked={settings.composerCollapseOnBlur}
+              aria-label="Proactive panels"
+              checked={settings.proactivePanelsEnabled}
               onCheckedChange={(checked) =>
-                updateSettings({ composerCollapseOnBlur: Boolean(checked) })
+                updateSettings({ proactivePanelsEnabled: Boolean(checked) })
               }
             />
           }

@@ -138,7 +138,8 @@
     "./state/vcs": {
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"
-    }
+    },
+    "./state/provider-instance-display": "./src/state/providerInstanceDisplay.ts"
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",

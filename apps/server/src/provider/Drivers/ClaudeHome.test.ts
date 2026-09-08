@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Path from "effect/Path";
 
 import {
+  claudeSignedOutMessage,
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
@@ -38,6 +39,19 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         );
       }),
     );
+
+    it("points the signed-out hint at the configured Claude home", () => {
+      expect(claudeSignedOutMessage({ configDir: undefined, cwd: "/synthetic" })).toContain(
+        "API credentials in the workspace provider configuration",
+      );
+      const configDir = "/synthetic/Claude work's $literal";
+      const message = claudeSignedOutMessage({ configDir, cwd: "/synthetic/project" });
+      expect(message).toContain(`CLAUDE_CONFIG_DIR set to "${configDir}"`);
+      expect(message).not.toContain("CLAUDE_CONFIG_DIR=");
+      expect(message).toContain("then start a new thread");
+      expect(message).not.toContain("claude auth login");
+      expect(message).not.toContain("subscription");
+    });
 
     it.effect("separates capability probes by cwd", () =>
       Effect.gen(function* () {

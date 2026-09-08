@@ -75,6 +75,7 @@ const DEFAULT_ATTACH_REPLAY_BYTE_LIMIT = 512 * 1024;
 const DEFAULT_ATTACH_REPLAY_TOTAL_BYTE_LIMIT = 64 * 1024 * 1024;
 const DEFAULT_PERSIST_DEBOUNCE_MS = 40;
 const DEFAULT_SUBPROCESS_POLL_INTERVAL_MS = 1_000;
+const MAX_SUBPROCESS_POLL_INTERVAL_MS = 60_000;
 const DEFAULT_PROCESS_KILL_GRACE_MS = 1_000;
 const DEFAULT_MAX_RETAINED_INACTIVE_SESSIONS = 128;
 const DEFAULT_OPEN_COLS = 120;
@@ -620,6 +621,13 @@ function isRetryableShellSpawnError(error: PtyAdapter.PtySpawnError): boolean {
 interface TerminalProcessTableSnapshot {
   readonly childrenByParent: ReadonlyMap<number, ReadonlyArray<number>>;
   readonly commandById: ReadonlyMap<number, string>;
+}
+
+export function subprocessSnapshotPollDelayMs(
+  pollIntervalMs: number,
+  failureCount: number,
+): number {
+  return Math.min(pollIntervalMs * 2 ** failureCount, MAX_SUBPROCESS_POLL_INTERVAL_MS);
 }
 
 function parsePosixProcessTable(stdout: string): TerminalProcessTableSnapshot {
@@ -2136,7 +2144,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     );
 
     if (runningSessions.length === 0) {
-      return;
+      return true;
     }
 
     const inspectorOption = yield* acquireSubprocessInspector.pipe(
@@ -2149,7 +2157,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     );
 
     if (Option.isNone(inspectorOption)) {
-      return;
+      return false;
     }
 
     const subprocessInspector = inspectorOption.value;
@@ -2221,6 +2229,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       concurrency: "unbounded",
       discard: true,
     });
+    return true;
   });
 
   const hasRunningSessions = readManagerState.pipe(
@@ -2229,14 +2238,26 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     ),
   );
 
+  let subprocessSnapshotFailureCount = 0;
   yield* Effect.forever(
     hasRunningSessions.pipe(
       Effect.flatMap((active) =>
         active
           ? pollSubprocessActivity().pipe(
-              Effect.flatMap(() => Effect.sleep(subprocessPollIntervalMs)),
+              Effect.flatMap((snapshotSucceeded) => {
+                subprocessSnapshotFailureCount = snapshotSucceeded
+                  ? 0
+                  : Math.min(subprocessSnapshotFailureCount + 1, 30);
+                const delayMs = subprocessSnapshotPollDelayMs(
+                  subprocessPollIntervalMs,
+                  subprocessSnapshotFailureCount,
+                );
+                return Effect.sleep(delayMs);
+              }),
             )
-          : Effect.sleep(subprocessPollIntervalMs),
+          : Effect.sync(() => {
+              subprocessSnapshotFailureCount = 0;
+            }).pipe(Effect.flatMap(() => Effect.sleep(subprocessPollIntervalMs))),
       ),
     ),
   ).pipe(Effect.forkIn(workerScope));

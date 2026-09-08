@@ -145,57 +145,58 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ),
     );
 
-  const applyItem = Effect.fn("EnvironmentShellState.applyItem")(function* (
-    item: OrchestrationShellStreamItem,
+  // One projection write per bounded RPC batch keeps bulk thread updates responsive.
+  const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
+    items: ReadonlyArray<OrchestrationShellStreamItem>,
   ) {
-    if (item.kind === "synchronized") {
-      yield* synchronizationCompletion.stop;
-      yield* SubscriptionRef.update(state, (current) =>
-        Option.isSome(current.snapshot)
-          ? { ...current, status: "live" as const, error: Option.none() }
-          : current,
-      );
-      return;
-    }
-
-    if (item.kind === "cursor") {
-      yield* Ref.update(resumeSequence, (current) => Math.max(current, item.sequence));
-      return;
-    }
-
-    const current = yield* SubscriptionRef.get(state);
-    const nextSnapshot =
-      item.kind === "snapshot"
-        ? item.snapshot
-        : Option.match(current.snapshot, {
-            onNone: () => null,
-            onSome: (snapshot) =>
-              item.sequence > snapshot.snapshotSequence
-                ? applyShellStreamEvent(snapshot, item)
-                : snapshot,
-          });
-    if (nextSnapshot === null) {
-      return;
-    }
-    if (item.kind === "snapshot") {
-      yield* Ref.set(resumeSequence, item.snapshot.snapshotSequence);
-    } else {
-      yield* Ref.update(resumeSequence, (current) => Math.max(current, item.sequence));
-    }
-
-    const waiting = yield* synchronizationCompletion.isWaiting;
-    yield* SubscriptionRef.set(state, {
-      snapshot: Option.some(nextSnapshot),
-      status: waiting ? "synchronizing" : "live",
-      error: Option.none(),
-    });
-    if (item.kind === "snapshot") {
-      const session = yield* Ref.get(activeSubscriptionSession);
-      if (session !== null) {
-        yield* Ref.set(lastAuthoritativeSession, session);
+    const initial = yield* SubscriptionRef.get(state);
+    let next = initial;
+    let waiting = yield* synchronizationCompletion.isWaiting;
+    let cursor = yield* Ref.get(resumeSequence);
+    let receivedSnapshot = false;
+    for (const item of items) {
+      if (item.kind === "synchronized") {
+        waiting = false;
+        yield* synchronizationCompletion.stop;
+        if (Option.isSome(next.snapshot)) {
+          next = { ...next, status: "live", error: Option.none() };
+        }
+        continue;
       }
+      if (item.kind === "cursor") {
+        cursor = Math.max(cursor, item.sequence);
+        continue;
+      }
+      const nextSnapshot =
+        item.kind === "snapshot"
+          ? item.snapshot
+          : Option.match(next.snapshot, {
+              onNone: () => null,
+              onSome: (snapshot) =>
+                item.sequence > snapshot.snapshotSequence
+                  ? applyShellStreamEvent(snapshot, item)
+                  : snapshot,
+            });
+      if (nextSnapshot === null) continue;
+      cursor =
+        item.kind === "snapshot" ? item.snapshot.snapshotSequence : Math.max(cursor, item.sequence);
+      receivedSnapshot ||= item.kind === "snapshot";
+      next = {
+        snapshot: Option.some(nextSnapshot),
+        status: waiting ? "synchronizing" : "live",
+        error: Option.none(),
+      };
     }
-    yield* Queue.offer(persistence, nextSnapshot);
+    yield* Ref.set(resumeSequence, cursor);
+    if (next === initial) return;
+    yield* SubscriptionRef.set(state, next);
+    if (receivedSnapshot) {
+      const session = yield* Ref.get(activeSubscriptionSession);
+      if (session !== null) yield* Ref.set(lastAuthoritativeSession, session);
+    }
+    if (next.snapshot !== initial.snapshot && Option.isSome(next.snapshot)) {
+      yield* Queue.offer(persistence, next.snapshot.value);
+    }
   });
 
   const foregroundResubscriptions = Option.match(wakeups, {
@@ -229,7 +230,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         retryExpectedFailureAfter: "250 millis",
         resubscribe: foregroundResubscriptions,
       },
-    ).pipe(Stream.runForEach(applyItem)),
+    ).pipe(Stream.runForEachArray(applyItems)),
   );
   yield* SubscriptionRef.changes(supervisor.state).pipe(
     Stream.runForEach((connectionState) => {

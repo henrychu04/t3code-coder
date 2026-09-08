@@ -76,7 +76,7 @@ import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
 import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "../markdown-links";
-import { useRightPanelStore } from "../rightPanelStore";
+import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 import {
   findProjectForGitLabMergeRequest,
@@ -106,6 +106,7 @@ interface ChatMarkdownProps {
   readonly cwd: string | undefined;
   /** Opens contained project file links in the in-browser Files surface. */
   readonly threadRef?: ScopedThreadRef | undefined;
+  readonly panelRef?: ScopedThreadRef | undefined;
   /** Environment used to resolve internal MR links outside a thread. */
   readonly environmentId?: EnvironmentId | undefined;
   readonly onTaskListChange?: (input: { markerOffset: number; checked: boolean }) => void;
@@ -626,6 +627,7 @@ function useChatMarkdownState({
   text,
   cwd,
   threadRef,
+  panelRef,
   environmentId,
   onTaskListChange,
   isStreaming = false,
@@ -711,6 +713,7 @@ function useChatMarkdownState({
     skills,
     text,
     threadRef,
+    panelRef,
     handleCopy,
   };
 }
@@ -798,8 +801,15 @@ const MARKDOWN_COMPONENTS: Components = {
     );
   },
   a({ node: _node, href, children, title: _title, ...props }) {
-    const { cwd, threadRef, environmentId, projects, navigate, handleMergeRequestContextMenu } =
-      useMarkdownState();
+    const {
+      cwd,
+      threadRef,
+      panelRef,
+      environmentId,
+      projects,
+      navigate,
+      handleMergeRequestContextMenu,
+    } = useMarkdownState();
     const pullRequestAutolink = String(
       (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
     );
@@ -847,7 +857,8 @@ const MARKDOWN_COMPONENTS: Components = {
           mergeRequest,
         )
       : undefined;
-    if (threadRef && mergeRequest && project) {
+    const resolvedPanelRef = panelRef ?? threadRef;
+    if (resolvedPanelRef && mergeRequest && project) {
       const linkedPullRequest: ThreadLinkedPullRequest = {
         projectId: project.id,
         repository: project.repositoryIdentity?.displayName ?? mergeRequest.repository,
@@ -862,14 +873,33 @@ const MARKDOWN_COMPONENTS: Components = {
           onContextMenu={(event) =>
             void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
           }
-          onClick={() =>
-            useRightPanelStore.getState().openPullRequest(threadRef, {
+          onClick={() => {
+            useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
               environmentId: project.environmentId,
               projectId: project.id,
               repository: linkedPullRequest.repository,
               number: mergeRequest.number,
-            })
-          }
+              url: targetHref,
+            });
+            if (
+              resolvedPanelRef.environmentId === PULL_REQUESTS_PANEL_REF.environmentId &&
+              resolvedPanelRef.threadId === PULL_REQUESTS_PANEL_REF.threadId
+            ) {
+              void navigate({
+                to: "/pull-requests",
+                search: (previous) => ({
+                  ...previous,
+                  involvement: previous.involvement ?? "all",
+                  state: previous.state ?? "all",
+                  repository: linkedPullRequest.repository,
+                  number: mergeRequest.number,
+                  selectedProjectId: project.id,
+                  selectedEnvironmentId: project.environmentId,
+                }),
+                replace: true,
+              });
+            }
+          }}
         >
           {children}
         </button>

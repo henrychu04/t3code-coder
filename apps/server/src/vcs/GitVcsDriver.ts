@@ -1175,6 +1175,32 @@ const makeLocalGitService = Effect.gen(function* () {
       };
     }
 
+    const index = yield* run("GitVcsDriver.status.indexPath", cwd, [
+      "rev-parse",
+      "--git-path",
+      "index",
+    ]);
+    const lockPath = `${path.resolve(cwd, index.stdout.trim())}.lock`;
+    const indexLocked = yield* fileSystem.exists(lockPath).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation: "GitVcsDriver.status.indexPath",
+            command: "git",
+            cwd,
+            detail: "Failed to check the Git index lock.",
+            cause,
+          }),
+      ),
+    );
+    if (indexLocked) {
+      return yield* new GitCommandError({
+        operation: "GitVcsDriver.status.indexPath",
+        command: "git",
+        cwd,
+        detail: "Git index is locked. Status will resume when the index lock is removed.",
+      });
+    }
     const branch = yield* currentBranch(cwd);
     const [porcelain, numstat, remotesResult, hasMain, hasMaster] = yield* Effect.all([
       run("GitVcsDriver.status.porcelain", cwd, [

@@ -104,6 +104,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           has_actionable_proposed_plan,
           pinned_at,
           pin_order_key,
+          active_order_key,
           created_at,
           updated_at,
           deleted_at
@@ -126,6 +127,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           '2026-02-24T00:00:01.000Z',
           'gm',
+          'hq',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -351,6 +353,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
+          activeOrderKey: "hq",
           titleRegeneration: null,
           deletedAt: null,
           messages: [
@@ -479,6 +482,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
+          activeOrderKey: "hq",
           titleRegeneration: null,
           session: {
             threadId: ThreadId.make("thread-1"),
@@ -2577,11 +2581,11 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       assert.equal(detailWithPinnedRequests._tag, "Some");
       if (detailWithPinnedRequests._tag === "Some") {
         const ids = detailWithPinnedRequests.value.activities.map((activity) => activity.id);
-        assert.equal(detailWithPinnedRequests.value.activities.length, 503);
+        assert.equal(detailWithPinnedRequests.value.activities.length, 502);
         assert.equal(ids.includes(asEventId("approval-old")), true);
         assert.equal(ids.includes(asEventId("user-input-old")), true);
         assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), false);
       }
 
       const windowWithPinnedRequests = yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
@@ -2590,11 +2594,56 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
       assert.equal(windowWithPinnedRequests._tag, "Some");
       if (windowWithPinnedRequests._tag === "Some") {
         const ids = windowWithPinnedRequests.value.thread.activities.map((activity) => activity.id);
-        assert.equal(windowWithPinnedRequests.value.thread.activities.length, 503);
+        assert.equal(windowWithPinnedRequests.value.thread.activities.length, 502);
         assert.equal(ids.includes(asEventId("approval-old")), true);
         assert.equal(ids.includes(asEventId("user-input-old")), true);
         assert.equal(ids.includes(asEventId("user-input-closed")), false);
-        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), true);
+        assert.equal(ids.includes(asEventId("user-input-tied-z-request")), false);
+      }
+    }),
+  );
+
+  it.effect("retains unsequenced question resolutions outside the activity and turn windows", () =>
+    Effect.gen(function* () {
+      yield* seedFanOutThread();
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`
+        WITH RECURSIVE rows(sequence) AS (
+          SELECT 1 UNION ALL SELECT sequence + 1 FROM rows WHERE sequence < 500
+        )
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
+        )
+        SELECT printf('tool-%04d', sequence), 'thread-w', 'turn-5', 'tool',
+          'tool.completed', 'Tool', '{}', sequence, '2026-03-01T00:04:00.000Z'
+        FROM rows
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
+        ) VALUES
+          ('question', 'thread-w', 'turn-5', 'approval', 'user-input.requested',
+           'Question', '{"requestId":"dismissed","responseMode":"message"}', 999,
+           '2099-01-01T00:00:00.000Z'),
+          ('dismissal', 'thread-w', NULL, 'info', 'user-input.resolved',
+           'Dismissed', '{"requestId":"dismissed","responseMode":"message"}', NULL,
+           '2026-01-01T00:00:00.000Z')
+      `;
+      yield* sql`UPDATE projection_threads SET pending_user_input_count = 0 WHERE thread_id = 'thread-w'`;
+
+      const full = Option.getOrThrow(yield* snapshotQuery.getThreadDetailById(threadW));
+      const windowed = Option.getOrThrow(
+        yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
+          turnLimit: 2,
+        }),
+      ).thread;
+      for (const detail of [full, windowed]) {
+        const ids = detail.activities.map((activity) => activity.id);
+        assert.equal(ids.includes(asEventId("question")), true);
+        assert.equal(ids.includes(asEventId("dismissal")), true);
+        assert.equal(ids.length, 501);
       }
     }),
   );

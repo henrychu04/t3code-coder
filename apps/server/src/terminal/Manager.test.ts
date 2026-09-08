@@ -2057,3 +2057,49 @@ it.layer(
     }).pipe(Effect.provide(TestClock.layer())),
   );
 });
+
+it.effect("backs off failed Linux snapshots and resets the interval after recovery", () =>
+  Effect.gen(function* () {
+    let calls = 0;
+    const processRunner: ProcessRunner.ProcessRunner["Service"] = {
+      run: () =>
+        Effect.sync(() => ({
+          stdout: "  100  9000 vim",
+          stderr: "",
+          code: ChildProcessSpawner.ExitCode(++calls <= 2 ? 1 : 0),
+          timedOut: false,
+          stdoutTruncated: false,
+          stderrTruncated: false,
+          stdoutInvalidUtf8: false,
+          stderrInvalidUtf8: false,
+        })),
+    };
+    const { manager, getEvents, ptyAdapter } = yield* createManager(5, {
+      subprocessPollIntervalMs: 1_000,
+    }).pipe(
+      Effect.provideService(ProcessRunner.ProcessRunner, processRunner),
+      Effect.provide(withHostPlatform("linux")),
+    );
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const process of ptyAdapter.processes) process.emitExit({ exitCode: 0, signal: 0 });
+      }),
+    );
+    yield* manager.open(openInput());
+    yield* TestClock.adjust("1 second");
+    expect(calls).toBe(1);
+    yield* TestClock.adjust("1999 millis");
+    expect(calls).toBe(1);
+    yield* TestClock.adjust("1 millis");
+    expect(calls).toBe(2);
+    yield* TestClock.adjust("3999 millis");
+    expect(calls).toBe(2);
+    yield* TestClock.adjust("1 millis");
+    expect(calls).toBe(3);
+    expect(
+      (yield* getEvents).some((event) => event.type === "activity" && event.hasRunningSubprocess),
+    ).toBe(true);
+    yield* TestClock.adjust("1 second");
+    expect(calls).toBe(4);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

@@ -1,6 +1,11 @@
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { toastManager } from "./ui/toast";
+import { PULL_REQUESTS_PANEL_REF } from "../rightPanelStore";
 import { CoderAddProjectDialog } from "../coder/CoderAddProjectDialog";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useLocation } from "@tanstack/react-router";
 import {
   FileIcon,
   FolderPlusIcon,
@@ -140,6 +145,27 @@ function CoderCommandPaletteDialog(props: {
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const referenceThreadRef =
+    pathname === "/pull-requests"
+      ? environments.some(
+          (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+        )
+        ? PULL_REQUESTS_PANEL_REF
+        : null
+      : activeThread
+        ? scopeThreadRef(activeThread.environmentId, activeThread.id)
+        : null;
+  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(referenceThreadRef);
+  const referenceCopyTarget =
+    referenceThreadRef === null || (pathname === "/pull-requests" && !openPanelPullRequestUrl)
+      ? null
+      : resolveThreadReferenceCopyTarget({
+          threadId: referenceThreadRef.threadId,
+          openPanelPullRequestUrl,
+          linkedPullRequestUrl:
+            activeThread?.linkedPullRequest?.url ?? activeThread?.branchPullRequest?.url ?? null,
+        });
   const [view, setView] = useState<"root" | "projects">("root");
   const [query, setQuery] = useState("");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
@@ -383,6 +409,38 @@ function CoderCommandPaletteDialog(props: {
     },
   );
 
+  if (referenceCopyTarget)
+    actionItems.push({
+      kind: "action",
+      value: "action:copy-reference",
+      title:
+        referenceCopyTarget.kind === "pull-request"
+          ? "Copy merge request link"
+          : "Copy thread reference",
+      searchTerms: ["copy", "reference", "merge request", "link"],
+      shortcutCommand: "thread.copyReference",
+      icon: <FileIcon className="size-4 text-icon-muted" />,
+      run: async () => {
+        try {
+          const didCopy = await writeTextToClipboard(
+            referenceCopyTarget.value,
+            referenceCopyTarget.clipboardTarget,
+          );
+          if (didCopy)
+            toastManager.add({
+              type: "success",
+              title: referenceCopyTarget.successTitle,
+              description: referenceCopyTarget.value,
+            });
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy reference",
+            description: error instanceof Error ? error.message : "Clipboard unavailable.",
+          });
+        }
+      },
+    });
   const rootGroups: CommandPaletteGroup[] = [
     { value: "actions", label: "Actions", items: actionItems },
     ...(query.trim().length > 0 && projectItems.length > 0

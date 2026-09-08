@@ -136,6 +136,7 @@ export type SDKUserMessage = {
 };
 
 type SDKAssistantMessage = {
+  readonly error?: string;
   readonly type: "assistant";
   readonly session_id: string;
   readonly parent_tool_use_id: string | null;

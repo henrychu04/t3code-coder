@@ -170,9 +170,6 @@ importers:
       '@effect/atom-react':
         specifier: 4.0.0-beta.103
         version: 4.0.0-beta.103(effect@4.0.0-beta.103(patch_hash=05af906e5db442668a85c1b7b175fd9e085e9ed78803e62b0404480bd988c76a))(react@19.2.6)(scheduler@0.27.0)
-      '@formkit/auto-animate':
-        specifier: ^0.9.0
-        version: 0.9.0
       '@legendapp/list':
         specifier: 'catalog:'
         version: 3.3.5(patch_hash=455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -806,9 +803,6 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
-
-  '@formkit/auto-animate@0.9.0':
-    resolution: {integrity: sha512-VhP4zEAacXS3dfTpJpJ88QdLqMTcabMg0jwpOSxZ/VzfQVfl3GkZSCZThhGC5uhq/TxPHPzW0dzr4H9Bb1OgKA==}
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -3493,8 +3487,6 @@ snapshots:
       tabbable: 6.4.0
 
   '@floating-ui/utils@0.2.11': {}
-
-  '@formkit/auto-animate@0.9.0': {}
 
   '@jridgewell/gen-mapping@0.3.13':
     dependencies:

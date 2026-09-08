@@ -4,13 +4,12 @@ Messages can contain up to 120,000 characters. If a draft is longer, T3 Coder ke
 composer and shows how many characters need to be removed. Shorten the draft or split it into
 multiple messages, then send again in the same thread.
 
-In an existing thread, the composer can settle into a single-line resting state when it loses
-focus. At wider sizes, scrolling the conversation can also rest a focused composer, except when
-scrolling toward the end while already there. Control those behaviors independently under
-**Settings → Preferences**. Selecting text in the composer keeps it expanded until the selection
-is released. When the thread-context strip has room, the model and mode controls remain available
-beside the thread context; otherwise they return when the composer is focused. Focus the composer
-or start typing to expand it again. New-thread layouts keep the full composer.
+In an existing thread, scrolling a conversation that overflows the viewport can rest the composer
+into one line. Losing focus does not collapse it, and multiline drafts remain expanded. Control
+scroll collapse under **Settings → Preferences**. When the thread-context strip has room, the
+model and mode controls remain available beside it; otherwise they return when the composer is
+focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
+composer.
 
 Pasting plain text while the conversation itself is focused moves that text into the composer.
 Paste remains with a terminal, menu, dialog, editor, or other interactive control when one of those
@@ -72,6 +71,9 @@ image links may not resolve there.
 The model picker in the composer sets the model for the thread; open it with `mod+shift+m`. When
 the picker is open, `mod+1` through `mod+9` jump straight to a model. The permission mode control
 sits next to it — see [Permission modes](./permission-modes.md).
+
+Fast/Normal selections survive model changes and new chats during the current browser session.
+Draft and selection state remains in browser memory.
 
 ## Context meter
 

@@ -1,3 +1,7 @@
+import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+
 import { shallow } from "zustand/shallow";
 import { projectSettingsTarget } from "../projectSettingsTarget";
 import {
@@ -55,6 +59,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -132,6 +137,7 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
+  pullRequestSurface,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -166,12 +172,16 @@ import {
   Minimize2Icon,
   WifiOffIcon,
 } from "lucide-react";
-import { cn, randomHex } from "~/lib/utils";
+
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { newMessageId, newThreadId } from "~/lib/utils";
+import { cn, randomHex, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
-import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useClientSettingsHydrated,
+  useEnvironmentSettings,
+} from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -268,11 +278,17 @@ import {
   runMobileComposerTransition,
 } from "./chat/draftHeroTransition";
 import {
+  observeProactivePanelUserChoice,
+  shouldOpenProactivePullRequest,
+  shouldOpenProactiveTurnDiff,
+  shouldRetargetThreadPullRequestPanel,
+  resolveProactiveTurnDiffAction,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLocalDraftThread,
   buildLoadingThreadFromShell,
+  buildRunningThreadTurnInterruptInput,
   buildThreadTurnInterruptInput,
   canUseOwnedFilesSurface,
   codexArtifactTemplatePromptToAppend,
@@ -297,6 +313,7 @@ import {
   shouldWriteThreadErrorToCurrentServerThread,
   startNewThreadForProject,
   waitForStartedServerThread,
+  shouldRefocusComposerOnWindowFocus,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -1251,6 +1268,9 @@ export default function ChatView(props: ChatViewProps) {
   const respondToThreadUserInput = useAtomCommand(threadEnvironment.respondToUserInput, {
     reportFailure: false,
   });
+  const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
+    reportFailure: false,
+  });
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
     reportFailure: false,
   });
@@ -1299,6 +1319,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [routeKind, routeThreadRef, routeThreadState]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const settings = useEnvironmentSettings(environmentId);
+  const clientSettingsHydrated = useClientSettingsHydrated();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -1365,6 +1386,7 @@ export default function ChatView(props: ChatViewProps) {
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
   const shouldUseRightPanelSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  const isMobileViewport = useMediaQuery("max-sm");
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [terminalUiLaunchContext, setTerminalUiLaunchContext] =
     useState<TerminalLaunchContext | null>(null);
@@ -2104,9 +2126,167 @@ export default function ChatView(props: ChatViewProps) {
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const activeThreadMetadata = routeServerThreadShell ?? activeThread;
   const linkedThreadPullRequest =
-    activeThread?.linkedPullRequest ?? activeThread?.branchPullRequest ?? null;
+    activeThreadMetadata?.linkedPullRequest ?? activeThreadMetadata?.branchPullRequest ?? null;
   const activeProjectRepository = gitLabRepository;
+  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
+  const referenceCopyTarget = activeThreadRef
+    ? resolveThreadReferenceCopyTarget({
+        threadId: activeThreadRef.threadId,
+        openPanelPullRequestUrl,
+        linkedPullRequestUrl: linkedThreadPullRequest?.url ?? null,
+      })
+    : null;
+  const copyThreadReference = useEffectEvent((event: KeyboardEvent) => {
+    if (!referenceCopyTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat) return;
+    void writeTextToClipboard(referenceCopyTarget.value, referenceCopyTarget.clipboardTarget)
+      .then((didCopy) => {
+        if (didCopy)
+          toastManager.add({
+            type: "success",
+            title: referenceCopyTarget.successTitle,
+            description: referenceCopyTarget.value,
+          });
+      })
+      .catch((error: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: "Failed to copy reference",
+          description: error instanceof Error ? error.message : "Clipboard unavailable.",
+        }),
+      );
+  });
+  const linkedThreadPullRequestKey = linkedThreadPullRequest
+    ? JSON.stringify([
+        linkedThreadPullRequest.projectId,
+        linkedThreadPullRequest.repository,
+        linkedThreadPullRequest.number,
+      ])
+    : null;
+  const observedThreadPullRequestRef = useRef<{
+    readonly threadKey: string;
+    readonly reference: typeof linkedThreadPullRequest;
+  } | null>(null);
+  const proactivePanelObservationRef = useRef<ReturnType<
+    typeof observeProactivePanelUserChoice
+  > | null>(null);
+
+  useEffect(() => {
+    if (!isServerThread || activeThreadKey === null || activeThreadRef === null) {
+      proactivePanelObservationRef.current = null;
+      observedThreadPullRequestRef.current = null;
+      return;
+    }
+    const panels = useRightPanelStore.getState();
+    const observation = observeProactivePanelUserChoice(proactivePanelObservationRef.current, {
+      threadKey: activeThreadKey,
+      runningTurnId: activeRunningTurnId,
+      userActionRevision: panels.getUserActionRevision(activeThreadRef),
+    });
+    proactivePanelObservationRef.current = observation;
+    const {
+      runningTurnId: previousRunningTurnId,
+      targetKey: previousTargetKey,
+      userActionRevision,
+    } = observation;
+    const openSurface = selectActiveRightPanelSurface(panels.byThreadKey, activeThreadRef);
+    const previousPullRequest = observedThreadPullRequestRef.current;
+    observedThreadPullRequestRef.current = {
+      threadKey: activeThreadKey,
+      reference: linkedThreadPullRequest,
+    };
+    const followSelectedPullRequest =
+      previousPullRequest?.threadKey === activeThreadKey &&
+      shouldRetargetThreadPullRequestPanel(
+        previousPullRequest.reference,
+        linkedThreadPullRequest,
+        openSurface,
+      );
+    // Following the selected linked PR does not open an unrelated panel, so it
+    // remains available with proactive panels off. It still respects a later choice.
+    if (followSelectedPullRequest && linkedThreadPullRequest !== null) {
+      panels.openProactive(
+        activeThreadRef,
+        pullRequestSurface(linkedThreadPullRequest),
+        userActionRevision,
+      );
+    }
+    if (!clientSettingsHydrated || threadDetailLoading) return;
+
+    const settledTurnId = latestTurnSettled ? (activeLatestTurn?.turnId ?? null) : null;
+    const newlyCompletedTurnId = shouldOpenProactiveTurnDiff({
+      previousRunningTurnId,
+      runningTurnId: activeRunningTurnId,
+      settledTurnId,
+      turnCompleted: activeLatestTurn?.state === "completed",
+    })
+      ? settledTurnId
+      : null;
+    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !shouldUseRightPanelSheet;
+    const eligibleCompletion = proactivePanelsEnabled && newlyCompletedTurnId !== null;
+    const completedCheckpoint = eligibleCompletion
+      ? activeThread?.checkpoints.find((checkpoint) => checkpoint.turnId === newlyCompletedTurnId)
+      : undefined;
+    const diffAction = eligibleCompletion
+      ? resolveProactiveTurnDiffAction({
+          checkpoint: completedCheckpoint,
+          isGitRepo: gitStatusQuery.data?.isRepo,
+        })
+      : "ignore";
+    const eligibleLink =
+      proactivePanelsEnabled &&
+      shouldOpenProactivePullRequest(previousTargetKey, linkedThreadPullRequestKey);
+    const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
+    proactivePanelObservationRef.current = {
+      ...observation,
+      // Preserve first-entry eligibility while the checkpoint or repository is loading.
+      runningTurnId: diffAction === "defer" ? previousRunningTurnId : activeRunningTurnId,
+      targetKey: shouldDeferLink ? (previousTargetKey ?? null) : linkedThreadPullRequestKey,
+    };
+
+    if (
+      !followSelectedPullRequest &&
+      eligibleLink &&
+      pullRequestsCapabilityKnown &&
+      supportsPullRequests &&
+      linkedThreadPullRequest !== null
+    ) {
+      panels.openProactive(
+        activeThreadRef,
+        pullRequestSurface(linkedThreadPullRequest),
+        userActionRevision,
+      );
+    }
+    if (diffAction !== "open" || newlyCompletedTurnId === null) return;
+    if (!panels.openProactive(activeThreadRef, { id: "diff", kind: "diff" }, userActionRevision)) {
+      return;
+    }
+    useDiffPanelStore.getState().selectTurn(activeThreadRef, newlyCompletedTurnId);
+    onDiffPanelOpen?.();
+  }, [
+    activeThread?.checkpoints,
+    activeLatestTurn?.turnId,
+    activeLatestTurn?.state,
+    activeRunningTurnId,
+    activeThreadKey,
+    activeThreadRef,
+    clientSettingsHydrated,
+    gitStatusQuery.data?.isRepo,
+    isServerThread,
+    latestTurnSettled,
+    linkedThreadPullRequest,
+    linkedThreadPullRequestKey,
+    onDiffPanelOpen,
+    pullRequestsCapabilityKnown,
+    settings.proactivePanelsEnabled,
+    shouldUseRightPanelSheet,
+    supportsPullRequests,
+    threadDetailLoading,
+  ]);
   const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     activeThreadRef?.environmentId ?? null,
@@ -2248,6 +2428,27 @@ export default function ChatView(props: ChatViewProps) {
     },
     [activeServerThread, draftId, routeThreadKey, routeThreadRef],
   );
+
+  const interruptContextRef = useRef({ activeThread, phase, setThreadError });
+  interruptContextRef.current = { activeThread, phase, setThreadError };
+  const onInterrupt = useCallback(async () => {
+    const { activeThread, phase, setThreadError } = interruptContextRef.current;
+    const input = buildRunningThreadTurnInterruptInput(activeThread, phase);
+    if (!input || !activeThread) return;
+    const result = await interruptThreadTurn({
+      environmentId: activeThread.environmentId,
+      input,
+    });
+    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+      const error = squashAtomCommandFailure(result);
+      setThreadError(
+        activeThread.id,
+        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
+      );
+    }
+  }, [interruptThreadTurn]);
+  const canInterruptRunningThread =
+    buildRunningThreadTurnInterruptInput(activeThread, phase) !== null;
 
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
@@ -3120,8 +3321,25 @@ export default function ChatView(props: ChatViewProps) {
         };
         // Keyboard scrolling (PageUp/Home/ArrowUp) bypasses wheel and
         // pointer events entirely; without this the timeline yanks back to
-        // the end on the next stream chunk.
+        // the end on the next stream chunk. Clicking message text can leave
+        // DOM focus on body, so these keys must also be heard at document.
         const handleKeyDown = (event: KeyboardEvent) => {
+          if (
+            !(event.target instanceof Node) ||
+            (!scrollNode.contains(event.target) &&
+              event.target !== document.body &&
+              event.target !== document.documentElement) ||
+            event.defaultPrevented ||
+            event.isComposing ||
+            event.altKey ||
+            event.ctrlKey ||
+            event.metaKey ||
+            event.shiftKey ||
+            eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR) ||
+            document.querySelector(TYPE_TO_FOCUS_FLOATING_LAYER_SELECTOR)
+          ) {
+            return;
+          }
           switch (event.key) {
             case "PageUp":
             case "Home":
@@ -3129,12 +3347,20 @@ export default function ChatView(props: ChatViewProps) {
               timelineScrollIntentRef.current = "away-from-end";
               if (contentScrollsUp()) {
                 handleManualNavigation();
+                composerRef.current?.collapseForTimelineScrollKey(event.key);
               }
               break;
             case "PageDown":
             case "End":
             case "ArrowDown":
               timelineScrollIntentRef.current = "toward-end";
+              if (viewportIsAwayFromEnd()) {
+                handleManualNavigation();
+              }
+              composerRef.current?.collapseForTimelineScrollKey(event.key);
+              if (isTimelineAtLogicalEnd()) {
+                composerRef.current?.restoreAfterTimelineReachedEnd();
+              }
               break;
             default:
               break;
@@ -3149,12 +3375,12 @@ export default function ChatView(props: ChatViewProps) {
         scrollNode.addEventListener("pointerdown", handlePointerDown, {
           passive: true,
         });
-        scrollNode.addEventListener("keydown", handleKeyDown);
+        document.addEventListener("keydown", handleKeyDown);
         removeListeners = () => {
           scrollNode.removeEventListener("wheel", handleWheel);
           scrollNode.removeEventListener("touchmove", handleTouchMove);
           scrollNode.removeEventListener("pointerdown", handlePointerDown);
-          scrollNode.removeEventListener("keydown", handleKeyDown);
+          document.removeEventListener("keydown", handleKeyDown);
         };
       });
     };
@@ -3414,6 +3640,33 @@ export default function ChatView(props: ChatViewProps) {
       window.cancelAnimationFrame(frame);
     };
   }, [activeThread?.id, focusComposer, terminalUiState.terminalOpen]);
+
+  // Tabbing back into the app lands focus wherever it last was, often the right panel or the
+  // body. Put it in the composer unless something that takes typing already holds it. The
+  // drawer terminal owns keyboard input while it is open, so it opts out here; a right panel
+  // terminal is a surface and is recognized by the predicate instead. Mobile is left alone so
+  // returning to the app does not raise the keyboard.
+  useEffect(() => {
+    if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
+    let frame: number | null = null;
+    const onWindowFocus = () => {
+      if (frame !== null) window.cancelAnimationFrame(frame);
+      // The element that held focus receives it again after the window's own event, and the
+      // composer ignores that same frame so a restored focus does not lift a scroll-collapsed
+      // composer. Wait one more frame so this focus counts as a request to expand it.
+      frame = window.requestAnimationFrame(() => {
+        frame = window.requestAnimationFrame(() => {
+          frame = null;
+          if (shouldRefocusComposerOnWindowFocus(document.activeElement)) focusComposer();
+        });
+      });
+    };
+    window.addEventListener("focus", onWindowFocus);
+    return () => {
+      window.removeEventListener("focus", onWindowFocus);
+      if (frame !== null) window.cancelAnimationFrame(frame);
+    };
+  }, [activeThread?.id, focusComposer, isMobileViewport, terminalUiState.terminalOpen]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -4205,6 +4458,14 @@ export default function ChatView(props: ChatViewProps) {
       });
       if (!command) return;
 
+      if (command === "thread.stop") {
+        if (!canInterruptRunningThread) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) void onInterrupt();
+        return;
+      }
+
       if (command === "thread.settle") {
         event.preventDefault();
         event.stopPropagation();
@@ -4262,6 +4523,10 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "thread.copyReference") {
+        copyThreadReference(event);
+        return;
+      }
       if (command === "rightPanel.toggle") {
         event.preventDefault();
         event.stopPropagation();
@@ -4353,6 +4618,8 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadPinned,
     activeThreadSettled,
     addTerminalSurface,
+    canInterruptRunningThread,
+    onInterrupt,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,
     activeThreadId,
@@ -4917,21 +5184,6 @@ export default function ChatView(props: ChatViewProps) {
     }
   };
 
-  const onInterrupt = async () => {
-    if (!activeThread) return;
-    const result = await interruptThreadTurn({
-      environmentId,
-      input: buildThreadTurnInterruptInput(activeThread),
-    });
-    if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      const error = squashAtomCommandFailure(result);
-      setThreadError(
-        activeThread.id,
-        error instanceof Error ? error.message : "Failed to interrupt the current turn.",
-      );
-    }
-  };
-
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
       if (!activeThreadId) return;
@@ -4986,6 +5238,32 @@ export default function ChatView(props: ChatViewProps) {
       return result;
     },
     [activeThreadId, environmentId, respondToThreadUserInput, setThreadError],
+  );
+
+  // Closes an async question without messaging the agent. The server records
+  // the dismissal so every client releases the composer.
+  const onDismissUserInput = useCallback(
+    async (requestId: ApprovalRequestId) => {
+      if (!activeThreadId) return;
+
+      setRespondingUserInputRequestIds((existing) =>
+        existing.includes(requestId) ? existing : [...existing, requestId],
+      );
+      const result = await dismissThreadUserInput({
+        environmentId,
+        input: { threadId: activeThreadId, requestId },
+      });
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        setThreadError(
+          activeThreadId,
+          error instanceof Error ? error.message : "Failed to dismiss the question.",
+        );
+      }
+      setRespondingUserInputRequestIds((existing) => existing.filter((id) => id !== requestId));
+      return result;
+    },
+    [activeThreadId, dismissThreadUserInput, environmentId, setThreadError],
   );
 
   const setActivePendingUserInputQuestionIndex = useCallback(
@@ -5849,7 +6127,7 @@ export default function ChatView(props: ChatViewProps) {
                 ref={attachDraftHeroTransitionGroupRef}
                 className="w-full ps-[calc(env(safe-area-inset-left)+0.75rem)] pe-[calc(env(safe-area-inset-right)+0.75rem)] sm:ps-[calc(env(safe-area-inset-left)+1.25rem)] sm:pe-[calc(env(safe-area-inset-right)+1.25rem)]"
               >
-                <div className="group/composer-stack pointer-events-auto relative z-10">
+                <div className="group/composer-stack pointer-events-auto relative z-10 mx-auto w-full max-w-3xl">
                   {isDraftHeroState ? (
                     <div className="absolute inset-x-0 bottom-full z-0">
                       <div
@@ -5950,6 +6228,7 @@ export default function ChatView(props: ChatViewProps) {
                               onSelectActivePendingUserInputOption
                             }
                             onAdvanceActivePendingUserInput={onAdvanceActivePendingUserInput}
+                            onDismissActivePendingUserInput={onDismissUserInput}
                             onPreviousActivePendingUserInputQuestion={
                               onPreviousActivePendingUserInputQuestion
                             }

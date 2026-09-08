@@ -430,7 +430,7 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
         Effect.catch(() => Effect.succeed(undefined)),
       ),
       client.request("account/rateLimits/read", undefined).pipe(
-        Effect.map((response) => response.rateLimits),
+        Effect.map((response) => response.rateLimitsByLimitId?.codex ?? response.rateLimits),
         Effect.timeout("1 second"),
         Effect.catch(() => Effect.succeed(undefined)),
       ),

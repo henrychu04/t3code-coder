@@ -944,3 +944,37 @@ it.effect("GitVcsDriver switchRef resolves remote-tracking refs to local branche
     assert.strictEqual(local.refName, "main");
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
+
+it.effect("Git status pauses for a linked worktree index lock and resumes after removal", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-git-index-lock-" });
+    const repo = path.join(root, "repo");
+    const worktree = path.join(root, "worktree");
+    yield* fs.makeDirectory(repo);
+    yield* runGit(repo, ["init"]);
+    yield* runGit(repo, [
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "initial",
+    ]);
+    yield* runGit(repo, ["worktree", "add", "-b", "test-lock", worktree]);
+    const index = yield* readGit(worktree, ["rev-parse", "--git-path", "index"]);
+    const lock = `${path.resolve(worktree, index)}.lock`;
+    yield* fs.writeFileString(lock, "");
+    const failure = yield* Effect.flip(driver.statusDetailsLocal(worktree));
+    assert.instanceOf(failure, GitCommandError);
+    assert.include(failure.message, "Git index is locked");
+    // The main checkout has a different index and must remain usable.
+    assert.isTrue((yield* driver.statusDetailsLocal(repo)).isRepo);
+    yield* fs.remove(lock);
+    assert.isTrue((yield* driver.statusDetailsLocal(worktree)).isRepo);
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
