@@ -13,6 +13,16 @@ project scripts, then choose **Save project settings**. Model and checkout defau
 threads. **Reload settings** discards unsaved form changes and reads the latest displayed settings.
 If another client changes these settings while the form is open, reload before saving.
 
+## Default merge method
+
+Choose **Default merge method** to prefer merge, squash, or rebase for this project's GitLab
+merge requests. This setting saves immediately in the selected Coder workspace. Choose
+**Last used in this workspace** to clear the project override.
+
+The merge-request panel uses your current selection, then the project default, then the last
+method selected in that workspace. If GitLab disallows a method, the panel selects an allowed
+one. Choosing a default does not merge a request or bypass GitLab permissions.
+
 ## Keep the default branch current
 
 Enable **Automatically pull** to keep the default-branch checkout up to date with its configured

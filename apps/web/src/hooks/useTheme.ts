@@ -60,7 +60,7 @@ function themeHalvesSignature(halves: ThemeHalves | null): string {
 const THEME_COLOR_META_NAME = "theme-color";
 const DYNAMIC_THEME_COLOR_SELECTOR = `meta[name="${THEME_COLOR_META_NAME}"][data-dynamic-theme-color="true"]`;
 
-export class ThemeStorageError extends Schema.TaggedErrorClass<ThemeStorageError>()(
+export class ThemeStorageError extends Schema.TaggedError<ThemeStorageError>()(
   "ThemeStorageError",
   {
     operation: Schema.Literals(["read", "write"]),

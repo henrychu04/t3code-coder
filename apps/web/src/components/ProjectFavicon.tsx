@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   BotIcon,
   BookOpenIcon,
@@ -56,15 +56,19 @@ const PROJECT_ICONS: Record<ProjectIconName, ComponentType<{ className?: string 
  * Automatic upstream icons use project metadata already in memory.
  * Never fetch a favicon or resolve a workspace image path in the browser.
  */
+export type ProjectFaviconProject = Pick<EnvironmentProject, "title" | "workspaceRoot">;
+
 export function ProjectFavicon(input: {
-  readonly environmentId: EnvironmentId;
-  readonly cwd: string;
-  readonly projectName?: string;
-  readonly faviconPath?: string | null | undefined;
+  readonly project: ProjectFaviconProject | null | undefined;
   readonly className?: string;
   readonly fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
-  const selection = selectProjectIcon(input.projectName ?? "", input.cwd);
-  const Icon = input.fallbackIcon ?? PROJECT_ICONS[selection.icon];
+  const selection = selectProjectIcon(
+    input.project?.title ?? "",
+    input.project?.workspaceRoot ?? "",
+  );
+  const Icon = input.project
+    ? PROJECT_ICONS[selection.icon]
+    : (input.fallbackIcon ?? PROJECT_ICONS[selection.icon]);
   return <Icon className={cn("size-3.5 shrink-0 text-icon-muted", input.className)} />;
 }

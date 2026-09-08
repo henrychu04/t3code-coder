@@ -24,7 +24,7 @@ import {
 import { type ElementType, useState } from "react";
 
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
-import { ProjectFavicon } from "../ProjectFavicon";
+import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Button } from "../ui/button";
 
@@ -56,10 +56,7 @@ export interface PullRequestFilterOption<Value extends string> {
   readonly label: string;
   /** Uses the option's native icon tone. */
   readonly Icon: ElementType<{ className?: string }>;
-  readonly favicon?: {
-    readonly environmentId: EnvironmentId;
-    readonly cwd: string;
-  };
+  readonly project?: ProjectFaviconProject;
   /** Why it cannot be chosen, carried onto the item as its title. */
   readonly unavailable?: string | undefined;
 }
@@ -69,13 +66,8 @@ export function PullRequestFilterOptionIcon<Value extends string>({
 }: {
   option: PullRequestFilterOption<Value>;
 }) {
-  return option.favicon ? (
-    <ProjectFavicon
-      environmentId={option.favicon.environmentId}
-      cwd={option.favicon.cwd}
-      fallbackIcon={FolderGit2Icon}
-      className="size-3.5"
-    />
+  return option.project ? (
+    <ProjectFavicon project={option.project} fallbackIcon={FolderGit2Icon} className="size-3.5" />
   ) : (
     <option.Icon aria-hidden className="size-3.5" />
   );
@@ -507,7 +499,7 @@ export function PullRequestFiltersMenu({
         value: pullRequestProjectKey(project),
         label: project.title,
         Icon: FolderGit2Icon,
-        favicon: { environmentId: project.environmentId, cwd: project.workspaceRoot },
+        project,
         ...(unavailable.has(pullRequestProjectKey(project))
           ? { unavailable: unavailable.get(pullRequestProjectKey(project)) }
           : {}),

@@ -25,7 +25,7 @@ function findThreadById(
   return readModel.threads.find((thread) => thread.id === threadId);
 }
 
-export function findProjectById(
+function findProjectById(
   readModel: OrchestrationReadModel,
   projectId: ProjectId,
 ): OrchestrationProject | undefined {
@@ -171,7 +171,7 @@ export function requireThreadAbsent(input: {
   );
 }
 
-export function requireNonNegativeInteger(input: {
+function requireNonNegativeInteger(input: {
   readonly commandType: OrchestrationCommand["type"];
   readonly field: string;
   readonly value: number;

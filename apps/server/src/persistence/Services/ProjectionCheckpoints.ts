@@ -89,6 +89,7 @@ export interface ProjectionCheckpointRepositoryShape {
 /**
  * ProjectionCheckpointRepository - Service tag for checkpoint projection persistence.
  */
+/** @public Service construction is part of the canonical Effect module API. */
 export class ProjectionCheckpointRepository extends Context.Service<
   ProjectionCheckpointRepository,
   ProjectionCheckpointRepositoryShape

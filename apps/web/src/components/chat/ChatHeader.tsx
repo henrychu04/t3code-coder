@@ -5,6 +5,7 @@ import {
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -43,11 +44,9 @@ interface ChatHeaderProps {
   activeThreadTitle: string;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
-  activeProjectName: string | undefined;
-  activeProjectCwd: string | null;
+  activeProject: EnvironmentProject | null | undefined;
   gitCwd: string | null;
   draftId?: DraftId;
-  activeProjectFaviconPath: string | null;
   keybindings: ResolvedKeybindingsConfig;
   rightPanelOpen: boolean;
   onNewThreadInProject: () => void;
@@ -83,11 +82,9 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   activeThreadTitle,
   isServerThread,
-  activeProjectName,
-  activeProjectCwd,
+  activeProject,
   gitCwd,
   draftId,
-  activeProjectFaviconPath,
   keybindings,
   rightPanelOpen,
   onNewThreadInProject,
@@ -142,7 +139,7 @@ export const ChatHeader = memo(function ChatHeader({
   );
   const { openMenu, closeMenu } = useThreadActionMenu({
     threadRef: isServerThread ? activeThreadRef : null,
-    projectCwd: activeProjectCwd,
+    projectCwd: activeProject?.workspaceRoot ?? null,
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -251,7 +248,7 @@ export const ChatHeader = memo(function ChatHeader({
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}
-        {activeProjectName ? (
+        {activeProject ? (
           <>
             <WorkspaceBreadcrumbItem className="shrink">
               <Tooltip>
@@ -259,22 +256,16 @@ export const ChatHeader = memo(function ChatHeader({
                   render={
                     <button
                       type="button"
-                      aria-label={`New thread in ${activeProjectName}`}
+                      aria-label={`New thread in ${activeProject?.title}`}
                       onClick={onNewThreadInProject}
                       className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
                     />
                   }
                 >
-                  <ProjectFavicon
-                    environmentId={activeThreadEnvironmentId}
-                    cwd={activeProjectCwd ?? ""}
-                    projectName={activeProjectName ?? ""}
-                    faviconPath={activeProjectFaviconPath}
-                    className="size-3.5"
-                  />
-                  <span className="max-w-40 truncate">{activeProjectName}</span>
+                  <ProjectFavicon project={activeProject} className="size-3.5" />
+                  <span className="max-w-40 truncate">{activeProject?.title}</span>
                 </TooltipTrigger>
-                <TooltipPopup side="top">New thread in {activeProjectName}</TooltipPopup>
+                <TooltipPopup side="top">New thread in {activeProject?.title}</TooltipPopup>
               </Tooltip>
             </WorkspaceBreadcrumbItem>
             {!isServerThread && onOpenProjectSettings ? (

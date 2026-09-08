@@ -142,7 +142,7 @@
     "./state/provider-instance-display": "./src/state/providerInstanceDisplay.ts"
   },
   "scripts": {
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vp test run"
   },
   "dependencies": {

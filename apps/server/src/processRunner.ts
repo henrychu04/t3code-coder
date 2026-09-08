@@ -66,7 +66,7 @@ const formatProcessInvocation = (input: {
     : `'${input.command}' in '${executionCwd}'`;
 };
 
-export class ProcessSpawnError extends Schema.TaggedErrorClass<ProcessSpawnError>()(
+export class ProcessSpawnError extends Schema.TaggedError<ProcessSpawnError>()(
   "ProcessSpawnError",
   {
     ...ProcessInvocationFields,
@@ -81,7 +81,7 @@ export class ProcessSpawnError extends Schema.TaggedErrorClass<ProcessSpawnError
   }
 }
 
-export class ProcessStdinError extends Schema.TaggedErrorClass<ProcessStdinError>()(
+export class ProcessStdinError extends Schema.TaggedError<ProcessStdinError>()(
   "ProcessStdinError",
   {
     ...ProcessInvocationFields,
@@ -94,7 +94,7 @@ export class ProcessStdinError extends Schema.TaggedErrorClass<ProcessStdinError
   }
 }
 
-export class ProcessOutputLimitError extends Schema.TaggedErrorClass<ProcessOutputLimitError>()(
+export class ProcessOutputLimitError extends Schema.TaggedError<ProcessOutputLimitError>()(
   "ProcessOutputLimitError",
   {
     ...ProcessInvocationFields,
@@ -108,20 +108,17 @@ export class ProcessOutputLimitError extends Schema.TaggedErrorClass<ProcessOutp
   }
 }
 
-export class ProcessReadError extends Schema.TaggedErrorClass<ProcessReadError>()(
-  "ProcessReadError",
-  {
-    ...ProcessInvocationFields,
-    stream: Schema.Literals(["stdout", "stderr", "exitCode"]),
-    cause: Schema.Defect(),
-  },
-) {
+export class ProcessReadError extends Schema.TaggedError<ProcessReadError>()("ProcessReadError", {
+  ...ProcessInvocationFields,
+  stream: Schema.Literals(["stdout", "stderr", "exitCode"]),
+  cause: Schema.Defect(),
+}) {
   override get message(): string {
     return `Failed to read ${this.stream} for process ${formatProcessInvocation(this)}`;
   }
 }
 
-export class ProcessTimeoutError extends Schema.TaggedErrorClass<ProcessTimeoutError>()(
+export class ProcessTimeoutError extends Schema.TaggedError<ProcessTimeoutError>()(
   "ProcessTimeoutError",
   {
     ...ProcessInvocationFields,
@@ -237,44 +234,45 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
       never
     >(
       () => ({ chunks: [], bytes: 0, truncated: false }),
-      (state, chunk) => Effect.gen(function* () {
-        const remainingBytes = input.maxOutputBytes - state.bytes;
-        if (chunk.byteLength > remainingBytes) {
-          if (input.outputMode === "truncate") {
-            const retained = chunk.subarray(0, Math.max(0, remainingBytes));
-            if (retained.byteLength > 0) {
-              state.chunks.push(retained);
-              lineBuffer += decoder.decode(retained, { stream: true });
-              yield* emitLines(false);
+      (state, chunk) =>
+        Effect.gen(function* () {
+          const remainingBytes = input.maxOutputBytes - state.bytes;
+          if (chunk.byteLength > remainingBytes) {
+            if (input.outputMode === "truncate") {
+              const retained = chunk.subarray(0, Math.max(0, remainingBytes));
+              if (retained.byteLength > 0) {
+                state.chunks.push(retained);
+                lineBuffer += decoder.decode(retained, { stream: true });
+                yield* emitLines(false);
+              }
+              return {
+                chunks: state.chunks,
+                bytes: input.maxOutputBytes,
+                truncated: true,
+              };
             }
-            return {
-              chunks: state.chunks,
-              bytes: input.maxOutputBytes,
-              truncated: true,
-            };
+            return yield* Effect.fail(
+              new ProcessOutputLimitError({
+                command: input.command,
+                argumentCount: input.args.length,
+                cwd: input.cwd,
+                spawnCwd: input.spawnCwd,
+                stream: input.streamName,
+                maxBytes: input.maxOutputBytes,
+                observedBytes: state.bytes + chunk.byteLength,
+              }),
+            );
           }
-          return yield* Effect.fail(
-            new ProcessOutputLimitError({
-              command: input.command,
-              argumentCount: input.args.length,
-              cwd: input.cwd,
-              spawnCwd: input.spawnCwd,
-              stream: input.streamName,
-              maxBytes: input.maxOutputBytes,
-              observedBytes: state.bytes + chunk.byteLength,
-            }),
-          );
-        }
 
-        state.chunks.push(chunk);
-        lineBuffer += decoder.decode(chunk, { stream: true });
-        yield* emitLines(false);
-        return {
-          chunks: state.chunks,
-          bytes: state.bytes + chunk.byteLength,
-          truncated: state.truncated,
-        };
-      }),
+          state.chunks.push(chunk);
+          lineBuffer += decoder.decode(chunk, { stream: true });
+          yield* emitLines(false);
+          return {
+            chunks: state.chunks,
+            bytes: state.bytes + chunk.byteLength,
+            truncated: state.truncated,
+          };
+        }),
     ),
   );
   lineBuffer += decoder.decode();
@@ -282,9 +280,7 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
   const decoded = decodeUtf8(Buffer.concat(collected.chunks, collected.bytes));
   return {
     ...decoded,
-    text: collected.truncated
-      ? `${decoded.text}${input.truncatedMarker}`
-      : decoded.text,
+    text: collected.truncated ? `${decoded.text}${input.truncatedMarker}` : decoded.text,
     bytes: collected.bytes,
     truncated: collected.truncated,
   } satisfies CollectedUint8StreamText;
@@ -447,6 +443,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
   } satisfies ProcessRunOutput;
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("ProcessRunner.make")(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
 

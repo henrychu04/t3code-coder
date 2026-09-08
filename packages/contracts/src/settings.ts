@@ -1,6 +1,8 @@
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
+
+import { PullRequestMergeMethod } from "./pullRequest.ts";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import { EnvironmentId, ProjectId, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas.ts";
 import { ThreadEnvMode } from "./environment.ts";
@@ -431,6 +433,12 @@ export type SourceControlWritingStyleSettings = typeof SourceControlWritingStyle
 export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(15);
 
 export const ServerSettings = Schema.Struct({
+  pullRequestMergeMethod: PullRequestMergeMethod.pipe(
+    Schema.withDecodingDefault(Effect.succeed("merge")),
+  ),
+  pullRequestMergeMethodOverrides: Schema.Record(ProjectId, PullRequestMergeMethod).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   defaultAutoPull: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   defaultProjectScripts: Schema.Array(ProjectScript).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
@@ -548,7 +556,7 @@ export const ServerSettingsOperation = Schema.Literals([
 ]);
 export type ServerSettingsOperation = typeof ServerSettingsOperation.Type;
 
-export class ServerSettingsError extends Schema.TaggedErrorClass<ServerSettingsError>()(
+export class ServerSettingsError extends Schema.TaggedError<ServerSettingsError>()(
   "ServerSettingsError",
   {
     settingsPath: Schema.String,
@@ -605,6 +613,10 @@ const ClaudeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  pullRequestMergeMethod: Schema.optionalKey(PullRequestMergeMethod),
+  pullRequestMergeMethodOverrides: Schema.optionalKey(
+    Schema.Record(ProjectId, Schema.NullOr(PullRequestMergeMethod)),
+  ),
   defaultAutoPull: Schema.optionalKey(Schema.Boolean),
   defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   projectScriptOverrides: Schema.optionalKey(

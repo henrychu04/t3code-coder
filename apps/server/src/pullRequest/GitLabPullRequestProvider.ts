@@ -113,7 +113,7 @@ export function gitLabViewerPermissions(input: {
 }
 
 /** The CLI tags that mean the tool itself is unusable, rather than one request failing. */
-export function gitLabProviderFailure(
+function gitLabProviderFailure(
   error: GitLabPullRequestCli.GitLabPullRequestCliError,
 ): PullRequestProviderFailure {
   if (error._tag === "GitLabCliUnavailableError") return { reason: "missing-tool" };

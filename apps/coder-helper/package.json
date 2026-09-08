@@ -6,7 +6,7 @@
     "build": "node src/build.ts",
     "start": "node src/bin.ts",
     "test": "node --test src/*.test.ts",
-    "typecheck": "tsgo --noEmit"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
