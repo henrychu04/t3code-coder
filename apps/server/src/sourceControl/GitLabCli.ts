@@ -9,6 +9,8 @@ import type * as DateTime from "effect/DateTime";
 
 import {
   TrimmedNonEmptyString,
+  VcsProcessExitError,
+  VcsProcessTimeoutError,
   type SourceControlRepositoryVisibility,
   type SourceControlWriteAccess,
   type VcsError,
@@ -154,6 +156,12 @@ export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandEr
   gitLabCliExecutionErrorContext,
 ) {
   get detail(): string {
+    if (Schema.is(VcsProcessExitError)(this.cause) && this.cause.failureKind === "not-found") {
+      return "The GitLab resource was not found or is not accessible. Check the repository path, GitLab host, and workspace account access.";
+    }
+    if (Schema.is(VcsProcessTimeoutError)(this.cause)) {
+      return "GitLab CLI request timed out. Check workspace network access and retry.";
+    }
     return "GitLab CLI command failed.";
   }
 
