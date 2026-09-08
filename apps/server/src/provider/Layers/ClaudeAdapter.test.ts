@@ -850,6 +850,43 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("dispatches a project skill as the final native command block", () =>
+    Effect.gen(function* () {
+      const cwd = yield* Effect.acquireRelease(
+        Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-skill-dispatch-"))),
+        (directory) =>
+          Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+      );
+      const skillDirectory = NodePath.join(cwd, ".claude", "skills", "review-change");
+      NodeFS.mkdirSync(skillDirectory, { recursive: true });
+      NodeFS.writeFileSync(
+        NodePath.join(skillDirectory, "SKILL.md"),
+        "---\ndescription: Review changes\n---\nReview the diff.",
+      );
+      const harness = makeHarness({
+        cwd,
+        adapterOptions: { environment: { CLAUDE_CONFIG_DIR: NodePath.join(cwd, "user-config") } },
+      });
+      yield* Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          cwd,
+          runtimeMode: "full-access",
+        });
+        yield* adapter.sendTurn({ threadId: THREAD_ID, input: "Please $review-change the patch" });
+        const message = yield* Effect.promise(() =>
+          readFirstPromptMessage(harness.getLastCreateQueryInput()),
+        );
+        assert.deepEqual(message?.message.content, [
+          { type: "text", text: "Please" },
+          { type: "text", text: "/review-change the patch" },
+        ]);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.scoped, Effect.provideService(Random.Random, makeDeterministicRandomService())),
+  );
+
   it.effect("treats ultrathink as a prompt keyword instead of a session effort", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {

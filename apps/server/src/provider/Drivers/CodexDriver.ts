@@ -143,6 +143,11 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        snapshotForCwd: (commandCwd) =>
+          checkCodexProviderStatus(effectiveConfig, undefined, processEnv, commandCwd).pipe(
+            Effect.map(classifyAndStamp),
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          ),
         adapter,
         textGeneration,
       } satisfies ProviderInstance;

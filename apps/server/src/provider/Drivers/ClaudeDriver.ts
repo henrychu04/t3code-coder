@@ -1,3 +1,4 @@
+import { discoverClaudeSkills } from "./ClaudeSkills.ts";
 /**
  * ClaudeDriver — `ProviderDriver` for the workspace Claude Code CLI runtime.
  *
@@ -176,6 +177,21 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         accentColor,
         enabled,
         snapshot,
+        snapshotForCwd: (commandCwd) =>
+          Effect.all([
+            snapshot.getSnapshot,
+            discoverClaudeSkills(effectiveConfig, commandCwd, processEnv).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+            ),
+            Cache.get(slashCommandsByCwd, commandCwd),
+          ]).pipe(
+            Effect.map(([current, skills, slashCommands]) => ({
+              ...current,
+              skills,
+              slashCommands,
+            })),
+          ),
         listSlashCommands: (commandCwd) => Cache.get(slashCommandsByCwd, commandCwd),
         adapter,
         textGeneration,

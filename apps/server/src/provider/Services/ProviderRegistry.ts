@@ -17,6 +17,11 @@ export interface ProviderRegistryShape {
    * Multiple snapshots may share the same `provider` kind (multiple
    * instances of the same driver) and disambiguate via `instanceId`.
    */
+  readonly refreshWorkspaceSnapshot: (input: {
+    instanceId: ProviderInstanceId;
+    cwd: string;
+  }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
   readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**

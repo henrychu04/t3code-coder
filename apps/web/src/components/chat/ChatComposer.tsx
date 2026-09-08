@@ -1,3 +1,4 @@
+import { usePanelAnimationSettings } from "../../panelAnimations";
 import { useClipboardImageUpload } from "../../coder/useClipboardImageUpload";
 import type {
   ApprovalRequestId,
@@ -171,7 +172,6 @@ type ComposerCommandMenuPosition = {
 
 const COMPOSER_SCROLL_COLLAPSE_THRESHOLD_PX = 24;
 const COMPOSER_SCROLL_GESTURE_RESET_MS = 120;
-const COMPOSER_RESTING_TRANSITION_DURATION_MS = 280;
 const COMPOSER_RESTING_TRANSITION_CLEANUP_BUFFER_MS = 50;
 const COMPOSER_RESTING_TRANSITION_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 const COMPOSER_RESTING_CONTROLS_ARRIVAL_DRIFT_PX = 4;
@@ -182,6 +182,7 @@ function useComposerRestingTransition(
   restingControlsRef: React.RefObject<HTMLDivElement | null>,
   onOverlayHeightChange: (height: number) => void,
 ) {
+  const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
   const elementRef = useRef<HTMLDivElement>(null);
   const isCollapsedRef = useRef(isCollapsed);
   const previousCollapsedRef = useRef(isCollapsed);
@@ -305,17 +306,16 @@ function useComposerRestingTransition(
       if (
         shouldAnimate &&
         !prefersReducedMotion &&
+        panelAnimationsActive &&
         previousHeight !== null &&
         Math.abs(previousHeight - nextHeight) >= 0.5
       ) {
         const remainingDuration =
           typeof interruptedDuration === "number" && interruptedCurrentTime !== null
             ? Math.max(1, interruptedDuration - interruptedCurrentTime)
-            : COMPOSER_RESTING_TRANSITION_DURATION_MS;
+            : durationMs;
         const duration =
-          interruptedHeight !== null && !targetChanged
-            ? remainingDuration
-            : COMPOSER_RESTING_TRANSITION_DURATION_MS;
+          interruptedHeight !== null && !targetChanged ? remainingDuration : durationMs;
         element.style.overflow = "clip";
         surface.style.height = "100%";
 
@@ -517,7 +517,13 @@ function useComposerRestingTransition(
         actionFromBottom: nextActionTop === null ? null : nextRect.bottom - nextActionTop,
       };
     },
-    [clearTransitionStyles, onOverlayHeightChange, restingControlsRef],
+    [
+      clearTransitionStyles,
+      onOverlayHeightChange,
+      restingControlsRef,
+      panelAnimationsActive,
+      durationMs,
+    ],
   );
 
   useLayoutEffect(() => {
@@ -729,6 +735,8 @@ import {
   formatProviderSkillDisplayName,
   getProviderSlashCommandsForSlashMenu,
   getProviderSkillsForSlashMenu,
+  resolveProviderSkillsForCwd,
+  resolveProviderSlashCommandsForCwd,
 } from "@t3tools/client-runtime/providerSkills";
 import { searchProviderSkills } from "../../providerSkillSearch";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
@@ -1604,8 +1612,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
+  const selectedProviderSkills = selectedProviderStatus
+    ? resolveProviderSkillsForCwd(selectedProviderStatus, gitCwd)
+    : [];
   const projectSlashCommands = useEnvironmentQuery(
-    composerTriggerKind === "slash-command" && gitCwd && selectedProviderStatus
+    gitCwd && selectedProviderStatus
       ? serverEnvironment.slashCommands({
           environmentId,
           input: { instanceId: selectedProviderStatus.instanceId, cwd: gitCwd },
@@ -1615,10 +1626,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const availableSlashCommands = useMemo(
     () =>
       mergeProviderSlashCommands(
-        selectedProviderStatus?.slashCommands ?? [],
+        selectedProviderStatus
+          ? resolveProviderSlashCommandsForCwd(selectedProviderStatus, gitCwd)
+          : [],
         projectSlashCommands.data ?? [],
       ),
-    [projectSlashCommands.data, selectedProviderStatus?.slashCommands],
+    [projectSlashCommands.data, selectedProviderStatus, gitCwd],
   );
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
@@ -1661,7 +1674,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             ] as const)
           : []),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
-      const slashMenuSkills = getProviderSkillsForSlashMenu(selectedProviderStatus?.skills ?? []);
+      const slashMenuSkills = getProviderSkillsForSlashMenu(
+        selectedProviderSkills,
+        settings.showSkillsInSlashMenu,
+      );
       const providerSlashCommandItems = getProviderSlashCommandsForSlashMenu(
         availableSlashCommands,
         slashMenuSkills,
@@ -1679,7 +1695,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         type: "skill" as const,
         provider: selectedProvider,
         skill,
-        label: `skill:${skill.name}`,
+        label: `/skill:${skill.name}`,
         description:
           skill.shortDescription ??
           skill.description ??
@@ -1692,19 +1708,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return searchSlashCommandItems(slashCommandItems, query);
     }
     if (composerTrigger.kind === "skill") {
-      return searchProviderSkills(selectedProviderStatus?.skills ?? [], composerTrigger.query).map(
-        (skill) => ({
-          id: `skill:${selectedProvider}:${skill.name}`,
-          type: "skill" as const,
-          provider: selectedProvider,
-          skill,
-          label: formatProviderSkillDisplayName(skill),
-          description:
-            skill.shortDescription ??
-            skill.description ??
-            (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
-        }),
-      );
+      return searchProviderSkills(selectedProviderSkills, composerTrigger.query).map((skill) => ({
+        id: `skill:${selectedProvider}:${skill.name}`,
+        type: "skill" as const,
+        provider: selectedProvider,
+        skill,
+        label: formatProviderSkillDisplayName(skill),
+        description:
+          skill.shortDescription ??
+          skill.description ??
+          (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
+      }));
     }
     return [];
   }, [
@@ -1713,6 +1727,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     selectedProvider,
     selectedProviderStatus,
+    selectedProviderSkills,
+    settings.showSkillsInSlashMenu,
     workspaceEntries.entries,
   ]);
 
@@ -3797,7 +3813,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       ? composerTerminalContexts
                       : []
                   }
-                  skills={selectedProviderStatus?.skills ?? []}
+                  skills={selectedProviderSkills}
                   {...(showMobilePendingAnswerActions ? { className: "max-sm:pb-11" } : {})}
                   onRemoveTerminalContext={removeComposerTerminalContextFromDraft}
                   onChange={onPromptChange}

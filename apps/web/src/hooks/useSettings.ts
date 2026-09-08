@@ -137,6 +137,11 @@ async function hydrateClientSettings(): Promise<void> {
   return clientSettingsHydrationPromise;
 }
 
+export async function saveClientSettings(settings: ClientSettings): Promise<void> {
+  await ensureLocalApi().persistence.setClientSettings(settings);
+  replaceClientSettingsSnapshot(settings);
+}
+
 function persistClientSettings(settings: ClientSettings): void {
   replaceClientSettingsSnapshot(settings);
   void ensureLocalApi()

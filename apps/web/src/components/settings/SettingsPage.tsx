@@ -27,27 +27,37 @@ export function SettingsSection({
   id,
   title,
   unframed = false,
+  headerAction,
 }: {
   readonly children: ReactNode;
   readonly description?: string;
   readonly id?: string;
   readonly title: string;
   readonly unframed?: boolean;
+  readonly headerAction?: ReactNode;
 }) {
   return (
     <section className="space-y-3" id={id}>
-      <div className={cn("px-3 sm:px-4", unframed && "min-h-8")}>
-        <h2
-          className={cn(
-            "text-lg font-semibold tracking-tight",
-            unframed && "tracking-[-0.025em] text-foreground",
-          )}
-        >
-          {title}
-        </h2>
-        {description ? (
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
-        ) : null}
+      <div
+        className={cn(
+          "flex items-center justify-between gap-4 px-3 sm:px-4",
+          unframed && "min-h-8",
+        )}
+      >
+        <div>
+          <h2
+            className={cn(
+              "text-lg font-semibold tracking-tight",
+              unframed && "tracking-[-0.025em] text-foreground",
+            )}
+          >
+            {title}
+          </h2>
+          {description ? (
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>
+          ) : null}
+        </div>
+        {headerAction}
       </div>
       <div
         className={

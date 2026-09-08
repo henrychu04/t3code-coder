@@ -1,68 +1,69 @@
+import { BundledThemeSettings } from "../components/settings/BundledThemeSettings";
+import { PanelAnimationsPreview } from "../components/settings/PanelAnimationsPreview";
 import {
+  MIN_PANEL_ANIMATION_DURATION_MS,
+  MAX_PANEL_ANIMATION_DURATION_MS,
+} from "@t3tools/contracts/settings";
+import {
+  DEFAULT_CLIENT_SETTINGS,
   MAX_APPEARANCE_CONTRAST,
-  MAX_CODE_FONT_SIZE,
   MAX_GLASS_OPACITY,
-  MAX_INTERFACE_FONT_SIZE,
-  MAX_PROMPT_FONT_SIZE,
-  MAX_TERMINAL_FONT_SIZE,
   MIN_APPEARANCE_CONTRAST,
-  MIN_CODE_FONT_SIZE,
   MIN_GLASS_OPACITY,
-  MIN_INTERFACE_FONT_SIZE,
-  MIN_PROMPT_FONT_SIZE,
-  MIN_TERMINAL_FONT_SIZE,
   type EnvironmentIdentificationMode,
 } from "@t3tools/contracts/settings";
 import { createFileRoute } from "@tanstack/react-router";
 
 import {
+  SettingResetButton,
   SettingsPage,
   SettingsRow,
   SettingsSection,
-  SettingsSelect,
 } from "../components/settings/SettingsPage";
-import { Input } from "../components/ui/input";
-import { Switch } from "../components/ui/switch";
+import { TypographySection } from "../components/settings/TypographySection";
+import type { CSSProperties } from "react";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPopup,
+  SelectItem,
+} from "../components/ui/select";
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { useTheme } from "../hooks/useTheme";
 
-function FontSizeInput({
-  ariaLabel,
-  max,
-  min,
-  onChange,
-  value,
-}: {
-  readonly ariaLabel: string;
-  readonly max: number;
-  readonly min: number;
-  readonly onChange: (value: number) => void;
-  readonly value: number;
-}) {
-  return (
-    <Input
-      aria-label={ariaLabel}
-      className="w-24"
-      inputMode="numeric"
-      max={max}
-      min={min}
-      type="number"
-      value={String(value)}
-      onValueChange={(nextValue) => {
-        const parsed = Number(nextValue);
-        if (Number.isInteger(parsed) && parsed >= min && parsed <= max) {
-          onChange(parsed);
-        }
-      }}
-    />
-  );
-}
+const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
+  artwork: "Artwork",
+  pill: "Version pill",
+  none: "None",
+};
 
 function AppearanceSettingsView() {
   const settings = useClientSettings();
   const updateSettings = useUpdateClientSettings();
   const { appearanceMode, setAppearanceMode } = useTheme();
 
+  const glassOpacityRatio =
+    (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
+  const glassOpacitySliderStyle = {
+    "--settings-slider-progress": `${glassOpacityRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - glassOpacityRatio}rem`,
+  } as CSSProperties;
+  const appearanceContrastRatio =
+    (settings.appearanceContrast - MIN_APPEARANCE_CONTRAST) /
+    (MAX_APPEARANCE_CONTRAST - MIN_APPEARANCE_CONTRAST);
+  const appearanceContrastSliderStyle = {
+    "--settings-slider-progress": `${appearanceContrastRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - appearanceContrastRatio}rem`,
+  } as CSSProperties;
+
+  const panelAnimationDurationRatio =
+    (settings.panelAnimationDurationMs - MIN_PANEL_ANIMATION_DURATION_MS) /
+    (MAX_PANEL_ANIMATION_DURATION_MS - MIN_PANEL_ANIMATION_DURATION_MS);
+  const panelAnimationDurationSliderStyle = {
+    "--settings-slider-progress": `${panelAnimationDurationRatio * 100}%`,
+    "--settings-slider-fill-offset": `${0.5 - panelAnimationDurationRatio}rem`,
+  } as CSSProperties;
   return (
     <SettingsPage>
       <SettingsSection title="Appearance">
@@ -70,39 +71,69 @@ function AppearanceSettingsView() {
           id="color-mode"
           title="Color mode"
           description="Follow the operating system or keep the interface light or dark."
+          resetAction={
+            appearanceMode !== "system" ? (
+              <SettingResetButton label="color mode" onClick={() => setAppearanceMode("system")} />
+            ) : null
+          }
           control={
-            <SettingsSelect
-              ariaLabel="Color mode"
+            <Select
               value={appearanceMode}
-              onChange={(value) => {
+              onValueChange={(value) => {
                 if (value === "system" || value === "light" || value === "dark") {
                   setAppearanceMode(value);
                 }
               }}
             >
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </SettingsSelect>
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Color mode">
+                <SelectValue>
+                  {{ system: "System", light: "Light", dark: "Dark" }[appearanceMode]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="system">
+                  System
+                </SelectItem>
+                <SelectItem hideIndicator value="light">
+                  Light
+                </SelectItem>
+                <SelectItem hideIndicator value="dark">
+                  Dark
+                </SelectItem>
+              </SelectPopup>
+            </Select>
           }
         />
         <SettingsRow
           id="appearance-contrast"
           title="Contrast"
           description="Adjust the contrast of colors and borders across the interface."
+          resetAction={
+            settings.appearanceContrast !== DEFAULT_CLIENT_SETTINGS.appearanceContrast ? (
+              <SettingResetButton
+                label="contrast"
+                onClick={() =>
+                  updateSettings({
+                    appearanceContrast: DEFAULT_CLIENT_SETTINGS.appearanceContrast,
+                  })
+                }
+              />
+            ) : null
+          }
           control={
-            <div className="flex w-full items-center gap-3 sm:w-64">
-              <output className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs">
+            <div className="flex w-full items-center gap-3 sm:w-52">
+              <output
+                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                htmlFor="appearance-contrast-input"
+              >
                 {settings.appearanceContrast}%
               </output>
               <input
                 aria-label="Contrast"
                 className="settings-slider min-w-0 flex-1"
+                id="appearance-contrast-input"
                 max={MAX_APPEARANCE_CONTRAST}
                 min={MIN_APPEARANCE_CONTRAST}
-                step={5}
-                type="range"
-                value={settings.appearanceContrast}
                 onChange={(event) => {
                   const appearanceContrast = Number(event.currentTarget.value);
                   if (
@@ -113,6 +144,10 @@ function AppearanceSettingsView() {
                     updateSettings({ appearanceContrast });
                   }
                 }}
+                step={5}
+                style={appearanceContrastSliderStyle}
+                type="range"
+                value={settings.appearanceContrast}
               />
             </div>
           }
@@ -120,20 +155,31 @@ function AppearanceSettingsView() {
         <SettingsRow
           id="glass-opacity"
           title="Glass opacity"
-          description="Adjust the opacity of menus, dialogs, and the composer."
+          description="Higher values make menus, dialogs, and the composer more solid."
+          resetAction={
+            settings.glassOpacity !== DEFAULT_CLIENT_SETTINGS.glassOpacity ? (
+              <SettingResetButton
+                label="glass opacity"
+                onClick={() =>
+                  updateSettings({ glassOpacity: DEFAULT_CLIENT_SETTINGS.glassOpacity })
+                }
+              />
+            ) : null
+          }
           control={
-            <div className="flex w-full items-center gap-3 sm:w-64">
-              <output className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs">
+            <div className="flex w-full items-center gap-3 sm:w-52">
+              <output
+                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                htmlFor="glass-opacity-input"
+              >
                 {settings.glassOpacity}%
               </output>
               <input
                 aria-label="Glass opacity"
                 className="settings-slider min-w-0 flex-1"
+                id="glass-opacity-input"
                 max={MAX_GLASS_OPACITY}
                 min={MIN_GLASS_OPACITY}
-                step={5}
-                type="range"
-                value={settings.glassOpacity}
                 onChange={(event) => {
                   const glassOpacity = Number(event.currentTarget.value);
                   if (
@@ -144,6 +190,10 @@ function AppearanceSettingsView() {
                     updateSettings({ glassOpacity });
                   }
                 }}
+                step={5}
+                style={glassOpacitySliderStyle}
+                type="range"
+                value={settings.glassOpacity}
               />
             </div>
           }
@@ -152,127 +202,106 @@ function AppearanceSettingsView() {
           id="environment-identification"
           title="Environment identification"
           description="Show environment artwork, a version pill, or no environment marker."
-          control={
-            <SettingsSelect
-              ariaLabel="Environment identification"
-              value={settings.environmentIdentificationMode}
-              onChange={(value) => {
-                if (value === "artwork" || value === "pill" || value === "none") {
+          resetAction={
+            settings.environmentIdentificationMode !==
+            DEFAULT_CLIENT_SETTINGS.environmentIdentificationMode ? (
+              <SettingResetButton
+                label="environment identification"
+                onClick={() =>
                   updateSettings({
-                    environmentIdentificationMode: value satisfies EnvironmentIdentificationMode,
-                  });
+                    environmentIdentificationMode:
+                      DEFAULT_CLIENT_SETTINGS.environmentIdentificationMode,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.environmentIdentificationMode}
+              onValueChange={(value) => {
+                if (value === "artwork" || value === "pill" || value === "none") {
+                  updateSettings({ environmentIdentificationMode: value });
                 }
               }}
             >
-              <option value="artwork">Artwork</option>
-              <option value="pill">Version pill</option>
-              <option value="none">None</option>
-            </SettingsSelect>
-          }
-        />
-        <SettingsRow
-          id="font-smoothing"
-          title="Font smoothing"
-          description="Use thinner grayscale font smoothing on macOS."
-          control={
-            <Switch
-              aria-label="Font smoothing"
-              checked={settings.fontSmoothing}
-              onCheckedChange={(checked) => updateSettings({ fontSmoothing: Boolean(checked) })}
-            />
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Environment identification"
+              >
+                <SelectValue>
+                  {ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(ENVIRONMENT_IDENTIFICATION_LABELS).map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
       </SettingsSection>
 
-      <SettingsSection
-        title="Typography"
-        description="Use a font family name or a CSS fallback list. Leave blank for the app default."
-      >
+      <SettingsSection title="Motion">
         <SettingsRow
-          id="interface-font"
-          title="Interface font"
+          id="panel-animations"
+          title="Panel animations"
+          description="Set how fast panels open and close."
           control={
-            <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
-              <Input
-                aria-label="Interface font family"
-                placeholder="System default"
-                value={settings.fontFamilySans}
-                onValueChange={(fontFamilySans) => updateSettings({ fontFamilySans })}
-              />
-              <FontSizeInput
-                ariaLabel="Interface font size"
-                max={MAX_INTERFACE_FONT_SIZE}
-                min={MIN_INTERFACE_FONT_SIZE}
-                value={settings.fontSizeInterface}
-                onChange={(fontSizeInterface) => updateSettings({ fontSizeInterface })}
-              />
+            <div className="grid w-full grid-cols-[5rem_minmax(0,1fr)] items-center gap-3 sm:w-auto sm:grid-cols-[7rem_13rem] sm:gap-4">
+              <PanelAnimationsPreview durationMs={settings.panelAnimationDurationMs} />
+              <div className="flex w-full items-center gap-3">
+                <output
+                  className="min-w-16 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"
+                  htmlFor="panel-animation-duration"
+                >
+                  {settings.panelAnimationDurationMs} ms
+                </output>
+                <input
+                  aria-label="Panel animation duration"
+                  className="settings-slider min-w-0 flex-1"
+                  id="panel-animation-duration"
+                  max={MAX_PANEL_ANIMATION_DURATION_MS}
+                  min={MIN_PANEL_ANIMATION_DURATION_MS}
+                  onChange={(event) => {
+                    const panelAnimationDurationMs = Number(event.currentTarget.value);
+                    if (
+                      Number.isInteger(panelAnimationDurationMs) &&
+                      panelAnimationDurationMs >= MIN_PANEL_ANIMATION_DURATION_MS &&
+                      panelAnimationDurationMs <= MAX_PANEL_ANIMATION_DURATION_MS
+                    ) {
+                      updateSettings({ panelAnimationDurationMs });
+                    }
+                  }}
+                  step={25}
+                  style={panelAnimationDurationSliderStyle}
+                  type="range"
+                  value={settings.panelAnimationDurationMs}
+                />
+              </div>
             </div>
           }
-        />
-        <SettingsRow
-          id="prompt-font"
-          title="Prompt font"
-          control={
-            <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
-              <Input
-                aria-label="Prompt font family"
-                placeholder="Interface font"
-                value={settings.fontFamilyComposer}
-                onValueChange={(fontFamilyComposer) => updateSettings({ fontFamilyComposer })}
+          resetAction={
+            settings.panelAnimationDurationMs !==
+            DEFAULT_CLIENT_SETTINGS.panelAnimationDurationMs ? (
+              <SettingResetButton
+                label="panel animations"
+                onClick={() =>
+                  updateSettings({
+                    panelAnimationDurationMs: DEFAULT_CLIENT_SETTINGS.panelAnimationDurationMs,
+                  })
+                }
               />
-              <FontSizeInput
-                ariaLabel="Prompt font size"
-                max={MAX_PROMPT_FONT_SIZE}
-                min={MIN_PROMPT_FONT_SIZE}
-                value={settings.fontSizePrompt}
-                onChange={(fontSizePrompt) => updateSettings({ fontSizePrompt })}
-              />
-            </div>
-          }
-        />
-        <SettingsRow
-          id="code-font"
-          title="Code font"
-          control={
-            <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
-              <Input
-                aria-label="Code font family"
-                placeholder="System monospace"
-                value={settings.fontFamilyCode}
-                onValueChange={(fontFamilyCode) => updateSettings({ fontFamilyCode })}
-              />
-              <FontSizeInput
-                ariaLabel="Code font size"
-                max={MAX_CODE_FONT_SIZE}
-                min={MIN_CODE_FONT_SIZE}
-                value={settings.fontSizeCode}
-                onChange={(fontSizeCode) => updateSettings({ fontSizeCode })}
-              />
-            </div>
-          }
-        />
-        <SettingsRow
-          id="terminal-font"
-          title="Terminal font"
-          control={
-            <div className="flex w-full flex-col gap-2 sm:w-80 sm:flex-row">
-              <Input
-                aria-label="Terminal font family"
-                placeholder="Code font"
-                value={settings.fontFamilyTerminal}
-                onValueChange={(fontFamilyTerminal) => updateSettings({ fontFamilyTerminal })}
-              />
-              <FontSizeInput
-                ariaLabel="Terminal font size"
-                max={MAX_TERMINAL_FONT_SIZE}
-                min={MIN_TERMINAL_FONT_SIZE}
-                value={settings.fontSizeTerminal}
-                onChange={(fontSizeTerminal) => updateSettings({ fontSizeTerminal })}
-              />
-            </div>
+            ) : null
           }
         />
       </SettingsSection>
+      <BundledThemeSettings />
+      <TypographySection />
     </SettingsPage>
   );
 }

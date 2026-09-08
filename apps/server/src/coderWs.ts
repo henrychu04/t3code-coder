@@ -32,6 +32,7 @@ import {
   OrchestrationSearchThreadsError,
   ORCHESTRATION_WS_METHODS,
   type ProjectEntriesFailure,
+  type ProviderInstanceId,
   type ProjectFileFailure,
   type ProjectFileOperation,
   ProjectListEntriesError,
@@ -374,6 +375,28 @@ export function compensateFailedBootstrap(input: {
     if (input.deleteThread) yield* input.deleteThread.pipe(Effect.ignore);
   });
 }
+
+export const listProviderWorkspaceSlashCommands = (
+  input: { instanceId: ProviderInstanceId; cwd: string },
+  providers: Pick<ProviderRegistry.ProviderRegistryShape, "refreshWorkspaceSnapshot">,
+  providerInstances: Pick<ProviderInstanceRegistry.ProviderInstanceRegistryShape, "getInstance">,
+) =>
+  providers.refreshWorkspaceSnapshot(input).pipe(
+    Effect.flatMap((snapshots) => {
+      const workspace = snapshots
+        .find((provider) => provider.instanceId === input.instanceId)
+        ?.workspaceSnapshots?.find((snapshot) => snapshot.cwd === input.cwd);
+      if (workspace) return Effect.succeed(workspace.slashCommands);
+      return providerInstances.getInstance(input.instanceId).pipe(
+        Effect.flatMap((instance) => {
+          if (instance?.listSlashCommands) return instance.listSlashCommands(input.cwd);
+          return instance
+            ? instance.snapshot.getSnapshot.pipe(Effect.map((snapshot) => snapshot.slashCommands))
+            : Effect.succeed([]);
+        }),
+      );
+    }),
+  );
 
 export const layer = CoderWsRpcGroup.toLayer(
   Effect.gen(function* () {
@@ -914,17 +937,8 @@ export const layer = CoderWsRpcGroup.toLayer(
           ),
         ),
       [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
-      [WS_METHODS.providerListSlashCommands]: ({ instanceId, cwd }) =>
-        providerInstances.getInstance(instanceId).pipe(
-          Effect.flatMap((instance) => {
-            if (instance?.listSlashCommands) {
-              return instance.listSlashCommands(cwd);
-            }
-            return instance
-              ? instance.snapshot.getSnapshot.pipe(Effect.map((snapshot) => snapshot.slashCommands))
-              : Effect.succeed([]);
-          }),
-        ),
+      [WS_METHODS.providerListSlashCommands]: (input) =>
+        listProviderWorkspaceSlashCommands(input, providers, providerInstances),
       [WS_METHODS.serverDiscoverSourceControl]: () => sourceControlDiscovery.discover,
       [WS_METHODS.sourceControlProbeWriteAccess]: (input) =>
         gitLabCli.reprobeWriteAccess({ cwd: config.cwd }),
