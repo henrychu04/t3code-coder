@@ -1,3 +1,4 @@
+import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { Spinner } from "~/components/ui/spinner";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { pullRequestFilterProjects } from "../components/pullRequest/pullRequestProjectFilter.logic";
@@ -450,7 +451,15 @@ function PullRequestsRouteView() {
   const selectedPullRequestSurface = isPullRequestSurface(selectedRightPanelSurface)
     ? selectedRightPanelSurface
     : null;
-  const activePullRequestSurface = rightPanelState.isOpen ? selectedPullRequestSurface : null;
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
+  const { present: rightPanelPresent, value: activePullRequestSurface } = usePanelPresence(
+    rightPanelState.isOpen,
+    selectedPullRequestSurface,
+    panelAnimationsActive,
+    rightPanelRef ? `${rightPanelRef.environmentId}:${rightPanelRef.threadId}` : null,
+    panelAnimationDurationMs,
+  );
   // The open tab names its own server; a link that arrived before any tab was opened names it
   // through the project it selected.
   const panelEnvironmentId =
@@ -1393,7 +1402,7 @@ function PullRequestsRouteView() {
   }, [linkedSelection, pullRequestsSupported, rightPanelRef]);
 
   const selected =
-    rightPanelState.isOpen && activePullRequestSurface !== null
+    rightPanelPresent && activePullRequestSurface !== null
       ? {
           environmentId: activePullRequestSurface.environmentId,
           repository: activePullRequestSurface.repository,
@@ -1796,8 +1805,9 @@ function PullRequestsRouteView() {
         {pullRequestsSupported && rightPanelState.isOpen ? openPanelControls : null}
         <PullRequestsColumn {...columnProps} />
 
-        {rightPanelState.isOpen && activePullRequestSurface && panelEnvironmentId !== null ? (
+        {rightPanelPresent && activePullRequestSurface && panelEnvironmentId !== null ? (
           <RightPanelTabs
+            open={rightPanelState.isOpen}
             mode="inline"
             widthStorageKey="t3code:pull-request-panel-width"
             // Default to roughly half the viewport: the PR list needs more

@@ -4,6 +4,7 @@ import { RIGHT_PANEL_SHEET_CLASS_NAME } from "../rightPanelLayout";
 import { Sheet, SheetPopup } from "./ui/sheet";
 
 export function RightPanelSheet(props: {
+  animationDurationMs?: number;
   children: ReactNode;
   open: boolean;
   onClose: () => void;
@@ -18,6 +19,9 @@ export function RightPanelSheet(props: {
       }}
     >
       <SheetPopup
+        {...(props.animationDurationMs !== undefined
+          ? { transitionDurationMs: props.animationDurationMs }
+          : {})}
         side="right"
         showCloseButton={false}
         keepMounted

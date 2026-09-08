@@ -6,7 +6,7 @@ import {
 import { describe, expect, it } from "@effect/vitest";
 import { createModelCapabilities } from "@t3tools/shared/model";
 
-import { mergeProviderSnapshot } from "./ProviderRegistry.ts";
+import { mergeProviderSnapshot, upsertProviderWorkspaceSnapshot } from "./ProviderRegistry.ts";
 
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const capabilities = createModelCapabilities({ optionDescriptors: [] });
@@ -54,5 +54,26 @@ describe("mergeProviderSnapshot", () => {
     expect(mergeProviderSnapshot(previous, next).models.map(({ slug }) => slug)).toEqual([
       "sonnet",
     ]);
+  });
+});
+
+describe("project catalogs", () => {
+  it("keeps project skills separate and bounds the number of cached projects", () => {
+    let provider = makeProvider();
+    for (let i = 0; i < 18; i++) {
+      provider = upsertProviderWorkspaceSnapshot(
+        provider,
+        `/project-${i}`,
+        makeProvider({
+          skills: [{ name: `skill-${i}`, path: `/project-${i}/SKILL.md`, enabled: true }],
+        }),
+      );
+    }
+    expect(provider.skills).toEqual([]);
+    expect(provider.workspaceSnapshots).toHaveLength(16);
+    expect(provider.workspaceSnapshots?.[0]?.cwd).toBe("/project-2");
+    const updated = upsertProviderWorkspaceSnapshot(provider, "/project-2", makeProvider());
+    expect(updated.workspaceSnapshots?.at(-1)?.skills).toEqual([]);
+    expect(updated.workspaceSnapshots).toHaveLength(16);
   });
 });

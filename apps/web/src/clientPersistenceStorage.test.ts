@@ -44,7 +44,7 @@ describe("clientPersistenceStorage", () => {
       await import("./clientPersistenceStorage");
     const settings = {
       ...DEFAULT_CLIENT_SETTINGS,
-      diffRenderMode: "split" as const,
+      diffLayout: "split" as const,
       timestampFormat: "24-hour" as const,
     };
 
@@ -58,7 +58,37 @@ describe("clientPersistenceStorage", () => {
     testWindow.localStorage.setItem("t3code:client-settings:v1", JSON.stringify({}));
     const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
 
-    expect(readBrowserClientSettings()?.diffRenderMode).toBe("stacked");
+    expect(readBrowserClientSettings()?.diffLayout).toBe("stacked");
+  });
+
+  it.each(["stacked", "split"] as const)("migrates the fork's saved %s layout", async (layout) => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({ diffRenderMode: layout, timestampFormat: "24-hour" }),
+    );
+    const { readBrowserClientSettings, writeBrowserClientSettings } =
+      await import("./clientPersistenceStorage");
+    const settings = readBrowserClientSettings();
+
+    expect(settings?.diffLayout).toBe(layout);
+    expect(settings?.timestampFormat).toBe("24-hour");
+    expect(settings).not.toHaveProperty("diffRenderMode");
+    writeBrowserClientSettings(settings!);
+    const saved = JSON.parse(testWindow.localStorage.getItem("t3code:client-settings:v1")!);
+    expect(saved.diffLayout).toBe(layout);
+    expect(saved).not.toHaveProperty("diffRenderMode");
+  });
+
+  it("prefers the upstream layout when both setting names exist", async () => {
+    const testWindow = getTestWindow();
+    testWindow.localStorage.setItem(
+      "t3code:client-settings:v1",
+      JSON.stringify({ diffRenderMode: "split", diffLayout: "stacked" }),
+    );
+    const { readBrowserClientSettings } = await import("./clientPersistenceStorage");
+
+    expect(readBrowserClientSettings()?.diffLayout).toBe("stacked");
   });
 
   it("reports structured decode failures while preserving the fallback", async () => {

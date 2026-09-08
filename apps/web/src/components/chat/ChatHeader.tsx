@@ -1,3 +1,4 @@
+import { observeResponsiveBreakpointFade, usePanelAnimationSettings } from "../../panelAnimations";
 import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
@@ -145,6 +146,21 @@ export const ChatHeader = memo(function ChatHeader({
     onStartRename: startRename,
   });
   const titleButtonRef = useRef<HTMLButtonElement | null>(null);
+  const headerActionsRef = useRef<HTMLDivElement | null>(null);
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
+  useEffect(() => {
+    const target = headerActionsRef.current;
+    const container = target?.parentElement;
+    if (!target || !container) return;
+    return observeResponsiveBreakpointFade({
+      target,
+      container,
+      active: panelAnimationsActive,
+      durationMs: panelAnimationDurationMs,
+      breakpoint: { value: 48, unit: "rem" },
+    });
+  }, [panelAnimationsActive, panelAnimationDurationMs]);
   const titleMenuTimerRef = useRef<number | null>(null);
   const cancelPendingTitleMenu = useCallback(() => {
     if (titleMenuTimerRef.current === null) return;
@@ -329,6 +345,7 @@ export const ChatHeader = memo(function ChatHeader({
         </WorkspaceBreadcrumbItem>
       </WorkspaceBreadcrumb>
       <div
+        ref={headerActionsRef}
         data-chat-header-actions
         className={cn(
           "flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3",

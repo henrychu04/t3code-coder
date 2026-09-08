@@ -116,7 +116,7 @@ export default function DiffPanel({
   const settings = useClientSettings();
   const updateClientSettings = useUpdateClientSettings();
   const [initialGitScope] = useState(initialGitScopeProp);
-  const diffRenderMode = settings.diffRenderMode;
+  const diffLayout = settings.diffLayout;
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
@@ -811,11 +811,12 @@ export default function DiffPanel({
         <ToggleGroup
           className="shrink-0 gap-1"
           size="sm"
-          value={[diffRenderMode]}
+          aria-label="Diff layout"
+          value={[diffLayout]}
           onValueChange={(value) => {
             const next = value[0];
             if (next === "stacked" || next === "split") {
-              updateClientSettings({ diffRenderMode: next });
+              updateClientSettings({ diffLayout: next });
             }
           }}
         >
@@ -1024,7 +1025,7 @@ export default function DiffPanel({
                       );
                     }}
                     options={{
-                      diffStyle: diffRenderMode === "split" ? "split" : "unified",
+                      diffStyle: diffLayout === "split" ? "split" : "unified",
                       lineDiffType: "none",
                       overflow: wordWrap ? "wrap" : "scroll",
                       theme: resolveDiffThemeName(resolvedTheme),

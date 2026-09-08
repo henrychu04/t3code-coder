@@ -96,6 +96,28 @@ const mergeProviderModels = (
   return [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))];
 };
 
+const MAX_WORKSPACE_SNAPSHOTS_PER_PROVIDER = 16;
+
+export function upsertProviderWorkspaceSnapshot(
+  provider: ServerProvider,
+  cwd: string,
+  scopedSnapshot: ServerProvider,
+): ServerProvider {
+  const workspaceSnapshot = {
+    cwd,
+    checkedAt: scopedSnapshot.checkedAt,
+    slashCommands: scopedSnapshot.slashCommands,
+    skills: scopedSnapshot.skills,
+  } satisfies NonNullable<ServerProvider["workspaceSnapshots"]>[number];
+  return {
+    ...provider,
+    workspaceSnapshots: [
+      ...(provider.workspaceSnapshots ?? []).filter((snapshot) => snapshot.cwd !== cwd),
+      workspaceSnapshot,
+    ].slice(-MAX_WORKSPACE_SNAPSHOTS_PER_PROVIDER),
+  };
+}
+
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
@@ -104,6 +126,9 @@ export const mergeProviderSnapshot = (
     ? nextProvider
     : {
         ...nextProvider,
+        ...(!nextProvider.workspaceSnapshots && previousProvider.workspaceSnapshots
+          ? { workspaceSnapshots: previousProvider.workspaceSnapshots }
+          : {}),
         models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
       };
 
@@ -261,6 +286,7 @@ export const ProviderRegistryLive = Layer.effect(
         ),
       ),
     );
+    const workspaceRefreshesRef = yield* Ref.make(new Map<ProviderInstance, Set<string>>());
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(cachedProviders);
     // Live-source registry — the dynamic counterpart to the boot-time
     // `bootSources`. Keyed by `instanceId`; the stored `ProviderInstance`
@@ -290,7 +316,8 @@ export const ProviderRegistryLive = Layer.effect(
           cacheDir: config.providerStatusCacheDir,
           instanceId: key,
         }).pipe(Effect.provideService(Path.Path, path));
-        yield* writeProviderStatusCache({ filePath, provider }).pipe(
+        const { workspaceSnapshots: _workspaceSnapshots, ...machineProvider } = provider;
+        yield* writeProviderStatusCache({ filePath, provider: machineProvider }).pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
           Effect.tapError(Effect.logError),
@@ -459,6 +486,15 @@ export const ProviderRegistryLive = Layer.effect(
           newlyAdded.push([instanceId, instance] as const);
         }
 
+        // Project catalogs belong to a specific runtime instance, not just its reusable ID.
+        yield* Ref.update(providersRef, (current) =>
+          current.map((provider) => {
+            if (carriedOver.has(provider.instanceId)) return provider;
+            const { workspaceSnapshots: _workspaceSnapshots, ...machineSnapshot } = provider;
+            return machineSnapshot;
+          }),
+        );
+
         // Fork long-lived subscriptions to each new/rebuilt instance's
         // change stream before reading its current snapshot. If the
         // driver's own initial probe finishes during this sync, either
@@ -591,7 +627,71 @@ export const ProviderRegistryLive = Layer.effect(
       return yield* Ref.get(providersRef);
     });
 
+    const refreshWorkspaceSnapshot = Effect.fn("refreshWorkspaceSnapshot")(function* (input: {
+      readonly instanceId: ProviderInstanceId;
+      readonly cwd: string;
+    }) {
+      const providers = yield* Ref.get(providersRef);
+      const provider = providers.find((candidate) => candidate.instanceId === input.instanceId);
+      if (
+        !provider ||
+        !provider.enabled ||
+        provider.workspaceSnapshots?.some((s) => s.cwd === input.cwd)
+      ) {
+        return providers;
+      }
+      const instance = yield* instanceRegistry.getInstance(input.instanceId);
+      if (!instance?.snapshotForCwd) return providers;
+      const claimed = yield* Ref.modify(workspaceRefreshesRef, (refreshes) => {
+        const current = refreshes.get(instance);
+        if (current?.has(input.cwd)) return [false, refreshes] as const;
+        const next = new Map(refreshes);
+        next.set(instance, new Set(current).add(input.cwd));
+        return [true, next] as const;
+      });
+      if (!claimed) return yield* Ref.get(providersRef);
+      return yield* instance.snapshotForCwd(input.cwd).pipe(
+        Effect.flatMap((scopedSnapshot) =>
+          scopedSnapshot.status === "error"
+            ? Ref.get(providersRef)
+            : instanceRegistry.getInstance(input.instanceId).pipe(
+                Effect.flatMap((currentInstance) => {
+                  if (currentInstance !== instance) return Ref.get(providersRef);
+                  return Ref.modify(providersRef, (currentProviders) => {
+                    const nextProviders = currentProviders.map((candidate) =>
+                      candidate.instanceId === input.instanceId &&
+                      !candidate.workspaceSnapshots?.some((s) => s.cwd === input.cwd)
+                        ? upsertProviderWorkspaceSnapshot(candidate, input.cwd, scopedSnapshot)
+                        : candidate,
+                    );
+                    return [[currentProviders, nextProviders] as const, nextProviders];
+                  }).pipe(
+                    Effect.tap(([previousProviders, nextProviders]) =>
+                      haveProvidersChanged(previousProviders, nextProviders)
+                        ? PubSub.publish(changesPubSub, nextProviders)
+                        : Effect.void,
+                    ),
+                    Effect.map(([, nextProviders]) => nextProviders),
+                  );
+                }),
+              ),
+        ),
+        Effect.ensuring(
+          Ref.update(workspaceRefreshesRef, (refreshes) => {
+            const next = new Map(refreshes);
+            const current = new Set(next.get(instance));
+            current.delete(input.cwd);
+            if (current.size) next.set(instance, current);
+            else next.delete(instance);
+            return next;
+          }),
+        ),
+      );
+    });
+
     return {
+      refreshWorkspaceSnapshot: (input) =>
+        refreshWorkspaceSnapshot(input).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviders: Ref.get(providersRef),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),

@@ -41,6 +41,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
 
 interface RightPanelTabsProps {
+  readonly open?: boolean;
   readonly mode: "inline" | "sheet";
   readonly maximized?: boolean;
   readonly widthStorageKey?: string;
@@ -516,6 +517,47 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     edge: "left",
   });
 
+  const open = props.open ?? true;
+  const maximized = props.maximized ?? false;
+  const collapsible = props.mode === "inline" && props.open !== undefined;
+  // Derive suppression before the layout commits so the browser never creates
+  // a width transition for resize or maximize changes.
+  const [layoutTransition, setLayoutTransition] = useState(() => ({
+    open,
+    width,
+    maximized,
+    suppressed: false,
+  }));
+  if (
+    layoutTransition.open !== open ||
+    layoutTransition.width !== width ||
+    layoutTransition.maximized !== maximized
+  ) {
+    setLayoutTransition({
+      open,
+      width,
+      maximized,
+      suppressed:
+        collapsible &&
+        layoutTransition.open === open &&
+        (layoutTransition.width !== width || layoutTransition.maximized !== maximized),
+    });
+  }
+  const suppressWidthTransition = layoutTransition.suppressed;
+  useLayoutEffect(() => {
+    if (!suppressWidthTransition) return;
+    let restoreFrame = 0;
+    const paintFrame = window.requestAnimationFrame(() => {
+      restoreFrame = window.requestAnimationFrame(() => {
+        setLayoutTransition((current) => ({ ...current, suppressed: false }));
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(paintFrame);
+      window.cancelAnimationFrame(restoreFrame);
+    };
+  }, [suppressWidthTransition]);
+
   const addSurfaceActions = [
     {
       label: "Terminal",
@@ -664,8 +706,20 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
         "relative flex h-full min-h-0 min-w-0 max-w-full flex-col border-l border-border bg-background",
         props.mode === "inline" && (props.maximized ? "w-full" : "shrink-0"),
         props.mode === "sheet" && "w-full",
+        collapsible &&
+          "overflow-clip [[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
+        collapsible && open && "[[data-panel-animations=true]_&]:starting:w-0!",
+        collapsible && !open && "pointer-events-none border-l-0",
       )}
-      style={resizable ? { width: `${width}px` } : undefined}
+      style={
+        props.mode === "inline"
+          ? {
+              width: !open ? "0px" : maximized ? "100%" : `${width}px`,
+              transitionDuration: suppressWidthTransition ? "0ms" : undefined,
+            }
+          : undefined
+      }
+      inert={!open || undefined}
     >
       {resizable ? (
         <div

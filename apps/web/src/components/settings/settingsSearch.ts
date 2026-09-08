@@ -18,6 +18,49 @@ export interface SettingsSearchItem {
 /** Coder-only settings destinations, including individual source-control controls. */
 export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   {
+    id: "restore-client-defaults",
+    title: "Restore browser preferences",
+    to: "/settings/preferences",
+    section: "Defaults",
+    searchTerms: ["reset appearance interface"],
+  },
+  {
+    id: "restore-workspace-defaults",
+    title: "Restore workspace preferences",
+    to: "/settings/preferences",
+    section: "Defaults",
+    searchTerms: ["reset general source control"],
+  },
+  {
+    id: "skills-in-slash-menu",
+    title: "Skills in slash menu",
+    to: "/settings/preferences",
+    section: "Editor and history",
+    searchTerms: ["slash commands dollar skills picker"],
+  },
+  {
+    id: "proactive-panels",
+    title: "Proactive panels",
+    to: "/settings/preferences",
+    section: "Editor and history",
+    searchTerms: ["automatic open merge request turn diffs"],
+  },
+  {
+    id: "panel-animations",
+    title: "Panel animations",
+    to: "/settings/appearance",
+    section: "Motion",
+    searchTerms: ["duration transition reduced motion"],
+  },
+  {
+    id: "theme",
+    title: "Themes",
+    to: "/settings/appearance",
+    section: "Appearance",
+    searchTerms: ["bundled palette light dark variants"],
+  },
+
+  {
     id: "git-fetch-interval",
     title: "Git fetch interval",
     to: "/settings/source-control",

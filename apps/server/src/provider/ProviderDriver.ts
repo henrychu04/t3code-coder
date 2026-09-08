@@ -1,3 +1,4 @@
+import type { ServerProvider } from "@t3tools/contracts";
 /**
  * ProviderDriver / ProviderInstance — driver SPI as plain values.
  *
@@ -72,6 +73,7 @@ export interface ProviderInstance {
   readonly enabled: boolean;
   readonly snapshot: ServerProviderShape;
   /** Resolve provider commands in the same cwd that will run the turn. */
+  readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, unknown>;
   readonly listSlashCommands?: (
     cwd: string,
   ) => Effect.Effect<ReadonlyArray<ServerProviderSlashCommand>>;

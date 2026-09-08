@@ -62,18 +62,27 @@ function SheetPopup({
   children,
   showCloseButton = true,
   keepMounted = false,
+  transitionDurationMs,
+  style,
   side = "right",
   variant = "default",
   ...props
 }: SheetPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   keepMounted?: boolean;
+  transitionDurationMs?: number;
   side?: "right" | "left" | "top" | "bottom";
   variant?: "default" | "inset";
 }) {
   return (
     <SheetPortal keepMounted={keepMounted}>
-      <SheetBackdrop />
+      <SheetBackdrop
+        style={
+          transitionDurationMs === undefined
+            ? undefined
+            : { transitionDuration: `${transitionDurationMs}ms` }
+        }
+      />
       <SheetViewport side={side} variant={variant}>
         <SheetPrimitive.Popup
           className={cn(
@@ -90,6 +99,12 @@ function SheetPopup({
               "before:hidden sm:rounded-2xl sm:border sm:before:rounded-[calc(var(--radius-2xl)-1px)] sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--radius-2xl)-1px)]",
             className,
           )}
+          style={{
+            ...style,
+            ...(transitionDurationMs === undefined
+              ? {}
+              : { transitionDuration: `${transitionDurationMs}ms` }),
+          }}
           data-slot="sheet-popup"
           {...props}
         >

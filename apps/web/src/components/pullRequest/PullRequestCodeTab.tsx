@@ -29,7 +29,7 @@ import { useAtomRefresh } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { useClientSettings } from "~/hooks/useSettings";
+import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useTheme } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
@@ -223,7 +223,8 @@ function PullRequestCodeTab({
   const [visibleCommitCount, setVisibleCommitCount] = useState(COMMIT_PAGE_SIZE);
   /** Set once the reader has asked for every file at once, until they pick a file apart again. */
   const [foldOverride, setFoldOverride] = useState<DiffFoldOverride>(null);
-  const [diffRenderMode, setDiffRenderMode] = useState<"stacked" | "split">("stacked");
+  const diffLayout = settings.diffLayout;
+  const updateClientSettings = useUpdateClientSettings();
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [fileTreeOpen, setFileTreeOpen] = useLocalStorage(
     PULL_REQUEST_FILE_TREE_STORAGE_KEY,
@@ -766,7 +767,7 @@ function PullRequestCodeTab({
 
   const diffViewOptions = useMemo(
     () => ({
-      diffStyle: diffRenderMode === "split" ? ("split" as const) : ("unified" as const),
+      diffStyle: diffLayout === "split" ? ("split" as const) : ("unified" as const),
       lineDiffType: "none" as const,
       overflow: wordWrap ? ("wrap" as const) : ("scroll" as const),
       theme: resolveDiffThemeName(resolvedTheme),
@@ -783,15 +784,7 @@ function PullRequestCodeTab({
       onGutterUtilityClick: beginComment,
       onLineSelectionEnd: beginComment,
     }),
-    [
-      diffRenderMode,
-      wordWrap,
-      resolvedTheme,
-      loadDiffFiles,
-      canCommentOnLines,
-      draft,
-      beginComment,
-    ],
+    [diffLayout, wordWrap, resolvedTheme, loadDiffFiles, canCommentOnLines, draft, beginComment],
   );
 
   const runThreadCommand = useCallback(
@@ -1149,11 +1142,12 @@ function PullRequestCodeTab({
         <ToggleGroup
           className="shrink-0 gap-1"
           size="sm"
-          value={[diffRenderMode]}
+          aria-label="Diff layout"
+          value={[diffLayout]}
           onValueChange={(value) => {
             const next = value[0];
             if (next === "stacked" || next === "split") {
-              setDiffRenderMode(next);
+              updateClientSettings({ diffLayout: next });
             }
           }}
         >

@@ -7,6 +7,9 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/provider/Drivers/ClaudeSkills.test.ts",
+      "apps/server/src/provider/Drivers/ClaudeSkillDispatch.test.ts",
+      "apps/server/src/provider/Layers/ProviderRegistry.test.ts",
       "apps/server/src/provider/Layers/ProviderSessionReaper.test.ts",
       "apps/server/src/pullRequest/PullRequestService.coder.test.ts",
       "apps/server/src/provider/Layers/ProviderService.compaction.test.ts",

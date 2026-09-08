@@ -7,6 +7,7 @@ import * as Stream from "effect/Stream";
 export const makeProviderRegistryMock = (
   providers: ReadonlyArray<ServerProvider> = [],
 ): ProviderRegistryShape => ({
+  refreshWorkspaceSnapshot: () => Effect.succeed(providers),
   getProviders: Effect.succeed(providers),
   refresh: () => Effect.succeed(providers),
   refreshInstance: () => Effect.succeed(providers),

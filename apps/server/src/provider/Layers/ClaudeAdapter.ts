@@ -1,3 +1,6 @@
+import * as FileSystem from "effect/FileSystem";
+import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
  *
@@ -1447,10 +1450,17 @@ const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")((
   input: ProviderSendTurnInput,
   dependencies: {
     readonly boundInstanceId: ProviderInstanceId;
+    readonly skillNames: ReadonlySet<string>;
   },
 ) => {
   const text = buildPromptText(input, dependencies.boundInstanceId);
-  return Effect.succeed(buildUserMessage({ sdkContent: [{ type: "text", text }] }));
+  const dispatch = planClaudeSkillDispatch(text, dependencies.skillNames);
+  const sdkContent: Array<Record<string, unknown>> = [];
+  if (dispatch?.leadingText !== undefined) {
+    sdkContent.push({ type: "text", text: dispatch.leadingText });
+  }
+  sdkContent.push({ type: "text", text: dispatch?.commandText ?? text });
+  return Effect.succeed(buildUserMessage({ sdkContent }));
 });
 
 /**
@@ -1878,6 +1888,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 ) {
   const boundInstanceId = options?.instanceId ?? ProviderInstanceId.make("claudeAgent");
   const path = yield* Path.Path;
+  const fileSystem = yield* FileSystem.FileSystem;
   const serverConfig = yield* ServerConfig;
   const crypto = yield* Crypto.Crypto;
   const claudeEnvironment = yield* makeClaudeEnvironment(claudeSettings, options?.environment).pipe(
@@ -4877,8 +4888,21 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       });
     }
 
+    const skills = yield* discoverClaudeSkills(
+      claudeSettings,
+      context.session.cwd,
+      claudeEnvironment,
+    ).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
     const message = yield* buildUserMessageEffect(input, {
       boundInstanceId,
+      skillNames: new Set(
+        skills
+          .filter((skill) => skill.enabled && skill.userInvocable !== false)
+          .map((skill) => skill.name),
+      ),
     });
 
     yield* Queue.offer(context.promptQueue, {

@@ -47,6 +47,13 @@ export interface ThreadRightPanelState {
 }
 
 interface RightPanelStoreState {
+  userActionRevisionByThreadKey: Record<string, number>;
+  getUserActionRevision: (ref: ScopedThreadRef) => number;
+  openProactive: (
+    ref: ScopedThreadRef,
+    surface: RightPanelSurface,
+    expectedUserActionRevision: number,
+  ) => boolean;
   byThreadKey: Record<string, ThreadRightPanelState>;
   open: (
     ref: ScopedThreadRef,
@@ -192,22 +199,59 @@ const removeSurface = (current: ThreadRightPanelState, surfaceId: string) => {
   };
 };
 
-export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
+export const useRightPanelStore = create<RightPanelStoreState>()((set, get) => ({
+  userActionRevisionByThreadKey: {},
   byThreadKey: {},
+  getUserActionRevision: (ref) => get().userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0,
+  openProactive: (ref, surface, expectedUserActionRevision) => {
+    let opened = false;
+    set((state) => {
+      if (
+        (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) !==
+        expectedUserActionRevision
+      )
+        return state;
+      if (
+        surface.kind === "diff" &&
+        selectActiveRightPanel(state.byThreadKey, ref) === "pull-request"
+      )
+        return state;
+      opened = true;
+      return {
+        byThreadKey: updateThread(state.byThreadKey, ref, (current) => upsert(current, surface)),
+      };
+    });
+    return opened;
+  },
   open: (ref, kind) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
         upsert(current, singletonSurface(kind)),
       ),
     })),
   openPullRequest: (ref, target) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
         upsert(current, pullRequestSurface(target)),
       ),
     })),
   openFile: (ref, relativePath, line) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
         const withoutStandaloneExplorer = current.surfaces.filter(
           (surface) => surface.kind !== "files",
@@ -233,12 +277,22 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   openTerminal: (ref, terminalId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
         upsert(current, terminalSurface(terminalId)),
       ),
     })),
   splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
         ...current,
         isOpen: true,
@@ -259,6 +313,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   activateTerminal: (ref, surfaceId, terminalId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
         ...current,
         activeSurfaceId: surfaceId,
@@ -273,6 +332,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   closeTerminal: (ref, surfaceId, terminalId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
         const surface = current.surfaces.find(
           (entry) => entry.id === surfaceId && entry.kind === "terminal",
@@ -299,6 +363,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   activateSurface: (ref, surfaceId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
         current.surfaces.some((surface) => surface.id === surfaceId)
           ? { ...current, isOpen: true, activeSurfaceId: surfaceId }
@@ -307,12 +376,22 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   closeSurface: (ref, surfaceId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) =>
         removeSurface(current, surfaceId),
       ),
     })),
   closeOtherSurfaces: (ref, surfaceId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
         const surface = current.surfaces.find((entry) => entry.id === surfaceId);
         return surface
@@ -322,6 +401,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   closeSurfacesToRight: (ref, surfaceId) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
         const index = current.surfaces.findIndex((surface) => surface.id === surfaceId);
         if (index < 0) return current;
@@ -337,10 +421,20 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   closeAllSurfaces: (ref) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, () => EMPTY_THREAD_STATE),
     })),
   show: (ref) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
         ...current,
         isOpen: current.surfaces.length > 0,
@@ -348,6 +442,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   close: (ref) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
         ...current,
         isOpen: false,
@@ -355,6 +454,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   toggleVisibility: (ref) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => ({
         ...current,
         isOpen: !current.isOpen,
@@ -362,6 +466,11 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     })),
   toggle: (ref, kind) =>
     set((state) => ({
+      userActionRevisionByThreadKey: {
+        ...state.userActionRevisionByThreadKey,
+        [scopedThreadKey(ref)]:
+          (state.userActionRevisionByThreadKey[scopedThreadKey(ref)] ?? 0) + 1,
+      },
       byThreadKey: updateThread(state.byThreadKey, ref, (current) => {
         const active = current.surfaces.find((surface) => surface.id === current.activeSurfaceId);
         return current.isOpen && active?.kind === kind
@@ -373,7 +482,9 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set) => ({
     set((state) => {
       const key = scopedThreadKey(ref);
       const { [key]: _removed, ...byThreadKey } = state.byThreadKey;
-      return { byThreadKey };
+      const { [key]: _revision, ...userActionRevisionByThreadKey } =
+        state.userActionRevisionByThreadKey;
+      return { byThreadKey, userActionRevisionByThreadKey };
     }),
 }));
 

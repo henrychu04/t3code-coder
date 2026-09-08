@@ -915,7 +915,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
       [WS_METHODS.providerListSlashCommands]: ({ instanceId, cwd }) =>
-        providerInstances.getInstance(instanceId).pipe(
+        providers.refreshWorkspaceSnapshot({ instanceId, cwd }).pipe(
+          Effect.andThen(providerInstances.getInstance(instanceId)),
           Effect.flatMap((instance) => {
             if (instance?.listSlashCommands) {
               return instance.listSlashCommands(cwd);
