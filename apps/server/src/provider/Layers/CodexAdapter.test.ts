@@ -280,7 +280,7 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
       const threadId = asThreadId("compact-thread");
       yield* adapter.startSession({ threadId, runtimeMode: "approval-required" });
 
-      yield* adapter.compactThread?.(threadId);
+      yield* adapter.compaction.start(threadId);
 
       NodeAssert.equal(factory.lastRuntime?.compactThreadImpl.mock.calls.length, 1);
       yield* adapter.stopAll();

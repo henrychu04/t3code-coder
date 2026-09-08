@@ -135,6 +135,7 @@ import {
   animatePinnedLayoutChanges,
   buildBulkTitleRegenerationContextMenuItem,
   buildBulkUnpinContextMenuItem,
+  deleteSelectedThreadEntries,
   filterSidebarProjectScopeItems,
   formatWorkingDurationLabel,
   firstValidTimestampMs,
@@ -815,7 +816,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const gitCwd = thread.worktreePath ?? props.projectCwd;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     thread.environmentId,
-    thread.linkedPullRequest,
+    thread.linkedPullRequest ?? thread.branchPullRequest,
   );
   const changeRequestSnapshots = useAtomValue(threadChangeRequestSnapshotsAtom);
   const changeRequestSnapshot = changeRequestSnapshots.get(threadKey);
@@ -833,7 +834,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     gitStatus: gitStatus.data,
     snapshot: changeRequestSnapshot,
     retainTerminalOnBranchMismatch,
-    linkedPullRequest: thread.linkedPullRequest,
+    linkedPullRequest: thread.linkedPullRequest ?? thread.branchPullRequest,
     linkedPullRequestStatus,
   });
   const changeRequestProvider = resolveDisplayedThreadPrProvider({
@@ -841,7 +842,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     gitStatus: gitStatus.data,
     snapshot: changeRequestSnapshot,
     retainTerminalOnBranchMismatch,
-    linkedPullRequest: thread.linkedPullRequest,
+    linkedPullRequest: thread.linkedPullRequest ?? thread.branchPullRequest,
     linkedPullRequestStatus,
   });
   const changeRequestStatus = prStatusIndicator(changeRequest, changeRequestProvider);
@@ -851,7 +852,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       gitStatus: gitStatus.data,
       snapshot: changeRequestSnapshot,
       retainTerminalOnBranchMismatch,
-      linkedPullRequest: thread.linkedPullRequest,
+      linkedPullRequest: thread.linkedPullRequest ?? thread.branchPullRequest,
       linkedPullRequestStatus,
     });
     if (nextSnapshot !== undefined) {
@@ -863,7 +864,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     linkedPullRequestStatus,
     retainTerminalOnBranchMismatch,
     thread.branch,
-    thread.linkedPullRequest,
+    thread.linkedPullRequest ?? thread.branchPullRequest,
     threadKey,
   ]);
   // Same semantics as the legacy sidebar (never-visited counts as read):
@@ -1020,13 +1021,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
       event.stopPropagation();
       if (!changeRequest) return;
       const repository =
-        thread.linkedPullRequest?.repository ??
+        (thread.linkedPullRequest ?? thread.branchPullRequest)?.repository ??
         parseChangeRequestUrl(changeRequest.url)?.repository ??
         null;
       if (repository === null) return;
       useRightPanelStore.getState().openPullRequest(threadRef, {
         environmentId: thread.environmentId,
-        projectId: thread.linkedPullRequest?.projectId ?? thread.projectId,
+        projectId:
+          (thread.linkedPullRequest ?? thread.branchPullRequest)?.projectId ?? thread.projectId,
         repository,
         number: changeRequest.number,
       });
@@ -3097,26 +3099,18 @@ export default function Sidebar() {
         );
         if (confirmed._tag === "Failure" || !confirmed.value) return;
       }
-      // Grown as deletions actually land, never seeded with the whole batch:
-      // orphaned-worktree detection must only discount threads that are
-      // really gone, or the first delete would treat still-alive batch mates
-      // as deleted and remove a worktree they still point at.
-      const deletedThreadKeys = new Set<string>();
-      let firstError: unknown = null;
-      for (const threadKey of threadKeys) {
-        const thread = threadByKeyRef.current.get(threadKey);
-        if (!thread) continue;
-        const result = await deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
-          deletedThreadKeys,
-        });
-        if (result._tag === "Failure") {
-          if (isAtomCommandInterrupted(result)) break;
-          firstError ??= squashAtomCommandFailure(result);
-          continue;
-        }
-        deletedThreadKeys.add(threadKey);
-      }
-      if (firstError !== null) {
+      const { deletedThreadKeys, firstFailure } = await deleteSelectedThreadEntries({
+        entries: threadKeys.map((threadKey) => ({ threadKey })),
+        delete: async ({ threadKey }, deletedThreadKeys) => {
+          const thread = threadByKeyRef.current.get(threadKey);
+          if (!thread) return null;
+          return deleteThread(scopeThreadRef(thread.environmentId, thread.id), {
+            deletedThreadKeys,
+          });
+        },
+      });
+      if (firstFailure !== null) {
+        const firstError = squashAtomCommandFailure(firstFailure);
         toastManager.add(
           stackedThreadToast({
             type: "error",

@@ -105,6 +105,13 @@ GitLab merge-request diffs are paged by file and capped below the gateway's 8 Mi
 host-backed full-file expansion is capped at 1 MiB of CLI output. These reads remain in browser or
 helper memory and are not persisted by the gateway.
 
+Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLab MR links at
+startup, after relevant thread changes, and periodically without an open browser. It uses the
+existing repository-scoped GitWorkflowService cache and glab-backed MR service, verifies both the
+branch and project repository identity before saving, and rejects updates after the lookup inputs
+change. Migration 048 adds the branch MR projection independently of explicit links. Settled-thread
+backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
+
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
 browser is connected. It resolves saved branches to GitLab merge requests without changing the
@@ -173,11 +180,13 @@ managed Claude sessions. Both provider connections remain owned by their workspa
 Native context compaction and asynchronous Codex questions use the same provider stdio sessions
 and orchestration event stream; they do not introduce another listener or transport. The upstream
 usage/cost dashboard is not included: remote pricing aggregation and user-configured CLI-proxy
-sources would add a separate external-data and secret-bearing surface. Read-only native subscription
-windows are shown in workspace provider settings. Codex reads them through its existing app-server
-stdio protocol; Claude sends a bounded `get_usage` control request through its existing foreground
-CLI capability probe. Neither path adds credential access, HTTP clients, listeners, or local
-persistence. These are health-probe snapshots, not live per-turn counters.
+sources would add a separate external-data and secret-bearing surface. This fork supports
+API-backed provider usage only, with API authentication configured in the workspace. Subscription
+plans and quota dashboards are outside the supported product scope. Provider settings therefore
+omit subscription-limit summaries; context/token usage and runtime rate-limit errors remain.
+This scope does not enforce authentication mode at runtime. Existing shared provider health probes
+and protocol handling may still report native subscription metadata, but it is not displayed as
+API billing information. T3 does not provide API spend, credit, or billing-limit tracking.
 The helper also starts repository-scoped Git commands and the workspace-installed `glab`
 executable with argument-array spawning and `shell: false` for GitLab source-control operations.
 GitLab authentication and network policy remain owned by the workspace CLI; T3 never asks for,

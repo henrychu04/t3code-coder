@@ -189,3 +189,16 @@ describe("ChatMarkdown", () => {
     expect(markup).not.toContain("/workspace/.codex/skills");
   });
 });
+
+it("uses a bundled GitHub mark while keeping links inert and rejecting lookalike hosts", () => {
+  const markup = renderToStaticMarkup(
+    <ChatMarkdown cwd="/workspace" text="[repository](https://github.com/org/repo)" />,
+  );
+  expect(markup).toContain('viewBox="0 0 1024 1024"');
+  expect(markup).not.toContain("<a ");
+  expect(markup).not.toContain("<img");
+  const other = renderToStaticMarkup(
+    <ChatMarkdown cwd="/workspace" text="[other](https://github.com.example.org/repo)" />,
+  );
+  expect(other).not.toContain('viewBox="0 0 1024 1024"');
+});

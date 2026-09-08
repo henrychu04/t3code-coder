@@ -9,7 +9,6 @@ import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
 import { environmentPresentations, useEnvironmentPresentation } from "./presentation";
-import { useEnvironmentQuery } from "./query";
 
 export interface EnvironmentPresentation extends BaseEnvironmentPresentation {
   readonly environmentId: EnvironmentId;
@@ -65,8 +64,4 @@ export function useEnvironment(
 
 export function useEnvironmentKeybindings(environmentId: EnvironmentId | null) {
   return useEnvironment(environmentId)?.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
-}
-
-export function useEnvironmentConnectionState(environmentId: EnvironmentId) {
-  return useEnvironmentQuery(environmentCatalog.stateAtom(environmentId));
 }

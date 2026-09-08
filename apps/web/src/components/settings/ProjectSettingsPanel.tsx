@@ -1,3 +1,6 @@
+import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
+import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
+import { serverEnvironment } from "../../state/server";
 import { useCanGoBack, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
@@ -128,17 +131,25 @@ export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
 export function ProjectSettingsPanel({ project }: { project: EnvironmentProject }) {
   const environment = useEnvironment(project.environmentId);
   const settings = useEnvironmentSettings(project.environmentId);
+  const resolvedProject = {
+    ...project,
+    autoPull: resolveProjectAutoPull(settings, project.id, project.autoPull),
+    scripts: resolveProjectScripts(settings, project),
+  };
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
-  const [baseline, setBaseline] = useState(() => projectSettingsValues(project));
+  const [baseline, setBaseline] = useState(() => projectSettingsValues(resolvedProject));
   const [values, setValues] = useState(baseline);
   const [pending, setPending] = useState(false);
   const saving = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const connected = environment?.connection.phase === "connected";
-  const stale = projectSettingsChanged(baseline, project);
+  const stale = projectSettingsChanged(baseline, resolvedProject);
   const providers = environment?.serverConfig?.providers ?? [];
   const selection =
-    values.defaultModelSelection ?? resolveAppModelSelectionState(settings, providers);
+    values.defaultModelSelection ??
+    settings.defaultModelSelection ??
+    resolveAppModelSelectionState(settings, providers);
   const instanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveCoderProviderInstanceEntries(providers), settings),
   );
@@ -149,13 +160,24 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
     selection.model,
   );
 
-  const save = async () => {
-    if (saving.current || !connected) return;
+  const isCurrent = () => {
     const current = readProject({ environmentId: project.environmentId, projectId: project.id });
-    if (!current || projectSettingsChanged(baseline, current)) {
+    if (
+      !current ||
+      projectSettingsChanged(baseline, {
+        ...current,
+        autoPull: resolveProjectAutoPull(settings, current.id, current.autoPull),
+        scripts: resolveProjectScripts(settings, current),
+      })
+    ) {
       setNotice("Project settings changed elsewhere. Reload settings before saving.");
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const save = async () => {
+    if (saving.current || !connected || !isCurrent()) return;
     const normalized = {
       ...values,
       title: values.title.trim(),
@@ -176,7 +198,18 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
     try {
       const result = await updateProject({
         environmentId: project.environmentId,
-        input: { projectId: project.id, ...normalized },
+        input: {
+          projectId: project.id,
+          ...normalized,
+          autoPull:
+            normalized.autoPull !== baseline.autoPull
+              ? normalized.autoPull
+              : (project.autoPull ?? false),
+          scripts:
+            JSON.stringify(normalized.scripts) !== JSON.stringify(baseline.scripts)
+              ? normalized.scripts
+              : project.scripts,
+        },
       });
       if (result._tag === "Failure") {
         if (!isAtomCommandInterrupted(result)) {
@@ -185,9 +218,72 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
         }
         return;
       }
+      const patch = {
+        ...(normalized.autoPull !== baseline.autoPull
+          ? { projectAutoPullOverrides: { [project.id]: normalized.autoPull } }
+          : {}),
+        ...(JSON.stringify(normalized.scripts) !== JSON.stringify(baseline.scripts)
+          ? { projectScriptOverrides: { [project.id]: normalized.scripts } }
+          : {}),
+      };
+      const overrideResult = Object.keys(patch).length
+        ? await updateSettings({ environmentId: project.environmentId, input: { patch } })
+        : { _tag: "Success" };
+      if (overrideResult._tag === "Failure") {
+        setNotice("Project saved, but overrides could not be saved. Reload before retrying.");
+        return;
+      }
       setBaseline(normalized);
       setValues(normalized);
       setNotice("Project settings saved.");
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  };
+
+  const resetInherited = async (kind: "scripts" | "autoPull") => {
+    if (saving.current || !connected || !isCurrent()) return;
+    saving.current = true;
+    setPending(true);
+    setNotice(null);
+    try {
+      const clearLegacy = await updateProject({
+        environmentId: project.environmentId,
+        input: {
+          projectId: project.id,
+          ...(kind === "scripts" ? { scripts: [] } : { autoPull: false }),
+        },
+      });
+      if (clearLegacy._tag === "Failure") {
+        setNotice("Could not reset the project setting.");
+        return;
+      }
+      const result = await updateSettings({
+        environmentId: project.environmentId,
+        input: {
+          patch:
+            kind === "scripts"
+              ? { projectScriptOverrides: { [project.id]: null } }
+              : { projectAutoPullOverrides: { [project.id]: null } },
+        },
+      });
+      if (result._tag === "Failure") {
+        setNotice("Project updated, but the override could not be reset. Reload before retrying.");
+        return;
+      }
+      const next = {
+        ...baseline,
+        ...(kind === "scripts"
+          ? { scripts: settings.defaultProjectScripts }
+          : { autoPull: settings.defaultAutoPull }),
+      };
+      setBaseline(next);
+      setValues((current) => ({
+        ...current,
+        ...(kind === "scripts" ? { scripts: next.scripts } : { autoPull: next.autoPull }),
+      }));
+      setNotice("Now using the workspace default.");
     } finally {
       saving.current = false;
       setPending(false);
@@ -306,6 +402,14 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
             }
           />
         </SettingsSection>
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" onClick={() => void resetInherited("autoPull")}>
+            Use workspace automatic-pull default
+          </Button>
+          <Button type="button" variant="outline" onClick={() => void resetInherited("scripts")}>
+            Use workspace default scripts
+          </Button>
+        </div>
         <SettingsSection title="Checkout">
           <SettingsRow
             title="Coder workspace"
@@ -420,7 +524,7 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
           variant="outline"
           disabled={pending}
           onClick={() => {
-            const next = projectSettingsValues(project);
+            const next = projectSettingsValues(resolvedProject);
             setBaseline(next);
             setValues(next);
             setNotice(null);

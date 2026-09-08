@@ -28,3 +28,30 @@ and terminal mechanism. There are no local-host script runners or browser-previe
 
 Desktop file picking and upstream project-image selection are not included. Deployment-wide
 authentication and GitLab preferences remain under global settings.
+
+## Workspace defaults
+
+Open **Settings → Projects** to set the default model, checkout mode, automatic pull, and scripts.
+Choose one Coder workspace or **All connected workspaces**. The form starts with the first selected
+workspace's values; saving applies those values to the selected connected workspaces. Offline
+workspaces retain their settings. A model must be available in every selected workspace.
+
+Defaults apply to projects that inherit the corresponding preference. Existing project model and
+checkout overrides, explicit automatic-pull choices, and existing scripts are preserved. Changing
+the model default affects new threads; it does not change existing conversations. Automatic pull
+runs at helper startup and retains the clean-checkout, default-branch, and fast-forward checks.
+
+Open a project under **Project overrides** to edit its preferences. Turning off the model override
+or choosing **Use default** for checkout mode restores inheritance. **Use workspace automatic-pull
+default** and **Use workspace default scripts** reset those individual overrides. Editing inherited
+scripts creates an independent project list; an explicit empty list disables scripts for that
+project. Saving scripts does not execute them.
+
+## Subscription limits across workspaces
+
+**Settings → Providers** includes a read-only overview of native Codex and Claude subscription
+limits from connected workspaces. Accounts with the same provider and reported email appear once,
+using the latest snapshot and listing their workspaces. Accounts without a reported identity stay
+separate. Each subscription retains its own quota windows; percentages are not combined across
+plans. Offline workspaces are omitted. The overview uses the snapshots already received from the
+workspace and does not query accounts from the browser.

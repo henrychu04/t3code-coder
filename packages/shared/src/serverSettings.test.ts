@@ -2,16 +2,19 @@ import { describe, expect, it } from "vite-plus/test";
 import * as Duration from "effect/Duration";
 import {
   DEFAULT_SERVER_SETTINGS,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
 
 import { createModelSelection } from "./model.ts";
+import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
   resolveCoderTextGenerationModelSelection,
   resolveSourceControlWriterModelSelection,
+  resolveProjectAutoPull,
 } from "./serverSettings.ts";
 
 const providerSnapshot = (input: {
@@ -103,5 +106,52 @@ describe("generated-name model selection", () => {
         [codex, claude],
       ),
     ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.6-luna"));
+  });
+});
+
+describe("workspace project defaults", () => {
+  const id = ProjectId.make("project-defaults");
+  const script = {
+    id: "setup",
+    name: "Setup",
+    command: "pnpm install",
+    icon: "play" as const,
+    runOnWorktreeCreate: true,
+  };
+  it("preserves explicit false and resets automatic pull to the workspace default", () => {
+    const defaults = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      defaultAutoPull: true,
+      projectAutoPullOverrides: { [id]: false },
+    });
+    expect(resolveProjectAutoPull(defaults, id, true)).toBe(false);
+    const reset = applyServerSettingsPatch(defaults, { projectAutoPullOverrides: { [id]: null } });
+    expect(reset.projectAutoPullOverrides[id]).toBeUndefined();
+    expect(resolveProjectAutoPull(reset, id, false)).toBe(true);
+  });
+  it("preserves existing scripts and distinguishes empty overrides from inheritance", () => {
+    const defaults = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      defaultProjectScripts: [script],
+    });
+    const existing = { id, scripts: [{ ...script, id: "existing", command: "custom" }] };
+    expect(resolveProjectScripts(defaults, existing)).toEqual(existing.scripts);
+    const cleared = applyServerSettingsPatch(defaults, { projectScriptOverrides: { [id]: [] } });
+    expect(resolveProjectScripts(cleared, existing)).toEqual([]);
+    expect(projectScriptsInheritDefaults(cleared, existing)).toBe(false);
+    const reset = applyServerSettingsPatch(cleared, { projectScriptOverrides: { [id]: null } });
+    expect(resolveProjectScripts(reset, existing)).toEqual([script]);
+    expect(projectScriptsInheritDefaults(reset, existing)).toBe(true);
+  });
+  it("replaces default model options and preserves unrelated project overrides", () => {
+    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      defaultModelSelection: createModelSelection(ProviderInstanceId.make("codex"), "first", [
+        { id: "reasoningEffort", value: "high" },
+      ]),
+      projectAutoPullOverrides: { [id]: false },
+    });
+    const next = applyServerSettingsPatch(initial, {
+      defaultModelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "second"),
+    });
+    expect(next.defaultModelSelection?.options).toBeUndefined();
+    expect(next.projectAutoPullOverrides[id]).toBe(false);
   });
 });

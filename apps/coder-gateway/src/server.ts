@@ -580,6 +580,13 @@ function makeDeferredPromise<A>(): DeferredPromise<A> {
 }
 
 type WorkspaceLifecycleState =
+  | {
+      readonly _tag: "ShutdownFailed";
+      readonly generation: number;
+      readonly connection: CoderHelperConnection;
+      readonly scope: Scope.Closeable;
+      readonly error: string;
+    }
   | { readonly _tag: "Disconnected"; readonly generation: number }
   | {
       readonly _tag: "Connecting";
@@ -598,9 +605,20 @@ type WorkspaceLifecycleState =
       readonly generation: number;
       readonly action: WorkspaceAction;
       readonly operation: Promise<void>;
+      // Acquisition cleanup can fail while this operation is waiting for it.
+      readonly shutdownFailure?:
+        | Extract<WorkspaceLifecycleState, { _tag: "ShutdownFailed" }>
+        | undefined;
     };
 
 type PortForwardLifecycleState =
+  | {
+      readonly _tag: "ShutdownFailed";
+      readonly generation: number;
+      readonly connection: CoderPortForwardConnection;
+      readonly scope: Scope.Closeable;
+      readonly error: string;
+    }
   | { readonly _tag: "Idle"; readonly generation: number }
   | { readonly _tag: "WorkspaceStopped"; readonly generation: number }
   | {
@@ -618,10 +636,15 @@ type PortForwardLifecycleState =
       readonly _tag: "Stopping";
       readonly generation: number;
       readonly operation: Promise<void>;
+      // Acquisition cleanup can fail while this operation is waiting for it.
+      readonly shutdownFailure?:
+        | Extract<PortForwardLifecycleState, { _tag: "ShutdownFailed" }>
+        | undefined;
     }
   | { readonly _tag: "Failed"; readonly generation: number; readonly error: string };
 
 type WorkspaceConnectionClaim =
+  | { readonly _tag: "ShutdownFailed"; readonly error: string }
   | { readonly _tag: "Existing"; readonly connection: WorkspaceConnection }
   | { readonly _tag: "Pending"; readonly operation: Promise<WorkspaceConnection> }
   | { readonly _tag: "Changing"; readonly operation: Promise<void> }
@@ -634,9 +657,13 @@ type WorkspaceCloseClaim =
       readonly _tag: "Close";
       readonly pending: Promise<WorkspaceConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
+      readonly previous:
+        | Extract<WorkspaceLifecycleState, { _tag: "Connected" | "ShutdownFailed" }>
+        | undefined;
     };
 
 type PortForwardStartClaim =
+  | { readonly _tag: "ShutdownFailed"; readonly error: string }
   | { readonly _tag: "Existing"; readonly connection: CoderPortForwardConnection }
   | { readonly _tag: "Pending"; readonly operation: Promise<CoderPortForwardConnection> }
   | { readonly _tag: "Stopping"; readonly operation: Promise<void> }
@@ -649,6 +676,9 @@ type PortForwardStopClaim =
       readonly _tag: "Stop";
       readonly pending: Promise<CoderPortForwardConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
+      readonly previous:
+        | Extract<PortForwardLifecycleState, { _tag: "Running" | "ShutdownFailed" }>
+        | undefined;
     };
 
 type WorkspaceActionClaim =
@@ -658,6 +688,9 @@ type WorkspaceActionClaim =
       readonly _tag: "Start";
       readonly pending: Promise<WorkspaceConnection> | undefined;
       readonly scope: Scope.Closeable | undefined;
+      readonly previous:
+        | Extract<WorkspaceLifecycleState, { _tag: "Connected" | "ShutdownFailed" }>
+        | undefined;
     };
 
 interface WorkspaceConnection {
@@ -876,6 +909,8 @@ export function makeLocalCoderGateway(
           lifecycle,
           (state) => {
             switch (state._tag) {
+              case "ShutdownFailed":
+                return [{ _tag: "ShutdownFailed" as const, error: state.error }, state];
               case "Connected":
                 return [
                   {
@@ -901,6 +936,7 @@ export function makeLocalCoderGateway(
           },
         ),
       );
+      if (claim._tag === "ShutdownFailed") throw new Error(claim.error);
       if (claim._tag === "Existing") return claim.connection;
       if (claim._tag === "Pending") return claim.operation;
       if (claim._tag === "Changing") {
@@ -959,6 +995,7 @@ export function makeLocalCoderGateway(
             yield* Effect.try({ try: assertStartIsCurrent, catch: (cause) => cause });
           }
           const connectionScope = yield* Scope.fork(gatewayScope, "sequential");
+          let acquired: CoderHelperConnection | undefined;
           return yield* Effect.gen(function* () {
             const connection = yield* instrumentDiagnosticPhase(
               workspaceId,
@@ -966,6 +1003,39 @@ export function makeLocalCoderGateway(
               "negotiating_helper",
               openHelper(buildCoderHelperInvocation(deployment, workspace, invocationOptions)).pipe(
                 Scope.provide(connectionScope),
+              ),
+            );
+            acquired = connection;
+            runFork(
+              connection.closed.pipe(
+                Effect.tap(() =>
+                  Effect.sync(() => {
+                    const state = SynchronizedRef.getUnsafe(lifecycle);
+                    if (
+                      (state._tag === "Connected" || state._tag === "ShutdownFailed") &&
+                      state.connection === connection
+                    ) {
+                      recordDiagnosticEvent(workspaceId, attempt, "disconnected");
+                    }
+                  }),
+                ),
+                Effect.tap(() =>
+                  SynchronizedRef.update(lifecycle, (state) => {
+                    if (
+                      state._tag === "Changing" &&
+                      state.shutdownFailure?.connection === connection
+                    )
+                      return { ...state, shutdownFailure: undefined };
+                    if (
+                      ((state._tag === "Connected" || state._tag === "ShutdownFailed") &&
+                        state.connection === connection) ||
+                      (state._tag === "Connecting" && state.operation === deferred.promise)
+                    )
+                      return { _tag: "Disconnected", generation: state.generation } as const;
+                    return state;
+                  }),
+                ),
+                Effect.ensuring(Scope.close(connectionScope, Exit.void)),
               ),
             );
             if (!startIsCurrent()) {
@@ -1002,28 +1072,35 @@ export function makeLocalCoderGateway(
               return yield* Effect.fail(new Error("Coder workspace connection was cancelled."));
             }
             recordDiagnosticEvent(workspaceId, attempt, "connected");
-            runFork(
-              connection.closed.pipe(
-                Effect.tap(() =>
-                  Effect.sync(() => {
-                    const state = SynchronizedRef.getUnsafe(lifecycle);
-                    if (state._tag === "Connected" && state.connection === connection) {
-                      recordDiagnosticEvent(workspaceId, attempt, "disconnected");
-                    }
-                  }),
-                ),
-                Effect.tap(() =>
-                  SynchronizedRef.update(lifecycle, (state) =>
-                    state._tag === "Connected" && state.connection === connection
-                      ? ({ _tag: "Disconnected", generation: state.generation } as const)
-                      : state,
-                  ),
-                ),
-                Effect.ensuring(Scope.close(connectionScope, Exit.void)),
-              ),
-            );
             return { connection, rpcBridge } satisfies WorkspaceConnection;
-          }).pipe(Effect.onError(() => Scope.close(connectionScope, Exit.void)));
+          }).pipe(
+            Effect.onError(() =>
+              Effect.gen(function* () {
+                if (acquired) {
+                  // Keep the scope retriable until the child confirms shutdown.
+                  const connection = acquired;
+                  yield* connection.close.pipe(
+                    Effect.onError(() =>
+                      SynchronizedRef.update(lifecycle, (state) => {
+                        const failure = {
+                          _tag: "ShutdownFailed" as const,
+                          generation: state.generation,
+                          connection,
+                          scope: connectionScope,
+                          error:
+                            "Coder child shutdown failed. Retry stopping it before reconnecting.",
+                        };
+                        return state._tag === "Changing"
+                          ? { ...state, shutdownFailure: failure }
+                          : failure;
+                      }),
+                    ),
+                  );
+                }
+                yield* Scope.close(connectionScope, Exit.void);
+              }),
+            ),
+          );
         }),
       ).then(deferred.resolve, (cause) => {
         void runPromise(
@@ -1042,39 +1119,85 @@ export function makeLocalCoderGateway(
 
     const closeWorkspaceConnection = async (workspaceId: string): Promise<void> => {
       const lifecycle = workspaceLifecycle(workspaceId);
+      const deferred = makeDeferredPromise<void>();
       const claim = await runPromise(
         SynchronizedRef.modify<WorkspaceLifecycleState, WorkspaceCloseClaim>(lifecycle, (state) => {
-          if (state._tag === "Changing") {
-            return [{ _tag: "Changing" as const, operation: state.operation }, state];
-          }
+          if (state._tag === "Changing")
+            return [{ _tag: "Changing", operation: state.operation }, state];
           const generation = state.generation + 1;
-          if (state._tag === "Disconnected") {
-            return [{ _tag: "Closed" as const }, { _tag: "Disconnected", generation }];
-          }
+          if (state._tag === "Disconnected")
+            return [{ _tag: "Closed" }, { _tag: "Disconnected", generation }];
           return [
             {
-              _tag: "Close" as const,
+              _tag: "Close",
               pending: state._tag === "Connecting" ? state.operation : undefined,
-              scope: state._tag === "Connected" ? state.scope : undefined,
+              scope:
+                state._tag === "Connected" || state._tag === "ShutdownFailed"
+                  ? state.scope
+                  : undefined,
+              previous:
+                state._tag === "Connected" || state._tag === "ShutdownFailed" ? state : undefined,
             },
-            { _tag: "Disconnected", generation },
+            { _tag: "Changing", generation, action: "stop", operation: deferred.promise },
           ];
         }),
       );
       if (claim._tag === "Closed") return;
       if (claim._tag === "Changing") {
-        await claim.operation.catch(() => undefined);
+        await claim.operation;
         return closeWorkspaceConnection(workspaceId);
       }
-      if (claim.scope !== undefined) {
-        await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
-      }
-      if (claim.pending !== undefined) await claim.pending.catch(() => undefined);
-      recordDiagnosticEvent(
-        workspaceId,
-        workspaceAttemptCounters.get(workspaceId) ?? 1,
-        "disconnected",
-      );
+      void (async () => {
+        try {
+          if (claim.previous) await runPromise(claim.previous.connection.close);
+          if (claim.scope)
+            await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
+          if (claim.pending)
+            await claim.pending.catch((cause) => {
+              const state = SynchronizedRef.getUnsafe(lifecycle);
+              if (
+                state._tag === "ShutdownFailed" ||
+                ("shutdownFailure" in state && state.shutdownFailure)
+              )
+                throw cause;
+            });
+          await runPromise(
+            SynchronizedRef.update(lifecycle, (state) =>
+              state._tag === "Changing" && state.operation === deferred.promise
+                ? { _tag: "Disconnected" as const, generation: state.generation }
+                : state,
+            ),
+          );
+          recordDiagnosticEvent(
+            workspaceId,
+            workspaceAttemptCounters.get(workspaceId) ?? 1,
+            "disconnected",
+          );
+          deferred.resolve(undefined);
+        } catch (cause) {
+          await runPromise(
+            SynchronizedRef.update(lifecycle, (state) =>
+              state._tag === "Changing" && state.operation === deferred.promise
+                ? (state.shutdownFailure ??
+                  (claim.previous
+                    ? {
+                        ...claim.previous,
+                        _tag: "ShutdownFailed" as const,
+                        generation: state.generation,
+                        error:
+                          "Coder child shutdown failed. Retry stopping it before reconnecting.",
+                      }
+                    : {
+                        _tag: "Disconnected" as const,
+                        generation: state.generation,
+                      }))
+                : state,
+            ),
+          );
+          deferred.reject(cause);
+        }
+      })();
+      return deferred.promise;
     };
 
     const ensurePortForward = async (
@@ -1088,6 +1211,8 @@ export function makeLocalCoderGateway(
           lifecycle,
           (state) => {
             switch (state._tag) {
+              case "ShutdownFailed":
+                return [{ _tag: "ShutdownFailed" as const, error: state.error }, state];
               case "Running":
                 return [{ _tag: "Existing" as const, connection: state.connection }, state];
               case "Starting":
@@ -1109,6 +1234,7 @@ export function makeLocalCoderGateway(
           },
         ),
       );
+      if (claim._tag === "ShutdownFailed") throw new Error(claim.error);
       if (claim._tag === "Existing") return claim.connection;
       if (claim._tag === "Pending") return claim.operation;
       if (claim._tag === "Stopping") {
@@ -1143,6 +1269,7 @@ export function makeLocalCoderGateway(
           }
 
           const connectionScope = yield* Scope.fork(gatewayScope, "sequential");
+          let acquired: CoderPortForwardConnection | undefined;
           return yield* Effect.gen(function* () {
             const connection = yield* openPortForward(
               buildCoderPortForwardInvocation(
@@ -1152,6 +1279,41 @@ export function makeLocalCoderGateway(
                 coderInvocationOptions(deployment.id),
               ),
             ).pipe(Scope.provide(connectionScope));
+            acquired = connection;
+            runFork(
+              connection.closed.pipe(
+                Effect.tap((exit) =>
+                  SynchronizedRef.update(lifecycle, (state) => {
+                    if (
+                      state._tag === "Stopping" &&
+                      state.shutdownFailure?.connection === connection
+                    )
+                      return { ...state, shutdownFailure: undefined };
+                    if (
+                      !(
+                        (state._tag === "Running" || state._tag === "ShutdownFailed") &&
+                        state.connection === connection
+                      ) &&
+                      !(state._tag === "Starting" && state.operation === deferred.promise)
+                    )
+                      return state;
+                    if (
+                      !exit.expected &&
+                      !gatewayClosed &&
+                      portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
+                    ) {
+                      return {
+                        _tag: "Failed",
+                        generation: state.generation,
+                        error: exit.reason ?? "Coder port forward stopped unexpectedly.",
+                      } as const;
+                    }
+                    return { _tag: "Idle", generation: state.generation } as const;
+                  }),
+                ),
+                Effect.ensuring(Scope.close(connectionScope, Exit.void)),
+              ),
+            );
             if (
               !startIsCurrent() ||
               !portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
@@ -1180,30 +1342,35 @@ export function makeLocalCoderGateway(
             if (!running) {
               return yield* Effect.fail(new Error("Coder port forward was cancelled."));
             }
-            runFork(
-              connection.closed.pipe(
-                Effect.tap((exit) =>
-                  SynchronizedRef.update(lifecycle, (state) => {
-                    if (state._tag !== "Running" || state.connection !== connection) return state;
-                    if (
-                      !exit.expected &&
-                      !gatewayClosed &&
-                      portForwardIsCurrent(connectionConfig, profileConfig, portForwardId)
-                    ) {
-                      return {
-                        _tag: "Failed",
-                        generation: state.generation,
-                        error: exit.reason ?? "Coder port forward stopped unexpectedly.",
-                      } as const;
-                    }
-                    return { _tag: "Idle", generation: state.generation } as const;
-                  }),
-                ),
-                Effect.ensuring(Scope.close(connectionScope, Exit.void)),
-              ),
-            );
             return connection;
-          }).pipe(Effect.onError(() => Scope.close(connectionScope, Exit.void)));
+          }).pipe(
+            Effect.onError(() =>
+              Effect.gen(function* () {
+                if (acquired) {
+                  // Keep the scope retriable until the child confirms shutdown.
+                  const connection = acquired;
+                  yield* connection.close.pipe(
+                    Effect.onError(() =>
+                      SynchronizedRef.update(lifecycle, (state) => {
+                        const failure = {
+                          _tag: "ShutdownFailed" as const,
+                          generation: state.generation,
+                          connection,
+                          scope: connectionScope,
+                          error:
+                            "Coder child shutdown failed. Retry stopping it before reconnecting.",
+                        };
+                        return state._tag === "Stopping"
+                          ? { ...state, shutdownFailure: failure }
+                          : failure;
+                      }),
+                    ),
+                  );
+                }
+                yield* Scope.close(connectionScope, Exit.void);
+              }),
+            ),
+          );
         }),
       ).then(deferred.resolve, (cause) => {
         void runPromise(
@@ -1247,7 +1414,12 @@ export function makeLocalCoderGateway(
               {
                 _tag: "Stop" as const,
                 pending: state._tag === "Starting" ? state.operation : undefined,
-                scope: state._tag === "Running" ? state.scope : undefined,
+                scope:
+                  state._tag === "Running" || state._tag === "ShutdownFailed"
+                    ? state.scope
+                    : undefined,
+                previous:
+                  state._tag === "Running" || state._tag === "ShutdownFailed" ? state : undefined,
               },
               { _tag: "Stopping", generation, operation: deferred.promise },
             ];
@@ -1258,10 +1430,19 @@ export function makeLocalCoderGateway(
       if (claim._tag === "Pending") return claim.operation;
       void (async () => {
         try {
+          if (claim.previous) await runPromise(claim.previous.connection.close);
           if (claim.scope !== undefined) {
             await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
           }
-          if (claim.pending !== undefined) await claim.pending.catch(() => undefined);
+          if (claim.pending !== undefined)
+            await claim.pending.catch((cause) => {
+              const state = SynchronizedRef.getUnsafe(lifecycle);
+              if (
+                state._tag === "ShutdownFailed" ||
+                ("shutdownFailure" in state && state.shutdownFailure)
+              )
+                throw cause;
+            });
           await runPromise(
             SynchronizedRef.update(lifecycle, (state) =>
               state._tag === "Stopping" && state.operation === deferred.promise
@@ -1271,6 +1452,26 @@ export function makeLocalCoderGateway(
           );
           deferred.resolve(undefined);
         } catch (cause) {
+          await runPromise(
+            SynchronizedRef.update(lifecycle, (state) =>
+              state._tag === "Stopping" && state.operation === deferred.promise
+                ? (state.shutdownFailure ??
+                  (claim.previous
+                    ? {
+                        ...claim.previous,
+                        _tag: "ShutdownFailed" as const,
+                        generation: state.generation,
+                        error:
+                          "Coder child shutdown failed. Retry stopping it before reconnecting.",
+                      }
+                    : {
+                        _tag: "Failed" as const,
+                        generation: state.generation,
+                        error: "Coder port forward shutdown failed.",
+                      }))
+                : state,
+            ),
+          );
           deferred.reject(cause);
         }
       })();
@@ -1364,7 +1565,12 @@ export function makeLocalCoderGateway(
               {
                 _tag: "Start" as const,
                 pending: state._tag === "Connecting" ? state.operation : undefined,
-                scope: state._tag === "Connected" ? state.scope : undefined,
+                scope:
+                  state._tag === "Connected" || state._tag === "ShutdownFailed"
+                    ? state.scope
+                    : undefined,
+                previous:
+                  state._tag === "Connected" || state._tag === "ShutdownFailed" ? state : undefined,
               },
               {
                 _tag: "Changing" as const,
@@ -1389,6 +1595,7 @@ export function makeLocalCoderGateway(
           throw new WorkspaceActionConflictError(`Coder workspace is already ${activeAction}.`);
         }
         void (async () => {
+          let helperClosed = false;
           try {
             const workspace = profileConfig.workspaces.find((entry) => entry.id === workspaceId);
             const deployment =
@@ -1404,10 +1611,20 @@ export function makeLocalCoderGateway(
                 ?.filter((entry) => entry.workspaceId === workspaceId)
                 .map((entry) => entry.id) ?? [];
             workspaceSockets.get(workspaceId)?.close(1012, "Coder workspace state is changing.");
+            if (claim.previous) await runPromise(claim.previous.connection.close);
+            helperClosed = true;
             if (claim.scope !== undefined) {
               await runPromise(Effect.uninterruptible(Scope.close(claim.scope, Exit.void)));
             }
-            if (claim.pending !== undefined) await claim.pending.catch(() => undefined);
+            if (claim.pending !== undefined)
+              await claim.pending.catch((cause) => {
+                const state = SynchronizedRef.getUnsafe(lifecycle);
+                if (
+                  state._tag === "ShutdownFailed" ||
+                  ("shutdownFailure" in state && state.shutdownFailure)
+                )
+                  throw cause;
+              });
             await Promise.all(portForwardIds.map(stopPortForward));
             if (gatewayClosed) throw new Error("Coder gateway is closed.");
 
@@ -1491,7 +1708,16 @@ export function makeLocalCoderGateway(
               await runPromise(
                 SynchronizedRef.update(lifecycle, (state) =>
                   state._tag === "Changing" && state.operation === deferred.promise
-                    ? ({ _tag: "Disconnected", generation: state.generation } as const)
+                    ? (state.shutdownFailure ??
+                      (!helperClosed && claim.previous
+                        ? {
+                            ...claim.previous,
+                            _tag: "ShutdownFailed" as const,
+                            generation: state.generation,
+                            error:
+                              "Coder helper shutdown failed. Retry stopping it before reconnecting.",
+                          }
+                        : ({ _tag: "Disconnected", generation: state.generation } as const)))
                     : state,
                 ),
               );
@@ -1659,10 +1885,12 @@ export function makeLocalCoderGateway(
                       ? "running"
                       : state._tag === "WorkspaceStopped"
                         ? "stopped"
-                        : state._tag === "Failed"
+                        : state._tag === "Failed" || state._tag === "ShutdownFailed"
                           ? "error"
                           : "starting",
-                  ...(state._tag === "Failed" ? { error: state.error } : {}),
+                  ...(state._tag === "Failed" || state._tag === "ShutdownFailed"
+                    ? { error: state.error }
+                    : {}),
                 };
               }),
             }),
@@ -1681,7 +1909,6 @@ export function makeLocalCoderGateway(
           try {
             const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
             const savedConfig = await serializeConfigMutation(async () => {
-              if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
               const previousConfig = profileConfig;
               const stalePortForwardIds = new Set(
                 (previousConfig.portForwards ?? [])
@@ -1697,10 +1924,12 @@ export function makeLocalCoderGateway(
                 workspaceSockets.get(workspaceId)?.close(1001, "Workspace configuration changed.");
                 workspaceLifecycles.delete(workspaceId);
               }
-              profileConfig = nextConfig;
-              await Promise.allSettled(
+              // Keep configuration and live handles until every requested stop succeeds.
+              await Promise.all(
                 [...stalePortForwardIds].map((portForwardId) => stopPortForward(portForwardId)),
               );
+              if (options?.configPath) await saveCoderProfileConfig(options.configPath, nextConfig);
+              profileConfig = nextConfig;
               for (const portForwardId of stalePortForwardIds) {
                 portForwardLifecycles.delete(portForwardId);
               }
@@ -2191,11 +2420,13 @@ export function makeLocalCoderGateway(
         const connectionScopes = [
           ...[...workspaceLifecycles.values()].flatMap((lifecycle) => {
             const state = SynchronizedRef.getUnsafe(lifecycle);
-            return state._tag === "Connected" ? [state.scope] : [];
+            return state._tag === "Connected" || state._tag === "ShutdownFailed"
+              ? [state.scope]
+              : [];
           }),
           ...[...portForwardLifecycles.values()].flatMap((lifecycle) => {
             const state = SynchronizedRef.getUnsafe(lifecycle);
-            return state._tag === "Running" ? [state.scope] : [];
+            return state._tag === "Running" || state._tag === "ShutdownFailed" ? [state.scope] : [];
           }),
         ];
         workspaceLifecycles.clear();

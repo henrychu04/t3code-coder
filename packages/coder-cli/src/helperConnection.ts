@@ -110,10 +110,15 @@ const terminateCoderProcess = (
   Effect.uninterruptible(
     Effect.suspend(() => {
       process.closeRequested = true;
-      process.child.stdin.end();
       if (Deferred.isDoneUnsafe(process.exit)) return Effect.void;
 
-      process.child.kill("SIGTERM");
+      // A failed signal is not an exit. Escalate, then require an exit event.
+      try {
+        process.child.stdin.end();
+        process.child.kill("SIGTERM");
+      } catch {
+        /* Still try SIGKILL below. */
+      }
       return Deferred.await(process.exit).pipe(
         Effect.timeoutOption(terminationGraceMs),
         Effect.flatMap((exit) => {
@@ -121,11 +126,22 @@ const terminateCoderProcess = (
           if (process.child.exitCode === null && process.child.signalCode === null) {
             process.child.kill("SIGKILL");
           }
-          return Deferred.await(process.exit).pipe(Effect.asVoid);
+          return Deferred.await(process.exit).pipe(
+            Effect.timeoutOrElse({
+              duration: terminationGraceMs,
+              orElse: () =>
+                Effect.die(
+                  new CoderHelperConnectionError(
+                    "Coder process did not exit after SIGKILL; shutdown was not confirmed.",
+                  ),
+                ),
+            }),
+            Effect.asVoid,
+          );
         }),
       );
     }),
-  ).pipe(Effect.catchCause(() => Effect.void));
+  );
 
 function acquireCoderProcess(
   invocation: CoderInvocation,
@@ -158,8 +174,13 @@ function acquireCoderProcess(
           child.once("exit", (code, signal) => {
             Deferred.doneUnsafe(process.exit, Effect.succeed({ code, signal }));
           });
-          child.once("error", (error) => {
-            Deferred.doneUnsafe(process.exit, Effect.succeed({ code: null, signal: null, error }));
+          child.on("error", (error) => {
+            if (child.pid === undefined) {
+              Deferred.doneUnsafe(
+                process.exit,
+                Effect.succeed({ code: null, signal: null, error }),
+              );
+            }
           });
           child.stderr.on("data", (chunk: Buffer) => {
             if (process.stderr.length >= MAX_HELPER_ERROR_BYTES) return;

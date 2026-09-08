@@ -1170,12 +1170,16 @@ const make = Effect.gen(function* () {
       return;
     }
 
-    const thread = yield* resolveThreadDetail(event.payload.threadId);
+    const thread = yield* resolveThreadShell(event.payload.threadId);
     if (!thread) {
       return;
     }
 
-    const message = thread.messages.find((entry) => entry.id === event.payload.messageId);
+    const startMessage = yield* projectionSnapshotQuery.getTurnStartMessage({
+      threadId: thread.id,
+      messageId: event.payload.messageId,
+    });
+    const message = Option.getOrUndefined(startMessage)?.message;
     if (!message || message.role !== "user") {
       yield* appendFailureActivity({
         threadId: event.payload.threadId,
@@ -1195,12 +1199,11 @@ const make = Effect.gen(function* () {
       ...message,
       attachments: event.payload.attachments,
     });
-    const nonCompactUserMessageCount = thread.messages.filter(
-      (entry) =>
-        entry.role === "user" &&
-        !(entry.id === message.id ? isCompactCommand : isCompactCommandMessage(entry)),
-    ).length;
-    if (nonCompactUserMessageCount === 1 && !isCompactCommand) {
+    if (
+      Option.isSome(startMessage) &&
+      !startMessage.value.hasOtherUserMessages &&
+      !isCompactCommand
+    ) {
       const project = yield* resolveProject(thread.projectId);
       const generationCwd =
         resolveThreadWorkspaceCwd({
@@ -1269,7 +1272,7 @@ const make = Effect.gen(function* () {
       );
 
     if (isCompactCommand) {
-      if (nonCompactUserMessageCount === 0) {
+      if (Option.isSome(startMessage) && !startMessage.value.hasOtherUserMessages) {
         yield* appendFailureActivity({
           threadId: event.payload.threadId,
           kind: "provider.turn.start.failed",

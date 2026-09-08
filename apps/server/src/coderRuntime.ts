@@ -24,6 +24,7 @@ import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.
 import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
 import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
+import * as ThreadPullRequestReactor from "./orchestration/ThreadPullRequestReactor.ts";
 import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
 import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
 import { CheckpointReactor } from "./orchestration/Services/CheckpointReactor.ts";
@@ -188,6 +189,7 @@ const CoderRuntimeFeaturesLive = Layer.mergeAll(
   CheckpointReactorLive,
   ThreadDeletionReactorLive,
   ThreadSettlementReactor.layer,
+  ThreadPullRequestReactor.layer,
 ).pipe(
   Layer.provideMerge(TextGeneration.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -216,7 +218,11 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
     yield* projectionSnapshotQuery.getShellSnapshot().pipe(
-      Effect.flatMap((snapshot) => ProjectAutoPull.autoPullProjects(snapshot.projects)),
+      Effect.flatMap((snapshot) =>
+        settings.getSettings.pipe(
+          Effect.flatMap((value) => ProjectAutoPull.autoPullProjects(snapshot.projects, value)),
+        ),
+      ),
       Effect.catch((cause) =>
         Effect.logWarning("Failed to load projects for automatic pull", { cause }),
       ),
@@ -235,6 +241,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
     const checkpointReactor = yield* CheckpointReactor;
     const threadDeletionReactor = yield* ThreadDeletionReactor;
     const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+    const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
 
     return OrchestrationReactor.OrchestrationReactor.of({
       start: Effect.fn("coderOrchestrationReactor.start")(function* () {
@@ -243,6 +250,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
         yield* checkpointReactor.start();
         yield* threadDeletionReactor.start();
         yield* threadSettlementReactor.start();
+        yield* threadPullRequestReactor.start();
       }),
     });
   }),

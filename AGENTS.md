@@ -14,6 +14,16 @@ SQLite, projects, threads, sessions, and checkpoints.
 
 Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
+## Provider usage model
+
+This fork supports API-backed Codex and Claude Code usage only. Configure API credentials through
+the workspace's provider configuration; never add credential entry or storage to the local UI.
+Subscription-backed ChatGPT and Claude consumer plans are outside the supported product scope.
+Do not port subscription-quota dashboards, plan windows, or subscription account-management UI.
+Provider readiness, authentication status, context/token usage, and runtime rate-limit errors
+remain relevant to API usage. This is a product constraint, not an authentication-mode enforcement
+claim: shared provider protocols may still report subscription metadata.
+
 ## Branch policy
 
 - `origin/main` is a protected, commit-for-commit mirror of `upstream/main`. It must point to the

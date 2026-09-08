@@ -24,6 +24,7 @@ const SETTINGS_NAV_ITEMS = [
   { label: "General", to: "/settings/preferences", icon: Settings2Icon },
   { label: "Appearance", to: "/settings/appearance", icon: PaletteIcon },
   { label: "Keyboard shortcuts", to: "/settings/shortcuts", icon: KeyboardIcon },
+  { label: "Projects", to: "/settings/projects", icon: ServerIcon },
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Coder connections", to: "/settings/general", icon: ServerIcon },
   { label: "GitLab source control", to: "/settings/source-control", icon: GitPullRequestIcon },

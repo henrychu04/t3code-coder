@@ -630,7 +630,7 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         branch: "feature/panel",
       });
 
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         state: "merged",
         updatedAt: null,
         closedAt: null,
@@ -746,7 +746,15 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
 
       const result = yield* service.branchPullRequest({ cwd: "/repo", branch: "main" });
 
-      expect(result).toEqual({ state: "merged", updatedAt: null, closedAt: null, mergedAt: null });
+      expect(result).toMatchObject({
+        state: "merged",
+        updatedAt: null,
+        closedAt: null,
+        mergedAt: null,
+        number: 43,
+        url: "https://gitlab.example.com/group/project/-/merge_requests/43",
+        repositoryKey: "gitlab.example.com/group/project",
+      });
       expect(execute).toHaveBeenCalledWith(
         expect.objectContaining({
           args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/upstream/HEAD"],
@@ -857,7 +865,15 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         branch: "feature/panel",
       });
 
-      expect(result).toEqual({ state: "merged", updatedAt: null, closedAt: null, mergedAt: null });
+      expect(result).toMatchObject({
+        state: "merged",
+        updatedAt: null,
+        closedAt: null,
+        mergedAt: null,
+        number: 45,
+        url: "https://gitlab.example.com/group/project/-/merge_requests/45",
+        repositoryKey: "gitlab.example.com/group/project",
+      });
     }),
   );
 
@@ -919,7 +935,15 @@ layer("GitWorkflowService.branchPullRequest", (it) => {
         branch: "feature/panel",
       });
 
-      expect(result).toEqual({ state: "merged", updatedAt: null, closedAt: null, mergedAt: null });
+      expect(result).toMatchObject({
+        state: "merged",
+        updatedAt: null,
+        closedAt: null,
+        mergedAt: null,
+        number: 47,
+        url: "https://gitlab.example.com/group/project/-/merge_requests/47",
+        repositoryKey: "gitlab.example.com/group/project",
+      });
     }),
   );
 });

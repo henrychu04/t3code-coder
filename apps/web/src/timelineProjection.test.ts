@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MessageId, type TurnId } from "@t3tools/contracts";
+import { CheckpointRef, MessageId, TurnId } from "@t3tools/contracts";
 import { deriveTimelineEntries, deriveTimelineEntriesWithState } from "./session-logic";
 import {
   deriveMessagesTimelineRows,
   deriveMessagesTimelineRowsWithState,
 } from "./components/chat/MessagesTimeline.logic";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, TurnDiffSummary } from "./types";
 
 const user: ChatMessage = {
   id: MessageId.make("user"),
@@ -40,16 +40,52 @@ describe("timeline projections", () => {
       expandedTurnIds: new Set<TurnId>(),
       isWorking: true,
       activeTurnStartedAt: null,
-      turnDiffSummaryByAssistantMessageId: new Map(),
-      revertTurnCountByUserMessageId: new Map(),
+      turnDiffSummaries: [],
     };
     const rows = deriveMessagesTimelineRowsWithState(input);
     const nextInput = { ...input, timelineEntries: next.entries };
     const updated = deriveMessagesTimelineRowsWithState(nextInput, rows);
-    expect(updated.rows).toEqual(deriveMessagesTimelineRows(nextInput));
+    expect(updated.rows).toEqual(
+      deriveMessagesTimelineRows({
+        ...nextInput,
+        turnDiffSummaryByAssistantMessageId: new Map(),
+        revertTurnCountByUserMessageId: new Map(),
+      }),
+    );
     expect(updated.rows.find((row) => row.kind === "message" && row.message.id === user.id)).toBe(
       rows.rows.find((row) => row.kind === "message" && row.message.id === user.id),
     );
+  });
+
+  it("updates rollback targets when checkpoints arrive without a message change", () => {
+    const input = {
+      timelineEntries: deriveTimelineEntries([user, assistant], [], []),
+      expandedTurnIds: new Set<TurnId>(),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [] as TurnDiffSummary[],
+    };
+    const first = deriveMessagesTimelineRowsWithState(input);
+    const summary: TurnDiffSummary = {
+      turnId: TurnId.make("turn"),
+      checkpointTurnCount: 3,
+      checkpointRef: CheckpointRef.make("checkpoint"),
+      status: "ready",
+      files: [],
+      assistantMessageId: assistant.id,
+      completedAt: assistant.createdAt,
+    };
+    const next = deriveMessagesTimelineRowsWithState(
+      { ...input, turnDiffSummaries: [summary] },
+      first,
+    );
+    const userRow = next.rows.find((row) => row.kind === "message" && row.message.id === user.id);
+    expect(userRow?.kind === "message" && userRow.revertTurnCount).toBe(2);
+    const removed = deriveMessagesTimelineRowsWithState(input, next);
+    const resetRow = removed.rows.find(
+      (row) => row.kind === "message" && row.message.id === user.id,
+    );
+    expect(resetRow?.kind === "message" && resetRow.revertTurnCount).toBeUndefined();
   });
 
   it("matches full derivation on append, reorder, completion, and removal", () => {

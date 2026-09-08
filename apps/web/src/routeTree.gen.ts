@@ -15,6 +15,7 @@ import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings.shortcuts'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
+import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsPreferencesRouteImport } from './routes/settings.preferences'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
@@ -51,6 +52,11 @@ const SettingsShortcutsRoute = SettingsShortcutsRouteImport.update({
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
   id: '/providers',
   path: '/providers',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsProjectsRoute = SettingsProjectsRouteImport.update({
+  id: '/projects',
+  path: '/projects',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsPreferencesRoute = SettingsPreferencesRouteImport.update({
@@ -104,6 +110,7 @@ export interface FileRoutesByFullPath {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/settings/archived': typeof SettingsArchivedRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/preferences': typeof SettingsPreferencesRoute
+  '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
+    | '/settings/projects'
     | '/settings/providers'
     | '/settings/shortcuts'
     | '/settings/source-control'
@@ -167,6 +177,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
+    | '/settings/projects'
     | '/settings/providers'
     | '/settings/shortcuts'
     | '/settings/source-control'
@@ -183,6 +194,7 @@ export interface FileRouteTypes {
     | '/settings/archived'
     | '/settings/general'
     | '/settings/preferences'
+    | '/settings/projects'
     | '/settings/providers'
     | '/settings/shortcuts'
     | '/settings/source-control'
@@ -239,6 +251,13 @@ declare module '@tanstack/react-router' {
       path: '/providers'
       fullPath: '/settings/providers'
       preLoaderRoute: typeof SettingsProvidersRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/projects': {
+      id: '/settings/projects'
+      path: '/projects'
+      fullPath: '/settings/projects'
+      preLoaderRoute: typeof SettingsProjectsRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/preferences': {
@@ -321,6 +340,7 @@ interface SettingsRouteChildren {
   SettingsArchivedRoute: typeof SettingsArchivedRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsPreferencesRoute: typeof SettingsPreferencesRoute
+  SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
@@ -331,6 +351,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsArchivedRoute: SettingsArchivedRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsPreferencesRoute: SettingsPreferencesRoute,
+  SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,

@@ -4,6 +4,11 @@ T3 Coder is a browser interface for Codex and Claude Code running inside your Co
 Start threads, review changes, run terminals, and manage repositories from a local web app while
 your code, provider sessions, and history stay in the workspace.
 
+This fork is intended solely for API-backed Codex and Claude Code usage. Configure API credentials
+inside the workspace using your provider's configuration. Subscription-backed ChatGPT and Claude
+consumer plans are outside the supported scope; T3 Coder does not provide subscription-quota or
+API billing dashboards.
+
 Your computer runs only a small local gateway and the browser UI. Nothing about your projects,
 conversations, or terminals is stored on the local machine — refresh the page and you are back
 where you started.
@@ -36,7 +41,7 @@ On the local machine (macOS for development, Windows 11 for daily use):
 
 Inside each Linux Coder workspace:
 
-- Codex or Claude Code, already authenticated for the provider you intend to use
+- Codex or Claude Code, already configured for API access in the workspace
 - Git
 - GitLab CLI (`glab`), authenticated when using GitLab merge-request features
 - Nix with a configured `nixpkgs` (used once to provision a pinned Node.js runtime)

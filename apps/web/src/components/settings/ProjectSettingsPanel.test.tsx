@@ -6,7 +6,12 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { Input } from "../ui/input";
 
-const mocks = vi.hoisted(() => ({ update: vi.fn(), readProject: vi.fn(), environment: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  update: vi.fn(),
+  readProject: vi.fn(),
+  environment: vi.fn(),
+  settings: vi.fn(),
+}));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mocks.update }));
 vi.mock("../../state/projects", () => ({ projectEnvironment: { update: {} } }));
 vi.mock("../../state/entities", () => ({
@@ -19,7 +24,7 @@ vi.mock("../../state/environments", () => ({
   useEnvironments: vi.fn(),
 }));
 vi.mock("../../hooks/useSettings", () => ({
-  useEnvironmentSettings: () => DEFAULT_UNIFIED_SETTINGS,
+  useEnvironmentSettings: mocks.settings,
 }));
 vi.mock("../chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
 
@@ -42,6 +47,7 @@ beforeEach(() => {
     label: "Workspace A",
     serverConfig: { providers: [] },
   });
+  mocks.settings.mockReturnValue(DEFAULT_UNIFIED_SETTINGS);
   mocks.readProject.mockReturnValue(project);
   mocks.update.mockResolvedValue({ _tag: "Success", value: undefined });
 });
@@ -59,11 +65,7 @@ async function mount() {
 
 it("saves edits only to the selected Coder workspace and project", async () => {
   const root = await mount();
-  await act(async () =>
-    root
-      .findByType(Input)
-      .props.onChange({ target: { value: "Renamed" } }),
-  );
+  await act(async () => root.findByType(Input).props.onChange({ target: { value: "Renamed" } }));
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.readProject).toHaveBeenCalledWith({
     environmentId: "workspace-a",
@@ -101,5 +103,52 @@ it("disables edits and dispatch when the workspace is disconnected", async () =>
   const root = await mount();
   expect(root.findByType("fieldset").props.disabled).toBe(true);
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+
+it("renaming a project preserves inherited scripts and automatic pull", async () => {
+  mocks.settings.mockReturnValue({
+    ...DEFAULT_UNIFIED_SETTINGS,
+    defaultAutoPull: true,
+    defaultProjectScripts: [
+      {
+        id: "default",
+        name: "Default",
+        command: "echo setup",
+        icon: "play",
+        runOnWorktreeCreate: false,
+      },
+    ],
+  });
+  const root = await mount();
+  await act(async () =>
+    root.findAllByType(Input)[0]!.props.onChange({ target: { value: "Renamed" } }),
+  );
+  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
+  expect(mocks.update).toHaveBeenCalledOnce();
+  expect(mocks.update.mock.calls[0]![0].input).toMatchObject({
+    title: "Renamed",
+    scripts: [],
+    autoPull: false,
+  });
+});
+it("reset does not erase a concurrent script edit", async () => {
+  const root = await mount();
+  mocks.readProject.mockReturnValue({
+    ...project,
+    scripts: [
+      {
+        id: "new",
+        name: "New setup",
+        command: "new command",
+        icon: "play",
+        runOnWorktreeCreate: true,
+      },
+    ],
+  });
+  const button = root
+    .findAllByType("button")
+    .find((node) => node.children.join("") === "Use workspace default scripts")!;
+  await act(async () => button.props.onClick());
   expect(mocks.update).not.toHaveBeenCalled();
 });

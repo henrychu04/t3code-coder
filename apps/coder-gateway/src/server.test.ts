@@ -250,6 +250,7 @@ describe("local Coder gateway", () => {
     const exits: Array<(exit: { readonly expected: boolean; readonly reason?: string }) => void> =
       [];
     let closeCount = 0;
+    let failClose = false;
     const gateway = await startLocalCoderGateway({
       configPath,
       connectPortForward: async (invocation) => {
@@ -266,6 +267,7 @@ describe("local Coder gateway", () => {
         return {
           closed: closed.then((exit) => ({ code: null, signal: null, ...exit })),
           close: () => {
+            if (failClose) throw new Error("stop failed");
             closeCount += 1;
             resolveClosed?.({ expected: true });
           },
@@ -313,6 +315,33 @@ describe("local Coder gateway", () => {
     });
     strictEqual(restarted.statusCode, 200);
     strictEqual(invocations.length, 2);
+
+    failClose = true;
+    const failedStop = await request({
+      url: `${gateway.url}/api/port-forwards/web/restart`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(failedStop.statusCode, 502);
+    strictEqual(invocations.length, 2);
+    strictEqual(closeCount, 0);
+    const retained = JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body);
+    strictEqual(retained.portForwards[0].status, "error");
+    const beforeRemoval = JSON.parse(await NodeFS.readFile(configPath, "utf8"));
+    const failedRemoval = await request({
+      url: `${gateway.url}/api/config`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...beforeRemoval, portForwards: [] }),
+    });
+    strictEqual(failedRemoval.statusCode >= 400, true);
+    deepStrictEqual(JSON.parse(await NodeFS.readFile(configPath, "utf8")), beforeRemoval);
+    strictEqual(
+      JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body).portForwards[0]
+        .status,
+      "error",
+    );
+    failClose = false;
 
     const removed = await request({
       url: `${gateway.url}/api/config`,
@@ -436,6 +465,7 @@ describe("local Coder gateway", () => {
     const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
       closeConnection = resolve;
     });
+    let failHelperClose = false;
     const gateway = await startLocalCoderGateway({
       configPath,
       probeWorkspace: async () => undefined,
@@ -445,6 +475,7 @@ describe("local Coder gateway", () => {
         sendRpc: () => undefined,
         onRpcMessage: () => () => undefined,
         close: () => {
+          if (failHelperClose) throw new Error("helper stop failed");
           lifecycle.push("close");
           closeConnection?.({ code: 130, signal: null, expected: true });
         },
@@ -531,6 +562,32 @@ describe("local Coder gateway", () => {
       headers: { Origin: "https://attacker.example" },
     });
     strictEqual(rejected.statusCode, 403);
+
+    failHelperClose = true;
+    const failedDisconnect = await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "DELETE",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(failedDisconnect.statusCode >= 400, true);
+    const reconnectAfterFailedStop = await request({
+      url: `${gateway.url}/api/workspaces/project-one/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(
+      reconnectAfterFailedStop.statusCode >= 400,
+      true,
+      "A failed-stop helper must not be returned as a healthy connection",
+    );
+    const failedRestart = await request({
+      url: `${gateway.url}/api/workspaces/project-one/restart`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+    strictEqual(failedRestart.statusCode, 502);
+    deepStrictEqual(lifecycle, ["forward-start"]);
+    failHelperClose = false;
 
     const restarted = await request({
       url: `${gateway.url}/api/workspaces/project-one/restart`,

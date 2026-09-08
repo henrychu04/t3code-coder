@@ -4,6 +4,7 @@ import {
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
   type ModelSelection,
+  type ProjectId,
   type ProviderDriverKind,
   type ServerProvider,
   type ServerSettings,
@@ -13,6 +14,18 @@ import {
 import { createModelSelection } from "./model.ts";
 import { deepMerge } from "./Struct.ts";
 import { isCoderProviderInstanceId } from "./coderProviders.ts";
+
+export function resolveProjectAutoPull(
+  settings: Pick<ServerSettings, "defaultAutoPull" | "projectAutoPullOverrides">,
+  projectId: ProjectId,
+  legacyAutoPull: boolean | undefined,
+): boolean {
+  // Existing opt-ins stay enabled until explicitly overridden or reset.
+  return (
+    settings.projectAutoPullOverrides[projectId] ??
+    (legacyAutoPull === true || settings.defaultAutoPull)
+  );
+}
 
 type ProviderSettings = ServerSettings["providers"][keyof ServerSettings["providers"]];
 
@@ -98,8 +111,21 @@ export function applyServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
+  const { projectAutoPullOverrides, ...ordinaryPatch } = patch;
+  const autoPullOverrides = { ...current.projectAutoPullOverrides };
+  for (const [id, value] of Object.entries(projectAutoPullOverrides ?? {})) {
+    if (value === null) delete autoPullOverrides[id as ProjectId];
+    else autoPullOverrides[id as ProjectId] = value;
+  }
   const next = {
-    ...deepMerge(current, patch),
+    ...deepMerge(current, ordinaryPatch),
+    projectAutoPullOverrides: autoPullOverrides,
+    defaultModelSelection:
+      patch.defaultModelSelection === undefined
+        ? current.defaultModelSelection
+        : patch.defaultModelSelection,
+    defaultProjectScripts: patch.defaultProjectScripts ?? current.defaultProjectScripts,
+    projectScriptOverrides: { ...current.projectScriptOverrides, ...patch.projectScriptOverrides },
     ...(patch.automaticGitFetchInterval === undefined
       ? {}
       : { automaticGitFetchInterval: patch.automaticGitFetchInterval }),
