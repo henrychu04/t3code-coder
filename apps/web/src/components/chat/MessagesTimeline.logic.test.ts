@@ -1,11 +1,10 @@
+import { resolveWorkGroupScrollIndex, shouldFollowWorkGroupAppend } from "./MessagesTimeline.logic";
 import { describe, expect, it } from "vite-plus/test";
 import { MessageId, TurnId } from "@t3tools/contracts";
 import {
   computeStableMessagesTimelineRows,
   computeMessageDurationStart,
   deriveMessagesTimelineRows,
-  estimateMessagesTimelineAverageRowHeight,
-  estimateMessagesTimelineRowHeight,
   normalizeCompactToolLabel,
   resolveAssistantMessageCopyState,
   shouldPreserveAssistantLineBreaks,
@@ -293,6 +292,126 @@ describe("resolveAssistantMessageCopyState", () => {
 });
 
 describe("deriveMessagesTimelineRows", () => {
+  it("renders a single completed tool call directly", () => {
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "completed-command-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:05Z",
+          entry: {
+            id: "completed-command",
+            createdAt: "2026-01-01T00:00:05Z",
+            turnId: "turn-1" as never,
+            label: "Ran rg",
+            command: "rg toolCall",
+            requestKind: "command",
+            tone: "tool" as const,
+            toolLifecycleStatus: "completed" as const,
+          },
+        },
+        {
+          id: "assistant-commentary-entry",
+          kind: "message",
+          createdAt: "2026-01-01T00:00:06Z",
+          message: {
+            id: "assistant-commentary" as never,
+            role: "assistant",
+            text: "Checking another thing.",
+            turnId: "turn-1" as never,
+            createdAt: "2026-01-01T00:00:06Z",
+            updatedAt: "2026-01-01T00:00:06Z",
+            streaming: false,
+          },
+        },
+        {
+          id: "running-command-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:07Z",
+          entry: {
+            id: "running-command",
+            createdAt: "2026-01-01T00:00:07Z",
+            turnId: "turn-1" as never,
+            label: "Running tests",
+            command: "vp test run",
+            requestKind: "command",
+            tone: "tool" as const,
+            toolLifecycleStatus: "inProgress" as const,
+          },
+        },
+      ],
+      latestTurn: {
+        turnId: "turn-1" as never,
+        state: "running",
+        startedAt: "2026-01-01T00:00:00Z",
+        completedAt: null,
+      },
+      isWorking: true,
+      activeTurnStartedAt: "2026-01-01T00:00:00Z",
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      groupedEntries: [{ id: "completed-command", command: "rg toolCall" }],
+      isExpandedToolGroup: false,
+      displayLabel: "rg toolCall",
+    });
+  });
+
+  it("renders one tool call directly after collapsing its lifecycle updates", () => {
+    const turnId = TurnId.make("turn-1");
+    const rows = deriveMessagesTimelineRows({
+      timelineEntries: [
+        {
+          id: "command-started-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:05Z",
+          entry: {
+            id: "command-started",
+            createdAt: "2026-01-01T00:00:05Z",
+            turnId,
+            toolCallId: "call-1",
+            label: "Running rg",
+            command: "rg toolCall",
+            tone: "tool" as const,
+            itemType: "command_execution" as const,
+            toolLifecycleStatus: "inProgress" as const,
+          },
+        },
+        {
+          id: "command-completed-entry",
+          kind: "work",
+          createdAt: "2026-01-01T00:00:06Z",
+          entry: {
+            id: "command-completed",
+            createdAt: "2026-01-01T00:00:06Z",
+            turnId,
+            toolCallId: "call-1",
+            label: "Ran rg",
+            command: "rg toolCall",
+            tone: "tool" as const,
+            itemType: "command_execution" as const,
+            toolLifecycleStatus: "completed" as const,
+          },
+        },
+      ],
+      expandedTurnIds: new Set([turnId]),
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaryByAssistantMessageId: new Map(),
+      revertTurnCountByUserMessageId: new Map(),
+    });
+
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      groupedEntries: [{ id: "command-completed", toolCallId: "call-1" }],
+      isExpandedToolGroup: false,
+      displayLabel: "rg toolCall",
+    });
+    expect(rows.some((row) => row.kind === "work-toggle")).toBe(false);
+  });
+
   it("only enables assistant copy for the terminal assistant message in a turn", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
@@ -565,7 +684,7 @@ describe("deriveMessagesTimelineRows", () => {
       "user-entry",
       "turn-fold:turn-1",
       "assistant-first-entry",
-      "work-toggle:work-entry-1",
+      "work-entry-1",
       "assistant-final-entry",
     ]);
     expect(
@@ -1132,7 +1251,7 @@ describe("deriveMessagesTimelineRows", () => {
     });
   });
 
-  it("summarizes a tool run after commentary starts a new run", () => {
+  it("shows a completed tool directly after commentary starts a new run", () => {
     const rows = deriveMessagesTimelineRows({
       timelineEntries: [
         {
@@ -1192,10 +1311,10 @@ describe("deriveMessagesTimelineRows", () => {
       revertTurnCountByUserMessageId: new Map(),
     });
 
-    expect(rows.map((row) => row.kind)).toEqual(["working", "work-toggle", "message", "work-live"]);
-    expect(rows.find((row) => row.kind === "work-toggle")).toMatchObject({
-      hiddenCount: 1,
-      summary: "Ran 1 command",
+    expect(rows.map((row) => row.kind)).toEqual(["working", "work", "message", "work-live"]);
+    expect(rows.find((row) => row.kind === "work")).toMatchObject({
+      isExpandedToolGroup: false,
+      displayLabel: "rg toolCall",
     });
   });
 
@@ -1646,12 +1765,15 @@ describe("deriveMessagesTimelineRows", () => {
     });
     expect(expandedRows.map((row) => row.id)).toEqual([
       "work-toggle:work-entry-1",
-      "work-1",
-      "work-2",
-      "work-3",
+      "work-group:work-entry-1:details",
     ]);
     expect(expandedRows.find((row) => row.kind === "work-toggle")).toMatchObject({
       expanded: true,
+    });
+    expect(expandedRows[1]).toMatchObject({
+      kind: "work",
+      isExpandedToolGroup: true,
+      groupedEntries: timelineEntries.map((entry) => entry.entry),
     });
   });
 
@@ -1953,141 +2075,51 @@ describe("computeStableMessagesTimelineRows", () => {
   });
 });
 
-describe("estimateMessagesTimelineRowHeight", () => {
-  const baseMessage = {
-    id: "m1" as never,
-    turnId: null,
-    streaming: false,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
+describe("expanded tool group scrolling", () => {
+  const entries = [{ id: "first" }, { id: "second" }];
 
-  const messageRow = (role: "user" | "assistant", text: string) => ({
-    kind: "message" as const,
-    id: "row-1",
-    createdAt: "2026-01-01T00:00:00Z",
-    message: { ...baseMessage, role, text },
-    durationStart: "2026-01-01T00:00:00Z",
-    showAssistantMeta: false,
-    showAssistantCopyButton: false,
-    assistantCopyStreaming: false,
+  it("follows appended calls only at the hard end", () => {
+    const appended = [...entries, { id: "third" }];
+    expect(shouldFollowWorkGroupAppend(entries, appended, 0)).toBe(true);
+    expect(shouldFollowWorkGroupAppend(entries, appended, 0.5)).toBe(true);
+    expect(shouldFollowWorkGroupAppend(entries, appended, 1)).toBe(true);
+    expect(shouldFollowWorkGroupAppend(entries, appended, 1.01)).toBe(false);
+    expect(shouldFollowWorkGroupAppend(entries, appended, 10)).toBe(false);
+    expect(shouldFollowWorkGroupAppend(entries, appended, Infinity)).toBe(false);
   });
 
-  it("grows with text length for assistant messages up to the cap", () => {
-    const short = estimateMessagesTimelineRowHeight(messageRow("assistant", "Done."));
-    const long = estimateMessagesTimelineRowHeight(messageRow("assistant", "x".repeat(20_000)));
-    expect(long).toBeGreaterThan(short * 5);
-    expect(long).toBe(88 + 820);
+  it("does not follow output updates, prepends, or replacements", () => {
+    expect(
+      shouldFollowWorkGroupAppend(
+        entries,
+        entries.map((entry) => ({ ...entry })),
+        0,
+      ),
+    ).toBe(false);
+    expect(shouldFollowWorkGroupAppend(entries, [{ id: "older" }, ...entries], 0)).toBe(false);
+    expect(
+      shouldFollowWorkGroupAppend(
+        entries,
+        [{ id: "replacement" }, entries[1]!, { id: "third" }],
+        0,
+      ),
+    ).toBe(false);
+    expect(shouldFollowWorkGroupAppend([], entries, 0)).toBe(false);
   });
 
-  it("estimates mid-length assistant messages from the calibrated chars-per-line", () => {
-    const mid = estimateMessagesTimelineRowHeight(messageRow("assistant", "x".repeat(2_000)));
-    expect(mid).toBe(88 + Math.ceil(2_000 / 88) * 23);
+  it("restores the visible tool and its offset inside expanded output", () => {
+    const anchor = { entryId: "second", offset: 120 };
+    expect(resolveWorkGroupScrollIndex(entries, anchor)).toEqual({ index: 1, viewOffset: -120 });
+    expect(resolveWorkGroupScrollIndex([{ id: "older" }, ...entries], anchor)).toEqual({
+      index: 2,
+      viewOffset: -120,
+    });
   });
 
-  it("counts preserved explicit line breaks as their own lines", () => {
-    const multiLine = estimateMessagesTimelineRowHeight(
-      messageRow("user", "a\nb\nc\nd\ne\nf\ng\nh"),
-    );
-    expect(multiLine).toBe(96 + 8 * 23);
-    const shortMultiLine = estimateMessagesTimelineRowHeight(messageRow("assistant", "ab\ncd\nef"));
-    expect(shortMultiLine).toBe(88 + 3 * 23);
-  });
-
-  it("wraps each newline-delimited segment independently", () => {
-    const twoWrappedSegments = estimateMessagesTimelineRowHeight(
-      messageRow("assistant", `${"x".repeat(100)}\n${"x".repeat(100)}`),
-    );
-    expect(twoWrappedSegments).toBe(88 + 2 * Math.ceil(100 / 88) * 23);
-  });
-
-  it("caps user messages at the collapsed preview height", () => {
-    const collapsed = estimateMessagesTimelineRowHeight(messageRow("user", "x".repeat(10_000)));
-    expect(collapsed).toBe(96 + 8 * 23);
-  });
-
-  it("uses fixed heights for non-message rows", () => {
-    const workRow = {
-      kind: "work" as const,
-      id: "w1",
-      createdAt: "2026-01-01T00:00:00Z",
-      groupedEntries: [],
-      isExpandedToolGroupEntry: false,
-      isLastExpandedToolGroupEntry: false,
-    };
-    const workingRow = {
-      kind: "working" as const,
-      id: "wk1",
-      createdAt: null,
-      showThinking: true,
-    };
-    expect(estimateMessagesTimelineRowHeight(workRow)).toBe(64);
-    expect(estimateMessagesTimelineRowHeight(workingRow)).toBe(40);
-  });
-});
-
-describe("estimateMessagesTimelineAverageRowHeight", () => {
-  const baseMessage = {
-    id: "m1" as never,
-    turnId: null,
-    streaming: false,
-    createdAt: "2026-01-01T00:00:00Z",
-    updatedAt: "2026-01-01T00:00:00Z",
-  };
-
-  it("falls back to the historical flat estimate for empty rows", () => {
-    expect(estimateMessagesTimelineAverageRowHeight([])).toBe(90);
-  });
-
-  it("averages per-row estimates and rounds", () => {
-    const workingRow = {
-      kind: "working" as const,
-      id: "wk1",
-      createdAt: null,
-      showThinking: true,
-    };
-    const workRow = {
-      kind: "work" as const,
-      id: "w1",
-      createdAt: "2026-01-01T00:00:00Z",
-      groupedEntries: [],
-      isExpandedToolGroupEntry: false,
-      isLastExpandedToolGroupEntry: false,
-    };
-    expect(estimateMessagesTimelineAverageRowHeight([workingRow, workRow])).toBe(52);
-  });
-
-  it("averages text-driven message rows above the flat fallback for long threads", () => {
-    const rows = [
-      {
-        kind: "message" as const,
-        id: "row-1",
-        createdAt: "2026-01-01T00:00:00Z",
-        message: {
-          ...baseMessage,
-          role: "assistant" as const,
-          text: "x".repeat(3_000),
-        },
-        durationStart: "2026-01-01T00:00:00Z",
-        showAssistantMeta: false,
-        showAssistantCopyButton: false,
-        assistantCopyStreaming: false,
-      },
-      {
-        kind: "message" as const,
-        id: "row-2",
-        createdAt: "2026-01-01T00:00:01Z",
-        message: {
-          ...baseMessage,
-          role: "user" as const,
-          text: "ok",
-        },
-        durationStart: "2026-01-01T00:00:01Z",
-        showAssistantMeta: false,
-        showAssistantCopyButton: false,
-        assistantCopyStreaming: false,
-      },
-    ];
-    expect(estimateMessagesTimelineAverageRowHeight(rows)).toBeGreaterThan(90);
+  it("starts normally when the saved tool no longer exists", () => {
+    expect(resolveWorkGroupScrollIndex(entries, undefined)).toBeUndefined();
+    expect(
+      resolveWorkGroupScrollIndex(entries, { entryId: "removed", offset: 120 }),
+    ).toBeUndefined();
   });
 });

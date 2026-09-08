@@ -2010,3 +2010,22 @@ code {
     visibility: visible;
   }
 }
+
+@property --assistant-citation-highlight-opacity {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@layer base {
+  ::highlight(t3-assistant-citation) {
+    background-color: color-mix(
+      in oklab,
+      var(--primary) calc(var(--assistant-citation-highlight-opacity) * 100%),
+      transparent
+    );
+  }
+  ::highlight(t3-assistant-citation-comment) {
+    background-color: color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+}

@@ -37,6 +37,35 @@ function workEntryHasScreenshotArtifacts(entry: WorkLogEntry): boolean {
   return (entry.artifacts?.length ?? 0) > 0;
 }
 
+export interface WorkGroupScrollAnchor {
+  readonly entryId: string;
+  readonly offset: number;
+}
+
+/** Restore a visible tool, including a position partway through its expanded output. */
+export function resolveWorkGroupScrollIndex(
+  entries: ReadonlyArray<{ readonly id: string }>,
+  anchor: WorkGroupScrollAnchor | undefined,
+): { index: number; viewOffset: number } | undefined {
+  if (!anchor) return undefined;
+  const index = entries.findIndex((entry) => entry.id === anchor.entryId);
+  return index < 0 ? undefined : { index, viewOffset: -anchor.offset };
+}
+
+/** Only newly appended calls may follow the end, never status or output updates. */
+export function shouldFollowWorkGroupAppend(
+  previous: ReadonlyArray<{ readonly id: string }>,
+  entries: ReadonlyArray<{ readonly id: string }>,
+  distanceFromEnd: number,
+): boolean {
+  return (
+    previous.length > 0 &&
+    entries.length > previous.length &&
+    distanceFromEnd <= 1 &&
+    previous.every((entry, index) => entry.id === entries[index]?.id)
+  );
+}
+
 export interface TimelineEndState {
   readonly isAtEnd?: boolean;
   readonly contentLength?: number;
@@ -51,25 +80,23 @@ export interface TimelineEndState {
  * A small pixel band (instead of the 1px isAtEnd epsilon alone) keeps re-arming
  * reliable while streaming content is still growing under the viewport.
  */
-export const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
+const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
-export function resolveTimelineIsAtEnd(
-  state: TimelineEndState | undefined,
-  endInset = 0,
-): boolean | undefined {
+export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boolean | undefined {
   if (!state) {
     return undefined;
-  }
-  if (state.isAtEnd) {
-    return true;
   }
   const { contentLength, scroll, scrollLength } = state;
   if (contentLength === undefined || scroll === undefined || scrollLength === undefined) {
     return state.isAtEnd;
   }
-  // contentLength includes the end inset (composer overlay), so subtract it to
-  // measure the distance to the real content bottom.
-  return contentLength - scroll - scrollLength - endInset <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
+  // contentLength includes the composer inset spacer, but the composer hides
+  // the same amount of viewport, so the inset cancels: plain
+  // contentLength - scroll - scrollLength is the gap between the last real row
+  // and the visible edge above the composer. LegendList's own isAtEnd subtracts
+  // the inset and is true anywhere in the bottom composer-height band, so it is
+  // only a fallback here, never a short-circuit.
+  return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
 export function shouldPreserveAssistantLineBreaks(text: string): boolean {
@@ -103,6 +130,34 @@ export function resolveTimelineMinimapIndexFromPointer(input: {
 
   const progress = Math.max(0, Math.min(1, (input.pointerY - input.railTop) / input.railHeight));
   return Math.max(0, Math.min(input.itemCount - 1, Math.round(progress * (input.itemCount - 1))));
+}
+
+export function resolveTimelineMinimapCurrentIndex(input: {
+  readonly scrollTop: number;
+  readonly scrollBottom: number;
+  readonly itemBounds: ReadonlyArray<{
+    readonly top: number | null;
+    readonly height: number | null;
+  }>;
+}): number | null {
+  let precedingIndex: number | null = null;
+
+  for (const [index, item] of input.itemBounds.entries()) {
+    if (item.top === null) {
+      continue;
+    }
+    const inView =
+      item.top < input.scrollBottom && item.top + Math.max(1, item.height ?? 1) > input.scrollTop;
+    if (inView) {
+      // The first visible marker is the turn at the reader's current position.
+      return index;
+    }
+    if (item.top <= input.scrollTop) {
+      precedingIndex = index;
+    }
+  }
+
+  return precedingIndex;
 }
 
 export function resolveTimelineMinimapHasPersistentGutter(viewportWidth: number): boolean {
@@ -192,8 +247,8 @@ export type MessagesTimelineRow =
       id: string;
       createdAt: string;
       groupedEntries: WorkLogEntry[];
-      isExpandedToolGroupEntry: boolean;
-      isLastExpandedToolGroupEntry: boolean;
+      isExpandedToolGroup: boolean;
+      displayLabel?: string;
     }
   | {
       kind: "work-live";
@@ -207,6 +262,7 @@ export type MessagesTimelineRow =
     }
   | {
       kind: "work-toggle";
+      turnId: TurnId | null;
       id: string;
       createdAt: string;
       groupId: string;
@@ -237,6 +293,14 @@ export type MessagesTimelineRow =
       revertTurnCount?: number | undefined;
     }
   | {
+      kind: "assistant-meta";
+      id: string;
+      createdAt: string;
+      message: ChatMessage;
+      showAssistantCopyButton: boolean;
+      assistantCopyStreaming: boolean;
+    }
+  | {
       kind: "proposed-plan";
       id: string;
       createdAt: string;
@@ -258,79 +322,6 @@ export interface StableMessagesTimelineRowsState {
   result: MessagesTimelineRow[];
 }
 
-// ---------------------------------------------------------------------------
-// Row height estimation
-// ---------------------------------------------------------------------------
-
-// LegendList sizes unmeasured rows from a single `estimatedItemSize` number.
-// A data-driven average keeps the pre-measurement layout close to reality, so
-// thread restores, minimap jumps, and load-earlier prepends need fewer scroll
-// corrections than a flat guess. Calibration: message text renders at
-// text-sm/leading-relaxed (~23px per line) in the max-w-3xl column; long user
-// messages collapse to 8 lines behind a disclosure; plan cards preview 10
-// lines before expansion.
-const ESTIMATED_TIMELINE_LINE_HEIGHT_PX = 23;
-const ESTIMATED_ASSISTANT_CHARS_PER_LINE = 88;
-const ESTIMATED_USER_CHARS_PER_LINE = 56;
-const ESTIMATED_USER_COLLAPSED_LINE_COUNT = 8;
-const ESTIMATED_PROPOSED_PLAN_PREVIEW_LINE_COUNT = 10;
-const ESTIMATED_ASSISTANT_TEXT_HEIGHT_CAP_PX = 820;
-const FALLBACK_ESTIMATED_TIMELINE_ROW_HEIGHT = 90;
-
-function estimateTimelineTextHeightPx(text: string, charsPerLine: number): number {
-  // Wrapping restarts after each preserved line break, so line counts sum
-  // per newline-delimited segment (each at least one line). Counting only
-  // total length would collapse short multi-line messages into one line;
-  // counting only break count would collapse a long wrapped segment.
-  const lineCount = text
-    .split("\n")
-    .reduce((total, segment) => total + Math.max(1, Math.ceil(segment.length / charsPerLine)), 0);
-  return lineCount * ESTIMATED_TIMELINE_LINE_HEIGHT_PX;
-}
-
-export function estimateMessagesTimelineRowHeight(row: MessagesTimelineRow): number {
-  switch (row.kind) {
-    case "work":
-    case "work-live":
-    case "work-toggle":
-      return 64;
-    case "turn-fold":
-      return 56;
-    case "working":
-    case "thinking":
-      return 40;
-    case "proposed-plan":
-      return (
-        120 +
-        Math.min(
-          estimateTimelineTextHeightPx(
-            row.proposedPlan.planMarkdown,
-            ESTIMATED_ASSISTANT_CHARS_PER_LINE,
-          ),
-          ESTIMATED_PROPOSED_PLAN_PREVIEW_LINE_COUNT * ESTIMATED_TIMELINE_LINE_HEIGHT_PX,
-        )
-      );
-    case "message": {
-      if (row.message.role === "user") {
-        return (
-          96 +
-          Math.min(
-            estimateTimelineTextHeightPx(row.message.text, ESTIMATED_USER_CHARS_PER_LINE),
-            ESTIMATED_USER_COLLAPSED_LINE_COUNT * ESTIMATED_TIMELINE_LINE_HEIGHT_PX,
-          )
-        );
-      }
-      return (
-        88 +
-        Math.min(
-          estimateTimelineTextHeightPx(row.message.text, ESTIMATED_ASSISTANT_CHARS_PER_LINE),
-          ESTIMATED_ASSISTANT_TEXT_HEIGHT_CAP_PX,
-        )
-      );
-    }
-  }
-}
-
 export function workEntryDisplayLabel(entry: WorkLogEntry, fallback?: string): string {
   if (
     (entry.sourceActivityKind === "runtime.error" ||
@@ -339,19 +330,6 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, fallback?: string): s
   )
     return entry.detail;
   return fallback ?? entry.label;
-}
-
-export function estimateMessagesTimelineAverageRowHeight(
-  rows: ReadonlyArray<MessagesTimelineRow>,
-): number {
-  if (rows.length === 0) {
-    return FALLBACK_ESTIMATED_TIMELINE_ROW_HEIGHT;
-  }
-  let totalHeight = 0;
-  for (const row of rows) {
-    totalHeight += estimateMessagesTimelineRowHeight(row);
-  }
-  return Math.round(totalHeight / rows.length);
 }
 
 export function computeMessageDurationStart(
@@ -531,6 +509,27 @@ function workGroupIdentity(timelineEntryId: string, entry: WorkLogEntry): string
 
 function workGroupId(timelineEntryId: string, entry: WorkLogEntry): string {
   return `work-group:${workGroupIdentity(timelineEntryId, entry)}`;
+}
+
+function singleToolCallLabel(entry: WorkLogEntry): string {
+  const command = entry.command?.trim();
+  if (command) return command;
+  const heading = normalizeCompactToolLabel(entry.toolTitle || entry.label);
+  return `${heading.charAt(0).toUpperCase()}${heading.slice(1)}`;
+}
+
+function expandedWorkGroupRow(
+  groupId: string,
+  createdAt: string,
+  groupedEntries: WorkLogEntry[],
+): Extract<MessagesTimelineRow, { kind: "work" }> {
+  return {
+    kind: "work",
+    id: `${groupId}:details`,
+    createdAt,
+    groupedEntries,
+    isExpandedToolGroup: true,
+  };
 }
 
 export function resolveAssistantMessageCopyState({
@@ -737,8 +736,20 @@ function deriveTurnFolds(input: {
       continue;
     }
     const hiddenEntryIds = new Set<string>();
-    for (const entry of group.entries) {
+    const terminalEntryIndex = group.terminalEntry
+      ? group.entries.findIndex((entry) => entry.id === group.terminalEntry?.id)
+      : group.entries.length;
+    for (const [index, entry] of group.entries.entries()) {
       if (entry.id === group.terminalEntry?.id) {
+        continue;
+      }
+      const isCompaction =
+        entry.kind === "work" && entry.entry.sourceActivityKind === "context-compaction";
+      const isSingleTrailingActivity =
+        group.entries.length === terminalEntryIndex + 2 &&
+        entry.kind === "work" &&
+        !workEntryDisplayIndicatesToolFailure(entry.entry);
+      if (!isCompaction && index > terminalEntryIndex && !isSingleTrailingActivity) {
         continue;
       }
       // Agent-spawn CTAs and screenshot galleries never fold. Workflows can
@@ -808,6 +819,84 @@ function deriveTurnFolds(input: {
     });
   }
   return foldsByAnchorEntryId;
+}
+
+function attachTrailingToolGroupsToAssistant(
+  rows: ReadonlyArray<MessagesTimelineRow>,
+): MessagesTimelineRow[] {
+  const messageRowsWithoutMeta = new Set<string>();
+  const metaRowsAfterIndex = new Map<
+    number,
+    Extract<MessagesTimelineRow, { kind: "assistant-meta" }>
+  >();
+
+  for (const [messageIndex, row] of rows.entries()) {
+    const turnId = row.kind === "message" ? (row.message.turnId ?? null) : null;
+    if (
+      row.kind !== "message" ||
+      row.message.role !== "assistant" ||
+      !row.showAssistantMeta ||
+      turnId === null
+    ) {
+      continue;
+    }
+
+    let lastTrailingWorkIndex = -1;
+    let hasTrailingToolGroup = false;
+    for (let index = messageIndex + 1; index < rows.length; index += 1) {
+      const candidate = rows[index];
+      if (!candidate || candidate.kind === "message") {
+        break;
+      }
+      if (candidate.kind === "work-toggle" && candidate.turnId === turnId) {
+        hasTrailingToolGroup = true;
+        lastTrailingWorkIndex = index;
+        continue;
+      }
+      if (
+        candidate.kind === "work" &&
+        candidate.groupedEntries.some((entry) => entry.turnId === turnId)
+      ) {
+        if (
+          !candidate.isExpandedToolGroup &&
+          candidate.groupedEntries.some(workLogEntryIsToolLike)
+        ) {
+          hasTrailingToolGroup = true;
+        }
+        if (hasTrailingToolGroup) {
+          lastTrailingWorkIndex = index;
+        }
+      }
+    }
+
+    if (lastTrailingWorkIndex < 0) {
+      continue;
+    }
+
+    messageRowsWithoutMeta.add(row.id);
+    metaRowsAfterIndex.set(lastTrailingWorkIndex, {
+      kind: "assistant-meta",
+      id: `assistant-meta:${row.message.id}`,
+      createdAt: rows[lastTrailingWorkIndex]?.createdAt ?? row.message.updatedAt,
+      message: row.message,
+      showAssistantCopyButton: row.showAssistantCopyButton,
+      assistantCopyStreaming: row.assistantCopyStreaming,
+    });
+  }
+
+  const result: MessagesTimelineRow[] = [];
+  for (const [index, row] of rows.entries()) {
+    if (row.kind === "message" && messageRowsWithoutMeta.has(row.id)) {
+      result.push({ ...row, showAssistantMeta: false, showAssistantCopyButton: false });
+    } else {
+      result.push(row);
+    }
+    const metaRow = metaRowsAfterIndex.get(index);
+    if (metaRow) {
+      result.push(metaRow);
+    }
+  }
+  return result;
 }
 
 export function deriveMessagesTimelineRows(input: {
@@ -943,16 +1032,13 @@ export function deriveMessagesTimelineRows(input: {
     nextRows.push(activeWorkRow);
     hasActivityRow ||= activeWorkRow.active;
     if (!activeWorkRow.expanded) return;
-    for (const [entryIndex, workEntry] of activeWorkRow.groupedEntries.entries()) {
-      nextRows.push({
-        kind: "work",
-        id: workEntry.id,
-        createdAt: workEntry.createdAt,
-        groupedEntries: [workEntry],
-        isExpandedToolGroupEntry: true,
-        isLastExpandedToolGroupEntry: entryIndex === activeWorkRow.groupedEntries.length - 1,
-      });
-    }
+    nextRows.push(
+      expandedWorkGroupRow(
+        activeWorkRow.groupId,
+        activeWorkRow.createdAt,
+        activeWorkRow.groupedEntries,
+      ),
+    );
   };
 
   for (let index = 0; index < input.timelineEntries.length; index += 1) {
@@ -1000,8 +1086,7 @@ export function deriveMessagesTimelineRows(input: {
           id: timelineEntry.id,
           createdAt: timelineEntry.createdAt,
           groupedEntries: [timelineEntry.entry],
-          isExpandedToolGroupEntry: false,
-          isLastExpandedToolGroupEntry: false,
+          isExpandedToolGroup: false,
         });
         continue;
       }
@@ -1048,17 +1133,26 @@ export function deriveMessagesTimelineRows(input: {
           });
           hasActivityRow = true;
           if (expanded) {
-            for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-              nextRows.push({
-                kind: "work",
-                id: workEntry.id,
-                createdAt: workEntry.createdAt,
-                groupedEntries: [workEntry],
-                isExpandedToolGroupEntry: true,
-                isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-              });
-            }
+            nextRows.push(
+              expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+            );
           }
+        } else if (
+          visibleGroupedEntries.length === 1 &&
+          workLogEntryIsToolLike(visibleGroupedEntries[0]!)
+        ) {
+          const singleEntry = visibleGroupedEntries[0]!;
+          nextRows.push({
+            kind: "work",
+            id: timelineEntry.id,
+            createdAt: timelineEntry.createdAt,
+            groupedEntries: visibleGroupedEntries,
+            isExpandedToolGroup: false,
+            displayLabel:
+              toolGroupAction(singleEntry) === "edit"
+                ? summarizeToolGroup(visibleGroupedEntries)
+                : singleToolCallLabel(singleEntry),
+          });
         } else {
           const groupId = workGroupId(timelineEntry.id, timelineEntry.entry);
           const expanded = input.expandedWorkGroupIds?.has(groupId) ?? false;
@@ -1067,6 +1161,7 @@ export function deriveMessagesTimelineRows(input: {
           nextRows.push({
             kind: "work-toggle",
             id: `work-toggle:${timelineEntry.id}`,
+            turnId: timelineEntry.entry.turnId ?? null,
             createdAt: timelineEntry.createdAt,
             groupId,
             hiddenCount: visibleGroupedEntries.length,
@@ -1082,16 +1177,9 @@ export function deriveMessagesTimelineRows(input: {
               workEntryDisplayIndicatesToolFailure(latestToolEntry),
           });
           if (expanded) {
-            for (const [entryIndex, workEntry] of visibleGroupedEntries.entries()) {
-              nextRows.push({
-                kind: "work",
-                id: workEntry.id,
-                createdAt: workEntry.createdAt,
-                groupedEntries: [workEntry],
-                isExpandedToolGroupEntry: true,
-                isLastExpandedToolGroupEntry: entryIndex === visibleGroupedEntries.length - 1,
-              });
-            }
+            nextRows.push(
+              expandedWorkGroupRow(groupId, timelineEntry.createdAt, visibleGroupedEntries),
+            );
           }
         }
       }
@@ -1157,7 +1245,7 @@ export function deriveMessagesTimelineRows(input: {
     });
   }
 
-  return nextRows;
+  return attachTrailingToolGroupsToAssistant(nextRows);
 }
 
 /** Match each user message to the next assistant checkpoint. */
@@ -1255,7 +1343,7 @@ function replaceStreamingMessageRows(
   }
   if (replacements.size === 0) return previous.rows;
   return previous.rows.map((row) => {
-    if (row.kind !== "message") return row;
+    if (row.kind !== "message" && row.kind !== "assistant-meta") return row;
     const message = replacements.get(row.message);
     return message ? { ...row, message } : row;
   });
@@ -1303,6 +1391,16 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "thinking":
       return a.createdAt === (b as typeof a).createdAt;
 
+    case "assistant-meta": {
+      const bm = b as typeof a;
+      return (
+        a.createdAt === bm.createdAt &&
+        a.message === bm.message &&
+        a.showAssistantCopyButton === bm.showAssistantCopyButton &&
+        a.assistantCopyStreaming === bm.assistantCopyStreaming
+      );
+    }
+
     case "turn-fold": {
       const bf = b as typeof a;
       return a.createdAt === bf.createdAt && a.label === bf.label && a.expanded === bf.expanded;
@@ -1314,8 +1412,8 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     case "work": {
       const bw = b as typeof a;
       return (
-        a.isExpandedToolGroupEntry === bw.isExpandedToolGroupEntry &&
-        a.isLastExpandedToolGroupEntry === bw.isLastExpandedToolGroupEntry &&
+        a.isExpandedToolGroup === bw.isExpandedToolGroup &&
+        a.displayLabel === bw.displayLabel &&
         Equal.equals(a.groupedEntries, bw.groupedEntries)
       );
     }
@@ -1338,6 +1436,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
         a.createdAt === bw.createdAt &&
         a.groupId === bw.groupId &&
         a.hiddenCount === bw.hiddenCount &&
+        a.turnId === bw.turnId &&
         a.expanded === bw.expanded &&
         a.summary === bw.summary &&
         a.summaryKind === bw.summaryKind &&

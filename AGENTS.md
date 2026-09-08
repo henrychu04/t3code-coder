@@ -124,7 +124,10 @@ claim: shared provider protocols may still report subscription metadata.
   forwarding, arbitrary tunnels, or providers other than Codex and Claude. OpenSSH use is limited
   to helper bootstrap and validated clipboard-image uploads through a `coder ssh --stdio`
   ProxyCommand.
-- External markdown links and images remain inert, and terminal URLs must not open automatically.
+- External markdown links remain inert except user-clicked HTTP(S) links to `gitlab.com` or
+  self-hosted hosts identified by project repository metadata as GitLab. Known merge requests keep
+  their internal navigation; other GitLab links open in a new tab. External images remain inert,
+  and terminal URLs must not open automatically.
 
 ## Supported platforms
 

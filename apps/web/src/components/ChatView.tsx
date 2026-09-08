@@ -1,3 +1,8 @@
+import type { AssistantCitation } from "@t3tools/contracts";
+import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
+import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
+import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
@@ -68,7 +73,7 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useLocation } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import {
   isAtomCommandInterrupted,
@@ -241,7 +246,7 @@ import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
-import type { TimelineScrollRestoration } from "./chat/timelineScrollAnchoring";
+import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -316,6 +321,7 @@ import {
   startNewThreadForProject,
   waitForStartedServerThread,
   shouldRefocusComposerOnWindowFocus,
+  toolGroupConsumesUpwardNavigation,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -323,7 +329,7 @@ import { useComposerHandleContext } from "../composerHandleContext";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { deriveLatestContextWindowSnapshot, formatContextWindowTokens } from "../lib/contextWindow";
 import { hasDismissedResumeCompaction, shouldOfferResumeCompaction } from "./chat/claudeCompaction";
-import { resolveComposerTimelineInset } from "./composerFooterLayout";
+import { resolveComposerTimelineInset, resolveScrollToEndClearance } from "./composerFooterLayout";
 
 import { RightPanelSheet } from "./RightPanelSheet";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -343,7 +349,6 @@ const EMPTY_ACTIVITIES: OrchestrationThreadActivity[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-const MAX_TIMELINE_SCROLL_RESTORATIONS = 100;
 function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -1327,6 +1332,8 @@ export default function ChatView(props: ChatViewProps) {
     }
     return {
       loading: routeThreadState.page._tag === "Some" && routeThreadState.page.value.loadingOlder,
+      cursor:
+        routeThreadState.page._tag === "Some" ? routeThreadState.page.value.beforeCursor : null,
       onLoadEarlier: () => {
         requestOlderThreadTurns(routeThreadRef.environmentId, routeThreadRef.threadId);
       },
@@ -1340,6 +1347,19 @@ export default function ChatView(props: ChatViewProps) {
   );
   const timestampFormat = settings.timestampFormat;
   const navigate = useNavigate();
+  const citationLocation = useLocation({
+    select: (location) => ({
+      href: location.href,
+      key: location.state.assistantCitationActivation ?? location.state.__TSR_key,
+    }),
+  });
+  const citationRequest = useMemo<AssistantCitationRequest | null>(() => {
+    const citation = assistantCitationFromLocation(citationLocation.href);
+    return citation && citation.environmentId === environmentId && citation.threadId === threadId
+      ? { citation, key: citationLocation.key ?? citationLocation.href }
+      : null;
+  }, [citationLocation.href, citationLocation.key, environmentId, threadId]);
+
   const { resolvedTheme } = useTheme();
   // Granular store selectors — avoid subscribing to prompt changes.
   const composerRuntimeMode = useComposerDraftStore(
@@ -1375,6 +1395,21 @@ export default function ChatView(props: ChatViewProps) {
     useState<HTMLDivElement | null>(null);
   const [restingComposerControlsVisible, setRestingComposerControlsVisible] = useState(false);
   const [timelineOverflows, setTimelineOverflows] = useState(false);
+  const citeAssistantText = useCallback(
+    (citation: AssistantCitation, sourceAnchor: AssistantCitationSourceAnchor) => {
+      const inserted = composerRef.current?.citeAssistantText(citation, sourceAnchor) ?? false;
+      if (!inserted) {
+        toastManager.add({
+          type: "warning",
+          title: "The composer is not ready",
+          description:
+            "Try citing the selection after the connection or pending input is resolved.",
+        });
+      }
+      return inserted;
+    },
+    [composerRef],
+  );
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
   const optimisticUserMessagesRef = useRef(optimisticUserMessages);
@@ -1417,38 +1452,63 @@ export default function ChatView(props: ChatViewProps) {
     () => legendListRef.current?.getScrollableNode() ?? null,
     [],
   );
-  const routeThreadKeyRef = useRef(routeThreadKey);
-  routeThreadKeyRef.current = routeThreadKey;
   const [composerOverlayElement, setComposerOverlayElement] = useState<HTMLDivElement | null>(null);
-  const [composerOverlayHeight, setComposerOverlayHeight] = useState(0);
-  const composerOverlayHeightRef = useRef(0);
   const [composerTimelineInset, setComposerTimelineInset] = useState(0);
   const composerTimelineInsetRef = useRef(0);
   const composerRestingRef = useRef(false);
+  const [scrollToEndClearance, setScrollToEndClearance] = useState(0);
   const isAtEndRef = useRef(true);
-  const isTimelineAtLogicalEnd = useCallback(() => isAtEndRef.current, []);
+  const isTimelineAtLogicalEnd = useCallback(
+    () => resolveTimelineIsAtEnd(legendListRef.current?.getState()) ?? isAtEndRef.current,
+    [],
+  );
   const sendInFlightRef = useRef(false);
   const environmentUnavailableSendToastSlotRef = useRef(0);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
-  const publishComposerOverlayHeight = useCallback((height: number) => {
-    const nextHeight = Math.ceil(height);
-    if (nextHeight <= 0) return;
-    if (composerOverlayHeightRef.current !== nextHeight) {
-      composerOverlayHeightRef.current = nextHeight;
-      setComposerOverlayHeight(nextHeight);
-    }
-    const nextInset = resolveComposerTimelineInset({
-      currentInset: composerTimelineInsetRef.current,
-      overlayHeight: nextHeight,
-      isResting: composerRestingRef.current,
-    });
-    if (composerTimelineInsetRef.current !== nextInset) {
-      composerTimelineInsetRef.current = nextInset;
-      setComposerTimelineInset(nextInset);
-    }
-  }, []);
-
+  const publishComposerOverlayHeight = useCallback(
+    (height: number) => {
+      const nextHeight = Math.ceil(height);
+      if (nextHeight <= 0) return;
+      const nextInset = resolveComposerTimelineInset({
+        currentInset: composerTimelineInsetRef.current,
+        overlayHeight: nextHeight,
+        isResting: composerRestingRef.current,
+      });
+      if (composerTimelineInsetRef.current !== nextInset) {
+        composerTimelineInsetRef.current = nextInset;
+        setComposerTimelineInset(nextInset);
+      }
+      const mainSurface = composerOverlayElement?.querySelector<HTMLElement>(
+        '[data-chat-composer-main-surface="true"]',
+      );
+      const button = composerOverlayElement?.parentElement?.querySelector<HTMLElement>(
+        'button[aria-label="Scroll to end"]',
+      );
+      const clearance =
+        composerOverlayElement && mainSurface && button
+          ? resolveScrollToEndClearance({
+              overlayHeight: nextHeight,
+              mainSurfaceTop: mainSurface.getBoundingClientRect().top,
+              button: button.getBoundingClientRect(),
+              attachments: Array.from(
+                composerOverlayElement.querySelectorAll<HTMLElement>(
+                  '[data-composer-banner-surface="attached"]',
+                ),
+                (element) => element.getBoundingClientRect(),
+              ),
+            })
+          : nextHeight;
+      setScrollToEndClearance(clearance);
+    },
+    [composerOverlayElement],
+  );
+  // The composer reports its resting flag from a layout effect, which runs
+  // before this component's own layout effects and before any resize
+  // observation, so every measurement below sees the flag for its layout.
+  // Only the flag is stored here: the stored height still belongs to the
+  // previous layout, and the composer publishes the new layout's height
+  // itself once it has measured it.
   const onComposerRestingChange = useCallback((resting: boolean) => {
     composerRestingRef.current = resting;
   }, []);
@@ -1466,7 +1526,7 @@ export default function ChatView(props: ChatViewProps) {
     const observer = new ResizeObserver(updateHeight);
     observer.observe(composerOverlayElement);
     return () => observer.disconnect();
-  }, [composerOverlayElement, publishComposerOverlayHeight]);
+  }, [composerOverlayElement, publishComposerOverlayHeight, showScrollToBottom]);
 
   const terminalUiState = useTerminalUiStateStore((state) =>
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef),
@@ -3168,23 +3228,6 @@ export default function ChatView(props: ChatViewProps) {
   );
   const timelineScrollIntentRef = useRef<"toward-end" | "away-from-end" | null>(null);
   const timelineScrollModeRef = useRef<TimelineScrollMode>("following-end");
-  const timelineScrollRestorationsRef = useRef(new Map<string, TimelineScrollRestoration>());
-  const restoredTimelineThreadKeyRef = useRef<string | null>(null);
-  const timelineScrollRestorationGenerationRef = useRef(0);
-  const rememberTimelineScrollRestoration = useCallback(
-    (threadKey: string, restoration: TimelineScrollRestoration) => {
-      const restorations = timelineScrollRestorationsRef.current;
-      restorations.delete(threadKey);
-      restorations.set(threadKey, restoration);
-      if (restorations.size > MAX_TIMELINE_SCROLL_RESTORATIONS) {
-        const oldestThreadKey = restorations.keys().next().value;
-        if (oldestThreadKey !== undefined) {
-          restorations.delete(oldestThreadKey);
-        }
-      }
-    },
-    [],
-  );
   // State mirror of the follow mode refs. LegendList's maintainScrollAtEnd
   // re-pins on its own (independent of the refs), so the timeline needs a
   // render-visible flag to switch it off once the user scrolls away.
@@ -3240,28 +3283,58 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [composerTimelineInset],
   );
+  const pageScrollControllerRef = useRef<ReturnType<typeof createPageScrollController> | null>(
+    null,
+  );
+  const handlePageScrollStart = useEffectEvent((key: PageScrollKey) => {
+    timelineScrollIntentRef.current = key === "PageUp" ? "away-from-end" : "toward-end";
+    composerRef.current?.collapseForTimelineScrollKey(key);
+    if ((key === "PageUp" && timelineRealContentOverflowsViewport()) || !isTimelineAtLogicalEnd()) {
+      cancelTimelineLiveFollowForUserNavigation();
+    }
+  });
+  useEffect(() => {
+    const controller = createPageScrollController({
+      getContainer: () => legendListRef.current?.getScrollableNode() ?? null,
+      getScrollPaddingBottomPx: () => composerOverlayElement?.getBoundingClientRect().height ?? 0,
+      onScrollStart: handlePageScrollStart,
+    });
+    pageScrollControllerRef.current = controller;
+
+    return () => {
+      controller.dispose();
+      if (pageScrollControllerRef.current === controller) {
+        pageScrollControllerRef.current = null;
+      }
+    };
+  }, [composerOverlayElement]);
+  const onComposerPageScrollKeyDown = useCallback((key: PageScrollKey) => {
+    pageScrollControllerRef.current?.handleKeyDown(key);
+  }, []);
+  const onComposerPageScrollKeyUp = useCallback((key: string) => {
+    pageScrollControllerRef.current?.handleKeyUp(key);
+  }, []);
+  const onComposerPageScrollRelease = useCallback(() => {
+    pageScrollControllerRef.current?.releaseActiveKey();
+  }, []);
   // Live-follow stays active after send/thread-open until an actual list scroll
   // gesture opts out.
-  const scrollToEnd = useCallback(
-    (animated = false) => {
-      rememberTimelineScrollRestoration(routeThreadKeyRef.current, { kind: "following-end" });
-      isAtEndRef.current = true;
-      timelineScrollModeRef.current = "following-end";
-      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-      setTimelineLiveFollowEnabled(true);
-      pendingTimelineAnchorRef.current = null;
-      positionedTimelineAnchorRef.current = null;
-      settledTimelineAnchorRef.current = null;
-      activeTimelineAnchorIndexRef.current = null;
-      showScrollDebouncer.current.cancel();
-      setShowScrollToBottom(false);
-      setTimelineAnchor(releaseChatTimelineAnchor);
-      requestAnimationFrame(() => {
-        void legendListRef.current?.scrollToEnd?.({ animated });
-      });
-    },
-    [rememberTimelineScrollRestoration],
-  );
+  const scrollToEnd = useCallback((animated = false) => {
+    isAtEndRef.current = true;
+    timelineScrollModeRef.current = "following-end";
+    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+    setTimelineLiveFollowEnabled(true);
+    pendingTimelineAnchorRef.current = null;
+    positionedTimelineAnchorRef.current = null;
+    settledTimelineAnchorRef.current = null;
+    activeTimelineAnchorIndexRef.current = null;
+    showScrollDebouncer.current.cancel();
+    setShowScrollToBottom(false);
+    setTimelineAnchor(releaseChatTimelineAnchor);
+    requestAnimationFrame(() => {
+      void legendListRef.current?.scrollToEnd?.({ animated });
+    });
+  }, []);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
@@ -3315,8 +3388,7 @@ export default function ChatView(props: ChatViewProps) {
         // up, and a gesture landing in that window while still pinned would
         // otherwise break follow with no scroll event left to re-arm it.
         const viewportIsAwayFromEnd = () =>
-          resolveTimelineIsAtEnd(legendListRef.current?.getState(), composerOverlayHeight) ===
-          false;
+          resolveTimelineIsAtEnd(legendListRef.current?.getState()) === false;
         // Only an upward wheel is a navigation intent; wheeling down while
         // following either does nothing (at the end) or moves toward it.
         const handleWheel = (event: WheelEvent) => {
@@ -3328,7 +3400,11 @@ export default function ChatView(props: ChatViewProps) {
           } else if (event.deltaY < 0) {
             timelineScrollIntentRef.current = "away-from-end";
           }
-          if (event.deltaY < 0 && contentScrollsUp()) {
+          if (
+            event.deltaY < 0 &&
+            contentScrollsUp() &&
+            !toolGroupConsumesUpwardNavigation(event.target)
+          ) {
             handleManualNavigation();
           }
         };
@@ -3383,7 +3459,7 @@ export default function ChatView(props: ChatViewProps) {
             case "Home":
             case "ArrowUp":
               timelineScrollIntentRef.current = "away-from-end";
-              if (contentScrollsUp()) {
+              if (contentScrollsUp() && !toolGroupConsumesUpwardNavigation(event.target)) {
                 handleManualNavigation();
                 composerRef.current?.collapseForTimelineScrollKey(event.key);
               }
@@ -3430,7 +3506,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       removeListeners?.();
     };
-  }, [activeThread?.id, composerOverlayHeight, timelineRealContentOverflowsViewport]);
+  }, [activeThread?.id, isTimelineAtLogicalEnd, timelineRealContentOverflowsViewport]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
     // Anchored-end space can be remeasured when the turn completes. Once the
@@ -3478,47 +3554,41 @@ export default function ChatView(props: ChatViewProps) {
     requestAnimationFrame(() => positionAnchor(12));
   }, []);
 
-  const onTimelineScrollStateChange = useCallback(
-    (isAtEnd: boolean, restoration: TimelineScrollRestoration | undefined, overflows?: boolean) => {
-      setTimelineOverflows(overflows ?? false);
-      if (restoredTimelineThreadKeyRef.current !== routeThreadKey) {
-        return;
+  const onToolOutputCollapsedAtEnd = useCallback(() => {
+    composerRef.current?.restoreAfterTimelineReachedEnd();
+  }, []);
+
+  const onIsAtEndChange = useCallback((isAtEnd: boolean) => {
+    if (
+      !isAtEnd &&
+      liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current
+    ) {
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+      return;
+    }
+    if (isAtEndRef.current === isAtEnd) return;
+    isAtEndRef.current = isAtEnd;
+    if (isAtEnd) {
+      if (timelineScrollIntentRef.current === "toward-end") {
+        composerRef.current?.restoreAfterTimelineReachedEnd();
       }
-      if (restoration) {
-        rememberTimelineScrollRestoration(routeThreadKey, restoration);
-      }
-      if (
-        !isAtEnd &&
-        liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current
-      ) {
-        showScrollDebouncer.current.cancel();
-        setShowScrollToBottom(false);
-        return;
-      }
-      if (isAtEndRef.current === isAtEnd) return;
-      isAtEndRef.current = isAtEnd;
-      if (isAtEnd) {
-        if (timelineScrollIntentRef.current === "toward-end") {
-          composerRef.current?.restoreAfterTimelineReachedEnd();
-        }
-        timelineScrollModeRef.current = "following-end";
-        liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
-        setTimelineLiveFollowEnabled(true);
-        // Reachable only once manual navigation has already broken follow, so
-        // the anchored turn framing is over: the user scrolled back to the live
-        // edge and expects the stream to stick to it again, exactly like the
-        // scroll-to-bottom pill.
-        setTimelineAnchor(releaseChatTimelineAnchor);
-        showScrollDebouncer.current.cancel();
-        setShowScrollToBottom(false);
-      } else {
-        timelineScrollModeRef.current = "free-scrolling";
-        liveFollowUserScrollGenerationRef.current = null;
-        showScrollDebouncer.current.maybeExecute();
-      }
-    },
-    [rememberTimelineScrollRestoration, routeThreadKey],
-  );
+      timelineScrollModeRef.current = "following-end";
+      liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+      setTimelineLiveFollowEnabled(true);
+      // Reachable only once manual navigation has already broken follow, so
+      // the anchored turn framing is over: the user scrolled back to the live
+      // edge and expects the stream to stick to it again, exactly like the
+      // scroll-to-bottom pill.
+      setTimelineAnchor(releaseChatTimelineAnchor);
+      showScrollDebouncer.current.cancel();
+      setShowScrollToBottom(false);
+    } else {
+      timelineScrollModeRef.current = "free-scrolling";
+      liveFollowUserScrollGenerationRef.current = null;
+      showScrollDebouncer.current.maybeExecute();
+    }
+  }, []);
 
   // Anchored end space intentionally disables LegendList's normal end-follow so
   // the sent message can stay near the top. T3 only owns streaming adjustments
@@ -3572,101 +3642,19 @@ export default function ChatView(props: ChatViewProps) {
     };
   }, [activeThread?.id, timelineEntries, getActiveTimelineTurnMetrics]);
 
-  useLayoutEffect(() => {
-    if (!activeThread?.id) {
-      return;
-    }
-
-    const generation = ++timelineScrollRestorationGenerationRef.current;
-    restoredTimelineThreadKeyRef.current = null;
-    showScrollDebouncer.current.cancel();
-    setShowScrollToBottom(false);
-
-    const restoration = timelineScrollRestorationsRef.current.get(routeThreadKey) ?? {
-      kind: "following-end" as const,
-    };
-    let frame: number | null = null;
-    let secondFrame: number | null = null;
-    const isCurrentRestoration = () =>
-      timelineScrollRestorationGenerationRef.current === generation;
-    const markRestored = () => {
-      if (isCurrentRestoration()) {
-        restoredTimelineThreadKeyRef.current = routeThreadKey;
-      }
-    };
-    const restoreEnd = () => {
-      scrollToEnd();
-      frame = requestAnimationFrame(() => {
-        frame = null;
-        secondFrame = requestAnimationFrame(markRestored);
-      });
-    };
-
-    if (restoration.kind === "following-end") {
-      // Store the intent, not the old bottom offset. If the thread gained rows
-      // while hidden, LegendList follows the newest end when it becomes active.
-      restoreEnd();
-    } else {
-      isAtEndRef.current = false;
-      cancelTimelineLiveFollowForUserNavigation();
-      setTimelineAnchor(releaseChatTimelineAnchor);
-
-      const restoreRow = (remainingAttempts: number) => {
-        frame = requestAnimationFrame(() => {
-          frame = null;
-          if (!isCurrentRestoration()) {
-            return;
-          }
-          const list = legendListRef.current;
-          const index = list?.getState().indexByKey(restoration.rowId);
-          if (!list || index === undefined) {
-            if (remainingAttempts > 0) {
-              restoreRow(remainingAttempts - 1);
-            } else {
-              restoreEnd();
-            }
-            return;
-          }
-
-          void list
-            .scrollToIndex({
-              index,
-              animated: false,
-              viewPosition: 0,
-              viewOffset: restoration.viewOffset,
-            })
-            .then(
-              () => {
-                if (!isCurrentRestoration()) {
-                  return;
-                }
-                restoredTimelineThreadKeyRef.current = routeThreadKey;
-                setShowScrollToBottom(true);
-              },
-              () => {
-                if (isCurrentRestoration()) {
-                  restoreEnd();
-                }
-              },
-            );
-        });
-      };
-      restoreRow(12);
-    }
-
-    return () => {
-      if (frame !== null) {
-        cancelAnimationFrame(frame);
-      }
-      if (secondFrame !== null) {
-        cancelAnimationFrame(secondFrame);
-      }
-    };
-  }, [activeThread?.id, cancelTimelineLiveFollowForUserNavigation, routeThreadKey, scrollToEnd]);
-
   useEffect(() => {
     setIsRevertingCheckpoint(false);
+    isAtEndRef.current = true;
     timelineScrollIntentRef.current = null;
+    timelineScrollModeRef.current = "following-end";
+    liveFollowUserScrollGenerationRef.current = anchorUserScrollGenerationRef.current;
+    setTimelineLiveFollowEnabled(true);
+    pendingTimelineAnchorRef.current = null;
+    positionedTimelineAnchorRef.current = null;
+    settledTimelineAnchorRef.current = null;
+    activeTimelineAnchorIndexRef.current = null;
+    showScrollDebouncer.current.cancel();
+    setShowScrollToBottom(false);
   }, [activeThread?.id]);
 
   useEffect(() => {
@@ -5007,7 +4995,7 @@ export default function ChatView(props: ChatViewProps) {
     clearComposerDraftContent(composerDraftTarget);
     composerRef.current?.resetCursorState();
 
-    let titleSeed = trimmed;
+    let titleSeed = assistantCitationsToPlainText(trimmed);
     if (!titleSeed) {
       if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
@@ -6096,6 +6084,10 @@ export default function ChatView(props: ChatViewProps) {
             <div className="relative flex min-h-0 flex-1 flex-col">
               {/* Messages — LegendList handles virtualization and scrolling internally */}
               <MessagesTimeline
+                citationRequest={citationRequest}
+                citationHistoryLoading={threadDetailLoading}
+                onCiteAssistantText={citeAssistantText}
+                key={activeThread.id}
                 agentPanelModel={agentPanelModel}
                 onOpenAgents={addAgentsSurface}
                 isWorking={isWorking}
@@ -6124,7 +6116,9 @@ export default function ChatView(props: ChatViewProps) {
                 onAnchorReady={onTimelineAnchorReady}
                 contentInsetEndAdjustment={composerTimelineInset}
                 liveFollowEnabled={timelineLiveFollowEnabled}
-                onScrollStateChange={onTimelineScrollStateChange}
+                onIsAtEndChange={onIsAtEndChange}
+                onContentOverflowChange={setTimelineOverflows}
+                onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
                 onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
                 hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
                 topFadeEnabled={!hasTimelineTopBanner}
@@ -6135,7 +6129,7 @@ export default function ChatView(props: ChatViewProps) {
               {showScrollToBottom && (
                 <div
                   className="pointer-events-none absolute left-1/2 z-30 flex -translate-x-1/2 justify-center py-1.5"
-                  style={{ bottom: composerOverlayHeight + 4 }}
+                  style={{ bottom: scrollToEndClearance + 4 }}
                 >
                   <Button
                     aria-label="Scroll to end"
@@ -6262,6 +6256,9 @@ export default function ChatView(props: ChatViewProps) {
                             onRestingChange={onComposerRestingChange}
                             promptRef={promptRef}
                             composerTerminalContextsRef={composerTerminalContextsRef}
+                            onPageScrollKeyDown={onComposerPageScrollKeyDown}
+                            onPageScrollKeyUp={onComposerPageScrollKeyUp}
+                            onPageScrollRelease={onComposerPageScrollRelease}
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}

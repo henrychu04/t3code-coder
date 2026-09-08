@@ -160,6 +160,10 @@
     "./imageDimensions": {
       "types": "./src/imageDimensions.ts",
       "import": "./src/imageDimensions.ts"
+    },
+    "./assistantCitations": {
+      "types": "./src/assistantCitations.ts",
+      "default": "./src/assistantCitations.ts"
     }
   },
   "scripts": {

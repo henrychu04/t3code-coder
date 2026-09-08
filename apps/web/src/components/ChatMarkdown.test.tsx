@@ -1,7 +1,15 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, MessageId, type AssistantCitation } from "@t3tools/contracts";
+
+import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
+
+vi.mock("./chat/AssistantCitationChip", () => ({
+  AssistantCitationChip: ({ citation }: { citation: AssistantCitation }) => (
+    <span data-citation-message={citation.messageId}>{citation.text}</span>
+  ),
+}));
 
 import ChatMarkdown, { orderedListGutterStyle } from "./ChatMarkdown";
 
@@ -47,6 +55,44 @@ describe("orderedListGutterStyle", () => {
 });
 
 describe("ChatMarkdown", () => {
+  it("opens GitLab links in a separate tab", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown cwd={undefined} text="[issue](https://gitlab.com/group/project/-/issues/1)" />,
+    );
+    expect(markup).toContain('href="https://gitlab.com/group/project/-/issues/1"');
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noopener noreferrer"');
+  });
+
+  it("renders validated internal citations while keeping external links inert", () => {
+    const citation: AssistantCitation = {
+      version: 1,
+      environmentId: EnvironmentId.make("env"),
+      threadId: ThreadId.make("thread"),
+      messageId: MessageId.make("assistant-source"),
+      text: "Quoted answer",
+      start: 0,
+      end: 13,
+      prefix: "",
+      suffix: "",
+    };
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd={undefined}
+        text={[
+          serializeAssistantCitation(citation),
+          "[malformed](t3-citation://invalid)",
+          "[external](https://example.com)",
+        ].join("\n\n")}
+      />,
+    );
+    expect(markup).toContain('data-citation-message="assistant-source"');
+    expect(markup).toContain("Quoted answer");
+    expect(markup.match(/data-citation-message=/g)).toHaveLength(1);
+    expect(markup).not.toContain('href="t3-citation://invalid"');
+    expect(markup).not.toContain('href="https://example.com"');
+  });
+
   it("keeps negative-exponent monetary values as text even when a skill has that name", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown

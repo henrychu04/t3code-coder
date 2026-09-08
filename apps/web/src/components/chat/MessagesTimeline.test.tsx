@@ -208,7 +208,7 @@ function buildProps() {
     onAnchorReady: () => {},
     contentInsetEndAdjustment: 0,
     liveFollowEnabled: true,
-    onScrollStateChange: () => {},
+    onIsAtEndChange: () => {},
     onManualNavigation: () => {},
   };
 }
@@ -248,6 +248,81 @@ function buildAssistantTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it("renders trailing tool calls as part of the terminal assistant block", () => {
+    const turnId = TurnId.make("turn-trailing-tools");
+    const assistantMessageId = MessageId.make("assistant-trailing-tools");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        latestTurn={{
+          turnId,
+          state: "error",
+          startedAt: "2026-03-17T19:12:20.000Z",
+          completedAt: "2026-03-17T19:12:30.000Z",
+        }}
+        timelineEntries={[
+          {
+            id: "assistant-entry",
+            kind: "message",
+            createdAt: MESSAGE_CREATED_AT,
+            message: {
+              id: assistantMessageId,
+              role: "assistant",
+              text: "I’ll search for it now.",
+              turnId,
+              createdAt: MESSAGE_CREATED_AT,
+              updatedAt: "2026-03-17T19:12:29.000Z",
+              streaming: false,
+            },
+          },
+          {
+            id: "trailing-work-entry",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:30.000Z",
+            entry: {
+              id: "trailing-work",
+              createdAt: "2026-03-17T19:12:30.000Z",
+              turnId,
+              label: "Ran command",
+              tone: "tool",
+              itemType: "command_execution",
+              toolLifecycleStatus: "failed",
+            },
+          },
+        ]}
+      />,
+    );
+
+    const messageIndex = markup.indexOf('data-timeline-row-id="assistant-entry"');
+    const toolIndex = markup.indexOf('data-timeline-row-id="trailing-work-entry"');
+    const metaIndex = markup.indexOf(
+      'data-timeline-row-id="assistant-meta:assistant-trailing-tools"',
+    );
+    expect(messageIndex).toBeGreaterThanOrEqual(0);
+    expect(toolIndex).toBeGreaterThan(messageIndex);
+    expect(metaIndex).toBeGreaterThan(toolIndex);
+    expect(markup.match(/I’ll search for it now\./gu)).toHaveLength(1);
+  });
+
+  it("renders previous and next controls with the minimap", () => {
+    const first = buildUserTimelineEntry("First turn");
+    const secondBase = buildUserTimelineEntry("Second turn");
+    const second = {
+      ...secondBase,
+      id: "entry-2",
+      message: {
+        ...secondBase.message,
+        id: MessageId.make("message-2"),
+      },
+    };
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[first, second]} />,
+    );
+
+    expect(markup).toContain('aria-label="Previous turn"');
+    expect(markup).toContain('aria-label="Next turn"');
+  });
+
   it("renders the worked-for row at assistant response text size", () => {
     const turnId = TurnId.make("turn-with-fold");
     const assistantEntry = buildAssistantTimelineEntry("Done.");
@@ -298,7 +373,7 @@ describe("MessagesTimeline", () => {
 
     expect(compactMarkup).toContain('class="h-3 sm:h-4"');
     expect(compactMarkup).not.toContain("topbar-scroll-fade");
-    expect(fadedMarkup).toContain('class="h-10 sm:h-12"');
+    expect(fadedMarkup).toContain('class="h-[var(--workspace-titlebar-scroll-fade-height)]"');
     expect(fadedMarkup).toContain("topbar-scroll-fade");
   });
 
@@ -358,6 +433,7 @@ describe("MessagesTimeline", () => {
     const {
       resolveTimelineIsAtEnd,
       resolveTimelineMinimapHasPersistentGutter,
+      resolveTimelineMinimapCurrentIndex,
       resolveTimelineMinimapHeightStyle,
       resolveTimelineMinimapHitStripWidth,
       resolveTimelineMinimapIndexFromPointer,
@@ -385,14 +461,17 @@ describe("MessagesTimeline", () => {
         scrollLength: 800,
       }),
     ).toBe(false);
-    // The composer inset is part of contentLength and must not count as
-    // distance-to-end.
+    // LegendList's isAtEnd is true anywhere within the composer-height band
+    // (it subtracts the inset); the last row is still hidden under the
+    // composer there, so the flag must not short-circuit the geometry.
     expect(
-      resolveTimelineIsAtEnd(
-        { isAtEnd: false, contentLength: 2100, scroll: 1170, scrollLength: 800 },
-        100,
-      ),
-    ).toBe(true);
+      resolveTimelineIsAtEnd({
+        isAtEnd: true,
+        contentLength: 2000,
+        scroll: 1100,
+        scrollLength: 800,
+      }),
+    ).toBe(false);
     // Geometry missing (older state shape): fall back to the strict flag.
     expect(resolveTimelineIsAtEnd({ isAtEnd: false })).toBe(false);
 
@@ -414,6 +493,35 @@ describe("MessagesTimeline", () => {
         pointerY: 999,
       }),
     ).toBe(100);
+    expect(
+      resolveTimelineMinimapCurrentIndex({
+        scrollTop: 100,
+        scrollBottom: 500,
+        itemBounds: [
+          { top: 80, height: 20 },
+          { top: 120, height: 20 },
+          { top: 220, height: 20 },
+        ],
+      }),
+    ).toBe(1);
+    expect(
+      resolveTimelineMinimapCurrentIndex({
+        scrollTop: 150,
+        scrollBottom: 200,
+        itemBounds: [
+          { top: 80, height: 20 },
+          { top: 120, height: 20 },
+          { top: 220, height: 20 },
+        ],
+      }),
+    ).toBe(1);
+    expect(
+      resolveTimelineMinimapCurrentIndex({
+        scrollTop: 0,
+        scrollBottom: 50,
+        itemBounds: [{ top: 80, height: 20 }],
+      }),
+    ).toBeNull();
     expect(resolveTimelineMinimapHasPersistentGutter(832)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(863)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(864)).toBe(true);

@@ -139,7 +139,11 @@
       "types": "./src/state/vcs.ts",
       "default": "./src/state/vcs.ts"
     },
-    "./state/provider-instance-display": "./src/state/providerInstanceDisplay.ts"
+    "./state/provider-instance-display": "./src/state/providerInstanceDisplay.ts",
+    "./work-log/scroll-anchor": {
+      "types": "./src/work-log/scrollAnchor.ts",
+      "default": "./src/work-log/scrollAnchor.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
