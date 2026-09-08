@@ -486,14 +486,27 @@ export const ProviderRegistryLive = Layer.effect(
           newlyAdded.push([instanceId, instance] as const);
         }
 
-        // Project catalogs belong to a specific runtime instance, not just its reusable ID.
-        yield* Ref.update(providersRef, (current) =>
-          current.map((provider) => {
-            if (carriedOver.has(provider.instanceId)) return provider;
-            const { workspaceSnapshots: _workspaceSnapshots, ...machineSnapshot } = provider;
-            return machineSnapshot;
-          }),
+        const rebuiltInstanceIds = new Set(
+          newlyAdded
+            .map(([instanceId]) => instanceId)
+            .filter((instanceId) => previousSubs.has(instanceId)),
         );
+        if (rebuiltInstanceIds.size > 0) {
+          const [previousProviders, providers] = yield* Ref.modify(
+            providersRef,
+            (previousProviders) => {
+              const providers = previousProviders.map((provider) => {
+                if (!rebuiltInstanceIds.has(provider.instanceId)) return provider;
+                const { workspaceSnapshots: _workspaceSnapshots, ...machineSnapshot } = provider;
+                return machineSnapshot;
+              });
+              return [[previousProviders, providers] as const, providers];
+            },
+          );
+          if (haveProvidersChanged(previousProviders, providers)) {
+            yield* PubSub.publish(changesPubSub, providers);
+          }
+        }
 
         // Fork long-lived subscriptions to each new/rebuilt instance's
         // change stream before reading its current snapshot. If the

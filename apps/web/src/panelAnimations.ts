@@ -100,14 +100,15 @@ export function usePanelPresence<T>(
       setPresent(true);
       return;
     }
-    if (!animated) {
+    if (!animated || retainedRef.current?.scopeKey !== scopeKey) {
+      retainedRef.current = null;
       setPresent(false);
       return;
     }
 
     const timeout = window.setTimeout(() => setPresent(false), durationMs);
     return () => window.clearTimeout(timeout);
-  }, [animated, durationMs, open]);
+  }, [animated, durationMs, open, scopeKey]);
 
   const retainedValue =
     retainedRef.current?.scopeKey === scopeKey ? retainedRef.current.value : null;

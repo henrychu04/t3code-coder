@@ -77,3 +77,14 @@ it("retains closing content for the configured duration, then releases it", asyn
   });
   expect(host.textContent).toBe("absent");
 });
+
+it("does not resurrect closed content after leaving and returning to its thread", async () => {
+  await render(true, "a");
+  await render(false, "a");
+  expect(host.textContent).toBe("a");
+  await render(false, "b");
+  await render(false, "a");
+  expect(host.textContent).toBe("absent");
+  await render(true, "a");
+  expect(host.textContent).toBe("a");
+});

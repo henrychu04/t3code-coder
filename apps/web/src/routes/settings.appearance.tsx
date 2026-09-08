@@ -247,7 +247,6 @@ function AppearanceSettingsView() {
       </SettingsSection>
 
       <SettingsSection title="Motion">
-        {" "}
         <SettingsRow
           id="panel-animations"
           title="Panel animations"
