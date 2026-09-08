@@ -71,3 +71,16 @@ menu and choose **Regenerate title**; while it is generating, the action is disa
 thread in the current project without asking. A new thread inherits sensible defaults from your
 project and picks up the branch and [worktree](./source-control.md#worktrees) choices from the
 branch toolbar, not from whichever thread you were last reading.
+
+## Automatic review panels
+
+Enable **Proactive panels** in **Settings → Preferences → Editor and history** to automatically
+open a linked GitLab merge request or a completed turn's changed-file diff when entering a thread
+or when new results arrive. This preference is off by default and does not open the narrow-screen
+panel sheet automatically. Merge requests take priority over diffs. Closing or selecting a panel
+while data loads prevents delayed automatic requests from replacing that choice; a new running
+turn can trigger automatic panels again.
+
+Recognized GitLab merge-request links in MR descriptions and comments open in the current panel.
+On the merge-request page, navigation also updates the selected MR in the page URL. External media
+attachments remain inert.

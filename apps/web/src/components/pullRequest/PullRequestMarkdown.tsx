@@ -1,5 +1,5 @@
-import { ExternalLinkIcon, PaperclipIcon, PlayIcon } from "lucide-react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { PaperclipIcon, PlayIcon } from "lucide-react";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext, useMemo } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
@@ -8,19 +8,12 @@ import { cn } from "~/lib/utils";
 import ChatMarkdown from "../ChatMarkdown";
 import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
-export const PullRequestMarkdownContext = createContext<string | null>(null);
+export const PullRequestMarkdownContext = createContext<{
+  repositoryUrl: string | null;
+  panelRef?: ScopedThreadRef | undefined;
+}>({ repositoryUrl: null });
 
-/**
- * A pull request body, rendered with the app's markdown renderer plus a card for each upload
- * embedded in it, which that renderer drops on the floor.
- *
- * The card links out instead of playing in place, because nothing here can play. A
- * `github.com/user-attachments/assets/…` link is a 302 to a signed S3 URL that serves the file
- * as uploaded — `video/quicktime` for anything recorded on a Mac, which no Chromium decodes —
- * and the desktop window's content policy declares no `media-src`, so media falls back to
- * `default-src 'self'` and every remote source is refused before a byte is fetched. A player
- * here can only be the box that never fills in; a card that opens the host is a real answer.
- */
+/** MR markdown keeps recognized GitLab navigation internal and external media inert. */
 export function PullRequestMarkdown({
   text,
   hostUrl,
@@ -35,7 +28,7 @@ export function PullRequestMarkdown({
   className?: string;
 }) {
   const segments = splitPullRequestBody(text, hostUrl);
-  const repositoryUrl = useContext(PullRequestMarkdownContext);
+  const { repositoryUrl, panelRef } = useContext(PullRequestMarkdownContext);
   const extraRemarkPlugins = useMemo<NonNullable<ReactMarkdownOptions["remarkPlugins"]>>(
     () => (repositoryUrl ? [[remarkPullRequestAutolinks, { repositoryUrl }]] : []),
     [repositoryUrl],
@@ -50,6 +43,7 @@ export function PullRequestMarkdown({
               text={segment.text}
               cwd={cwd}
               environmentId={environmentId}
+              panelRef={panelRef}
               extraRemarkPlugins={extraRemarkPlugins}
             />
           );
@@ -57,24 +51,17 @@ export function PullRequestMarkdown({
         const isVideo = segment.media === "video";
         const Icon = isVideo ? PlayIcon : PaperclipIcon;
         return (
-          // A plain anchor rather than the page's openExternal button: the desktop window
-          // turns a blocked _blank into openExternal itself, and in a browser tab — where
-          // there is no shell to call — this is the only one of the two that goes anywhere.
-          <a
+          <div
             key={segment.id}
-            href={segment.url}
-            rel="noreferrer noopener"
-            target="_blank"
-            className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60"
+            className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm"
           >
             <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">
               {isVideo
-                ? `Play video on ${segment.hostLabel}`
-                : `Open attachment on ${segment.hostLabel}`}
+                ? `Video attachment on ${segment.hostLabel}`
+                : `Attachment on ${segment.hostLabel}`}
             </span>
-            <ExternalLinkIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-          </a>
+          </div>
         );
       })}
     </div>

@@ -374,6 +374,7 @@ export function PullRequestDetailPanel({
   onStateChange,
   context = "page",
   composerDraftTarget,
+  panelRef,
 }: {
   environmentId: EnvironmentId;
   reference: PullRequestRef;
@@ -411,6 +412,7 @@ export function PullRequestDetailPanel({
    * land here instead of opening a new thread — the branch is already under the reader's feet.
    */
   composerDraftTarget?: ScopedThreadRef | DraftId;
+  panelRef?: ScopedThreadRef | undefined;
 }) {
   const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
@@ -514,6 +516,7 @@ export function PullRequestDetailPanel({
     [activity, coreDetail],
   );
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
+  const markdownContext = useMemo(() => ({ repositoryUrl, panelRef }), [repositoryUrl, panelRef]);
   const branchRefsQuery = useEnvironmentQuery(
     detail === null
       ? null
@@ -1951,7 +1954,7 @@ export function PullRequestDetailPanel({
             {...(unavailableGitHubUrl ? { gitHubUrl: unavailableGitHubUrl } : {})}
           />
         ) : detail ? (
-          <PullRequestMarkdownContext value={repositoryUrl}>
+          <PullRequestMarkdownContext value={markdownContext}>
             {mountedTabs.has("summary") ? (
               <div className={cn("absolute inset-0", tab !== "summary" && "invisible")}>
                 <PullRequestSummaryTab

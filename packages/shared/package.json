@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./threadReference": "./src/threadReference.ts",
     "./testing/*": "./src/testing/*.ts",
     "./themePalettes": {
       "types": "./src/themePalettes.ts",

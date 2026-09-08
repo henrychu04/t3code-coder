@@ -42,6 +42,7 @@ export default defineConfig({
       "apps/server/src/serverSettings.persistence.test.ts",
       "apps/server/src/serverSettings.redaction.test.ts",
       "apps/server/src/terminal/NodePtyAdapter.test.ts",
+      "apps/server/src/terminal/Manager.test.ts",
       "apps/server/src/orchestration/Layers/ProviderCommandReactor.test.ts",
       "apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.test.ts",
       "apps/server/src/workspace/*.test.ts",

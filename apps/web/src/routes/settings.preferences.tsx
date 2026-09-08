@@ -251,6 +251,20 @@ function GeneralSettingsView() {
 
       <SettingsSection title="Editor and history">
         <SettingsRow
+          id="proactive-panels"
+          title="Proactive panels"
+          description="Automatically open linked merge requests and completed-turn diffs when entering or working in a thread."
+          control={
+            <Switch
+              aria-label="Proactive panels"
+              checked={settings.proactivePanelsEnabled}
+              onCheckedChange={(checked) =>
+                updateSettings({ proactivePanelsEnabled: Boolean(checked) })
+              }
+            />
+          }
+        />
+        <SettingsRow
           id="composer-collapse-on-scroll"
           title="Collapse composer when scrolling"
           description="Rest the composer when you scroll through an existing conversation."

@@ -1,8 +1,14 @@
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { toastManager } from "../components/ui/toast";
+
+import { resolveShortcutCommand } from "../keybindings";
+
+import { isTerminalFocused } from "../lib/terminalFocus";
 import { Spinner } from "~/components/ui/spinner";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { pullRequestFilterProjects } from "../components/pullRequest/pullRequestProjectFilter.logic";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { pullRequestHostOf, ThreadId } from "@t3tools/contracts";
+import { pullRequestHostOf } from "@t3tools/contracts";
 import type {
   EnvironmentId,
   ProjectId,
@@ -117,6 +123,7 @@ import { SidebarInset } from "../components/ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useLiveRefresh } from "../hooks/useLiveRefresh";
 import {
+  PULL_REQUESTS_PANEL_REF,
   selectActiveRightPanelSurface,
   isPullRequestSurface,
   pullRequestSurface,
@@ -128,7 +135,7 @@ import {
 } from "../rightPanelStore";
 import { useDebouncedValue } from "../state/queries";
 import { useAllEnvironmentShellsBootstrapped, useProjects } from "../state/entities";
-import { useEnvironments } from "../state/environments";
+import { useEnvironmentKeybindings, useEnvironments } from "../state/environments";
 import {
   pullRequestEnvironment,
   usePullRequestList,
@@ -211,15 +218,6 @@ const PAGE_SIZE = 99;
 const MAX_PAGE_SIZE = 500;
 /** Stable empty map so the memos below do not see a new object on every render. */
 const EMPTY_VIEWERS: PullRequestListResult["viewers"] = {};
-/** The list owns one environment-scoped right panel rather than borrowing a real thread's. */
-const PULL_REQUESTS_PANEL_ID = ThreadId.make("pull-requests-panel");
-/**
- * A fixed sentinel, not a real server: the panel is one workspace-level surface list (each
- * surface already carries the server it was read from), so its store key must not move when a
- * capable server disconnects or reconnects. Real environment ids are server-generated UUIDs, so
- * this string can never collide with one.
- */
-const PULL_REQUESTS_PANEL_ENVIRONMENT_ID = "pull-requests-panel" as EnvironmentId;
 /** Stable so a read that is not wanted right now does not re-key on every render. */
 const NO_LIST_TARGETS: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>> = [];
 const EMPTY_PREVIEW_SESSIONS = {};
@@ -434,13 +432,8 @@ function PullRequestsRouteView() {
   // read from, so tabs from two of them sit side by side instead of replacing each other. Its ref
   // uses a fixed sentinel environment, not whichever server happens to sort first, so the tab
   // strip survives a capable server disconnecting or losing the pull-requests capability.
-  const rightPanelRef = useMemo(
-    () =>
-      capableEnvironments.length === 0
-        ? null
-        : scopeThreadRef(PULL_REQUESTS_PANEL_ENVIRONMENT_ID, PULL_REQUESTS_PANEL_ID),
-    [capableEnvironments.length],
-  );
+  const rightPanelRef = capableEnvironments.length === 0 ? null : PULL_REQUESTS_PANEL_REF;
+  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(rightPanelRef);
   const rightPanelState = useRightPanelStore((state) =>
     selectThreadRightPanelState(state.byThreadKey, rightPanelRef),
   );
@@ -460,6 +453,39 @@ function PullRequestsRouteView() {
   const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
     Record<string, PullRequestTabStatus>
   >({});
+  const copyKeybindings = useEnvironmentKeybindings(panelEnvironmentId);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !openPanelPullRequestUrl) return;
+      if (
+        resolveShortcutCommand(event, copyKeybindings, {
+          context: { terminalFocus: isTerminalFocused() },
+        }) !== "thread.copyReference"
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.repeat) return;
+      void writeTextToClipboard(openPanelPullRequestUrl, "merge request link")
+        .then((didCopy) => {
+          if (didCopy)
+            toastManager.add({
+              type: "success",
+              title: "MR link copied",
+              description: openPanelPullRequestUrl,
+            });
+        })
+        .catch((error: unknown) =>
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy MR link",
+            description: error instanceof Error ? error.message : "Clipboard unavailable.",
+          }),
+        );
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [copyKeybindings, openPanelPullRequestUrl]);
   // Keyed by the surface the panel is showing rather than by a key rebuilt from the status: a
   // surface opened from this page carries the environment its row was listed under, and a key
   // assembled from the pull request alone would never name that surface back.
@@ -1840,6 +1866,7 @@ function PullRequestsRouteView() {
             pullRequestStatuses={pullRequestTabStatuses}
           >
             <PullRequestDetailPanel
+              panelRef={rightPanelRef ?? undefined}
               key={activePullRequestSurface.id}
               environmentId={panelEnvironmentId}
               reference={{

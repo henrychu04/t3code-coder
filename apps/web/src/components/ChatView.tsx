@@ -1,3 +1,7 @@
+import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
+import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
+import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+
 import { shallow } from "zustand/shallow";
 import { projectSettingsTarget } from "../projectSettingsTarget";
 import {
@@ -55,6 +59,7 @@ import {
   Suspense,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -132,6 +137,7 @@ import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import {
+  pullRequestSurface,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
@@ -166,12 +172,16 @@ import {
   Minimize2Icon,
   WifiOffIcon,
 } from "lucide-react";
-import { cn, randomHex } from "~/lib/utils";
+
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { newMessageId, newThreadId } from "~/lib/utils";
+import { cn, randomHex, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities, resolveSelectableProvider } from "../providerModels";
 import { NO_PROVIDER_MODEL_SELECTION } from "../providerInstances";
-import { useClientSettings, useEnvironmentSettings } from "../hooks/useSettings";
+import {
+  useClientSettings,
+  useClientSettingsHydrated,
+  useEnvironmentSettings,
+} from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -268,6 +278,11 @@ import {
   runMobileComposerTransition,
 } from "./chat/draftHeroTransition";
 import {
+  observeProactivePanelUserChoice,
+  shouldOpenProactivePullRequest,
+  shouldOpenProactiveTurnDiff,
+  shouldRetargetThreadPullRequestPanel,
+  resolveProactiveTurnDiffAction,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
@@ -1304,6 +1319,7 @@ export default function ChatView(props: ChatViewProps) {
   }, [routeKind, routeThreadRef, routeThreadState]);
   const markThreadVisited = useUiStateStore((store) => store.markThreadVisited);
   const settings = useEnvironmentSettings(environmentId);
+  const clientSettingsHydrated = useClientSettingsHydrated();
   const setStickyComposerModelSelection = useComposerDraftStore(
     (store) => store.setStickyModelSelection,
   );
@@ -2110,9 +2126,167 @@ export default function ChatView(props: ChatViewProps) {
   const isGitRepo = gitStatusQuery.data?.isRepo ?? true;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
+  const activeThreadMetadata = routeServerThreadShell ?? activeThread;
   const linkedThreadPullRequest =
-    activeThread?.linkedPullRequest ?? activeThread?.branchPullRequest ?? null;
+    activeThreadMetadata?.linkedPullRequest ?? activeThreadMetadata?.branchPullRequest ?? null;
   const activeProjectRepository = gitLabRepository;
+  const openPanelPullRequestUrl = useOpenPanelPullRequestUrl(activeThreadRef);
+  const referenceCopyTarget = activeThreadRef
+    ? resolveThreadReferenceCopyTarget({
+        threadId: activeThreadRef.threadId,
+        openPanelPullRequestUrl,
+        linkedPullRequestUrl: linkedThreadPullRequest?.url ?? null,
+      })
+    : null;
+  const copyThreadReference = useEffectEvent((event: KeyboardEvent) => {
+    if (!referenceCopyTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.repeat) return;
+    void writeTextToClipboard(referenceCopyTarget.value, referenceCopyTarget.clipboardTarget)
+      .then((didCopy) => {
+        if (didCopy)
+          toastManager.add({
+            type: "success",
+            title: referenceCopyTarget.successTitle,
+            description: referenceCopyTarget.value,
+          });
+      })
+      .catch((error: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: "Failed to copy reference",
+          description: error instanceof Error ? error.message : "Clipboard unavailable.",
+        }),
+      );
+  });
+  const linkedThreadPullRequestKey = linkedThreadPullRequest
+    ? JSON.stringify([
+        linkedThreadPullRequest.projectId,
+        linkedThreadPullRequest.repository,
+        linkedThreadPullRequest.number,
+      ])
+    : null;
+  const observedThreadPullRequestRef = useRef<{
+    readonly threadKey: string;
+    readonly reference: typeof linkedThreadPullRequest;
+  } | null>(null);
+  const proactivePanelObservationRef = useRef<ReturnType<
+    typeof observeProactivePanelUserChoice
+  > | null>(null);
+
+  useEffect(() => {
+    if (!isServerThread || activeThreadKey === null || activeThreadRef === null) {
+      proactivePanelObservationRef.current = null;
+      observedThreadPullRequestRef.current = null;
+      return;
+    }
+    const panels = useRightPanelStore.getState();
+    const observation = observeProactivePanelUserChoice(proactivePanelObservationRef.current, {
+      threadKey: activeThreadKey,
+      runningTurnId: activeRunningTurnId,
+      userActionRevision: panels.getUserActionRevision(activeThreadRef),
+    });
+    proactivePanelObservationRef.current = observation;
+    const {
+      runningTurnId: previousRunningTurnId,
+      targetKey: previousTargetKey,
+      userActionRevision,
+    } = observation;
+    const openSurface = selectActiveRightPanelSurface(panels.byThreadKey, activeThreadRef);
+    const previousPullRequest = observedThreadPullRequestRef.current;
+    observedThreadPullRequestRef.current = {
+      threadKey: activeThreadKey,
+      reference: linkedThreadPullRequest,
+    };
+    const followSelectedPullRequest =
+      previousPullRequest?.threadKey === activeThreadKey &&
+      shouldRetargetThreadPullRequestPanel(
+        previousPullRequest.reference,
+        linkedThreadPullRequest,
+        openSurface,
+      );
+    // Following the selected linked PR does not open an unrelated panel, so it
+    // remains available with proactive panels off. It still respects a later choice.
+    if (followSelectedPullRequest && linkedThreadPullRequest !== null) {
+      panels.openProactive(
+        activeThreadRef,
+        pullRequestSurface(linkedThreadPullRequest),
+        userActionRevision,
+      );
+    }
+    if (!clientSettingsHydrated || threadDetailLoading) return;
+
+    const settledTurnId = latestTurnSettled ? (activeLatestTurn?.turnId ?? null) : null;
+    const newlyCompletedTurnId = shouldOpenProactiveTurnDiff({
+      previousRunningTurnId,
+      runningTurnId: activeRunningTurnId,
+      settledTurnId,
+      turnCompleted: activeLatestTurn?.state === "completed",
+    })
+      ? settledTurnId
+      : null;
+    const proactivePanelsEnabled = settings.proactivePanelsEnabled && !shouldUseRightPanelSheet;
+    const eligibleCompletion = proactivePanelsEnabled && newlyCompletedTurnId !== null;
+    const completedCheckpoint = eligibleCompletion
+      ? activeThread?.checkpoints.find((checkpoint) => checkpoint.turnId === newlyCompletedTurnId)
+      : undefined;
+    const diffAction = eligibleCompletion
+      ? resolveProactiveTurnDiffAction({
+          checkpoint: completedCheckpoint,
+          isGitRepo: gitStatusQuery.data?.isRepo,
+        })
+      : "ignore";
+    const eligibleLink =
+      proactivePanelsEnabled &&
+      shouldOpenProactivePullRequest(previousTargetKey, linkedThreadPullRequestKey);
+    const shouldDeferLink = eligibleLink && !pullRequestsCapabilityKnown;
+    proactivePanelObservationRef.current = {
+      ...observation,
+      // Preserve first-entry eligibility while the checkpoint or repository is loading.
+      runningTurnId: diffAction === "defer" ? previousRunningTurnId : activeRunningTurnId,
+      targetKey: shouldDeferLink ? (previousTargetKey ?? null) : linkedThreadPullRequestKey,
+    };
+
+    if (
+      !followSelectedPullRequest &&
+      eligibleLink &&
+      pullRequestsCapabilityKnown &&
+      supportsPullRequests &&
+      linkedThreadPullRequest !== null
+    ) {
+      panels.openProactive(
+        activeThreadRef,
+        pullRequestSurface(linkedThreadPullRequest),
+        userActionRevision,
+      );
+    }
+    if (diffAction !== "open" || newlyCompletedTurnId === null) return;
+    if (!panels.openProactive(activeThreadRef, { id: "diff", kind: "diff" }, userActionRevision)) {
+      return;
+    }
+    useDiffPanelStore.getState().selectTurn(activeThreadRef, newlyCompletedTurnId);
+    onDiffPanelOpen?.();
+  }, [
+    activeThread?.checkpoints,
+    activeLatestTurn?.turnId,
+    activeLatestTurn?.state,
+    activeRunningTurnId,
+    activeThreadKey,
+    activeThreadRef,
+    clientSettingsHydrated,
+    gitStatusQuery.data?.isRepo,
+    isServerThread,
+    latestTurnSettled,
+    linkedThreadPullRequest,
+    linkedThreadPullRequestKey,
+    onDiffPanelOpen,
+    pullRequestsCapabilityKnown,
+    settings.proactivePanelsEnabled,
+    shouldUseRightPanelSheet,
+    supportsPullRequests,
+    threadDetailLoading,
+  ]);
   const threadRepository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     activeThreadRef?.environmentId ?? null,
@@ -4349,6 +4523,10 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "thread.copyReference") {
+        copyThreadReference(event);
+        return;
+      }
       if (command === "rightPanel.toggle") {
         event.preventDefault();
         event.stopPropagation();
