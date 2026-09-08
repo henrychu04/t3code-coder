@@ -162,3 +162,19 @@ describe("Claude auto-compaction settings", () => {
     },
   );
 });
+
+describe("workspace merge method settings", () => {
+  it("defaults legacy settings and accepts resettable project overrides", () => {
+    expect(decodeServerSettings({}).pullRequestMergeMethod).toBe("merge");
+    expect(decodeServerSettings({}).pullRequestMergeMethodOverrides).toEqual({});
+    expect(
+      decodeServerSettingsPatch({ pullRequestMergeMethodOverrides: { project: null } })
+        .pullRequestMergeMethodOverrides,
+    ).toEqual({ project: null });
+    expect(() => decodeServerSettingsPatch({ pullRequestMergeMethod: "fast-forward" })).toThrow();
+    expect(() =>
+      decodeServerSettingsPatch({ pullRequestMergeMethodOverrides: { project: "fast-forward" } }),
+    ).toThrow();
+    expect("pullRequestMergeMethodOverrides" in decodeClientSettings({})).toBe(false);
+  });
+});

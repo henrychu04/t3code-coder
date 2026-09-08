@@ -224,15 +224,7 @@ function CoderCommandPaletteDialog(props: {
         description: [targetProject.workspaceRoot, targetProject.environmentLabel]
           .filter(Boolean)
           .join(" · "),
-        icon: (
-          <ProjectFavicon
-            className="size-4 shrink-0"
-            cwd={targetProject.workspaceRoot}
-            projectName={targetProject.title}
-            environmentId={targetProject.environmentId}
-            faviconPath={targetProject.faviconPath}
-          />
-        ),
+        icon: <ProjectFavicon project={targetProject} className="size-4 shrink-0" />,
         run: async () => {
           await handleNewThread(scopeProjectRef(targetProject.environmentId, targetProject.id));
         },
@@ -299,9 +291,7 @@ function CoderCommandPaletteDialog(props: {
         titleTrailingContent: <ThreadRowTrailingStatus thread={thread} />,
         description: (
           <ThreadCommandSubtitle
-            environmentId={thread.environmentId}
-            projectCwd={project?.workspaceRoot ?? null}
-            projectFaviconPath={project?.faviconPath ?? null}
+            project={project ?? null}
             projectTitle={projectTitle}
             branch={thread.branch ?? null}
             worktreePath={thread.worktreePath ?? null}

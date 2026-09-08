@@ -142,7 +142,7 @@ function processFailureDetail(error: VcsError): string {
  * reject it without changing state; reaching that rejection proves the workspace allowed the
  * request to leave. The behavior stays replaceable as GS policy responses become better known.
  */
-export const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
+const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
   request: () => ({
     args: ["api", "--method", "POST", "projects/0/merge_requests"],
   }),
@@ -175,6 +175,7 @@ export class GitLabWriteProbe extends Context.Service<
   }
 >()("t3/sourceControl/GitLabWriteProbe") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export function make(behavior: GitLabWriteProbeBehavior = workspacePolicyWriteProbe) {
   return Effect.gen(function* () {
     const process = yield* VcsProcess.VcsProcess;

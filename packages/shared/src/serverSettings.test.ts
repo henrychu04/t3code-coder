@@ -155,3 +155,20 @@ describe("workspace project defaults", () => {
     expect(next.projectAutoPullOverrides[id]).toBe(false);
   });
 });
+
+describe("workspace merge method defaults", () => {
+  it("preserves other projects and clears only the requested override", () => {
+    const a = ProjectId.make("project-a");
+    const b = ProjectId.make("project-b");
+    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      pullRequestMergeMethod: "squash",
+      pullRequestMergeMethodOverrides: { [a]: "merge", [b]: "rebase" },
+    });
+    const next = applyServerSettingsPatch(initial, {
+      pullRequestMergeMethodOverrides: { [a]: null },
+    });
+    expect(next.pullRequestMergeMethodOverrides).toEqual({ [b]: "rebase" });
+    expect(next.pullRequestMergeMethod).toBe("squash");
+    expect(initial.pullRequestMergeMethodOverrides[a]).toBe("merge");
+  });
+});

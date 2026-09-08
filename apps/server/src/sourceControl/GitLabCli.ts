@@ -37,7 +37,7 @@ const gitLabCliDecodeErrorContext = {
   cause: Schema.Defect(),
 };
 
-export class GitLabCliUnavailableError extends Schema.TaggedErrorClass<GitLabCliUnavailableError>()(
+export class GitLabCliUnavailableError extends Schema.TaggedError<GitLabCliUnavailableError>()(
   "GitLabCliUnavailableError",
   gitLabCliExecutionErrorContext,
 ) {
@@ -50,7 +50,7 @@ export class GitLabCliUnavailableError extends Schema.TaggedErrorClass<GitLabCli
   }
 }
 
-export class GitLabCliAuthenticationError extends Schema.TaggedErrorClass<GitLabCliAuthenticationError>()(
+export class GitLabCliAuthenticationError extends Schema.TaggedError<GitLabCliAuthenticationError>()(
   "GitLabCliAuthenticationError",
   gitLabCliExecutionErrorContext,
 ) {
@@ -63,7 +63,7 @@ export class GitLabCliAuthenticationError extends Schema.TaggedErrorClass<GitLab
   }
 }
 
-export class GitLabCliRateLimitError extends Schema.TaggedErrorClass<GitLabCliRateLimitError>()(
+export class GitLabCliRateLimitError extends Schema.TaggedError<GitLabCliRateLimitError>()(
   "GitLabCliRateLimitError",
   gitLabCliExecutionErrorContext,
 ) {
@@ -76,7 +76,7 @@ export class GitLabCliRateLimitError extends Schema.TaggedErrorClass<GitLabCliRa
   }
 }
 
-export class GitLabWriteUnavailableError extends Schema.TaggedErrorClass<GitLabWriteUnavailableError>()(
+export class GitLabWriteUnavailableError extends Schema.TaggedError<GitLabWriteUnavailableError>()(
   "GitLabWriteUnavailableError",
   {
     operation: Schema.Literal("execute"),
@@ -110,7 +110,7 @@ export class GitLabWriteUnavailableError extends Schema.TaggedErrorClass<GitLabW
   }
 }
 
-export class GitLabMergeRequestNotFoundError extends Schema.TaggedErrorClass<GitLabMergeRequestNotFoundError>()(
+export class GitLabMergeRequestNotFoundError extends Schema.TaggedError<GitLabMergeRequestNotFoundError>()(
   "GitLabMergeRequestNotFoundError",
   {
     ...gitLabCliExecutionErrorContext,
@@ -149,7 +149,7 @@ export class GitLabMergeRequestNotFoundError extends Schema.TaggedErrorClass<Git
   }
 }
 
-export class GitLabCliCommandError extends Schema.TaggedErrorClass<GitLabCliCommandError>()(
+export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandError>()(
   "GitLabCliCommandError",
   gitLabCliExecutionErrorContext,
 ) {
@@ -195,7 +195,7 @@ export class GitLabCliCommandError extends Schema.TaggedErrorClass<GitLabCliComm
   }
 }
 
-export class GitLabMergeRequestListDecodeError extends Schema.TaggedErrorClass<GitLabMergeRequestListDecodeError>()(
+export class GitLabMergeRequestListDecodeError extends Schema.TaggedError<GitLabMergeRequestListDecodeError>()(
   "GitLabMergeRequestListDecodeError",
   {
     ...gitLabCliDecodeErrorContext,
@@ -211,7 +211,7 @@ export class GitLabMergeRequestListDecodeError extends Schema.TaggedErrorClass<G
   }
 }
 
-export class GitLabMergeRequestDecodeError extends Schema.TaggedErrorClass<GitLabMergeRequestDecodeError>()(
+export class GitLabMergeRequestDecodeError extends Schema.TaggedError<GitLabMergeRequestDecodeError>()(
   "GitLabMergeRequestDecodeError",
   {
     ...gitLabCliDecodeErrorContext,
@@ -228,7 +228,7 @@ export class GitLabMergeRequestDecodeError extends Schema.TaggedErrorClass<GitLa
   }
 }
 
-export class GitLabRepositoryDecodeError extends Schema.TaggedErrorClass<GitLabRepositoryDecodeError>()(
+export class GitLabRepositoryDecodeError extends Schema.TaggedError<GitLabRepositoryDecodeError>()(
   "GitLabRepositoryDecodeError",
   {
     ...gitLabCliDecodeErrorContext,
@@ -250,7 +250,7 @@ export class GitLabRepositoryDecodeError extends Schema.TaggedErrorClass<GitLabR
   }
 }
 
-export class GitLabNamespaceDecodeError extends Schema.TaggedErrorClass<GitLabNamespaceDecodeError>()(
+export class GitLabNamespaceDecodeError extends Schema.TaggedError<GitLabNamespaceDecodeError>()(
   "GitLabNamespaceDecodeError",
   {
     ...gitLabCliDecodeErrorContext,
@@ -280,7 +280,6 @@ export const GitLabCliError = Schema.Union([
   GitLabNamespaceDecodeError,
 ]);
 export type GitLabCliError = typeof GitLabCliError.Type;
-export const isGitLabCliError = Schema.is(GitLabCliError);
 
 export interface GitLabMergeRequestSummary {
   readonly number: number;
@@ -473,6 +472,7 @@ function parseRepositoryPath(repository: string): {
   return { namespacePath, projectPath };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const process = yield* VcsProcess.VcsProcess;
   const writeProbe = yield* GitLabWriteProbe.GitLabWriteProbe;

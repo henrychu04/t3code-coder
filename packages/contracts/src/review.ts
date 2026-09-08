@@ -46,7 +46,7 @@ export type ReviewDiffFileContentsResult = typeof ReviewDiffFileContentsResult.T
 export const MAX_REVIEW_DIFF_FILE_BYTES = 32 * 1024 * 1024;
 export const MAX_REVIEW_DIFF_FILE_CHUNK_BYTES = 512 * 1024;
 
-export class ReviewDiffFileTooLargeError extends Schema.TaggedErrorClass<ReviewDiffFileTooLargeError>()(
+export class ReviewDiffFileTooLargeError extends Schema.TaggedError<ReviewDiffFileTooLargeError>()(
   "ReviewDiffFileTooLargeError",
   {
     path: TrimmedNonEmptyString,

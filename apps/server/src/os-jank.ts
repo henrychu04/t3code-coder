@@ -48,7 +48,7 @@ export function hydratePosixHome(
   }
 }
 
-export const fixPath = Effect.fn("fixPath")(function* (): Effect.fn.Return<
+const fixPath = Effect.fn("fixPath")(function* (): Effect.fn.Return<
   void,
   never,
   FileSystem.FileSystem | Path.Path
@@ -91,7 +91,7 @@ export const fixPath = Effect.fn("fixPath")(function* (): Effect.fn.Return<
   );
 });
 
-export const expandHomePath = Effect.fn(function* (input: string) {
+const expandHomePath = Effect.fn(function* (input: string) {
   const { join } = yield* Path.Path;
   if (input === "~") {
     return NodeOS.homedir();
@@ -102,7 +102,7 @@ export const expandHomePath = Effect.fn(function* (input: string) {
   return input;
 });
 
-export const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
+const resolveBaseDir = Effect.fn(function* (raw: string | undefined) {
   const { join, resolve } = yield* Path.Path;
   if (!raw || raw.trim().length === 0) {
     return join(NodeOS.homedir(), ".t3");

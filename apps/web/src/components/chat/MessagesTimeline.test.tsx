@@ -146,6 +146,7 @@ function matchMedia() {
 }
 
 let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
+let TimelineMinimap: typeof import("./MessagesTimeline").TimelineMinimap;
 let buildToolCallExpandedBody: typeof import("./MessagesTimeline").buildToolCallExpandedBody;
 
 beforeAll(async () => {
@@ -180,7 +181,8 @@ beforeAll(async () => {
     },
   });
 
-  ({ MessagesTimeline, buildToolCallExpandedBody } = await import("./MessagesTimeline"));
+  ({ MessagesTimeline, TimelineMinimap, buildToolCallExpandedBody } =
+    await import("./MessagesTimeline"));
 }, 30_000);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
@@ -248,6 +250,28 @@ function buildAssistantTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
+  it.each([0, 1, 19, 20, 40])("keeps navigation controls inside a %ipx gutter", (hitStripWidth) => {
+    const markup = renderToStaticMarkup(
+      <TimelineMinimap
+        items={[0, 1, 2].map((index) => ({
+          id: `turn-${index}`,
+          rowIndex: index,
+          userText: `Turn ${index}`,
+          assistantText: null,
+        }))}
+        currentIndex={1}
+        hasPersistentGutter={false}
+        hitStripWidth={hitStripWidth}
+        stripMap={new Map()}
+        onSelect={() => {}}
+      />,
+    );
+    for (const label of ["Previous turn", "Next turn"]) {
+      if (hitStripWidth >= 20) expect(markup).toContain(`aria-label="${label}"`);
+      else expect(markup).not.toContain(`aria-label="${label}"`);
+    }
+  });
+
   it("renders the worked-for row at assistant response text size", () => {
     const turnId = TurnId.make("turn-with-fold");
     const assistantEntry = buildAssistantTimelineEntry("Done.");
@@ -358,6 +382,7 @@ describe("MessagesTimeline", () => {
     const {
       resolveTimelineIsAtEnd,
       resolveTimelineMinimapHasPersistentGutter,
+      resolveTimelineMinimapCurrentIndex,
       resolveTimelineMinimapHeightStyle,
       resolveTimelineMinimapHitStripWidth,
       resolveTimelineMinimapIndexFromPointer,
@@ -414,6 +439,35 @@ describe("MessagesTimeline", () => {
         pointerY: 999,
       }),
     ).toBe(100);
+    expect(
+      resolveTimelineMinimapCurrentIndex({
+        scrollTop: 100,
+        scrollBottom: 500,
+        itemBounds: [
+          { top: 80, height: 20 },
+          { top: 120, height: 20 },
+          { top: 220, height: 20 },
+        ],
+      }),
+    ).toBe(1);
+    expect(
+      resolveTimelineMinimapCurrentIndex({
+        scrollTop: 150,
+        scrollBottom: 200,
+        itemBounds: [
+          { top: 80, height: 20 },
+          { top: 120, height: 20 },
+          { top: 220, height: 20 },
+        ],
+      }),
+    ).toBe(1);
+    expect(
+      resolveTimelineMinimapCurrentIndex({
+        scrollTop: 0,
+        scrollBottom: 50,
+        itemBounds: [{ top: 80, height: 20 }],
+      }),
+    ).toBeNull();
     expect(resolveTimelineMinimapHasPersistentGutter(832)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(863)).toBe(false);
     expect(resolveTimelineMinimapHasPersistentGutter(864)).toBe(true);

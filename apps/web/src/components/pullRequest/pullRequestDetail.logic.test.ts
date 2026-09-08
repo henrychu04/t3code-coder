@@ -1,3 +1,4 @@
+import { resolvePullRequestMergeMethod } from "./pullRequestDetail.logic";
 import {
   PullRequestAction,
   type PullRequestCheck,
@@ -1267,5 +1268,18 @@ describe("which actions need the host read again after they run", () => {
     ] as const) {
       expect(pullRequestActionNeedsHostRefresh(action)).toBe(false);
     }
+  });
+});
+
+describe("merge method defaults", () => {
+  it("prefers the current MR choice, then project default, then workspace history", () => {
+    const allowed = ["merge", "squash", "rebase"] as const;
+    expect(resolvePullRequestMergeMethod(allowed, "rebase", "squash", "merge")).toBe("rebase");
+    expect(resolvePullRequestMergeMethod(allowed, null, "squash", "merge")).toBe("squash");
+    expect(resolvePullRequestMergeMethod(allowed, null, undefined, "merge")).toBe("merge");
+  });
+  it("falls back to a method allowed by GitLab", () => {
+    expect(resolvePullRequestMergeMethod(["merge"], "rebase", "squash", "rebase")).toBe("merge");
+    expect(resolvePullRequestMergeMethod(["squash"], null, "merge", "rebase")).toBe("squash");
   });
 });

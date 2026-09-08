@@ -127,6 +127,7 @@ export class ScreenshotArtifacts extends Context.Service<
   }
 >()("t3/workspace/ScreenshotArtifacts") {}
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
 

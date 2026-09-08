@@ -115,7 +115,7 @@ export const WorkspaceListDirectoriesResult = Schema.Struct({
 });
 export type WorkspaceListDirectoriesResult = typeof WorkspaceListDirectoriesResult.Type;
 
-export class WorkspaceListDirectoriesError extends Schema.TaggedErrorClass<WorkspaceListDirectoriesError>()(
+export class WorkspaceListDirectoriesError extends Schema.TaggedError<WorkspaceListDirectoriesError>()(
   "WorkspaceListDirectoriesError",
   {
     path: TrimmedNonEmptyString,
@@ -149,7 +149,7 @@ function decodedProjectErrorMessage(props: object): string | undefined {
   return typeof props.message === "string" ? props.message : undefined;
 }
 
-export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSearchEntriesError>()(
+export class ProjectSearchEntriesError extends Schema.TaggedError<ProjectSearchEntriesError>()(
   "ProjectSearchEntriesError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -181,7 +181,7 @@ export class ProjectSearchEntriesError extends Schema.TaggedErrorClass<ProjectSe
   }
 }
 
-export class ProjectTextSearchError extends Schema.TaggedErrorClass<ProjectTextSearchError>()(
+export class ProjectTextSearchError extends Schema.TaggedError<ProjectTextSearchError>()(
   "ProjectTextSearchError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -207,7 +207,7 @@ export class ProjectTextSearchError extends Schema.TaggedErrorClass<ProjectTextS
   }
 }
 
-export class ProjectListEntriesError extends Schema.TaggedErrorClass<ProjectListEntriesError>()(
+export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntriesError>()(
   "ProjectListEntriesError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -302,7 +302,7 @@ function projectFileFailureMessage(
   }
 }
 
-export class ProjectReadFileError extends Schema.TaggedErrorClass<ProjectReadFileError>()(
+export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileError>()(
   "ProjectReadFileError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),
@@ -340,7 +340,7 @@ export const ProjectWriteFileResult = Schema.Struct({
 });
 export type ProjectWriteFileResult = typeof ProjectWriteFileResult.Type;
 
-export class ProjectWriteFileError extends Schema.TaggedErrorClass<ProjectWriteFileError>()(
+export class ProjectWriteFileError extends Schema.TaggedError<ProjectWriteFileError>()(
   "ProjectWriteFileError",
   {
     cwd: Schema.optional(TrimmedNonEmptyString),

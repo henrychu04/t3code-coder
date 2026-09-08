@@ -49,7 +49,7 @@ const QUERY_ENVIRONMENT = new ConnectionTarget({
 
 const QUERY_RPC_SESSION = {} as RpcSession.RpcSession;
 
-class TestQueryError extends Schema.TaggedErrorClass<TestQueryError>()("TestQueryError", {
+class TestQueryError extends Schema.TaggedError<TestQueryError>()("TestQueryError", {
   message: Schema.String,
 }) {}
 

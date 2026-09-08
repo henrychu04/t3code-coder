@@ -104,15 +104,15 @@ export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCa
  *
  * @deprecated use `resolveProviderStatusCachePath` with an instance id.
  */
-export const resolveLegacyProviderStatusCachePath = Effect.fn(
-  "resolveLegacyProviderStatusCachePath",
-)(function* (input: {
-  readonly cacheDir: string;
-  readonly provider: ProviderDriverKind;
-}): Effect.fn.Return<string, never, Path.Path> {
-  const path = yield* Path.Path;
-  return path.join(input.cacheDir, `${input.provider}.json`);
-});
+const resolveLegacyProviderStatusCachePath = Effect.fn("resolveLegacyProviderStatusCachePath")(
+  function* (input: {
+    readonly cacheDir: string;
+    readonly provider: ProviderDriverKind;
+  }): Effect.fn.Return<string, never, Path.Path> {
+    const path = yield* Path.Path;
+    return path.join(input.cacheDir, `${input.provider}.json`);
+  },
+);
 
 export const readProviderStatusCache = (filePath: string) =>
   Effect.gen(function* () {

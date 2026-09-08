@@ -56,7 +56,7 @@ export interface ClaudeScopedLimitNames {
   readonly overageIncluded: string | undefined;
 }
 
-export const makeClaudeScopedLimitNames = Ref.make<ClaudeScopedLimitNames>({
+const makeClaudeScopedLimitNames = Ref.make<ClaudeScopedLimitNames>({
   overageIncluded: undefined,
 });
 
@@ -190,7 +190,7 @@ export function claudeUsageResponseToLimits(input: {
 }
 
 /** Probe-side helper: map the response and remember the scoped names for events. */
-export const recordClaudeUsageResponse = (
+const recordClaudeUsageResponse = (
   namesRef: Ref.Ref<ClaudeScopedLimitNames>,
   input: Parameters<typeof claudeUsageResponseToLimits>[0],
 ): Effect.Effect<ServerProviderUsageLimits> => {

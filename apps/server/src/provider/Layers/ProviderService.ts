@@ -1160,6 +1160,7 @@ export const ProviderServiceLive = Layer.effect(
   makeProviderService(),
 );
 
+/** @public Service construction is part of the canonical Effect module API. */
 export function makeProviderServiceLive() {
   return Layer.effect(ProviderService.ProviderService, makeProviderService());
 }

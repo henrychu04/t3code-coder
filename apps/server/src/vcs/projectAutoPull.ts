@@ -31,7 +31,7 @@ export function automaticPullSkipReason(
   return null;
 }
 
-export const pullProjectIfEligible = Effect.fn("pullProjectIfEligible")(function* (cwd: string) {
+const pullProjectIfEligible = Effect.fn("pullProjectIfEligible")(function* (cwd: string) {
   const workflow = yield* GitWorkflowService.GitWorkflowService;
   yield* workflow.invalidateStatus(cwd);
   const remote = yield* workflow.remoteStatus({ cwd }, { fetch: true });

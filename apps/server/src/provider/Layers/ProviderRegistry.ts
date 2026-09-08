@@ -132,7 +132,7 @@ export const mergeProviderSnapshot = (
         models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
       };
 
-export const mergeProviderSnapshots = (
+const mergeProviderSnapshots = (
   previousProviders: ReadonlyArray<ServerProvider>,
   nextProviders: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ServerProvider> => {
@@ -150,13 +150,13 @@ export const mergeProviderSnapshots = (
   return orderProviderSnapshots([...mergedProviders.values()]);
 };
 
-export const selectProvidersByKind = (
+const selectProvidersByKind = (
   providers: ReadonlyArray<ServerProvider>,
   providerKinds: ReadonlySet<ProviderDriverKind>,
 ): ReadonlyArray<ServerProvider> =>
   providers.filter((provider) => providerKinds.has(provider.driver));
 
-export const haveProvidersChanged = (
+const haveProvidersChanged = (
   previousProviders: ReadonlyArray<ServerProvider>,
   nextProviders: ReadonlyArray<ServerProvider>,
 ): boolean => !Equal.equals(previousProviders, nextProviders);

@@ -33,7 +33,6 @@
  * @module provider/Layers/ProviderInstanceRegistryLive
  */
 import {
-  defaultInstanceIdForDriver,
   providerInstanceConfigEnabledFlag,
   ProviderInstanceId,
   type ProviderInstanceConfig,
@@ -336,6 +335,7 @@ const makeReconcile = <R>(input: {
  * created during `reconcile`. Closing that scope closes every live
  * instance.
  */
+/** @public Service construction is part of the canonical Effect module API. */
 export const makeProviderInstanceRegistry = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
   readonly configMap: ProviderInstanceConfigMap;
@@ -420,6 +420,7 @@ export const makeProviderInstanceRegistry = <R>(input: {
  * Only exposes the public registry tag — hot-reload consumers should use
  * `ProviderInstanceRegistryMutableLayer` (below) or the hydration layer.
  */
+/** @public Service construction is part of the canonical Effect module API. */
 export const ProviderInstanceRegistryLayer = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
   readonly configMap: ProviderInstanceConfigMap;
@@ -448,5 +449,3 @@ export const ProviderInstanceRegistryMutableLayer = <R>(input: {
       ),
     ),
   ) as Layer.Layer<ProviderInstanceRegistry | ProviderInstanceRegistryMutator, never, R>;
-
-export { defaultInstanceIdForDriver };
