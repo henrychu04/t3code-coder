@@ -88,6 +88,7 @@ import {
 import { installFileEditorDismissal } from "./fileEditorDismissal";
 import { HighlightedSearchLine } from "./HighlightedSearchLine";
 import { findTextMatches, type FileTextMatch } from "./fileFind";
+import { retainFileFindFocus } from "./fileFindFocus";
 import { getFileSearchMatches } from "./fileSearchMatches";
 import {
   type FileEditorViewAnchor,
@@ -230,6 +231,7 @@ function FileFindBar(props: {
   const [useRegex, setUseRegex] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const findBarRef = useRef<HTMLDivElement>(null);
   const matchResult = useMemo(
     () =>
       findTextMatches({
@@ -246,9 +248,17 @@ function FileFindBar(props: {
 
   useEffect(() => setSelectedIndex(0), [caseSensitive, query, useRegex, wholeWord]);
   useEffect(() => {
+    if (!props.open || !findBarRef.current) return;
+    return retainFileFindFocus(findBarRef.current);
+  }, [props.open]);
+  useEffect(() => {
     if (!props.open) return;
-    inputRef.current?.focus();
-    inputRef.current?.select();
+    // Let the editor finish its layout before moving focus into the find bar.
+    const frame = requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+      inputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [props.open, props.requestId]);
   useEffect(() => {
     if (!props.open) return;
@@ -263,7 +273,10 @@ function FileFindBar(props: {
   };
 
   return (
-    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/25 px-2">
+    <div
+      ref={findBarRef}
+      className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/25 px-2"
+    >
       <InputGroup className="h-8 min-w-0 flex-1 max-w-xl bg-background">
         <InputGroupAddon>
           <Search className="size-3.5 text-icon-muted" />
