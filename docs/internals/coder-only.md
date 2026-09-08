@@ -93,8 +93,10 @@ released immediately; settled snapshots remain in the bounded memory-only cache.
 The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
 receive a complete capped snapshot. Shell subscriptions coalesce filtered high-frequency activity
-into cursor-only watermarks so reconnect cursors advance without reprojecting sidebar rows. Initial
-thread snapshots target 512 KiB and older pages target 1 MiB by reducing the requested turn window;
+into cursor-only watermarks so reconnect cursors advance without reprojecting sidebar rows. The
+browser applies each bounded received RPC batch with one state write, retaining those watermarks
+and the mandatory synchronization marker. Migration 049 stores manual active-thread order in the
+workspace. Initial thread snapshots target 512 KiB and older pages target 1 MiB by reducing the requested turn window;
 the newest requested turn is always retained, even when that one turn exceeds the target. Older
 pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
 and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff

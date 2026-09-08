@@ -389,6 +389,68 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
     }).pipe(TestClock.withLive),
   );
 
+  it.effect("names native Codex usage-limit failures once on the completed turn", () =>
+    Effect.gen(function* () {
+      const adapter = yield* CodexAdapter;
+      const threadId = asThreadId("usage-limit-thread");
+      yield* adapter.startSession({
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        runtimeMode: "approval-required",
+      });
+      const runtime = runtimeFactory.lastRuntime;
+      NodeAssert.ok(runtime);
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "runtime.error" || event.type === "turn.completed"),
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      const base = {
+        kind: "notification" as const,
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+      };
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("limits"),
+        method: "account/rateLimits/updated",
+        payload: {
+          rateLimits: {
+            limitId: "codex",
+            primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: 1767229200 },
+          },
+        },
+      });
+      const error = {
+        message: "out of credits",
+        codexErrorInfo: "usageLimitExceeded",
+        additionalDetails: null,
+      };
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("limit-error"),
+        method: "error",
+        payload: { threadId, turnId: "turn-1", error, willRetry: false },
+      });
+      yield* runtime.emit({
+        ...base,
+        id: asEventId("limit-completed"),
+        method: "turn/completed",
+        payload: { threadId, turn: { id: "turn-1", status: "failed", items: [], error } },
+      });
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("10 seconds")));
+      NodeAssert.deepStrictEqual(
+        events.map((event) => event.type),
+        ["runtime.error", "turn.completed"],
+      );
+      NodeAssert.match(JSON.stringify(events[0]?.payload), /session limit resets in 1h/);
+      NodeAssert.match(JSON.stringify(events[1]?.payload), /Codex usage limit reached/);
+    }).pipe(TestClock.withLive),
+  );
+
   it.effect("maps async agent questions without ending the turn", () =>
     Effect.gen(function* () {
       const adapter = yield* CodexAdapter;

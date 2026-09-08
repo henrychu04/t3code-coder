@@ -95,12 +95,13 @@ it("does not overwrite settings changed since the form was opened", async () => 
 });
 
 it("disables edits and dispatch when the workspace is disconnected", async () => {
+  const root = await mount();
   mocks.environment.mockReturnValue({
     connection: { phase: "offline" },
     label: "Workspace A",
     serverConfig: null,
   });
-  const root = await mount();
+  await act(async () => renderer!.update(<ProjectSettingsPanel project={project} />));
   expect(root.findByType("fieldset").props.disabled).toBe(true);
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.update).not.toHaveBeenCalled();
@@ -150,5 +151,33 @@ it("reset does not erase a concurrent script edit", async () => {
     .findAllByType("button")
     .find((node) => node.children.join("") === "Use workspace default scripts")!;
   await act(async () => button.props.onClick());
+  expect(mocks.update).not.toHaveBeenCalled();
+});
+
+it("captures hydrated defaults once and preserves edits when later settings become stale", async () => {
+  mocks.environment.mockReturnValue({ connection: { phase: "connected" }, serverConfig: null });
+  await mount();
+  expect(JSON.stringify(renderer!.toJSON())).toContain("Loading project settings");
+  expect(renderer!.root.findAllByType("form")).toHaveLength(0);
+
+  mocks.environment.mockReturnValue({
+    connection: { phase: "connected" },
+    serverConfig: { providers: [] },
+  });
+  mocks.settings.mockReturnValue({ ...DEFAULT_UNIFIED_SETTINGS, defaultAutoPull: true });
+  await act(async () => renderer!.update(<ProjectSettingsPanel project={project} />));
+  const root = renderer!.root;
+  const saveButton = () =>
+    root.findAllByType("button").find((node) => node.props.type === "submit")!;
+  await act(async () =>
+    root.findByType(Input).props.onChange({ target: { value: "Unsaved edit" } }),
+  );
+
+  expect(saveButton().props.disabled).toBe(false);
+  mocks.settings.mockReturnValue(DEFAULT_UNIFIED_SETTINGS);
+  await act(async () => renderer!.update(<ProjectSettingsPanel project={project} />));
+  expect(saveButton().props.disabled).toBe(true);
+  expect(root.findByType(Input).props.value).toBe("Unsaved edit");
+  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.update).not.toHaveBeenCalled();
 });

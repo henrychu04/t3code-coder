@@ -478,6 +478,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
+          active_order_key AS "activeOrderKey",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -517,6 +518,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
+          active_order_key AS "activeOrderKey",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -558,6 +560,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
+          active_order_key AS "activeOrderKey",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -1004,6 +1007,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           snoozed_at AS "snoozedAt",
           pinned_at AS "pinnedAt",
           pin_order_key AS "pinOrderKey",
+          active_order_key AS "activeOrderKey",
           title_regeneration_request_id AS "titleRegenerationRequestId",
           title_regeneration_started_at AS "titleRegenerationStartedAt",
           latest_user_message_at AS "latestUserMessageAt",
@@ -1290,7 +1294,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       WHERE thread_id = ${threadId}
         AND kind IN ('user-input.requested', 'user-input.resolved')
         AND json_extract(payload_json, '$.requestId') = ${requestId}
-      ORDER BY sequence DESC, created_at DESC, activity_id DESC
+      ORDER BY (kind = 'user-input.resolved') DESC, sequence DESC, created_at DESC, activity_id DESC
       LIMIT 1
     `,
   });
@@ -1839,6 +1843,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 snoozedAt: row.snoozedAt,
                 pinnedAt: row.pinnedAt,
                 pinOrderKey: row.pinOrderKey ?? null,
+                activeOrderKey: row.activeOrderKey ?? null,
                 titleRegeneration: mapTitleRegeneration(row),
                 deletedAt: row.deletedAt,
                 messages: messagesByThread.get(row.threadId) ?? [],
@@ -2052,6 +2057,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   snoozedAt: row.snoozedAt,
                   pinnedAt: row.pinnedAt,
                   pinOrderKey: row.pinOrderKey ?? null,
+                  activeOrderKey: row.activeOrderKey ?? null,
                   titleRegeneration: mapTitleRegeneration(row),
                   deletedAt: row.deletedAt,
                   messages: [],
@@ -2193,6 +2199,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       snoozedAt: row.snoozedAt,
                       pinnedAt: row.pinnedAt,
                       pinOrderKey: row.pinOrderKey ?? null,
+                      activeOrderKey: row.activeOrderKey ?? null,
                       titleRegeneration: mapTitleRegeneration(row),
                       session: sessionByThread.get(row.threadId) ?? null,
                       latestUserMessageAt: row.latestUserMessageAt,
@@ -2343,6 +2350,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   snoozedAt: row.snoozedAt,
                   pinnedAt: row.pinnedAt,
                   pinOrderKey: row.pinOrderKey ?? null,
+                  activeOrderKey: row.activeOrderKey ?? null,
                   titleRegeneration: mapTitleRegeneration(row),
                   session: sessionByThread.get(row.threadId) ?? null,
                   latestUserMessageAt: row.latestUserMessageAt,
@@ -2628,6 +2636,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         snoozedAt: threadRow.value.snoozedAt,
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
+        activeOrderKey: threadRow.value.activeOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         session: Option.isSome(sessionRow) ? mapSessionRow(sessionRow.value) : null,
         latestUserMessageAt: threadRow.value.latestUserMessageAt,
@@ -2731,6 +2740,61 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const listRetainedUserInputResolutionIds = SqlSchema.findAll({
+    Request: ThreadActivityIdsLookupInput,
+    Result: ProjectionThreadActivityIdRowSchema,
+    execute: ({ activityIds }) => sql`
+      SELECT MIN(resolution.activity_id) AS "activityId"
+      FROM projection_thread_activities AS request
+      JOIN projection_thread_activities AS resolution
+        ON resolution.thread_id = request.thread_id
+        AND resolution.kind = 'user-input.resolved'
+        AND json_extract(resolution.payload_json, '$.requestId') =
+          json_extract(request.payload_json, '$.requestId')
+      WHERE ${sql.in("request.activity_id", activityIds)}
+        AND request.kind = 'user-input.requested'
+      GROUP BY request.thread_id, json_extract(request.payload_json, '$.requestId')
+    `,
+  });
+
+  // A recent provider request can outlive its unsequenced resolution in the
+  // bounded window. Retain one closure per included question, even when the
+  // closure belongs to a different turn window. Closure is final for a request ID.
+  const retainUserInputResolutions = Effect.fn("retainUserInputResolutions")(function* (
+    activities: OrchestrationThreadActivity[],
+    client: boolean,
+  ) {
+    const requestIds = activities
+      .filter((activity) => activity.kind === "user-input.requested")
+      .map((activity) => activity.id);
+    if (requestIds.length === 0) return activities;
+    const retained = new Map(activities.map((activity) => [activity.id, activity]));
+    for (
+      let offset = 0;
+      offset < requestIds.length;
+      offset += THREAD_DETAIL_ACTIVITY_PAYLOAD_BATCH_SIZE
+    ) {
+      const resolutions = yield* listRetainedUserInputResolutionIds({
+        activityIds: requestIds.slice(offset, offset + THREAD_DETAIL_ACTIVITY_PAYLOAD_BATCH_SIZE),
+      });
+      const missingIds = resolutions
+        .map(({ activityId }) => activityId)
+        .filter((id) => !retained.has(id));
+      if (missingIds.length === 0) continue;
+      const rows = yield* listThreadActivityRowsByIds({ activityIds: missingIds });
+      for (const row of rows) {
+        const activity = mapThreadActivityRow(row);
+        retained.set(activity.id, client ? projectActivityPayload(activity) : activity);
+      }
+    }
+    return [...retained.values()].sort(
+      (left, right) =>
+        (left.sequence ?? -1) - (right.sequence ?? -1) ||
+        left.createdAt.localeCompare(right.createdAt) ||
+        left.id.localeCompare(right.id),
+    );
+  });
+
   const listThreadActivityIdsByThreadWindow = SqlSchema.findAll({
     Request: ThreadTurnRangeLookupInput,
     Result: ProjectionThreadActivityIdRowSchema,
@@ -2816,7 +2880,8 @@ pending_approval_requests AS (
             activity.kind,
             ROW_NUMBER() OVER (
               PARTITION BY json_extract(activity.payload_json, '$.requestId')
-              ORDER BY activity.created_at DESC, activity.activity_id DESC
+              ORDER BY (activity.kind != 'user-input.requested') DESC,
+                activity.created_at DESC, activity.activity_id DESC
             ) AS request_order
           FROM pending_user_input_thread AS pending
           CROSS JOIN projection_thread_activities AS activity
@@ -2850,6 +2915,40 @@ pending_approval_requests AS (
             AND kind = 'user-input.requested'
         )
   `;
+
+  const listPendingRequestActivityRows = SqlSchema.findAll({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId }) => sql`
+      WITH ${pinnedThreadActivityIdsCte(threadId)}
+      SELECT
+        activity.activity_id AS "activityId",
+        activity.thread_id AS "threadId",
+        activity.turn_id AS "turnId",
+        activity.tone,
+        activity.kind,
+        activity.summary,
+        activity.payload_json AS "payload",
+        activity.sequence,
+        activity.created_at AS "createdAt"
+      FROM projection_thread_activities AS activity
+      INNER JOIN pinned_activity_ids AS pending ON pending.activity_id = activity.activity_id
+      ORDER BY activity.sequence, activity.created_at, activity.activity_id
+    `,
+  });
+
+  const getPendingRequestActivities: ProjectionSnapshotQueryShape["getPendingRequestActivities"] = (
+    threadId,
+  ) =>
+    listPendingRequestActivityRows({ threadId }).pipe(
+      Effect.map((rows) => rows.map(mapThreadActivityRow)),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getPendingRequestActivities:query",
+          "ProjectionSnapshotQuery.getPendingRequestActivities:decodeRows",
+        ),
+      ),
+    );
 
   const listProjectedThreadActivities = Effect.fn(
     "ProjectionSnapshotQuery.listProjectedThreadActivities",
@@ -3002,7 +3101,20 @@ pending_approval_requests AS (
             ),
           ),
         ),
-        activitiesEffect,
+        activitiesEffect.pipe(
+          Effect.flatMap((activities) =>
+            query?.activityKinds === undefined
+              ? retainUserInputResolutions(activities, client).pipe(
+                  Effect.mapError(
+                    toPersistenceSqlOrDecodeError(
+                      "ProjectionSnapshotQuery.getThreadDetailById:retainResolutions:query",
+                      "ProjectionSnapshotQuery.getThreadDetailById:retainResolutions:decodeRows",
+                    ),
+                  ),
+                )
+              : Effect.succeed(activities),
+          ),
+        ),
         listCheckpointRowsByThread({ threadId }).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(
@@ -3057,6 +3169,7 @@ pending_approval_requests AS (
         snoozedAt: threadRow.value.snoozedAt,
         pinnedAt: threadRow.value.pinnedAt,
         pinOrderKey: threadRow.value.pinOrderKey ?? null,
+        activeOrderKey: threadRow.value.activeOrderKey ?? null,
         titleRegeneration: mapTitleRegeneration(threadRow.value),
         deletedAt: null,
         messages: messageRows.map((row) => {
@@ -3248,6 +3361,7 @@ pending_approval_requests AS (
   return {
     getCommandReadModel,
     getUserInputActivity,
+    getPendingRequestActivities,
     getSnapshot,
     getShellSnapshot,
     getArchivedShellSnapshot,

@@ -11,34 +11,37 @@ try again.
 
 `mod` means `cmd` on macOS and `ctrl` on Windows and Linux.
 
-| Shortcut         | Command                                |
-| ---------------- | -------------------------------------- |
-| `mod+k`          | Command palette                        |
-| `mod+b`          | Toggle sidebar                         |
-| `mod+alt+b`      | Toggle right panel                     |
-| `mod+j`          | Toggle terminal                        |
-| `mod+p`          | Search project files                   |
-| `shift` `shift`  | Search project files (project open)    |
-| `mod+shift+f`    | Find text in project                   |
-| `mod+f`          | Find in current file                   |
-| `mod+g`          | Go to line and column                  |
-| `mod+d`          | Toggle diff (or split terminal, when the terminal has focus) |
-| `mod+s`          | Stash composer draft                   |
-| `mod+n`          | New thread                             |
-| `mod+shift+o`    | New thread                             |
-| `mod+shift+n`    | New thread in current project          |
-| `mod+shift+m`    | Open model picker                      |
-| `mod+1`…`mod+9`  | Go to thread *n*                       |
-| `mod+shift+[`    | Previous thread                        |
-| `mod+shift+]`    | Next thread                            |
-| `mod+shift+s`    | Settle or un-settle current thread     |
-| `mod+shift+p`    | Pin or unpin current thread            |
+| Shortcut        | Command                                                      |
+| --------------- | ------------------------------------------------------------ |
+| `mod+k`         | Command palette                                              |
+| `mod+b`         | Toggle sidebar                                               |
+| `mod+alt+b`     | Toggle right panel                                           |
+| `mod+j`         | Toggle terminal                                              |
+| `mod+p`         | Search project files                                         |
+| `shift` `shift` | Search project files (project open)                          |
+| `mod+shift+f`   | Find text in project                                         |
+| `mod+f`         | Find in current file                                         |
+| `mod+g`         | Go to line and column                                        |
+| `mod+d`         | Toggle diff (or split terminal, when the terminal has focus) |
+| `mod+s`         | Stash composer draft                                         |
+| `mod+n`         | New thread                                                   |
+| `mod+shift+o`   | New thread                                                   |
+| `mod+shift+n`   | New thread in current project                                |
+| `mod+shift+m`   | Open model picker                                            |
+| `mod+1`…`mod+9` | Go to thread _n_                                             |
+| `mod+shift+[`   | Previous thread                                              |
+| `mod+shift+]`   | Next thread                                                  |
+| `mod+shift+s`   | Settle or un-settle current thread                           |
+| `mod+shift+p`   | Pin or unpin current thread                                  |
 
 When the terminal has focus, `mod+n` opens a new terminal and `mod+w` closes the current one;
 `mod+shift+d` splits the terminal vertically.
 
-When the model picker is open, `mod+1`…`mod+9` choose the *n*-th model instead of jumping to a
+When the model picker is open, `mod+1`…`mod+9` choose the _n_-th model instead of jumping to a
 thread.
+
+`thread.stop` interrupts the running turn in the focused thread. It has no default shortcut;
+assign one in **Settings → Keyboard shortcuts**.
 
 ## How rules work
 
@@ -74,3 +77,10 @@ and your threads' messages, so it doubles as a way to find that thing Claude sai
 
 The authoritative command list is always the one in **Settings → Keyboard shortcuts** for the
 build you are running — use that rather than any copied table.
+
+## Copy the current reference
+
+**Cmd+Shift+C** on macOS or **Ctrl+Shift+C** on Windows runs `thread.copyReference` outside terminal
+focus. It copies the visible merge request's link first, then the thread's linked or discovered
+merge-request link, then the thread ID. On the merge-request page it copies only the selected MR's
+link. If that panel's URL is still unavailable, the copy action is unavailable until the URL resolves; it never substitutes a different reference. The command palette also offers this action.

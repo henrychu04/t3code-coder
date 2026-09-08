@@ -6,7 +6,7 @@ import {
   shouldRetargetThreadPullRequestPanel,
   resolveProactiveTurnDiffAction,
   shouldOpenProactiveTurnDiff,
-} from "./proactivePanels";
+} from "./components/ChatView.logic";
 import {
   useRightPanelStore,
   pullRequestSurface,

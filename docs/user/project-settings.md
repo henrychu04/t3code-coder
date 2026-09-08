@@ -47,11 +47,8 @@ default** and **Use workspace default scripts** reset those individual overrides
 scripts creates an independent project list; an explicit empty list disables scripts for that
 project. Saving scripts does not execute them.
 
-## Subscription limits across workspaces
+## Provider usage
 
-**Settings → Providers** includes a read-only overview of native Codex and Claude subscription
-limits from connected workspaces. Accounts with the same provider and reported email appear once,
-using the latest snapshot and listing their workspaces. Accounts without a reported identity stay
-separate. Each subscription retains its own quota windows; percentages are not combined across
-plans. Offline workspaces are omitted. The overview uses the snapshots already received from the
-workspace and does not query accounts from the browser.
+Provider settings show availability and authentication status for each workspace. Context/token
+usage and runtime rate-limit errors remain visible in conversations. This fork supports API-backed
+usage and does not include subscription-quota dashboards. See [Usage and limits](./providers.md#usage-and-limits).

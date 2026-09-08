@@ -36,7 +36,6 @@ export const CLIENT_RESET_LABELS = {
   sidebarProjectSortOrder: "Project order",
   sidebarThreadSortOrder: "Thread order",
   sidebarThreadPreviewCount: "Visible threads",
-  composerCollapseOnBlur: "Collapse composer when unfocused",
   composerCollapseOnScroll: "Collapse composer on scroll",
   confirmThreadUnpin: "Unpin confirmation",
   confirmThreadArchive: "Archive confirmation",

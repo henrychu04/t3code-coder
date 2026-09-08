@@ -39,13 +39,6 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     searchTerms: ["slash commands dollar skills picker"],
   },
   {
-    id: "proactive-panels",
-    title: "Proactive panels",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["automatic open merge request turn diffs"],
-  },
-  {
     id: "panel-animations",
     title: "Panel animations",
     to: "/settings/appearance",
@@ -167,6 +160,13 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     to: "/settings/preferences",
     section: "Thread settlement",
     searchTerms: ["gitlab merge request merged closed automatically sidebar"],
+  },
+  {
+    id: "proactive-panels",
+    title: "Proactive panels",
+    to: "/settings/preferences",
+    section: "Editor and history",
+    searchTerms: ["automatic merge request diff completed turn panel"],
   },
   {
     id: "time-format",

@@ -2,6 +2,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
 import { ProjectsSettings } from "./ProjectsSettings";
+import { Combobox } from "../ui/combobox";
 
 const mocks = vi.hoisted(() => ({ environments: vi.fn(), update: vi.fn() }));
 vi.mock("../../state/environments", () => ({ useEnvironments: mocks.environments }));
@@ -40,7 +41,9 @@ async function mount() {
 
 it("writes defaults to connected workspaces and leaves offline workspaces untouched", async () => {
   const root = await mount();
-  await act(async () => root.findByType("input").props.onChange({ target: { checked: true } }));
+  await act(async () =>
+    root.findByProps({ type: "checkbox" }).props.onChange({ target: { checked: true } }),
+  );
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.update.mock.calls.map(([input]) => input.environmentId)).toEqual(["one", "two"]);
   expect(
@@ -49,11 +52,7 @@ it("writes defaults to connected workspaces and leaves offline workspaces untouc
 });
 it("scopes a default change to the explicitly selected workspace", async () => {
   const root = await mount();
-  await act(async () =>
-    root
-      .findByProps({ "aria-label": "Project defaults workspace" })
-      .props.onChange({ target: { value: "two" } }),
-  );
+  await act(async () => root.findByType(Combobox).props.onValueChange({ id: "two", label: "two" }));
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.update).toHaveBeenCalledOnce();
   expect(mocks.update.mock.calls[0]![0].environmentId).toBe("two");
@@ -77,7 +76,7 @@ it("resets displayed defaults when the source workspace disconnects", async () =
   };
   mocks.environments.mockReturnValue({ environments: [one, two] });
   const root = await mount();
-  expect(root.findByType("input").props.checked).toBe(false);
+  expect(root.findByProps({ type: "checkbox" }).props.checked).toBe(false);
   mocks.environments.mockReturnValue({
     environments: [{ ...one, connection: { phase: "offline" } }, two],
   });

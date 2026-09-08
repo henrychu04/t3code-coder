@@ -149,13 +149,10 @@ function derivePendingUserInputCountFromActivities(
   activities: ReadonlyArray<ProjectionThreadActivity>,
 ): number {
   const openRequestIds = new Set<string>();
-  const ordered = [...activities].toSorted(
-    (left, right) =>
-      left.createdAt.localeCompare(right.createdAt) ||
-      left.activityId.localeCompare(right.activityId),
-  );
+  // Match upstream's client reducer: unique request IDs cannot reopen after resolution.
+  const closedRequestIds = new Set<string>();
 
-  for (const activity of ordered) {
+  for (const activity of activities) {
     const requestId = extractActivityRequestId(activity.payload);
     if (requestId === null) {
       continue;
@@ -167,11 +164,12 @@ function derivePendingUserInputCountFromActivities(
     const detail = typeof payload?.detail === "string" ? payload.detail.toLowerCase() : null;
 
     if (activity.kind === "user-input.requested") {
-      openRequestIds.add(requestId);
+      if (!closedRequestIds.has(requestId)) openRequestIds.add(requestId);
       continue;
     }
 
     if (activity.kind === "user-input.resolved") {
+      closedRequestIds.add(requestId);
       openRequestIds.delete(requestId);
       continue;
     }
@@ -180,6 +178,7 @@ function derivePendingUserInputCountFromActivities(
       activity.kind === "provider.user-input.respond.failed" &&
       isStalePendingUserInputFailureDetail(detail)
     ) {
+      closedRequestIds.add(requestId);
       openRequestIds.delete(requestId);
     }
   }
@@ -456,6 +455,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             snoozedAt: null,
             pinnedAt: null,
             pinOrderKey: null,
+            activeOrderKey: null,
             titleRegenerationRequestId: null,
             titleRegenerationStartedAt: null,
             latestUserMessageAt: null,
@@ -510,6 +510,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             settledOverride: "settled",
             settledAt: event.payload.settledAt,
             unsettledAt: null,
+            activeOrderKey: null,
             updatedAt: event.payload.updatedAt,
           });
           return;
@@ -629,6 +630,9 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           yield* projectionThreadRepository.upsert({
             ...existingRow.value,
             ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
+            ...(event.payload.activeOrderKey !== undefined
+              ? { activeOrderKey: event.payload.activeOrderKey }
+              : {}),
             ...(event.payload.titleRegeneration !== undefined
               ? {
                   titleRegenerationRequestId: event.payload.titleRegeneration?.requestId ?? null,

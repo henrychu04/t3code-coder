@@ -156,10 +156,11 @@ import {
 import {
   createComposerScrollGestureState,
   recordComposerScrollGestureEvent,
+  shouldCollapseComposerForScrollKey,
   resetComposerScrollGesture,
   suppressActiveComposerScrollGesture,
 } from "./composerScrollGesture";
-import { selectionHoldsComposerOpen } from "./composerSelectionHold";
+import { useComposerMultilinePrompt } from "./useComposerMultilinePrompt";
 import { useComposerMenuState } from "./useComposerMenuState";
 
 type ComposerCommandMenuPosition = {
@@ -1025,6 +1026,7 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
 // --------------------------------------------------------------------------
 
 export interface ChatComposerHandle {
+  collapseForTimelineScrollKey: (key: string) => void;
   focusAtEnd: () => void;
   focusAt: (cursor: number) => void;
   restoreAfterTimelineReachedEnd: () => void;
@@ -1167,6 +1169,7 @@ export interface ChatComposerProps {
   ) => Promise<unknown>;
   onSelectActivePendingUserInputOption: (questionId: string, optionLabel: string) => void;
   onAdvanceActivePendingUserInput: () => void;
+  onDismissActivePendingUserInput: (requestId: ApprovalRequestId) => void;
   onPreviousActivePendingUserInputQuestion: () => void;
   onChangeActivePendingUserInputCustomAnswer: (
     questionId: string,
@@ -1252,6 +1255,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRespondToApproval,
     onSelectActivePendingUserInputOption,
     onAdvanceActivePendingUserInput,
+    onDismissActivePendingUserInput,
     onPreviousActivePendingUserInputQuestion,
     onChangeActivePendingUserInputCustomAnswer,
     onProviderModelSelect,
@@ -1531,7 +1535,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     isComposerScrollCollapsed,
     setIsComposerScrollCollapsed,
     restoreAfterTimelineReachedEnd,
-  } = useComposerFocusState(isMobileViewport);
+  } = useComposerFocusState();
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
   const { isUploading: isUploadingClipboardImages, upload: uploadClipboardImages } =
     useClipboardImageUpload(environmentId, clipboardUploadTarget, setComposerSubmissionError);
@@ -1545,8 +1549,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     key: 0,
     active: false,
   });
+  const hasWrappedPrompt = useComposerMultilinePrompt(composerMenuAnchor);
+  const hasMultilinePrompt = prompt.includes("\n") || hasWrappedPrompt;
   const isComposerCollapsedMobile =
-    isMobileViewport && !forceExpandedOnMobile && !isComposerFocused;
+    isMobileViewport && !forceExpandedOnMobile && !isComposerFocused && !hasMultilinePrompt;
   const isComposerBusy = isSendBusy || isUploadingClipboardImages;
 
   // ------------------------------------------------------------------
@@ -1564,8 +1570,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const mobileComposerExpandFrameRef = useRef<number | null>(null);
   const mobileComposerExpandReleaseFrameRef = useRef<number | null>(null);
   const mobileComposerExpandInFlightRef = useRef(false);
-  const desktopOutsidePointerInFlightRef = useRef(false);
-  const desktopOutsidePointerReleaseTimeoutRef = useRef<number | null>(null);
   const composerScrollCollapseTimeoutRef = useRef<number | null>(null);
   const composerScrollCollapseEligibleRef = useRef(false);
   const windowRefocusInFlightRef = useRef(false);
@@ -2933,8 +2937,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const handleImplementPlanInNewThreadPrimaryAction = useCallback(() => {
     void onImplementPlanInNewThread();
   }, [onImplementPlanInNewThread]);
+  // The phone composer collapses when the editor loses focus. Desktop only
+  // rests on a timeline scroll, so losing focus there changes nothing.
   const scheduleComposerCollapseCheck = useCallback(() => {
-    if (isMobileViewport && mobileComposerExpandInFlightRef.current) {
+    if (!isMobileViewport || mobileComposerExpandInFlightRef.current) {
       return;
     }
     if (composerBlurFrameRef.current !== null) {
@@ -2942,10 +2948,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     composerBlurFrameRef.current = window.requestAnimationFrame(() => {
       composerBlurFrameRef.current = null;
-      if (isMobileViewport && mobileComposerExpandInFlightRef.current) {
-        return;
-      }
-      if (!isMobileViewport && desktopOutsidePointerInFlightRef.current) {
+      if (mobileComposerExpandInFlightRef.current) {
         return;
       }
       const composerSurface = composerSurfaceRef.current;
@@ -2961,101 +2964,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ) {
         return;
       }
-      if (
-        !isMobileViewport &&
-        selectionHoldsComposerOpen(window.getSelection(), getTimelineScrollableNode())
-      ) {
-        return;
-      }
       setIsComposerFocused(false);
     });
-  }, [getTimelineScrollableNode, isMobileViewport, setIsComposerFocused]);
-
-  useEffect(() => {
-    if (isMobileViewport || !isComposerFocused) return;
-    let wasHolding = false;
-    const handleSelectionChange = () => {
-      const holding = selectionHoldsComposerOpen(
-        window.getSelection(),
-        getTimelineScrollableNode(),
-      );
-      if (wasHolding && !holding) scheduleComposerCollapseCheck();
-      wasHolding = holding;
-    };
-    document.addEventListener("selectionchange", handleSelectionChange);
-    return () => document.removeEventListener("selectionchange", handleSelectionChange);
-  }, [
-    getTimelineScrollableNode,
-    isComposerFocused,
-    isMobileViewport,
-    scheduleComposerCollapseCheck,
-  ]);
-
-  useEffect(() => {
-    if (isMobileViewport || !isComposerFocused) return;
-
-    const isInsideDesktopComposerFocusScope = (target: EventTarget | null) =>
-      Boolean(
-        target instanceof Node &&
-        (composerFormRef.current?.contains(target) || isInsideRestingComposerControlScope(target)),
-      );
-    const handleFocusIn = (event: FocusEvent) => {
-      if (!isInsideDesktopComposerFocusScope(event.target)) {
-        if (desktopOutsidePointerInFlightRef.current) {
-          return;
-        }
-        setIsComposerFocused(false);
-      }
-    };
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!isInsideDesktopComposerFocusScope(event.target)) {
-        desktopOutsidePointerInFlightRef.current = true;
-        if (desktopOutsidePointerReleaseTimeoutRef.current !== null) {
-          window.clearTimeout(desktopOutsidePointerReleaseTimeoutRef.current);
-          desktopOutsidePointerReleaseTimeoutRef.current = null;
-        }
-      }
-    };
-    const finishOutsidePointerInteraction = () => {
-      desktopOutsidePointerInFlightRef.current = false;
-      if (desktopOutsidePointerReleaseTimeoutRef.current !== null) {
-        window.clearTimeout(desktopOutsidePointerReleaseTimeoutRef.current);
-        desktopOutsidePointerReleaseTimeoutRef.current = null;
-      }
-      scheduleComposerCollapseCheck();
-    };
-    const handlePointerUp = () => {
-      if (!desktopOutsidePointerInFlightRef.current) return;
-      desktopOutsidePointerReleaseTimeoutRef.current = window.setTimeout(() => {
-        if (desktopOutsidePointerInFlightRef.current) {
-          finishOutsidePointerInteraction();
-        }
-      }, 0);
-    };
-    const handleClick = () => {
-      if (desktopOutsidePointerInFlightRef.current) {
-        finishOutsidePointerInteraction();
-      }
-    };
-
-    document.addEventListener("focusin", handleFocusIn, true);
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    document.addEventListener("pointerup", handlePointerUp, true);
-    document.addEventListener("pointercancel", handlePointerUp, true);
-    document.addEventListener("click", handleClick);
-    return () => {
-      document.removeEventListener("focusin", handleFocusIn, true);
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      document.removeEventListener("pointerup", handlePointerUp, true);
-      document.removeEventListener("pointercancel", handlePointerUp, true);
-      document.removeEventListener("click", handleClick);
-      if (desktopOutsidePointerReleaseTimeoutRef.current !== null) {
-        window.clearTimeout(desktopOutsidePointerReleaseTimeoutRef.current);
-        desktopOutsidePointerReleaseTimeoutRef.current = null;
-      }
-      desktopOutsidePointerInFlightRef.current = false;
-    };
-  }, [isComposerFocused, isMobileViewport, scheduleComposerCollapseCheck, setIsComposerFocused]);
+  }, [isMobileViewport, setIsComposerFocused]);
 
   useEffect(() => {
     return () => {
@@ -3086,10 +2997,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const isComposerResting = shouldUseRestingComposerLayout({
     isExistingThread: routeKind === "server" && activeThreadId !== null,
     isMobileViewport,
-    isFocused: isComposerFocused,
     isScrollCollapsed: isComposerScrollCollapsed,
     hasExpandedChrome: composerHasExpandedChrome,
-    collapseOnBlur: settings.composerCollapseOnBlur,
+    hasMultilinePrompt,
     timelineOverflows,
   });
   const composerControlsInStrip = isComposerResting || isComposerCollapsedMobile;
@@ -3391,6 +3301,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useImperativeHandle(
     composerRef,
     () => ({
+      collapseForTimelineScrollKey: (key) => {
+        const scrollNode = getTimelineScrollableNode();
+        if (
+          composerScrollCollapseEligibleRef.current &&
+          scrollNode &&
+          shouldCollapseComposerForScrollKey({
+            key,
+            scrollTop: scrollNode.scrollTop,
+            scrollHeight: scrollNode.scrollHeight,
+            clientHeight: scrollNode.clientHeight,
+            isAtLogicalEnd: isTimelineAtLogicalEnd(),
+          })
+        ) {
+          setIsComposerScrollCollapsed(true);
+        }
+      },
       focusAtEnd: () => {
         composerEditorRef.current?.focusAtEnd();
       },
@@ -3537,10 +3463,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
         setIsComposerScrollCollapsed(false);
         if (isComposerResting && !target.closest('[data-testid="composer-editor"]')) {
-          // Clicking resting-surface padding would otherwise blur the still
-          // focused editor after pointerdown: expansion starts, the blur check
-          // runs, and it immediately collapses again. Treat that padding like
-          // the editor without stealing native caret placement from text.
+          // Clicking resting-surface padding would otherwise blur the editor.
+          // Treat that padding like the editor without stealing native caret
+          // placement from text.
           event.preventDefault();
           setIsComposerFocused(true);
           scheduleComposerFocus();
@@ -3637,6 +3562,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     questionIndex={activePendingQuestionIndex}
                     onToggleOption={onSelectActivePendingUserInputOption}
                     onAdvance={onAdvanceActivePendingUserInput}
+                    onDismiss={onDismissActivePendingUserInput}
                   />
                 ) : !isComposerCollapsedMobile && showPlanFollowUpPrompt && activeProposedPlan ? (
                   <ComposerPlanFollowUpBanner
@@ -3669,6 +3595,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       questionIndex={activePendingQuestionIndex}
                       onToggleOption={onSelectActivePendingUserInputOption}
                       onAdvance={onAdvanceActivePendingUserInput}
+                      onDismiss={onDismissActivePendingUserInput}
                     />
                     <div className="px-3 pb-3 sm:px-4">
                       <div

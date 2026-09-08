@@ -22,7 +22,8 @@ Threads move through four states in the sidebar:
 
 - **Pinned** — kept above your active work, independent of project grouping. Pin or unpin from the
   thread's context menu, or press `mod+shift+p`. Drag to reorder. Enable **Settings → Preferences
-  → Confirm before unpinning** if you want every unpin action to ask first.
+  → Confirm before unpinning** to confirm menu and keyboard unpin actions. Dragging out of the
+  pinned section does not ask for confirmation.
 - **Active** — everything you are working on now.
 - **Snoozed** — out of the way until a wake time you pick from the thread's menu (later today,
   tomorrow morning, next week, and so on). Snoozed threads return to active on their own and a
@@ -40,6 +41,20 @@ the inactivity rule can still apply. Manually un-settling a thread keeps it acti
 clears that choice. Change these rules in **Settings → Preferences**. A settings change affects
 future settlement and does not reopen an already settled thread.
 
+## Drag and reorder
+
+Drag within the pinned or active section to arrange threads. Drag between sections to pin,
+unpin, settle, or un-settle a thread. Dragging a snoozed thread out wakes it; snoozing still
+requires choosing a wake time from its menu. During a drag, the destination shows the action
+that will happen. Transitions respect reduced-motion preferences.
+
+The workspace saves the order. New threads appear above arranged active threads. Settling clears
+active placement, so un-settling returns a thread to the top; pinning and snoozing retain its
+active placement. Subsequent thread activity does not reorder arranged threads.
+
+Manually settling an idle thread dismisses unanswered asynchronous questions without sending
+an answer to the provider. Approvals, blocking questions, and live work still prevent settlement.
+
 ## Archiving
 
 Archive a thread from its menu to retire it without deleting it. Archived threads live in
@@ -56,3 +71,16 @@ menu and choose **Regenerate title**; while it is generating, the action is disa
 thread in the current project without asking. A new thread inherits sensible defaults from your
 project and picks up the branch and [worktree](./source-control.md#worktrees) choices from the
 branch toolbar, not from whichever thread you were last reading.
+
+## Automatic review panels
+
+Enable **Proactive panels** in **Settings → Preferences → Editor and history** to automatically
+open a linked GitLab merge request or a completed turn's changed-file diff when entering a thread
+or when new results arrive. This preference is off by default and does not open the narrow-screen
+panel sheet automatically. Merge requests take priority over diffs. Closing or selecting a panel
+while data loads prevents delayed automatic requests from replacing that choice; a new running
+turn can trigger automatic panels again.
+
+Recognized GitLab merge-request links in MR descriptions and comments open in the current panel.
+On the merge-request page, navigation also updates the selected MR in the page URL. External media
+attachments remain inert.

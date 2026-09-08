@@ -55,6 +55,7 @@ export const layer = Layer.effect(
           threadSnooze: true,
           threadPinning: true,
           threadPinReorder: true,
+          threadActiveReorder: true,
           threadTitleRegeneration: true,
           threadPullRequestLinking: true,
         },

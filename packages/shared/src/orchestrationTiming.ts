@@ -1,5 +1,7 @@
 type LatestTurnTiming = {
   readonly turnId: string | null;
+  /** Set when the turn is created; `startedAt` waits for the provider. */
+  readonly requestedAt?: string | null;
   readonly startedAt: string | null;
   readonly completedAt: string | null;
 };
@@ -32,20 +34,23 @@ function isLatestTurnSettled(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
 ): boolean {
-  if (!latestTurn?.startedAt) return false;
+  if (!latestTurn) return false;
   if (!latestTurn.completedAt) return false;
   if (!session) return true;
   if (session.orchestrationStatus === "running") return false;
   return true;
 }
 
-function deriveActiveWorkStartedAt(
+export function deriveActiveWorkStartedAt(
   latestTurn: LatestTurnTiming | null,
   session: SessionActivityState | null,
   sendStartedAt: string | null,
 ): string | null {
+  if (session?.activeTurnId && session.activeTurnId !== latestTurn?.turnId) {
+    return sendStartedAt;
+  }
   if (!isLatestTurnSettled(latestTurn, session)) {
-    return latestTurn?.startedAt ?? sendStartedAt;
+    return latestTurn?.startedAt ?? latestTurn?.requestedAt ?? sendStartedAt;
   }
   return sendStartedAt;
 }

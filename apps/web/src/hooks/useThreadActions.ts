@@ -24,6 +24,7 @@ import { readLocalApi } from "../localApi";
 import {
   readEnvironmentSupportsPinning,
   readEnvironmentSupportsPinReorder,
+  readEnvironmentSupportsActiveReorder,
   readEnvironmentSupportsSettlement,
   readEnvironmentSupportsSnooze,
   readEnvironmentThreadRefs,
@@ -123,6 +124,18 @@ export class ThreadPinReorderUnsupportedError extends Schema.TaggedErrorClass<Th
   }
 }
 
+export class ThreadActiveReorderUnsupportedError extends Schema.TaggedErrorClass<ThreadActiveReorderUnsupportedError>()(
+  "ThreadActiveReorderUnsupportedError",
+  {
+    environmentId: EnvironmentId,
+    threadId: ThreadId,
+  },
+) {
+  override get message(): string {
+    return "Update this environment's server to reorder active threads.";
+  }
+}
+
 export async function requestThreadUnpinConfirmation(input: {
   enabled: boolean;
   title: string;
@@ -180,6 +193,9 @@ export function useThreadActions() {
     reportFailure: false,
   });
   const reorderPinnedThreadMutation = useAtomCommand(threadEnvironment.reorderPin, {
+    reportFailure: false,
+  });
+  const reorderActiveThreadMutation = useAtomCommand(threadEnvironment.reorderActive, {
     reportFailure: false,
   });
   const snoozeThreadMutation = useAtomCommand(threadEnvironment.snooze, {
@@ -623,6 +639,26 @@ export function useThreadActions() {
     [reorderPinnedThreadMutation],
   );
 
+  const reorderActiveThread = useCallback(
+    async (target: ScopedThreadRef, orderKey: string) => {
+      if (!readEnvironmentSupportsActiveReorder(target.environmentId)) {
+        return AsyncResult.failure(
+          Cause.fail(
+            new ThreadActiveReorderUnsupportedError({
+              environmentId: target.environmentId,
+              threadId: target.threadId,
+            }),
+          ),
+        );
+      }
+      return reorderActiveThreadMutation({
+        environmentId: target.environmentId,
+        input: { threadId: target.threadId, orderKey },
+      });
+    },
+    [reorderActiveThreadMutation],
+  );
+
   const snoozeThread = useCallback(
     async (target: ScopedThreadRef, snoozedUntil: string) => {
       // Version skew: never send the command to a server that predates it.
@@ -721,6 +757,7 @@ export function useThreadActions() {
       unpinThread,
       confirmAndUnpinThread,
       reorderPinnedThread,
+      reorderActiveThread,
     }),
     [
       archiveThread,
@@ -729,6 +766,7 @@ export function useThreadActions() {
       pinThread,
       confirmAndUnpinThread,
       reorderPinnedThread,
+      reorderActiveThread,
       settleThread,
       snoozeThread,
       unarchiveThread,

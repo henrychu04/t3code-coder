@@ -1,7 +1,7 @@
 import { it } from "node:test";
 import { channel } from "node:diagnostics_channel";
 import type { IncomingMessage } from "node:http";
-import { strictEqual } from "node:assert";
+import { strictEqual, rejects } from "node:assert";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -144,3 +144,59 @@ for (const kind of ["forward", "helper"] as const) {
     },
   );
 }
+
+it(
+  "closes retained child scopes and the listener even when one child finalizer defects",
+  { timeout: 10_000 },
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "t3-shutdown-defect-"));
+    const configPath = path.join(dir, "config.json");
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        deployments: [{ id: "d", name: "D", url: "https://coder.example.com" }],
+        workspaces: [{ id: "w", name: "W", deploymentId: "d", workspace: "user/w" }],
+        portForwards: [8080, 8081].map((localPort) => ({
+          id: `f-${localPort}`,
+          workspaceId: "w",
+          protocol: "tcp",
+          localPort,
+          remotePort: 3000,
+        })),
+      }),
+    );
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    let opened = 0;
+    const finalized = new Set<number>();
+    try {
+      const gateway = await Effect.runPromise(
+        makeLocalCoderGateway({
+          configPath,
+          connectPortForward: () =>
+            Effect.gen(function* () {
+              const id = ++opened;
+              return yield* Effect.acquireRelease(
+                Effect.succeed({ closed: Effect.never, close: Effect.void }),
+                () =>
+                  Effect.sync(() => {
+                    finalized.add(id);
+                    if (id === 1) throw new Error("child finalizer failed");
+                  }),
+              );
+            }),
+        }).pipe(Scope.provide(scope)),
+      );
+      strictEqual(opened, 2);
+      const response = await fetch(`${gateway.url}/api/config`);
+      await response.text();
+      // Parent scope defects must not prevent listener cleanup.
+      await Effect.runPromiseExit(Scope.close(scope, Exit.void));
+      strictEqual(finalized.size, 2);
+      await rejects(fetch(`${gateway.url}/api/config`), /fetch failed/);
+    } finally {
+      await Effect.runPromiseExit(Scope.close(scope, Exit.void));
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  },
+);

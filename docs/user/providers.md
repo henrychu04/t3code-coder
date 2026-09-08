@@ -62,7 +62,8 @@ leaves missing metadata blank rather than copying the parent agent's settings.
 
 Codex can also surface asynchronous questions while it continues working. Answering one records
 the resolution and starts a follow-up message in the same thread; unanswered questions remain
-available even after a long activity history. Context compaction is available for both Codex and
+available even after a long activity history. Dismiss an asynchronous question to close it without
+sending anything to Codex; blocking questions still require an answer or interruption. Context compaction is available for both Codex and
 Claude through the context meter and `/compact` command.
 
 ## Images
@@ -114,3 +115,10 @@ T3 Coder does not provide a billing dashboard, external usage hubs, or pricing l
 When Claude reports a blocking usage limit during a turn, the conversation shows a warning.
 Claude's own safety fallback notifications are also shown; T3 Coder does not initiate a provider
 or account switch.
+
+When Codex reports a usage-limit failure, the conversation names the exhausted window and its
+reset time when available. These are provider runtime errors, not an API billing dashboard.
+
+Claude verbose output is supported for generated titles, branch names, commit messages, and merge
+request descriptions. These metadata requests run in the workspace with executable tools, hooks,
+skills, and configured MCP servers disabled; title generation also runs outside the project folder.

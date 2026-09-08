@@ -111,6 +111,7 @@ export interface PendingApproval {
 }
 
 export interface PendingUserInput {
+  dismissible: boolean;
   requestId: ApprovalRequestId;
   createdAt: string;
   questions: ReadonlyArray<UserInputQuestion>;

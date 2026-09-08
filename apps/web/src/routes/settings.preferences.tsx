@@ -479,7 +479,7 @@ function GeneralSettingsView() {
         <SettingsRow
           id="proactive-panels"
           title="Proactive panels"
-          description="Open linked merge requests when found and turn diffs when work changes files."
+          description="Automatically open linked merge requests and completed-turn diffs when entering or working in a thread."
           resetAction={
             settings.proactivePanelsEnabled !== DEFAULT_CLIENT_SETTINGS.proactivePanelsEnabled ? (
               <SettingResetButton
@@ -525,32 +525,6 @@ function GeneralSettingsView() {
                 updateSettings({ showSkillsInSlashMenu: Boolean(checked) })
               }
               aria-label="Show skills in slash menu"
-            />
-          }
-        />
-        <SettingsRow
-          id="composer-collapse-on-blur"
-          title="Collapse composer when unfocused"
-          description="Rest an existing thread's composer into one line after focus moves elsewhere."
-          resetAction={
-            settings.composerCollapseOnBlur !== DEFAULT_CLIENT_SETTINGS.composerCollapseOnBlur ? (
-              <SettingResetButton
-                label="composer collapse on blur"
-                onClick={() =>
-                  updateSettings({
-                    composerCollapseOnBlur: DEFAULT_CLIENT_SETTINGS.composerCollapseOnBlur,
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <Switch
-              aria-label="Collapse composer when unfocused"
-              checked={settings.composerCollapseOnBlur}
-              onCheckedChange={(checked) =>
-                updateSettings({ composerCollapseOnBlur: Boolean(checked) })
-              }
             />
           }
         />

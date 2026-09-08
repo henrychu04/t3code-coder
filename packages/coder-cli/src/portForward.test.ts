@@ -211,3 +211,47 @@ it("does not treat a kill error event as process exit", async () => {
     await Effect.runPromise(Scope.close(scope, Exit.void));
   }
 });
+
+for (const exitsAfterSignal of [false, true]) {
+  it(`waits for exit confirmation after SIGKILL throws (exits: ${exitsAfterSignal})`, async () => {
+    const child = fakeChild();
+    const originalKill = child.kill;
+    child.kill = (signal) => {
+      if (signal === "SIGKILL") {
+        if (exitsAfterSignal) {
+          setImmediate(() => {
+            child.exitCode = 0;
+            child.emit("exit", 0, null);
+          });
+        }
+        throw new Error("signal rejected");
+      }
+      return false;
+    };
+    const scope = await Effect.runPromise(Scope.make("sequential"));
+    const connection = await Effect.runPromise(
+      connectCoderPortForward(
+        { executable: "coder", args: [] },
+        {
+          spawnProcess: () => {
+            queueMicrotask(() => child.emit("spawn"));
+            return child as unknown as ChildProcess;
+          },
+          terminationGraceMs: 10,
+        },
+      ).pipe(Scope.provide(scope)),
+    );
+    try {
+      if (exitsAfterSignal) {
+        await Effect.runPromise(connection.close);
+        strictEqual((await Effect.runPromise(connection.closed)).expected, true);
+      } else {
+        await rejects(Effect.runPromise(connection.close), /shutdown was not confirmed/);
+        strictEqual(child.listenerCount("exit"), 1);
+      }
+    } finally {
+      child.kill = originalKill;
+      await Effect.runPromise(Scope.close(scope, Exit.void));
+    }
+  });
+}

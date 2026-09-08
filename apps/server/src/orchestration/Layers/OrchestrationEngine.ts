@@ -201,12 +201,20 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         // request's durable state before deciding whether an async answer is
         // a provider response or a new user turn.
         const userInputActivity =
-          envelope.command.type === "thread.user-input.respond"
+          envelope.command.type === "thread.user-input.respond" ||
+          envelope.command.type === "thread.user-input.dismiss"
             ? yield* projectionSnapshotQuery.getUserInputActivity(envelope.command)
             : Option.none();
+        // Settlement must also see requests persisted before this engine started.
+        const pendingRequestActivities =
+          envelope.command.type === "thread.settle" ||
+          envelope.command.type === "thread.auto-settle"
+            ? yield* projectionSnapshotQuery.getPendingRequestActivities(envelope.command.threadId)
+            : undefined;
         const eventBase = yield* decideOrchestrationCommand({
           command: envelope.command,
           readModel: commandReadModel,
+          ...(pendingRequestActivities !== undefined ? { pendingRequestActivities } : {}),
           ...(Option.isSome(userInputActivity)
             ? { userInputActivity: userInputActivity.value }
             : {}),

@@ -207,6 +207,16 @@ describe("local Coder gateway", () => {
     });
     strictEqual(rejected.statusCode, 403);
 
+    for (const invalidBody of ["{", JSON.stringify({ version: 1, deployments: "invalid" })]) {
+      const invalid = await request({
+        url: `${gateway.url}/api/config`,
+        method: "POST",
+        headers: { Origin: gateway.url, "Content-Type": "application/json" },
+        body: invalidBody,
+      });
+      strictEqual(invalid.statusCode, 400);
+    }
+
     const accepted = await request({
       url: `${gateway.url}/api/config`,
       method: "POST",
@@ -334,7 +344,8 @@ describe("local Coder gateway", () => {
       headers: { Origin: gateway.url, "Content-Type": "application/json" },
       body: JSON.stringify({ ...beforeRemoval, portForwards: [] }),
     });
-    strictEqual(failedRemoval.statusCode >= 400, true);
+    strictEqual(failedRemoval.statusCode, 502);
+    strictEqual(failedRemoval.body, "stop failed");
     deepStrictEqual(JSON.parse(await NodeFS.readFile(configPath, "utf8")), beforeRemoval);
     strictEqual(
       JSON.parse((await request({ url: `${gateway.url}/api/port-forwards` })).body).portForwards[0]

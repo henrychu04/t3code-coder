@@ -174,6 +174,9 @@ without explicit user permission. Do not test against or modify `~/.t3/userdata`
 ## Working practices
 
 - Prefer `rg`/`rg --files` for discovery.
+- Treat upstream as the source of truth for shared product behavior. Prefer adapting existing fork
+  code to match upstream implementations; retain differences required by the explicit Coder-only
+  boundaries.
 - Upstream T3 Code's docs (`docs/user/` in `pingdotgg/t3code`) are the source of truth for shared
   product behavior. When documenting product behavior, start from upstream's docs rather than
   re-deriving from code, adapt them to the Coder-only model, and port upstream doc updates when
