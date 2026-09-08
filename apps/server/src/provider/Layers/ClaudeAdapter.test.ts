@@ -2062,13 +2062,13 @@ describe("ClaudeAdapterLive", () => {
       name: "an api_error terminal reason",
       result: { subtype: "success", is_error: false, terminal_reason: "api_error", errors: [] },
       state: "failed",
-      errorMessage: /claude auth login/,
+      errorMessage: /API credentials in the workspace provider configuration/,
     },
     {
       name: "an is_error success with no terminal reason",
       result: { subtype: "success", is_error: true, errors: [] },
       state: "failed",
-      errorMessage: /claude auth login/,
+      errorMessage: /API credentials in the workspace provider configuration/,
     },
     // Every other outcome names its own cause, and the latch must not speak over it.
     {

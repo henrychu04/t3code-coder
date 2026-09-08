@@ -2740,6 +2740,61 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const listRetainedUserInputResolutionIds = SqlSchema.findAll({
+    Request: ThreadActivityIdsLookupInput,
+    Result: ProjectionThreadActivityIdRowSchema,
+    execute: ({ activityIds }) => sql`
+      SELECT MIN(resolution.activity_id) AS "activityId"
+      FROM projection_thread_activities AS request
+      JOIN projection_thread_activities AS resolution
+        ON resolution.thread_id = request.thread_id
+        AND resolution.kind = 'user-input.resolved'
+        AND json_extract(resolution.payload_json, '$.requestId') =
+          json_extract(request.payload_json, '$.requestId')
+      WHERE ${sql.in("request.activity_id", activityIds)}
+        AND request.kind = 'user-input.requested'
+      GROUP BY request.thread_id, json_extract(request.payload_json, '$.requestId')
+    `,
+  });
+
+  // A recent provider request can outlive its unsequenced resolution in the
+  // bounded window. Retain one closure per included question, even when the
+  // closure belongs to a different turn window. Closure is final for a request ID.
+  const retainUserInputResolutions = Effect.fn("retainUserInputResolutions")(function* (
+    activities: OrchestrationThreadActivity[],
+    client: boolean,
+  ) {
+    const requestIds = activities
+      .filter((activity) => activity.kind === "user-input.requested")
+      .map((activity) => activity.id);
+    if (requestIds.length === 0) return activities;
+    const retained = new Map(activities.map((activity) => [activity.id, activity]));
+    for (
+      let offset = 0;
+      offset < requestIds.length;
+      offset += THREAD_DETAIL_ACTIVITY_PAYLOAD_BATCH_SIZE
+    ) {
+      const resolutions = yield* listRetainedUserInputResolutionIds({
+        activityIds: requestIds.slice(offset, offset + THREAD_DETAIL_ACTIVITY_PAYLOAD_BATCH_SIZE),
+      });
+      const missingIds = resolutions
+        .map(({ activityId }) => activityId)
+        .filter((id) => !retained.has(id));
+      if (missingIds.length === 0) continue;
+      const rows = yield* listThreadActivityRowsByIds({ activityIds: missingIds });
+      for (const row of rows) {
+        const activity = mapThreadActivityRow(row);
+        retained.set(activity.id, client ? projectActivityPayload(activity) : activity);
+      }
+    }
+    return [...retained.values()].sort(
+      (left, right) =>
+        (left.sequence ?? -1) - (right.sequence ?? -1) ||
+        left.createdAt.localeCompare(right.createdAt) ||
+        left.id.localeCompare(right.id),
+    );
+  });
+
   const listThreadActivityIdsByThreadWindow = SqlSchema.findAll({
     Request: ThreadTurnRangeLookupInput,
     Result: ProjectionThreadActivityIdRowSchema,
@@ -3046,7 +3101,20 @@ pending_approval_requests AS (
             ),
           ),
         ),
-        activitiesEffect,
+        activitiesEffect.pipe(
+          Effect.flatMap((activities) =>
+            query?.activityKinds === undefined
+              ? retainUserInputResolutions(activities, client).pipe(
+                  Effect.mapError(
+                    toPersistenceSqlOrDecodeError(
+                      "ProjectionSnapshotQuery.getThreadDetailById:retainResolutions:query",
+                      "ProjectionSnapshotQuery.getThreadDetailById:retainResolutions:decodeRows",
+                    ),
+                  ),
+                )
+              : Effect.succeed(activities),
+          ),
+        ),
         listCheckpointRowsByThread({ threadId }).pipe(
           Effect.mapError(
             toPersistenceSqlOrDecodeError(

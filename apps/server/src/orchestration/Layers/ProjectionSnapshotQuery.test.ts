@@ -2603,6 +2603,51 @@ projectionSnapshotLayer("ProjectionSnapshotQuery windowed thread detail", (it) =
     }),
   );
 
+  it.effect("retains unsequenced question resolutions outside the activity and turn windows", () =>
+    Effect.gen(function* () {
+      yield* seedFanOutThread();
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`DELETE FROM projection_thread_activities`;
+      yield* sql`
+        WITH RECURSIVE rows(sequence) AS (
+          SELECT 1 UNION ALL SELECT sequence + 1 FROM rows WHERE sequence < 500
+        )
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
+        )
+        SELECT printf('tool-%04d', sequence), 'thread-w', 'turn-5', 'tool',
+          'tool.completed', 'Tool', '{}', sequence, '2026-03-01T00:04:00.000Z'
+        FROM rows
+      `;
+      yield* sql`
+        INSERT INTO projection_thread_activities (
+          activity_id, thread_id, turn_id, tone, kind, summary, payload_json, sequence, created_at
+        ) VALUES
+          ('question', 'thread-w', 'turn-5', 'approval', 'user-input.requested',
+           'Question', '{"requestId":"dismissed","responseMode":"message"}', 999,
+           '2099-01-01T00:00:00.000Z'),
+          ('dismissal', 'thread-w', NULL, 'info', 'user-input.resolved',
+           'Dismissed', '{"requestId":"dismissed","responseMode":"message"}', NULL,
+           '2026-01-01T00:00:00.000Z')
+      `;
+      yield* sql`UPDATE projection_threads SET pending_user_input_count = 0 WHERE thread_id = 'thread-w'`;
+
+      const full = Option.getOrThrow(yield* snapshotQuery.getThreadDetailById(threadW));
+      const windowed = Option.getOrThrow(
+        yield* snapshotQuery.getThreadDetailSnapshot(threadW, {
+          turnLimit: 2,
+        }),
+      ).thread;
+      for (const detail of [full, windowed]) {
+        const ids = detail.activities.map((activity) => activity.id);
+        assert.equal(ids.includes(asEventId("question")), true);
+        assert.equal(ids.includes(asEventId("dismissal")), true);
+        assert.equal(ids.length, 501);
+      }
+    }),
+  );
+
   it.effect("a thread with no turns returns its content unwindowed on the first page", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
