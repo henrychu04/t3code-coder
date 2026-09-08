@@ -1017,7 +1017,7 @@ export function ProjectTextSearchDialog(props: {
             <div className="grid min-h-0 flex-1 grid-rows-[minmax(10rem,46%)_minmax(0,1fr)]">
               <div
                 id={CONTENT_SEARCH_RESULTS_ID}
-                className="min-h-0 overflow-auto border-b border-border/60 p-2"
+                className="min-h-0 overflow-auto border-b border-border/60 px-2 pb-2"
               >
                 {query.length === 0 ? (
                   <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -1047,7 +1047,7 @@ export function ProjectTextSearchDialog(props: {
                         key={group.path}
                         role="group"
                       >
-                        <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-background/95 px-2 text-xs backdrop-blur-sm">
+                        <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-background px-2 text-xs">
                           <FileIcon className="size-3.5 shrink-0 opacity-75" />
                           <span className="min-w-0 flex-1 truncate font-medium">{group.path}</span>
                           <span className="rounded-full bg-muted px-1.5 py-0.5 tabular-nums text-[10px] text-muted-foreground">
