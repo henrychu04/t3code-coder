@@ -87,7 +87,7 @@ describe("getComposerProviderState", () => {
     );
   });
 
-  it("returns descriptor defaults when no selections are provided", () => {
+  it("uses descriptor defaults for display without dispatching them as overrides", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
       model: MODEL,
@@ -104,7 +104,7 @@ describe("getComposerProviderState", () => {
     expect(state).toEqual({
       provider: PROVIDER,
       promptEffort: "high",
-      modelOptionsForDispatch: selections(["effort", "high"]),
+      modelOptionsForDispatch: undefined,
     });
   });
 
@@ -230,9 +230,7 @@ describe("getComposerProviderState", () => {
     });
 
     expect(state.promptEffort).toBe("high");
-    expect(state.modelOptionsForDispatch).toEqual(
-      selections(["effort", "high"], ["contextWindow", "200k"], ["agent", "plan"]),
-    );
+    expect(state.modelOptionsForDispatch).toEqual(selections(["agent", "plan"]));
   });
 
   it("returns undefined dispatch options when the model declares no descriptors", () => {
@@ -345,4 +343,21 @@ describe("provider traits render guards", () => {
     expect(renderProviderTraitsPicker(args)).toBeNull();
     expect(renderProviderTraitsMenuContent(args)).toBeNull();
   });
+});
+
+it("does not dispatch unselected Codex catalog defaults", () => {
+  const state = getComposerProviderState({
+    provider: ProviderDriverKind.make("codex"),
+    model: MODEL,
+    models: modelWith([
+      selectDescriptor("reasoningEffort", [{ id: "medium", label: "Medium", isDefault: true }]),
+      selectDescriptor("serviceTier", [
+        { id: "default", label: "Standard", isDefault: true },
+        { id: "fast", label: "Fast" },
+      ]),
+    ]),
+    modelOptions: undefined,
+    planModeEnabled: true,
+  });
+  expect(state.modelOptionsForDispatch).toBeUndefined();
 });
