@@ -1,20 +1,14 @@
-import type { EnvironmentId } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ProjectFavicon } from "./ProjectFavicon";
-
-const environmentId = "environment-test" as EnvironmentId;
 
 describe("ProjectFavicon", () => {
   it("derives the upstream icon from the project name without fetching images", () => {
     const html = renderToStaticMarkup(
       <ProjectFavicon
         className="project-icon"
-        environmentId={environmentId}
-        cwd="/workspace-test"
-        projectName="agent-runtime"
-        faviconPath="brand/icon.svg"
+        project={{ title: "agent-runtime", workspaceRoot: "/workspace-test" }}
       />,
     );
 
@@ -25,16 +19,23 @@ describe("ProjectFavicon", () => {
     expect(html).not.toContain("<img");
   });
 
+  it("honors a caller-provided fallback even when a project is available", () => {
+    const html = renderToStaticMarkup(
+      <ProjectFavicon
+        project={{ title: "agent-runtime", workspaceRoot: "/workspace-test" }}
+        fallbackIcon={() => <span>fallback</span>}
+      />,
+    );
+    expect(html).toContain("fallback");
+    expect(html).not.toContain("lucide-bot");
+  });
+
   it("supports a caller-provided fallback icon", () => {
     const FallbackIcon = ({ className }: { className?: string }) => (
       <span className={className}>custom fallback</span>
     );
     const html = renderToStaticMarkup(
-      <ProjectFavicon
-        environmentId={environmentId}
-        cwd="/workspace-test"
-        fallbackIcon={FallbackIcon}
-      />,
+      <ProjectFavicon project={null} fallbackIcon={FallbackIcon} />,
     );
 
     expect(html).toContain("custom fallback");

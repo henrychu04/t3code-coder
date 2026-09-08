@@ -42,21 +42,21 @@ const CONTENT_SEARCH_MAX_TOTAL_MATCHES = 500;
 const CONTENT_SEARCH_MAX_LINE_CHARS = 4096;
 const CONTENT_SEARCH_MAX_PATH_CHARS = 512;
 
-export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexCreateFailed>()(
+export class WorkspaceSearchIndexCreateFailed extends Schema.TaggedError<WorkspaceSearchIndexCreateFailed>()(
   "WorkspaceSearchIndexCreateFailed",
   {
     reason: Schema.String,
   },
 ) {}
 
-export class WorkspaceSearchIndexScanTimedOut extends Schema.TaggedErrorClass<WorkspaceSearchIndexScanTimedOut>()(
+export class WorkspaceSearchIndexScanTimedOut extends Schema.TaggedError<WorkspaceSearchIndexScanTimedOut>()(
   "WorkspaceSearchIndexScanTimedOut",
   {
     timeout: Schema.String,
   },
 ) {}
 
-export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexSearchFailed>()(
+export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedError<WorkspaceSearchIndexSearchFailed>()(
   "WorkspaceSearchIndexSearchFailed",
   {
     queryLength: Schema.Number,
@@ -65,14 +65,14 @@ export class WorkspaceSearchIndexSearchFailed extends Schema.TaggedErrorClass<Wo
   },
 ) {}
 
-export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexRefreshFailed>()(
+export class WorkspaceSearchIndexRefreshFailed extends Schema.TaggedError<WorkspaceSearchIndexRefreshFailed>()(
   "WorkspaceSearchIndexRefreshFailed",
   {
     reason: Schema.String,
   },
 ) {}
 
-export class WorkspaceSearchIndexDestroyFailed extends Schema.TaggedErrorClass<WorkspaceSearchIndexDestroyFailed>()(
+export class WorkspaceSearchIndexDestroyFailed extends Schema.TaggedError<WorkspaceSearchIndexDestroyFailed>()(
   "WorkspaceSearchIndexDestroyFailed",
   {
     reason: Schema.String,
@@ -663,6 +663,7 @@ function parseWorkspaceSearchIndexKey(key: string): {
   };
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const layer = (key: string) => {
   const { cwd, variant } = parseWorkspaceSearchIndexKey(key);
   return Layer.effect(WorkspaceSearchIndex, make(cwd, variant));

@@ -56,7 +56,7 @@ export class WorkspaceEntries extends Context.Service<
   }
 >()("t3/workspace/WorkspaceEntries") {}
 
-export class WorkspaceDirectoryListFailed extends Schema.TaggedErrorClass<WorkspaceDirectoryListFailed>()(
+export class WorkspaceDirectoryListFailed extends Schema.TaggedError<WorkspaceDirectoryListFailed>()(
   "WorkspaceDirectoryListFailed",
   {
     path: Schema.String,
@@ -68,6 +68,7 @@ export class WorkspaceDirectoryListFailed extends Schema.TaggedErrorClass<Worksp
   }
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;

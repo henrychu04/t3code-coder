@@ -7,7 +7,7 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 export const CODER_HELPER_PROTOCOL_VERSION = 2;
 export const CODER_HELPER_INFO_METHOD = "coder.helper.info";
 
-export class CoderHelperProtocolError extends Schema.TaggedErrorClass<CoderHelperProtocolError>()(
+export class CoderHelperProtocolError extends Schema.TaggedError<CoderHelperProtocolError>()(
   "CoderHelperProtocolError",
   {
     message: Schema.String,

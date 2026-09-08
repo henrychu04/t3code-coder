@@ -66,6 +66,7 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
   );
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const layer = (config: ServerConfig["Service"]) =>
   Layer.succeed(ServerConfig, ServerConfig.of(config));
 

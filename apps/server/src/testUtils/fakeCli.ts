@@ -75,7 +75,7 @@ export function writeFakeCli(options: FakeCliOptions): string {
  * host. The script must not read `process.argv`; the mock agents are driven
  * by environment and stdin.
  */
-export function execScriptSource(options: {
+function execScriptSource(options: {
   readonly scriptPath: string;
   readonly expectedArgs?: ReadonlyArray<string>;
   /** Tab-separated argv appended here per invocation, for launch-flag assertions. */

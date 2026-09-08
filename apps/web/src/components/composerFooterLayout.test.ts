@@ -1,4 +1,3 @@
-import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveContextStripLabelsCompact } from "./BranchToolbar.logic";
@@ -8,6 +7,7 @@ import {
   COMPOSER_RESTING_EXPANSION_MIN_PX,
   getRestingComposerImagePreviewCounts,
   resolveComposerTimelineInset,
+  resolveScrollToEndClearance,
   resolveRestingComposerControlsLayout,
   resolveRestingComposerControlsNaturalWidth,
   shouldAnimateComposerRestingTransition,

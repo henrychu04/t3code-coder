@@ -28,7 +28,7 @@ function revisionOf(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-export class WorkspaceFileSystemOperationError extends Schema.TaggedErrorClass<WorkspaceFileSystemOperationError>()(
+export class WorkspaceFileSystemOperationError extends Schema.TaggedError<WorkspaceFileSystemOperationError>()(
   "WorkspaceFileSystemOperationError",
   {
     workspaceRoot: Schema.String,
@@ -50,7 +50,7 @@ export class WorkspaceFileSystemOperationError extends Schema.TaggedErrorClass<W
   },
 ) {}
 
-export class WorkspaceFilePathEscapeError extends Schema.TaggedErrorClass<WorkspaceFilePathEscapeError>()(
+export class WorkspaceFilePathEscapeError extends Schema.TaggedError<WorkspaceFilePathEscapeError>()(
   "WorkspaceFilePathEscapeError",
   {
     workspaceRoot: Schema.String,
@@ -60,7 +60,7 @@ export class WorkspaceFilePathEscapeError extends Schema.TaggedErrorClass<Worksp
   },
 ) {}
 
-export class WorkspacePathNotFileError extends Schema.TaggedErrorClass<WorkspacePathNotFileError>()(
+export class WorkspacePathNotFileError extends Schema.TaggedError<WorkspacePathNotFileError>()(
   "WorkspacePathNotFileError",
   {
     workspaceRoot: Schema.String,
@@ -69,7 +69,7 @@ export class WorkspacePathNotFileError extends Schema.TaggedErrorClass<Workspace
   },
 ) {}
 
-export class WorkspaceBinaryFileError extends Schema.TaggedErrorClass<WorkspaceBinaryFileError>()(
+export class WorkspaceBinaryFileError extends Schema.TaggedError<WorkspaceBinaryFileError>()(
   "WorkspaceBinaryFileError",
   {
     workspaceRoot: Schema.String,
@@ -78,7 +78,7 @@ export class WorkspaceBinaryFileError extends Schema.TaggedErrorClass<WorkspaceB
   },
 ) {}
 
-export class WorkspaceFileStaleError extends Schema.TaggedErrorClass<WorkspaceFileStaleError>()(
+export class WorkspaceFileStaleError extends Schema.TaggedError<WorkspaceFileStaleError>()(
   "WorkspaceFileStaleError",
   {
     workspaceRoot: Schema.String,
@@ -121,6 +121,7 @@ function isContained(root: string, target: string): boolean {
   );
 }
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const writeLocks = yield* RcMap.make({ lookup: (_path: string) => Semaphore.make(1) });
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;

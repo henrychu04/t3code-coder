@@ -111,7 +111,12 @@ export function applyServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
-  const { projectAutoPullOverrides, ...ordinaryPatch } = patch;
+  const { projectAutoPullOverrides, pullRequestMergeMethodOverrides, ...ordinaryPatch } = patch;
+  const mergeMethodOverrides = { ...current.pullRequestMergeMethodOverrides };
+  for (const [id, value] of Object.entries(pullRequestMergeMethodOverrides ?? {})) {
+    if (value === null) delete mergeMethodOverrides[id as ProjectId];
+    else mergeMethodOverrides[id as ProjectId] = value;
+  }
   const autoPullOverrides = { ...current.projectAutoPullOverrides };
   for (const [id, value] of Object.entries(projectAutoPullOverrides ?? {})) {
     if (value === null) delete autoPullOverrides[id as ProjectId];
@@ -120,6 +125,7 @@ export function applyServerSettingsPatch(
   const next = {
     ...deepMerge(current, ordinaryPatch),
     projectAutoPullOverrides: autoPullOverrides,
+    pullRequestMergeMethodOverrides: mergeMethodOverrides,
     defaultModelSelection:
       patch.defaultModelSelection === undefined
         ? current.defaultModelSelection

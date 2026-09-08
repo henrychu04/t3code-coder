@@ -1,3 +1,5 @@
+import type { PullRequestMergeMethod } from "@t3tools/contracts";
+import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
 import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { serverEnvironment } from "../../state/server";
@@ -320,6 +322,53 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
         <p role="status">Project settings changed elsewhere. Reload settings before saving.</p>
       )}
       <fieldset disabled={pending || !connected} className="space-y-8 disabled:opacity-60">
+        <SettingsSection title="Merge requests">
+          <SettingsRow
+            title="Default merge method"
+            description="Saved immediately for this project. GitLab's allowed methods still apply."
+            control={
+              <select
+                aria-label="Default merge method"
+                className="rounded border bg-background p-1 text-sm"
+                value={settings.pullRequestMergeMethodOverrides[project.id] ?? "last-used"}
+                onChange={async (event) => {
+                  const value = event.target.value;
+                  if (saving.current) return;
+                  saving.current = true;
+                  setPending(true);
+                  try {
+                    const result = await updateSettings({
+                      environmentId: project.environmentId,
+                      input: {
+                        patch: {
+                          pullRequestMergeMethodOverrides: {
+                            [project.id]:
+                              value === "last-used" ? null : (value as PullRequestMergeMethod),
+                          },
+                        },
+                      },
+                    });
+                    setNotice(
+                      result._tag === "Failure"
+                        ? "Could not save the default merge method."
+                        : "Default merge method saved.",
+                    );
+                  } finally {
+                    saving.current = false;
+                    setPending(false);
+                  }
+                }}
+              >
+                <option value="last-used">Last used in this workspace</option>
+                {Object.entries(PULL_REQUEST_MERGE_METHOD_LABELS).map(([method, label]) => (
+                  <option key={method} value={method}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            }
+          />
+        </SettingsSection>
         <SettingsSection title="Project">
           <SettingsRow
             title="Name"

@@ -196,6 +196,7 @@ export const ProviderSessionDirectoryLive = Layer.effect(
   makeProviderSessionDirectory,
 );
 
+/** @public Service construction is part of the canonical Effect module API. */
 export function makeProviderSessionDirectoryLive() {
   return Layer.effect(ProviderSessionDirectory, makeProviderSessionDirectory);
 }

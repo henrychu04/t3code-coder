@@ -50,7 +50,7 @@ export const ScreenshotArtifactChunk = Schema.Struct({
 });
 export type ScreenshotArtifactChunk = typeof ScreenshotArtifactChunk.Type;
 
-export class ScreenshotArtifactReadError extends Schema.TaggedErrorClass<ScreenshotArtifactReadError>()(
+export class ScreenshotArtifactReadError extends Schema.TaggedError<ScreenshotArtifactReadError>()(
   "ScreenshotArtifactReadError",
   {
     artifactId: ScreenshotArtifactId,

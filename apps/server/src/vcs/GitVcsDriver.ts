@@ -2017,6 +2017,7 @@ const makeLocalGitService = Effect.gen(function* () {
   });
 });
 
+/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const git = yield* makeLocalGitService;
   return GitVcsDriver.of(git);

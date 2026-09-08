@@ -6039,11 +6039,9 @@ export default function ChatView(props: ChatViewProps) {
             activeThreadId={activeThread.id}
             activeThreadTitle={activeThread.title}
             isServerThread={isServerThread}
-            activeProjectName={activeProject?.title}
-            activeProjectCwd={activeProject?.workspaceRoot ?? null}
+            activeProject={activeProject}
             gitCwd={gitStatusCwd}
             {...(draftId ? { draftId } : {})}
-            activeProjectFaviconPath={activeProject?.faviconPath ?? null}
             keybindings={keybindings}
             rightPanelOpen={rightPanelOpen}
             onNewThreadInProject={handleNewThreadInActiveProject}

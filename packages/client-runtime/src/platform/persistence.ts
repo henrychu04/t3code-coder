@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-export class ConnectionPersistenceError extends Schema.TaggedErrorClass<ConnectionPersistenceError>()(
+export class ConnectionPersistenceError extends Schema.TaggedError<ConnectionPersistenceError>()(
   "ConnectionPersistenceError",
   {
     operation: Schema.Literals([

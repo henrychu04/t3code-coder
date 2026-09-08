@@ -181,3 +181,18 @@ it("captures hydrated defaults once and preserves edits when later settings beco
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.update).not.toHaveBeenCalled();
 });
+
+it("stores and clears merge defaults only in the selected workspace", async () => {
+  const root = await mount();
+  const select = root.findByProps({ "aria-label": "Default merge method" });
+  await act(async () => select.props.onChange({ target: { value: "squash" } }));
+  expect(mocks.update).toHaveBeenLastCalledWith({
+    environmentId: "workspace-a",
+    input: { patch: { pullRequestMergeMethodOverrides: { project: "squash" } } },
+  });
+  await act(async () => select.props.onChange({ target: { value: "last-used" } }));
+  expect(mocks.update).toHaveBeenLastCalledWith({
+    environmentId: "workspace-a",
+    input: { patch: { pullRequestMergeMethodOverrides: { project: null } } },
+  });
+});

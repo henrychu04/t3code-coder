@@ -53,20 +53,18 @@ export function transportSafeSourceControlErrorValue(value: string): string {
   return safe.slice(0, MAX_ERROR_TRANSPORT_VALUE_LENGTH);
 }
 
-export function parseSourceControlOwnerRef(
-  headSelector: string,
-): SourceControlRefSelector | undefined {
+function parseSourceControlOwnerRef(headSelector: string): SourceControlRefSelector | undefined {
   const match = /^([^:/\s]+):(.+)$/u.exec(headSelector.trim());
   const owner = match?.[1]?.trim();
   const refName = match?.[2]?.trim();
   return owner && refName ? { owner, refName } : undefined;
 }
 
-export function normalizeSourceBranch(headSelector: string): string {
+function normalizeSourceBranch(headSelector: string): string {
   return parseSourceControlOwnerRef(headSelector)?.refName ?? headSelector.trim();
 }
 
-export function sourceBranch(input: {
+function sourceBranch(input: {
   readonly headSelector: string;
   readonly source?: SourceControlRefSelector;
 }): string {

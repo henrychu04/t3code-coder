@@ -65,7 +65,7 @@ import Migration0050 from "./Migrations/050_RepairPendingUserInputCounts.ts";
  * Uses Migrator.fromRecord which parses the key format and
  * returns migrations sorted by ID.
  */
-export const migrationEntries = [
+const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
   [3, "CheckpointDiffBlobs", Migration0003],
@@ -109,9 +109,9 @@ export const migrationEntries = [
   [50, "RepairPendingUserInputCounts", Migration0050],
 ] as const;
 
-export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
+const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
-export const makeMigrationLoader = (throughId?: number) =>
+const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
     Object.fromEntries(
       migrationEntries
@@ -168,4 +168,5 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
  * )
  * ```
  */
+/** @public Service construction is part of the canonical Effect module API. */
 export const MigrationsLive = Layer.effectDiscard(runMigrations());
