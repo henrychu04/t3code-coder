@@ -1477,8 +1477,8 @@ function resultOutcome(result: SDKResultMessage): {
       : result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
   const errorMessage = listedError || structuredError;
   if (structuredError !== undefined) return { status: "failed", errorMessage };
-  if (result.subtype === "success") return { status: "completed", errorMessage };
   if (isInterruptedResult(result)) return { status: "interrupted", errorMessage };
+  if (result.subtype === "success") return { status: "completed", errorMessage };
   return {
     status: resultErrorsText(result).includes("cancel") ? "cancelled" : "failed",
     errorMessage,
