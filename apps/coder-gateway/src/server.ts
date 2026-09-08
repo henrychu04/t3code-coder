@@ -1906,8 +1906,15 @@ export function makeLocalCoderGateway(
             sendText(response, 415, "text/plain; charset=utf-8", "JSON content required.");
             return;
           }
+          let nextConfig: ReturnType<typeof parseCoderProfileConfig>;
           try {
-            const nextConfig = parseCoderProfileConfig(await readJsonBody(request));
+            nextConfig = parseCoderProfileConfig(await readJsonBody(request));
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : "Invalid configuration.";
+            sendText(response, 400, "text/plain; charset=utf-8", message);
+            return;
+          }
+          try {
             const savedConfig = await serializeConfigMutation(async () => {
               const previousConfig = profileConfig;
               const stalePortForwardIds = new Set(
@@ -1938,8 +1945,8 @@ export function makeLocalCoderGateway(
             });
             sendText(response, 200, "application/json; charset=utf-8", JSON.stringify(savedConfig));
           } catch (cause) {
-            const message = cause instanceof Error ? cause.message : "Invalid configuration.";
-            sendText(response, 400, "text/plain; charset=utf-8", message);
+            const message = cause instanceof Error ? cause.message : "Configuration update failed.";
+            sendText(response, 502, "text/plain; charset=utf-8", message);
           }
           return;
         }

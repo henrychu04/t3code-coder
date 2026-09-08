@@ -177,6 +177,7 @@ const makeProjectionThreadActivityRepository = Effect.gen(function* () {
           AND length(trim(
             CASE
               WHEN json_type(payload_json, '$.title') = 'text'
+                AND length(trim(json_extract(payload_json, '$.title'), ${taskTitleWhitespace})) > 0
                 THEN json_extract(payload_json, '$.title')
               WHEN kind = 'task.started' AND json_type(payload_json, '$.detail') = 'text'
                 THEN json_extract(payload_json, '$.detail')

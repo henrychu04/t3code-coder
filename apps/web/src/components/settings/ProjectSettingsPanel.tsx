@@ -138,11 +138,22 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
   };
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
-  const [baseline, setBaseline] = useState(() => projectSettingsValues(resolvedProject));
+  const [baseline, setBaseline] = useState<ReturnType<typeof projectSettingsValues> | null>(() =>
+    environment?.serverConfig ? projectSettingsValues(resolvedProject) : null,
+  );
   const [values, setValues] = useState(baseline);
   const [pending, setPending] = useState(false);
   const saving = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Capture the first hydrated snapshot only; later changes must remain stale.
+  if (baseline === null || values === null) {
+    if (environment?.serverConfig) {
+      const initialValues = projectSettingsValues(resolvedProject);
+      setBaseline(initialValues);
+      setValues(initialValues);
+    }
+    return <p role="status">Loading project settings…</p>;
+  }
   const connected = environment?.connection.phase === "connected";
   const stale = projectSettingsChanged(baseline, resolvedProject);
   const providers = environment?.serverConfig?.providers ?? [];
@@ -280,7 +291,7 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
       };
       setBaseline(next);
       setValues((current) => ({
-        ...current,
+        ...(current ?? values),
         ...(kind === "scripts" ? { scripts: next.scripts } : { autoPull: next.autoPull }),
       }));
       setNotice("Now using the workspace default.");

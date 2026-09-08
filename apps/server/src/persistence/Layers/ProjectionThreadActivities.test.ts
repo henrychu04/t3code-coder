@@ -97,4 +97,33 @@ layer("ProjectionThreadActivityRepository", (it) => {
       );
     }),
   );
+  it.effect("uses started detail after blank titles without accepting progress detail", () =>
+    Effect.gen(function* () {
+      const repository = yield* ProjectionThreadActivityRepository;
+      const threadId = ThreadId.make("thread-detail-fallback");
+      for (const [index, kind] of (["task.started", "task.progress"] as const).entries()) {
+        yield* repository.upsert({
+          activityId: EventId.make(`detail-${index}`),
+          threadId,
+          turnId: null,
+          tone: "info",
+          kind,
+          summary: "Task activity",
+          payload: { taskId: "task", title: " \t\n\u00a0", detail: "Usable task label" },
+          sequence: index + 1,
+          createdAt: "2026-03-01T00:00:00.000Z",
+        });
+      }
+      const activity = yield* repository.getLatestTaskActivity({ threadId, taskId: "task" });
+      assert.equal(activity._tag, "Some");
+      if (activity._tag === "Some") {
+        assert.equal(activity.value.activityId, "detail-0");
+        assert.deepEqual(activity.value.payload, {
+          taskId: "task",
+          title: " \t\n\u00a0",
+          detail: "Usable task label",
+        });
+      }
+    }),
+  );
 });

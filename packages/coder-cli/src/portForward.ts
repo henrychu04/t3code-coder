@@ -66,7 +66,11 @@ const terminatePortForwardProcess = (
         Effect.flatMap((exit) => {
           if (Option.isSome(exit)) return Effect.void;
           if (process.child.exitCode === null && process.child.signalCode === null) {
-            process.child.kill("SIGKILL");
+            try {
+              process.child.kill("SIGKILL");
+            } catch {
+              /* Still require an exit event below. */
+            }
           }
           return Deferred.await(process.exit).pipe(
             Effect.timeoutOrElse({
