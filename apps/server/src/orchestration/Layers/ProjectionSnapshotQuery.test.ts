@@ -104,6 +104,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           has_actionable_proposed_plan,
           pinned_at,
           pin_order_key,
+          active_order_key,
           created_at,
           updated_at,
           deleted_at
@@ -126,6 +127,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           0,
           '2026-02-24T00:00:01.000Z',
           'gm',
+          'hq',
           '2026-02-24T00:00:02.000Z',
           '2026-02-24T00:00:03.000Z',
           NULL
@@ -351,6 +353,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
+          activeOrderKey: "hq",
           titleRegeneration: null,
           deletedAt: null,
           messages: [
@@ -479,6 +482,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           snoozedAt: null,
           pinnedAt: "2026-02-24T00:00:01.000Z",
           pinOrderKey: "gm",
+          activeOrderKey: "hq",
           titleRegeneration: null,
           session: {
             threadId: ThreadId.make("thread-1"),

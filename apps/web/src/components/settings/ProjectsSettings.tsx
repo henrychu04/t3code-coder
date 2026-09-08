@@ -1,4 +1,13 @@
-import { useState } from "react";
+import {
+  Combobox,
+  ComboboxTrigger,
+  ComboboxPopup,
+  ComboboxSearchInput,
+  ComboboxEmpty,
+  ComboboxList,
+  ComboboxItem,
+} from "../ui/combobox";
+import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -21,6 +30,17 @@ export function ProjectsSettings() {
   const { environments } = useEnvironments();
   const projects = useProjects();
   const [scope, setScope] = useState<EnvironmentId | null>(null);
+  const scopeOptions = useMemo(
+    () => [
+      { id: null, label: "All connected workspaces" },
+      ...environments.map((environment) => ({
+        id: environment.environmentId,
+        label: environment.label,
+      })),
+    ],
+    [environments],
+  );
+  const selectedScope = scopeOptions.find((option) => option.id === scope) ?? scopeOptions[0]!;
   const targets = environments.filter(
     (environment) =>
       (scope === null || environment.environmentId === scope) &&
@@ -39,24 +59,36 @@ export function ProjectsSettings() {
         <SettingsRow
           title="Coder workspace"
           control={
-            <select
-              aria-label="Project defaults workspace"
-              className="rounded border bg-background p-2 text-sm"
-              value={scope ?? "all"}
-              onChange={(event) => {
-                setScope(
-                  event.target.value === "all" ? null : (event.target.value as EnvironmentId),
-                );
+            <Combobox<{ id: EnvironmentId | null; label: string }>
+              items={scopeOptions}
+              value={selectedScope}
+              itemToStringLabel={(option) => option.label}
+              onValueChange={(option) => {
+                if (!option) return;
+                setScope(option.id);
                 setNotice(null);
               }}
             >
-              <option value="all">All connected workspaces</option>
-              {environments.map((environment) => (
-                <option key={environment.environmentId} value={environment.environmentId}>
-                  {environment.label}
-                </option>
-              ))}
-            </select>
+              <ComboboxTrigger
+                render={<Button variant="outline" aria-label="Project defaults workspace" />}
+              >
+                {selectedScope.label}
+              </ComboboxTrigger>
+              <ComboboxPopup>
+                <ComboboxSearchInput
+                  placeholder="Search workspaces..."
+                  aria-label="Search project defaults workspaces"
+                />
+                <ComboboxEmpty>No workspaces found.</ComboboxEmpty>
+                <ComboboxList>
+                  {(option: (typeof scopeOptions)[number]) => (
+                    <ComboboxItem key={option.id ?? "all"} value={option}>
+                      {option.label}
+                    </ComboboxItem>
+                  )}
+                </ComboboxList>
+              </ComboboxPopup>
+            </Combobox>
           }
         />
         {targets.length === 0 ? (

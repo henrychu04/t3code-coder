@@ -201,7 +201,8 @@ const makeOrchestrationEngine = Effect.gen(function* () {
         // request's durable state before deciding whether an async answer is
         // a provider response or a new user turn.
         const userInputActivity =
-          envelope.command.type === "thread.user-input.respond"
+          envelope.command.type === "thread.user-input.respond" ||
+          envelope.command.type === "thread.user-input.dismiss"
             ? yield* projectionSnapshotQuery.getUserInputActivity(envelope.command)
             : Option.none();
         const eventBase = yield* decideOrchestrationCommand({

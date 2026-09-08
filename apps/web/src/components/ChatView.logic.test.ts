@@ -17,6 +17,7 @@ import {
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
   buildLoadingThreadFromShell,
+  buildRunningThreadTurnInterruptInput,
   buildThreadTurnInterruptInput,
   canUseOwnedFilesSurface,
   codexArtifactTemplatePromptToAppend,
@@ -28,6 +29,7 @@ import {
   getStartedThreadModelChangeBlockReason,
   hasEnvironmentReconnectWarningGraceElapsed,
   hasServerAcknowledgedLocalDispatch,
+  shouldRefocusComposerOnWindowFocus,
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
   reconcileRetainedMountedThreadIds,
@@ -462,6 +464,20 @@ describe("buildThreadTurnInterruptInput", () => {
     expect(buildThreadTurnInterruptInput(makeThread({ session: readySession }))).toEqual({
       threadId,
     });
+  });
+
+  it("omits a turn id when a running session has not projected its active turn yet", () => {
+    expect(
+      buildThreadTurnInterruptInput(
+        makeThread({
+          session: {
+            ...readySession,
+            status: "running",
+            activeTurnId: null,
+          },
+        }),
+      ),
+    ).toEqual({ threadId });
   });
 });
 
@@ -1012,5 +1028,47 @@ describe("provider lock for imported history", () => {
         ],
       }),
     ).toBe("claudeAgent");
+  });
+});
+
+describe("shouldRefocusComposerOnWindowFocus", () => {
+  function element(
+    tagName: string,
+    options?: { editable?: boolean; role?: string; within?: string },
+  ) {
+    return {
+      tagName,
+      isContentEditable: options?.editable ?? false,
+      getAttribute: (name: string) => (name === "role" ? (options?.role ?? null) : null),
+      closest: (selector: string) =>
+        options?.within !== undefined && selector.includes(options.within) ? ({} as Element) : null,
+    };
+  }
+
+  it("refocuses when nothing or the body holds focus", () => {
+    expect(shouldRefocusComposerOnWindowFocus(null)).toBe(true);
+    expect(shouldRefocusComposerOnWindowFocus(element("BODY"))).toBe(true);
+  });
+
+  it("refocuses away from a plain button, such as a pull request tab", () => {
+    expect(shouldRefocusComposerOnWindowFocus(element("BUTTON"))).toBe(true);
+  });
+
+  it("leaves other text fields alone", () => {
+    expect(shouldRefocusComposerOnWindowFocus(element("INPUT"))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("TEXTAREA"))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("DIV", { editable: true }))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("DIV", { role: "textbox" }))).toBe(false);
+  });
+
+  it("leaves a focused terminal alone in the drawer and the right panel", () => {
+    expect(
+      shouldRefocusComposerOnWindowFocus(element("BUTTON", { within: "data-terminal-owner" })),
+    ).toBe(false);
+  });
+
+  it("leaves focus inside a dialog or popup alone", () => {
+    expect(shouldRefocusComposerOnWindowFocus(element("BUTTON", { within: "dialog" }))).toBe(false);
+    expect(shouldRefocusComposerOnWindowFocus(element("BUTTON", { within: "-popup" }))).toBe(false);
   });
 });

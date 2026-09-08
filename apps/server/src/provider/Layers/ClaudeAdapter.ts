@@ -78,7 +78,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import { ServerConfig } from "../../config.ts";
-import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
+import { claudeSignedOutMessage, makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
 import {
   getClaudeModelCapabilities,
   isClaudeUltracodeEffort,
@@ -151,6 +151,9 @@ interface ClaudeTurnState {
     readonly close: () => ReadonlyArray<string>;
   };
   nextSyntheticAssistantBlockIndex: number;
+  authenticationFailureMessage: string | undefined;
+  rejectedRateLimitTypes: Set<string>;
+  latestAssistantRateLimited: boolean;
 }
 
 interface AssistantTextBlockState {
@@ -438,10 +441,13 @@ function resultErrorsText(result: SDKResultMessage): string {
 }
 
 /** Failure text for structured terminal reasons, including success-tagged failures. */
-function terminalResultError(reason: SDKResultMessage["terminal_reason"]): string | undefined {
+function terminalResultError(
+  reason: SDKResultMessage["terminal_reason"],
+  failureHint?: string,
+): string | undefined {
   switch (reason) {
     case "api_error":
-      return "Claude gave up after repeated API errors.";
+      return failureHint ?? "Claude gave up after repeated API errors.";
     case "malformed_tool_use_exhausted":
       return "Claude gave up after repeated malformed tool calls.";
     case "budget_exhausted":
@@ -1463,18 +1469,31 @@ function isOverloadedResult(result: SDKResultMessage): boolean {
 }
 
 /** Derives turn status and its error from the same provider result. */
-function resultOutcome(result: SDKResultMessage): {
+function resultOutcome(
+  result: SDKResultMessage,
+  failureHint?: string,
+): {
   status: ProviderRuntimeTurnStatus;
   errorMessage: string | undefined;
 } {
+  // A success result flagged is_error only fails when the turn already
+  // reported its cause (expired login, rejected usage window).
+  const successTaggedFailure = result.subtype === "success" && result.is_error === true;
   const structuredError = isOverloadedResult(result)
     ? "Claude API is overloaded (529). Try again shortly."
-    : terminalResultError(result.terminal_reason);
-  // CLI diagnostic entries must not become the error banner.
+    : (terminalResultError(result.terminal_reason, failureHint) ??
+      (successTaggedFailure ? failureHint : undefined));
+  // CLI diagnostic entries must not become the error banner. Success results
+  // carry no typed error list, but a success-tagged failure may still list one.
+  const listedErrors: ReadonlyArray<unknown> =
+    "errors" in result && Array.isArray(result.errors) ? result.errors : [];
   const listedError =
-    result.subtype === "success" || !Array.isArray(result.errors)
+    result.subtype === "success" && !successTaggedFailure
       ? undefined
-      : result.errors.find((error) => !error.startsWith("[ede_diagnostic]"));
+      : listedErrors.find(
+          (error): error is string =>
+            typeof error === "string" && !error.startsWith("[ede_diagnostic]"),
+        );
   const errorMessage = listedError || structuredError;
   if (structuredError !== undefined) return { status: "failed", errorMessage };
   if (result.subtype === "success") return { status: "completed", errorMessage };
@@ -3186,6 +3205,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedScreenshotArtifacts: [],
         capturedScreenshotDigests: new Set(),
         nextSyntheticAssistantBlockIndex: -1,
+        authenticationFailureMessage: undefined,
+        rejectedRateLimitTypes: new Set(),
+        latestAssistantRateLimited: false,
       };
       context.session = {
         ...context.session,
@@ -3244,6 +3266,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     }
 
     if (context.turnState) {
+      // Limited retries may only carry an assistant error, without a new window
+      // event. Later parent responses replace this evidence if the turn recovers.
+      context.turnState.latestAssistantRateLimited = message.error === "rate_limit";
+      // The CLI can report authentication failure before ending the turn as a
+      // generic API error, so retain that evidence for the result fallback.
+      if (message.error === "authentication_failed") {
+        context.turnState.authenticationFailureMessage = claudeSignedOutMessage({
+          configDir: claudeEnvironment.CLAUDE_CONFIG_DIR,
+          cwd: path.resolve(context.session.cwd ?? "."),
+        });
+      }
       context.turnState.items.push(message.message);
       if (
         normalizeClaudeActiveTokenUsage(
@@ -3270,7 +3303,13 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    const { status, errorMessage } = resultOutcome(message);
+    const turn = context.turnState;
+    const failureHint =
+      turn?.authenticationFailureMessage ??
+      (turn && (turn.rejectedRateLimitTypes.size > 0 || turn.latestAssistantRateLimited)
+        ? "Claude usage limit reached. Send the message again once the limit resets."
+        : undefined);
+    const { status, errorMessage } = resultOutcome(message, failureHint);
 
     if (status === "failed") {
       yield* emitRuntimeError(context, errorMessage ?? "Claude turn failed.");
@@ -3837,19 +3876,33 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     if (message.type === "rate_limit_event") {
       const info = message.rate_limit_info;
       if (!info) return;
-      if (
-        info.status === "rejected" &&
-        info.overageStatus !== "allowed" &&
-        info.overageStatus !== "allowed_warning" &&
-        info.isUsingOverage !== true &&
-        info.overageInUse !== true &&
-        context.turnState
-      ) {
+      // A rejected window parks the turn inside the SDK: no further messages
+      // arrive and no result lands, so without a row the thread just spins.
+      // Warnings (allowed_warning) still have headroom and stay quiet, an
+      // account spending provisioned overage keeps running despite the reject,
+      // and between turns there is no turn to report as paused.
+      const overageAllowed =
+        info.overageStatus === "allowed" ||
+        info.overageStatus === "allowed_warning" ||
+        info.isUsingOverage === true ||
+        info.overageInUse === true;
+      const blocked = info.status === "rejected" && !overageAllowed;
+      const limitType = info.rateLimitType ?? "unknown";
+      const limitKey = `${limitType}:${info.resetsAt ?? "unknown"}`;
+      if (context.turnState) {
+        // Current blocking evidence is independent of whether its warning has
+        // already been shown. A recovery can omit or advance the reset time;
+        // its window type remains stable without clearing another window.
+        if (blocked) context.turnState.rejectedRateLimitTypes.add(limitType);
+        else if (info.status === "allowed" || info.status === "allowed_warning" || overageAllowed) {
+          context.turnState.rejectedRateLimitTypes.delete(limitType);
+        }
+      }
+      if (blocked && context.turnState !== undefined) {
         const turnId = context.turnState.turnId;
         if (context.announcedUsageLimits?.turnId !== turnId)
           context.announcedUsageLimits = { turnId, keys: new Set() };
-        const key =
-          String(info.rateLimitType ?? "unknown") + ":" + String(info.resetsAt ?? "unknown");
+        const key = limitKey;
         if (!context.announcedUsageLimits.keys.has(key)) {
           context.announcedUsageLimits.keys.add(key);
           yield* emitRuntimeWarning(
@@ -4853,6 +4906,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedScreenshotDigests: new Set(),
         ...(screenshotObservation ? { screenshotObservation } : {}),
         nextSyntheticAssistantBlockIndex: -1,
+        authenticationFailureMessage: undefined,
+        rejectedRateLimitTypes: new Set(),
+        latestAssistantRateLimited: false,
       };
 
       const updatedAt = yield* nowIso;

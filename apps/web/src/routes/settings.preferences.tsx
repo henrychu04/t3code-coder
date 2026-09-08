@@ -251,20 +251,6 @@ function GeneralSettingsView() {
 
       <SettingsSection title="Editor and history">
         <SettingsRow
-          id="composer-collapse-on-blur"
-          title="Collapse composer when unfocused"
-          description="Rest an existing thread's composer into one line after focus moves elsewhere."
-          control={
-            <Switch
-              aria-label="Collapse composer when unfocused"
-              checked={settings.composerCollapseOnBlur}
-              onCheckedChange={(checked) =>
-                updateSettings({ composerCollapseOnBlur: Boolean(checked) })
-              }
-            />
-          }
-        />
-        <SettingsRow
           id="composer-collapse-on-scroll"
           title="Collapse composer when scrolling"
           description="Rest the composer when you scroll through an existing conversation."

@@ -22,7 +22,8 @@ Threads move through four states in the sidebar:
 
 - **Pinned** — kept above your active work, independent of project grouping. Pin or unpin from the
   thread's context menu, or press `mod+shift+p`. Drag to reorder. Enable **Settings → Preferences
-  → Confirm before unpinning** if you want every unpin action to ask first.
+  → Confirm before unpinning** to confirm menu and keyboard unpin actions. Dragging out of the
+  pinned section does not ask for confirmation.
 - **Active** — everything you are working on now.
 - **Snoozed** — out of the way until a wake time you pick from the thread's menu (later today,
   tomorrow morning, next week, and so on). Snoozed threads return to active on their own and a
@@ -39,6 +40,20 @@ settlement only when its update timestamp is not older than the user's latest ac
 the inactivity rule can still apply. Manually un-settling a thread keeps it active until new work
 clears that choice. Change these rules in **Settings → Preferences**. A settings change affects
 future settlement and does not reopen an already settled thread.
+
+## Drag and reorder
+
+Drag within the pinned or active section to arrange threads. Drag between sections to pin,
+unpin, settle, or un-settle a thread. Dragging a snoozed thread out wakes it; snoozing still
+requires choosing a wake time from its menu. During a drag, the destination shows the action
+that will happen. Transitions respect reduced-motion preferences.
+
+The workspace saves the order. New threads appear above arranged active threads. Settling clears
+active placement, so un-settling returns a thread to the top; pinning and snoozing retain its
+active placement. Subsequent thread activity does not reorder arranged threads.
+
+Manually settling an idle thread dismisses unanswered asynchronous questions without sending
+an answer to the provider. Approvals, blocking questions, and live work still prevent settlement.
 
 ## Archiving
 

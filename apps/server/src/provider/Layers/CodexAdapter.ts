@@ -1,3 +1,8 @@
+import {
+  type CodexRateLimitSnapshot,
+  mergeCodexRateLimits,
+  codexUsageLimitMessage,
+} from "./codexUsageLimits.ts";
 /**
  * CodexAdapterLive - Scoped live implementation for the Codex provider adapter.
  *
@@ -1791,9 +1796,63 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         // this a child of `startSession`, and Effect interrupts a fiber's
         // children when it completes, so the consumer died on return and every
         // runtime event the session emitted afterwards was dropped.
+        let rateLimits: CodexRateLimitSnapshot | undefined;
         const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
           Effect.gen(function* () {
-            const runtimeEvents = mapToRuntimeEvents(event, event.threadId);
+            if (event.method === "account/rateLimits/updated") {
+              const limitsPayload = readPayload(
+                EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
+                event.payload,
+              );
+              if (limitsPayload) {
+                rateLimits = mergeCodexRateLimits(rateLimits, limitsPayload.rateLimits);
+              }
+            } else if (event.method === "error") {
+              const errorPayload = readPayload(
+                EffectCodexSchema.V2ErrorNotification,
+                event.payload,
+              );
+              // The failed `turn/completed` repeats this sentence and is answered
+              // below; relaying both would show the limit twice.
+              if (errorPayload?.error.codexErrorInfo === "usageLimitExceeded") return;
+            }
+
+            let usageLimitError: ProviderRuntimeEvent | undefined;
+            let usageLimitMessage: string | undefined;
+            if (event.method === "turn/completed") {
+              const completedPayload = readPayload(
+                EffectCodexSchema.V2TurnCompletedNotification,
+                event.payload,
+              );
+              const turnError =
+                completedPayload?.turn.status === "failed"
+                  ? completedPayload.turn.error
+                  : undefined;
+              if (turnError?.codexErrorInfo === "usageLimitExceeded") {
+                usageLimitMessage = codexUsageLimitMessage(rateLimits, event.createdAt);
+                usageLimitError = {
+                  ...runtimeEventBase(event, event.threadId),
+                  type: "runtime.error",
+                  payload: {
+                    message: usageLimitMessage,
+                    class: "provider_error",
+                    ...(turnError.message ? { detail: turnError.message } : {}),
+                  },
+                };
+              }
+            }
+
+            const mappedEvents = mapToRuntimeEvents(event, event.threadId).map((runtimeEvent) =>
+              runtimeEvent.type === "turn.completed" && usageLimitMessage
+                ? {
+                    ...runtimeEvent,
+                    payload: { ...runtimeEvent.payload, errorMessage: usageLimitMessage },
+                  }
+                : runtimeEvent,
+            );
+            const runtimeEvents = usageLimitError
+              ? [usageLimitError, ...mappedEvents]
+              : mappedEvents;
             if (runtimeEvents.length === 0) {
               yield* Effect.logDebug("ignoring unhandled Codex provider event", {
                 method: event.method,

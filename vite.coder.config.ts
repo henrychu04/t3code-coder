@@ -7,6 +7,13 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/orchestration/decider.active-order.test.ts",
+      "apps/server/src/orchestration/decider.userInputDismiss.test.ts",
+      "apps/server/src/orchestration/decider.settled.test.ts",
+      "apps/server/src/orchestration/projector.test.ts",
+      "apps/server/src/persistence/Migrations/049_ProjectionThreadsActiveOrderKey.test.ts",
+      "apps/server/src/textGeneration/ClaudeTextGeneration.test.ts",
+      "apps/server/src/provider/Drivers/ClaudeHome.test.ts",
       "apps/server/src/provider/Layers/ProviderSessionReaper.test.ts",
       "apps/server/src/pullRequest/PullRequestService.coder.test.ts",
       "apps/server/src/provider/Layers/ProviderService.compaction.test.ts",

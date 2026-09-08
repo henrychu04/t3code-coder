@@ -26,27 +26,26 @@ export function shouldUseCompactComposerFooter(
 export function shouldUseRestingComposerLayout(input: {
   isExistingThread: boolean;
   isMobileViewport: boolean;
-  isFocused: boolean;
   isScrollCollapsed: boolean;
   hasExpandedChrome: boolean;
-  collapseOnBlur: boolean;
+  hasMultilinePrompt: boolean;
   /** Whether the timeline has more content than fits above the composer. */
   timelineOverflows: boolean;
 }): boolean {
-  // Passive draft content is deliberately absent here. Resting only clamps
-  // the prompt row and overlays its actions; non-image attachment and context
+  // Multiline drafts stay readable. Resting only clamps a single prompt
+  // line and overlays its actions; non-image attachment and context
   // rows keep their natural height above it while image previews move inline.
   // Banners and the tasks badge dock above the surface, so they are absent
   // too. Whether the context strip can host the relocated controls is
   // deliberately absent here: resting reclaims vertical space at every
   // desktop width, and where the strip is missing or too narrow the controls
   // simply return when the composer is focused.
-  const collapsed = input.isScrollCollapsed || (input.collapseOnBlur && !input.isFocused);
   return (
     input.isExistingThread &&
     !input.isMobileViewport &&
     input.timelineOverflows &&
-    collapsed &&
+    input.isScrollCollapsed &&
+    !input.hasMultilinePrompt &&
     !input.hasExpandedChrome
   );
 }
