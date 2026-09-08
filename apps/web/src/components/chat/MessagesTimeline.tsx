@@ -797,7 +797,7 @@ function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
   return target instanceof Element && target.closest("[data-minimap-preview]") !== null;
 }
 
-function TimelineMinimap({
+export function TimelineMinimap({
   hasPersistentGutter,
   hitStripWidth,
   currentIndex,
@@ -896,6 +896,7 @@ function TimelineMinimap({
         >
           <TimelineMinimapNavigationButton
             direction="previous"
+            hitStripWidth={hitStripWidth}
             disabled={previousItem === null}
             onClick={() => {
               if (previousItem) onSelect(previousItem);
@@ -1011,6 +1012,7 @@ function TimelineMinimap({
           </button>
           <TimelineMinimapNavigationButton
             direction="next"
+            hitStripWidth={hitStripWidth}
             disabled={nextItem === null}
             onClick={() => {
               if (nextItem) onSelect(nextItem);
@@ -1024,13 +1026,19 @@ function TimelineMinimap({
 
 function TimelineMinimapNavigationButton({
   direction,
+  hitStripWidth,
   disabled,
   onClick,
 }: {
   direction: "previous" | "next";
+  hitStripWidth: number;
   disabled: boolean;
   onClick: () => void;
 }) {
+  // The 20px button must fit entirely inside the same gutter as the rail.
+  // A child with pointer-events-auto would reactivate a zero-width rail.
+  if (hitStripWidth < 20) return null;
+
   const previous = direction === "previous";
   const label = previous ? "Previous turn" : "Next turn";
   const Icon = previous ? ChevronUpIcon : ChevronDownIcon;
@@ -1041,7 +1049,7 @@ function TimelineMinimapNavigationButton({
         render={
           <span
             className={cn(
-              "absolute left-1 z-10 inline-flex -translate-x-1/2 opacity-0 pointer-events-auto transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
+              "absolute left-0 z-10 inline-flex opacity-0 transition-opacity duration-150 hover:opacity-100 focus-within:opacity-100",
               previous ? "bottom-[calc(100%+2px)]" : "top-[calc(100%+2px)]",
             )}
           />

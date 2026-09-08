@@ -146,6 +146,7 @@ function matchMedia() {
 }
 
 let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
+let TimelineMinimap: typeof import("./MessagesTimeline").TimelineMinimap;
 let buildToolCallExpandedBody: typeof import("./MessagesTimeline").buildToolCallExpandedBody;
 
 beforeAll(async () => {
@@ -180,7 +181,8 @@ beforeAll(async () => {
     },
   });
 
-  ({ MessagesTimeline, buildToolCallExpandedBody } = await import("./MessagesTimeline"));
+  ({ MessagesTimeline, TimelineMinimap, buildToolCallExpandedBody } =
+    await import("./MessagesTimeline"));
 }, 30_000);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
@@ -248,23 +250,26 @@ function buildAssistantTimelineEntry(text: string) {
 }
 
 describe("MessagesTimeline", () => {
-  it("renders previous and next controls with the minimap", () => {
-    const first = buildUserTimelineEntry("First turn");
-    const secondBase = buildUserTimelineEntry("Second turn");
-    const second = {
-      ...secondBase,
-      id: "entry-2",
-      message: {
-        ...secondBase.message,
-        id: MessageId.make("message-2"),
-      },
-    };
+  it.each([0, 1, 19, 20, 40])("keeps navigation controls inside a %ipx gutter", (hitStripWidth) => {
     const markup = renderToStaticMarkup(
-      <MessagesTimeline {...buildProps()} timelineEntries={[first, second]} />,
+      <TimelineMinimap
+        items={[0, 1, 2].map((index) => ({
+          id: `turn-${index}`,
+          rowIndex: index,
+          userText: `Turn ${index}`,
+          assistantText: null,
+        }))}
+        currentIndex={1}
+        hasPersistentGutter={false}
+        hitStripWidth={hitStripWidth}
+        stripMap={new Map()}
+        onSelect={() => {}}
+      />,
     );
-
-    expect(markup).toContain('aria-label="Previous turn"');
-    expect(markup).toContain('aria-label="Next turn"');
+    for (const label of ["Previous turn", "Next turn"]) {
+      if (hitStripWidth >= 20) expect(markup).toContain(`aria-label="${label}"`);
+      else expect(markup).not.toContain(`aria-label="${label}"`);
+    }
   });
 
   it("renders the worked-for row at assistant response text size", () => {
