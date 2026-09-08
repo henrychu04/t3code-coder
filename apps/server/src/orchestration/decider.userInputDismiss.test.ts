@@ -106,6 +106,30 @@ it.layer(NodeServices.layer)("user input dismiss decider", (it) => {
     }),
   );
 
+  for (const kind of ["user-input.resolved", "provider.user-input.respond.failed"]) {
+    it.effect(`settles a closed native question when ${kind} sorts before its request`, () =>
+      Effect.gen(function* () {
+        const request = {
+          ...makeRequest(undefined),
+          sequence: 999,
+          createdAt: "2099-01-01T00:00:00.000Z",
+        };
+        const closed = {
+          ...makeRequest(undefined),
+          id: EventId.make("closed"),
+          kind,
+          payload: { requestId, detail: "Unknown pending user input request" },
+        };
+        const result = yield* decideOrchestrationCommand({
+          command: { type: "thread.settle", commandId: CommandId.make("settle-closed"), threadId },
+          readModel: makeReadModel([closed, request]),
+        });
+        const events = Array.isArray(result) ? result : [result];
+        expect(events.map((event) => event.type)).toEqual(["thread.settled"]);
+      }),
+    );
+  }
+
   it.effect("rejects dismissing a native callback question", () =>
     Effect.gen(function* () {
       const request = makeRequest(undefined);

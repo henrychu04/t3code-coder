@@ -62,7 +62,12 @@ export interface ProjectionFullThreadDiffContext {
  * ProjectionSnapshotQueryShape - Service API for read-model snapshots.
  */
 export interface ProjectionSnapshotQueryShape {
-  /** Read the latest request or resolution without loading the thread history. */
+  /** Read pending approvals and questions without loading the thread history. */
+  readonly getPendingRequestActivities: (
+    threadId: ThreadId,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationThreadActivity>, ProjectionRepositoryError>;
+
+  /** Read request state without loading history; a resolution always takes precedence. */
   readonly getUserInputActivity: (input: {
     readonly threadId: ThreadId;
     readonly requestId: ApprovalRequestId;

@@ -67,6 +67,7 @@ function isStaleRequestFailureDetail(payload: Record<string, unknown> | null): b
 // while the agent works, so they must not expire with the activity window.
 function openRequests(thread: Pick<OrchestrationThread, "activities">) {
   const requests = new Map<string, OrchestrationThreadActivity>();
+  const closedRequestIds = new Set<string>();
   for (const activity of thread.activities) {
     const payload =
       typeof activity.payload === "object" && activity.payload !== null
@@ -75,14 +76,16 @@ function openRequests(thread: Pick<OrchestrationThread, "activities">) {
     const requestId = typeof payload?.requestId === "string" ? payload.requestId : null;
     if (requestId === null) continue;
     if (activity.kind === "approval.requested" || activity.kind === "user-input.requested") {
-      requests.set(requestId, activity);
+      if (!closedRequestIds.has(requestId)) requests.set(requestId, activity);
     } else if (activity.kind === "approval.resolved" || activity.kind === "user-input.resolved") {
+      closedRequestIds.add(requestId);
       requests.delete(requestId);
     } else if (
       (activity.kind === "provider.approval.respond.failed" ||
         activity.kind === "provider.user-input.respond.failed") &&
       isStaleRequestFailureDetail(payload)
     ) {
+      closedRequestIds.add(requestId);
       requests.delete(requestId);
     }
   }
@@ -203,10 +206,12 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
   command,
   readModel,
   userInputActivity,
+  pendingRequestActivities,
 }: {
   readonly command: OrchestrationCommand;
   readonly readModel: OrchestrationReadModel;
   readonly userInputActivity?: OrchestrationThreadActivity;
+  readonly pendingRequestActivities?: ReadonlyArray<OrchestrationThreadActivity>;
 }): Effect.fn.Return<
   DecideOrchestrationCommandResult,
   OrchestrationCommandRejection | PlatformError.PlatformError,
@@ -456,7 +461,9 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       if (thread.session?.status === "starting" || thread.session?.status === "running") {
         return yield* new OrchestrationThreadSettleBlockedError({ threadId: command.threadId });
       }
-      const pendingRequests = openRequests(thread);
+      const pendingRequests = openRequests({
+        activities: pendingRequestActivities ?? thread.activities,
+      });
       // Manual settlement dismisses async questions without answering them.
       // Native callbacks and approvals still need a response or interruption.
       if (

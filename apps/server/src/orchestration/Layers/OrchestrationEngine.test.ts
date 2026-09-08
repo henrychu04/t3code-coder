@@ -1,5 +1,7 @@
 import {
   CheckpointRef,
+  ApprovalRequestId,
+  EventId,
   CommandId,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   MessageId,
@@ -11,6 +13,7 @@ import {
   ProviderInstanceId,
 } from "@t3tools/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -54,16 +57,16 @@ async function createOrchestrationSystem() {
   const orchestrationLayer = Layer.mergeAll(
     OrchestrationEngineLive.pipe(
       Layer.provide(OrchestrationProjectionSnapshotQueryLive),
-      Layer.provide(OrchestrationProjectionPipelineLive),
+      Layer.provideMerge(OrchestrationProjectionPipelineLive),
     ),
     OrchestrationProjectionSnapshotQueryLive,
   ).pipe(
     Layer.provideMerge(ThreadBackgroundLiveness.layer),
     Layer.provide(ThreadPlanProgress.layer),
-    Layer.provide(OrchestrationEventStoreLive),
+    Layer.provideMerge(OrchestrationEventStoreLive),
     Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
     Layer.provide(RepositoryIdentityResolver.layer),
-    Layer.provide(SqlitePersistenceMemory),
+    Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
   );
@@ -76,9 +79,20 @@ async function createOrchestrationSystem() {
   );
   return {
     engine,
+    // Build a fresh command engine over the same persisted projections, as on restart.
+    dispatchAfterRestart: (command: OrchestrationCommand) =>
+      runtime.runPromise(
+        Effect.gen(function* () {
+          const context = yield* Layer.build(Layer.fresh(OrchestrationEngineLive));
+          return yield* Context.get(context, OrchestrationEngineService).dispatch(command);
+        }).pipe(Effect.scoped),
+      ),
     receipts,
     backgroundLiveness,
     readModel: () => runtime.runPromise(snapshotQuery.getSnapshot()),
+    shell: () => runtime.runPromise(snapshotQuery.getShellSnapshot()),
+    requestActivity: (threadId: ThreadId, requestId: ApprovalRequestId) =>
+      runtime.runPromise(snapshotQuery.getUserInputActivity({ threadId, requestId })),
     run: <A, E>(effect: Effect.Effect<A, E>) => runtime.runPromise(effect),
     dispose: () => runtime.dispose(),
   };
@@ -89,6 +103,134 @@ function now() {
 }
 
 describe("OrchestrationEngine", () => {
+  it.each([
+    { kind: "user-input.requested", responseMode: "message", automatic: false, blocked: false },
+    { kind: "user-input.requested", responseMode: "message", automatic: true, blocked: true },
+    { kind: "user-input.requested", responseMode: "native", automatic: false, blocked: true },
+    { kind: "approval.requested", responseMode: "native", automatic: false, blocked: true },
+  ])(
+    "settlement after restart: $kind / $responseMode / automatic=$automatic",
+    async ({ kind, responseMode, automatic, blocked }) => {
+      const system = await createOrchestrationSystem();
+      const projectId = ProjectId.make("restart-project");
+      const threadId = ThreadId.make("restart-thread");
+      try {
+        await system.run(
+          system.engine.dispatch({
+            type: "project.create",
+            commandId: CommandId.make("restart-project"),
+            projectId,
+            title: "Project",
+            workspaceRoot: "/tmp/restart-project",
+            createdAt: now(),
+          }),
+        );
+        await system.run(
+          system.engine.dispatch({
+            type: "thread.create",
+            commandId: CommandId.make("restart-thread"),
+            projectId,
+            threadId,
+            title: "Thread",
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-5.4",
+            },
+            interactionMode: "default",
+            runtimeMode: "full-access",
+            branch: null,
+            worktreePath: null,
+            createdAt: now(),
+          }),
+        );
+        await system.run(
+          system.engine.dispatch({
+            type: "thread.activity.append",
+            commandId: CommandId.make("restart-question"),
+            threadId,
+            createdAt: now(),
+            activity: {
+              id: EventId.make("restart-question"),
+              kind,
+              summary: "Question",
+              tone: "approval",
+              turnId: null,
+              createdAt: "2099-01-01T00:00:00.000Z",
+              sequence: 999,
+              payload: { requestId: "request", responseMode },
+            },
+          }),
+        );
+        const snapshot = await system.readModel();
+        const settlement = system.dispatchAfterRestart({
+          type: automatic ? "thread.auto-settle" : "thread.settle",
+          commandId: CommandId.make("restart-settle"),
+          threadId,
+          snapshotSequence: snapshot.snapshotSequence,
+          settledAt: now(),
+        });
+        if (blocked) {
+          await expect(settlement).rejects.toMatchObject({
+            _tag: "OrchestrationThreadSettleBlockedError",
+          });
+        } else {
+          await settlement;
+          const thread = (await system.readModel()).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(
+            thread?.activities.filter((activity) => activity.kind === "user-input.resolved"),
+          ).toMatchObject([{ payload: { requestId: "request" } }]);
+          expect(
+            (await system.shell()).threads.find((thread) => thread.id === threadId)
+              ?.hasPendingUserInput,
+          ).toBe(false);
+          expect(
+            Option.getOrNull(
+              await system.requestActivity(threadId, ApprovalRequestId.make("request")),
+            )?.kind,
+          ).toBe("user-input.resolved");
+          await system.dispatchAfterRestart({
+            type: "thread.activity.append",
+            commandId: CommandId.make("second-question"),
+            threadId,
+            createdAt: now(),
+            activity: {
+              id: EventId.make("second-question"),
+              kind: "user-input.requested",
+              summary: "Another question",
+              tone: "approval",
+              turnId: null,
+              createdAt: now(),
+              payload: { requestId: "second-request", responseMode: "message" },
+            },
+          });
+          // A second restart must see the resolution despite timestamp/sequence skew.
+          await system.dispatchAfterRestart({
+            type: "thread.settle",
+            commandId: CommandId.make("restart-settle-again"),
+            threadId,
+          });
+          const settled = (await system.readModel()).threads.find(
+            (thread) => thread.id === threadId,
+          );
+          expect(
+            settled?.activities.filter((activity) => activity.kind === "user-input.resolved"),
+          ).toMatchObject([
+            { payload: { requestId: "request" } },
+            { payload: { requestId: "second-request" } },
+          ]);
+          expect(
+            (await system.shell()).threads.find((thread) => thread.id === threadId)
+              ?.hasPendingUserInput,
+          ).toBe(false);
+        }
+      } finally {
+        await system.dispose();
+      }
+    },
+  );
+
   it("bootstraps command handling from persisted projections without reading the full snapshot", async () => {
     let nextSequence = 8;
     const eventStore: OrchestrationEventStoreShape = {
@@ -178,6 +320,7 @@ describe("OrchestrationEngine", () => {
         Layer.succeed(ProjectionSnapshotQuery, {
           getCommandReadModel: () => Effect.succeed(commandReadModel),
           getUserInputActivity: () => Effect.die("unused"),
+          getPendingRequestActivities: () => Effect.die("unused"),
           getSnapshot: () =>
             Effect.sync(() => {
               fullSnapshotReadCount += 1;

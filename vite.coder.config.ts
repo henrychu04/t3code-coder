@@ -12,6 +12,7 @@ export default defineConfig({
       "apps/server/src/orchestration/decider.settled.test.ts",
       "apps/server/src/orchestration/projector.test.ts",
       "apps/server/src/persistence/Migrations/049_ProjectionThreadsActiveOrderKey.test.ts",
+      "apps/server/src/persistence/Migrations/050_RepairPendingUserInputCounts.test.ts",
       "apps/server/src/textGeneration/ClaudeTextGeneration.test.ts",
       "apps/server/src/provider/Drivers/ClaudeHome.test.ts",
       "apps/server/src/provider/Layers/ProviderSessionReaper.test.ts",

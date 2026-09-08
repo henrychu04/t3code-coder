@@ -1294,7 +1294,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       WHERE thread_id = ${threadId}
         AND kind IN ('user-input.requested', 'user-input.resolved')
         AND json_extract(payload_json, '$.requestId') = ${requestId}
-      ORDER BY sequence DESC, created_at DESC, activity_id DESC
+      ORDER BY (kind = 'user-input.resolved') DESC, sequence DESC, created_at DESC, activity_id DESC
       LIMIT 1
     `,
   });
@@ -2825,7 +2825,8 @@ pending_approval_requests AS (
             activity.kind,
             ROW_NUMBER() OVER (
               PARTITION BY json_extract(activity.payload_json, '$.requestId')
-              ORDER BY activity.created_at DESC, activity.activity_id DESC
+              ORDER BY (activity.kind != 'user-input.requested') DESC,
+                activity.created_at DESC, activity.activity_id DESC
             ) AS request_order
           FROM pending_user_input_thread AS pending
           CROSS JOIN projection_thread_activities AS activity
@@ -2859,6 +2860,40 @@ pending_approval_requests AS (
             AND kind = 'user-input.requested'
         )
   `;
+
+  const listPendingRequestActivityRows = SqlSchema.findAll({
+    Request: ThreadIdLookupInput,
+    Result: ProjectionThreadActivityDbRowSchema,
+    execute: ({ threadId }) => sql`
+      WITH ${pinnedThreadActivityIdsCte(threadId)}
+      SELECT
+        activity.activity_id AS "activityId",
+        activity.thread_id AS "threadId",
+        activity.turn_id AS "turnId",
+        activity.tone,
+        activity.kind,
+        activity.summary,
+        activity.payload_json AS "payload",
+        activity.sequence,
+        activity.created_at AS "createdAt"
+      FROM projection_thread_activities AS activity
+      INNER JOIN pinned_activity_ids AS pending ON pending.activity_id = activity.activity_id
+      ORDER BY activity.sequence, activity.created_at, activity.activity_id
+    `,
+  });
+
+  const getPendingRequestActivities: ProjectionSnapshotQueryShape["getPendingRequestActivities"] = (
+    threadId,
+  ) =>
+    listPendingRequestActivityRows({ threadId }).pipe(
+      Effect.map((rows) => rows.map(mapThreadActivityRow)),
+      Effect.mapError(
+        toPersistenceSqlOrDecodeError(
+          "ProjectionSnapshotQuery.getPendingRequestActivities:query",
+          "ProjectionSnapshotQuery.getPendingRequestActivities:decodeRows",
+        ),
+      ),
+    );
 
   const listProjectedThreadActivities = Effect.fn(
     "ProjectionSnapshotQuery.listProjectedThreadActivities",
@@ -3258,6 +3293,7 @@ pending_approval_requests AS (
   return {
     getCommandReadModel,
     getUserInputActivity,
+    getPendingRequestActivities,
     getSnapshot,
     getShellSnapshot,
     getArchivedShellSnapshot,
