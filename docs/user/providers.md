@@ -4,6 +4,10 @@ T3 Coder uses the Codex and Claude Code installations already available in the c
 workspace. It does not run a provider on the local computer, install a provider in the workspace,
 or copy provider credentials between them.
 
+This fork supports API-backed usage only. Subscription-backed ChatGPT and Claude consumer plans
+are outside the supported product scope. This describes the supported configuration, rather than
+a runtime check that rejects every other authentication mode.
+
 ## Provider availability
 
 Each provider is checked independently.
@@ -22,17 +26,13 @@ Claude is ready, Claude continues to work; the reverse is also true. There is no
 mid-thread or mid-turn fallback. Existing work remains tied to its provider so T3 Coder does not
 silently change agent behavior or conversation history.
 
-## Sign in
+## API authentication
 
-Provider authentication belongs to the workspace. Open a workspace terminal and use the provider's
-normal command:
+Configure API access through the workspace's Codex or Claude Code configuration and your
+organization's credential-management process. Credentials belong in the workspace provider
+configuration, never in T3 Coder's browser or local gateway. T3 Coder does not collect API keys.
 
-```bash
-codex login
-claude auth login
-```
-
-Reconnect after signing in so the provider status and capabilities are checked again.
+Reconnect after updating authentication so provider status and capabilities are checked again.
 
 ## Models and controls
 
@@ -89,7 +89,7 @@ Provider configuration and text-generation defaults are stored in the selected w
 favorites, hidden models, and model ordering are also kept separately for each workspace.
 
 The default Codex and Claude settings use the workspace's standard executables, provider homes,
-and existing logins. Most users should leave them unchanged. Each provider can be enabled or
+and existing API authentication. Most users should leave them unchanged. Each provider can be enabled or
 disabled independently.
 
 Additional provider instances let a workspace expose another Codex or Claude installation,
@@ -104,15 +104,12 @@ a model or grant access to one that the workspace provider cannot use.
 These settings change how T3 Coder uses software and state already present in the workspace. They
 do not install a provider, perform login, or copy provider state to the local computer.
 
-## Subscription limits
+## Usage and limits
 
-The selected workspace provider shows its reported subscription windows, percentage remaining, and
-reset times. Codex and Claude Code read these through their workspace CLI processes using existing
-logins. API-key accounts may not have subscription windows.
-
-These snapshots refresh with provider health checks, rather than continuously during a turn.
-The **Checked** time identifies the snapshot; an unavailable read is not shown as zero usage.
-There are no external usage hubs, pricing lookups, or reset-credit redemption actions.
+Provider settings show availability and authentication status, without subscription-quota panels.
+The conversation retains context/token usage and provider-reported runtime limit errors. These
+are not API spend, credit balances, or billing limits; consult your API billing system for those.
+T3 Coder does not provide a billing dashboard, external usage hubs, or pricing lookups.
 
 When Claude reports a blocking usage limit during a turn, the conversation shows a warning.
 Claude's own safety fallback notifications are also shown; T3 Coder does not initiate a provider

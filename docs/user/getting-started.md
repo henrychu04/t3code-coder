@@ -16,7 +16,7 @@ Development and testing happen on macOS; Windows 11 is the supported daily-use h
 
 Inside each Linux Coder workspace you plan to use:
 
-- Codex or Claude Code, installed and authenticated in the workspace
+- Codex or Claude Code, installed and configured for API access in the workspace
 - Git
 - Nix with a configured `nixpkgs` and access to its substituters
 

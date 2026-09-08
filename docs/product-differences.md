@@ -94,8 +94,8 @@ validated exceptions.
   application listeners.
 - Providers other than workspace-installed Codex and Claude Code.
 - Upstream's cost dashboard, remote pricing aggregation, and user-configured CLI-proxy usage
-  sources. Native subscription-limit snapshots remain available in workspace provider settings,
-  alongside per-thread context usage.
+  sources, and subscription-quota dashboards. This fork supports API-backed provider usage only;
+  per-thread context usage and provider-reported runtime limit errors remain available.
 - MCP servers, Codex app integrations, the Claude browser integration, and the packaged Anthropic
   Agent SDK.
 - General-purpose uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer,

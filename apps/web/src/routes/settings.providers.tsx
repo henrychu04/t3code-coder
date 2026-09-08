@@ -1,4 +1,3 @@
-import { NativeUsageOverview } from "../components/settings/NativeUsageOverview";
 import { createFileRoute } from "@tanstack/react-router";
 
 import { SettingsPage } from "../components/settings/SettingsPage";
@@ -8,7 +7,6 @@ function ProviderSettingsView() {
   return (
     <SettingsPage>
       <WorkspaceProviderSettings />
-      <NativeUsageOverview />
     </SettingsPage>
   );
 }
