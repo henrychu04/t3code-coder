@@ -1,3 +1,13 @@
+import { randomUUID } from "node:crypto";
+import {
+  makeTurnScreenshotCapture,
+  type TurnScreenshotCapture,
+  type ScreenshotCaptureOptions,
+} from "../../workspace/TurnScreenshotCapture.ts";
+import {
+  extractCodexScreenshotImages,
+  sanitizeCodexScreenshotImages,
+} from "./CodexScreenshotImages.ts";
 import {
   type CodexRateLimitSnapshot,
   mergeCodexRateLimits,
@@ -78,7 +88,7 @@ const isCodexResumeCursorSchema = Schema.is(CodexResumeCursorSchema);
 
 const PROVIDER = ProviderDriverKind.make("codex");
 
-export interface CodexAdapterLiveOptions {
+export interface CodexAdapterLiveOptions extends ScreenshotCaptureOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
   readonly attachmentsDir?: string;
@@ -97,6 +107,12 @@ interface CodexAdapterSessionContext {
   readonly scope: Scope.Closeable;
   readonly runtime: CodexSessionRuntimeShape;
   readonly eventFiber: Fiber.Fiber<void, never>;
+  readonly screenshots: {
+    current?:
+      | { capture: TurnScreenshotCapture; turnId?: NonNullable<ProviderEvent["turnId"]> }
+      | undefined;
+  };
+  readonly cwd: string;
   stopped: boolean;
 }
 
@@ -1721,6 +1737,29 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         ...(options?.environment ? { environment: options.environment } : {}),
       }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, childProcessSpawner)));
 
+  const finishScreenshots = Effect.fn("CodexAdapter.finishScreenshots")(function* (
+    threadId: ThreadId,
+    screenshots: CodexAdapterSessionContext["screenshots"],
+    requestedTurnId?: ProviderEvent["turnId"],
+  ) {
+    const current = screenshots.current;
+    const turnId = requestedTurnId ?? current?.turnId;
+    if (!current || (turnId && current.turnId && turnId !== current.turnId)) return;
+    screenshots.current = undefined;
+    const payload = yield* current.capture.finish;
+    if (!payload || !turnId) return;
+    yield* Queue.offer(runtimeEventQueue, {
+      type: "item.completed",
+      eventId: EventId.make(randomUUID()),
+      itemId: RuntimeItemId.make(randomUUID()),
+      provider: PROVIDER,
+      threadId,
+      turnId,
+      createdAt: new Date().toISOString(),
+      payload,
+    });
+  });
+
   const startSession: CodexAdapterShape["startSession"] = (input) =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -1796,9 +1835,41 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         // this a child of `startSession`, and Effect interrupts a fiber's
         // children when it completes, so the consumer died on return and every
         // runtime event the session emitted afterwards was dropped.
+        const screenshots: CodexAdapterSessionContext["screenshots"] = {};
+        yield* Scope.addFinalizer(
+          sessionScope,
+          Effect.sync(() => screenshots.current?.capture.dispose()),
+        );
         let rateLimits: CodexRateLimitSnapshot | undefined;
-        const eventFiber = yield* Stream.runForEach(runtime.events, (event) =>
+        const eventFiber = yield* Stream.runForEach(runtime.events, (nativeEvent) =>
           Effect.gen(function* () {
+            const event = {
+              ...nativeEvent,
+              payload: sanitizeCodexScreenshotImages(nativeEvent.payload),
+            };
+            if (event.method === "turn/started" && event.turnId) {
+              if (screenshots.current?.turnId && screenshots.current.turnId !== event.turnId) {
+                yield* finishScreenshots(input.threadId, screenshots);
+              }
+              screenshots.current ??= { capture: yield* makeTurnScreenshotCapture(cwd, options) };
+              screenshots.current.turnId = event.turnId;
+            }
+            if (
+              event.method === "item/completed" &&
+              screenshots.current &&
+              (!event.turnId ||
+                !screenshots.current.turnId ||
+                event.turnId === screenshots.current.turnId)
+            ) {
+              yield* screenshots.current.capture.captureImages(
+                extractCodexScreenshotImages(nativeEvent.payload),
+              );
+            }
+            if (event.method === "turn/completed" || event.method === "turn/aborted") {
+              yield* finishScreenshots(input.threadId, screenshots, event.turnId);
+            } else if (event.method === "session/exited" || event.method === "session/closed") {
+              yield* finishScreenshots(input.threadId, screenshots);
+            }
             if (event.method === "account/rateLimits/updated") {
               const limitsPayload = readPayload(
                 EffectCodexSchema.V2AccountRateLimitsUpdatedNotification,
@@ -1864,7 +1935,10 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             }
             yield* Queue.offerAll(runtimeEventQueue, runtimeEvents);
           }),
-        ).pipe(Effect.forkIn(sessionScope));
+        ).pipe(
+          Effect.ensuring(finishScreenshots(input.threadId, screenshots)),
+          Effect.forkIn(sessionScope),
+        );
 
         const started = yield* runtime.start().pipe(
           Effect.mapError(
@@ -1890,6 +1964,8 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           scope: sessionScope,
           runtime,
           eventFiber,
+          screenshots,
+          cwd,
           stopped: false,
         });
         sessionScopeTransferred = true;
@@ -1938,7 +2014,12 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       input.modelSelection?.instanceId === boundInstanceId
         ? getCodexServiceTierOptionValue(input.modelSelection)
         : undefined;
-    return yield* session.runtime
+    const startedCapture = session.screenshots.current === undefined;
+    session.screenshots.current ??= {
+      capture: yield* makeTurnScreenshotCapture(session.cwd, options),
+    };
+    const current = session.screenshots.current;
+    const turn = yield* session.runtime
       .sendTurn({
         ...(input.input !== undefined ? { input: input.input } : {}),
         ...(input.modelSelection?.instanceId === boundInstanceId
@@ -1953,7 +2034,19 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
         ...(input.interactionMode !== undefined ? { interactionMode: input.interactionMode } : {}),
         ...(codexAttachments.length > 0 ? { attachments: codexAttachments } : {}),
       })
-      .pipe(Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)));
+      .pipe(
+        Effect.mapError((cause) => mapCodexRuntimeError(input.threadId, "turn/start", cause)),
+        Effect.onError(() =>
+          Effect.sync(() => {
+            if (startedCapture && session.screenshots.current === current) {
+              current.capture.dispose();
+              session.screenshots.current = undefined;
+            }
+          }),
+        ),
+      );
+    if (session.screenshots.current === current) current.turnId = turn.turnId;
+    return turn;
   });
 
   const requireSession = Effect.fn("requireSession")(function* (threadId: ThreadId) {
@@ -1994,7 +2087,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       ),
       Effect.map((snapshot) => ({
         threadId,
-        turns: snapshot.turns,
+        turns: sanitizeCodexScreenshotImages(snapshot.turns),
       })),
     );
 
@@ -2018,7 +2111,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
       ),
       Effect.map((snapshot) => ({
         threadId,
-        turns: snapshot.turns,
+        turns: sanitizeCodexScreenshotImages(snapshot.turns),
       })),
     );
   };
@@ -2055,6 +2148,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
     }
     session.stopped = true;
     sessions.delete(session.threadId);
+    yield* finishScreenshots(session.threadId, session.screenshots);
     yield* session.runtime.close.pipe(Effect.ignore);
     yield* Effect.ignore(Scope.close(session.scope, Exit.void));
     yield* Fiber.interrupt(session.eventFiber).pipe(Effect.ignore);

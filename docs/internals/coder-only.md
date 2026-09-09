@@ -294,6 +294,10 @@ ownership and reference tracking across those lifetimes; deleting files merely b
 old or absent from the current browser snapshot can break resumed sessions and historical turns.
 
 The other user-facing exception displays screenshots produced while a provider verifies a frontend.
+Codex and Claude share the turn capture lifecycle, limits, deduplication, and artifact activity
+payload; each adapter only translates its native image results and signals turn boundaries.
+Observation begins before sending a turn, stays open across steering, and closes on completion,
+interruption, failure, or session shutdown. Failed starts dispose their observation without publishing.
 This does not require MCP or a project-specific T3 skill. While a provider turn is active, the helper
 observes image paths created or modified inside that turn's active project and accepts image content
 returned directly by tool results. Tool-result images are captured as they arrive; observed paths

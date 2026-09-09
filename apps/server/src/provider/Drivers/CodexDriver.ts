@@ -1,3 +1,4 @@
+import { ScreenshotArtifacts } from "../../workspace/ScreenshotArtifacts.ts";
 import { CodexSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -33,7 +34,8 @@ export type CodexDriverEnv =
   | Crypto.Crypto
   | FileSystem.FileSystem
   | Path.Path
-  | ServerConfig;
+  | ServerConfig
+  | ScreenshotArtifacts;
 
 const withInstanceIdentity =
   (input: {
@@ -95,11 +97,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         homePath: effectiveConfig.homePath,
         environment: processEnv,
       });
+      const screenshotArtifacts = yield* ScreenshotArtifacts;
       const adapter = yield* makeCodexAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,
         attachmentsDir,
         resolveMcpServerNames,
+        captureScreenshotFile: screenshotArtifacts.captureFile,
+        captureScreenshotBase64: screenshotArtifacts.captureBase64,
+        observeScreenshots: screenshotArtifacts.observeTurn,
       });
       const textGeneration = yield* makeCodexTextGeneration(
         effectiveConfig,
