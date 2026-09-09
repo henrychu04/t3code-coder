@@ -791,3 +791,12 @@ export function toolGroupConsumesUpwardNavigation(target: EventTarget | null): b
   }
   return false;
 }
+
+export function threadShellHasStarted(
+  shell: Pick<ThreadShell, "latestTurn" | "latestUserMessageAt" | "session"> | null | undefined,
+): boolean {
+  return Boolean(
+    shell &&
+    (shell.latestTurn !== null || shell.latestUserMessageAt !== null || shell.session !== null),
+  );
+}

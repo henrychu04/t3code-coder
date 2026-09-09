@@ -176,6 +176,7 @@ interface TimelineRowSharedState {
 }
 
 interface TimelineRowActivityState {
+  isCompacting: boolean;
   isWorking: boolean;
   isRevertingCheckpoint: boolean;
   latestTurnId: TurnId | null;
@@ -260,6 +261,7 @@ interface MessagesTimelineProps {
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
   isWorking: boolean;
+  isCompacting?: boolean;
   activeTurnStartedAt: string | null;
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReturnType<typeof deriveTimelineEntries>;
@@ -310,6 +312,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   citationHistoryLoading = false,
   onCiteAssistantText,
   isWorking,
+  isCompacting = false,
   activeTurnStartedAt,
   agentPanelModel = EMPTY_AGENT_PANEL_MODEL,
   onOpenAgents = NOOP_OPEN_AGENTS,
@@ -716,11 +719,12 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   );
   const activityState = useMemo<TimelineRowActivityState>(
     () => ({
+      isCompacting,
       isWorking,
       isRevertingCheckpoint,
       latestTurnId: latestTurn?.turnId ?? null,
     }),
-    [isRevertingCheckpoint, isWorking, latestTurn?.turnId],
+    [isCompacting, isRevertingCheckpoint, isWorking, latestTurn?.turnId],
   );
 
   // Stable renderItem — no closure deps. Row components read shared state
@@ -1482,11 +1486,14 @@ function ProposedPlanTimelineRow({
 }
 
 function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "working" }> }) {
+  const { isCompacting } = use(TimelineRowActivityCtx);
   return (
     <div className="border-b border-border/60 pb-2 pt-1">
       <div className="flex h-6 min-w-0 items-baseline px-1 text-sm leading-relaxed text-muted-foreground tabular-nums">
         <span className="relative shrink-0 overflow-hidden whitespace-nowrap transition-opacity duration-150 starting:opacity-0 motion-reduce:transition-none">
-          {row.createdAt ? (
+          {isCompacting ? (
+            "Compacting…"
+          ) : row.createdAt ? (
             <>
               Working for <WorkingTimer createdAt={row.createdAt} />
             </>
@@ -1500,7 +1507,12 @@ function WorkingTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "workin
 }
 
 function ThinkingTimelineRow() {
-  return <LiveActivityRow label="Thinking" iconName="brain" />;
+  const { isCompacting } = use(TimelineRowActivityCtx);
+  return (
+    <div className="min-h-7">
+      {isCompacting ? null : <LiveActivityRow label="Thinking" iconName="brain" />}
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -2739,7 +2751,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
               <span
                 className={cn(
                   "min-w-0 flex-1",
-                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
+                  expanded || (workEntry.command?.trim() === displayText.trim() && !canExpand)
+                    ? "whitespace-pre-wrap break-words select-text"
+                    : "truncate",
                   headingClass,
                 )}
                 onClick={expanded ? (event) => event.stopPropagation() : undefined}

@@ -2,6 +2,7 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   formatContextWindowCompactionMessage,
+  shouldReserveContextWindowMeter,
   resolveContextWindowModelDisplayName,
 } from "./ContextWindowMeter.logic";
 
@@ -61,4 +62,19 @@ describe("formatContextWindowCompactionMessage", () => {
       "Compacts automatically at 160,000 tokens.",
     );
   });
+});
+
+it("reserves usage space only while a started thread is loading", () => {
+  const input = {
+    meterEnabled: true,
+    detailLoading: true,
+    threadStarted: true,
+    providerReportsContextWindow: null,
+  };
+  expect(shouldReserveContextWindowMeter(input)).toBe(true);
+  expect(shouldReserveContextWindowMeter({ ...input, detailLoading: false })).toBe(false);
+  expect(shouldReserveContextWindowMeter({ ...input, threadStarted: false })).toBe(false);
+  expect(shouldReserveContextWindowMeter({ ...input, providerReportsContextWindow: false })).toBe(
+    false,
+  );
 });
