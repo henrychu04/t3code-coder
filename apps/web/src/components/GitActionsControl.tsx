@@ -78,7 +78,7 @@ import {
   useVcsInitAction,
   useVcsPullAction,
 } from "~/lib/sourceControlActions";
-import { useThread } from "~/state/entities";
+import { useThreadShell } from "~/state/entities";
 import { useEnvironmentQuery } from "~/state/query";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { threadEnvironment } from "~/state/threads";
@@ -966,9 +966,7 @@ export default function GitActionsControl({
         ? store.getDraftThreadByRef(activeThreadRef)
         : null,
   );
-  const activeServerThread = useThread(activeThreadRef, {
-    waitForShell: activeDraftThread !== null,
-  });
+  const activeServerThread = useThreadShell(activeThreadRef);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const [isCommitDialogOpen, setIsCommitDialogOpen] = useState(false);
   const [dialogCommitMessage, setDialogCommitMessage] = useState("");
