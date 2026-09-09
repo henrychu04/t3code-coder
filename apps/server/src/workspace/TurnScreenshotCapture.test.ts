@@ -48,7 +48,7 @@ it.effect("shares the ten-image limit across concurrent captures and observed fi
       { concurrency: "unbounded" },
     );
     expect((yield* capture.finish)?.artifacts).toHaveLength(10);
-    expect(captureFile).not.toHaveBeenCalled();
+    expect(captureFile).toHaveBeenCalledTimes(1);
   }),
 );
 
@@ -66,5 +66,25 @@ it.effect("disposes failed turn observation without accepting late images", () =
     expect(yield* capture.finish).toBeUndefined();
     expect(close).toHaveBeenCalledTimes(1);
     expect(captureImage).not.toHaveBeenCalled();
+  }),
+);
+
+it.effect("publishes source keys added to an already captured tool image", () =>
+  Effect.gen(function* () {
+    const original = captured("same-image");
+    const sourcePathKeys = ["a".repeat(64)];
+    const capture = yield* makeTurnScreenshotCapture("/project", {
+      observeScreenshots: () => Effect.succeed({ close: () => ["shot.png"] }),
+      captureScreenshotBase64: () => Effect.succeed(original),
+      captureScreenshotFile: ({ capturedArtifacts }) => {
+        expect(capturedArtifacts?.get(original.digest)).toEqual(original.reference);
+        return Effect.succeed({
+          ...original,
+          reference: { ...original.reference, sourcePathKeys },
+        });
+      },
+    });
+    yield* capture.captureImages([{ dataBase64: "bytes", mimeType: "image/png" }]);
+    expect((yield* capture.finish)?.artifacts).toEqual([{ ...original.reference, sourcePathKeys }]);
   }),
 );

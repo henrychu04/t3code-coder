@@ -304,7 +304,8 @@ returned directly by tool results. Tool-result images are captured as they arriv
 are captured when the turn completes. Both paths signature-validate PNG, JPEG, and WebP content,
 reject files larger than 20 MiB, deduplicate by content, cap capture at 10 images, and copy accepted
 bytes to generated paths beneath `$HOME/.t3-coder/artifacts`. The durable activity event contains
-only an opaque artifact ID, display name, MIME type, byte count, and optional pixel dimensions; tool-result base64 is removed
+only an opaque artifact ID, display name, MIME type, byte count, optional pixel dimensions, and
+optional artifact-salted SHA-256 source-path fingerprints; tool-result base64 is removed
 before activity and turn history are persisted.
 
 ```text
@@ -322,7 +323,12 @@ The browser initially renders only a collapsed artifact count. Explicitly expand
 bounded 512 KiB chunks by opaque ID over the existing browser-to-helper RPC path. The browser joins
 those chunks into memory-only object URLs and revokes them when the view unmounts. The RPC accepts
 no filesystem path, the gateway does not persist the bytes, and the UI exposes no download or
-export action. The observer ends with the turn and performs no scan or background synchronization.
+export action. Image references in assistant Markdown resolve only against artifacts from the same turn, using
+those fingerprints of exact project-relative paths. Clicking a matched reference expands Visual
+artifacts, scrolls to it, and highlights its thumbnail; selecting the thumbnail opens the existing
+lightbox. Unmatched and legacy references remain inert with an unavailable explanation. Matching
+never uses display names or reads a path, and external images remain inert.
+The observer ends with the turn and performs no scan or background synchronization.
 Filesystem paths outside the contained Files RPC, arbitrary files, downloads, exports, and
 drag-and-drop remain prohibited.
 

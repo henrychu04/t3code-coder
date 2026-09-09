@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -58,6 +59,26 @@ it.layer(NodeServices.layer)("ScreenshotArtifacts", (it) => {
           sizeBytes: ONE_PIXEL_PNG.byteLength,
           dimensions: { width: 1, height: 1 },
         });
+
+        expect(captured!.reference.sourcePathKeys).toEqual([
+          createHash("sha256").update(`${captured!.reference.id}\0result.png`).digest("hex"),
+        ]);
+        expect(JSON.stringify(captured!.reference)).not.toContain(cwd);
+        const duplicatePath = NodePath.join(cwd, "other.png");
+        yield* Effect.promise(() => NodeFS.writeFile(duplicatePath, ONE_PIXEL_PNG));
+        const duplicate = yield* artifacts.captureFile({
+          cwd,
+          filePath: duplicatePath,
+          capturedDigests: new Set([captured!.digest]),
+          capturedArtifacts: new Map([[captured!.digest, captured!.reference]]),
+        });
+        expect(duplicate!.reference.id).toBe(captured!.reference.id);
+        expect(duplicate!.reference.sourcePathKeys).toHaveLength(2);
+        expect(
+          (yield* Effect.promise(() => NodeFS.readdir(NodePath.join(baseDir, "artifacts")))).filter(
+            (name) => name.endsWith(".png"),
+          ),
+        ).toHaveLength(1);
 
         const first = yield* artifacts.readChunk({
           artifactId: captured!.reference.id,

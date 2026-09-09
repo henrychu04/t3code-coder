@@ -55,6 +55,19 @@ describe("orderedListGutterStyle", () => {
 });
 
 describe("ChatMarkdown", () => {
+  it("keeps uncaptured image links out of Files and external images inert", () => {
+    const markup = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/project"
+        threadRef={scopeThreadRef(EnvironmentId.make("env"), ThreadId.make("thread"))}
+        text="[shot](/project/result.png) ![embedded](/project/result.png) [file-uri](file:///project/result.png) ![external](https://example.com/image.png)"
+      />,
+    );
+    expect(markup.match(/title="Image preview unavailable"/g)).toHaveLength(3);
+    expect(markup).not.toContain("<button");
+    expect(markup).not.toContain("<img");
+  });
+
   it("opens GitLab links in a separate tab", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown cwd={undefined} text="[issue](https://gitlab.com/group/project/-/issues/1)" />,
