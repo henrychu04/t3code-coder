@@ -25,7 +25,7 @@
     "test:coder:live": "node scripts/coder-live-test.mjs test",
     "test:web:coder": "pnpm --filter @t3tools/web test src/coder src/components/CoderWorkspaceIssues.test.tsx src/components/CoderWorkspaceLatency.react.test.tsx src/components/CoderWorkspaceLatency.test.ts src/state/projectTextSearch.react.test.tsx src/promptStashStore.test.ts src/composerDraftStore.unsent.test.ts src/rightPanelStore.test.ts src/components/ChatView.logic.test.ts src/components/pullRequest/PullRequestMarkdown.test.tsx src/hooks/useOpenPanelPullRequestUrl.test.tsx src/terminalUiStateStore.test.ts src/components/files src/components/diffs src/components/chat/ScreenshotArtifactPreview.test.tsx src/components/chat/MessagesTimeline.test.tsx src/components/chat/useScreenshotArtifacts.test.tsx",
     "test:client-runtime": "pnpm --filter @t3tools/client-runtime test",
-    "test:shared:coder": "vp test run packages/shared/src/imageSignature.test.ts packages/shared/src/threadReference.test.ts packages/shared/src/KeyedCoalescingWorker.test.ts packages/shared/src/path.test.ts packages/shared/src/imageDimensions.test.ts",
+    "test:shared:coder": "vp test run packages/shared/src/httpClientResponse.test.ts packages/shared/src/imageSignature.test.ts packages/shared/src/threadReference.test.ts packages/shared/src/KeyedCoalescingWorker.test.ts packages/shared/src/path.test.ts packages/shared/src/imageDimensions.test.ts",
     "knip:exports": "knip --workspace apps/server --workspace packages/client-runtime --workspace packages/contracts --workspace packages/shared --workspace packages/effect-codex-app-server --workspace packages/coder-cli --exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
     "test:knip": "vp test run scripts/knip-schemas.test.ts"
   },
