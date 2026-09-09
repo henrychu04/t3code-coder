@@ -37,7 +37,7 @@ it("keeps successful paths when a later upload fails", async () => {
   expect(onError).toHaveBeenLastCalledWith("Transfer failed");
   expect(current.isUploading).toBe(false);
 });
-it("does not insert an upload into a different draft or start a concurrent upload", async () => {
+it("retains the originating callback after navigation and rejects duplicate uploads in that draft", async () => {
   let resolve!: (path: string) => void;
   vi.mocked(uploadCoderClipboardImage).mockReturnValue(
     new Promise((done) => {
@@ -55,12 +55,13 @@ it("does not insert an upload into a different draft or start a concurrent uploa
     root.render(<Consumer target="thread:b" />);
   });
   expect(uploadCoderClipboardImage).toHaveBeenCalledTimes(1);
+  expect(current.isUploading).toBe(false);
   await act(async () => {
     resolve("attachment-one");
     await pending;
   });
-  expect(publish).not.toHaveBeenCalled();
-  expect(onError).toHaveBeenLastCalledWith("Image upload finished after you left the thread.");
+  expect(publish).toHaveBeenCalledWith(["attachment-one"]);
+  expect(onError).not.toHaveBeenCalledWith("Image upload finished after you left the thread.");
 });
 it("rejects unsupported or oversized files before transferring any bytes", async () => {
   const oversized = png();
@@ -71,4 +72,34 @@ it("rejects unsupported or oversized files before transferring any bytes", async
   });
   expect(uploadCoderClipboardImage).not.toHaveBeenCalled();
   expect(onError).toHaveBeenLastCalledWith("Clipboard image exceeds the 20 MiB limit.");
+});
+
+it("allows a new thread to upload while the original thread is still uploading", async () => {
+  let finish!: (id: string) => void;
+  vi.mocked(uploadCoderClipboardImage)
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    )
+    .mockResolvedValueOnce("image-b");
+  const publishA = vi.fn();
+  const publishB = vi.fn();
+  let pending!: Promise<void>;
+  await act(async () => {
+    pending = current.upload([png()], publishA);
+  });
+  await act(async () => root.render(<Consumer target="thread:b" />));
+  expect(current.isUploading).toBe(false);
+  await act(async () => current.upload([png()], publishB));
+  expect(publishB).toHaveBeenCalledWith(["image-b"]);
+  await act(async () => root.render(<Consumer target="thread:a" />));
+  expect(current.isUploading).toBe(true);
+  await act(async () => {
+    finish("image-a");
+    await pending;
+  });
+  expect(publishA).toHaveBeenCalledWith(["image-a"]);
+  expect(current.isUploading).toBe(false);
 });

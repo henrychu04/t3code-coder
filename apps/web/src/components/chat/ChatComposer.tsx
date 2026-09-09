@@ -3030,7 +3030,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       );
       const following = snapshot.value.slice(snapshot.expandedCursor, snapshot.expandedCursor + 1);
       const replacement = `${preceding.length > 0 && !/\s/u.test(preceding) ? " " : ""}${links}${following.length === 0 || !/\s/u.test(following) ? " " : ""}`;
-      applyPromptReplacement(snapshot.expandedCursor, snapshot.expandedCursor, replacement);
+      // The upload may finish after navigation. Update the captured draft,
+      // never the currently mounted editor or a pending question's answer.
+      const store = useComposerDraftStore.getState();
+      const draft = store.getComposerDraft(composerDraftTarget);
+      const draftPrompt = draft?.prompt ?? "";
+      const position =
+        draftPrompt === snapshot.value ? snapshot.expandedCursor : draftPrompt.length;
+      const insertion =
+        draftPrompt === snapshot.value
+          ? replacement
+          : `${draftPrompt && !/\s$/u.test(draftPrompt) ? " " : ""}${links} `;
+      const next = replaceTextRange(draftPrompt, position, position, insertion);
+      store.setPrompt(composerDraftTarget, next.text);
     });
   };
 
