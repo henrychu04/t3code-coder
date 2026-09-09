@@ -9,13 +9,13 @@ export function useClipboardImageUpload(
   target: string,
   onError: (message: string | null) => void,
 ) {
-  const [isUploading, setIsUploading] = useState(false);
-  const inFlight = useRef(false);
+  const [uploadingTargets, setUploadingTargets] = useState<ReadonlySet<string>>(new Set());
+  const inFlight = useRef(new Set<string>());
   const targetRef = useRef(target);
   targetRef.current = target;
 
   const upload = async (files: ReadonlyArray<File>, onUploaded: (paths: string[]) => void) => {
-    if (inFlight.current) {
+    if (inFlight.current.has(target)) {
       onError("Wait for the current pasted image upload to finish.");
       return;
     }
@@ -35,30 +35,24 @@ export function useClipboardImageUpload(
       }
     }
     onError(null);
-    inFlight.current = true;
-    setIsUploading(true);
+    inFlight.current.add(target);
+    setUploadingTargets(new Set(inFlight.current));
     const paths: string[] = [];
     const publish = () => {
       if (paths.length > 0) onUploaded(paths);
     };
     try {
       for (const file of files) paths.push(await uploadCoderClipboardImage(workspaceId, file));
-      if (targetRef.current !== target) {
-        onError("Image upload finished after you left the thread.");
-        return;
-      }
       publish();
     } catch (cause) {
-      if (targetRef.current !== target) {
-        onError("Image upload finished after you left the thread.");
-        return;
-      }
       publish();
-      onError(cause instanceof Error ? cause.message : "Clipboard image upload failed.");
+      if (targetRef.current === target) {
+        onError(cause instanceof Error ? cause.message : "Clipboard image upload failed.");
+      }
     } finally {
-      inFlight.current = false;
-      setIsUploading(false);
+      inFlight.current.delete(target);
+      setUploadingTargets(new Set(inFlight.current));
     }
   };
-  return { isUploading, upload };
+  return { isUploading: uploadingTargets.has(target), upload };
 }

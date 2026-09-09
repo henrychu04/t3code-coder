@@ -27,3 +27,18 @@ export function formatContextWindowCompactionMessage(
     ? `Context for ${modelDisplayName} compacts automatically when needed.`
     : "Context compacts automatically when needed.";
 }
+
+export function shouldReserveContextWindowMeter(input: {
+  readonly meterEnabled: boolean;
+  readonly detailLoading: boolean;
+  readonly threadStarted: boolean;
+  /** `null` while the thread's provider is not in the catalog. */
+  readonly providerReportsContextWindow: boolean | null;
+}): boolean {
+  return (
+    input.meterEnabled &&
+    input.detailLoading &&
+    input.threadStarted &&
+    input.providerReportsContextWindow !== false
+  );
+}

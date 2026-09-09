@@ -1527,3 +1527,46 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("text-destructive");
   });
 });
+
+it("shows compaction feedback instead of thinking or a working timer", () => {
+  const markup = renderToStaticMarkup(
+    <MessagesTimeline
+      {...buildProps()}
+      isWorking
+      isCompacting
+      activeTurnStartedAt={MESSAGE_CREATED_AT}
+      timelineEntries={[]}
+    />,
+  );
+  expect(markup).toContain("Compacting…");
+  expect(markup).not.toContain("Thinking");
+  expect(markup).not.toContain("Working for");
+});
+
+it("wraps a command-only tool row when there is no expansion body", () => {
+  const command = "printf " + "long-argument".repeat(30);
+  const markup = renderToStaticMarkup(
+    <MessagesTimeline
+      {...buildProps()}
+      timelineEntries={[
+        {
+          id: "command-entry",
+          kind: "work",
+          createdAt: MESSAGE_CREATED_AT,
+          entry: {
+            id: "command-only",
+            createdAt: MESSAGE_CREATED_AT,
+            tone: "tool",
+            itemType: "command_execution",
+            label: "Run command",
+            command,
+          },
+        },
+      ]}
+    />,
+  );
+  expect(markup).toContain(command);
+  expect(markup).toMatch(
+    /class="[^"]*whitespace-pre-wrap break-words select-text[^"]*"[^>]*>printf /,
+  );
+});
