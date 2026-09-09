@@ -32,6 +32,7 @@ export default defineConfig({
       "apps/server/src/provider/PastedImageAttachments.test.ts",
       "apps/server/src/provider/Layers/ClaudeAdapter.test.ts",
       "apps/server/src/provider/Layers/CodexAdapter.test.ts",
+      "apps/server/src/provider/Layers/CodexScreenshotImages.test.ts",
       "apps/server/src/provider/Layers/CodexCollabRuntime.integration.test.ts",
       "apps/server/src/provider/Layers/CodexCollabWire.test.ts",
       "apps/server/src/provider/Layers/CodexIntegrationPolicy.test.ts",

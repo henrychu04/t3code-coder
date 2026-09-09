@@ -1,3 +1,8 @@
+import {
+  makeTurnScreenshotCapture,
+  type TurnScreenshotCapture,
+  type ScreenshotCaptureOptions,
+} from "../../workspace/TurnScreenshotCapture.ts";
 import * as FileSystem from "effect/FileSystem";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
@@ -48,8 +53,6 @@ import {
   RuntimeTaskId,
   type RuntimeTaskStatus,
   type RuntimeTaskUsage,
-  MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
-  type ScreenshotArtifactReference,
   type TaskAgentLinkage,
   type TaskRunHandles,
   ThreadId,
@@ -148,11 +151,7 @@ interface ClaudeTurnState {
   readonly capturedProposedPlanKeys: Set<string>;
   latestAssistantUsage: unknown | undefined;
   compactedSinceLatestAssistantUsage: boolean;
-  readonly capturedScreenshotArtifacts: Array<ScreenshotArtifactReference>;
-  readonly capturedScreenshotDigests: Set<string>;
-  readonly screenshotObservation?: {
-    readonly close: () => ReadonlyArray<string>;
-  };
+  readonly screenshotCapture: TurnScreenshotCapture;
   nextSyntheticAssistantBlockIndex: number;
   authenticationFailureMessage: string | undefined;
   rejectedRateLimitTypes: Set<string>;
@@ -337,31 +336,13 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly close: () => void;
 }
 
-export interface ClaudeAdapterLiveOptions {
+export interface ClaudeAdapterLiveOptions extends ScreenshotCaptureOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
   readonly createQuery?: (input: {
     readonly prompt: AsyncIterable<SDKUserMessage>;
     readonly options: ClaudeQueryOptions;
   }) => ClaudeQueryRuntime;
-  readonly captureScreenshotFile?: (input: {
-    readonly capturedDigests: ReadonlySet<string>;
-    readonly cwd: string;
-    readonly filePath: string;
-  }) => Effect.Effect<
-    { readonly reference: ScreenshotArtifactReference; readonly digest: string } | undefined
-  >;
-  readonly captureScreenshotBase64?: (input: {
-    readonly capturedDigests: ReadonlySet<string>;
-    readonly dataBase64: string;
-    readonly mimeType: string;
-    readonly name?: string;
-  }) => Effect.Effect<
-    { readonly reference: ScreenshotArtifactReference; readonly digest: string } | undefined
-  >;
-  readonly observeScreenshots?: (
-    cwd: string,
-  ) => Effect.Effect<{ readonly close: () => ReadonlyArray<string> }>;
 }
 
 function isUuid(value: string): boolean {
@@ -1950,46 +1931,12 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
 
-  function appendCapturedScreenshot(
-    turnState: ClaudeTurnState,
-    captured:
-      | { readonly reference: ScreenshotArtifactReference; readonly digest: string }
-      | undefined,
-  ): void {
-    if (
-      !captured ||
-      turnState.capturedScreenshotArtifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN ||
-      turnState.capturedScreenshotDigests.has(captured.digest)
-    ) {
-      return;
-    }
-    turnState.capturedScreenshotDigests.add(captured.digest);
-    turnState.capturedScreenshotArtifacts.push(captured.reference);
-  }
-
-  const captureObservedScreenshots = Effect.fn("captureObservedScreenshots")(function* (
-    context: ClaudeSessionContext,
-    turnState: ClaudeTurnState,
-  ) {
-    const observedPaths = turnState.screenshotObservation?.close() ?? [];
-    if (!options?.captureScreenshotFile || !context.session.cwd) return;
-    for (const filePath of observedPaths) {
-      if (turnState.capturedScreenshotArtifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN) break;
-      const captured = yield* options.captureScreenshotFile({
-        cwd: context.session.cwd,
-        filePath,
-        capturedDigests: turnState.capturedScreenshotDigests,
-      });
-      appendCapturedScreenshot(turnState, captured);
-    }
-  });
-
   const emitCapturedScreenshots = Effect.fn("emitCapturedScreenshots")(function* (
     context: ClaudeSessionContext,
     turnState: ClaudeTurnState,
   ) {
-    if (turnState.capturedScreenshotArtifacts.length === 0) return;
-    const count = turnState.capturedScreenshotArtifacts.length;
+    const payload = yield* turnState.screenshotCapture.finish;
+    if (!payload) return;
     const stamp = yield* makeEventStamp();
     yield* offerRuntimeEvent({
       type: "item.completed",
@@ -1999,13 +1946,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       threadId: context.session.threadId,
       turnId: turnState.turnId,
       itemId: RuntimeItemId.make(yield* randomUUIDv4),
-      payload: {
-        itemType: "image_view",
-        status: "completed",
-        title: "Visual artifacts",
-        detail: `${count} screenshot${count === 1 ? "" : "s"}`,
-        artifacts: [...turnState.capturedScreenshotArtifacts],
-      },
+      payload,
       providerRefs: nativeProviderRefs(context),
     });
   });
@@ -2587,7 +2528,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    yield* captureObservedScreenshots(context, turnState);
     yield* emitCapturedScreenshots(context, turnState);
 
     for (const [index, tool] of context.inFlightTools.entries()) {
@@ -3003,27 +2943,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       if (!toolResult.isError) {
         yield* updateSessionCwdFromWorktreeTool(context, tool, toolUseResult, sanitizedMessage);
       }
-      if (
-        !toolResult.isError &&
-        context.turnState &&
-        options?.captureScreenshotBase64 &&
-        toolResult.images.length > 0
-      ) {
+      if (!toolResult.isError && context.turnState && toolResult.images.length > 0) {
         const name = screenshotNameFromTool(tool);
-        for (const image of toolResult.images) {
-          if (
-            context.turnState.capturedScreenshotArtifacts.length >=
-            MAX_SCREENSHOT_ARTIFACTS_PER_TURN
-          ) {
-            break;
-          }
-          const captured = yield* options.captureScreenshotBase64({
-            ...image,
-            capturedDigests: context.turnState.capturedScreenshotDigests,
-            ...(name ? { name } : {}),
-          });
-          appendCapturedScreenshot(context.turnState, captured);
-        }
+        yield* context.turnState.screenshotCapture.captureImages(
+          toolResult.images.map((image) => ({ ...image, ...(name ? { name } : {}) })),
+        );
       }
       const toolData = {
         toolName: tool.toolName,
@@ -3218,8 +3142,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedProposedPlanKeys: new Set(),
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
-        capturedScreenshotArtifacts: [],
-        capturedScreenshotDigests: new Set(),
+        screenshotCapture: yield* makeTurnScreenshotCapture(context.session.cwd, options),
         nextSyntheticAssistantBlockIndex: -1,
         authenticationFailureMessage: undefined,
         rejectedRateLimitTypes: new Set(),
@@ -4073,7 +3996,9 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           detail: "Failed to close Claude runtime query.",
           cause,
         }),
-    });
+    }).pipe(
+      Effect.onError(() => Effect.sync(() => context.turnState?.screenshotCapture.dispose())),
+    );
 
     context.stopped = true;
 
@@ -4830,6 +4755,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               context.streamFiber = undefined;
             }
             return handleStreamExit(context, exit).pipe(
+              Effect.ensuring(Effect.sync(() => context.turnState?.screenshotCapture.dispose())),
               Effect.catch((cause) =>
                 Effect.logError("Failed to close Claude runtime stream.", { cause }),
               ),
@@ -4906,13 +4832,25 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       });
     }
 
+    const skills = yield* discoverClaudeSkills(
+      claudeSettings,
+      context.session.cwd,
+      claudeEnvironment,
+    ).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
+    );
+    const message = yield* buildUserMessageEffect(input, {
+      boundInstanceId,
+      skillNames: new Set(
+        skills
+          .filter((skill) => skill.enabled && skill.userInvocable !== false)
+          .map((skill) => skill.name),
+      ),
+    });
+
     const turnId = steeringTurnState?.turnId ?? TurnId.make(yield* randomUUIDv4);
     if (steeringTurnState === null) {
-      const screenshotCwd = context.session.cwd;
-      const screenshotObservation =
-        screenshotCwd && options?.observeScreenshots
-          ? yield* options.observeScreenshots(screenshotCwd)
-          : undefined;
       const turnState: ClaudeTurnState = {
         turnId,
         startedAt: yield* nowIso,
@@ -4922,9 +4860,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedProposedPlanKeys: new Set(),
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
-        capturedScreenshotArtifacts: [],
-        capturedScreenshotDigests: new Set(),
-        ...(screenshotObservation ? { screenshotObservation } : {}),
+        screenshotCapture: yield* makeTurnScreenshotCapture(context.session.cwd, options),
         nextSyntheticAssistantBlockIndex: -1,
         authenticationFailureMessage: undefined,
         rejectedRateLimitTypes: new Set(),
@@ -4953,27 +4889,17 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       });
     }
 
-    const skills = yield* discoverClaudeSkills(
-      claudeSettings,
-      context.session.cwd,
-      claudeEnvironment,
-    ).pipe(
-      Effect.provideService(FileSystem.FileSystem, fileSystem),
-      Effect.provideService(Path.Path, path),
-    );
-    const message = yield* buildUserMessageEffect(input, {
-      boundInstanceId,
-      skillNames: new Set(
-        skills
-          .filter((skill) => skill.enabled && skill.userInvocable !== false)
-          .map((skill) => skill.name),
-      ),
-    });
-
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,
-    }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
+    }).pipe(
+      Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)),
+      Effect.onError(() =>
+        Effect.sync(() => {
+          if (steeringTurnState === null) context.turnState?.screenshotCapture.dispose();
+        }),
+      ),
+    );
 
     return {
       threadId: context.session.threadId,
@@ -5068,7 +4994,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     emitExitEvent: boolean,
   ) {
     const results = yield* Effect.forEach(contexts, (context) =>
-      stopSessionInternal(context, { emitExitEvent }).pipe(Effect.result),
+      stopSessionInternal(context, { emitExitEvent }).pipe(
+        Effect.ensuring(Effect.sync(() => context.turnState?.screenshotCapture.dispose())),
+        Effect.result,
+      ),
     );
 
     for (const result of results) {

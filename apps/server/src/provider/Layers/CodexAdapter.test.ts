@@ -3,6 +3,7 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 import {
+  ScreenshotArtifactId,
   ApprovalRequestId,
   CodexSettings,
   EventId,
@@ -96,7 +97,7 @@ class FakeCodexRuntime implements CodexSessionRuntimeShape {
     return Effect.void;
   }
 
-  readThread = Effect.succeed({
+  readThread: CodexSessionRuntimeShape["readThread"] = Effect.succeed({
     threadId: "provider-thread-1",
     turns: [],
   } satisfies CodexThreadSnapshot);
@@ -177,6 +178,181 @@ const adapterLayer = it.layer(
 );
 
 adapterLayer("CodexAdapter Coder integration", (it) => {
+  it.effect(
+    "disposes observation after a failed Codex start and creates a fresh capture on retry",
+    () =>
+      Effect.gen(function* () {
+        const factory = makeRuntimeFactory();
+        const close = vi.fn(() => [] as string[]);
+        const observe = vi.fn(() => Effect.succeed({ close }));
+        const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+          makeRuntime: factory.factory,
+          resolveMcpServerNames: resolveNoMcpServers,
+          observeScreenshots: observe,
+        });
+        const threadId = asThreadId("failed-screenshot-start");
+        yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
+        factory.lastRuntime!.sendTurnImpl.mockRejectedValueOnce(new Error("start failed"));
+        yield* adapter.sendTurn({ threadId, input: "verify" }).pipe(Effect.exit);
+        NodeAssert.equal(close.mock.calls.length, 1);
+        yield* adapter.sendTurn({ threadId, input: "retry" });
+        NodeAssert.equal(observe.mock.calls.length, 2);
+        yield* adapter.stopSession(threadId);
+        NodeAssert.equal(close.mock.calls.length, 2);
+      }),
+  );
+
+  it.effect("redacts image bytes from Codex read and rollback history", () =>
+    Effect.gen(function* () {
+      const factory = makeRuntimeFactory();
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+        resolveMcpServerNames: resolveNoMcpServers,
+      });
+      const threadId = asThreadId("image-history");
+      yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
+      factory.lastRuntime!.readThread = Effect.succeed({
+        threadId: "native-thread",
+        turns: [
+          {
+            id: asTurnId("turn-1"),
+            items: [
+              {
+                type: "imageGeneration",
+                id: "image",
+                status: "completed",
+                result: "private-history-image",
+              },
+            ],
+          },
+        ],
+      });
+      const read = yield* adapter.readThread(threadId);
+      const rollback = yield* adapter.rollbackThread(threadId, 1);
+      NodeAssert.equal(read.turns.length, 1);
+      NodeAssert.deepStrictEqual(rollback, read);
+      NodeAssert.doesNotMatch(JSON.stringify(read), /private-history-image/);
+    }),
+  );
+
+  for (const ending of ["completed", "failed", "aborted", "exited", "stop"] as const) {
+    it.effect(`captures Codex screenshots and closes observation when ${ending}`, () =>
+      Effect.gen(function* () {
+        const factory = makeRuntimeFactory();
+        const close = vi.fn(() => ["/project/final.png"]);
+        const capturedImages: string[] = [];
+        let observations = 0;
+        const artifact = (id: string) => ({
+          digest: id,
+          reference: {
+            id: ScreenshotArtifactId.make(id),
+            name: `${id}.png`,
+            mimeType: "image/png" as const,
+            sizeBytes: 8,
+          },
+        });
+        const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+          makeRuntime: factory.factory,
+          resolveMcpServerNames: resolveNoMcpServers,
+          observeScreenshots: (cwd) => {
+            observations++;
+            NodeAssert.equal(cwd, "/project");
+            return Effect.succeed({ close });
+          },
+          captureScreenshotBase64: ({ dataBase64 }) => {
+            capturedImages.push(dataBase64);
+            return Effect.succeed(artifact("tool"));
+          },
+          captureScreenshotFile: () => Effect.succeed(artifact("file")),
+        });
+        const threadId = asThreadId(`screenshots-${ending}`);
+        yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
+        yield* adapter.sendTurn({ threadId, input: "verify" });
+        // Steering must retain the existing observer and artifact budget.
+        yield* adapter.sendTurn({ threadId, input: "also check mobile" });
+        const runtime = factory.lastRuntime!;
+        const eventsFiber = yield* adapter.streamEvents.pipe(
+          Stream.takeUntil(
+            (event) => event.type === "item.completed" && Boolean(event.payload.artifacts),
+          ),
+          Stream.runCollect,
+          Effect.forkChild,
+        );
+        const base = {
+          kind: "notification" as const,
+          provider: ProviderDriverKind.make("codex"),
+          threadId,
+          turnId: asTurnId("turn-1"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+        };
+        yield* runtime.emit({
+          ...base,
+          id: asEventId("image-tool"),
+          method: "item/completed",
+          payload: {
+            completedAtMs: 0,
+            threadId,
+            turnId: "turn-1",
+            item: {
+              type: "mcpToolCall",
+              id: "tool-1",
+              server: "tools",
+              tool: "screenshot",
+              arguments: {},
+              status: "completed",
+              result: {
+                content: [{ type: "image", data: "secret-image-base64", mimeType: "image/png" }],
+              },
+              error: null,
+              durationMs: null,
+            },
+          },
+        });
+        // Wait until the native result is consumed before an explicit stop.
+        yield* Effect.yieldNow;
+        if (ending === "stop") {
+          yield* adapter.stopSession(threadId);
+        } else {
+          yield* runtime.emit({
+            ...base,
+            id: asEventId("finish"),
+            method:
+              ending === "aborted"
+                ? "turn/aborted"
+                : ending === "exited"
+                  ? "session/exited"
+                  : "turn/completed",
+            payload: { threadId, turn: { id: "turn-1", status: ending, items: [], error: null } },
+          });
+        }
+        const events = Array.from(
+          yield* Fiber.join(eventsFiber).pipe(Effect.timeout("10 seconds")),
+        );
+        NodeAssert.ok(
+          events.some(
+            (event) =>
+              event.type === "item.completed" && event.payload.itemType === "mcp_tool_call",
+          ),
+        );
+        const result = events.at(-1);
+        NodeAssert.equal(result?.type, "item.completed");
+        if (result?.type === "item.completed") {
+          NodeAssert.equal(result.turnId, "turn-1");
+          NodeAssert.deepStrictEqual(
+            result.payload.artifacts?.map((entry) => entry.id),
+            ["tool", "file"],
+          );
+        }
+        NodeAssert.deepStrictEqual(capturedImages, ["secret-image-base64"]);
+        NodeAssert.doesNotMatch(JSON.stringify(events), /secret-image-base64/);
+        NodeAssert.equal(close.mock.calls.length, 1);
+        NodeAssert.equal(observations, 1);
+        yield* adapter.stopAll();
+        NodeAssert.equal(close.mock.calls.length, 1);
+      }).pipe(TestClock.withLive),
+    );
+  }
+
   it.effect("forwards validated pasted images as native Codex inputs", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

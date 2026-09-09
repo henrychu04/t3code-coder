@@ -29,7 +29,7 @@ Claude can read it. There are no general file attachments: images pasted into th
 only upload.
 
 See [Images and screenshots](./images-and-screenshots.md) for the other direction — viewing
-screenshots Claude produces during a turn.
+screenshots Codex or Claude produces during a turn.
 
 ## Terminal context
 
