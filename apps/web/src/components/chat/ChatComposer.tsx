@@ -2,6 +2,12 @@ import type { AssistantCitation } from "@t3tools/contracts";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { formatAssistantCitationForComposer } from "../../composer-logic";
 import { useClipboardImageUpload } from "../../coder/useClipboardImageUpload";
+import { ComposerPastedImages } from "./ComposerPastedImages";
+import {
+  pastedImageSendBlockReason,
+  EMPTY_PASTED_IMAGES,
+  type ComposerPastedImage,
+} from "../../lib/composerPastedImages";
 import type {
   ApprovalRequestId,
   EnvironmentId,
@@ -1065,6 +1071,7 @@ export interface ChatComposerHandle {
   /** Get the current prompt/effort/model state for use in send. */
   getSendContext: () => {
     prompt: string;
+    pastedImages: ReadonlyArray<ComposerPastedImage>;
     terminalContexts: TerminalContextDraft[];
     reviewComments: ReviewCommentContext[];
     selectedPromptEffort: string | null;
@@ -1291,7 +1298,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   } = props;
   const visibleTasksProgress = props.threadSyncPhase === null ? activeTasksProgress : null;
   const visibleTaskSteps = props.threadSyncPhase === null ? activeTaskSteps : null;
-  const isSendDisabled = sendDisabledReason !== null;
   const clipboardUploadTarget =
     typeof composerDraftTarget === "string"
       ? `draft:${composerDraftTarget}`
@@ -1304,6 +1310,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const prompt = composerDraft.prompt;
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerReviewComments = composerDraft.reviewComments;
+  const composerPastedImages = composerDraft.pastedImages ?? EMPTY_PASTED_IMAGES;
+  const imageUploadBlockReason = pastedImageSendBlockReason(composerPastedImages);
+  const effectiveSendDisabledReason = sendDisabledReason ?? imageUploadBlockReason;
+  const isSendDisabled = effectiveSendDisabledReason !== null;
+  const isUploadingClipboardImages = composerPastedImages.some(
+    (image) => image.status === "queued" || image.status === "uploading",
+  );
+  const setComposerPastedImages = useComposerDraftStore((store) => store.setPastedImages);
 
   const setComposerDraftPrompt = useComposerDraftStore((store) => store.setPrompt);
   const insertComposerDraftTerminalContext = useComposerDraftStore(
@@ -1575,8 +1589,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     restoreAfterTimelineReachedEnd,
   } = useComposerFocusState();
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
-  const { isUploading: isUploadingClipboardImages, upload: uploadClipboardImages } =
-    useClipboardImageUpload(environmentId, clipboardUploadTarget, setComposerSubmissionError);
+  const {
+    upload: uploadClipboardImages,
+    remove: removeClipboardImage,
+    retry: retryClipboardImage,
+  } = useClipboardImageUpload(environmentId, composerDraftTarget, setComposerSubmissionError);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -1623,9 +1640,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       deriveComposerSendState({
         prompt,
         terminalContexts: composerTerminalContexts,
-        supplementalContextCount: composerReviewComments.length,
+        supplementalContextCount: composerReviewComments.length + composerPastedImages.length,
       }),
-    [composerReviewComments.length, composerTerminalContexts, prompt],
+    [composerReviewComments.length, composerPastedImages.length, composerTerminalContexts, prompt],
   );
 
   // ------------------------------------------------------------------
@@ -1810,13 +1827,16 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return "running";
     }
     if (showPlanFollowUpPrompt) {
-      return prompt.trim().length > 0 ? "plan:refine" : "plan:implement";
+      return prompt.trim().length > 0 || composerPastedImages.length > 0
+        ? "plan:refine"
+        : "plan:implement";
     }
     return `idle:${composerSendState.hasSendableContent}:${isComposerBusy}:${isConnecting}:${isPreparingWorktree}`;
   }, [
     activePendingIsResponding,
     activePendingProgress,
     composerSendState.hasSendableContent,
+    composerPastedImages.length,
     isConnecting,
     isPreparingWorktree,
     isComposerBusy,
@@ -2565,6 +2585,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       // ArrowUp meant.
       if (
         composerTerminalContextsRef.current.length > 0 ||
+        composerPastedImages.length > 0 ||
         isUploadingClipboardImages ||
         composerReviewComments.length > 0
       ) {
@@ -2592,6 +2613,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     },
     [
       composerTerminalContextsRef,
+      composerPastedImages.length,
       isUploadingClipboardImages,
       composerReviewComments.length,
       isComposerApprovalState,
@@ -2749,13 +2771,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [expandMobileComposer, isComposerCollapsedMobile]);
 
   const stashCurrentPrompt = useCallback(() => {
+    if (imageUploadBlockReason) return;
     // Terminal-context placeholders reference live sessions the stash can't
     // round-trip, so they are stripped from the stashed prompt.
     const stashedPrompt = promptRef.current
       .split(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)
       .join("")
       .trim();
-    if (stashedPrompt.length === 0) {
+    if (stashedPrompt.length === 0 && composerPastedImages.length === 0) {
       setIsStashMenuOpen((open) => !open);
       return;
     }
@@ -2764,9 +2787,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       createdAt: new Date().toISOString(),
       environmentId,
       prompt: stashedPrompt,
+      pastedImages: composerPastedImages,
     });
 
-    // Only the prompt text is cleared — review comments and model selections
+    // Prompt text and pasted images move into the stash. Review comments and model selections
     // are not stashable, so destroying them would be unrecoverable or simply
     // wrong to carry along. Terminal contexts stay too, but their placeholders
     // are re-inserted so they keep rendering inline instead of silently
@@ -2777,6 +2801,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       composerTerminalContexts.length,
     );
     setComposerDraftPrompt(composerDraftTarget, promptRef.current);
+    setComposerPastedImages(composerDraftTarget, []);
     setComposerCursor(0);
     setComposerTrigger(null);
     pulseStashBadge();
@@ -2792,6 +2817,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   }, [
     composerDraftTarget,
     composerTerminalContexts.length,
+    composerPastedImages,
+    imageUploadBlockReason,
+    setComposerPastedImages,
     environmentId,
     pulseStashBadge,
     promptRef,
@@ -2801,6 +2829,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const restoreStashEntry = useCallback(
     (entry: PromptStashEntry) => {
+      if (imageUploadBlockReason) return;
+      const images = entry.pastedImages ?? EMPTY_PASTED_IMAGES;
+      if (images.length > 0 && (isComposerApprovalState || pendingUserInputs.length > 0)) {
+        setComposerSubmissionError("Restore images after resolving the current composer prompt.");
+        return;
+      }
+      if (
+        extractComposerPastedImageAttachmentIds(promptRef.current).length +
+          extractComposerPastedImageAttachmentIds(entry.prompt).length +
+          composerPastedImages.length +
+          images.length >
+        PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+      ) {
+        setComposerSubmissionError(
+          `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} pasted images per message.`,
+        );
+        return;
+      }
       // Remove first so a double activation (click + Enter) can't restore twice.
       const { entry: taken } = takeStashEntry(entry.id);
       if (!taken) return;
@@ -2808,9 +2854,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setIsStashMenuOpen(false);
 
       const currentPrompt = promptRef.current;
+      const restoredPrompt = entry.prompt;
       const nextPrompt = currentPrompt.trim().length
-        ? `${currentPrompt.replace(/\s+$/, "")}\n\n${entry.prompt}`
-        : entry.prompt;
+        ? `${currentPrompt.replace(/\s+$/, "")}\n\n${restoredPrompt}`
+        : restoredPrompt;
+      if (images.length > 0) {
+        setComposerPastedImages(composerDraftTarget, [...composerPastedImages, ...images]);
+      }
       const promptChanged = nextPrompt !== currentPrompt;
       if (promptChanged) {
         promptRef.current = nextPrompt;
@@ -2836,9 +2886,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         setComposerTrigger(detectComposerTrigger(nextPrompt, nextPrompt.length));
       }
 
-      // Pasted images ride in the prompt as workspace file links, and those
-      // paths only exist in the workspace that uploaded them.
-      if (entry.environmentId !== environmentId) {
+      // Workspace image references only resolve in the workspace that uploaded them.
+      if (
+        entry.environmentId !== environmentId &&
+        extractComposerPastedImageAttachmentIds(entry.prompt).length > 0
+      ) {
         toastManager.add({
           type: "warning",
           title: "Prompt came from a different workspace",
@@ -2860,6 +2912,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [
       activePendingProgress?.activeQuestion,
       activePendingUserInput,
+      composerPastedImages,
+      imageUploadBlockReason,
+      isComposerApprovalState,
+      pendingUserInputs.length,
+      setComposerPastedImages,
       composerDraftTarget,
       composerEditorRef,
       environmentId,
@@ -2902,7 +2959,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       const soleEntry = stashQueue.length === 1 ? stashQueue[0] : undefined;
-      if (promptRef.current.trim().length === 0 && soleEntry) {
+      if (promptRef.current.trim().length === 0 && composerPastedImages.length === 0 && soleEntry) {
         restoreStashEntry(soleEntry);
         return;
       }
@@ -2920,6 +2977,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     promptRef,
     restoreStashEntry,
     stashQueue,
+    composerPastedImages.length,
     stashCurrentPrompt,
     terminalOpen,
   ]);
@@ -3008,42 +3066,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
     if (imageFiles.length === 0) return;
     event.preventDefault();
-    if (
-      extractComposerPastedImageAttachmentIds(promptRef.current).length + imageFiles.length >
-      PROVIDER_SEND_TURN_MAX_ATTACHMENTS
-    ) {
-      setComposerSubmissionError(
-        `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} pasted images per message.`,
-      );
-      return;
-    }
     if (isComposerApprovalState || pendingUserInputs.length > 0 || projectSelectionRequired) {
       setComposerSubmissionError("Paste images after resolving the current composer prompt.");
       return;
     }
-    const snapshot = readComposerSnapshot();
-    void uploadClipboardImages(imageFiles, (paths) => {
-      const links = paths.map((path) => serializeComposerFileLink(path)).join(" ");
-      const preceding = snapshot.value.slice(
-        Math.max(0, snapshot.expandedCursor - 1),
-        snapshot.expandedCursor,
-      );
-      const following = snapshot.value.slice(snapshot.expandedCursor, snapshot.expandedCursor + 1);
-      const replacement = `${preceding.length > 0 && !/\s/u.test(preceding) ? " " : ""}${links}${following.length === 0 || !/\s/u.test(following) ? " " : ""}`;
-      // The upload may finish after navigation. Update the captured draft,
-      // never the currently mounted editor or a pending question's answer.
-      const store = useComposerDraftStore.getState();
-      const draft = store.getComposerDraft(composerDraftTarget);
-      const draftPrompt = draft?.prompt ?? "";
-      const position =
-        draftPrompt === snapshot.value ? snapshot.expandedCursor : draftPrompt.length;
-      const insertion =
-        draftPrompt === snapshot.value
-          ? replacement
-          : `${draftPrompt && !/\s$/u.test(draftPrompt) ? " " : ""}${links} `;
-      const next = replaceTextRange(draftPrompt, position, position, insertion);
-      store.setPrompt(composerDraftTarget, next.text);
-    });
+    uploadClipboardImages(imageFiles);
   };
 
   const handleInterruptPrimaryAction = useCallback(() => {
@@ -3108,7 +3135,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     environmentUnavailable !== null ||
     composerSubmissionError !== null ||
     providerInputSubmissionError !== null ||
-    isUploadingClipboardImages;
+    imageUploadBlockReason !== null;
   const isComposerResting = shouldUseRestingComposerLayout({
     isExistingThread: routeKind === "server" && activeThreadId !== null,
     isMobileViewport,
@@ -3130,9 +3157,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRestingChange(isComposerResting);
   }, [isComposerResting, onRestingChange]);
 
-  // T3 Coder turns pasted images into workspace-scoped prompt links immediately,
-  // so it has no local attachment thumbnails to relocate into the resting row.
-  const collapsedComposerImagePreviews: ReactNode = null;
   const composerMainSurfaceRef = useComposerRestingTransition(
     composerControlsInStrip,
     isComposerResting,
@@ -3538,6 +3562,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       getSendContext: () => ({
         prompt: promptRef.current,
+        pastedImages: composerPastedImages,
         terminalContexts: composerTerminalContextsRef.current,
         reviewComments: composerReviewComments,
         selectedPromptEffort,
@@ -3569,6 +3594,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       promptRef,
       composerTerminalContextsRef,
       composerReviewComments,
+      composerPastedImages,
       compactThreadContext,
       isConnecting,
       isComposerApprovalState,
@@ -3775,7 +3801,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                             showPlanFollowUpPrompt={false}
                             promptHasText={false}
                             isSendBusy={isComposerBusy}
-                            sendDisabledReason={sendDisabledReason}
+                            sendDisabledReason={effectiveSendDisabledReason}
                             isConnecting={isConnecting}
                             isEnvironmentUnavailable={
                               environmentUnavailable !== null ||
@@ -3827,6 +3853,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               onClose={closeStashMenu}
             />
           ) : null}
+          {composerPastedImages.length > 0 ? (
+            <ComposerBanner.Attachment>
+              <ComposerBanner.Root>
+                <ComposerPastedImages
+                  images={composerPastedImages}
+                  compact={isComposerCollapsedMobile || isComposerResting}
+                  onRemove={removeClipboardImage}
+                  onRetry={retryClipboardImage}
+                />
+              </ComposerBanner.Root>
+            </ComposerBanner.Attachment>
+          ) : null}
         </ComposerBanner.Column>
         {!isComposerApprovalState ? (
           <ComposerStashBadge
@@ -3876,7 +3914,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         ? "Enable a provider in Settings"
                         : "Ask anything...")}
                 </button>
-                {collapsedComposerImagePreviews}
                 <button
                   type="button"
                   data-chat-composer-transition-actions="true"
@@ -3997,18 +4034,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Enable a provider in Settings to send a message"
                               : phase === "disconnected"
                                 ? DISCONNECTED_COMPOSER_PLACEHOLDER
-                                : isUploadingClipboardImages
-                                  ? "Uploading pasted image…"
-                                  : "Ask anything, @tag files/folders, $use skills, or / for commands"
+                                : "Ask anything, @tag files/folders, $use skills, or / for commands"
                   }
-                  disabled={
-                    isConnecting ||
-                    isUploadingClipboardImages ||
-                    isComposerApprovalState ||
-                    projectSelectionRequired
-                  }
+                  disabled={isConnecting || isComposerApprovalState || projectSelectionRequired}
                 />
-                {isComposerResting ? collapsedComposerImagePreviews : null}
                 {showMobilePendingAnswerActions ? (
                   <div
                     data-chat-composer-mobile-pending-actions="true"
@@ -4021,7 +4050,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                       showPlanFollowUpPrompt={false}
                       promptHasText={false}
                       isSendBusy={isComposerBusy}
-                      sendDisabledReason={sendDisabledReason}
+                      sendDisabledReason={effectiveSendDisabledReason}
                       isConnecting={isConnecting}
                       isEnvironmentUnavailable={
                         environmentUnavailable !== null ||
@@ -4088,9 +4117,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     showPlanFollowUpPrompt={
                       pendingUserInputs.length === 0 && showPlanFollowUpPrompt
                     }
-                    promptHasText={prompt.trim().length > 0}
+                    promptHasText={prompt.trim().length > 0 || composerPastedImages.length > 0}
                     isSendBusy={isComposerBusy}
-                    sendDisabledReason={sendDisabledReason}
+                    sendDisabledReason={effectiveSendDisabledReason}
                     isConnecting={isConnecting}
                     isEnvironmentUnavailable={
                       environmentUnavailable !== null ||

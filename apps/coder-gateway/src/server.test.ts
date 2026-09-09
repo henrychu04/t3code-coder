@@ -1541,6 +1541,89 @@ setTimeout(() => process.exit(0), 100);
     strictEqual(invalid.statusCode, 415);
   });
 
+  it(
+    "interrupts a cancelled clipboard transfer and deletes staging without closing the gateway",
+    { timeout: 5_000 },
+    async () => {
+      const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+      tempDirectories.push(directory);
+      const configPath = NodePath.join(directory, "config.json");
+      await NodeFS.writeFile(
+        configPath,
+        JSON.stringify({
+          version: 1,
+          deployments: [
+            { id: "deployment", name: "Deployment", url: "https://coder.example.test" },
+          ],
+          workspaces: [
+            {
+              id: "workspace",
+              name: "Workspace",
+              deploymentId: "deployment",
+              workspace: "owner/workspace",
+            },
+          ],
+        }),
+      );
+      const scope = await Effect.runPromise(Scope.make("sequential"));
+      closeGateway = () => Effect.runPromise(Scope.close(scope, Exit.void));
+      const started = Promise.withResolvers<void>();
+      const interrupted = Promise.withResolvers<void>();
+      let stagedPath = "";
+      const gateway = await Effect.runPromise(
+        makeLocalCoderGateway({
+          configPath,
+          probeWorkspace: () => Effect.void,
+          connectHelper: () =>
+            Effect.succeed({
+              info: helperInfo,
+              closed: Effect.never,
+              close: Effect.void,
+              sendRpc: () => Effect.void,
+              onRpcMessage: () => () => undefined,
+            }),
+          uploadClipboardImage: (input) =>
+            Effect.acquireUseRelease(
+              Effect.sync(() => {
+                stagedPath = input.localPath;
+                started.resolve();
+              }),
+              () => Effect.never,
+              () => Effect.sync(() => interrupted.resolve()),
+            ),
+        }).pipe(Scope.provide(scope)),
+      );
+      const connected = await request({
+        url: `${gateway.url}/api/workspaces/workspace/connection`,
+        method: "POST",
+        headers: { Origin: gateway.url },
+      });
+      strictEqual(connected.statusCode, 200);
+      const client = NodeHttp.request(`${gateway.url}/api/workspaces/workspace/clipboard-image`, {
+        method: "POST",
+        headers: { Origin: gateway.url, "Content-Type": "image/png" },
+      });
+      client.on("error", () => undefined);
+      client.end(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      await started.promise;
+      await NodeFS.access(stagedPath);
+      client.destroy();
+      await interrupted.promise;
+      // The transfer finalizer runs before withStagedClipboardImage's async unlink.
+      let removed = false;
+      for (let attempt = 0; attempt < 100; attempt += 1) {
+        removed = await NodeFS.access(stagedPath).then(
+          () => false,
+          () => true,
+        );
+        if (removed) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      strictEqual(removed, true);
+      strictEqual((await request({ url: `${gateway.url}/api/config` })).statusCode, 200);
+    },
+  );
+
   it("bridges loopback WebSocket RPC messages to helper stdio messages", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);

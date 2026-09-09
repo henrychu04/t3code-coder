@@ -1,24 +1,20 @@
-import type { EnvironmentId } from "@t3tools/contracts";
-import { useRef, useState } from "react";
-import { uploadCoderClipboardImage } from "./api";
+import {
+  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
+  type EnvironmentId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
+import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
+import { type DraftId, useComposerDraftStore } from "../composerDraftStore";
 import { coderWorkspaceIdForEnvironment } from "./environmentStore";
+import { retryClipboardImage } from "./clipboardImageUploadQueue";
 
-/** Upload only to the captured workspace, and publish paths only to the originating draft. */
+/** Captures the workspace when queued; navigation does not re-route pending transfers. */
 export function useClipboardImageUpload(
   environmentId: EnvironmentId,
-  target: string,
+  target: ScopedThreadRef | DraftId,
   onError: (message: string | null) => void,
 ) {
-  const [uploadingTargets, setUploadingTargets] = useState<ReadonlySet<string>>(new Set());
-  const inFlight = useRef(new Set<string>());
-  const targetRef = useRef(target);
-  targetRef.current = target;
-
-  const upload = async (files: ReadonlyArray<File>, onUploaded: (paths: string[]) => void) => {
-    if (inFlight.current.has(target)) {
-      onError("Wait for the current pasted image upload to finish.");
-      return;
-    }
+  const upload = (files: ReadonlyArray<File>) => {
     const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
     if (workspaceId === null) {
       onError("The Coder workspace is not connected.");
@@ -34,25 +30,37 @@ export function useClipboardImageUpload(
         return;
       }
     }
-    onError(null);
-    inFlight.current.add(target);
-    setUploadingTargets(new Set(inFlight.current));
-    const paths: string[] = [];
-    const publish = () => {
-      if (paths.length > 0) onUploaded(paths);
-    };
-    try {
-      for (const file of files) paths.push(await uploadCoderClipboardImage(workspaceId, file));
-      publish();
-    } catch (cause) {
-      publish();
-      if (targetRef.current === target) {
-        onError(cause instanceof Error ? cause.message : "Clipboard image upload failed.");
-      }
-    } finally {
-      inFlight.current.delete(target);
-      setUploadingTargets(new Set(inFlight.current));
+    const store = useComposerDraftStore.getState();
+    const draft = store.getComposerDraft(target);
+    const images = draft?.pastedImages ?? [];
+    if (
+      images.length +
+        files.length +
+        extractComposerPastedImageAttachmentIds(draft?.prompt ?? "").length >
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+    ) {
+      onError(
+        `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} pasted images per message.`,
+      );
+      return;
     }
+    onError(null);
+    store.setPastedImages(target, [
+      ...images,
+      ...files.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        workspaceId,
+        status: "queued" as const,
+      })),
+    ]);
   };
-  return { isUploading: uploadingTargets.has(target), upload };
+  const remove = (id: string) => {
+    const store = useComposerDraftStore.getState();
+    store.setPastedImages(
+      target,
+      (store.getComposerDraft(target)?.pastedImages ?? []).filter((image) => image.id !== id),
+    );
+  };
+  return { upload, remove, retry: retryClipboardImage };
 }

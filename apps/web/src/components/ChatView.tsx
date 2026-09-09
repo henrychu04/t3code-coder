@@ -34,6 +34,10 @@ import {
 } from "@t3tools/contracts";
 import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import {
+  appendPastedImagesToPrompt,
+  pastedImageSendBlockReason,
+} from "../lib/composerPastedImages";
+import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
 } from "@t3tools/client-runtime/connection";
@@ -4833,7 +4837,7 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx?.providerAvailable) {
+    if (!sendCtx?.providerAvailable || pastedImageSendBlockReason(sendCtx.pastedImages)) {
       return;
     }
     const {
@@ -4846,7 +4850,9 @@ export default function ChatView(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
       runtimeMode: ctxRuntimeMode,
     } = sendCtx;
-    const promptForSend = promptRef.current;
+    const draftPromptForSend = promptRef.current;
+    const pastedImagesForSend = sendCtx.pastedImages;
+    const promptForSend = appendPastedImagesToPrompt(draftPromptForSend, pastedImagesForSend);
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -4857,7 +4863,12 @@ export default function ChatView(props: ChatViewProps) {
       terminalContexts: composerTerminalContexts,
       supplementalContextCount: composerReviewComments.length,
     });
-    if (showPlanFollowUpPrompt && activeProposedPlan) {
+    if (
+      showPlanFollowUpPrompt &&
+      activeProposedPlan &&
+      pastedImagesForSend.length === 0 &&
+      extractComposerPastedImageAttachmentIds(draftPromptForSend).length === 0
+    ) {
       const followUp = resolvePlanFollowUpSubmission({
         draftText: trimmed,
         planMarkdown: activeProposedPlan.planMarkdown,
@@ -5211,20 +5222,23 @@ export default function ChatView(props: ChatViewProps) {
         promptRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
-          .length ?? 0) === 0
+          .length ?? 0) === 0 &&
+        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.pastedImages
+          ?.length ?? 0) === 0
       ) {
         setOptimisticUserMessages((existing) => {
           const next = existing.filter((message) => message.id !== messageIdForSend);
           return next.length === existing.length ? existing : next;
         });
-        promptRef.current = promptForSend;
+        promptRef.current = draftPromptForSend;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        setComposerDraftPrompt(composerDraftTarget, promptForSend);
+        setComposerDraftPrompt(composerDraftTarget, draftPromptForSend);
+        useComposerDraftStore.getState().setPastedImages(composerDraftTarget, pastedImagesForSend);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
-          prompt: promptForSend,
+          cursor: collapseExpandedComposerCursor(draftPromptForSend, draftPromptForSend.length),
+          prompt: draftPromptForSend,
           detectTrigger: true,
         });
       }
