@@ -237,8 +237,17 @@ General user-facing file transfer remains disabled. One exception is an image pa
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts
 signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS temporary directory,
 and copies it through helper-scoped SCP to a generated path beneath
-`$HOME/.t3-coder/attachments`. It then deletes the local staging file and inserts the remote path
-into the draft. At send time the browser may additionally submit at most eight opaque generated
+`$HOME/.t3-coder/attachments`. It then deletes the local staging file and returns the generated path
+to the draft's in-memory attachment state. The browser queues at most three concurrent clipboard
+transfers per workspace, matching upstream's per-environment limit. Workspaces have independent
+queues; drafts in the same workspace share its limit. Completed images retain their workspace
+identity. Moving or restoring images into another workspace queues their original pasted bytes
+for that destination and cancels any old transfer. The browser retains failed images for explicit
+retry and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
+child process and cleans up staging. Progress updates use upstream's five-percent steps.
+Percentage progress covers only the loopback upload; the
+workspace copy remains pending until SCP and finalization complete. Paths are added to message text
+at send time. The browser may additionally submit at most eight opaque generated
 image ids—never a caller-supplied path. The helper resolves each id only beneath the attachment
 directory, rejects symlinks, size violations, and signature/extension mismatches, and sends the
 validated bytes to Codex as native image input. The same validated images may be passed by fixed

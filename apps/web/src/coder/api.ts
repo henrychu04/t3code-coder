@@ -210,24 +210,63 @@ export async function updateCoderWorkspace(workspaceId: string): Promise<void> {
   }).then(readResponse);
 }
 
-export async function uploadCoderClipboardImage(workspaceId: string, file: File): Promise<string> {
+export async function uploadCoderClipboardImage(
+  workspaceId: string,
+  file: File,
+  options?: { signal?: AbortSignal; onProgress?: (progress: number) => void },
+): Promise<string> {
   if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
     throw new Error("Clipboard image must be PNG, JPEG, or WebP.");
   }
   if (file.size > 20 * 1024 * 1024) {
     throw new Error("Clipboard image exceeds the 20 MiB limit.");
   }
-  const response = await fetch(
-    `/api/workspaces/${encodeURIComponent(workspaceId)}/clipboard-image`,
-    {
-      method: "POST",
-      headers: { "Content-Type": file.type },
-      body: file,
-    },
-  ).then(readResponse);
-  const path = ((await response.json()) as { readonly path?: unknown }).path;
-  if (typeof path !== "string" || !path.startsWith("/")) {
-    throw new Error("Clipboard image upload returned an invalid workspace path.");
-  }
-  return path;
+  return new Promise<string>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const abort = () => {
+      xhr.abort();
+      reject(new DOMException("Image upload cancelled.", "AbortError"));
+    };
+    if (options?.signal?.aborted) {
+      abort();
+      return;
+    }
+    xhr.open("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/clipboard-image`, true);
+    xhr.timeout = 5 * 60 * 1000;
+    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && event.total > 0) {
+        options?.onProgress?.(Math.min(1, event.loaded / event.total));
+      }
+    });
+    xhr.upload.addEventListener("load", () => options?.onProgress?.(1));
+    xhr.addEventListener("load", () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(xhr.responseText || `Image upload failed (${xhr.status}).`));
+        return;
+      }
+      try {
+        const path: unknown = JSON.parse(xhr.responseText).path;
+        if (typeof path !== "string" || !path.startsWith("/")) {
+          throw new Error("Clipboard image upload returned an invalid workspace path.");
+        }
+        resolve(path);
+      } catch {
+        reject(new Error("Clipboard image upload returned an invalid workspace path."));
+      }
+    });
+    xhr.addEventListener("error", () => reject(new Error("Clipboard image upload failed.")));
+    xhr.addEventListener("timeout", () => reject(new Error("Clipboard image upload timed out.")));
+    xhr.addEventListener("abort", () =>
+      reject(new DOMException("Image upload cancelled.", "AbortError")),
+    );
+    xhr.addEventListener("loadend", () => options?.signal?.removeEventListener("abort", abort));
+    options?.signal?.addEventListener("abort", abort, { once: true });
+    try {
+      xhr.send(file);
+    } catch (cause) {
+      options?.signal?.removeEventListener("abort", abort);
+      reject(cause);
+    }
+  });
 }

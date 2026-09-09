@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import { create } from "zustand";
+import type { ComposerPastedImage } from "./lib/composerPastedImages";
 
 export const PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v3";
 // Remove older image-bearing formats as well as the former text-only stash.
@@ -11,12 +12,11 @@ const LEGACY_PROMPT_STASH_STORAGE_KEYS = [
 export const MAX_STASH_ENTRIES = 20;
 
 /**
- * A stashed prompt carries only text plus the environment it was written in.
+ * A stashed prompt carries text, in-memory pasted images, and its environment.
  * Deliberately no model selection — the point of stashing is to move a prompt
  * into a different thread or provider, so restoring must never drag the old
- * model choice along. The environment rides along because pasted images are
- * workspace file links: restoring into a different workspace cannot resolve
- * them, and the composer says so instead of failing silently.
+ * model choice along. Pasted image bytes can be uploaded to a new workspace;
+ * the environment identifies legacy workspace links that cannot be moved.
  */
 const StashEntrySchema = Schema.Struct({
   id: Schema.String,
@@ -24,7 +24,9 @@ const StashEntrySchema = Schema.Struct({
   environmentId: Schema.String,
   prompt: Schema.String,
 });
-export type PromptStashEntry = typeof StashEntrySchema.Type;
+export type PromptStashEntry = typeof StashEntrySchema.Type & {
+  readonly pastedImages?: ReadonlyArray<ComposerPastedImage>;
+};
 
 const PersistedPromptStashState = Schema.Struct({
   entries: Schema.Array(StashEntrySchema),

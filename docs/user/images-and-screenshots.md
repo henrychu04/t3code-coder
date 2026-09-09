@@ -9,6 +9,23 @@ general file-transfer path.
 Paste an image directly into the composer. PNG, JPEG, and WebP up to 20 MiB are accepted, and the
 content is validated before upload — an image that merely claims to be a PNG is not enough.
 
+Pasted images appear as thumbnails above the chat input. You can continue editing and pasting more
+images while transfers run. At most eight images can be attached to a message, including queued and
+failed uploads. Thumbnails show **Queued**, a percentage while sending bytes to the local gateway,
+remaining at **100%** until the workspace transfer is confirmed. Send waits until every
+image is ready. Failed images stay in the draft with a **Retry** action; retry or remove them before
+sending.
+
+Click a thumbnail to open the gallery and use its arrows or the left/right arrow keys to move between
+images. The compact composer shows up to three thumbnails with a count for the rest. Removing a
+queued image prevents its transfer; removing an active image cancels that transfer. Uploads stay
+with their originating draft when you switch threads. Moving a draft to a project in another
+workspace re-uploads the original images there; Send waits for those uploads.
+
+Images stay separate from the text while composing. They can be sent without accompanying text and
+move with the prompt when stashed. Draft images and their previews stay in browser memory only and
+are lost on page reload.
+
 The image is copied into the workspace under a generated filename (you cannot choose the path)
 and the message references it there, where the model can open it. The local temporary copy is deleted
 as soon as the transfer finishes, either way it goes.

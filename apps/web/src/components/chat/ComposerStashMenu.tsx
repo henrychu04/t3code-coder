@@ -14,7 +14,7 @@ function stashEntrySnippet(entry: PromptStashEntry): string {
   if (trimmed.length > 0) {
     return trimmed.length > SNIPPET_MAX_CHARS ? `${trimmed.slice(0, SNIPPET_MAX_CHARS)}…` : trimmed;
   }
-  return "(empty)";
+  return entry.pastedImages?.length ? `${entry.pastedImages.length} pasted image(s)` : "(empty)";
 }
 
 /**

@@ -2224,6 +2224,9 @@ export function makeLocalCoderGateway(
             return;
           }
           const contentType = request.headers["content-type"] ?? "";
+          const uploadAbort = new AbortController();
+          const abortUpload = () => uploadAbort.abort();
+          response.once("close", abortUpload);
           try {
             const bytes = await readBody(request, MAX_CLIPBOARD_IMAGE_BYTES);
             const extension = validateClipboardImage(contentType, bytes);
@@ -2236,10 +2239,12 @@ export function makeLocalCoderGateway(
                   extension,
                   invocationOptions: coderInvocationOptions(deployment.id),
                 }),
+                { signal: uploadAbort.signal },
               ),
             );
             sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ path }));
           } catch (cause) {
+            if (uploadAbort.signal.aborted) return;
             if (cause instanceof RequestBodyTooLargeError) {
               sendText(
                 response,
@@ -2259,6 +2264,8 @@ export function makeLocalCoderGateway(
               "text/plain; charset=utf-8",
               cause instanceof Error ? cause.message : "Clipboard image upload failed.",
             );
+          } finally {
+            response.off("close", abortUpload);
           }
           return;
         }

@@ -17,16 +17,20 @@ surfaces owns focus.
 
 At phone-sized browser widths, existing threads animate between compact and expanded layouts.
 Terminal context and other draft details return when the compact composer is expanded. Pasted
-images remain workspace-scoped links in the prompt, consistent with T3 Coder's Coder-only image
-boundary.
+image thumbnails appear above the input; their workspace references are added when the message sends.
 
 ## Images
 
-Paste an image straight into the composer to share it with Claude. PNG, JPEG, and WebP images up
+Paste an image straight into the composer to share it with Codex or Claude. PNG, JPEG, and WebP images up
 to 20 MiB are accepted; anything else — or anything larger — is rejected before it is sent. The
 image is validated, not just renamed, and is stored at a generated path inside the workspace so
-Claude can read it. There are no general file attachments: images pasted into the composer are the
+the provider can read it. There are no general file attachments: images pasted into the composer are the
 only upload.
+
+Thumbnails appear above the input with queue and upload percentage indicators. You can keep editing
+and pasting images during uploads; Send waits until all images are ready. Retry or remove failed
+uploads. Click a thumbnail to open the gallery, or remove an image to cancel or omit it. Transfers
+stay with the originating draft when you switch threads.
 
 See [Images and screenshots](./images-and-screenshots.md) for the other direction — viewing
 screenshots Codex or Claude produces during a turn.
@@ -62,9 +66,10 @@ the stash contains exactly one entry, the same shortcut restores it directly; ot
 entry from the stash menu. This is useful when a long prompt is blocked on something else — stash
 it, ask your question, then bring it back.
 
-The stash is per-browser and holds up to 20 entries. Pasted images are workspace file links, so
-they ride along in the prompt text; restoring an entry into another workspace warns that its
-image links may not resolve there.
+The stash is per-browser and holds up to 20 entries. Wait for uploads to finish before stashing.
+Pasted images and their previews move with the prompt in browser memory. Restoring an entry into
+another workspace uploads its pasted images to that workspace before sending. Legacy file links
+remain workspace-specific and show a warning when restored elsewhere.
 
 ## Model and mode
 

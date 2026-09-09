@@ -39,6 +39,7 @@ import { create } from "zustand";
 import { useShallow } from "zustand/react/shallow";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
+import type { ComposerPastedImage } from "./lib/composerPastedImages";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
@@ -62,6 +63,7 @@ type ProviderOptionSelectionsByProvider = Partial<
 
 export interface ComposerThreadDraftState {
   prompt: string;
+  pastedImages?: ReadonlyArray<ComposerPastedImage>;
   terminalContexts: TerminalContextDraft[];
   reviewComments: ReviewCommentContext[];
   /**
@@ -93,6 +95,7 @@ export function composerDraftHasUserContent(
   }
   return (
     draft.prompt.trim().length > 0 ||
+    (draft.pastedImages?.length ?? 0) > 0 ||
     draft.terminalContexts.length > 0 ||
     draft.reviewComments.length > 0
   );
@@ -283,6 +286,10 @@ interface ComposerDraftStoreState {
   ) => void;
   removeReviewComment: (threadRef: ComposerThreadTarget, commentId: string) => void;
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
+  setPastedImages: (
+    threadRef: ComposerThreadTarget,
+    images: ReadonlyArray<ComposerPastedImage>,
+  ) => void;
   moveComposerPrompt: (from: ComposerThreadTarget, to: ComposerThreadTarget) => void;
 }
 
@@ -432,6 +439,7 @@ function normalizeTerminalContextsForThread(
 function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
   return (
     draft.prompt.length === 0 &&
+    (draft.pastedImages?.length ?? 0) === 0 &&
     draft.terminalContexts.length === 0 &&
     draft.reviewComments.length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
@@ -1762,6 +1770,18 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
         return { draftsByThreadKey: nextDraftsByThreadKey };
       });
     },
+    setPastedImages: (threadRef, images) => {
+      const threadKey = resolveComposerDraftKey(get(), threadRef);
+      if (!threadKey) return;
+      set((state) => {
+        const current = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+        const nextDraft = { ...current, pastedImages: [...images] };
+        const draftsByThreadKey = { ...state.draftsByThreadKey };
+        if (shouldRemoveDraft(nextDraft)) delete draftsByThreadKey[threadKey];
+        else draftsByThreadKey[threadKey] = nextDraft;
+        return { draftsByThreadKey };
+      });
+    },
     clearComposerContent: (threadRef) => {
       const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
       if (threadKey.length === 0) {
@@ -1775,6 +1795,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
         const nextDraft: ComposerThreadDraftState = {
           ...current,
           prompt: "",
+          pastedImages: [],
           terminalContexts: [],
           reviewComments: [],
         };
@@ -1797,6 +1818,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
         const destination = state.draftsByThreadKey[toKey] ?? createEmptyThreadDraft();
         const nextDestination = {
           ...destination,
+          pastedImages: source.pastedImages ?? [],
           prompt: ensureInlineTerminalContextPlaceholders(
             stripInlineTerminalContextPlaceholders(source.prompt),
             destination.terminalContexts.length,
@@ -1804,6 +1826,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
         };
         const nextSource = {
           ...source,
+          pastedImages: [],
           prompt: ensureInlineTerminalContextPlaceholders("", source.terminalContexts.length),
         };
         const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
