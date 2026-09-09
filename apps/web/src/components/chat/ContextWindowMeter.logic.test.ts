@@ -2,8 +2,8 @@ import { ProviderInstanceId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   formatContextWindowCompactionMessage,
-  shouldReserveContextWindowMeter,
   resolveContextWindowModelDisplayName,
+  shouldReserveContextWindowMeter,
 } from "./ContextWindowMeter.logic";
 
 describe("resolveContextWindowModelDisplayName", () => {
@@ -64,17 +64,51 @@ describe("formatContextWindowCompactionMessage", () => {
   });
 });
 
-it("reserves usage space only while a started thread is loading", () => {
-  const input = {
+describe("shouldReserveContextWindowMeter", () => {
+  const loadingStartedThread = {
     meterEnabled: true,
     detailLoading: true,
     threadStarted: true,
-    providerReportsContextWindow: null,
+    providerReportsContextWindow: true,
   };
-  expect(shouldReserveContextWindowMeter(input)).toBe(true);
-  expect(shouldReserveContextWindowMeter({ ...input, detailLoading: false })).toBe(false);
-  expect(shouldReserveContextWindowMeter({ ...input, threadStarted: false })).toBe(false);
-  expect(shouldReserveContextWindowMeter({ ...input, providerReportsContextWindow: false })).toBe(
-    false,
-  );
+
+  it("holds the meter's slot while a started thread's detail loads", () => {
+    expect(shouldReserveContextWindowMeter(loadingStartedThread)).toBe(true);
+  });
+
+  it("reserves nothing once the detail is in", () => {
+    expect(shouldReserveContextWindowMeter({ ...loadingStartedThread, detailLoading: false })).toBe(
+      false,
+    );
+  });
+
+  it("reserves nothing for a thread that never ran a turn", () => {
+    expect(shouldReserveContextWindowMeter({ ...loadingStartedThread, threadStarted: false })).toBe(
+      false,
+    );
+  });
+
+  it("reserves while the thread's provider is not in the catalog yet", () => {
+    expect(
+      shouldReserveContextWindowMeter({
+        ...loadingStartedThread,
+        providerReportsContextWindow: null,
+      }),
+    ).toBe(true);
+  });
+
+  it("reserves nothing for a provider that does not stream usage", () => {
+    expect(
+      shouldReserveContextWindowMeter({
+        ...loadingStartedThread,
+        providerReportsContextWindow: false,
+      }),
+    ).toBe(false);
+  });
+
+  it("reserves nothing while the meter is switched off", () => {
+    expect(shouldReserveContextWindowMeter({ ...loadingStartedThread, meterEnabled: false })).toBe(
+      false,
+    );
+  });
 });

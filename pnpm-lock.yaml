@@ -38,7 +38,7 @@ patchedDependencies:
   '@ff-labs/fff-node@0.9.4': e46c6778036022ce6ce97a1b7ceef898a8d56427d3c66da3ea26c8f7c63e4932
   '@legendapp/list@3.3.5': 455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67
   '@pierre/diffs@1.3.0-beta.10': 96db6b586fca73fb188fe278c7bcf722c473945bba9ca7b7b26b124da815aaa2
-  effect@4.0.0-rc.112: 71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2
+  effect@4.0.0-rc.112: d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1
 
 importers:
 
@@ -64,7 +64,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@t3tools/coder-cli':
         specifier: workspace:*
         version: link:../../packages/coder-cli
@@ -76,7 +76,7 @@ importers:
         version: link:../../packages/shared
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       ws:
         specifier: 8.21.0
         version: 8.21.0
@@ -92,7 +92,7 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@t3tools/coder-cli':
         specifier: workspace:*
         version: link:../../packages/coder-cli
@@ -101,7 +101,7 @@ importers:
         version: link:../../packages/contracts
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       t3:
         specifier: workspace:*
         version: link:../server
@@ -117,13 +117,13 @@ importers:
     dependencies:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@ff-labs/fff-node':
         specifier: 0.9.4
         version: 0.9.4(patch_hash=e46c6778036022ce6ce97a1b7ceef898a8d56427d3c66da3ea26c8f7c63e4932)
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       node-pty:
         specifier: 1.2.0-beta.14
         version: 1.2.0-beta.14
@@ -133,7 +133,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -169,7 +169,7 @@ importers:
         version: 3.2.2(react@19.2.6)
       '@effect/atom-react':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))(react@19.2.6)(scheduler@0.27.0)
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))(react@19.2.6)(scheduler@0.27.0)
       '@legendapp/list':
         specifier: 'catalog:'
         version: 3.3.5(patch_hash=455036e04ba51e6cf7245e44ee095467b7337f9b6943bca65acdb99baa287e67)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -205,7 +205,7 @@ importers:
         version: 4.0.2
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       lexical:
         specifier: ^0.41.0
         version: 0.41.0
@@ -242,7 +242,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@rolldown/plugin-babel':
         specifier: ^0.2.0
         version: 0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(@voidzero-dev/vite-plus-core@0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(jiti@2.7.0)(typescript@6.0.3)(yaml@2.9.0))
@@ -299,7 +299,7 @@ importers:
         version: link:../shared
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       mdast-util-directive:
         specifier: ^3.1.0
         version: 3.1.0
@@ -318,7 +318,7 @@ importers:
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       micromark-util-types:
         specifier: ^2.0.2
         version: 2.0.2
@@ -333,7 +333,7 @@ importers:
         version: link:../contracts
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
     devDependencies:
       '@types/node':
         specifier: 24.12.4
@@ -343,11 +343,11 @@ importers:
     dependencies:
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
     devDependencies:
       '@effect/vitest':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       vite-plus:
         specifier: 'catalog:'
         version: 0.2.2(@types/node@24.12.4)(esbuild@0.28.1)(happy-dom@20.11.6)(jiti@2.7.0)(typescript@6.0.3)(yaml@2.9.0)
@@ -356,14 +356,14 @@ importers:
     dependencies:
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
     devDependencies:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@effect/vitest':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
@@ -378,17 +378,17 @@ importers:
         version: link:../contracts
       effect:
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+        version: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       yaml:
         specifier: 2.9.0
         version: 2.9.0
     devDependencies:
       '@effect/platform-node':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@effect/vitest':
         specifier: 4.0.0-rc.112
-        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
+        version: 4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
       '@types/node':
         specifier: 24.12.4
         version: 24.12.4
@@ -3373,33 +3373,33 @@ snapshots:
       react: 19.2.6
       tslib: 2.8.1
 
-  '@effect/atom-react@4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))(react@19.2.6)(scheduler@0.27.0)':
+  '@effect/atom-react@4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))(react@19.2.6)(scheduler@0.27.0)':
     dependencies:
-      effect: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+      effect: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       react: 19.2.6
       scheduler: 0.27.0
 
-  '@effect/platform-node-shared@4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))':
+  '@effect/platform-node-shared@4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))':
     dependencies:
       '@types/ws': 8.18.1
-      effect: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+      effect: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       ws: 8.21.3
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/platform-node@4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))':
+  '@effect/platform-node@4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))':
     dependencies:
-      '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))
-      effect: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+      '@effect/platform-node-shared': 4.0.0-rc.112(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))
+      effect: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
       mime: 4.1.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  '@effect/vitest@4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2))':
+  '@effect/vitest@4.0.0-rc.112(patch_hash=a16b1e870d8c29e4a98b17cc4c638a4ff471753d8ca3487f78a22b759caf951b)(effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1))':
     dependencies:
-      effect: 4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2)
+      effect: 4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1)
 
   '@emnapi/core@1.11.2':
     dependencies:
@@ -4839,7 +4839,7 @@ snapshots:
 
   dom-accessibility-api@0.5.16: {}
 
-  effect@4.0.0-rc.112(patch_hash=71f8e6b65648f81bf4ed9194720d97cfe0b5b61eb0877693303dccd6d06fbea2):
+  effect@4.0.0-rc.112(patch_hash=d98b2ef92ef810fbad95cfddeea47077c8907a0d67f030b2ca2b99890c9146e1):
     dependencies:
       fast-check: 4.9.0
       msgpackr: 2.1.0

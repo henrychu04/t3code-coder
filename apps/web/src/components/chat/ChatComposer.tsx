@@ -57,7 +57,7 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
-import { deriveComposerSendState } from "../ChatView.logic";
+import { deriveComposerSendState, threadShellHasStarted } from "../ChatView.logic";
 import {
   type DraftId,
   useComposerDraftStore,
@@ -130,7 +130,6 @@ import {
   resolveComposerRuntimeMode,
   providerSupportsManualCompaction,
 } from "./composerProviderState";
-import { threadShellHasStarted } from "../ChatView.logic";
 import { ContextWindowMeter, ContextWindowMeterPlaceholder } from "./ContextWindowMeter";
 import {
   resolveContextWindowModelDisplayName,
@@ -1096,8 +1095,8 @@ export interface ChatComposerProps {
   activeThreadId: ThreadId | null;
   activeThreadEnvironmentId: EnvironmentId | undefined;
   activeThread: Thread | undefined;
+  /** The routed server thread's shell, present before its detail loads. */
   activeThreadShell: ThreadShell | null;
-  providerCatalogKnown: boolean;
   /** Timeline messages including optimistic sends, for ArrowUp prompt recall. */
   promptHistoryMessages: ReadonlyArray<ChatMessage>;
   isServerThread: boolean;
@@ -1148,6 +1147,8 @@ export interface ChatComposerProps {
   // Provider / model
   lockedProvider: ProviderDriverKind | null;
   providerStatuses: ServerProvider[];
+  /** False until the environment's server config has arrived at least once. */
+  providerCatalogKnown: boolean;
   activeProjectDefaultModelSelection: ModelSelection | null | undefined;
   activeThreadModelSelection: ModelSelection | null | undefined;
 
@@ -1249,6 +1250,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     interactionMode,
     lockedProvider,
     providerStatuses,
+    providerCatalogKnown,
     activeProjectDefaultModelSelection,
     activeThreadModelSelection,
     activeThreadActivities,
@@ -1431,7 +1433,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [providerInstanceEntries, selectedInstanceId],
   );
   const noProviderAvailable = selectedProviderEntry === undefined;
-  const providerCatalogPending = noProviderAvailable && !props.providerCatalogKnown;
+  // Before the catalog arrives, every thread resolves to "no provider". Send
+  // stays blocked either way; only the chrome waits, keeping the picker with
+  // the thread's own selection instead of swapping in the setup button and
+  // back once the catalog lands.
+  const providerCatalogPending = noProviderAvailable && !providerCatalogKnown;
   const showProviderUnavailable = noProviderAvailable && !providerCatalogPending;
   // The driver kind follows the instance that will actually run the turn,
   // which can differ from the persisted selection when that selection is
@@ -1452,13 +1458,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => selectedProviderEntry?.snapshot ?? null,
     [selectedProviderEntry],
   );
-  const reserveContextWindowMeter = shouldReserveContextWindowMeter({
-    meterEnabled: true,
-    detailLoading: props.threadSyncPhase === "loading",
-    threadStarted: threadShellHasStarted(props.activeThreadShell),
-    // Both retained providers report context usage.
-    providerReportsContextWindow: true,
-  });
   const selectedProviderModels = useMemo<ReadonlyArray<ServerProvider["models"][number]>>(
     () => selectedProviderEntry?.models ?? [],
     [selectedProviderEntry],
@@ -1540,6 +1539,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => resolveContextWindowModelDisplayName(activeThreadModelSelection, modelOptionsByInstance),
     [activeThreadModelSelection, modelOptionsByInstance],
   );
+  const reserveContextWindowMeter = shouldReserveContextWindowMeter({
+    meterEnabled: true,
+    detailLoading: props.threadSyncPhase === "loading",
+    threadStarted: threadShellHasStarted(props.activeThreadShell),
+    providerReportsContextWindow: selectedProviderStatus
+      ? selectedProviderStatus.reportsContextWindow === true
+      : null,
+  });
 
   // ------------------------------------------------------------------
   // Composer-local state
