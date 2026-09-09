@@ -14,6 +14,7 @@ export interface ScreenshotCaptureOptions {
   readonly captureScreenshotFile?: (input: {
     readonly cwd: string;
     readonly filePath: string;
+    readonly capturedArtifacts?: ReadonlyMap<string, ScreenshotArtifactReference>;
     readonly capturedDigests: ReadonlySet<string>;
   }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
   readonly captureScreenshotBase64?: (input: {
@@ -42,9 +43,18 @@ export const makeTurnScreenshotCapture = Effect.fn("makeTurnScreenshotCapture")(
   const lock = yield* Semaphore.make(1);
   const artifacts: ScreenshotArtifactReference[] = [];
   const capturedDigests = new Set<string>();
+  const capturedArtifacts = new Map<string, ScreenshotArtifactReference>();
   let closed = false;
   const append = (captured: CapturedScreenshotArtifact | undefined) => {
-    if (!captured || capturedDigests.has(captured.digest)) return;
+    if (!captured) return;
+    const existing = capturedArtifacts.get(captured.digest);
+    if (!existing && artifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN) return;
+    capturedArtifacts.set(captured.digest, captured.reference);
+    if (existing) {
+      artifacts[artifacts.findIndex((artifact) => artifact.id === existing.id)] =
+        captured.reference;
+      return;
+    }
     capturedDigests.add(captured.digest);
     artifacts.push(captured.reference);
   };
@@ -70,9 +80,16 @@ export const makeTurnScreenshotCapture = Effect.fn("makeTurnScreenshotCapture")(
       closed = true;
       const paths = observation?.close() ?? [];
       if (cwd && options?.captureScreenshotFile) {
+        // Even at the image cap, observed duplicates can add source keys without storing bytes.
         for (const filePath of paths) {
-          if (artifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN) break;
-          append(yield* options.captureScreenshotFile({ cwd, filePath, capturedDigests }));
+          append(
+            yield* options.captureScreenshotFile({
+              cwd,
+              filePath,
+              capturedDigests,
+              capturedArtifacts,
+            }),
+          );
         }
       }
       if (artifacts.length === 0) return;

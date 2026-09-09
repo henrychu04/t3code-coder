@@ -1,3 +1,4 @@
+import { ArtifactImageLink, isImageFilePath } from "./chat/ArtifactNavigation";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { defaultUrlTransform } from "react-markdown";
@@ -78,7 +79,11 @@ import { fnv1a32, resolveDiffThemeName, type DiffThemeName } from "../lib/diffRe
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
-import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "../markdown-links";
+import {
+  resolveInlineCodeFileLinkMeta,
+  resolveMarkdownFileLinkMeta,
+  rewriteMarkdownFileUriHref,
+} from "../markdown-links";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 import {
@@ -209,7 +214,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation"],
+    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation", "file"],
+    src: [...(defaultSchema.protocols?.src ?? []), "file"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -909,6 +915,13 @@ const MARKDOWN_COMPONENTS: Components = {
       );
     }
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
+    if (fileLink && isImageFilePath(fileLink.filePath)) {
+      return (
+        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+          {children}
+        </ArtifactImageLink>
+      );
+    }
     if (threadRef && fileLink?.workspaceRelativePath) {
       return (
         <button
@@ -1041,7 +1054,15 @@ const MARKDOWN_COMPONENTS: Components = {
       </span>
     );
   },
-  img({ node: _node, title: _title, src: _src, alt }) {
+  img({ node: _node, title: _title, src, alt }) {
+    const { cwd } = useMarkdownState();
+    const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
+    if (fileLink)
+      return (
+        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+          {alt || fileLink.basename}
+        </ArtifactImageLink>
+      );
     return <InertMarkdownImage alt={alt ?? ""} />;
   },
   code({ node, children, className: codeClassName, ...props }) {
@@ -1051,6 +1072,13 @@ const MARKDOWN_COMPONENTS: Components = {
       node?.properties?.dataInlineCode != null
         ? resolveInlineCodeFileLinkMeta(codeText, cwd)
         : null;
+    if (fileLink && isImageFilePath(fileLink.filePath)) {
+      return (
+        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+          {children}
+        </ArtifactImageLink>
+      );
+    }
     if (threadRef && fileLink?.workspaceRelativePath) {
       return (
         <button
@@ -1133,7 +1161,9 @@ function ChatMarkdown(props: ChatMarkdownProps) {
       <MarkdownStateContext value={state}>
         <ReactMarkdown
           urlTransform={(href) =>
-            parseAssistantCitationHref(href) ? href : defaultUrlTransform(href)
+            parseAssistantCitationHref(href)
+              ? href
+              : (rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href))
           }
           remarkPlugins={remarkPlugins}
           rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
