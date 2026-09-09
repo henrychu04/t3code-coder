@@ -1,3 +1,4 @@
+import { ArtifactImageLink, isImageFilePath } from "./chat/ArtifactNavigation";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { defaultUrlTransform } from "react-markdown";
@@ -78,7 +79,11 @@ import { fnv1a32, resolveDiffThemeName, type DiffThemeName } from "../lib/diffRe
 import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
-import { resolveInlineCodeFileLinkMeta, resolveMarkdownFileLinkMeta } from "../markdown-links";
+import {
+  resolveInlineCodeFileLinkMeta,
+  resolveMarkdownFileLinkMeta,
+  rewriteMarkdownFileUriHref,
+} from "../markdown-links";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 import {
@@ -209,7 +214,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation"],
+    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation", "file"],
+    src: [...(defaultSchema.protocols?.src ?? []), "file"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -734,6 +740,66 @@ function useMarkdownState() {
 }
 
 // Renderer identities never change when text or metadata changes.
+const SANITIZED_FRAGMENT_PREFIX = "user-content-";
+
+function decodeMarkdownFragmentId(href: string): string {
+  const encodedId = href.slice(1);
+  try {
+    return decodeURIComponent(encodedId);
+  } catch {
+    return encodedId;
+  }
+}
+
+function normalizeSanitizedFragmentId(id: string): string {
+  let normalizedId = id;
+  while (normalizedId.startsWith(SANITIZED_FRAGMENT_PREFIX)) {
+    normalizedId = normalizedId.slice(SANITIZED_FRAGMENT_PREFIX.length);
+  }
+  return normalizedId;
+}
+
+function findMarkdownFragmentTarget(anchor: HTMLAnchorElement, href: string): HTMLElement | null {
+  const decodedId = decodeMarkdownFragmentId(href);
+  const normalizedId = normalizeSanitizedFragmentId(decodedId);
+  const matchesFragment = (element: HTMLElement) =>
+    element.id === decodedId || normalizeSanitizedFragmentId(element.id) === normalizedId;
+  const markdownRoot = anchor.closest<HTMLElement>(".chat-markdown");
+  if (markdownRoot) {
+    const localTargets = Array.from(markdownRoot.querySelectorAll<HTMLElement>("[id]"));
+    const localTarget = localTargets.find(matchesFragment);
+    if (localTarget) return localTarget;
+  }
+
+  return (
+    document.getElementById(decodedId) ??
+    Array.from(document.querySelectorAll<HTMLElement>("[id]")).find(matchesFragment) ??
+    null
+  );
+}
+
+function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, href: string) {
+  if (
+    event.defaultPrevented ||
+    event.button !== 0 ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    event.altKey
+  ) {
+    return;
+  }
+
+  const target = findMarkdownFragmentTarget(event.currentTarget, href);
+  if (!target) return;
+
+  event.preventDefault();
+  const nextUrl = new URL(window.location.href);
+  nextUrl.hash = href.slice(1);
+  window.history.pushState(window.history.state, "", nextUrl);
+  target.scrollIntoView({ block: "nearest" });
+}
+
 const MARKDOWN_COMPONENTS: Components = {
   div({ node, children, ...props }) {
     const { onUseArtifactTemplate } = useMarkdownState();
@@ -835,12 +901,27 @@ const MARKDOWN_COMPONENTS: Components = {
     };
     if (href?.startsWith("#")) {
       return (
-        <a {...props} {...autolinkProps} href={href}>
+        <a
+          {...props}
+          {...autolinkProps}
+          href={href}
+          onClick={(event) => {
+            props.onClick?.(event);
+            handleMarkdownFragmentClick(event, href);
+          }}
+        >
           {children}
         </a>
       );
     }
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
+    if (fileLink && isImageFilePath(fileLink.filePath)) {
+      return (
+        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+          {children}
+        </ArtifactImageLink>
+      );
+    }
     if (threadRef && fileLink?.workspaceRelativePath) {
       return (
         <button
@@ -973,7 +1054,15 @@ const MARKDOWN_COMPONENTS: Components = {
       </span>
     );
   },
-  img({ node: _node, title: _title, src: _src, alt }) {
+  img({ node: _node, title: _title, src, alt }) {
+    const { cwd } = useMarkdownState();
+    const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
+    if (fileLink)
+      return (
+        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+          {alt || fileLink.basename}
+        </ArtifactImageLink>
+      );
     return <InertMarkdownImage alt={alt ?? ""} />;
   },
   code({ node, children, className: codeClassName, ...props }) {
@@ -983,6 +1072,13 @@ const MARKDOWN_COMPONENTS: Components = {
       node?.properties?.dataInlineCode != null
         ? resolveInlineCodeFileLinkMeta(codeText, cwd)
         : null;
+    if (fileLink && isImageFilePath(fileLink.filePath)) {
+      return (
+        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+          {children}
+        </ArtifactImageLink>
+      );
+    }
     if (threadRef && fileLink?.workspaceRelativePath) {
       return (
         <button
@@ -1065,7 +1161,9 @@ function ChatMarkdown(props: ChatMarkdownProps) {
       <MarkdownStateContext value={state}>
         <ReactMarkdown
           urlTransform={(href) =>
-            parseAssistantCitationHref(href) ? href : defaultUrlTransform(href)
+            parseAssistantCitationHref(href)
+              ? href
+              : (rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href))
           }
           remarkPlugins={remarkPlugins}
           rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}

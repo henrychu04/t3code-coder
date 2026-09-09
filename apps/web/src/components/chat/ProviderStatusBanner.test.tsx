@@ -54,3 +54,19 @@ describe("ProviderStatusBanner", () => {
     expect(markup).toContain('aria-label="Dismiss Codex provider error"');
   });
 });
+
+it("preserves the workspace API credential diagnostic", () => {
+  const markup = renderToStaticMarkup(
+    <ProviderStatusBanner
+      status={{
+        ...warningProvider(),
+        status: "error",
+        auth: { status: "unauthenticated" },
+        message: "Check the workspace backend API credentials.",
+      }}
+      onDismiss={() => {}}
+    />,
+  );
+  expect(markup).toContain("Check the workspace backend API credentials.");
+  expect(markup).not.toContain("Sign in via the CLI");
+});

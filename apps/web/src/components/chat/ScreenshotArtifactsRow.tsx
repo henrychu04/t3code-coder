@@ -1,5 +1,6 @@
+import { ArtifactNavigationContext } from "./ArtifactNavigation";
 import { type EnvironmentId, type ScreenshotArtifactReference } from "@t3tools/contracts";
-import { memo, useState } from "react";
+import { memo, useState, useContext, useEffect, useRef } from "react";
 import { PaintbrushIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
 import { Button } from "../ui/button";
@@ -11,9 +12,34 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props
   environmentId: EnvironmentId;
 }) {
   const { artifacts, environmentId } = props;
+  const navigation = useContext(ArtifactNavigationContext);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const pendingFocusId = useRef<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const images = useScreenshotArtifacts(environmentId, artifacts, expanded);
+  useEffect(() => {
+    const id = navigation?.request?.artifactId;
+    if (!id || !artifacts.some((artifact) => artifact.id === id)) {
+      pendingFocusId.current = null;
+      setHighlightedId(null);
+      return;
+    }
+    if (!navigation!.request!.consume()) return;
+    pendingFocusId.current = id;
+    setExpanded(true);
+    setHighlightedId(id);
+  }, [navigation?.request, artifacts]);
+  useEffect(() => {
+    if (!expanded || !highlightedId || pendingFocusId.current !== highlightedId) return;
+    pendingFocusId.current = null;
+    const target = Array.from(
+      rowRef.current?.querySelectorAll<HTMLElement>("[data-artifact-id]") ?? [],
+    ).find((element) => element.dataset.artifactId === highlightedId);
+    target?.scrollIntoView?.({ block: "nearest" });
+    target?.focus({ preventScroll: true });
+  }, [expanded, highlightedId, navigation?.request]);
 
   const selectedArtifactIndex = artifacts.findIndex(
     (artifact) => artifact.id === selectedArtifactId,
@@ -29,7 +55,7 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props
   };
 
   return (
-    <div className="rounded-md px-0.5 py-0.5">
+    <div ref={rowRef} className="rounded-md px-0.5 py-0.5">
       <button
         type="button"
         className="flex min-h-6 w-full items-center gap-1.5 rounded-md text-left text-sm leading-relaxed text-secondary-label transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
@@ -56,9 +82,14 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props
               <button
                 key={artifact.id}
                 type="button"
-                className="min-w-0 overflow-hidden rounded-md border border-border/55 bg-muted/25 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:cursor-default"
-                disabled={image?.status !== "loaded"}
-                onClick={() => setSelectedArtifactId(artifact.id)}
+                className="data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-primary min-w-0 overflow-hidden rounded-md border border-border/55 bg-muted/25 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:cursor-default"
+                data-artifact-id={artifact.id}
+                data-highlighted={highlightedId === artifact.id || undefined}
+                aria-label={artifact.name}
+                aria-disabled={image?.status !== "loaded"}
+                onClick={() => {
+                  if (image?.status === "loaded") setSelectedArtifactId(artifact.id);
+                }}
               >
                 <ScreenshotArtifactPreview artifact={artifact} image={image} />
                 <span className="block truncate border-t border-border/45 px-2 py-1 text-muted-foreground text-xs">

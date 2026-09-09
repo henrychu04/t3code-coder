@@ -112,6 +112,7 @@ export class ScreenshotArtifacts extends Context.Service<
     readonly captureFile: (input: {
       readonly cwd: string;
       readonly filePath: string;
+      readonly capturedArtifacts?: ReadonlyMap<string, ScreenshotArtifactReference>;
       readonly capturedDigests?: ReadonlySet<string> | undefined;
     }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
     readonly captureBase64: (input: {
@@ -196,6 +197,9 @@ export const make = Effect.gen(function* () {
         const requestedPath = NodePath.isAbsolute(input.filePath)
           ? NodePath.resolve(input.filePath)
           : NodePath.resolve(root, input.filePath);
+        const lexicalRoot = NodePath.resolve(input.cwd);
+        const sourceRoot = isPathWithinRoot(lexicalRoot, requestedPath) ? lexicalRoot : root;
+        if (!isPathWithinRoot(sourceRoot, requestedPath)) return undefined;
         const requestedStat = await NodeFS.lstat(requestedPath);
         if (!requestedStat.isFile() || requestedStat.isSymbolicLink()) return undefined;
         if (requestedStat.size === 0 || requestedStat.size > MAX_SCREENSHOT_ARTIFACT_BYTES) {
@@ -207,15 +211,34 @@ export const make = Effect.gen(function* () {
         return {
           bytes: await NodeFS.readFile(resolvedPath),
           name: NodePath.basename(resolvedPath),
+          relativePath: NodePath.relative(sourceRoot, requestedPath),
         };
       },
       catch: (cause) => cause,
     }).pipe(
       Effect.catch(() => Effect.succeed(undefined)),
       Effect.flatMap((candidate) =>
-        candidate
-          ? persistBytes({ ...candidate, capturedDigests: input.capturedDigests })
-          : Effect.succeed(undefined),
+        Effect.gen(function* () {
+          if (!candidate) return undefined;
+          const digest = createHash("sha256").update(candidate.bytes).digest("hex");
+          const existing = input.capturedArtifacts?.get(digest);
+          const captured: CapturedScreenshotArtifact | undefined = existing
+            ? { reference: existing, digest }
+            : yield* persistBytes({ ...candidate, capturedDigests: input.capturedDigests });
+          if (!captured) return undefined;
+          const key = createHash("sha256")
+            .update(`${captured.reference.id}\0${candidate.relativePath}`)
+            .digest("hex");
+          return {
+            ...captured,
+            reference: {
+              ...captured.reference,
+              sourcePathKeys: [
+                ...new Set([...(captured.reference.sourcePathKeys ?? []), key]),
+              ].slice(0, 100),
+            },
+          };
+        }),
       ),
     );
   });

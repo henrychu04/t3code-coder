@@ -29,6 +29,12 @@ export const ScreenshotArtifactReference = Schema.Struct({
   name: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   mimeType: ScreenshotArtifactMimeType,
   dimensions: Schema.optional(ScreenshotArtifactDimensions),
+  /** Opaque, artifact-salted fingerprints of contained source paths; never read capabilities. */
+  sourcePathKeys: Schema.optional(
+    Schema.Array(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))).check(
+      Schema.isMaxLength(100),
+    ),
+  ),
   sizeBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_BYTES)),
 });
 export type ScreenshotArtifactReference = typeof ScreenshotArtifactReference.Type;
