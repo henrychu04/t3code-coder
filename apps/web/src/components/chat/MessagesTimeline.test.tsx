@@ -994,53 +994,57 @@ describe("MessagesTimeline", () => {
     ).toBeNull();
   });
 
-  it("renders screenshot artifacts collapsed without loading image bytes", () => {
-    const turnId = TurnId.make("turn-with-artifacts");
-    const assistantEntry = buildAssistantTimelineEntry("Verification passed.");
-    const markup = renderToStaticMarkup(
-      <MessagesTimeline
-        {...buildProps()}
-        latestTurn={{
-          turnId,
-          state: "completed",
-          startedAt: "2026-03-17T19:12:20.000Z",
-          completedAt: "2026-03-17T19:12:28.000Z",
-        }}
-        timelineEntries={[
-          {
-            ...assistantEntry,
-            message: { ...assistantEntry.message, turnId },
-          },
-          {
-            id: "entry-artifacts",
-            kind: "work",
-            createdAt: "2026-03-17T19:12:28.000Z",
-            entry: {
-              id: "work-artifacts",
-              createdAt: "2026-03-17T19:12:28.000Z",
-              turnId,
-              label: "Visual artifacts",
-              tone: "tool",
-              itemType: "image_view",
-              artifacts: [
-                {
-                  id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
-                  name: "home.png",
-                  mimeType: "image/png",
-                  sizeBytes: 128,
-                },
-              ],
+  it.each([true, false])(
+    "keeps image previews and capture failures visible: captured=%s",
+    (captured) => {
+      const turnId = TurnId.make("turn-with-artifacts");
+      const assistantEntry = buildAssistantTimelineEntry("Verification passed.");
+      const markup = renderToStaticMarkup(
+        <MessagesTimeline
+          {...buildProps()}
+          latestTurn={{
+            turnId,
+            state: "completed",
+            startedAt: "2026-03-17T19:12:20.000Z",
+            completedAt: "2026-03-17T19:12:28.000Z",
+          }}
+          timelineEntries={[
+            {
+              ...assistantEntry,
+              message: { ...assistantEntry.message, turnId },
             },
-          },
-        ]}
-      />,
-    );
+            {
+              id: "entry-artifacts",
+              kind: "work",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              entry: {
+                id: "work-artifacts",
+                createdAt: "2026-03-17T19:12:28.000Z",
+                turnId,
+                label: "Visual artifacts",
+                tone: "tool",
+                itemType: "image_view",
+                ...(captured ? {} : { imageCaptureWarning: "Image could not be preserved." }),
+                artifacts: captured
+                  ? [
+                      {
+                        id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
+                        name: "home.png",
+                        mimeType: "image/png",
+                        sizeBytes: 128,
+                      },
+                    ]
+                  : [],
+              },
+            },
+          ]}
+        />,
+      );
 
-    expect(markup).toContain("Visual artifacts · 1");
-    expect(markup).toContain('aria-expanded="false"');
-    expect(markup).not.toContain("<img");
-    expect(markup).not.toContain("home.png");
-  });
+      expect(markup).toContain(captured ? "Preview home.png" : "Image could not be preserved.");
+      expect(markup).not.toContain("<img");
+    },
+  );
 
   it("summarizes changed files in one line", () => {
     const markup = renderToStaticMarkup(

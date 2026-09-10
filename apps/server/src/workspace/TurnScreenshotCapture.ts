@@ -1,19 +1,20 @@
 import {
   MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
+  MAX_SCREENSHOT_ARTIFACT_BYTES,
   type ProviderRuntimeEvent,
   type ScreenshotArtifactReference,
 } from "@t3tools/contracts";
+import { createHash } from "node:crypto";
 import * as Effect from "effect/Effect";
 import * as Semaphore from "effect/Semaphore";
 import type { CapturedScreenshotArtifact } from "./ScreenshotArtifacts.ts";
 
 export interface ScreenshotCaptureOptions {
-  readonly observeScreenshots?: (cwd: string) => Effect.Effect<{
-    readonly close: () => ReadonlyArray<string>;
-  }>;
   readonly captureScreenshotFile?: (input: {
     readonly cwd: string;
     readonly filePath: string;
+    readonly existingOnly?: boolean;
+    readonly sourceArtifact?: CapturedScreenshotArtifact;
     readonly capturedArtifacts?: ReadonlyMap<string, ScreenshotArtifactReference>;
     readonly capturedDigests: ReadonlySet<string>;
   }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
@@ -33,76 +34,108 @@ export interface ScreenshotImageInput {
 
 type ArtifactPayload = Extract<ProviderRuntimeEvent, { type: "item.completed" }>["payload"];
 
-/** One provider turn owns observation, limits, deduplication, and publication. */
+/** One provider turn owns capture, limits, deduplication, and activity references. */
 export const makeTurnScreenshotCapture = Effect.fn("makeTurnScreenshotCapture")(function* (
   cwd: string | undefined,
   options?: ScreenshotCaptureOptions,
 ) {
-  const observation =
-    cwd && options?.observeScreenshots ? yield* options.observeScreenshots(cwd) : undefined;
   const lock = yield* Semaphore.make(1);
-  const artifacts: ScreenshotArtifactReference[] = [];
-  const capturedDigests = new Set<string>();
   const capturedArtifacts = new Map<string, ScreenshotArtifactReference>();
+  const capturedDigests = new Set<string>();
   let closed = false;
-  const append = (captured: CapturedScreenshotArtifact | undefined) => {
-    if (!captured) return;
-    const existing = capturedArtifacts.get(captured.digest);
-    if (!existing && artifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN) return;
-    capturedArtifacts.set(captured.digest, captured.reference);
-    if (existing) {
-      artifacts[artifacts.findIndex((artifact) => artifact.id === existing.id)] =
-        captured.reference;
-      return;
-    }
+  const remember = (captured: CapturedScreenshotArtifact | undefined) => {
+    if (!captured) return undefined;
+    // Deduplicate bytes, not observations: a later activity must not inherit old paths.
+    const { sourcePathKeys: _paths, ...storedReference } = captured.reference;
+    capturedArtifacts.set(captured.digest, storedReference);
     capturedDigests.add(captured.digest);
-    artifacts.push(captured.reference);
+    return captured.reference;
   };
-  // Also used by scope finalizers when a turn fails before it can be published.
-  const dispose = () => {
-    if (closed) return;
-    closed = true;
-    observation?.close();
-  };
-  const captureImages = (images: ReadonlyArray<ScreenshotImageInput>) =>
+  // Capture on the tool event, never by watching unrelated filesystem changes.
+  const capture = (images: ReadonlyArray<ScreenshotImageInput>, filePath?: string) =>
     lock.withPermit(
       Effect.gen(function* () {
-        if (closed || !options?.captureScreenshotBase64) return;
+        const artifacts: ScreenshotArtifactReference[] = [];
+        let imageCaptureWarning: string | undefined;
+        const accept = (reference: ScreenshotArtifactReference | undefined) => {
+          if (reference) {
+            if (!artifacts.some((artifact) => artifact.id === reference.id))
+              artifacts.push(reference);
+          } else {
+            imageCaptureWarning =
+              capturedDigests.size >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN
+                ? "Image limit reached. Additional images were not preserved."
+                : "Image could not be preserved.";
+          }
+        };
+        if (closed) return { artifacts, imageCaptureWarning: "Image capture has ended." };
         for (const image of images) {
-          if (closed || artifacts.length >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN) break;
-          append(yield* options.captureScreenshotBase64({ ...image, capturedDigests }));
-        }
-      }),
-    );
-  const finish = lock.withPermit(
-    Effect.gen(function* (): Effect.fn.Return<ArtifactPayload | undefined> {
-      if (closed) return;
-      closed = true;
-      const paths = observation?.close() ?? [];
-      if (cwd && options?.captureScreenshotFile) {
-        // Even at the image cap, observed duplicates can add source keys without storing bytes.
-        for (const filePath of paths) {
-          append(
-            yield* options.captureScreenshotFile({
-              cwd,
-              filePath,
-              capturedDigests,
-              capturedArtifacts,
-            }),
+          if (closed) break;
+          if (image.dataBase64.length > Math.ceil(MAX_SCREENSHOT_ARTIFACT_BYTES / 3) * 4 + 4) {
+            accept(undefined);
+            continue;
+          }
+          const digest = createHash("sha256")
+            .update(Buffer.from(image.dataBase64, "base64"))
+            .digest("hex");
+          const existing = capturedArtifacts.get(digest);
+          accept(
+            existing ??
+              (capturedDigests.size < MAX_SCREENSHOT_ARTIFACTS_PER_TURN &&
+              options?.captureScreenshotBase64
+                ? remember(yield* options.captureScreenshotBase64({ ...image, capturedDigests }))
+                : undefined),
           );
         }
-      }
-      if (artifacts.length === 0) return;
-      return {
-        itemType: "image_view",
-        status: "completed",
-        title: "Visual artifacts",
-        detail: `${artifacts.length} screenshot${artifacts.length === 1 ? "" : "s"}`,
-        artifacts: [...artifacts],
-      };
+        if (filePath && images.length === 0) {
+          accept(
+            cwd && options?.captureScreenshotFile
+              ? remember(
+                  yield* options.captureScreenshotFile({
+                    cwd,
+                    filePath,
+                    capturedDigests,
+                    capturedArtifacts,
+                  }),
+                )
+              : undefined,
+          );
+        }
+        // A single tool image can be resized/re-encoded relative to its source. Preserve
+        // those returned bytes and associate only the current validated path observation.
+        // Multiple returned images remain ambiguous unless the file digest matches one.
+        if (filePath && images.length > 0 && cwd && options?.captureScreenshotFile) {
+          const source =
+            images.length === 1 && artifacts.length === 1
+              ? [...capturedArtifacts].find(([, reference]) => reference.id === artifacts[0]!.id)
+              : undefined;
+          const linked = yield* options.captureScreenshotFile({
+            cwd,
+            filePath,
+            capturedDigests,
+            capturedArtifacts,
+            existingOnly: true,
+            ...(source ? { sourceArtifact: { digest: source[0], reference: source[1] } } : {}),
+          });
+          if (linked && artifacts.some((artifact) => artifact.id === linked.reference.id)) {
+            remember(linked);
+            artifacts[artifacts.findIndex((artifact) => artifact.id === linked.reference.id)] =
+              linked.reference;
+          }
+        }
+        return { artifacts, ...(imageCaptureWarning ? { imageCaptureWarning } : {}) };
+      }),
+    );
+  const dispose = () => {
+    closed = true;
+  };
+  const finish: Effect.Effect<ArtifactPayload | undefined> = lock.withPermit(
+    Effect.sync(() => {
+      dispose();
+      return undefined;
     }),
   );
-  return { captureImages, finish, dispose };
+  return { captureImages: capture, finish, dispose };
 });
 
 export type TurnScreenshotCapture = Effect.Success<ReturnType<typeof makeTurnScreenshotCapture>>;

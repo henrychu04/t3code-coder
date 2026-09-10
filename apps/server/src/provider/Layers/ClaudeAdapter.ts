@@ -892,7 +892,21 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
   };
 }
 
-function classifyToolItemType(toolName: string): CanonicalItemType {
+// From upstream 8d8189e67; restrict formats to the Coder image boundary.
+function readToolImagePath(toolName: string, input: Record<string, unknown>): string | undefined {
+  const normalized = toolName.trim().toLowerCase();
+  if (normalized !== "read" && normalized !== "read file") return undefined;
+  const pathValue = input.file_path ?? input.path;
+  if (typeof pathValue !== "string") return undefined;
+  const path = pathValue.trim();
+  return path.length > 0 && /\.(?:png|jpe?g|webp)$/i.test(path) ? path : undefined;
+}
+
+function classifyToolItemType(
+  toolName: string,
+  input: Record<string, unknown> = {},
+): CanonicalItemType {
+  if (readToolImagePath(toolName, input)) return "image_view";
   const normalized = toolName.toLowerCase();
   if (normalized.includes("agent")) {
     return "collab_agent_tool_call";
@@ -2835,11 +2849,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       }
 
       const toolName = block.name;
-      const itemType = classifyToolItemType(toolName);
       const toolInput =
         typeof block.input === "object" && block.input !== null
           ? (block.input as Record<string, unknown>)
           : {};
+      const itemType = classifyToolItemType(toolName, toolInput);
       const itemId = block.id;
       const detail = summarizeToolRequest(toolName, toolInput);
       const inputFingerprint =
@@ -2943,12 +2957,22 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       if (!toolResult.isError) {
         yield* updateSessionCwdFromWorktreeTool(context, tool, toolUseResult, sanitizedMessage);
       }
-      if (!toolResult.isError && context.turnState && toolResult.images.length > 0) {
-        const name = screenshotNameFromTool(tool);
-        yield* context.turnState.screenshotCapture.captureImages(
-          toolResult.images.map((image) => ({ ...image, ...(name ? { name } : {}) })),
-        );
-      }
+      const imagePath = screenshotNameFromTool(tool);
+      const isImagePath = imagePath && /\.(?:png|jpe?g|webp)$/i.test(imagePath);
+      const capturedImages =
+        !toolResult.isError &&
+        context.turnState &&
+        (toolResult.images.length > 0 ||
+          ((tool.itemType === "image_view" || readToolImagePath(tool.toolName, tool.input)) &&
+            isImagePath))
+          ? yield* context.turnState.screenshotCapture.captureImages(
+              toolResult.images.map((image) => ({
+                ...image,
+                ...(imagePath ? { name: imagePath } : {}),
+              })),
+              isImagePath ? imagePath : undefined,
+            )
+          : undefined;
       const toolData = {
         toolName: tool.toolName,
         input: tool.input,
@@ -3021,6 +3045,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         payload: {
           itemType: tool.itemType,
           status: itemStatus,
+          ...(capturedImages ?? {}),
           title: tool.title,
           ...(tool.detail ? { detail: tool.detail } : {}),
           ...(tool.agentId ? { agentId: tool.agentId } : {}),

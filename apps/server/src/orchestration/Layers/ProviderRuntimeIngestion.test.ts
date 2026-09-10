@@ -1226,6 +1226,7 @@ describe("ProviderRuntimeIngestion", () => {
         itemType: "image_view",
         status: "completed",
         title: "Visual artifacts",
+        imageCaptureWarning: "Image limit reached.",
         artifacts: [
           {
             id: artifactId,
@@ -1250,6 +1251,7 @@ describe("ProviderRuntimeIngestion", () => {
       summary: "Visual artifacts",
       payload: {
         itemType: "image_view",
+        imageCaptureWarning: "Image limit reached.",
         artifacts: [
           {
             id: artifactId,

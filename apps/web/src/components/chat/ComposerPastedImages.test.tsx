@@ -61,6 +61,17 @@ it("keeps a stable thumbnail through progress and completion, then releases it o
   expect(revoke).toHaveBeenCalledWith("blob:preview");
 });
 
+it("displays submitted images with a gallery and no editing controls", async () => {
+  await act(async () => root.render(<ComposerPastedImages images={[uploaded]} />));
+  expect(container.querySelector("img")?.src).toBe("blob:preview");
+  expect(container.querySelector('[aria-label="Remove Screenshot.png"]')).toBeNull();
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Preview Screenshot.png"]')!.click(),
+  );
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  expect(document.body.textContent).not.toContain("Remove image");
+});
+
 it("offers retry for failed uploads without re-pasting", async () => {
   await render([
     { id: "one", file, workspaceId: "workspace", status: "failed", error: "Connection lost" },
@@ -93,7 +104,7 @@ it("opens all compact thumbnails in one keyboard-navigable gallery", async () =>
   );
   expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("4.png");
   expect(document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.disabled).toBe(
-    true,
+    false,
   );
   await act(async () =>
     document.querySelector<HTMLButtonElement>('[aria-label="Previous image"]')!.click(),

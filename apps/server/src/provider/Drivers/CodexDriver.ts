@@ -105,7 +105,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         resolveMcpServerNames,
         captureScreenshotFile: screenshotArtifacts.captureFile,
         captureScreenshotBase64: screenshotArtifacts.captureBase64,
-        observeScreenshots: screenshotArtifacts.observeTurn,
       });
       const textGeneration = yield* makeCodexTextGeneration(
         effectiveConfig,

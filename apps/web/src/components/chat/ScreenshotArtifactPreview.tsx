@@ -5,8 +5,10 @@ import * as Schema from "effect/Schema";
 export function ScreenshotArtifactPreview({
   artifact,
   image,
+  onError,
 }: {
-  readonly artifact: ScreenshotArtifactReference;
+  readonly onError?: (() => void) | undefined;
+  readonly artifact: Omit<ScreenshotArtifactReference, "sizeBytes">;
   readonly image?:
     | { readonly status: "loading" | "error" }
     | { readonly status: "loaded"; readonly url: string }
@@ -17,7 +19,7 @@ export function ScreenshotArtifactPreview({
     ? artifact.dimensions
     : undefined;
   return (
-    <div
+    <span
       className="flex max-h-48 items-center justify-center overflow-hidden bg-background/70"
       style={{ aspectRatio: dimensions ? `${dimensions.width} / ${dimensions.height}` : "16 / 9" }}
     >
@@ -29,12 +31,13 @@ export function ScreenshotArtifactPreview({
           width={dimensions?.width}
           height={dimensions?.height}
           src={image.url}
+          onError={onError}
         />
       ) : image?.status === "error" ? (
         <span className="px-2 text-center text-destructive text-xs">Unavailable</span>
       ) : (
         <span className="text-muted-foreground text-xs">Loading…</span>
       )}
-    </div>
+    </span>
   );
 }
