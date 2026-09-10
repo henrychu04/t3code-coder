@@ -7,6 +7,15 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/coderPullRequestLink.test.ts",
+      "apps/server/src/persistence/Migrations/051_ProjectionThreadPullRequests.test.ts",
+      "apps/server/src/persistence/Layers/OrchestrationEventStore.test.ts",
+      "apps/server/src/orchestration/decider.pullRequests.test.ts",
+      "apps/server/src/orchestration/projector.pullRequests.test.ts",
+      "apps/server/src/orchestration/PullRequestSyncReactor.test.ts",
+      "apps/server/src/pullRequest/PullRequestReadCache.test.ts",
+      "apps/server/src/pullRequest/linkedThreads.test.ts",
+      "apps/server/src/pullRequest/pullRequestSyncKey.test.ts",
       "apps/server/src/provider/Drivers/ClaudeSkills.test.ts",
       "apps/server/src/provider/Drivers/ClaudeSkillDispatch.test.ts",
       "apps/server/src/provider/Layers/ProviderRegistry.test.ts",

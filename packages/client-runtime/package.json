@@ -143,7 +143,8 @@
     "./work-log/scroll-anchor": {
       "types": "./src/work-log/scrollAnchor.ts",
       "default": "./src/work-log/scrollAnchor.ts"
-    }
+    },
+    "./threadPullRequestCompatibility": "./src/threadPullRequestCompatibility.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

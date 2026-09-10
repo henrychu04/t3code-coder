@@ -1,3 +1,4 @@
+import { LinkBranchPullRequestButton } from "./pullRequest/LinkBranchPullRequestButton";
 import { readThreadReference } from "../lib/threadReference";
 import { projectSettingsTarget } from "../projectSettingsTarget";
 import { useAtomValue } from "@effect/atom-react";
@@ -150,7 +151,7 @@ import {
   resolveSidebarDropVerb,
   type SidebarDropVerb,
   resolveSidebarThreadStatus,
-  searchSidebarThreadsByTitle,
+  searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
@@ -1016,6 +1017,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest ?? thread.branchPullRequest,
+    thread.pullRequests,
   );
   const changeRequestSnapshots = useAtomValue(threadChangeRequestSnapshotsAtom);
   const changeRequestSnapshot = changeRequestSnapshots.get(threadKey);
@@ -1338,6 +1340,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // content; surface is reserved for interaction (hover, multi-select, route).
   const rowSurfaceClassName = cn(
     "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none",
+    variantAction === "unsettle" && "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
     props.isActive
       ? "bg-sidebar-row-active text-sidebar-foreground"
       : isSelected
@@ -1417,7 +1420,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     : "text-foreground/90",
             )
           : cn(
-              "truncate group-hover/sidebar-row:text-foreground",
+              "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
               shouldRecede
                 ? "text-secondary-label/70"
                 : props.isActive || isWoke
@@ -1848,6 +1851,24 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     <PrStatusTooltipContent status={changeRequestStatus} />
                   </TooltipPopup>
                 </Tooltip>
+              ) : null}
+              {thread.pullRequests.filter((link) => link.source !== "stack-dismissed").length >
+              1 ? (
+                <button
+                  type="button"
+                  aria-label="Show linked merge requests"
+                  className="text-secondary-label hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    useRightPanelStore.getState().open(threadRef, "pull-requests");
+                    if (!props.isActive) onThreadActivate(threadRef);
+                  }}
+                >
+                  +{thread.pullRequests.filter((link) => link.source !== "stack-dismissed").length}
+                </button>
+              ) : null}
+              {changeRequest && variantAction !== "unsettle" && thread.pullRequests.length === 0 ? (
+                <LinkBranchPullRequestButton threadRef={threadRef} url={changeRequest.url} />
               ) : null}
               {/* Always the branch. The plan step used to take this slot while
                   working, but it truncated to a half-sentence and dropped the
@@ -2481,7 +2502,7 @@ export default function Sidebar() {
     [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
   );
   const threadSearchResults = useMemo(
-    () => searchSidebarThreadsByTitle(searchableThreads, threadSearchQuery),
+    () => searchSidebarThreads(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
   );
   const threadSearchResultOrderKey = threadSearchResults

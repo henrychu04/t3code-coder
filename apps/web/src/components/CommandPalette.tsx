@@ -1,3 +1,6 @@
+import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
+import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
+import { useRightPanelStore } from "../rightPanelStore";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReference";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
@@ -25,7 +28,7 @@ import {
   useState,
 } from "react";
 
-import { onOpenCommandPalette } from "../commandPaletteBus";
+import { onOpenCommandPalette, type CommandPaletteOpenDetail } from "../commandPaletteBus";
 import { ComposerHandleContext } from "../composerHandleContext";
 import { openFileViewerCommand } from "../fileViewerCommandBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -66,12 +69,14 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
     mode: "command",
     openIntent: null,
   });
+  const [openDetail, setOpenDetail] = useState<CommandPaletteOpenDetail>({});
   const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
 
   useEffect(
     () =>
       onOpenCommandPalette((detail) => {
+        setOpenDetail(detail);
         if (detail.open === "new-thread-in") {
           dispatch({ _tag: "OpenNewThreadIn" });
         } else if (detail.open === "add-project") {
@@ -92,6 +97,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
       if (command !== "commandPalette.toggle") return;
       event.preventDefault();
       event.stopPropagation();
+      setOpenDetail({});
       dispatch({ _tag: "ToggleMode", mode: "command" });
     };
     window.addEventListener("keydown", onKeyDown);
@@ -119,6 +125,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
             <CoderCommandPaletteDialog
               clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
               openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
+              openDetail={openDetail}
               openIntent={state.openIntent}
               setOpen={setOpen}
             />
@@ -131,6 +138,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
 }
 
 function CoderCommandPaletteDialog(props: {
+  readonly openDetail: CommandPaletteOpenDetail;
   readonly clearOpenIntent: () => void;
   readonly openAddProject: () => void;
   readonly openIntent: CommandPaletteOpenIntent | null;
@@ -167,7 +175,7 @@ function CoderCommandPaletteDialog(props: {
             activeThread?.linkedPullRequest?.url ?? activeThread?.branchPullRequest?.url ?? null,
         });
   const [view, setView] = useState<"root" | "projects">("root");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(props.openDetail.query ?? "");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
 
   const environmentIds = useMemo(
@@ -285,7 +293,13 @@ function CoderCommandPaletteDialog(props: {
       return {
         kind: "action",
         value: `thread:${thread.environmentId}:${thread.id}`,
-        searchTerms: [thread.title, projectTitle, thread.branch ?? "", match?.snippet ?? ""],
+        searchTerms: [
+          thread.title,
+          projectTitle,
+          thread.branch ?? "",
+          match?.snippet ?? "",
+          ...threadPullRequestSearchTerms(thread),
+        ],
         title: thread.title,
         titleLeadingContent: <ThreadRowLeadingStatus thread={thread} />,
         titleTrailingContent: <ThreadRowTrailingStatus thread={thread} />,
@@ -322,6 +336,29 @@ function CoderCommandPaletteDialog(props: {
         },
       };
     });
+  if (props.openDetail.linkedThreads && query === props.openDetail.query) {
+    threadItems.splice(
+      0,
+      threadItems.length,
+      ...props.openDetail.linkedThreads.threads.map(
+        (thread): CommandPaletteActionItem => ({
+          kind: "action",
+          value: `linked-thread:${thread.id}`,
+          title: thread.title,
+          icon: <MessageSquareIcon className="size-4" />,
+          searchTerms: [query],
+          run: async () => {
+            await navigate({
+              to: "/$environmentId/$threadId",
+              params: buildThreadRouteParams(
+                scopeThreadRef(props.openDetail.linkedThreads!.environmentId, thread.id),
+              ),
+            });
+          },
+        }),
+      ),
+    );
+  }
   const preferredProject =
     projectPickerEntries.find((entry) => entry.isPreferred) ?? projectPickerEntries[0];
   const projectSearchAvailable =
@@ -431,6 +468,32 @@ function CoderCommandPaletteDialog(props: {
         }
       },
     });
+  if (activeThread !== null) {
+    const ref = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    actionItems.push(
+      {
+        kind: "action",
+        value: "action:link-mr",
+        icon: <MessageSquareIcon className="size-4" />,
+        title: "Link merge request to thread",
+        searchTerms: ["link", "mr", "merge request"],
+        run: async () => {
+          openLinkPullRequestDialog(ref);
+        },
+      },
+      {
+        kind: "action",
+        value: "action:linked-mrs",
+        icon: <MessageSquareIcon className="size-4" />,
+        title: "Show linked merge requests",
+        searchTerms: ["linked", "mr", "merge requests"],
+        run: async () => {
+          useRightPanelStore.getState().open(ref, "pull-requests");
+        },
+      },
+    );
+  }
+
   const rootGroups: CommandPaletteGroup[] = [
     { value: "actions", label: "Actions", items: actionItems },
     ...(query.trim().length > 0 && projectItems.length > 0

@@ -20,7 +20,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
 import { OrchestrationCommandReceiptRepositoryLive } from "../../persistence/Layers/OrchestrationCommandReceipts.ts";
@@ -50,7 +50,10 @@ const asMessageId = (value: string): MessageId => MessageId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const asCheckpointRef = (value: string): CheckpointRef => CheckpointRef.make(value);
 
-async function createOrchestrationSystem() {
+async function createOrchestrationSystem(
+  _databasePath?: string,
+  resolver?: RepositoryIdentityResolver.RepositoryIdentityResolver["Service"],
+) {
   const ServerConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-orchestration-engine-test-",
   });
@@ -65,7 +68,11 @@ async function createOrchestrationSystem() {
     Layer.provide(ThreadPlanProgress.layer),
     Layer.provideMerge(OrchestrationEventStoreLive),
     Layer.provideMerge(OrchestrationCommandReceiptRepositoryLive),
-    Layer.provide(RepositoryIdentityResolver.layer),
+    Layer.provide(
+      resolver
+        ? Layer.succeed(RepositoryIdentityResolver.RepositoryIdentityResolver, resolver)
+        : RepositoryIdentityResolver.layer,
+    ),
     Layer.provideMerge(SqlitePersistenceMemory),
     Layer.provideMerge(ServerConfigLayer),
     Layer.provideMerge(NodeServices.layer),
@@ -288,6 +295,7 @@ describe("OrchestrationEngine", () => {
           runtimeMode: "full-access" as const,
           branch: null,
           worktreePath: null,
+          pullRequests: [],
           latestTurn: null,
           createdAt: "2026-03-03T00:00:02.000Z",
           updatedAt: "2026-03-03T00:00:03.000Z",
@@ -901,7 +909,22 @@ describe("OrchestrationEngine", () => {
   it.each(["unlink", "relink", "branch", "worktree", "project", "delete"] as const)(
     "rejects PR discovery completed after a newer %s command",
     async (change) => {
-      const system = await createOrchestrationSystem();
+      const system = await createOrchestrationSystem(undefined, {
+        resolve: (workspaceRoot) =>
+          Effect.succeed({
+            canonicalKey: "example.test/owner/repository",
+            provider: "github",
+            displayName: "owner/repository",
+            rootPath: workspaceRoot,
+            locator: {
+              source: "git-remote",
+              remoteName: "origin",
+              remoteUrl: "https://example.test/owner/repository.git",
+            },
+          }),
+      });
+      // Same-tick links must replace the old PR, not rely on timestamp ordering.
+      const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse(now()));
       try {
         const projectId = ProjectId.make("pr-race-project");
         const threadId = ThreadId.make("pr-race-thread");
@@ -950,6 +973,7 @@ describe("OrchestrationEngine", () => {
             linkedPullRequest: previous,
           }),
         );
+        expect((await system.readModel()).threads[0]?.linkedPullRequest).toEqual(previous);
         const metadataChanges = {
           unlink: { linkedPullRequest: null },
           relink: {
@@ -1003,6 +1027,9 @@ describe("OrchestrationEngine", () => {
         if (change === "delete") return;
         const current = (await system.readModel()).threads[0];
         expect(current?.branchPullRequest ?? null).toBeNull();
+        expect(current?.pullRequests.map((link) => link.number)).toEqual(
+          change === "unlink" ? [] : change === "relink" ? [3] : [1],
+        );
         expect(current?.linkedPullRequest ?? null).toEqual(
           change === "unlink"
             ? null
@@ -1011,6 +1038,7 @@ describe("OrchestrationEngine", () => {
               : previous,
         );
       } finally {
+        clock.mockRestore();
         await system.dispose();
       }
     },

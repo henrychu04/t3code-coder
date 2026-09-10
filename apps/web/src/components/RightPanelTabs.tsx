@@ -61,6 +61,7 @@ interface RightPanelTabsProps {
   readonly onAddTerminal: () => void;
   readonly onAddDiff: () => void;
   readonly onAddFiles: () => void;
+  readonly onAddPullRequests?: (() => void) | undefined;
   readonly onAddPullRequest: () => void;
   readonly onAddAgents: () => void;
   readonly terminalAvailable: boolean;
@@ -205,6 +206,7 @@ function RightPanelEmptyState(props: {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
+  onAddPullRequests?: (() => void) | undefined;
   onAddPullRequest: () => void;
   onAddAgents: () => void;
   terminalAvailable: boolean;
@@ -248,13 +250,13 @@ function RightPanelEmptyState(props: {
       badgeCount: 0,
     },
     {
-      label: "GitLab MR",
+      label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
       description: "View the current GitLab merge request.",
       icon: GitPullRequest,
       shortcut: "P",
       available: props.pullRequestAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequest,
+      onClick: props.onAddPullRequests ?? props.onAddPullRequest,
       badgeCount: 0,
     },
     {
@@ -360,60 +362,35 @@ function RightPanelEmptyState(props: {
         "pb-[calc(var(--workspace-topbar-height)+--spacing(6))]",
       )}
     >
-      <div className="relative w-full max-w-lg">
-        <div className="absolute inset-x-0 bottom-full mb-5 text-center">
-          <h3 className="font-medium text-foreground text-sm">Open a surface</h3>
-          <p className="mt-1 text-muted-foreground text-xs">
-            Choose what to show in the right panel.
-          </p>
-        </div>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,11rem),1fr))] gap-2">
-          {actions.map((action) =>
-            action.available ? (
-              <button
-                key={action.label}
-                type="button"
-                onClick={action.onClick}
-                onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
-                onMouseLeave={() =>
-                  setHighlight((current) =>
-                    current === availableActions.indexOf(action) ? -1 : current,
-                  )
-                }
-                className={cn(
-                  "relative flex min-w-0 w-full cursor-pointer flex-col items-start p-4 text-left transition hover:border-border hover:bg-accent/60",
-                  cardShellClass,
-                  isHighlighted(action) && highlightedCardClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.description}
-                </span>
-              </button>
-            ) : (
-              <div
-                key={action.label}
-                className={cn(
-                  "relative flex min-w-0 w-full flex-col items-start p-4 opacity-40",
-                  cardShellClass,
-                )}
-              >
-                <Kbd className="absolute top-3 right-3">{action.shortcut}</Kbd>
-                <span className="flex items-center gap-2 pe-8">
-                  {actionIcon(action)}
-                  <span className="font-medium text-sm">{action.label}</span>
-                </span>
-                <span className="mt-1.5 text-muted-foreground text-xs leading-relaxed">
-                  {action.disabledReason}
-                </span>
-              </div>
-            ),
-          )}
+      <div className="w-full max-w-xs">
+        <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
+        <div className="flex flex-col gap-0.5">
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              disabled={!action.available}
+              onClick={action.onClick}
+              onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
+              onMouseLeave={() => setHighlight(-1)}
+              className={cn(
+                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors disabled:opacity-40",
+                action.available && "hover:bg-accent/60",
+                isHighlighted(action) && "bg-accent/60",
+              )}
+            >
+              {actionIcon(action)}
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium">{action.label}</span>
+                {!action.available ? (
+                  <span className="block text-xs text-muted-foreground">
+                    {action.disabledReason}
+                  </span>
+                ) : null}
+              </span>
+              <Kbd>{action.shortcut}</Kbd>
+            </button>
+          ))}
         </div>
       </div>
     </div>
@@ -428,6 +405,7 @@ function surfaceLabel(
   if (surface.kind === "files") return "Files";
   if (surface.kind === "file")
     return surface.relativePath.split("/").at(-1) ?? surface.relativePath;
+  if (surface.kind === "pull-requests") return "Linked MRs";
   if (surface.kind === "pull-request")
     return "number" in surface ? `MR !${surface.number}` : "GitLab MR";
   if (surface.kind === "agents") return "Agents";
@@ -469,6 +447,7 @@ function SurfaceIcon({
               : "text-muted-foreground";
     return <GitPullRequest className={cn("size-3.5", toneClassName)} />;
   }
+  if (surface.kind === "pull-requests") return <GitPullRequest className="size-3.5" />;
   if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
 }
@@ -584,12 +563,12 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDiff,
     },
     {
-      label: "GitLab MR",
+      label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
       icon: GitPullRequest,
       shortcut: "P",
       available: props.pullRequestAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
-      onClick: props.onAddPullRequest,
+      onClick: props.onAddPullRequests ?? props.onAddPullRequest,
     },
     {
       label: "Agents",
@@ -889,6 +868,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           onAddTerminal={props.onAddTerminal}
           onAddDiff={props.onAddDiff}
           onAddFiles={props.onAddFiles}
+          onAddPullRequests={props.onAddPullRequests}
           onAddPullRequest={props.onAddPullRequest}
           onAddAgents={props.onAddAgents}
           terminalAvailable={props.terminalAvailable}

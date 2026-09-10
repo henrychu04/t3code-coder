@@ -76,3 +76,23 @@ See label, check, and change-size context on each row. Opening a row seeds the d
 list data immediately while the full GitLab detail loads.
 Command-click (Control-click on Windows and Linux) a merge request number to open it on GitLab
 instead of inside T3 Coder.
+
+## Linked merge requests
+
+A thread can hold several GitLab merge requests. Use **Link merge request to thread** in the command
+palette or **Linked MRs** in the right-panel menu. Enter a merge-request URL or a number for the
+thread's own repository. A URL may name another repository on a GitLab host already identified by
+workspace project metadata. Creating a merge request from the thread's Git actions links it automatically.
+
+The **Linked MRs** panel lists the linked reviews and groups related branches. Its row menu can
+unlink a review. The review header's **Link to thread** action links it to another active thread;
+the linked-thread count opens a search that includes archived threads. Sidebar and command-palette
+search also match linked review numbers, repositories, and titles.
+
+The workspace refreshes link status even while the browser is disconnected. Open or unsynced links
+keep a thread active; automatic settlement can proceed once every linked review is terminal, subject
+to the workspace's settlement settings. GitHub-native stack merge and rebase actions are not supported.
+
+Press Command-Enter (Control-Enter on Windows) to save an edited review description or comment.
+Recent review summaries are cached in the workspace across helper restarts. Review contents and
+linked-review panel state remain in browser memory while displayed.

@@ -41,7 +41,7 @@ and no changes to your project's setup.
 
 At the end of the turn, a **Visual artifacts** row appears in the conversation showing how many
 images were captured. Expand it to see thumbnails and click an image to open the larger viewer.
-Use its arrows to move between images. Details:
+Use its arrows to move between images. Click or scroll to zoom, then drag to pan across the image. Details:
 
 - Screenshots saved inside the active project during the turn are collected automatically. Images
   returned directly by supported provider tool results use the same capture pipeline. Existing

@@ -111,7 +111,11 @@ Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLa
 startup, after relevant thread changes, and periodically without an open browser. It uses the
 existing repository-scoped GitWorkflowService cache and glab-backed MR service, verifies both the
 branch and project repository identity before saving, and rejects updates after the lookup inputs
-change. Migration 048 adds the branch MR projection independently of explicit links. Settled-thread
+change. Migration 048 adds the branch MR projection independently of explicit links. Migration 051 adds
+multiple explicit MR links, preserving migration 050 for pending-input repair. Link commands validate
+the URL and its host against workspace GitLab metadata at the helper RPC boundary. The helper
+refreshes link snapshots and serves linked-thread lookups over the existing stdio connection.
+Recent MR summaries are cached beneath the workspace provider-status cache directory. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace

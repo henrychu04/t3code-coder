@@ -1,3 +1,5 @@
+import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
+import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -142,6 +144,7 @@ const CoderVcsLive = Layer.mergeAll(
 );
 
 const CoderPullRequestsLive = PullRequestService.layer.pipe(
+  Layer.provide(PullRequestReadCache.layer),
   Layer.provideMerge(PullRequestProviderRegistry.layer),
   Layer.provideMerge(CoderSourceControlLive),
   Layer.provideMerge(SourceControlRateLimit.layer),
@@ -190,6 +193,7 @@ const CoderRuntimeFeaturesLive = Layer.mergeAll(
   ThreadDeletionReactorLive,
   ThreadSettlementReactor.layer,
   ThreadPullRequestReactor.layer,
+  PullRequestSyncReactor.layer,
 ).pipe(
   Layer.provideMerge(TextGeneration.layer),
   Layer.provideMerge(RuntimeReceiptBusLive),
@@ -241,6 +245,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
     const checkpointReactor = yield* CheckpointReactor;
     const threadDeletionReactor = yield* ThreadDeletionReactor;
     const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+    const pullRequestSyncReactor = yield* PullRequestSyncReactor.PullRequestSyncReactor;
     const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
 
     return OrchestrationReactor.OrchestrationReactor.of({
@@ -251,6 +256,7 @@ const CoderOrchestrationReactorLive = Layer.effect(
         yield* threadDeletionReactor.start();
         yield* threadSettlementReactor.start();
         yield* threadPullRequestReactor.start();
+        yield* pullRequestSyncReactor.start();
       }),
     });
   }),

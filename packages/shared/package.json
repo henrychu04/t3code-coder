@@ -7,7 +7,10 @@
       "types": "./src/dateTime.ts",
       "import": "./src/dateTime.ts"
     },
-    "./threadReference": "./src/threadReference.ts",
+    "./threadReference": {
+      "types": "./src/threadReference.ts",
+      "import": "./src/threadReference.ts"
+    },
     "./testing/*": "./src/testing/*.ts",
     "./themePalettes": {
       "types": "./src/themePalettes.ts",
@@ -120,6 +123,14 @@
     "./keybindings": {
       "types": "./src/keybindings.ts",
       "import": "./src/keybindings.ts"
+    },
+    "./threadPullRequests": {
+      "types": "./src/threadPullRequests.ts",
+      "import": "./src/threadPullRequests.ts"
+    },
+    "./changeRequestUrl": {
+      "types": "./src/changeRequestUrl.ts",
+      "import": "./src/changeRequestUrl.ts"
     },
     "./composerTrigger": {
       "types": "./src/composerTrigger.ts",

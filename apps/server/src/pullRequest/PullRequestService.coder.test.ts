@@ -1,3 +1,4 @@
+import * as PullRequestReadCache from "./PullRequestReadCache.ts";
 import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -141,6 +142,10 @@ const provider: PullRequestProviderApi = {
 };
 
 const service = PullRequestService.make.pipe(
+  Effect.provideService(PullRequestReadCache.PullRequestReadCache, {
+    get: (_key, lookup) => lookup,
+    invalidate: Effect.void,
+  }),
   Effect.provide(
     Layer.mergeAll(
       Layer.succeed(PullRequestProviderRegistry, fromProviders([provider])),
@@ -205,5 +210,21 @@ it.effect("publishes a refresh revision after a provider turn", () =>
     yield* pullRequests.refreshAfterTurn;
 
     expect(Option.getOrThrow(yield* Fiber.join(nextRefresh))).toBeGreaterThan(0);
+  }),
+);
+
+it.effect("keeps host and repository aligned through cached MR activity reads", () =>
+  Effect.gen(function* () {
+    const api = yield* service;
+    const input = {
+      projectId: project.id,
+      host: "gitlab.example.gs.com",
+      repository: "goldman/project",
+      number: 42,
+    };
+    const first = yield* api.activity(input);
+    const again = yield* api.activity(input);
+    expect(first).toEqual(again);
+    expect(first.comments).toEqual([]);
   }),
 );

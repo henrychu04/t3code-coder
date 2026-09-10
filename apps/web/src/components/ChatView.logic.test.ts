@@ -286,6 +286,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     environmentId,
     projectId,
     title: "Thread",
+    pullRequests: [],
     modelSelection: {
       instanceId: ProviderInstanceId.make("codex"),
       model: "gpt-5.4",
@@ -395,6 +396,7 @@ describe("buildLoadingThreadFromShell", () => {
       id: threadId,
       projectId,
       title: "Loading thread",
+      pullRequests: [],
       modelSelection: {
         instanceId: ProviderInstanceId.make("codex"),
         model: "gpt-5.4",
@@ -423,6 +425,7 @@ describe("buildLoadingThreadFromShell", () => {
       id: threadId,
       projectId,
       title: "Loading thread",
+      pullRequests: [],
       branch: "main",
       deletedAt: null,
       messages: [],

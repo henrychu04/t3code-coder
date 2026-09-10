@@ -1,3 +1,4 @@
+import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -612,6 +613,7 @@ export function PullRequestDetailPanel({
     readonly pullRequestKey: string;
     readonly text: string;
   } | null>(null);
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false);
   const titleDraft = titleScope?.pullRequestKey === pullRequestKey ? titleScope.text : null;
   const [titleSaving, setTitleSaving] = useState(false);
   const newThread = useNewThreadHandler();
@@ -1658,6 +1660,26 @@ export function PullRequestDetailPanel({
           >
             {detail ? (
               <div className="col-span-2 mt-1 min-w-0 px-4 pb-4">
+                <PullRequestThreadLinks
+                  environmentId={environmentId}
+                  reference={reference}
+                  url={detail.url}
+                  threadRef={panelRef ?? null}
+                  display="count"
+                />
+                <Button size="xs" variant="ghost" onClick={() => setLinkPickerOpen(true)}>
+                  Link to thread
+                </Button>
+                {linkPickerOpen ? (
+                  <PullRequestThreadLinks
+                    environmentId={environmentId}
+                    reference={reference}
+                    url={detail.url}
+                    threadRef={panelRef ?? null}
+                    display="picker"
+                    onPickerOpenChange={setLinkPickerOpen}
+                  />
+                ) : null}
                 {titleDraft === null ? (
                   <div className="group flex min-w-0 items-start gap-1">
                     <h1 className="min-w-0 flex-1 text-base font-semibold leading-snug">

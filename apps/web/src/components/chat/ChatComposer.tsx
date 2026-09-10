@@ -3336,7 +3336,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <ProviderModelPicker
         environmentId={environmentId}
         isComposerOwned
-        compact={composerControlsCompact}
         disabled={providerCatalogPending}
         activeInstanceId={
           providerCatalogPending

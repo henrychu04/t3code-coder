@@ -1,3 +1,7 @@
+import { useCallback, type MouseEvent } from "react";
+import type { ScopedThreadRef } from "@t3tools/contracts";
+import { useProjects } from "../state/entities";
+import { useRightPanelStore } from "../rightPanelStore";
 import {
   pullRequestHostOf,
   type RepositoryIdentity,
@@ -181,4 +185,43 @@ export function changeRequestRepositoryUrl(targetUrl: string): string | null {
   url.search = "";
   url.hash = "";
   return url.toString();
+}
+
+export function findProjectOnChangeRequestHost(
+  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
+  link: ChangeRequestLink,
+) {
+  return (
+    findProjectForChangeRequest(projects, link) ??
+    projects.find(
+      ({ repositoryIdentity }) =>
+        repositoryIdentity?.provider === "gitlab" &&
+        pullRequestHostOf(repositoryIdentity, "gitlab") === link.host,
+    )
+  );
+}
+
+export function useOpenPrLink(defaultThreadRef?: ScopedThreadRef) {
+  const projects = useProjects();
+  return useCallback(
+    (event: MouseEvent, url: string, threadRef = defaultThreadRef) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const link = parseChangeRequestUrl(url);
+      if (!link || !threadRef) return false;
+      const project = findProjectOnChangeRequestHost(
+        projects.filter((entry) => entry.environmentId === threadRef.environmentId),
+        link,
+      );
+      if (!project) return false;
+      useRightPanelStore.getState().openPullRequest(threadRef, {
+        environmentId: threadRef.environmentId,
+        projectId: project.id,
+        ...link,
+        url,
+      });
+      return true;
+    },
+    [defaultThreadRef, projects],
+  );
 }

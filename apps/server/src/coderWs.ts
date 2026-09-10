@@ -1,3 +1,8 @@
+import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
+import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { bufferLiveEvents } from "./orchestration/BufferedLiveEvents.ts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -230,7 +235,7 @@ function projectFileFailureContext(
   }
 }
 
-function isThreadDetailEvent(event: OrchestrationEvent): boolean {
+export function isThreadDetailEvent(event: OrchestrationEvent): boolean {
   return (
     event.type === "thread.message-sent" ||
     event.type === "thread.proposed-plan-upserted" ||
@@ -425,6 +430,7 @@ export const layer = CoderWsRpcGroup.toLayer(
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const sql = yield* SqlClient.SqlClient;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
     const review = yield* ReviewService.ReviewService;
     const terminals = yield* TerminalManager.TerminalManager;
@@ -1002,6 +1008,24 @@ export const layer = CoderWsRpcGroup.toLayer(
               publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
             })
             .pipe(
+              Effect.tap((result) =>
+                input.threadId === undefined
+                  ? Effect.void
+                  : linkCreatedPullRequest({
+                      threadId: input.threadId,
+                      result,
+                      commandId: commandId("link-created-mr"),
+                    }).pipe(
+                      Effect.provideService(
+                        OrchestrationEngine.OrchestrationEngineService,
+                        orchestration,
+                      ),
+                      Effect.provideService(
+                        ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+                        projections,
+                      ),
+                    ),
+              ),
               Effect.matchCauseEffect({
                 onFailure: (cause) => Queue.failCause(queue, cause),
                 onSuccess: () =>
@@ -1018,6 +1042,19 @@ export const layer = CoderWsRpcGroup.toLayer(
           .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
       [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
+      [WS_METHODS.pullRequestsSummary]: (input) => pullRequests.summary(input),
+      [WS_METHODS.pullRequestsStack]: (input) => pullRequests.stack(input),
+      [WS_METHODS.pullRequestsLinkedThreads]: (input) =>
+        pullRequests.summary(input).pipe(
+          Effect.flatMap((summary) => {
+            const key = parseChangeRequestUrl(summary.url);
+            return key === null
+              ? Effect.succeed({ threads: [] })
+              : listLinkedPullRequestThreads(key).pipe(
+                  Effect.provideService(SqlClient.SqlClient, sql),
+                );
+          }),
+        ),
       [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
       [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
       [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
@@ -1168,6 +1205,25 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
         normalizeDispatchCommand(command).pipe(
+          Effect.tap((command) =>
+            command.type !== "thread.pull-request.link"
+              ? Effect.void
+              : projections
+                  .getShellSnapshot()
+                  .pipe(
+                    Effect.flatMap((snapshot) =>
+                      isCoderPullRequestLink(command, snapshot.projects) &&
+                      ["manual", "created", "agent"].includes(command.source)
+                        ? Effect.void
+                        : Effect.fail(
+                            toDispatchError(
+                              undefined,
+                              "The merge request must belong to a known GitLab host.",
+                            ),
+                          ),
+                    ),
+                  ),
+          ),
           Effect.flatMap(dispatch),
           Effect.mapError((cause) => toDispatchError(cause, "Failed to dispatch the command.")),
         ),

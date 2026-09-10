@@ -1,3 +1,4 @@
+import { ZoomableImage } from "./ZoomableImage";
 import { ArtifactNavigationContext } from "./ArtifactNavigation";
 import { type EnvironmentId, type ScreenshotArtifactReference } from "@t3tools/contracts";
 import { memo, useState, useContext, useEffect, useRef } from "react";
@@ -17,6 +18,7 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props
   const pendingFocusId = useRef<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
   const images = useScreenshotArtifacts(environmentId, artifacts, expanded);
   useEffect(() => {
@@ -122,16 +124,19 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props
           <DialogTitle className="sr-only">{selectedArtifact?.name ?? "Screenshot"}</DialogTitle>
           <div className="flex min-h-0 flex-col gap-1">
             <div className="relative flex min-h-48 min-w-64 items-center justify-center overflow-hidden">
-              {selectedImage?.status === "loaded" ? (
-                <img
-                  alt={selectedArtifact?.name ?? "Screenshot"}
-                  className="max-h-[calc(88vh-2.25rem)] w-full object-contain"
-                  draggable={false}
+              {selectedImage?.status === "loaded" && selectedImage.url !== failedImageUrl ? (
+                <ZoomableImage
+                  key={selectedImage.url}
+                  name={selectedArtifact?.name ?? "Screenshot"}
                   src={selectedImage.url}
+                  onError={() => setFailedImageUrl(selectedImage.url)}
                 />
               ) : (
                 <span className="text-muted-foreground text-sm">
-                  {selectedImage?.status === "error" ? "Screenshot unavailable" : "Loading…"}
+                  {selectedImage?.status === "error" ||
+                  (selectedImage?.status === "loaded" && failedImageUrl === selectedImage.url)
+                    ? "Screenshot unavailable"
+                    : "Loading…"}
                 </span>
               )}
               {artifacts.length > 1 ? (
