@@ -102,7 +102,7 @@ function LinkRow({
                 <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground" />
               }
             >
-              #{link.number}
+              !{link.number}
             </TooltipTrigger>
             <TooltipPopup>
               {SOURCE_LABELS[link.source]} · {formatRelativeTimeLabel(link.linkedAt)}

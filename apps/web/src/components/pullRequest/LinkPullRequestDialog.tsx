@@ -222,7 +222,7 @@ function LinkPullRequestDialog({
           />
           {resolved !== null && "link" in resolved ? (
             <p className="truncate text-muted-foreground text-xs">
-              {resolved.link.host}/{resolved.link.repository} #{resolved.link.number}
+              {resolved.link.host}/{resolved.link.repository} !{resolved.link.number}
             </p>
           ) : null}
           {(validation ?? submitError) ? (

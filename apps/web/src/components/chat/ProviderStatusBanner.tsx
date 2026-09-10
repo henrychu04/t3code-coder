@@ -48,7 +48,7 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
       <div
         className={cn(
-          "alert-glass relative inline-flex items-center gap-3 rounded-xl border py-3 ps-3.5 pe-10 text-card-foreground text-sm",
+          "alert-glass relative inline-flex max-w-full items-center gap-3 rounded-xl border py-3 ps-3.5 pe-10 text-card-foreground text-sm",
           status.status === "warning"
             ? "border-warning/32 [&_svg]:text-warning"
             : "border-destructive/32 text-destructive-foreground [&_svg]:text-destructive",
@@ -58,12 +58,12 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
       >
         <InfoIcon className="size-4 shrink-0" aria-hidden />
         <div className="flex min-w-0 flex-col gap-1">
-          <div className="font-medium">{title}</div>
+          <div className="font-medium wrap-anywhere">{title}</div>
           <Tooltip>
             <TooltipTrigger
-              render={<div className="line-clamp-3 text-muted-foreground">{message}</div>}
+              render={<div className="line-clamp-3 wrap-anywhere text-muted-foreground">{message}</div>}
             />
-            <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap">
+            <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap wrap-anywhere">
               {message}
             </TooltipPopup>
           </Tooltip>
