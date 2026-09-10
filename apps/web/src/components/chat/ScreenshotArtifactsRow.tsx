@@ -1,178 +1,109 @@
 import { ArtifactNavigationContext } from "./ArtifactNavigation";
 import { type EnvironmentId, type ScreenshotArtifactReference } from "@t3tools/contracts";
 import { memo, useState, useContext, useEffect, useRef } from "react";
-import { PaintbrushIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "../ui/dialog";
-import { Button } from "../ui/button";
-import { cn } from "../../lib/utils";
 import { ScreenshotArtifactPreview } from "./ScreenshotArtifactPreview";
 import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
-export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow(props: {
-  artifacts: ReadonlyArray<ScreenshotArtifactReference>;
+import { ExpandedImageDialog } from "./ExpandedImageDialog";
+
+export type ImagePreviewReference = Omit<ScreenshotArtifactReference, "sizeBytes"> & {
+  sizeBytes?: number;
+};
+export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow({
+  artifacts,
+  environmentId,
+  source = "artifact",
+  previewOnly = false,
+  onClose,
+}: {
+  artifacts: ReadonlyArray<ImagePreviewReference>;
   environmentId: EnvironmentId;
+  source?: "artifact" | "attachment";
+  previewOnly?: boolean;
+  onClose?: () => void;
 }) {
-  const { artifacts, environmentId } = props;
   const navigation = useContext(ArtifactNavigationContext);
-  const rowRef = useRef<HTMLDivElement>(null);
-  const pendingFocusId = useRef<string | null>(null);
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null);
-  const images = useScreenshotArtifacts(environmentId, artifacts, expanded);
-  useEffect(() => {
-    const id = navigation?.request?.artifactId;
-    if (!id || !artifacts.some((artifact) => artifact.id === id)) {
-      pendingFocusId.current = null;
-      setHighlightedId(null);
-      return;
-    }
-    if (!navigation!.request!.consume()) return;
-    pendingFocusId.current = id;
-    setExpanded(true);
-    setHighlightedId(id);
-  }, [navigation?.request, artifacts]);
-  useEffect(() => {
-    if (!expanded || !highlightedId || pendingFocusId.current !== highlightedId) return;
-    pendingFocusId.current = null;
-    const target = Array.from(
-      rowRef.current?.querySelectorAll<HTMLElement>("[data-artifact-id]") ?? [],
-    ).find((element) => element.dataset.artifactId === highlightedId);
-    target?.scrollIntoView?.({ block: "nearest" });
-    target?.focus({ preventScroll: true });
-  }, [expanded, highlightedId, navigation?.request]);
-
-  const selectedArtifactIndex = artifacts.findIndex(
-    (artifact) => artifact.id === selectedArtifactId,
+  const rowRef = useRef<HTMLSpanElement>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    previewOnly ? (artifacts[0]?.id ?? null) : null,
   );
-  const selectedArtifact = artifacts[selectedArtifactIndex];
-  const selectedImage = selectedArtifact ? images[selectedArtifact.id] : undefined;
-  const canSelectPrevious = selectedArtifactIndex > 0;
-  const canSelectNext = selectedArtifactIndex >= 0 && selectedArtifactIndex < artifacts.length - 1;
-
-  const selectAdjacentArtifact = (offset: -1 | 1) => {
-    const artifact = artifacts[selectedArtifactIndex + offset];
-    if (artifact) setSelectedArtifactId(artifact.id);
-  };
-
+  const [failedUrls, setFailedUrls] = useState<ReadonlySet<string>>(new Set());
+  const images = useScreenshotArtifacts(environmentId, artifacts, true, source);
+  useEffect(() => {
+    const request = navigation?.request;
+    if (
+      !request ||
+      !artifacts.some((artifact) => artifact.id === request.artifactId) ||
+      !request.consume()
+    )
+      return;
+    setSelectedId(request.artifactId);
+    rowRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [navigation?.request, artifacts]);
+  const selectedIndex = artifacts.findIndex((artifact) => artifact.id === selectedId);
+  if (artifacts.length === 0) return null;
   return (
-    <div ref={rowRef} className="rounded-md px-0.5 py-0.5">
-      <button
-        type="button"
-        className="flex min-h-6 w-full items-center gap-1.5 rounded-md text-left text-sm leading-relaxed text-secondary-label transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
+    <span ref={rowRef} className="block">
+      {/* Upstream MessagesTimeline user-image grid, using Coder's bounded chunk loader. */}
+      <span
+        hidden={previewOnly}
+        className={previewOnly ? "hidden" : "mb-2 grid max-w-[420px] grid-cols-2 gap-2"}
       >
-        <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <PaintbrushIcon className="size-4 stroke-[1.8] opacity-70" />
-        </span>
-        <span className="min-w-0 flex-1 truncate">Visual artifacts · {artifacts.length}</span>
-        <ChevronDownIcon
-          aria-hidden
-          className={cn(
-            "me-0.5 size-3 shrink-0 opacity-70 transition-transform duration-200",
-            expanded && "rotate-180",
-          )}
-        />
-      </button>
-      {expanded ? (
-        <div className="ms-7 mt-1 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {artifacts.map((artifact) => {
-            const image = images[artifact.id];
-            return (
+        {artifacts.map((artifact) => {
+          const image = images[artifact.id];
+          const failed =
+            image?.status === "error" || (image?.status === "loaded" && failedUrls.has(image.url));
+          const retry = () => {
+            if (image && image.status !== "loading") image.retry();
+          };
+          return (
+            <span key={artifact.id} className="relative">
               <button
                 key={artifact.id}
                 type="button"
-                className="data-[highlighted=true]:ring-2 data-[highlighted=true]:ring-primary min-w-0 overflow-hidden rounded-md border border-border/55 bg-muted/25 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/70 disabled:cursor-default"
                 data-artifact-id={artifact.id}
-                data-highlighted={highlightedId === artifact.id || undefined}
-                aria-label={artifact.name}
-                aria-disabled={image?.status !== "loaded"}
-                onClick={() => {
-                  if (image?.status === "loaded") setSelectedArtifactId(artifact.id);
-                }}
+                className="w-full aspect-[4/3] overflow-hidden rounded-lg border border-border/80 bg-background/70 cursor-zoom-in"
+                aria-label={`Preview ${artifact.name}`}
+                onClick={() => setSelectedId(artifact.id)}
               >
-                <ScreenshotArtifactPreview artifact={artifact} image={image} />
-                <span className="block truncate border-t border-border/45 px-2 py-1 text-muted-foreground text-xs">
-                  {artifact.name}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
-      <Dialog
-        open={selectedArtifact !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setSelectedArtifactId(null);
-        }}
-      >
-        <DialogContent
-          className="max-h-[94vh] max-w-[94vw] overflow-hidden bg-background p-3"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowLeft" && canSelectPrevious) {
-              event.preventDefault();
-              selectAdjacentArtifact(-1);
-            } else if (event.key === "ArrowRight" && canSelectNext) {
-              event.preventDefault();
-              selectAdjacentArtifact(1);
-            }
-          }}
-          showCloseButton
-        >
-          <DialogTitle className="sr-only">{selectedArtifact?.name ?? "Screenshot"}</DialogTitle>
-          <div className="flex min-h-0 flex-col gap-1">
-            <div className="relative flex min-h-48 min-w-64 items-center justify-center overflow-hidden">
-              {selectedImage?.status === "loaded" ? (
-                <img
-                  alt={selectedArtifact?.name ?? "Screenshot"}
-                  className="max-h-[calc(88vh-2.25rem)] w-full object-contain"
-                  draggable={false}
-                  src={selectedImage.url}
+                <ScreenshotArtifactPreview
+                  artifact={artifact}
+                  image={failed ? { status: "error" } : image}
+                  onError={() => {
+                    if (image?.status === "loaded")
+                      setFailedUrls((current) => new Set([...current, image.url]));
+                  }}
                 />
-              ) : (
-                <span className="text-muted-foreground text-sm">
-                  {selectedImage?.status === "error" ? "Screenshot unavailable" : "Loading…"}
-                </span>
-              )}
-              {artifacts.length > 1 ? (
-                <>
-                  <Button
-                    aria-label="Previous screenshot"
-                    className="absolute start-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
-                    disabled={!canSelectPrevious}
-                    onClick={() => selectAdjacentArtifact(-1)}
-                    size="icon-sm"
-                    variant="outline"
-                  >
-                    <ChevronLeftIcon />
-                  </Button>
-                  <Button
-                    aria-label="Next screenshot"
-                    className="absolute end-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-background/80 shadow-sm backdrop-blur-sm"
-                    disabled={!canSelectNext}
-                    onClick={() => selectAdjacentArtifact(1)}
-                    size="icon-sm"
-                    variant="outline"
-                  >
-                    <ChevronRightIcon />
-                  </Button>
-                </>
+              </button>
+              {failed ? (
+                <button type="button" className="block text-xs underline" onClick={retry}>
+                  Retry image
+                </button>
               ) : null}
-            </div>
-            {artifacts.length > 1 ? (
-              <div
-                aria-live="polite"
-                className="flex min-w-0 items-center justify-center gap-1.5 text-center text-muted-foreground text-xs"
-              >
-                <span className="min-w-0 truncate">{selectedArtifact?.name}</span>
-                <span className="shrink-0">
-                  · {selectedArtifactIndex + 1} of {artifacts.length}
-                </span>
-              </div>
-            ) : null}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+            </span>
+          );
+        })}
+      </span>
+      {selectedIndex >= 0 ? (
+        <ExpandedImageDialog
+          key={selectedId}
+          onClose={() => {
+            setSelectedId(null);
+            onClose?.();
+          }}
+          preview={{
+            index: selectedIndex,
+            images: artifacts.map((artifact) => {
+              const image = images[artifact.id];
+              return {
+                name: artifact.name,
+                loading: !image || image.status === "loading",
+                retry: image && image.status !== "loading" ? image.retry : undefined,
+                src: image?.status === "loaded" ? image.url : null,
+              };
+            }),
+          }}
+        />
+      ) : null}
+    </span>
   );
 });

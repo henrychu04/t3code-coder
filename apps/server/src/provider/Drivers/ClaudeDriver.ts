@@ -109,7 +109,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         environment: processEnv,
         captureScreenshotFile: screenshotArtifacts.captureFile,
         captureScreenshotBase64: screenshotArtifacts.captureBase64,
-        observeScreenshots: screenshotArtifacts.observeTurn,
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
       const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv);

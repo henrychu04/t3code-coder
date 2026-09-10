@@ -41,6 +41,7 @@ export type ScreenshotArtifactReference = typeof ScreenshotArtifactReference.Typ
 
 export const ScreenshotArtifactReadInput = Schema.Struct({
   artifactId: ScreenshotArtifactId,
+  source: Schema.optional(Schema.Literals(["artifact", "attachment"])),
   offset: NonNegativeInt,
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES)),
 });

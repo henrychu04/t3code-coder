@@ -1,3 +1,4 @@
+import { rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
 import { ArtifactImageLink, isImageFilePath } from "./chat/ArtifactNavigation";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
@@ -129,6 +130,13 @@ interface ChatMarkdownProps {
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
 }
 
+function markdownImageCopy(alt: string, src: string, title: string | undefined): string {
+  const escapedAlt = alt.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
+  const titleSuffix =
+    title === undefined ? "" : ` "${title.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"`;
+  return `![${escapedAlt}](${src}${titleSuffix})`;
+}
+
 const EMPTY_MARKDOWN_SKILLS: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">> = [];
 const EMPTY_REMARK_PLUGINS: NonNullable<ReactMarkdownOptions["remarkPlugins"]> = [];
 
@@ -207,6 +215,7 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
+    img: [...(defaultSchema.attributes?.img ?? []), "title", "className", "align"],
     code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
@@ -241,6 +250,7 @@ const CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS = [
 const CHAT_MARKDOWN_REHYPE_PLUGINS = [
   rehypeRaw,
   [rehypeSanitize, CHAT_MARKDOWN_SANITIZE_SCHEMA],
+  rehypeMarkStandaloneImages,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
 const GITHUB_ALERT_PRESENTATIONS: Record<
@@ -1054,12 +1064,38 @@ const MARKDOWN_COMPONENTS: Components = {
       </span>
     );
   },
-  img({ node: _node, title: _title, src, alt }) {
+  img({
+    node,
+    title,
+    src,
+    alt,
+    width,
+    height,
+    className,
+    id,
+    style: _style,
+    srcSet: _srcSet,
+    ...imageProps
+  }) {
     const { cwd } = useMarkdownState();
     const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
     if (fileLink)
       return (
-        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+        <ArtifactImageLink
+          inline
+          imageProps={{
+            id,
+            title,
+            className,
+            ...imageProps,
+          }}
+          copyMarkdown={markdownImageCopy(alt ?? "", typeof src === "string" ? src : "", title)}
+          alt={alt ?? ""}
+          width={width}
+          height={height}
+          standalone={node?.properties?.dataStandalone === true}
+          relativePath={fileLink.workspaceRelativePath}
+        >
           {alt || fileLink.basename}
         </ArtifactImageLink>
       );
@@ -1166,7 +1202,7 @@ function ChatMarkdown(props: ChatMarkdownProps) {
               : (rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href))
           }
           remarkPlugins={remarkPlugins}
-          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : undefined}
+          rehypePlugins={parseRawHtml ? CHAT_MARKDOWN_REHYPE_PLUGINS : [rehypeMarkStandaloneImages]}
           skipHtml={false}
           components={MARKDOWN_COMPONENTS}
         >

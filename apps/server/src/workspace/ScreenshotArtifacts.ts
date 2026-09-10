@@ -2,7 +2,7 @@ import { readImageDimensions } from "@t3tools/shared/imageDimensions";
 import { detectImageMimeType } from "@t3tools/shared/imageSignature";
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace artifact storage is a Linux filesystem adapter.
 import { createHash, randomUUID } from "node:crypto";
-import { constants as FILE_SYSTEM_CONSTANTS, watch as watchFileSystem } from "node:fs";
+import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
@@ -24,7 +24,6 @@ import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const MAX_OBSERVED_PATHS = 100;
 const MAX_BASE64_IMAGE_CHARS = Math.ceil(MAX_SCREENSHOT_ARTIFACT_BYTES / 3) * 4 + 4;
 const ARTIFACT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -38,19 +37,6 @@ const extensionByMimeType: Record<ScreenshotArtifactMimeType, string> = {
 export interface CapturedScreenshotArtifact {
   readonly reference: ScreenshotArtifactReference;
   readonly digest: string;
-}
-
-export interface ScreenshotObservation {
-  /** Stops the observer and returns the bounded set of image paths it saw. */
-  readonly close: () => ReadonlyArray<string>;
-}
-
-export function isScreenshotCandidatePath(value: string): boolean {
-  const normalized = value.replaceAll("\\", "/");
-  if (normalized.split("/").some((segment) => segment === ".git" || segment === "node_modules")) {
-    return false;
-  }
-  return /\.(?:jpe?g|png|webp)$/i.test(normalized);
 }
 
 async function detectStoredScreenshotMimeType(
@@ -112,6 +98,9 @@ export class ScreenshotArtifacts extends Context.Service<
     readonly captureFile: (input: {
       readonly cwd: string;
       readonly filePath: string;
+      readonly existingOnly?: boolean;
+      /** A single tool-returned image associated with this validated source path. */
+      readonly sourceArtifact?: CapturedScreenshotArtifact;
       readonly capturedArtifacts?: ReadonlyMap<string, ScreenshotArtifactReference>;
       readonly capturedDigests?: ReadonlySet<string> | undefined;
     }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
@@ -121,7 +110,6 @@ export class ScreenshotArtifacts extends Context.Service<
       readonly mimeType: string;
       readonly name?: string;
     }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
-    readonly observeTurn: (cwd: string) => Effect.Effect<ScreenshotObservation>;
     readonly readChunk: (
       input: ScreenshotArtifactReadInput,
     ) => Effect.Effect<ScreenshotArtifactChunk, ScreenshotArtifactReadError>;
@@ -219,12 +207,21 @@ export const make = Effect.gen(function* () {
       Effect.catch(() => Effect.succeed(undefined)),
       Effect.flatMap((candidate) =>
         Effect.gen(function* () {
-          if (!candidate) return undefined;
+          if (
+            !candidate ||
+            candidate.bytes.length > MAX_SCREENSHOT_ARTIFACT_BYTES ||
+            !detectImageMimeType(candidate.bytes)
+          )
+            return undefined;
           const digest = createHash("sha256").update(candidate.bytes).digest("hex");
           const existing = input.capturedArtifacts?.get(digest);
-          const captured: CapturedScreenshotArtifact | undefined = existing
-            ? { reference: existing, digest }
-            : yield* persistBytes({ ...candidate, capturedDigests: input.capturedDigests });
+          const captured: CapturedScreenshotArtifact | undefined =
+            input.sourceArtifact ??
+            (existing
+              ? { reference: existing, digest }
+              : input.existingOnly
+                ? undefined
+                : yield* persistBytes({ ...candidate, capturedDigests: input.capturedDigests }));
           if (!captured) return undefined;
           const key = createHash("sha256")
             .update(`${captured.reference.id}\0${candidate.relativePath}`)
@@ -233,9 +230,7 @@ export const make = Effect.gen(function* () {
             ...captured,
             reference: {
               ...captured.reference,
-              sourcePathKeys: [
-                ...new Set([...(captured.reference.sourcePathKeys ?? []), key]),
-              ].slice(0, 100),
+              sourcePathKeys: [key],
             },
           };
         }),
@@ -258,37 +253,6 @@ export const make = Effect.gen(function* () {
     });
   });
 
-  const observeTurn: ScreenshotArtifacts["Service"]["observeTurn"] = (cwd) =>
-    Effect.sync(() => {
-      const paths = new Set<string>();
-      let closed = false;
-      try {
-        const watcher = watchFileSystem(cwd, { recursive: true }, (_eventType, filename) => {
-          if (closed || !filename || paths.size >= MAX_OBSERVED_PATHS) return;
-          const relativePath = filename.toString();
-          if (!isScreenshotCandidatePath(relativePath)) return;
-          const resolvedPath = NodePath.resolve(cwd, relativePath);
-          if (isPathAtOrWithinRoot(config.screenshotArtifactsDir, resolvedPath)) return;
-          paths.add(resolvedPath);
-        });
-        watcher.on("error", () => {
-          closed = true;
-          watcher.close();
-        });
-        return {
-          close: () => {
-            if (!closed) {
-              closed = true;
-              watcher.close();
-            }
-            return [...paths];
-          },
-        } satisfies ScreenshotObservation;
-      } catch {
-        return { close: () => [] } satisfies ScreenshotObservation;
-      }
-    });
-
   const readChunk: ScreenshotArtifacts["Service"]["readChunk"] = Effect.fn(
     "ScreenshotArtifacts.readChunk",
   )(function* (input) {
@@ -305,7 +269,7 @@ export const make = Effect.gen(function* () {
           [ScreenshotArtifactMimeType, string]
         >) {
           const filePath = NodePath.join(
-            config.screenshotArtifactsDir,
+            input.source === "attachment" ? config.attachmentsDir : config.screenshotArtifactsDir,
             `${input.artifactId}.${extension}`,
           );
           try {
@@ -361,7 +325,7 @@ export const make = Effect.gen(function* () {
     } satisfies ScreenshotArtifactChunk;
   });
 
-  return ScreenshotArtifacts.of({ captureFile, captureBase64, observeTurn, readChunk });
+  return ScreenshotArtifacts.of({ captureFile, captureBase64, readChunk });
 });
 
 export const layer = Layer.effect(ScreenshotArtifacts, make);

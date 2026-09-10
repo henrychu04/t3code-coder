@@ -769,6 +769,9 @@ export function runtimeEventToActivities(
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.payload.imageCaptureWarning
+              ? { imageCaptureWarning: event.payload.imageCaptureWarning }
+              : {}),
             ...(event.payload.artifacts !== undefined
               ? { artifacts: event.payload.artifacts }
               : {}),
@@ -800,6 +803,9 @@ export function runtimeEventToActivities(
             ...(event.payload.status ? { status: event.payload.status } : {}),
             ...(event.payload.detail ? { detail: truncateDetail(event.payload.detail) } : {}),
             ...(event.payload.data !== undefined ? { data: event.payload.data } : {}),
+            ...(event.payload.imageCaptureWarning
+              ? { imageCaptureWarning: event.payload.imageCaptureWarning }
+              : {}),
             ...(event.payload.artifacts !== undefined
               ? { artifacts: event.payload.artifacts }
               : {}),

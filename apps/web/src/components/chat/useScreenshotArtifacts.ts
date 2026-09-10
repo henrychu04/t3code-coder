@@ -1,17 +1,14 @@
+import { imageResources, type ImageResourceState } from "./imageResources";
 import {
   type EnvironmentId,
   type ScreenshotArtifactReference,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
+  MAX_SCREENSHOT_ARTIFACT_BYTES,
 } from "@t3tools/contracts";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useReducer } from "react";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
-type ScreenshotImageState =
-  | { readonly status: "loading" }
-  | { readonly status: "error" }
-  | { readonly status: "loaded"; readonly url: string };
-
 function decodeBase64Bytes(value: string): ArrayBuffer {
   const decoded = window.atob(value);
   const bytes = new Uint8Array(decoded.length);
@@ -21,85 +18,84 @@ function decodeBase64Bytes(value: string): ArrayBuffer {
 
 export function useScreenshotArtifacts(
   environmentId: EnvironmentId,
-  artifacts: ReadonlyArray<ScreenshotArtifactReference>,
+  artifacts: ReadonlyArray<Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number }>,
   expanded: boolean,
+  source: "artifact" | "attachment" = "artifact",
 ) {
   const readArtifact = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
     reportFailure: false,
   });
-  const [images, setImages] = useState<Record<string, ScreenshotImageState>>({});
-  const objectUrlsRef = useRef(new Set<string>());
-  const requestedArtifactIdsRef = useRef(new Set<string>());
-  const mountedRef = useRef(true);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
-      objectUrlsRef.current.clear();
-    };
-  }, []);
-
+  const [, rerender] = useReducer((value: number) => value + 1, 0);
+  // Equivalent references must share a subscription even when their caller recreates the array.
+  const resourceKey = JSON.stringify(
+    artifacts.map(({ id, mimeType, sizeBytes }) => ({ id, mimeType, sizeBytes })),
+  );
   useEffect(() => {
     if (!expanded) return;
-    for (const artifact of artifacts) {
-      if (requestedArtifactIdsRef.current.has(artifact.id)) continue;
-      requestedArtifactIdsRef.current.add(artifact.id);
-      setImages((current) => ({ ...current, [artifact.id]: { status: "loading" } }));
-      void (async () => {
-        try {
+    const references = JSON.parse(resourceKey) as typeof artifacts;
+    const releases = references.map((artifact) =>
+      imageResources.subscribe(
+        JSON.stringify([environmentId, source, artifact.id]),
+        async (signal) => {
           const chunks: ArrayBuffer[] = [];
           let offset = 0;
-          let receivedBytes = 0;
+          let totalBytes = artifact.sizeBytes;
           while (true) {
+            signal.throwIfAborted();
             const result = await readArtifact({
-              environmentId: environmentId,
+              environmentId,
               input: {
                 artifactId: artifact.id,
+                source,
                 offset,
                 limit: MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
               },
             });
+            signal.throwIfAborted();
             if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+            totalBytes ??= result.value.totalBytes;
+            if (
+              result.value.dataBase64.length >
+              Math.ceil(MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES / 3) * 4
+            )
+              throw new Error("Invalid image chunk.");
             const chunk = decodeBase64Bytes(result.value.dataBase64);
-            const expectedNextOffset = offset + chunk.byteLength;
+            const nextOffset = offset + chunk.byteLength;
             if (
               result.value.offset !== offset ||
-              result.value.totalBytes !== artifact.sizeBytes ||
+              result.value.totalBytes !== totalBytes ||
+              !Number.isInteger(totalBytes) ||
+              totalBytes <= 0 ||
+              totalBytes > MAX_SCREENSHOT_ARTIFACT_BYTES ||
+              result.value.mimeType !== artifact.mimeType ||
+              result.value.artifactId !== artifact.id ||
               chunk.byteLength === 0 ||
-              expectedNextOffset > artifact.sizeBytes ||
-              (result.value.nextOffset !== null && result.value.nextOffset !== expectedNextOffset)
-            ) {
-              throw new Error("Invalid screenshot artifact chunk.");
-            }
+              chunk.byteLength > MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES ||
+              nextOffset > totalBytes ||
+              (result.value.nextOffset !== null && result.value.nextOffset !== nextOffset)
+            )
+              throw new Error("Invalid image chunk.");
             chunks.push(chunk);
-            receivedBytes = expectedNextOffset;
             if (result.value.nextOffset === null) {
-              if (receivedBytes !== artifact.sizeBytes) {
-                throw new Error("Incomplete screenshot artifact.");
-              }
+              if (nextOffset !== totalBytes) throw new Error("Incomplete image.");
               break;
             }
-            offset = result.value.nextOffset;
+            offset = nextOffset;
           }
-          const url = URL.createObjectURL(new Blob(chunks, { type: artifact.mimeType }));
-          if (!mountedRef.current) {
-            URL.revokeObjectURL(url);
-            return;
-          }
-          objectUrlsRef.current.add(url);
-          setImages((current) => ({
-            ...current,
-            [artifact.id]: { status: "loaded", url },
-          }));
-        } catch {
-          if (!mountedRef.current) return;
-          setImages((current) => ({ ...current, [artifact.id]: { status: "error" } }));
-        }
-      })();
-    }
-  }, [environmentId, artifacts, expanded, readArtifact]);
-
+          return new Blob(chunks, { type: artifact.mimeType });
+        },
+        rerender,
+      ),
+    );
+    return () => {
+      for (const release of releases) release();
+    };
+  }, [environmentId, source, resourceKey, expanded, readArtifact]);
+  const images: Record<string, ImageResourceState> = {};
+  if (expanded)
+    for (const artifact of artifacts)
+      images[artifact.id] = imageResources.get(
+        JSON.stringify([environmentId, source, artifact.id]),
+      );
   return images;
 }
