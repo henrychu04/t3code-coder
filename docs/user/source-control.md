@@ -96,3 +96,16 @@ to the workspace's settlement settings. GitHub-native stack merge and rebase act
 Press Command-Enter (Control-Enter on Windows) to save an edited review description or comment.
 Recent review summaries are cached in the workspace across helper restarts. Review contents and
 linked-review panel state remain in browser memory while displayed.
+
+### Agent-managed links
+
+Codex and Claude receive workspace CLI commands for listing, linking, and unlinking the current
+thread's merge requests on ordinary message turns. Native slash commands are sent unchanged.
+After creating an MR with `glab`, the agent can register its GitLab URL
+so T3 tracks it alongside the thread. These commands change T3's associations; they do not create,
+close, merge, or rebase GitLab MRs. Plan mode allows listing only.
+
+No MCP setup is needed. The command is supplied for the active turn and expires when that turn
+finishes or the provider session stops. If a command times out, list the links before retrying:
+the association may already have changed. URLs must identify a GitLab host known to workspace
+project metadata, including when linking an MR from another repository.

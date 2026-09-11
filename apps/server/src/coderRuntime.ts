@@ -1,3 +1,4 @@
+import * as AgentMergeRequests from "./agentMergeRequests/AgentMergeRequests.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
 import * as Effect from "effect/Effect";
@@ -84,6 +85,7 @@ const CoderTextGenerationLive = TextGeneration.layer.pipe(
 );
 
 const CoderProviderLive = ProviderServiceLive.pipe(
+  Layer.provide(AgentMergeRequests.layer.pipe(Layer.provide(CoderOrchestrationLayerLive))),
   Layer.provide(ProviderAdapterRegistryLive),
   Layer.provideMerge(CoderProviderSessionDirectoryLive),
   Layer.provideMerge(CoderProviderInstancesLive),

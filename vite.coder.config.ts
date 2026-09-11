@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/agentMergeRequests/*.test.ts",
       "apps/server/src/coderPullRequestLink.test.ts",
       "apps/server/src/persistence/Migrations/051_ProjectionThreadPullRequests.test.ts",
       "apps/server/src/persistence/Layers/OrchestrationEventStore.test.ts",

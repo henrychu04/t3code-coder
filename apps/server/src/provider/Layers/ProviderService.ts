@@ -9,6 +9,7 @@
  *
  * @module ProviderServiceLive
  */
+import { AgentMergeRequests } from "../../agentMergeRequests/AgentMergeRequests.ts";
 import { stat } from "node:fs/promises";
 import {
   EventId,
@@ -207,6 +208,7 @@ const correlateRuntimeEventWithInstance = (
 };
 
 const makeProviderService = Effect.fn("makeProviderService")(function* () {
+  const agentMrTools = Option.getOrUndefined(yield* Effect.serviceOption(AgentMergeRequests));
   const serverConfig = yield* ServerConfig.ServerConfig;
   const registry = yield* ProviderAdapterRegistry.ProviderAdapterRegistry;
   const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
@@ -215,7 +217,17 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
   const timedOutNativeCompactions = new Set<ThreadId>();
   const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
   const publishRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
-    PubSub.publish(runtimeEventPubSub, event).pipe(Effect.asVoid);
+    Effect.gen(function* () {
+      if (
+        agentMrTools &&
+        (event.type === "turn.completed" ||
+          event.type === "turn.aborted" ||
+          event.type === "session.exited")
+      ) {
+        yield* agentMrTools.release(event.threadId, event.turnId, event.providerInstanceId);
+      }
+      yield* PubSub.publish(runtimeEventPubSub, event);
+    });
 
   const settleCompaction = (threadId: ThreadId, pending: PendingCompaction, terminal: string) =>
     Effect.gen(function* () {
@@ -722,7 +734,25 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
         "provider.kind": routed.adapter.provider,
         ...(input.modelSelection?.model ? { "provider.model": input.modelSelection.model } : {}),
       });
-      const turn = yield* routed.adapter.sendTurn(input);
+      // Preserve native slash-command parsing and its arguments byte-for-byte.
+      const mrInstructions =
+        agentMrTools && !input.input?.trimStart().startsWith("/")
+          ? yield* agentMrTools
+              .prepare(input.threadId, input.interactionMode === "plan", routed.instanceId)
+              .pipe(
+                Effect.catch(() =>
+                  Effect.logWarning("Workspace MR tools unavailable for this turn").pipe(
+                    Effect.as(undefined),
+                  ),
+                ),
+              )
+          : undefined;
+      const turn = yield* routed.adapter
+        .sendTurn(
+          mrInstructions ? { ...input, input: `${mrInstructions}\n\n${input.input ?? ""}` } : input,
+        )
+        .pipe(Effect.onError(() => agentMrTools?.release(input.threadId) ?? Effect.void));
+      agentMrTools?.activate(input.threadId, turn.turnId);
       yield* directory.upsert({
         threadId: input.threadId,
         provider: routed.adapter.provider,
@@ -950,6 +980,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
           "provider.kind": routed.adapter.provider,
           "provider.thread_id": input.threadId,
         });
+        yield* agentMrTools?.release(input.threadId) ?? Effect.void;
         if (routed.isActive) {
           yield* routed.adapter.stopSession(routed.threadId);
         }
@@ -1093,6 +1124,9 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
     const threadIds = yield* directory.listThreadIds();
+    yield* Effect.forEach(threadIds, (id) => agentMrTools?.release(id) ?? Effect.void, {
+      discard: true,
+    });
     const currentAdapters = yield* getAdapterEntries;
     const activeSessions = yield* Effect.forEach(currentAdapters, ([instanceId, adapter]) =>
       adapter.listSessions().pipe(
