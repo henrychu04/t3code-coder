@@ -1,3 +1,4 @@
+import { LinkedGitLabStackNavigation } from "./LinkedGitLabStackNavigation";
 import { PullRequestThreadLinks } from "./PullRequestThreadLinks";
 import { useEnvironmentSettings } from "~/hooks/useSettings";
 import { serverEnvironment } from "~/state/server";
@@ -413,7 +414,7 @@ export function PullRequestDetailPanel({
   composerDraftTarget?: ScopedThreadRef | DraftId;
   panelRef?: ScopedThreadRef | undefined;
 }) {
-  const pullRequestKey = `${reference.projectId}:${reference.repository}#${reference.number}`;
+  const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
     listEntry.repository.toLowerCase() === reference.repository.toLowerCase() &&
@@ -1288,7 +1289,7 @@ export function PullRequestDetailPanel({
                       <span className="flex min-w-0 flex-col">
                         <span>In this repository</span>
                         <span className="text-xs text-muted-foreground">
-                          Switches the branch you are working in, like `gh pr checkout`.
+                          Switches the branch you are working in, like `glab mr checkout`.
                         </span>
                       </span>
                     </MenuItem>
@@ -1322,6 +1323,9 @@ export function PullRequestDetailPanel({
                     The host will merge this on its own once its requirements are met
                   </TooltipPopup>
                 </Tooltip>
+              ) : null}
+              {panelRef ? (
+                <LinkedGitLabStackNavigation threadRef={panelRef} currentUrl={detail.url} />
               ) : null}
               {primaryAction === "resolve" ? (
                 <Button
