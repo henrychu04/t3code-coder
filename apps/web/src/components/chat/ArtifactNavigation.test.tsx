@@ -9,9 +9,7 @@ import {
   ArtifactNavigationContext,
   ArtifactTurnContext,
   findLinkedArtifact,
-  createArtifactNavigationRequest,
 } from "./ArtifactNavigation";
-import { ScreenshotArtifactsRow } from "./ScreenshotArtifactsRow";
 const load = vi.hoisted(() =>
   vi.fn((_environmentId: unknown, _artifacts: unknown, _expanded: boolean) => ({})),
 );
@@ -40,7 +38,7 @@ it("matches exact captured paths, never basenames, traversal, or legacy metadata
     await findLinkedArtifact("screens/shot.png", [{ ...artifact, sourcePathKeys: [] }]),
   ).toBeUndefined();
 });
-it("reveals the captured thumbnail on click without opening the lightbox, scoped to the turn", async () => {
+it("renders captured Markdown images inline and opens links directly in the gallery", async () => {
   vi.stubGlobal("crypto", webcrypto);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const host = document.createElement("div");
@@ -48,88 +46,38 @@ it("reveals the captured thumbnail on click without opening the lightbox, scoped
   const root = createRoot(host);
   const turn = TurnId.make("turn");
   const reveal = vi.fn();
-  const artifacts = [artifact];
-  const artifactsByTurn = new Map([[turn, artifacts]]);
-  const render = (sequence: number, activeTurn = turn, requestedId: string = artifact.id) =>
-    root.render(
-      <ArtifactNavigationContext
-        value={{
-          artifactsByTurn,
-          reveal,
-          request: sequence ? createArtifactNavigationRequest(requestedId) : null,
-        }}
-      >
-        <ArtifactTurnContext value={activeTurn}>
-          <ChatMarkdown cwd="/project" text="[Image link](file:///project/screens/shot.png)" />
-        </ArtifactTurnContext>
-        <ScreenshotArtifactsRow artifacts={artifacts} environmentId={EnvironmentId.make("env")} />
-      </ArtifactNavigationContext>,
-    );
   try {
-    await act(async () => {
-      render(0);
-    });
-    // The browser digest resolves outside React's initial effect flush.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    });
-    const link = host.querySelector<HTMLButtonElement>('button[title="Show in Visual artifacts"]');
-    expect(link).not.toBeNull();
-    expect(load.mock.calls.at(-1)?.[2]).toBe(false);
-    await act(async () => link!.click());
-    expect(reveal).toHaveBeenCalledWith(artifact.id);
-    await act(async () => render(1));
-    expect(host.querySelector('[aria-expanded="true"]')).not.toBeNull();
-    expect(host.querySelector('[data-highlighted="true"]')?.getAttribute("data-artifact-id")).toBe(
-      artifact.id,
+    await act(async () =>
+      root.render(
+        <ArtifactNavigationContext
+          value={{
+            environmentId: EnvironmentId.make("env"),
+            artifactsByTurn: new Map([[turn, [artifact]]]),
+            reveal,
+            request: null,
+          }}
+        >
+          <ArtifactTurnContext value={turn}>
+            <ChatMarkdown
+              cwd="/project"
+              text="![Screenshot](screens/shot.png) [Open image](screens/shot.png)"
+            />
+          </ArtifactTurnContext>
+        </ArtifactNavigationContext>,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(host.querySelector('[aria-label="Loading image"]')).not.toBeNull(),
     );
     expect(load.mock.calls.at(-1)?.[2]).toBe(true);
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    const thumbnail = host.querySelector<HTMLElement>("[data-artifact-id]")!;
-    const scroll = vi.fn();
-    thumbnail.scrollIntoView = scroll;
-    await act(async () => render(2, turn, "another-gallery-image"));
-    expect(scroll).not.toHaveBeenCalled();
-    expect(host.querySelector('[data-highlighted="true"]')).toBeNull();
-    await act(async () => render(1, TurnId.make("other-turn")));
-    expect(host.querySelector('button[title="Show in Visual artifacts"]')).toBeNull();
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-  }
-});
-
-it("does not replay consumed requests after a gallery remount, but accepts a fresh click", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const host = document.createElement("div");
-  const reader = document.createElement("button");
-  document.body.append(host, reader);
-  const root = createRoot(host);
-  const artifacts = [artifact];
-  const request = createArtifactNavigationRequest(artifact.id);
-  const render = (nextRequest = request) =>
-    root.render(
-      <ArtifactNavigationContext
-        value={{ artifactsByTurn: new Map(), reveal: vi.fn(), request: nextRequest }}
-      >
-        <ScreenshotArtifactsRow artifacts={artifacts} environmentId={EnvironmentId.make("env")} />
-      </ArtifactNavigationContext>,
+    await act(async () =>
+      host.querySelector<HTMLAnchorElement>('a[title="Preview image"]')!.click(),
     );
-  try {
-    await act(async () => render());
-    expect(document.activeElement?.getAttribute("data-artifact-id")).toBe(artifact.id);
-    await act(async () => root.render(null));
-    reader.focus();
-    await act(async () => render());
-    expect(document.activeElement).toBe(reader);
-    expect(host.querySelector('[aria-expanded="false"]')).not.toBeNull();
-    expect(load.mock.calls.at(-1)?.[2]).toBe(false);
-    await act(async () => render(createArtifactNavigationRequest(artifact.id)));
-    expect(document.activeElement?.getAttribute("data-artifact-id")).toBe(artifact.id);
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(reveal).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();
-    reader.remove();
   }
 });
 
@@ -155,12 +103,84 @@ it.each([
         </ArtifactNavigationContext>,
       ),
     );
-    await vi.waitFor(() => expect(host.querySelectorAll("button")).toHaveLength(1));
-    expect(host.querySelector("button button")).toBeNull();
-    await act(async () => host.querySelector<HTMLButtonElement>("button")!.click());
+    await vi.waitFor(() =>
+      expect(host.querySelectorAll('a[title="Preview image"]')).toHaveLength(1),
+    );
+    expect(host.querySelector("a a")).toBeNull();
+    await act(async () =>
+      host.querySelector<HTMLAnchorElement>('a[title="Preview image"]')!.click(),
+    );
     expect(reveal).toHaveBeenCalledTimes(1);
     expect(reveal).toHaveBeenCalledWith(artifact.id);
   } finally {
     await act(async () => root.unmount());
   }
+});
+
+it("keeps linked captured images visible and browses neighboring images", async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  load.mockReturnValue({ artifact: { status: "loaded", url: "blob:artifact", retry: vi.fn() } });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const turn = TurnId.make("turn");
+  try {
+    await act(async () =>
+      root.render(
+        <ArtifactNavigationContext
+          value={{
+            environmentId: EnvironmentId.make("env"),
+            artifactsByTurn: new Map([[turn, [artifact]]]),
+            reveal: vi.fn(),
+            request: null,
+          }}
+        >
+          <ArtifactTurnContext value={turn}>
+            <ChatMarkdown
+              cwd="/project"
+              text={
+                '[![Linked](screens/shot.png "Figure title")](screens/shot.png) ![Neighbor](screens/shot.png)'
+              }
+            />
+          </ArtifactTurnContext>
+        </ArtifactNavigationContext>,
+      ),
+    );
+    await vi.waitFor(async () => {
+      await act(async () => {});
+      expect(host.querySelectorAll("img")).toHaveLength(2);
+    });
+    await act(async () => {
+      for (const image of host.querySelectorAll("img")) image.dispatchEvent(new Event("load"));
+    });
+    expect(host.querySelector('img[alt="Linked"]')?.getAttribute("title")).toBe("Figure title");
+    expect(host.querySelector('img[alt="Linked"]')?.getAttribute("data-markdown-copy")).toBe(
+      '![Linked](screens/shot.png "Figure title")',
+    );
+    await act(async () => host.querySelector<HTMLImageElement>('img[alt="Linked"]')!.click());
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+    );
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("Neighbor");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    load.mockReturnValue({});
+  }
+});
+
+it("selects the latest view of a path when old bytes are later reused for another file", async () => {
+  vi.stubGlobal("crypto", webcrypto);
+  const reference = (id: string, path: string) => ({
+    ...artifact,
+    id: ScreenshotArtifactId.make(id),
+    sourcePathKeys: [createHash("sha256").update(`${id}\0${path}`).digest("hex")],
+  });
+  const redA = reference("red", "a.png");
+  const blueA = reference("blue", "a.png");
+  const redB = reference("red", "b.png");
+  expect(await findLinkedArtifact("a.png", [redA, blueA, redB])).toBe(blueA);
+  expect(await findLinkedArtifact("b.png", [redA, blueA, redB])).toBe(redB);
 });

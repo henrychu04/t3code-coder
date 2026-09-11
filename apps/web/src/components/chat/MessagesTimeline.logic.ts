@@ -34,7 +34,7 @@ export function workEntryIsVisibleInGroup(
 }
 
 function workEntryHasScreenshotArtifacts(entry: WorkLogEntry): boolean {
-  return (entry.artifacts?.length ?? 0) > 0;
+  return (entry.artifacts?.length ?? 0) > 0 || Boolean(entry.imageCaptureWarning);
 }
 
 export interface WorkGroupScrollAnchor {

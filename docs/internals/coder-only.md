@@ -263,7 +263,7 @@ retry and aborts a transfer when its draft attachment is removed. HTTP response 
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
 workspace copy remains pending until SCP and finalization complete. Paths are added to message text
-at send time. The browser may additionally submit at most eight opaque generated
+at send time; the UI replaces generated attachment references with durable workspace-backed previews. The browser may additionally submit at most eight opaque generated
 image ids—never a caller-supplied path. The helper resolves each id only beneath the attachment
 directory, rejects symlinks, size violations, and signature/extension mismatches, and sends the
 validated bytes to Codex as native image input. The same validated images may be passed by fixed
@@ -318,44 +318,37 @@ change, and artifact capture does not record a durable owning thread. Safe recla
 ownership and reference tracking across those lifetimes; deleting files merely because they are
 old or absent from the current browser snapshot can break resumed sessions and historical turns.
 
-The other user-facing exception displays screenshots produced while a provider verifies a frontend.
-Codex and Claude share the turn capture lifecycle, limits, deduplication, and artifact activity
-payload; each adapter only translates its native image results and signals turn boundaries.
-Observation begins before sending a turn, stays open across steering, and closes on completion,
-interruption, failure, or session shutdown. Failed starts dispose their observation without publishing.
-This does not require MCP or a project-specific T3 skill. While a provider turn is active, the helper
-observes image paths created or modified inside that turn's active project and accepts image content
-returned directly by tool results. Tool-result images are captured as they arrive; observed paths
-are captured when the turn completes. Both paths signature-validate PNG, JPEG, and WebP content,
-reject files larger than 20 MiB, deduplicate by content, cap capture at 10 images, and copy accepted
-bytes to generated paths beneath `$HOME/.t3-coder/artifacts`. The durable activity event contains
-only an opaque artifact ID, display name, MIME type, byte count, optional pixel dimensions, and
-optional artifact-salted SHA-256 source-path fingerprints; tool-result base64 is removed
-before activity and turn history are persisted.
+Image previews use the upstream thumbnail grid and gallery navigation, with upstream's
+`ZoomableImage` component copied from commit `8d8189e67`. The adapted gallery excludes external
+asset URLs, videos, saving, export, and desktop actions. It uses upstream’s portal-based gallery
+and bounded helper stdio image transport.
 
-```text
-project verification skill -> screenshot in active project --+
-provider image tool result -> in-memory image content --------+-> validate/dedupe/copy in workspace
-                                                                -> metadata-only activity row
-user expands Visual artifacts -> opaque-ID chunk RPC -> browser Blob URL -> thumbnail/lightbox
-```
+Capture is driven by provider tool events. A Codex `imageView` completion immediately copies a
+validated image inside the active project, including an unchanged file. Codex MCP, dynamic-tool,
+and generation results and Claude tool-result image blocks preserve their returned image bytes.
+Claude image-read activity can also capture a contained file when it has no returned image bytes.
+No filesystem watcher runs and no end-of-turn scan collects unrelated files. A path-only event is
+best effort: the original may change between the provider read and capture.
 
-The helper derives dimensions from a bounded header of the already validated captured bytes.
-The browser uses that metadata to reserve a bounded image frame while bytes load, and falls back
-to the existing frame for older artifacts without dimensions.
+The turn shares a ten-image budget and content deduplication across activities. Each tool activity
+gets its own opaque artifact references immediately; repeated content reuses the saved copy. Source-path fingerprints belong to the current
+activity rather than the deduplicated copy. A single tool-returned image may be associated with
+its validated source path even when the tool resized or re-encoded it.
+Capture failures and limit omissions become activity notices. Signature-validated PNG, JPEG and
+WebP are limited to 20 MiB. Capture is disabled on completion, interruption, failed start or shutdown.
+Stored activity contains metadata and opaque source-path fingerprints, not image bytes.
 
-The browser initially renders only a collapsed artifact count. Explicitly expanding it requests
-bounded 512 KiB chunks by opaque ID over the existing browser-to-helper RPC path. The browser joins
-those chunks into memory-only object URLs and revokes them when the view unmounts. The RPC accepts
-no filesystem path, the gateway does not persist the bytes, and the UI exposes no download or
-export action. Image references in assistant Markdown resolve only against artifacts from the same turn, using
-those fingerprints of exact project-relative paths. Clicking a matched reference expands Visual
-artifacts, scrolls to it, and highlights its thumbnail; selecting the thumbnail opens the existing
-lightbox. Unmatched and legacy references remain inert with an unavailable explanation. Matching
-never uses display names or reads a path, and external images remain inert.
-The observer ends with the turn and performs no scan or background synchronization.
-Filesystem paths outside the contained Files RPC, arbitrary files, downloads, exports, and
-drag-and-drop remain prohibited.
+Submitted messages resolve generated attachment IDs through the same 512 KiB chunk RPC, with a
+fixed attachment source selector. IDs are validated UUIDs; the helper selects only its own attachment
+or artifact directory and checks file type, size, no-follow opens, and image signature. There is no
+caller-supplied path. Submitted previews survive reload while the workspace copy exists; draft
+images remain memory-only. Thumbnails load automatically when their surface mounts and object
+URLs are revoked on unmount. No bytes persist in the gateway or browser storage.
+
+Activity images appear beside their tool row. Assistant Markdown images resolve against captured
+artifacts from that turn and render inline; image links open the same zoomable gallery. The latest
+matching capture is preferred when a path has multiple versions in one turn. Unknown references
+and external images remain inert. Older aggregate Visual artifacts activities remain readable.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be

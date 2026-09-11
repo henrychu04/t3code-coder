@@ -1854,6 +1854,9 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               screenshots.current ??= { capture: yield* makeTurnScreenshotCapture(cwd, options) };
               screenshots.current.turnId = event.turnId;
             }
+            let capturedImages:
+              | Effect.Success<ReturnType<TurnScreenshotCapture["captureImages"]>>
+              | undefined;
             if (
               event.method === "item/completed" &&
               screenshots.current &&
@@ -1861,8 +1864,18 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                 !screenshots.current.turnId ||
                 event.turnId === screenshots.current.turnId)
             ) {
-              yield* screenshots.current.capture.captureImages(
+              const item = (
+                nativeEvent.payload as {
+                  item?: { type?: string; path?: string; savedPath?: string };
+                }
+              )?.item;
+              capturedImages = yield* screenshots.current.capture.captureImages(
                 extractCodexScreenshotImages(nativeEvent.payload),
+                item?.type === "imageView"
+                  ? item.path
+                  : item?.type === "imageGeneration"
+                    ? item.savedPath
+                    : undefined,
               );
             }
             if (event.method === "turn/completed" || event.method === "turn/aborted") {
@@ -1921,6 +1934,19 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
                   }
                 : runtimeEvent,
             );
+            for (let index = 0; index < mappedEvents.length; index++) {
+              const mapped = mappedEvents[index]!;
+              if (
+                mapped.type === "item.completed" &&
+                capturedImages &&
+                (capturedImages.artifacts.length > 0 || capturedImages.imageCaptureWarning)
+              ) {
+                mappedEvents[index] = {
+                  ...mapped,
+                  payload: { ...mapped.payload, ...capturedImages },
+                };
+              }
+            }
             const runtimeEvents = usageLimitError
               ? [usageLimitError, ...mappedEvents]
               : mappedEvents;

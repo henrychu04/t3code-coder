@@ -1409,7 +1409,7 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("captures tool-result and observed screenshots without retaining base64", () => {
+  it.effect("attaches tool-result images to their activity without retaining base64", () => {
     const capturedInputs: Array<{
       dataBase64: string;
       mimeType: string;
@@ -1423,12 +1423,6 @@ describe("ClaudeAdapterLive", () => {
     }> = [];
     const harness = makeHarness({
       adapterOptions: {
-        observeScreenshots: (cwd) => {
-          assert.equal(cwd, "/workspace/repo");
-          return Effect.succeed({
-            close: () => ["/workspace/repo/test-results/final.webp"],
-          });
-        },
         captureScreenshotFile: (input) => {
           capturedFiles.push({
             cwd: input.cwd,
@@ -1529,19 +1523,14 @@ describe("ClaudeAdapterLive", () => {
       );
       assert.equal(artifactEvent?.type, "item.completed");
       if (artifactEvent?.type === "item.completed") {
-        assert.equal(artifactEvent.payload.itemType, "image_view");
+        assert.equal(artifactEvent.payload.itemType, "dynamic_tool_call");
+        assert.equal(artifactEvent.itemId, "tool-screenshot-1");
         assert.deepEqual(artifactEvent.payload.artifacts, [
           {
             id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
             name: "home.png",
             mimeType: "image/png",
             sizeBytes: 128,
-          },
-          {
-            id: ScreenshotArtifactId.make("5e2df9f0-9e4e-4a68-a812-3024f8f2d4e1"),
-            name: "final.webp",
-            mimeType: "image/webp",
-            sizeBytes: 256,
           },
         ]);
       }
@@ -1553,13 +1542,8 @@ describe("ClaudeAdapterLive", () => {
           name: "test-results/home.png",
         },
       ]);
-      assert.deepEqual(capturedFiles, [
-        {
-          cwd: "/workspace/repo",
-          filePath: "/workspace/repo/test-results/final.webp",
-          capturedDigests: new Set(["screenshot-digest"]),
-        },
-      ]);
+      assert.equal(capturedFiles.length, 1);
+      assert.equal(capturedFiles[0]?.filePath, "test-results/home.png");
       assert.notMatch(JSON.stringify(runtimeEvents), /secret-image-base64/u);
       assert.notMatch(
         JSON.stringify(yield* adapter.readThread(session.threadId)),

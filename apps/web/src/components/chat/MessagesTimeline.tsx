@@ -17,6 +17,7 @@ import { useAssistantCitationTarget, type CitationHistoryPage } from "./useAssis
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { ScreenshotArtifactsRow } from "./ScreenshotArtifactsRow";
+import { submittedImageAttachments } from "../../lib/submittedImageAttachments";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
@@ -551,8 +552,13 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     [rows, onManualNavigation, listRef],
   );
   const artifactNavigation = useMemo(
-    () => ({ artifactsByTurn, reveal: revealArtifact, request: artifactRequest }),
-    [artifactsByTurn, revealArtifact, artifactRequest],
+    () => ({
+      environmentId: activeThreadEnvironmentId,
+      artifactsByTurn,
+      reveal: revealArtifact,
+      request: artifactRequest,
+    }),
+    [activeThreadEnvironmentId, artifactsByTurn, revealArtifact, artifactRequest],
   );
 
   const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);
@@ -1317,13 +1323,20 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const displayedUserMessage = deriveDisplayedUserMessageState(row.message.text);
+  const pastedImages = submittedImageAttachments(row.message.text);
+  const displayedUserMessage = deriveDisplayedUserMessageState(pastedImages.text);
   const terminalContexts = displayedUserMessage.contexts;
   const revertTurnCount = row.revertTurnCount;
 
   return (
     <div className="group flex flex-col items-end gap-1">
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
+        <ScreenshotArtifactsRow
+          key={ctx.activeThreadEnvironmentId}
+          environmentId={ctx.activeThreadEnvironmentId}
+          artifacts={pastedImages.images}
+          source="attachment"
+        />
         <CollapsibleUserMessageBody
           text={displayedUserMessage.visibleText}
           terminalContexts={terminalContexts}
@@ -2680,7 +2693,13 @@ function TimelineScreenshotArtifactsRow({
   artifacts: ReadonlyArray<ScreenshotArtifactReference>;
 }) {
   const { activeThreadEnvironmentId } = use(TimelineRowCtx);
-  return <ScreenshotArtifactsRow environmentId={activeThreadEnvironmentId} artifacts={artifacts} />;
+  return (
+    <ScreenshotArtifactsRow
+      key={activeThreadEnvironmentId}
+      environmentId={activeThreadEnvironmentId}
+      artifacts={artifacts}
+    />
+  );
 }
 
 const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
@@ -2695,8 +2714,22 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
   if (workEntry.agentSpawn) {
     return <AgentSpawnCtaRow workEntry={workEntry} />;
   }
-  if (workEntry.artifacts && workEntry.artifacts.length > 0) {
-    return <TimelineScreenshotArtifactsRow artifacts={workEntry.artifacts} />;
+  if (workEntry.artifacts?.length || workEntry.imageCaptureWarning) {
+    return (
+      <div>
+        <PlainWorkEntryRow {...props} />
+        {workEntry.artifacts?.length ? (
+          <div className="mt-1 ms-7">
+            <TimelineScreenshotArtifactsRow artifacts={workEntry.artifacts} />
+          </div>
+        ) : null}
+        {workEntry.imageCaptureWarning ? (
+          <p role="status" className="ms-7 text-xs text-muted-foreground">
+            {workEntry.imageCaptureWarning}
+          </p>
+        ) : null}
+      </div>
+    );
   }
   return (
     <PlainWorkEntryRow

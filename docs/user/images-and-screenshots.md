@@ -33,23 +33,32 @@ as soon as the transfer finishes, either way it goes.
 There is deliberately no drag-and-drop, no file picker for uploads, and no download path — paste
 into the composer is the only way an image gets in.
 
-## Viewing model screenshots
+## Images in agent messages
 
-When a Codex or Claude turn produces screenshots — for example while the model verifies a frontend
-it is building — T3 Coder collects them as **visual artifacts** for that turn. This needs no MCP server
-and no changes to your project's setup.
+Images appear beside the tool activity that viewed or produced them. Assistant replies can also
+embed a captured image inline or link to it. Click a thumbnail or image link to enlarge it. The
+shared gallery supports previous/next arrows, left/right keys, zooming, and panning. When zoomed,
+arrow keys pan the image; use the gallery buttons to switch images.
 
-At the end of the turn, a **Visual artifacts** row appears in the conversation showing how many
-images were captured. Expand it to see thumbnails and click an image to open the larger viewer.
-Use its arrows to move between images. Click or scroll to zoom, then drag to pan across the image. Details:
+Inline images preserve their reported dimensions and share a gallery in message order. If an image
+fails to load, use **Retry**. Repeated previews share one read; the browser loads at most three images
+at once and bounds retained image bytes to 100 MiB. Image bytes are released when no displayed preview uses them.
 
-- Screenshots saved inside the active project during the turn are collected automatically. Images
-  returned directly by supported provider tool results use the same capture pipeline. Existing
-  images merely opened by the model, and files saved outside the project, are not collected.
-- At most 10 images are captured per turn; duplicates by content are collapsed.
-- Images larger than 20 MiB are skipped.
-- Viewing streams the image from the workspace on demand and holds it only in browser memory. It
-  is never saved to your computer, and there is no download or export action.
+Submitted messages retain their image previews after reload or reconnect, while the workspace
+copies exist. Unsent draft images still disappear on reload.
 
-Like everything else, the artifacts live in the workspace and disappear with it — your machine
-stays out of the picture.
+T3 preserves supported image bytes returned by tools and images viewed inside the active project,
+including existing files. These preserved copies remain available if the original project file is
+later changed or deleted. For tools reporting only a path, capture happens immediately after the
+event, so a concurrent file change can still affect which version is saved. Merely writing an image
+file does not add it to the conversation.
+
+At most ten unique PNG, JPEG, or WebP images of up to 20 MiB are preserved per turn. Repeated views
+reuse the same copy. The activity shows a notice when an image could not be preserved or the limit
+was reached. This is not a guarantee that every image visible to a provider is captured.
+
+Images stay in the Coder workspace. There are no save, export, or download actions, and external
+images are not loaded. Unrecognized image references show an unavailable explanation. Older
+conversations with a Visual artifacts activity can still display their saved images.
+
+The thumbnail and gallery interactions follow [upstream's image previews](https://github.com/pingdotgg/t3code/blob/8d8189e67/docs/user/composer.md#images-and-videos-in-messages), adapted to preserve workspace copies and use Coder-only transport.

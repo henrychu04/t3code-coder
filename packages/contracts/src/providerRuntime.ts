@@ -447,6 +447,7 @@ export const ItemLifecyclePayload = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyStringSchema),
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
   data: Schema.optional(Schema.Unknown),
+  imageCaptureWarning: Schema.optional(TrimmedNonEmptyStringSchema),
   artifacts: Schema.optional(
     Schema.Array(ScreenshotArtifactReference).check(
       Schema.isMaxLength(MAX_SCREENSHOT_ARTIFACTS_PER_TURN),

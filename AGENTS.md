@@ -105,12 +105,19 @@ claim: shared provider protocols may still report subscription metadata.
     than 20 MiB.
     - Pasted images: generate filenames internally and copy only into
       `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
-    - Screenshot artifacts: capture at most 10 images that were created or modified inside the
-    active project during a provider turn, or returned as image content by that turn's tool
-      results. Copy them to generated paths beneath `$HOME/.t3-coder/artifacts`, expose only opaque
-      IDs and metadata in durable activity, and return bytes in bounded chunks over the existing
-      helper stdio RPC only after explicit UI expansion. Do not expose arbitrary paths,
-      download/export actions, local persistence, or a general file-reading API.
+      Submitted image references may read these validated workspace copies by opaque generated ID
+      through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
+    - Image artifacts: capture at most 10 unique images per provider turn when the provider reports
+      viewing a file inside the active project (including unchanged files), or returns image bytes
+      from a tool. Capture at the tool event, not by observing unrelated filesystem writes. Copy to
+      generated paths beneath `$HOME/.t3-coder/artifacts` and attach opaque IDs and metadata to the
+      originating activity. Reuse preserved copies for duplicate content and report capture failures
+      or limits. Path-only events cannot guarantee the exact bytes the provider saw.
+    - Submitted thumbnails, activity previews, and captured images embedded in assistant Markdown
+      may load automatically through bounded chunks over the existing helper stdio RPC. Image links
+      may open the shared gallery. Markdown resolves only against captured images from that turn.
+      Do not expose arbitrary paths, external images, download/export actions, local persistence,
+      or a general file-reading API. Retain signature, size, symlink and project-containment checks.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and

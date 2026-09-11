@@ -178,28 +178,76 @@ const adapterLayer = it.layer(
 );
 
 adapterLayer("CodexAdapter Coder integration", (it) => {
-  it.effect(
-    "disposes observation after a failed Codex start and creates a fresh capture on retry",
-    () =>
-      Effect.gen(function* () {
-        const factory = makeRuntimeFactory();
-        const close = vi.fn(() => [] as string[]);
-        const observe = vi.fn(() => Effect.succeed({ close }));
-        const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
-          makeRuntime: factory.factory,
-          resolveMcpServerNames: resolveNoMcpServers,
-          observeScreenshots: observe,
-        });
-        const threadId = asThreadId("failed-screenshot-start");
-        yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
-        factory.lastRuntime!.sendTurnImpl.mockRejectedValueOnce(new Error("start failed"));
-        yield* adapter.sendTurn({ threadId, input: "verify" }).pipe(Effect.exit);
-        NodeAssert.equal(close.mock.calls.length, 1);
-        yield* adapter.sendTurn({ threadId, input: "retry" });
-        NodeAssert.equal(observe.mock.calls.length, 2);
-        yield* adapter.stopSession(threadId);
-        NodeAssert.equal(close.mock.calls.length, 2);
-      }),
+  it.effect("allows retry after a failed Codex image turn start", () =>
+    Effect.gen(function* () {
+      const factory = makeRuntimeFactory();
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+        resolveMcpServerNames: resolveNoMcpServers,
+      });
+      const threadId = asThreadId("failed-screenshot-start");
+      yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
+      factory.lastRuntime!.sendTurnImpl.mockRejectedValueOnce(new Error("start failed"));
+      yield* adapter.sendTurn({ threadId, input: "verify" }).pipe(Effect.exit);
+      yield* adapter.sendTurn({ threadId, input: "retry" });
+      yield* adapter.stopSession(threadId);
+    }),
+  );
+
+  it.effect("preserves an unchanged image on its Codex imageView activity immediately", () =>
+    Effect.gen(function* () {
+      const factory = makeRuntimeFactory();
+      const save = vi.fn(() =>
+        Effect.succeed({
+          digest: "saved",
+          reference: {
+            id: ScreenshotArtifactId.make("saved"),
+            name: "existing.png",
+            mimeType: "image/png" as const,
+            sizeBytes: 8,
+          },
+        }),
+      );
+      const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
+        makeRuntime: factory.factory,
+        resolveMcpServerNames: resolveNoMcpServers,
+        captureScreenshotFile: save,
+      });
+      const threadId = asThreadId("existing-image");
+      yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
+      yield* adapter.sendTurn({ threadId, input: "view it" });
+      const eventsFiber = yield* adapter.streamEvents.pipe(
+        Stream.takeUntil(
+          (event) => event.type === "item.completed" && Boolean(event.payload.artifacts),
+        ),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+      yield* factory.lastRuntime!.emit({
+        kind: "notification",
+        provider: ProviderDriverKind.make("codex"),
+        threadId,
+        turnId: asTurnId("turn-1"),
+        createdAt: "2026-01-01T00:00:00.000Z",
+        id: asEventId("view"),
+        itemId: asItemId("view-1"),
+        method: "item/completed",
+        payload: {
+          completedAtMs: 0,
+          threadId,
+          turnId: "turn-1",
+          item: { type: "imageView", id: "view-1", path: "/project/existing.png" },
+        },
+      });
+      const events = Array.from(yield* Fiber.join(eventsFiber).pipe(Effect.timeout("2 seconds")));
+      const event = events.at(-1);
+      NodeAssert.equal(event?.itemId, "view-1");
+      NodeAssert.equal(event?.type, "item.completed");
+      if (event?.type === "item.completed")
+        NodeAssert.equal(event.payload.artifacts?.[0]?.id, "saved");
+      NodeAssert.equal(save.mock.calls.length, 1);
+      yield* adapter.stopAll();
+    }),
   );
 
   it.effect("redacts image bytes from Codex read and rollback history", () =>
@@ -236,12 +284,10 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
   );
 
   for (const ending of ["completed", "failed", "aborted", "exited", "stop"] as const) {
-    it.effect(`captures Codex screenshots and closes observation when ${ending}`, () =>
+    it.effect(`preserves Codex images on their tool activity when ${ending}`, () =>
       Effect.gen(function* () {
         const factory = makeRuntimeFactory();
-        const close = vi.fn(() => ["/project/final.png"]);
         const capturedImages: string[] = [];
-        let observations = 0;
         const artifact = (id: string) => ({
           digest: id,
           reference: {
@@ -254,11 +300,6 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
         const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
           makeRuntime: factory.factory,
           resolveMcpServerNames: resolveNoMcpServers,
-          observeScreenshots: (cwd) => {
-            observations++;
-            NodeAssert.equal(cwd, "/project");
-            return Effect.succeed({ close });
-          },
           captureScreenshotBase64: ({ dataBase64 }) => {
             capturedImages.push(dataBase64);
             return Effect.succeed(artifact("tool"));
@@ -268,7 +309,7 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
         const threadId = asThreadId(`screenshots-${ending}`);
         yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
         yield* adapter.sendTurn({ threadId, input: "verify" });
-        // Steering must retain the existing observer and artifact budget.
+        // Steering must retain the existing capture and artifact budget.
         yield* adapter.sendTurn({ threadId, input: "also check mobile" });
         const runtime = factory.lastRuntime!;
         const eventsFiber = yield* adapter.streamEvents.pipe(
@@ -340,15 +381,12 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
           NodeAssert.equal(result.turnId, "turn-1");
           NodeAssert.deepStrictEqual(
             result.payload.artifacts?.map((entry) => entry.id),
-            ["tool", "file"],
+            ["tool"],
           );
         }
         NodeAssert.deepStrictEqual(capturedImages, ["secret-image-base64"]);
         NodeAssert.doesNotMatch(JSON.stringify(events), /secret-image-base64/);
-        NodeAssert.equal(close.mock.calls.length, 1);
-        NodeAssert.equal(observations, 1);
         yield* adapter.stopAll();
-        NodeAssert.equal(close.mock.calls.length, 1);
       }).pipe(TestClock.withLive),
     );
   }

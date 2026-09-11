@@ -64,6 +64,7 @@ export interface WorkLogEntry {
   toolTitle?: string;
   toolData?: unknown;
   artifacts?: ReadonlyArray<ScreenshotArtifactReference>;
+  imageCaptureWarning?: string;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -674,6 +675,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
   const artifacts = extractScreenshotArtifacts(payload);
+  const imageCaptureWarning = asTrimmedString(payload?.imageCaptureWarning);
   const title = extractToolTitle(payload);
   const isTaskActivity =
     activity.kind === "task.started" ||
@@ -730,6 +732,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
   }
+  if (imageCaptureWarning) entry.imageCaptureWarning = imageCaptureWarning;
   if (artifacts.length > 0) {
     entry.artifacts = artifacts;
   }
@@ -972,6 +975,9 @@ function mergeDerivedWorkLogEntries(
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
     ...(artifacts !== undefined ? { artifacts } : {}),
+    ...((next.imageCaptureWarning ?? previous.imageCaptureWarning)
+      ? { imageCaptureWarning: next.imageCaptureWarning ?? previous.imageCaptureWarning }
+      : {}),
   };
 }
 

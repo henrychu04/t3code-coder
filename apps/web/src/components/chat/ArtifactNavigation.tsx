@@ -1,5 +1,15 @@
-import type { ScreenshotArtifactReference, TurnId } from "@t3tools/contracts";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { CapturedMarkdownImage, CapturedImageDialog } from "./CapturedMarkdownImage";
+import type { ExpandedImagePreview } from "./ExpandedImageDialog";
+import { markdownImageGallery } from "./markdownImageGallery";
+import type { EnvironmentId, ScreenshotArtifactReference, TurnId } from "@t3tools/contracts";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
 
 /** A one-shot request owned by the timeline, surviving gallery unmounts. */
 export function createArtifactNavigationRequest(artifactId: string) {
@@ -15,6 +25,7 @@ export function createArtifactNavigationRequest(artifactId: string) {
 }
 
 export const ArtifactNavigationContext = createContext<{
+  environmentId?: EnvironmentId;
   artifactsByTurn: ReadonlyMap<TurnId, ReadonlyArray<ScreenshotArtifactReference>>;
   reveal: (artifactId: string) => void;
   request: ReturnType<typeof createArtifactNavigationRequest> | null;
@@ -35,7 +46,7 @@ export async function findLinkedArtifact(
     relativePath.split("/").some((part) => !part || part === "." || part === "..")
   )
     return;
-  for (const artifact of artifacts) {
+  for (const artifact of [...artifacts].reverse()) {
     if (!artifact.sourcePathKeys?.length) continue;
     const digest = await crypto.subtle.digest(
       "SHA-256",
@@ -50,9 +61,19 @@ export async function findLinkedArtifact(
 
 const InsideArtifactLink = createContext(false);
 
-export function ArtifactImageLink(props: { relativePath: string | null; children: ReactNode }) {
+export function ArtifactImageLink(props: {
+  relativePath: string | null;
+  children: ReactNode;
+  inline?: boolean;
+  alt?: string | undefined;
+  width?: string | number | undefined;
+  height?: string | number | undefined;
+  standalone?: boolean | undefined;
+  imageProps?: Omit<ComponentProps<"img">, "src" | "srcSet" | "alt" | "style"> | undefined;
+  copyMarkdown?: string | undefined;
+}) {
   const nested = useContext(InsideArtifactLink);
-  if (nested) return <>{props.children}</>;
+  if (nested && !props.inline) return <>{props.children}</>;
   return (
     <InsideArtifactLink value={true}>
       <ArtifactImageLinkContent {...props} />
@@ -63,11 +84,26 @@ export function ArtifactImageLink(props: { relativePath: string | null; children
 function ArtifactImageLinkContent({
   relativePath,
   children,
+  inline,
+  alt,
+  width,
+  height,
+  standalone,
+  imageProps,
+  copyMarkdown,
 }: {
   relativePath: string | null;
   children: ReactNode;
+  inline?: boolean;
+  alt?: string | undefined;
+  width?: string | number | undefined;
+  height?: string | number | undefined;
+  standalone?: boolean | undefined;
+  imageProps?: Omit<ComponentProps<"img">, "src" | "srcSet" | "alt" | "style"> | undefined;
+  copyMarkdown?: string | undefined;
 }) {
   const navigation = useContext(ArtifactNavigationContext);
+  const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
   const turnId = useContext(ArtifactTurnContext);
   const artifacts = turnId ? navigation?.artifactsByTurn.get(turnId) : undefined;
   const [match, setMatch] = useState<{
@@ -99,14 +135,44 @@ function ArtifactImageLinkContent({
         <span className="sr-only"> — Image preview unavailable</span>
       </span>
     );
+  const artifact = artifacts?.find((artifact) => artifact.id === id);
+  if (inline && artifact && navigation.environmentId)
+    return (
+      <CapturedMarkdownImage
+        key={`${navigation.environmentId}:${id}`}
+        environmentId={navigation.environmentId}
+        artifact={artifact}
+        alt={alt ?? artifact.name}
+        width={width}
+        height={height}
+        standalone={standalone}
+        imageProps={imageProps}
+        copyMarkdown={copyMarkdown}
+      />
+    );
+  if (inline) return <>{children}</>;
   return (
-    <button
-      type="button"
-      className="cursor-pointer text-primary underline"
-      title="Show in Visual artifacts"
-      onClick={() => navigation.reveal(id)}
-    >
-      {children}
-    </button>
+    <>
+      <a
+        href="#"
+        className="cursor-pointer text-primary underline"
+        title="Preview image"
+        onClick={(event) => {
+          event.preventDefault();
+          if (!navigation.environmentId || !artifact) return navigation.reveal(id);
+          const element = event.currentTarget.querySelector("img") ?? event.currentTarget;
+          setPreview(markdownImageGallery(element, { src: null, name: artifact.name, artifact }));
+        }}
+      >
+        {children}
+      </a>
+      {preview && navigation.environmentId ? (
+        <CapturedImageDialog
+          environmentId={navigation.environmentId}
+          preview={preview}
+          onClose={() => setPreview(null)}
+        />
+      ) : null}
+    </>
   );
 }
