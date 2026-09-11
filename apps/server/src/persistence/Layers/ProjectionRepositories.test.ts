@@ -1,4 +1,12 @@
-import { EventId, OrchestrationProposedPlanId, TurnId, ProjectId, ThreadId, ProviderInstanceId } from "@t3tools/contracts";
+import { ProjectionThreadProposedPlanRepositoryLive } from "./ProjectionThreadProposedPlans.ts";
+import {
+  EventId,
+  OrchestrationProposedPlanId,
+  TurnId,
+  ProjectId,
+  ThreadId,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,7 +17,7 @@ import * as Statement from "effect/unstable/sql/Statement";
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
 import { ProjectionProjectRepositoryLive } from "./ProjectionProjects.ts";
 import { ProjectionThreadRepositoryLive } from "./ProjectionThreads.ts";
-import { ProjectionThreadProposedPlanRepositoryLive } from "./ProjectionThreadProposedPlans.ts";
+import * as ProjectionThreadPullRequests from "../ProjectionThreadPullRequests.ts";
 import { ProjectionProjectRepository } from "../Services/ProjectionProjects.ts";
 import { ProjectionThreadProposedPlanRepository } from "../Services/ProjectionThreadProposedPlans.ts";
 import { ProjectionThreadRepository } from "../Services/ProjectionThreads.ts";
@@ -22,6 +30,7 @@ const projectionRepositoriesLayer = it.layer(
     ProjectionThreadProposedPlanRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     ProjectionThreadRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
     ProjectionThreadActivityRepositoryLive.pipe(Layer.provideMerge(SqlitePersistenceMemory)),
+    ProjectionThreadPullRequests.layer.pipe(Layer.provide(SqlitePersistenceMemory)),
     SqlitePersistenceMemory,
   ),
 );
@@ -271,7 +280,6 @@ projectionRepositoriesLayer("Projection repositories", (it) => {
       );
     }),
   );
-
 
   it.effect("filters user-input lifecycle rows by thread and preserves sequence order", () =>
     Effect.gen(function* () {

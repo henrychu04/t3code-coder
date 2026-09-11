@@ -1,10 +1,17 @@
+import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
+import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import {
   scopeProjectRef,
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
 import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pullRequests";
-import type { EnvironmentId, ThreadLinkedPullRequest, VcsStatusResult } from "@t3tools/contracts";
+import type {
+  ThreadPullRequestLink,
+  EnvironmentId,
+  ThreadLinkedPullRequest,
+  VcsStatusResult,
+} from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
@@ -45,16 +52,43 @@ export interface LinkedThreadPullRequestStatus {
   readonly sourceControlProvider: NonNullable<VcsStatusResult["sourceControlProvider"]>;
 }
 
+export function linkedPullRequestSnapshotStatus(
+  link: ThreadPullRequestLink,
+): LinkedThreadPullRequestStatus | null {
+  const snapshot = link.snapshot;
+  if (snapshot === null) return null;
+  if (parseChangeRequestUrl(link.url) === null) return null;
+  const kind = "gitlab";
+  return {
+    pr: {
+      number: link.number,
+      url: link.url,
+      title: snapshot.title,
+      state: snapshot.state,
+      isDraft: snapshot.isDraft,
+      headRef: snapshot.headBranch,
+      baseRef: snapshot.baseBranch,
+      ...(snapshot.updatedAt === null ? {} : { updatedAt: snapshot.updatedAt }),
+    },
+    sourceControlProvider: { kind, name: kind, baseUrl: "" },
+  };
+}
+
 export function useLinkedThreadPullRequest(
   environmentId: EnvironmentId | null,
   linkedPullRequest: ThreadLinkedPullRequest | null | undefined,
+  pullRequests?: ReadonlyArray<ThreadPullRequestLink>,
 ): LinkedThreadPullRequestStatus | null {
+  const current = resolveThreadCurrentPullRequestLink(pullRequests ?? []);
   const detail = useEnvironmentQuery(
-    environmentId === null || linkedPullRequest == null
+    current !== null || environmentId === null || linkedPullRequest == null
       ? null
       : linkedPullRequestDetailAtom({
           environmentId,
           input: {
+            ...(parseChangeRequestUrl(linkedPullRequest.url)?.host
+              ? { host: parseChangeRequestUrl(linkedPullRequest.url)!.host }
+              : {}),
             projectId: linkedPullRequest.projectId,
             repository: linkedPullRequest.repository,
             number: linkedPullRequest.number,
@@ -64,17 +98,19 @@ export function useLinkedThreadPullRequest(
 
   return useMemo(
     () =>
-      detail === null
-        ? null
-        : {
-            pr: pullRequestDetailToVcsStatus(detail),
-            sourceControlProvider: {
-              kind: detail.provider,
-              name: detail.provider,
-              baseUrl: "",
+      current !== null
+        ? linkedPullRequestSnapshotStatus(current)
+        : detail === null
+          ? null
+          : {
+              pr: pullRequestDetailToVcsStatus(detail),
+              sourceControlProvider: {
+                kind: detail.provider,
+                name: detail.provider,
+                baseUrl: "",
+              },
             },
-          },
-    [detail],
+    [current, detail],
   );
 }
 
@@ -292,6 +328,14 @@ export function nextThreadChangeRequestSnapshot(input: {
     linkedPullRequest,
     linkedPullRequestStatus,
   } = input;
+  // Multi-link status is already durable. Do not cache another repository's MR
+  // under the legacy link, where it could survive unlinking the selected MR.
+  if (
+    linkedPullRequestStatus != null &&
+    linkedPullRequestStatus.pr.url !== linkedPullRequest?.url
+  ) {
+    return null;
+  }
   if (linkedPullRequest != null) {
     if (linkedPullRequestStatus === null || linkedPullRequestStatus === undefined) {
       return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
@@ -360,13 +404,11 @@ export function resolveDisplayedThreadPr(input: {
     linkedPullRequest,
     linkedPullRequestStatus,
   } = input;
+  if (linkedPullRequestStatus != null) return linkedPullRequestStatus.pr;
   if (linkedPullRequest != null) {
-    return (
-      linkedPullRequestStatus?.pr ??
-      (linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
-        ? (snapshot?.pr ?? null)
-        : null)
-    );
+    return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+      ? (snapshot?.pr ?? null)
+      : null;
   }
   if (
     threadBranch !== null &&
@@ -406,13 +448,11 @@ export function resolveDisplayedThreadPrProvider(input: {
     linkedPullRequest,
     linkedPullRequestStatus,
   } = input;
+  if (linkedPullRequestStatus != null) return linkedPullRequestStatus.sourceControlProvider;
   if (linkedPullRequest != null) {
-    return (
-      linkedPullRequestStatus?.sourceControlProvider ??
-      (linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
-        ? snapshot?.sourceControlProvider
-        : undefined)
-    );
+    return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+      ? snapshot?.sourceControlProvider
+      : undefined;
   }
   if (
     threadBranch !== null &&
@@ -555,6 +595,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
   const linkedPullRequest = useLinkedThreadPullRequest(
     thread.environmentId,
     thread.linkedPullRequest,
+    thread.pullRequests,
   );
   const gitStatus = useEnvironmentQuery(
     thread.linkedPullRequest == null &&

@@ -32,6 +32,11 @@ function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry[
   );
 }
 
+export type PullRequestRowTarget = Pick<
+  EnvironmentPullRequestEntry,
+  "environmentId" | "projectId" | "host" | "repository" | "number"
+>;
+
 function PullRequestRowImpl({
   entry,
   selected,

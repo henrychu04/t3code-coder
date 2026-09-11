@@ -76,3 +76,43 @@ See label, check, and change-size context on each row. Opening a row seeds the d
 list data immediately while the full GitLab detail loads.
 Command-click (Control-click on Windows and Linux) a merge request number to open it on GitLab
 instead of inside T3 Coder.
+
+## Linked merge requests
+
+A thread can hold several GitLab merge requests. Use **Link merge request to thread** in the command
+palette or **Linked MRs** in the right-panel menu. Enter a merge-request URL or a number for the
+thread's own repository. A URL may name another repository on a GitLab host already identified by
+workspace project metadata. Creating a merge request from the thread's Git actions links it automatically.
+
+The **Linked MRs** panel lists the linked reviews and groups related branches. Its row menu can
+unlink a review. The review header's **Link to thread** action links it to another active thread;
+the linked-thread count opens a search that includes archived threads. Sidebar and command-palette
+search also match linked review numbers, repositories, and titles.
+
+When an MR is open beside a thread, a layer indicator appears if its linked MRs form a branch
+chain. Open it to see the stack's MR titles, statuses, and source/target branches, then select a
+layer to open that review. The base branch appears below the list. These relationships are inferred
+from MRs already linked to this thread, within the same GitLab host and repository; the menu does
+not discover unlinked MRs or offer stack merge/rebase actions. Ambiguous reused head branches are
+not treated as a known parent.
+
+The workspace refreshes link status even while the browser is disconnected. Open or unsynced links
+keep a thread active; automatic settlement can proceed once every linked review is terminal, subject
+to the workspace's settlement settings. GitHub-native stack merge and rebase actions are not supported.
+
+Press Command-Enter (Control-Enter on Windows) to save an edited review description or comment.
+Recent review summaries are cached in the workspace across helper restarts. Review contents and
+linked-review panel state remain in browser memory while displayed.
+
+### Agent-managed links
+
+Codex and Claude receive workspace CLI commands for listing, linking, and unlinking the current
+thread's merge requests on ordinary message turns. Native slash commands are sent unchanged.
+After creating an MR with `glab`, the agent can register its GitLab URL
+so T3 tracks it alongside the thread. These commands change T3's associations; they do not create,
+close, merge, or rebase GitLab MRs. Plan mode allows listing only.
+
+No MCP setup is needed. The command is supplied for the active turn and expires when that turn
+finishes or the provider session stops. If a command times out, list the links before retrying:
+the association may already have changed. URLs must identify a GitLab host known to workspace
+project metadata, including when linking an MR from another repository.

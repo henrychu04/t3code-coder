@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  ProjectId,
+  type ThreadPullRequestKey,
   ThreadId,
   type OrchestrationEvent,
   type OrchestrationThreadDetailSnapshot,
@@ -9,6 +11,7 @@ import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 
 import {
+  requestLinkedPullRequestSync,
   compensateFailedBootstrap,
   getProjectedThreadSnapshotWithinBudget,
   isShellMaterialEvent,
@@ -214,6 +217,62 @@ describe("Coder WebSocket boundary", () => {
       );
 
       expect(Option.getOrThrow(result).snapshotSequence).toBe(1);
+    }),
+  );
+});
+
+describe("linked MR refresh routing", () => {
+  it.effect("uses the explicit MR host instead of the thread project's host", () =>
+    Effect.gen(function* () {
+      const keys: ThreadPullRequestKey[] = [];
+      yield* requestLinkedPullRequestSync(
+        {
+          projectId: ProjectId.make("project"),
+          host: "code.example",
+          repository: "team/backend",
+          number: 42,
+        },
+        {
+          getProjectShellById: () => Effect.die("Explicit hosts need no project lookup"),
+          requestSync: (key) =>
+            Effect.sync(() => {
+              keys.push(key);
+            }),
+        },
+      );
+      expect(keys).toEqual([{ host: "code.example", repository: "team/backend", number: 42 }]);
+    }),
+  );
+  it.effect("resolves legacy references and tolerates deleted projects", () =>
+    Effect.gen(function* () {
+      const keys: ThreadPullRequestKey[] = [];
+      const ref = { projectId: ProjectId.make("project"), repository: "team/repo", number: 42 };
+      const dependencies = {
+        getProjectShellById: () =>
+          Effect.succeed(
+            Option.some({
+              repositoryIdentity: {
+                provider: "gitlab",
+                canonicalKey: "code.example/team/repo",
+                locator: {
+                  source: "git-remote",
+                  remoteName: "origin",
+                  remoteUrl: "https://code.example/team/repo.git",
+                },
+              },
+            } as import("@t3tools/contracts").OrchestrationProjectShell),
+          ),
+        requestSync: (key: ThreadPullRequestKey) =>
+          Effect.sync(() => {
+            keys.push(key);
+          }),
+      };
+      yield* requestLinkedPullRequestSync(ref, dependencies);
+      yield* requestLinkedPullRequestSync(ref, {
+        ...dependencies,
+        getProjectShellById: () => Effect.succeed(Option.none()),
+      });
+      expect(keys).toEqual([{ host: "code.example", repository: "team/repo", number: 42 }]);
     }),
   );
 });

@@ -94,6 +94,11 @@ function RootRouteView() {
 
 function ContrastAppearanceSync() {
   const appearanceContrast = useClientSettings((settings) => settings.appearanceContrast);
+  const diffColorScheme = useClientSettings((settings) => settings.diffColorScheme);
+
+  useEffect(() => {
+    document.documentElement.dataset.diffColorScheme = diffColorScheme;
+  }, [diffColorScheme]);
 
   useEffect(() => {
     applyAppearanceContrast(document.documentElement, appearanceContrast);
@@ -106,7 +111,13 @@ function GlassAppearanceSync() {
   const glassOpacity = useClientSettings((settings) => settings.glassOpacity);
 
   useEffect(() => {
-    document.documentElement.style.setProperty("--glass-opacity", `${glassOpacity}%`);
+    const style = document.documentElement.style;
+    style.setProperty("--glass-opacity", `${glassOpacity}%`);
+    if (glassOpacity === 100) {
+      style.setProperty("--glass-blur", "0px");
+    } else {
+      style.removeProperty("--glass-blur");
+    }
   }, [glassOpacity]);
 
   return null;

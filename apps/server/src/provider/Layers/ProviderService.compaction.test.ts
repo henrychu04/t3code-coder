@@ -1,3 +1,4 @@
+import { AgentMergeRequests } from "../../agentMergeRequests/AgentMergeRequests.ts";
 import { EnvironmentId, PROVIDER_SEND_TURN_MAX_INPUT_CHARS } from "@t3tools/contracts";
 import {
   serializeAssistantCitation,
@@ -57,7 +58,12 @@ const completed = {
 } satisfies ProviderRuntimeEvent;
 
 const harness = (
-  options: { native?: boolean; startFailure?: boolean; earlyCompletion?: boolean } = {},
+  options: {
+    native?: boolean;
+    startFailure?: boolean;
+    earlyCompletion?: boolean;
+    mrTools?: AgentMergeRequests["Service"];
+  } = {},
 ) =>
   Effect.gen(function* () {
     const events = yield* Queue.unbounded<ProviderRuntimeEvent>();
@@ -110,6 +116,7 @@ const harness = (
       streamEvents: Stream.fromQueue(events),
     };
     const dependencies = Layer.mergeAll(
+      options.mrTools ? Layer.succeed(AgentMergeRequests, options.mrTools) : Layer.empty,
       Layer.succeed(ProviderAdapterRegistry, {
         getByInstance: () => Effect.succeed(adapter),
         getInstanceInfo: () =>
@@ -380,3 +387,65 @@ describe("ProviderService assistant citations", () => {
     }).pipe(Effect.scoped),
   );
 });
+
+describe("ProviderService workspace MR instructions", () => {
+  it.effect("supplies scoped commands and revokes them on completion", () =>
+    Effect.gen(function* () {
+      const prepared: unknown[] = [];
+      const released: unknown[] = [];
+      const activated: unknown[] = [];
+      const h = yield* harness({
+        mrTools: {
+          prepare: (id, readOnly) =>
+            Effect.sync(() => {
+              prepared.push([id, readOnly]);
+              return "MR tool instructions";
+            }),
+          activate: (id, turn) => {
+            activated.push([id, turn]);
+          },
+          release: (id, turn) =>
+            Effect.sync(() => {
+              released.push([id, turn]);
+            }),
+        },
+      });
+      yield* h.service.sendTurn({ threadId, input: "Review this", interactionMode: "plan" });
+      assert.deepEqual(prepared, [[threadId, true]]);
+      assert.deepEqual(activated, [[threadId, turnId]]);
+      assert.equal(h.sentInputs[0], "MR tool instructions\n\nReview this");
+      yield* Queue.offer(h.events, completed);
+      yield* Queue.take(h.published);
+      yield* Effect.yieldNow;
+      assert.deepEqual(released, [[threadId, turnId]]);
+    }).pipe(Effect.scoped),
+  );
+});
+
+it.effect("keeps ordinary turns available when MR tool preparation fails", () =>
+  Effect.gen(function* () {
+    const h = yield* harness({
+      mrTools: {
+        prepare: () => Effect.fail(new Error("unavailable")),
+        activate: () => {},
+        release: () => Effect.void,
+      },
+    });
+    yield* h.service.sendTurn({ threadId, input: "Continue working" });
+    assert.deepEqual(h.sentInputs, ["Continue working"]);
+  }).pipe(Effect.scoped),
+);
+
+it.effect("preserves native slash commands without injecting MR instructions", () =>
+  Effect.gen(function* () {
+    const h = yield* harness({
+      mrTools: {
+        prepare: () => Effect.die("must not prepare tools for a native command"),
+        activate: () => {},
+        release: () => Effect.void,
+      },
+    });
+    yield* h.service.sendTurn({ threadId, input: "/review staged" });
+    assert.deepEqual(h.sentInputs, ["/review staged"]);
+  }).pipe(Effect.scoped),
+);

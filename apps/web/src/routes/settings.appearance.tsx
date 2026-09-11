@@ -300,6 +300,32 @@ function AppearanceSettingsView() {
           }
         />
       </SettingsSection>
+      <SettingsSection title="Diff colors">
+        <SettingsRow
+          id="diff-color-scheme"
+          title="Diff colors"
+          description="Colors for additions and deletions."
+          control={
+            <Select
+              value={settings.diffColorScheme}
+              onValueChange={(value) => {
+                if (value === "red-green" || value === "blue-orange")
+                  updateSettings({ diffColorScheme: value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Diff colors">
+                <SelectValue>
+                  {settings.diffColorScheme === "blue-orange" ? "Blue / orange" : "Red / green"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                <SelectItem value="red-green">Red / green</SelectItem>
+                <SelectItem value="blue-orange">Blue / orange</SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+      </SettingsSection>
       <BundledThemeSettings />
       <TypographySection />
     </SettingsPage>

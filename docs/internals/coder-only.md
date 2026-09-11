@@ -111,8 +111,24 @@ Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLa
 startup, after relevant thread changes, and periodically without an open browser. It uses the
 existing repository-scoped GitWorkflowService cache and glab-backed MR service, verifies both the
 branch and project repository identity before saving, and rejects updates after the lookup inputs
-change. Migration 048 adds the branch MR projection independently of explicit links. Settled-thread
+change. Migration 048 adds the branch MR projection independently of explicit links. Migration 051 adds
+multiple explicit MR links, preserving migration 050 for pending-input repair. Link commands validate
+the URL and its host against workspace GitLab metadata at the helper RPC boundary. The helper
+refreshes link snapshots and serves linked-thread lookups over the existing stdio connection.
+Recent MR summaries are cached beneath the workspace provider-status cache directory. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
+
+Agent MR commands use a generated workspace-local CLI, invoked with the helper's pinned Node
+runtime. The shared provider service supplies its command to Codex and Claude on ordinary message
+turns; native slash commands retain their original input. Temporary
+private directories hold one request/reply exchange per thread; no socket or MCP server is opened.
+The helper captures the thread identity, validates GitLab URLs, and dispatches normal orchestration
+commands rather than writing SQLite directly. Plan-mode invocations are read-only. Requests are
+limited to 16 KiB, responses to 256 KiB, and execution to 10 seconds; the CLI waits at most 15 seconds.
+At most 64 tool sessions exist at once; if tool setup is unavailable, ordinary provider turns still
+run without these commands. Turn completion, abortion, session exit/stop, and helper
+shutdown revoke the commands and remove their temporary files. Workspace processes run as the same
+OS user; these directories are not an isolation boundary between mutually untrusted agents.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no

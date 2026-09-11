@@ -122,6 +122,9 @@ import {
   PullRequestOperationError,
   PullRequestReactionInput,
   PullRequestRef,
+  PullRequestSummary,
+  PullRequestStack,
+  PullRequestLinkedThreadsResult,
   PullRequestReviewerCandidateList,
   PullRequestReviewerRequestInput,
   PullRequestSubmitReviewInput,
@@ -178,6 +181,9 @@ export const WS_METHODS = {
   gitPreparePullRequestThread: "git.preparePullRequestThread",
   pullRequestsList: "pullRequests.list",
   pullRequestsListStats: "pullRequests.listStats",
+  pullRequestsSummary: "pullRequests.summary",
+  pullRequestsStack: "pullRequests.stack",
+  pullRequestsLinkedThreads: "pullRequests.linkedThreads",
   pullRequestsDetail: "pullRequests.detail",
   pullRequestsActivity: "pullRequests.activity",
   pullRequestsThreadComments: "pullRequests.threadComments",
@@ -425,6 +431,24 @@ const WsPullRequestsListStatsRpc = Rpc.make(WS_METHODS.pullRequestsListStats, {
   success: PullRequestListStatsResult,
   error: PullRequestRpcError,
 });
+const WsPullRequestsSummaryRpc = Rpc.make(WS_METHODS.pullRequestsSummary, {
+  payload: PullRequestRef,
+  success: PullRequestSummary,
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsStackRpc = Rpc.make(WS_METHODS.pullRequestsStack, {
+  payload: PullRequestRef,
+  success: Schema.NullOr(PullRequestStack),
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsLinkedThreadsRpc = Rpc.make(WS_METHODS.pullRequestsLinkedThreads, {
+  payload: PullRequestRef,
+  success: PullRequestLinkedThreadsResult,
+  error: PullRequestRpcError,
+});
+
 const WsPullRequestsDetailRpc = Rpc.make(WS_METHODS.pullRequestsDetail, {
   payload: PullRequestRef,
   success: PullRequestDetail,
@@ -689,6 +713,9 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsGitPreparePullRequestThreadRpc,
   WsPullRequestsListRpc,
   WsPullRequestsListStatsRpc,
+  WsPullRequestsSummaryRpc,
+  WsPullRequestsStackRpc,
+  WsPullRequestsLinkedThreadsRpc,
   WsPullRequestsDetailRpc,
   WsPullRequestsActivityRpc,
   WsPullRequestsThreadCommentsRpc,

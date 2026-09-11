@@ -13,6 +13,7 @@ export const RIGHT_PANEL_KINDS = [
   "file",
   "terminal",
   "pull-request",
+  "pull-requests",
   "agents",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
@@ -39,11 +40,13 @@ export type RightPanelSurface =
       id: `pull-request:${string}`;
       kind: "pull-request";
       environmentId?: string;
+      host?: string;
       projectId: string;
       repository: string;
       number: number;
       url?: string;
     }
+  | { id: "pull-requests"; kind: "pull-requests" }
   | { id: "agents"; kind: "agents" };
 
 export interface ThreadRightPanelState {
@@ -74,6 +77,7 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     target: {
       environmentId?: string;
+      host?: string;
       projectId: string;
       repository: string;
       number: number;
@@ -133,12 +137,16 @@ const userAction = (
   },
 });
 
-const singletonSurface = (kind: "diff" | "files" | "agents"): RightPanelSurface => {
+const singletonSurface = (
+  kind: "diff" | "files" | "agents" | "pull-requests",
+): RightPanelSurface => {
   switch (kind) {
     case "diff":
       return { id: "diff", kind };
     case "files":
       return { id: "files", kind };
+    case "pull-requests":
+      return { id: "pull-requests", kind };
     case "agents":
       return { id: "agents", kind };
   }
@@ -192,6 +200,7 @@ export function updatePullRequestTabStatus<Status extends { state: unknown; isDr
 }
 
 export function pullRequestSurface(target: {
+  host?: string;
   environmentId?: string;
   projectId: string;
   repository: string;
@@ -200,10 +209,11 @@ export function pullRequestSurface(target: {
 }): PullRequestSurface {
   const environment = target.environmentId ? `${encodeURIComponent(target.environmentId)}:` : "";
   return {
-    id: `pull-request:${environment}${encodeURIComponent(target.projectId)}:${encodeURIComponent(target.repository)}:${target.number}`,
+    id: `pull-request:${environment}${encodeURIComponent(target.projectId)}:${target.host ? `${encodeURIComponent(target.host)}:` : ""}${encodeURIComponent(target.repository)}:${target.number}`,
     kind: "pull-request",
     ...(target.environmentId ? { environmentId: target.environmentId } : {}),
     projectId: target.projectId,
+    ...(target.host ? { host: target.host } : {}),
     repository: target.repository,
     number: target.number,
     ...(typeof target.url === "string" ? { url: target.url } : {}),

@@ -161,7 +161,12 @@ const DEFAULT_DIFF_LAYOUT: DiffLayout = "stacked";
 export const FontFamilyPreference = Schema.String.check(Schema.isMaxLength(200));
 export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 
+export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
+
 export const ClientSettingsSchema = Schema.Struct({
+  diffColorScheme: DiffColorScheme.pipe(
+    Schema.withDecodingDefault(Effect.succeed("red-green" as const)),
+  ),
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
   ),
@@ -653,6 +658,7 @@ export const ServerSettingsPatch = Schema.Struct({
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
 
 export const ClientSettingsPatch = Schema.Struct({
+  diffColorScheme: Schema.optionalKey(DiffColorScheme),
   appearanceContrast: Schema.optionalKey(AppearanceContrast),
   confirmThreadArchive: Schema.optionalKey(Schema.Boolean),
   confirmThreadDelete: Schema.optionalKey(Schema.Boolean),

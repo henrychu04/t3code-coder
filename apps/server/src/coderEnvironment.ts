@@ -58,6 +58,7 @@ export const layer = Layer.effect(
           threadActiveReorder: true,
           threadTitleRegeneration: true,
           threadPullRequestLinking: true,
+          threadPullRequests: true,
         },
       },
     });

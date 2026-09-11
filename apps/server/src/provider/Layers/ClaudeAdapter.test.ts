@@ -1424,7 +1424,11 @@ describe("ClaudeAdapterLive", () => {
     const harness = makeHarness({
       adapterOptions: {
         captureScreenshotFile: (input) => {
-          capturedFiles.push({ ...input, capturedDigests: new Set(input.capturedDigests) });
+          capturedFiles.push({
+            cwd: input.cwd,
+            filePath: input.filePath,
+            capturedDigests: new Set(input.capturedDigests),
+          });
           return Effect.succeed({
             reference: {
               id: ScreenshotArtifactId.make("5e2df9f0-9e4e-4a68-a812-3024f8f2d4e1"),

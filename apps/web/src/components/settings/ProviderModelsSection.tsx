@@ -21,6 +21,21 @@ import {
 } from "@t3tools/shared/model";
 import { CustomModelEditor } from "./CustomModelEditor";
 
+export function nextHiddenModelsForBulkToggle(
+  models: ReadonlyArray<Pick<ServerProviderModel, "slug" | "isCustom">>,
+  hiddenModels: ReadonlyArray<string>,
+): string[] {
+  const builtInSlugs = models.filter((model) => !model.isCustom).map((model) => model.slug);
+  const builtInSlugSet = new Set(builtInSlugs);
+  const allBuiltInModelsHidden = builtInSlugs.every((slug) => hiddenModels.includes(slug));
+
+  if (allBuiltInModelsHidden) {
+    return hiddenModels.filter((slug) => !builtInSlugSet.has(slug));
+  }
+
+  return [...new Set([...hiddenModels, ...builtInSlugs])];
+}
+
 interface ProviderModelsSectionProps {
   readonly customModels?: unknown;
   readonly driverKind?: ProviderDriverKind;
@@ -145,7 +160,23 @@ export function ProviderModelsSection({
           ) : null}
         </div>
       ) : null}
-      <div className="text-xs font-medium text-foreground">Models</div>
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-foreground">Models</span>
+        {builtInModels.length > 0 ? (
+          <Button
+            type="button"
+            size="xs"
+            variant="ghost"
+            onClick={() =>
+              onHiddenModelsChange(nextHiddenModelsForBulkToggle(models, hiddenModels))
+            }
+          >
+            {builtInModels.every((model) => hiddenModelSet.has(model.slug))
+              ? "Enable all"
+              : "Disable all"}
+          </Button>
+        ) : null}
+      </div>
       <div className="mt-1 text-xs text-muted-foreground">
         {builtInModels.length} model{builtInModels.length === 1 ? "" : "s"} available.
       </div>

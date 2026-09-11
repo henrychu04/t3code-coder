@@ -1,3 +1,10 @@
+import { PullRequestSyncReactor } from "./orchestration/PullRequestSyncReactor.ts";
+import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
+import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
+import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
+import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import { bufferLiveEvents } from "./orchestration/BufferedLiveEvents.ts";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
@@ -31,6 +38,7 @@ import {
   OrchestrationGetTurnDiffError,
   OrchestrationSearchThreadsError,
   ORCHESTRATION_WS_METHODS,
+  type PullRequestRef,
   type ProjectEntriesFailure,
   type ProviderInstanceId,
   type ProjectFileFailure,
@@ -86,6 +94,24 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
+
+/** Refresh linked badges after a host action without turning a successful action into an error. */
+export const requestLinkedPullRequestSync = (
+  reference: PullRequestRef,
+  dependencies: {
+    readonly getProjectShellById: ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]["getProjectShellById"];
+    readonly requestSync: PullRequestSyncReactor["Service"]["requestSync"];
+  },
+) =>
+  Effect.gen(function* () {
+    const identity =
+      reference.host === undefined
+        ? Option.getOrUndefined(yield* dependencies.getProjectShellById(reference.projectId))
+            ?.repositoryIdentity
+        : undefined;
+    const key = pullRequestSyncKey(reference, identity);
+    if (key !== null) yield* dependencies.requestSync(key);
+  }).pipe(Effect.catch(() => Effect.logWarning("Linked MR refresh could not be requested")));
 
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -230,7 +256,7 @@ function projectFileFailureContext(
   }
 }
 
-function isThreadDetailEvent(event: OrchestrationEvent): boolean {
+export function isThreadDetailEvent(event: OrchestrationEvent): boolean {
   return (
     event.type === "thread.message-sent" ||
     event.type === "thread.proposed-plan-upserted" ||
@@ -425,6 +451,13 @@ export const layer = CoderWsRpcGroup.toLayer(
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const pullRequestSync = yield* PullRequestSyncReactor;
+    const refreshLinkedPullRequest = (reference: PullRequestRef) =>
+      requestLinkedPullRequestSync(reference, {
+        getProjectShellById: projections.getProjectShellById,
+        requestSync: pullRequestSync.requestSync,
+      });
+    const sql = yield* SqlClient.SqlClient;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
     const review = yield* ReviewService.ReviewService;
     const terminals = yield* TerminalManager.TerminalManager;
@@ -1002,6 +1035,24 @@ export const layer = CoderWsRpcGroup.toLayer(
               publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
             })
             .pipe(
+              Effect.tap((result) =>
+                input.threadId === undefined
+                  ? Effect.void
+                  : linkCreatedPullRequest({
+                      threadId: input.threadId,
+                      result,
+                      commandId: commandId("link-created-mr"),
+                    }).pipe(
+                      Effect.provideService(
+                        OrchestrationEngine.OrchestrationEngineService,
+                        orchestration,
+                      ),
+                      Effect.provideService(
+                        ProjectionSnapshotQuery.ProjectionSnapshotQuery,
+                        projections,
+                      ),
+                    ),
+              ),
               Effect.matchCauseEffect({
                 onFailure: (cause) => Queue.failCause(queue, cause),
                 onSuccess: () =>
@@ -1018,12 +1069,26 @@ export const layer = CoderWsRpcGroup.toLayer(
           .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
       [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
+      [WS_METHODS.pullRequestsSummary]: (input) => pullRequests.summary(input),
+      [WS_METHODS.pullRequestsStack]: (input) => pullRequests.stack(input),
+      [WS_METHODS.pullRequestsLinkedThreads]: (input) =>
+        pullRequests.summary(input).pipe(
+          Effect.flatMap((summary) => {
+            const key = parseChangeRequestUrl(summary.url);
+            return key === null
+              ? Effect.succeed({ threads: [] })
+              : listLinkedPullRequestThreads(key).pipe(
+                  Effect.provideService(SqlClient.SqlClient, sql),
+                );
+          }),
+        ),
       [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
       [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
       [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
       [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
       [WS_METHODS.pullRequestsDiffFileContents]: (input) => pullRequests.diffFileContents(input),
-      [WS_METHODS.pullRequestsRunAction]: (input) => pullRequests.runAction(input),
+      [WS_METHODS.pullRequestsRunAction]: (input) =>
+        pullRequests.runAction(input).pipe(Effect.tap(() => refreshLinkedPullRequest(input))),
       [WS_METHODS.pullRequestsUpdate]: (input) => pullRequests.update(input),
       [WS_METHODS.pullRequestsComment]: (input) => pullRequests.comment(input),
       [WS_METHODS.pullRequestsUpdateComment]: (input) => pullRequests.updateComment(input),
@@ -1032,7 +1097,16 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.pullRequestsSetThreadResolution]: (input) =>
         pullRequests.setThreadResolution(input),
       [WS_METHODS.pullRequestsSetReaction]: (input) => pullRequests.setReaction(input),
-      [WS_METHODS.pullRequestsInvalidate]: (input) => pullRequests.invalidate(input),
+      [WS_METHODS.pullRequestsInvalidate]: (input) =>
+        pullRequests
+          .invalidate(input)
+          .pipe(
+            Effect.tap(() =>
+              input.reference === undefined
+                ? Effect.void
+                : refreshLinkedPullRequest(input.reference),
+            ),
+          ),
       [WS_METHODS.pullRequestsSubscribeRefreshes]: () => pullRequests.subscribeRefreshes,
       [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
         pullRequests.reviewerCandidates(input),
@@ -1168,6 +1242,25 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
         normalizeDispatchCommand(command).pipe(
+          Effect.tap((command) =>
+            command.type !== "thread.pull-request.link"
+              ? Effect.void
+              : projections
+                  .getShellSnapshot()
+                  .pipe(
+                    Effect.flatMap((snapshot) =>
+                      isCoderPullRequestLink(command, snapshot.projects) &&
+                      ["manual", "created", "agent"].includes(command.source)
+                        ? Effect.void
+                        : Effect.fail(
+                            toDispatchError(
+                              undefined,
+                              "The merge request must belong to a known GitLab host.",
+                            ),
+                          ),
+                    ),
+                  ),
+          ),
           Effect.flatMap(dispatch),
           Effect.mapError((cause) => toDispatchError(cause, "Failed to dispatch the command.")),
         ),

@@ -9,7 +9,10 @@ const state = vi.hoisted(() => ({
   project: null as unknown,
   query: vi.fn(),
 }));
-vi.mock("../state/entities", () => ({ useProject: () => state.project }));
+vi.mock("../state/entities", () => ({
+  useProject: () => state.project,
+  useServerConfigs: () => new Map(),
+}));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: (input: unknown) => {
     state.query(input);
@@ -79,12 +82,10 @@ it("uses a selected list entry's URL before detail has loaded and updates it on 
   await act(() => root.render(<Probe />));
   expect(value).toBeNull();
   await act(() =>
-    useRightPanelStore
-      .getState()
-      .openPullRequest(PULL_REQUESTS_PANEL_REF, {
-        ...target,
-        url: "https://gitlab.example/group/project/-/merge_requests/2",
-      }),
+    useRightPanelStore.getState().openPullRequest(PULL_REQUESTS_PANEL_REF, {
+      ...target,
+      url: "https://gitlab.example/group/project/-/merge_requests/2",
+    }),
   );
   expect(value).toBe("https://gitlab.example/group/project/-/merge_requests/2");
 });

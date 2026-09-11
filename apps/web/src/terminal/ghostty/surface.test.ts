@@ -181,7 +181,7 @@ describe("GhosttyTerminalSurface visibility", () => {
             clientX,
             clientY: 5,
             pointerId: 1,
-            button: 0,
+            button: buttons === 4 ? 1 : 0,
             buttons,
           }),
         );

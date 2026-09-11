@@ -1,7 +1,8 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  resolvePullRequestPanelTarget,
   findProjectForGitLabMergeRequest,
   isGitLabExternalUrl,
   matchesLinkedPullRequestUrl,
@@ -156,4 +157,49 @@ describe("external GitLab links", () => {
   ])("keeps unrecognized or unsafe URLs inert: %s", (url) => {
     expect(isGitLabExternalUrl(url, projects)).toBe(false);
   });
+});
+
+it("routes the selected MR identity through a same-host project in its own environment", () => {
+  const environmentId = EnvironmentId.make("workspace");
+  const projectId = ProjectId.make("frontend");
+  const projects = [
+    {
+      id: projectId,
+      environmentId,
+      repositoryIdentity: {
+        provider: "gitlab" as const,
+        canonicalKey: "code.example/team/frontend",
+        displayName: "team/frontend",
+        locator: {
+          source: "git-remote" as const,
+          remoteName: "origin",
+          remoteUrl: "https://code.example/team/frontend.git",
+        },
+      },
+    },
+  ];
+  const threadRef = { environmentId, threadId: ThreadId.make("thread") };
+  const url = "https://code.example/team/backend/-/merge_requests/42";
+  expect(resolvePullRequestPanelTarget(projects, threadRef, url)).toEqual({
+    environmentId,
+    projectId,
+    host: "code.example",
+    repository: "team/backend",
+    number: 42,
+    url,
+  });
+  expect(
+    resolvePullRequestPanelTarget(
+      projects,
+      { ...threadRef, environmentId: EnvironmentId.make("other") },
+      url,
+    ),
+  ).toBeNull();
+  expect(
+    resolvePullRequestPanelTarget(
+      projects,
+      threadRef,
+      url.replace("code.example", "unknown.example"),
+    ),
+  ).toBeNull();
 });

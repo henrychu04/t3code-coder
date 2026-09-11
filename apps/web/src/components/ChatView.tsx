@@ -1,3 +1,6 @@
+import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
+import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
+import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import type { AssistantCitation } from "@t3tools/contracts";
 import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -2279,6 +2282,7 @@ export default function ChatView(props: ChatViewProps) {
     ? resolveThreadReferenceCopyTarget({
         threadId: activeThreadRef.threadId,
         openPanelPullRequestUrl,
+        pullRequests: activeThread?.pullRequests,
         linkedPullRequestUrl: linkedThreadPullRequest?.url ?? null,
       })
     : null;
@@ -2441,6 +2445,7 @@ export default function ChatView(props: ChatViewProps) {
   const linkedPullRequestStatus = useLinkedThreadPullRequest(
     activeThreadRef?.environmentId ?? null,
     linkedThreadPullRequest,
+    activeThread?.pullRequests,
   );
   const activeThreadPr = resolveDisplayedThreadPr({
     threadBranch: activeThread?.branch ?? null,
@@ -2847,13 +2852,13 @@ export default function ChatView(props: ChatViewProps) {
   const addPullRequestSurface = useCallback(() => {
     if (!activeThreadRef || !pullRequestAvailable || !activeThreadPr) return;
     const projectId = linkedThreadPullRequest?.projectId ?? activeProject?.id;
-    const repository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
-    if (projectId === undefined || repository === null) return;
+    const link = parseChangeRequestUrl(activeThreadPr.url);
+    if (projectId === undefined || link === null) return;
     useRightPanelStore.getState().openPullRequest(activeThreadRef, {
       environmentId: activeThreadRef.environmentId,
       projectId,
-      repository,
-      number: activeThreadPr.number,
+      ...link,
+      url: activeThreadPr.url,
     });
   }, [
     activeProject?.id,
@@ -6022,6 +6027,8 @@ export default function ChatView(props: ChatViewProps) {
           workspaceMutationId={workspaceMutationId}
         />
       </Suspense>
+    ) : activeRightPanelSurface?.kind === "pull-requests" ? (
+      <ThreadPullRequestsPanel threadRef={activeThreadRef} />
     ) : activeRightPanelSurface?.kind === "agents" ? (
       <AgentsPanel
         model={agentPanelModel}
@@ -6044,6 +6051,7 @@ export default function ChatView(props: ChatViewProps) {
             : activeThreadRef.environmentId
         }
         reference={{
+          ...(activeRightPanelSurface.host ? { host: activeRightPanelSurface.host } : {}),
           projectId: activeRightPanelSurface.projectId as ProjectId,
           repository: activeRightPanelSurface.repository,
           number: activeRightPanelSurface.number,
@@ -6485,6 +6493,7 @@ export default function ChatView(props: ChatViewProps) {
         </Suspense>
       ) : null}
 
+      <LinkPullRequestDialogHost />
       {!shouldUseRightPanelSheet && rightPanelPresent && activeThreadRef ? (
         <RightPanelTabs
           mode="inline"
@@ -6504,6 +6513,11 @@ export default function ChatView(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
+          onAddPullRequests={
+            isServerThread && serverConfig?.environment.capabilities.threadPullRequests
+              ? () => useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
+              : undefined
+          }
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
           terminalAvailable={activeProject !== null}
@@ -6543,6 +6557,11 @@ export default function ChatView(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
+            onAddPullRequests={
+              isServerThread && serverConfig?.environment.capabilities.threadPullRequests
+                ? () => useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
+                : undefined
+            }
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}
             terminalAvailable={activeProject !== null}
