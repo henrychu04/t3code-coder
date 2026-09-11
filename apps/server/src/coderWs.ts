@@ -1,3 +1,5 @@
+import { PullRequestSyncReactor } from "./orchestration/PullRequestSyncReactor.ts";
+import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
 import { linkCreatedPullRequest } from "./git/linkCreatedPullRequest.ts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
@@ -36,6 +38,7 @@ import {
   OrchestrationGetTurnDiffError,
   OrchestrationSearchThreadsError,
   ORCHESTRATION_WS_METHODS,
+  type PullRequestRef,
   type ProjectEntriesFailure,
   type ProviderInstanceId,
   type ProjectFileFailure,
@@ -91,6 +94,24 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
+
+/** Refresh linked badges after a host action without turning a successful action into an error. */
+export const requestLinkedPullRequestSync = (
+  reference: PullRequestRef,
+  dependencies: {
+    readonly getProjectShellById: ProjectionSnapshotQuery.ProjectionSnapshotQuery["Service"]["getProjectShellById"];
+    readonly requestSync: PullRequestSyncReactor["Service"]["requestSync"];
+  },
+) =>
+  Effect.gen(function* () {
+    const identity =
+      reference.host === undefined
+        ? Option.getOrUndefined(yield* dependencies.getProjectShellById(reference.projectId))
+            ?.repositoryIdentity
+        : undefined;
+    const key = pullRequestSyncKey(reference, identity);
+    if (key !== null) yield* dependencies.requestSync(key);
+  }).pipe(Effect.catch(() => Effect.logWarning("Linked MR refresh could not be requested")));
 
 const isDispatchError = Schema.is(OrchestrationDispatchCommandError);
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
@@ -430,6 +451,12 @@ export const layer = CoderWsRpcGroup.toLayer(
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const pullRequests = yield* PullRequestService.PullRequestService;
+    const pullRequestSync = yield* PullRequestSyncReactor;
+    const refreshLinkedPullRequest = (reference: PullRequestRef) =>
+      requestLinkedPullRequestSync(reference, {
+        getProjectShellById: projections.getProjectShellById,
+        requestSync: pullRequestSync.requestSync,
+      });
     const sql = yield* SqlClient.SqlClient;
     const provisioning = yield* VcsProvisioningService.VcsProvisioningService;
     const review = yield* ReviewService.ReviewService;
@@ -1060,7 +1087,8 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
       [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
       [WS_METHODS.pullRequestsDiffFileContents]: (input) => pullRequests.diffFileContents(input),
-      [WS_METHODS.pullRequestsRunAction]: (input) => pullRequests.runAction(input),
+      [WS_METHODS.pullRequestsRunAction]: (input) =>
+        pullRequests.runAction(input).pipe(Effect.tap(() => refreshLinkedPullRequest(input))),
       [WS_METHODS.pullRequestsUpdate]: (input) => pullRequests.update(input),
       [WS_METHODS.pullRequestsComment]: (input) => pullRequests.comment(input),
       [WS_METHODS.pullRequestsUpdateComment]: (input) => pullRequests.updateComment(input),
@@ -1069,7 +1097,16 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.pullRequestsSetThreadResolution]: (input) =>
         pullRequests.setThreadResolution(input),
       [WS_METHODS.pullRequestsSetReaction]: (input) => pullRequests.setReaction(input),
-      [WS_METHODS.pullRequestsInvalidate]: (input) => pullRequests.invalidate(input),
+      [WS_METHODS.pullRequestsInvalidate]: (input) =>
+        pullRequests
+          .invalidate(input)
+          .pipe(
+            Effect.tap(() =>
+              input.reference === undefined
+                ? Effect.void
+                : refreshLinkedPullRequest(input.reference),
+            ),
+          ),
       [WS_METHODS.pullRequestsSubscribeRefreshes]: () => pullRequests.subscribeRefreshes,
       [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
         pullRequests.reviewerCandidates(input),

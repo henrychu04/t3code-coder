@@ -1,14 +1,14 @@
-import { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 export { changeRequestUrlFor as changeRequestWebUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   pullRequestHostOf,
+  type RepositoryIdentity,
   type ScopedThreadRef,
   type SourceControlProviderKind,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
+import { gitLabMergeRequestBrowserUrl, parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { parsePullRequestReference } from "~/pullRequestReference";
 import { useProjects, useThreadShell } from "~/state/entities";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
@@ -116,6 +116,20 @@ export function resolveLinkPullRequestInput(input: {
   };
 }
 
+export function resolveLinkPullRequestProject(identity: RepositoryIdentity | null | undefined) {
+  if (!identity) return null;
+  const repository =
+    identity.displayName ??
+    (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
+  if (repository === null) return null;
+  const host = pullRequestHostOf(identity, identity.provider as SourceControlProviderKind);
+  return {
+    host,
+    repository,
+    webUrl: (number: number) => gitLabMergeRequestBrowserUrl(identity, repository, number),
+  };
+}
+
 function LinkPullRequestDialog({
   open,
   threadRef,
@@ -131,22 +145,13 @@ function LinkPullRequestDialog({
     () => projects.filter((project) => project.environmentId === threadRef.environmentId),
     [projects, threadRef.environmentId],
   );
-  const ownProject = useMemo(() => {
-    const project = environmentProjects.find((candidate) => candidate.id === projectId);
-    const identity = project?.repositoryIdentity;
-    if (!project || !identity) return null;
-    const repository =
-      identity.displayName ??
-      (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
-    if (repository === null) return null;
-    const kind = identity.provider as SourceControlProviderKind;
-    const host = pullRequestHostOf(identity, kind);
-    return {
-      host,
-      repository,
-      webUrl: (number: number) => changeRequestWebUrl(kind, host, repository, number),
-    };
-  }, [environmentProjects, projectId]);
+  const ownProject = useMemo(
+    () =>
+      resolveLinkPullRequestProject(
+        environmentProjects.find((candidate) => candidate.id === projectId)?.repositoryIdentity,
+      ),
+    [environmentProjects, projectId],
+  );
   const linking = usePullRequestLinking(threadRef.environmentId);
   const [pending, setPending] = useState(false);
 

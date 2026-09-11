@@ -328,6 +328,14 @@ export function nextThreadChangeRequestSnapshot(input: {
     linkedPullRequest,
     linkedPullRequestStatus,
   } = input;
+  // Multi-link status is already durable. Do not cache another repository's MR
+  // under the legacy link, where it could survive unlinking the selected MR.
+  if (
+    linkedPullRequestStatus != null &&
+    linkedPullRequestStatus.pr.url !== linkedPullRequest?.url
+  ) {
+    return null;
+  }
   if (linkedPullRequest != null) {
     if (linkedPullRequestStatus === null || linkedPullRequestStatus === undefined) {
       return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
@@ -396,13 +404,11 @@ export function resolveDisplayedThreadPr(input: {
     linkedPullRequest,
     linkedPullRequestStatus,
   } = input;
+  if (linkedPullRequestStatus != null) return linkedPullRequestStatus.pr;
   if (linkedPullRequest != null) {
-    return (
-      linkedPullRequestStatus?.pr ??
-      (linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
-        ? (snapshot?.pr ?? null)
-        : null)
-    );
+    return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+      ? (snapshot?.pr ?? null)
+      : null;
   }
   if (
     threadBranch !== null &&
@@ -442,13 +448,11 @@ export function resolveDisplayedThreadPrProvider(input: {
     linkedPullRequest,
     linkedPullRequestStatus,
   } = input;
+  if (linkedPullRequestStatus != null) return linkedPullRequestStatus.sourceControlProvider;
   if (linkedPullRequest != null) {
-    return (
-      linkedPullRequestStatus?.sourceControlProvider ??
-      (linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
-        ? snapshot?.sourceControlProvider
-        : undefined)
-    );
+    return linkedPullRequestsEqual(snapshot?.linkedPullRequest, linkedPullRequest)
+      ? snapshot?.sourceControlProvider
+      : undefined;
   }
   if (
     threadBranch !== null &&

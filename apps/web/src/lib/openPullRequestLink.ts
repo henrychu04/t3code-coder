@@ -201,25 +201,32 @@ export function findProjectOnChangeRequestHost(
   );
 }
 
+export function resolvePullRequestPanelTarget(
+  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
+  threadRef: ScopedThreadRef,
+  url: string,
+) {
+  const link = parseChangeRequestUrl(url);
+  if (!link) return null;
+  const project = findProjectOnChangeRequestHost(
+    projects.filter((entry) => entry.environmentId === threadRef.environmentId),
+    link,
+  );
+  return project
+    ? { environmentId: threadRef.environmentId, projectId: project.id, ...link, url }
+    : null;
+}
+
 export function useOpenPrLink(defaultThreadRef?: ScopedThreadRef) {
   const projects = useProjects();
   return useCallback(
     (event: MouseEvent, url: string, threadRef = defaultThreadRef) => {
       event.preventDefault();
       event.stopPropagation();
-      const link = parseChangeRequestUrl(url);
-      if (!link || !threadRef) return false;
-      const project = findProjectOnChangeRequestHost(
-        projects.filter((entry) => entry.environmentId === threadRef.environmentId),
-        link,
-      );
-      if (!project) return false;
-      useRightPanelStore.getState().openPullRequest(threadRef, {
-        environmentId: threadRef.environmentId,
-        projectId: project.id,
-        ...link,
-        url,
-      });
+      if (!threadRef) return false;
+      const target = resolvePullRequestPanelTarget(projects, threadRef, url);
+      if (!target) return false;
+      useRightPanelStore.getState().openPullRequest(threadRef, target);
       return true;
     },
     [defaultThreadRef, projects],

@@ -103,7 +103,7 @@ import { useThreadActions } from "../hooks/useThreadActions";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
-import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
+import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { useClientSettings } from "../hooks/useSettings";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useLocalStorage } from "../hooks/useLocalStorage";
@@ -1214,26 +1214,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [onContextMenu, threadRef],
   );
+  const openPrLink = useOpenPrLink(threadRef);
   const handleChangeRequestClick = useCallback(
     (event: ReactMouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
       if (!changeRequest) return;
-      const repository =
-        (thread.linkedPullRequest ?? thread.branchPullRequest)?.repository ??
-        parseChangeRequestUrl(changeRequest.url)?.repository ??
-        null;
-      if (repository === null) return;
-      useRightPanelStore.getState().openPullRequest(threadRef, {
-        environmentId: thread.environmentId,
-        projectId:
-          (thread.linkedPullRequest ?? thread.branchPullRequest)?.projectId ?? thread.projectId,
-        repository,
-        number: changeRequest.number,
-      });
+      if (!openPrLink(event, changeRequest.url)) return;
       if (!props.isActive) onThreadActivate(threadRef);
     },
-    [changeRequest, onThreadActivate, props.isActive, thread, threadRef],
+    [changeRequest, onThreadActivate, openPrLink, props.isActive, threadRef],
   );
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {

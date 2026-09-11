@@ -1,3 +1,4 @@
+import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
 import type { AssistantCitation } from "@t3tools/contracts";
@@ -2281,6 +2282,7 @@ export default function ChatView(props: ChatViewProps) {
     ? resolveThreadReferenceCopyTarget({
         threadId: activeThreadRef.threadId,
         openPanelPullRequestUrl,
+        pullRequests: activeThread?.pullRequests,
         linkedPullRequestUrl: linkedThreadPullRequest?.url ?? null,
       })
     : null;
@@ -2850,13 +2852,13 @@ export default function ChatView(props: ChatViewProps) {
   const addPullRequestSurface = useCallback(() => {
     if (!activeThreadRef || !pullRequestAvailable || !activeThreadPr) return;
     const projectId = linkedThreadPullRequest?.projectId ?? activeProject?.id;
-    const repository = linkedThreadPullRequest?.repository ?? activeProjectRepository;
-    if (projectId === undefined || repository === null) return;
+    const link = parseChangeRequestUrl(activeThreadPr.url);
+    if (projectId === undefined || link === null) return;
     useRightPanelStore.getState().openPullRequest(activeThreadRef, {
       environmentId: activeThreadRef.environmentId,
       projectId,
-      repository,
-      number: activeThreadPr.number,
+      ...link,
+      url: activeThreadPr.url,
     });
   }, [
     activeProject?.id,
@@ -6511,8 +6513,10 @@ export default function ChatView(props: ChatViewProps) {
           onAddTerminal={addTerminalSurface}
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
-          onAddPullRequests={() =>
-            useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
+          onAddPullRequests={
+            isServerThread && serverConfig?.environment.capabilities.threadPullRequests
+              ? () => useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
+              : undefined
           }
           onAddPullRequest={addPullRequestSurface}
           onAddAgents={addAgentsSurface}
@@ -6553,8 +6557,10 @@ export default function ChatView(props: ChatViewProps) {
             onAddTerminal={addTerminalSurface}
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
-            onAddPullRequests={() =>
-              useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
+            onAddPullRequests={
+              isServerThread && serverConfig?.environment.capabilities.threadPullRequests
+                ? () => useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
+                : undefined
             }
             onAddPullRequest={addPullRequestSurface}
             onAddAgents={addAgentsSurface}

@@ -212,3 +212,19 @@ describe("right-panel tab context menu", () => {
     expect(rightPanelTabContextMenuItems(surfaces, { id: "agents", kind: "agents" })).toEqual([]);
   });
 });
+
+it("keeps the linked-MR surface available before the first MR exists", () => {
+  const markup = renderToStaticMarkup(
+    <RightPanelTabs
+      {...sharedProps}
+      mode="inline"
+      pullRequestAvailable={false}
+      onAddPullRequests={() => {}}
+    />,
+  );
+  const button = markup.match(
+    /<button[^>]*>(?:(?!<\/button>)[\s\S])*Linked MRs(?:(?!<\/button>)[\s\S])*<\/button>/,
+  )?.[0];
+  expect(button).toBeDefined();
+  expect(button).not.toContain('disabled=""');
+});

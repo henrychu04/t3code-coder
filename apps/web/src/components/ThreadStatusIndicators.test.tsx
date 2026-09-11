@@ -589,3 +589,41 @@ describe("linked pull request snapshots", () => {
     });
   });
 });
+
+it("shows a linked cross-repository MR without a legacy link", () => {
+  const linkedPullRequestStatus = {
+    pr: {
+      number: 42,
+      url: "https://code.example/team/backend/-/merge_requests/42",
+      title: "Backend",
+      state: "open" as const,
+      isDraft: false,
+      headRef: "feature",
+      baseRef: "main",
+    },
+    sourceControlProvider: { kind: "gitlab" as const, name: "GitLab", baseUrl: "" },
+  };
+  const input = {
+    threadBranch: null,
+    gitStatus: null,
+    snapshot: null,
+    retainTerminalOnBranchMismatch: false,
+    linkedPullRequest: null,
+    linkedPullRequestStatus,
+  };
+  expect(resolveDisplayedThreadPr(input)).toEqual(linkedPullRequestStatus.pr);
+  expect(resolveDisplayedThreadPrProvider(input)).toEqual(
+    linkedPullRequestStatus.sourceControlProvider,
+  );
+  expect(
+    nextThreadChangeRequestSnapshot({
+      ...input,
+      linkedPullRequest: {
+        projectId: ProjectId.make("frontend"),
+        repository: "team/frontend",
+        number: 1,
+        url: "https://code.example/team/frontend/-/merge_requests/1",
+      },
+    }),
+  ).toBeNull();
+});
