@@ -153,13 +153,12 @@ const service = PullRequestService.make.pipe(
         resolveHandle: () => Effect.die("Unexpected provider refinement"),
       }),
       Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
-        getShellSnapshot: () =>
-          Effect.succeed({
-            snapshotSequence: 1,
-            projects: [project],
-            threads: [],
-            updatedAt: "2026-08-02T00:00:00.000Z",
-          }),
+        getProjectShells: (projectIds) =>
+          Effect.succeed(
+            projectIds === undefined || projectIds.includes(project.id) ? [project] : [],
+          ),
+        getProjectShellById: (projectId) =>
+          Effect.succeed(projectId === project.id ? Option.some(project) : Option.none()),
       }),
       SourceControlRateLimit.layer,
     ),

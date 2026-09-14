@@ -268,3 +268,11 @@ it.layer(NodeServices.layer)("Codex provider availability", (it) => {
     }),
   );
 });
+
+it("prefers the current upstream default when exposed with a provider-qualified slug", () => {
+  const models = applyPreferredCodexDefaultModel([
+    { slug: "openai.gpt-6-astra", name: "Astra", isCustom: false, capabilities: null },
+    { slug: "gpt-5.6-sol", name: "Sol", isCustom: false, isDefault: true, capabilities: null },
+  ]);
+  assert.strictEqual(models.find((model) => model.isDefault)?.slug, "openai.gpt-6-astra");
+});

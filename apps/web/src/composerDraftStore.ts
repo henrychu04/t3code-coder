@@ -1,3 +1,4 @@
+import { collectInlineComposerContexts } from "./lib/composerInlineContext";
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
@@ -40,7 +41,11 @@ import { useShallow } from "zustand/react/shallow";
 import { getDefaultServerModel } from "./providerModels";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import type { ComposerPastedImage } from "./lib/composerPastedImages";
-import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
+import {
+  formatReviewCommentContext,
+  ReviewCommentContextSchema,
+  type ReviewCommentContext,
+} from "./reviewCommentContext";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
@@ -149,6 +154,7 @@ type ComposerThreadTarget = ScopedThreadRef | DraftId;
  * - server thread composer state keyed by `ScopedThreadRef`
  */
 interface ComposerDraftStoreState {
+  rewindingThreadKeys: ReadonlySet<string>;
   draftsByThreadKey: Record<string, ComposerThreadDraftState>;
   draftThreadsByThreadKey: Record<string, DraftThreadState>;
   logicalProjectDraftThreadKeyByLogicalProjectKey: Record<string, string>;
@@ -905,6 +911,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
   const set = setBase;
 
   return {
+    rewindingThreadKeys: new Set(),
     draftsByThreadKey: {},
     draftThreadsByThreadKey: {},
     logicalProjectDraftThreadKeyByLogicalProjectKey: {},
@@ -1729,12 +1736,21 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
       set((state) => {
         const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
         const reviewComments = existing.reviewComments.filter((entry) => entry.id !== comment.id);
+        const inline = collectInlineComposerContexts(existing.prompt).find(
+          (entry) =>
+            entry.context.kind === "review-comment" && entry.context.comment.id === comment.id,
+        );
+        const block = formatReviewCommentContext(comment);
+        const prompt = inline
+          ? existing.prompt.slice(0, inline.start) + block + existing.prompt.slice(inline.end)
+          : [existing.prompt, block].filter(Boolean).join("\n\n");
         return {
           draftsByThreadKey: {
             ...state.draftsByThreadKey,
             [threadKey]: {
               ...existing,
-              reviewComments: [...reviewComments, { ...comment }],
+              prompt,
+              reviewComments,
             },
           },
         };
@@ -1762,8 +1778,14 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
         const current = state.draftsByThreadKey[threadKey];
         if (!current) return state;
         const reviewComments = current.reviewComments.filter((entry) => entry.id !== commentId);
-        if (reviewComments.length === current.reviewComments.length) return state;
-        const nextDraft = { ...current, reviewComments };
+        let prompt = current.prompt;
+        for (const inline of collectInlineComposerContexts(prompt).reverse()) {
+          if (inline.context.kind === "review-comment" && inline.context.comment.id === commentId)
+            prompt = prompt.slice(0, inline.start) + prompt.slice(inline.end);
+        }
+        if (reviewComments.length === current.reviewComments.length && prompt === current.prompt)
+          return state;
+        const nextDraft = { ...current, prompt, reviewComments };
         const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
         if (shouldRemoveDraft(nextDraft)) delete nextDraftsByThreadKey[threadKey];
         else nextDraftsByThreadKey[threadKey] = nextDraft;

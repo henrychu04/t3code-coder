@@ -19,6 +19,7 @@ const DEFAULT_SELECTION = createModelSelection(ProviderInstanceId.make("codex"),
 function withFakeCodex<A, E, R>(
   input: {
     readonly output: string;
+    readonly modelSlug?: string;
     readonly exitCode?: number;
     readonly stderr?: string;
     readonly launchArgs?: string;
@@ -82,6 +83,11 @@ function withFakeCodex<A, E, R>(
       environment,
       tempDir,
       () => Effect.succeed([]),
+      Effect.succeed(
+        input.modelSlug
+          ? [{ slug: input.modelSlug, name: "Test", isCustom: false, capabilities: null }]
+          : [],
+      ),
     );
 
     return yield* run({
@@ -94,6 +100,23 @@ function withFakeCodex<A, E, R>(
 }
 
 it.layer(NodeServices.layer)("CodexTextGeneration", (it) => {
+  it.effect("uses the discovered qualified model ID for text generation", () =>
+    withFakeCodex(
+      { output: JSON.stringify({ subject: "Test", body: "" }), modelSlug: "openai.gpt-6-astra" },
+      ({ textGeneration, argsPath }) =>
+        Effect.gen(function* () {
+          yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "test",
+            stagedSummary: "M test.ts",
+            stagedPatch: "diff",
+            modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-6-astra"),
+          });
+          const fs = yield* FileSystem.FileSystem;
+          expect((yield* fs.readFileString(argsPath)).split("\n")).toContain("openai.gpt-6-astra");
+        }),
+    ),
+  );
   it.effect("generates commit messages through workspace Codex", () =>
     withFakeCodex(
       {

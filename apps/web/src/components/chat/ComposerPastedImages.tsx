@@ -1,3 +1,4 @@
+import { useComposerImageThumbnail } from "../../hooks/useComposerImageThumbnail";
 import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ComposerPastedImage } from "../../lib/composerPastedImages";
@@ -7,12 +8,7 @@ import { ExpandedImageDialog, type ExpandedImagePreview } from "./ExpandedImageD
 import { cn } from "../../lib/utils";
 
 function ImagePreview({ file, className }: { file: File; className: string }) {
-  const [url, setUrl] = useState<string>();
-  useEffect(() => {
-    const url = URL.createObjectURL(file);
-    setUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
+  const url = useComposerImageThumbnail(file);
   return <img src={url} alt={file.name} className={className} draggable={false} decoding="async" />;
 }
 

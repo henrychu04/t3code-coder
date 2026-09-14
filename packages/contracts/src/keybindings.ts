@@ -46,6 +46,8 @@ export type ThreadKeybindingCommand = (typeof THREAD_KEYBINDING_COMMANDS)[number
 
 const MODEL_PICKER_KEYBINDING_COMMANDS = [
   "modelPicker.toggle",
+  "modelPicker.previousProvider",
+  "modelPicker.nextProvider",
   ...MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 ] as const;
 export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
@@ -59,6 +61,7 @@ const STATIC_KEYBINDING_COMMANDS = [
   "terminal.close",
   "rightPanel.toggle",
   "rightPanel.toggleMaximized",
+  "pullRequest.copyNumber",
   "diff.toggle",
   "commandPalette.toggle",
   "filePicker.toggle",
@@ -66,6 +69,12 @@ const STATIC_KEYBINDING_COMMANDS = [
   "fileViewer.find",
   "fileViewer.goToLine",
   "composer.stash",
+  "composer.host",
+  "composer.effort",
+  "composer.mode",
+  "composer.workspace",
+  "composer.previousWorktree",
+  "composer.branch",
   "chat.new",
   "chat.newLocal",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,

@@ -5,7 +5,12 @@ project — not a general window onto the workspace filesystem.
 
 ## Browsing and reading
 
-Open the Files panel and browse the project tree. Selecting a text file shows it in the preview.
+Open the Files panel and browse the project tree. Each folder loads when opened, including
+Git-ignored folders; ignored entries are dimmed. The tree skips symlinks and Git metadata. Large
+folders show a limit notice after 1,000 inspected entries. Filename search continues to use the
+separate path index, so ignored files can be browsed without adding them to search results.
+
+Selecting a text file shows it in the preview.
 Files up to 1 MiB can be opened fully; larger text files open truncated and read-only, and binary
 files are rejected rather than rendered as garbage.
 
@@ -47,3 +52,10 @@ it returns matched lines with the match highlighted, capped per file and per sea
 page through results. Binary files are skipped.
 
 `mod+f` finds within the currently open file, and `mod+g` jumps to a line and column.
+
+## CSV and TSV previews
+
+Open a CSV or TSV file in Files and select **Show table** to see a table. Switch back with **Show source** to
+read or edit the text. The table shows at most 100 rows and 30 columns, with cells limited to 2,000
+characters. It uses the same bounded project-file read as the source editor, including the 1 MiB
+file limit and project path checks.

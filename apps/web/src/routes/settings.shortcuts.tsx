@@ -459,7 +459,7 @@ function ShortcutsSettingsView() {
   return (
     <SettingsPage>
       <SettingsSection title="Keyboard shortcuts" unframed>
-        <WorkspaceSettingsTarget ariaLabel="Keyboard shortcuts workspace">
+        <WorkspaceSettingsTarget projectReadOnly ariaLabel="Keyboard shortcuts workspace">
           {(environment) => (
             <WorkspaceShortcutsSettings key={environment.environmentId} environment={environment} />
           )}

@@ -208,12 +208,13 @@ const collectText = Effect.fn("processRunner.collectText")(function* (input: {
   const decoder = new TextDecoder();
   let lineBuffer = "";
   const emitLines = Effect.fn("processRunner.emitLines")(function* (flush: boolean) {
-    let newlineIndex = lineBuffer.indexOf("\n");
-    while (newlineIndex >= 0) {
-      const line = lineBuffer.slice(0, newlineIndex).replace(/\r$/, "");
-      lineBuffer = lineBuffer.slice(newlineIndex + 1);
+    // Git redraws checkout progress with bare carriage returns.
+    let separator = /\r\n|\r|\n/.exec(lineBuffer);
+    while (separator) {
+      const line = lineBuffer.slice(0, separator.index);
+      lineBuffer = lineBuffer.slice(separator.index + separator[0].length);
       if (line.length > 0 && input.onLine) yield* input.onLine(line);
-      newlineIndex = lineBuffer.indexOf("\n");
+      separator = /\r\n|\r|\n/.exec(lineBuffer);
     }
     if (flush) {
       const trailing = lineBuffer.replace(/\r$/, "");

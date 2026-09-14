@@ -1260,3 +1260,59 @@ for (const scenario of [
     }),
   );
 }
+
+layer("GitWorkflowService.prepareWorktreeBase", (it) => {
+  it.effect("falls back to the project checkout for a non-repository or unborn branch", () =>
+    Effect.gen(function* () {
+      const service = yield* GitWorkflowService.GitWorkflowService;
+      execute.mockReturnValue(Effect.succeed(gitOutput("", 128)));
+      expect(yield* service.prepareWorktreeBase({ cwd: "/repo", baseBranch: "main" })).toBeNull();
+      expect(execute).toHaveBeenCalledTimes(1);
+      execute.mockClear();
+      execute.mockImplementation((input) =>
+        Effect.succeed(
+          input.args.includes("--is-inside-work-tree") ? gitOutput("true") : gitOutput("", 128),
+        ),
+      );
+      expect(yield* service.prepareWorktreeBase({ cwd: "/repo", baseBranch: "main" })).toBeNull();
+      expect(createWorktree).not.toHaveBeenCalled();
+    }),
+  );
+  it.effect(
+    "uses the fetched origin commit and falls back to the local branch when unavailable",
+    () =>
+      Effect.gen(function* () {
+        const service = yield* GitWorkflowService.GitWorkflowService;
+        const local = "a".repeat(40),
+          remote = "b".repeat(40);
+        let remoteAvailable = true;
+        execute.mockImplementation((input) => {
+          if (input.args.includes("--is-inside-work-tree"))
+            return Effect.succeed(gitOutput("true"));
+          if (input.args[0] === "remote") return Effect.succeed(gitOutput("origin\n"));
+          if (input.args.at(-1) === "refs/remotes/origin/main^{commit}")
+            return Effect.succeed(remoteAvailable ? gitOutput(remote) : gitOutput("", 128));
+          if (input.args.at(-1) === "main^{commit}") return Effect.succeed(gitOutput(local));
+          return Effect.succeed(gitOutput());
+        });
+        expect(
+          yield* service.prepareWorktreeBase({
+            cwd: "/repo",
+            baseBranch: "main",
+            startFromOrigin: true,
+          }),
+        ).toBe(remote);
+        expect(
+          execute.mock.calls.some(([input]) => input.args.join(" ") === "fetch --no-tags origin"),
+        ).toBe(true);
+        remoteAvailable = false;
+        expect(
+          yield* service.prepareWorktreeBase({
+            cwd: "/repo",
+            baseBranch: "main",
+            startFromOrigin: true,
+          }),
+        ).toBe(local);
+      }),
+  );
+});

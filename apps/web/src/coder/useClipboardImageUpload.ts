@@ -1,3 +1,4 @@
+import { collectDraftImageReferences } from "../lib/composerInlineContext";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   type EnvironmentId,
@@ -57,6 +58,12 @@ export function useClipboardImageUpload(
   };
   const remove = (id: string) => {
     const store = useComposerDraftStore.getState();
+    let prompt = store.getComposerDraft(target)?.prompt ?? "";
+    for (const reference of collectDraftImageReferences(prompt).reverse()) {
+      if (reference.id === id)
+        prompt = prompt.slice(0, reference.start) + prompt.slice(reference.end);
+    }
+    store.setPrompt(target, prompt);
     store.setPastedImages(
       target,
       (store.getComposerDraft(target)?.pastedImages ?? []).filter((image) => image.id !== id),

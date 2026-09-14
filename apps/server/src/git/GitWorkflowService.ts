@@ -1,3 +1,6 @@
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { ProjectId } from "@t3tools/contracts";
 import type {
   ChangeRequest,
   GitActionProgressEvent,
@@ -68,6 +71,11 @@ export interface GitActionProgressReporter {
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   {
+    readonly prepareWorktreeBase: (input: {
+      readonly cwd: string;
+      readonly baseBranch: string;
+      readonly startFromOrigin?: boolean;
+    }) => Effect.Effect<string | null, GitCommandError>;
     readonly localStatus: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsStatusLocalResult, GitCommandError>;
@@ -118,6 +126,7 @@ export class GitWorkflowService extends Context.Service<
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
+      options?: GitVcsDriver.CreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
@@ -153,6 +162,7 @@ export class GitWorkflowService extends Context.Service<
 export const layer = Layer.effect(
   GitWorkflowService,
   Effect.gen(function* () {
+    const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
     const git = yield* GitVcsDriver.GitVcsDriver;
     const sourceControls = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
     const textGeneration = yield* TextGeneration.TextGeneration;
@@ -177,6 +187,22 @@ export const layer = Layer.effect(
       );
     const readGenerationSettings = (cwd: string) =>
       serverSettings.getSettings.pipe(
+        Effect.flatMap((settings) =>
+          Effect.gen(function* () {
+            if (Option.isNone(sqlOption)) return settings;
+            const sql = sqlOption.value;
+            const rows = yield* sql<{ projectId: string }>`
+            SELECT p.project_id AS "projectId" FROM projection_projects p
+            WHERE p.deleted_at IS NULL AND (p.workspace_root = ${cwd} OR EXISTS (
+              SELECT 1 FROM projection_threads t WHERE t.project_id = p.project_id
+                AND t.deleted_at IS NULL AND t.worktree_path = ${cwd}
+            )) LIMIT 1`;
+            return resolveProjectSettings(
+              settings,
+              rows[0] ? ProjectId.make(rows[0].projectId) : null,
+            ).settings;
+          }),
+        ),
         Effect.mapError(
           (cause) =>
             new GitManagerError({
@@ -1510,7 +1536,46 @@ export const layer = Layer.effect(
       input,
     ) => preparePullRequestThreadImpl(input).pipe(Effect.ensuring(invalidateStatus(input.cwd)));
 
+    const prepareWorktreeBase: GitWorkflowService["Service"]["prepareWorktreeBase"] = Effect.fn(
+      "GitWorkflowService.prepareWorktreeBase",
+    )(function* (input) {
+      const inspect = (args: ReadonlyArray<string>) =>
+        git.execute({
+          operation: "GitWorkflowService.prepareWorktreeBase",
+          cwd: input.cwd,
+          args,
+          allowNonZeroExit: true,
+          maxOutputBytes: 65536,
+        });
+      const repository = yield* inspect(["rev-parse", "--is-inside-work-tree"]);
+      if (repository.exitCode !== 0 || repository.stdout.trim() !== "true") return null;
+      const resolve = (ref: string) =>
+        inspect(["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`]).pipe(
+          Effect.map((result) =>
+            result.exitCode === 0 && /^[0-9a-f]{40,64}$/i.test(result.stdout.trim())
+              ? result.stdout.trim()
+              : null,
+          ),
+        );
+      if (input.startFromOrigin) {
+        const remotes = yield* inspect(["remote"]);
+        if (remotes.stdout.split("\n").includes("origin")) {
+          yield* git.execute({
+            operation: "GitWorkflowService.prepareWorktreeBase.fetch",
+            cwd: input.cwd,
+            args: ["fetch", "--no-tags", "origin"],
+            maxOutputBytes: 65536,
+          });
+          const branch = input.baseBranch.replace(/^(?:refs\/remotes\/)?origin\//, "");
+          const remote = yield* resolve(`refs/remotes/origin/${branch}`);
+          if (remote) return remote;
+        }
+      }
+      return yield* resolve(input.baseBranch);
+    });
+
     return GitWorkflowService.of({
+      prepareWorktreeBase,
       localStatus,
       remoteStatus,
       status,
@@ -1521,7 +1586,7 @@ export const layer = Layer.effect(
       runStackedAction: (input, reporter) => mutate(input.cwd, runStackedAction(input, reporter)),
       localRefStatus: ({ cwd }) => git.refStatusLocal(cwd),
       listRefs: git.listRefs,
-      createWorktree: (input) => mutate(input.cwd, git.createWorktree(input)),
+      createWorktree: (input, options) => mutate(input.cwd, git.createWorktree(input, options)),
       removeWorktree: (input) => mutate(input.cwd, git.removeWorktree(input)),
       pruneWorktrees: (input) => mutate(input.cwd, git.pruneWorktrees(input)),
       createRef: (input) => mutate(input.cwd, git.createRef(input)),

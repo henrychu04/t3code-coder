@@ -1,3 +1,4 @@
+import { imageContextReference } from "../../lib/composerInlineContext";
 import type { AssistantCitation } from "@t3tools/contracts";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { formatAssistantCitationForComposer } from "../../composer-logic";
@@ -10,6 +11,7 @@ import {
 } from "../../lib/composerPastedImages";
 import type {
   ApprovalRequestId,
+  KeybindingCommand,
   EnvironmentId,
   ModelSelection,
   ProviderApprovalDecision,
@@ -51,7 +53,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
   clampCollapsedComposerCursor,
   type ComposerSubmissionIntent,
@@ -929,6 +931,7 @@ const ComposerFooterModeControls = memo(function ComposerFooterModeControls(prop
           <TooltipTrigger
             render={
               <ComposerSelectControl
+                data-composer-shortcut="composer.mode"
                 size={size}
                 className={size === "xs" ? undefined : "font-medium"}
                 aria-label="Runtime mode"
@@ -1052,6 +1055,7 @@ export interface ChatComposerHandle {
   ) => boolean;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
+  openControl: (command: KeybindingCommand) => void;
   isModelPickerOpen: () => boolean;
   compactContext: () => void;
   readSnapshot: () => {
@@ -1187,6 +1191,7 @@ export interface ChatComposerProps {
   onPageScrollRelease: () => void;
 
   // Callbacks
+  onCompactContext: () => void;
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -1280,6 +1285,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPageScrollKeyUp,
     onPageScrollRelease,
     composerTerminalContextsRef,
+    onCompactContext,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -1311,7 +1317,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerReviewComments = composerDraft.reviewComments;
   const composerPastedImages = composerDraft.pastedImages ?? EMPTY_PASTED_IMAGES;
-  const imageUploadBlockReason = pastedImageSendBlockReason(composerPastedImages);
+  const imageUploadBlockReason = pastedImageSendBlockReason(composerPastedImages, prompt);
   const effectiveSendDisabledReason = sendDisabledReason ?? imageUploadBlockReason;
   const isSendDisabled = effectiveSendDisabledReason !== null;
   const isUploadingClipboardImages = composerPastedImages.some(
@@ -2515,14 +2521,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : null;
   const compactThreadContext = useCallback(() => {
     if (compactDisabled) return;
-    promptRef.current = "/compact";
-    setComposerDraftPrompt(composerDraftTarget, "/compact");
-    submitComposer();
-    if (promptRef.current === "/compact") {
-      promptRef.current = "";
-      setComposerDraftPrompt(composerDraftTarget, "");
-    }
-  }, [compactDisabled, composerDraftTarget, promptRef, setComposerDraftPrompt, submitComposer]);
+    onCompactContext();
+  }, [compactDisabled, onCompactContext]);
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
@@ -3070,7 +3070,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setComposerSubmissionError("Paste images after resolving the current composer prompt.");
       return;
     }
+    const existingIds = new Set(composerPastedImages.map((image) => image.id));
     uploadClipboardImages(imageFiles);
+    const added =
+      useComposerDraftStore
+        .getState()
+        .getComposerDraft(composerDraftTarget)
+        ?.pastedImages?.filter((image) => !existingIds.has(image.id)) ?? [];
+    if (added.length)
+      insertComposerText(
+        added.map((image) => imageContextReference(image.id)).join(" ") + " ",
+        "cursor",
+      );
   };
 
   const handleInterruptPrimaryAction = useCallback(() => {
@@ -3500,6 +3511,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         } else {
           openModelPicker();
         }
+      },
+      openControl: (command) => {
+        if (composerBlurFrameRef.current !== null) {
+          window.cancelAnimationFrame(composerBlurFrameRef.current);
+          composerBlurFrameRef.current = null;
+        }
+        flushSync(() => {
+          setIsComposerScrollCollapsed(false);
+          setIsComposerFocused(true);
+        });
+        const shell = composerFormRef.current?.closest('[data-slot="composer-shell"]');
+        const trigger = Array.from(
+          shell?.querySelectorAll<HTMLButtonElement>(
+            `button[data-composer-shortcut~="${command}"]:not(:disabled)`,
+          ) ?? [],
+        ).find(
+          (element) =>
+            !element.closest("[inert]") && element.checkVisibility({ visibilityProperty: true }),
+        );
+        if (!trigger) return;
+        trigger.focus({ preventScroll: true });
+        trigger.click();
       },
       isModelPickerOpen: () => isComposerModelPickerOpen,
       compactContext: compactThreadContext,
@@ -3985,6 +4018,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
               >
                 <ComposerPromptEditor
+                  images={composerPastedImages}
                   editorRef={composerEditorRef}
                   value={
                     isComposerApprovalState

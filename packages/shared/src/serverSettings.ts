@@ -16,14 +16,21 @@ import { deepMerge } from "./Struct.ts";
 import { isCoderProviderInstanceId } from "./coderProviders.ts";
 
 export function resolveProjectAutoPull(
-  settings: Pick<ServerSettings, "defaultAutoPull" | "projectAutoPullOverrides">,
+  settings: Pick<
+    ServerSettings,
+    | "defaultAutoPull"
+    | "projectAutoPullOverrides"
+    | "projectSettingsFolded"
+    | "projectSettingsOverrides"
+  >,
   projectId: ProjectId,
   legacyAutoPull: boolean | undefined,
 ): boolean {
   // Existing opt-ins stay enabled until explicitly overridden or reset.
   return (
+    settings.projectSettingsOverrides[projectId]?.defaultAutoPull ??
     settings.projectAutoPullOverrides[projectId] ??
-    (legacyAutoPull === true || settings.defaultAutoPull)
+    ((!settings.projectSettingsFolded && legacyAutoPull === true) || settings.defaultAutoPull)
   );
 }
 
@@ -35,7 +42,7 @@ const getProviderSettings = (
 ): ProviderSettings | undefined =>
   (settings.providers as Record<string, ProviderSettings | undefined>)[provider];
 
-function isModelSelectionProviderEnabled(
+export function isModelSelectionProviderEnabled(
   settings: ServerSettings,
   selection: ModelSelection,
 ): boolean {
@@ -111,27 +118,68 @@ export function applyServerSettingsPatch(
   patch: ServerSettingsPatch,
 ): ServerSettings {
   const selectionPatch = patch.textGenerationModelSelection;
-  const { projectAutoPullOverrides, pullRequestMergeMethodOverrides, ...ordinaryPatch } = patch;
-  const mergeMethodOverrides = { ...current.pullRequestMergeMethodOverrides };
-  for (const [id, value] of Object.entries(pullRequestMergeMethodOverrides ?? {})) {
-    if (value === null) delete mergeMethodOverrides[id as ProjectId];
-    else mergeMethodOverrides[id as ProjectId] = value;
+  const {
+    projectAutoPullOverrides,
+    pullRequestMergeMethodOverrides,
+    projectSettingsOverrides: projectPatch,
+    ...ordinaryPatch
+  } = patch;
+  const projectSettingsOverrides = { ...current.projectSettingsOverrides };
+  if (!current.projectSettingsFolded) {
+    for (const [map, key] of [
+      [current.projectAutoPullOverrides, "defaultAutoPull"],
+      [current.projectScriptOverrides, "defaultProjectScripts"],
+      [current.pullRequestMergeMethodOverrides, "pullRequestMergeMethod"],
+    ] as const) {
+      for (const [id, value] of Object.entries(map)) {
+        if (value === null) continue;
+        const entry = projectSettingsOverrides[id as ProjectId] ?? {};
+        if (!Object.hasOwn(entry, key))
+          projectSettingsOverrides[id as ProjectId] = { ...entry, [key]: value };
+      }
+    }
   }
-  const autoPullOverrides = { ...current.projectAutoPullOverrides };
-  for (const [id, value] of Object.entries(projectAutoPullOverrides ?? {})) {
-    if (value === null) delete autoPullOverrides[id as ProjectId];
-    else autoPullOverrides[id as ProjectId] = value;
+  for (const [id, value] of Object.entries(projectPatch ?? {})) {
+    if (value === null || Object.keys(value).length === 0)
+      delete projectSettingsOverrides[id as ProjectId];
+    else projectSettingsOverrides[id as ProjectId] = value;
+  }
+  for (const [map, key] of [
+    [patch.projectAutoPullOverrides, "defaultAutoPull"],
+    [patch.projectScriptOverrides, "defaultProjectScripts"],
+    [patch.pullRequestMergeMethodOverrides, "pullRequestMergeMethod"],
+  ] as const) {
+    for (const [id, value] of Object.entries(map ?? {})) {
+      if (Object.hasOwn(projectPatch ?? {}, id)) continue;
+      const entry = { ...projectSettingsOverrides[id as ProjectId] };
+      if (value === null) delete entry[key];
+      else Object.assign(entry, { [key]: value });
+      if (Object.keys(entry).length === 0) delete projectSettingsOverrides[id as ProjectId];
+      else projectSettingsOverrides[id as ProjectId] = entry;
+    }
+  }
+  const legacy = deriveLegacyProjectOverrides({ projectSettingsOverrides });
+  if (!current.projectSettingsFolded) {
+    for (const [id, value] of Object.entries({
+      ...current.projectScriptOverrides,
+      ...patch.projectScriptOverrides,
+    })) {
+      if (
+        value === null &&
+        projectSettingsOverrides[id as ProjectId]?.defaultProjectScripts === undefined
+      )
+        legacy.projectScriptOverrides[id as ProjectId] = null;
+    }
   }
   const next = {
     ...deepMerge(current, ordinaryPatch),
-    projectAutoPullOverrides: autoPullOverrides,
-    pullRequestMergeMethodOverrides: mergeMethodOverrides,
+    projectSettingsOverrides,
+    ...legacy,
     defaultModelSelection:
       patch.defaultModelSelection === undefined
         ? current.defaultModelSelection
         : patch.defaultModelSelection,
     defaultProjectScripts: patch.defaultProjectScripts ?? current.defaultProjectScripts,
-    projectScriptOverrides: { ...current.projectScriptOverrides, ...patch.projectScriptOverrides },
     ...(patch.automaticGitFetchInterval === undefined
       ? {}
       : { automaticGitFetchInterval: patch.automaticGitFetchInterval }),
@@ -153,4 +201,26 @@ export function applyServerSettingsPatch(
     ...next,
     textGenerationModelSelection: createModelSelection(instanceId, model, options),
   };
+}
+
+export function deriveLegacyProjectOverrides(
+  settings: Pick<ServerSettings, "projectSettingsOverrides">,
+) {
+  const projectAutoPullOverrides: Record<ProjectId, boolean> = {};
+  const projectScriptOverrides: Record<ProjectId, ServerSettings["defaultProjectScripts"] | null> =
+    {};
+  const pullRequestMergeMethodOverrides: Record<
+    ProjectId,
+    ServerSettings["pullRequestMergeMethod"]
+  > = {};
+  for (const [id, entry] of Object.entries(settings.projectSettingsOverrides)) {
+    const projectId = id as ProjectId;
+    if (entry.defaultAutoPull !== undefined)
+      projectAutoPullOverrides[projectId] = entry.defaultAutoPull;
+    if (entry.defaultProjectScripts !== undefined)
+      projectScriptOverrides[projectId] = entry.defaultProjectScripts;
+    if (entry.pullRequestMergeMethod !== undefined)
+      pullRequestMergeMethodOverrides[projectId] = entry.pullRequestMergeMethod;
+  }
+  return { projectAutoPullOverrides, projectScriptOverrides, pullRequestMergeMethodOverrides };
 }

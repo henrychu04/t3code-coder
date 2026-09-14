@@ -1,3 +1,4 @@
+import { useOptionalScopedSettingsMixed } from "./useScopedSettings";
 import {
   type EnvironmentId,
   ProviderDriverKind,
@@ -27,6 +28,7 @@ export function TextGenerationModelSettings(props: {
   readonly onChange: (selection: ModelSelection) => void;
 }) {
   const selection = resolveAppModelSelectionState(props.settings, props.providers);
+  const mixed = useOptionalScopedSettingsMixed(["textGenerationModelSelection"]);
   const instanceEntries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(
       deriveCoderProviderInstanceEntries(props.providers),
@@ -53,6 +55,7 @@ export function TextGenerationModelSettings(props: {
     >
       <SettingsRow
         title="Thread title model"
+        settingKeys={["textGenerationModelSelection"]}
         description="Used for new thread titles and initial branch names."
         resetAction={
           isDirty ? (
@@ -65,6 +68,7 @@ export function TextGenerationModelSettings(props: {
         control={
           <div className="flex flex-wrap items-center justify-end gap-1.5">
             <ProviderModelPicker
+              triggerLabel={mixed ? "Mixed" : undefined}
               environmentId={props.environmentId}
               activeInstanceId={selection.instanceId}
               model={selection.model}

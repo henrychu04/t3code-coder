@@ -1,3 +1,5 @@
+import * as VcsProcess from "../vcs/VcsProcess.ts";
+import type { ProjectEntry } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off -- Directory browsing is a small Linux filesystem adapter.
 import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
@@ -24,7 +26,8 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 
 const MAX_LISTED_DIRECTORIES = 500;
-type WorkspaceListEntriesInput = Pick<ProjectListEntriesInput, "cwd">;
+type WorkspaceListEntriesInput = Pick<ProjectListEntriesInput, "cwd" | "directoryPath">;
+export const MAX_PROJECT_DIRECTORY_ENTRIES = 1000;
 
 export const WorkspaceEntriesError = Schema.Union([
   WorkspacePaths.WorkspaceRootNotExistsError,
@@ -70,6 +73,7 @@ export class WorkspaceDirectoryListFailed extends Schema.TaggedError<WorkspaceDi
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
+  const vcsProcess = yield* VcsProcess.VcsProcess;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
   const searchIndexes = yield* WorkspaceSearchIndex.WorkspaceSearchIndexMap;
@@ -105,6 +109,95 @@ export const make = Effect.gen(function* () {
   const list: WorkspaceEntries["Service"]["list"] = Effect.fn("WorkspaceEntries.list")(
     function* (input) {
       const cwd = yield* normalizeRealWorkspaceRoot(input.cwd);
+      if (input.directoryPath !== undefined) {
+        const directoryPath = input.directoryPath;
+        const failure = () =>
+          new WorkspaceSearchIndex.WorkspaceSearchIndexSearchFailed({
+            reason: "Unable to list the requested project folder.",
+            queryLength: 0,
+            pageSize: MAX_PROJECT_DIRECTORY_ENTRIES,
+          });
+        const result = yield* Effect.tryPromise({
+          try: async (signal) => {
+            if (
+              directoryPath !== "" &&
+              (directoryPath.startsWith("/") ||
+                directoryPath.includes("\\") ||
+                directoryPath.includes("\0") ||
+                directoryPath
+                  .split("/")
+                  .some((part) => !part || part === "." || part === ".." || part === ".git"))
+            )
+              throw new Error("Invalid project folder.");
+            const contained = (target: string) => {
+              const relative = path.relative(cwd, target);
+              return (
+                relative !== ".." &&
+                !relative.startsWith(`..${path.sep}`) &&
+                !path.isAbsolute(relative) &&
+                !relative.split(path.sep).includes(".git")
+              );
+            };
+            const directory = await NodeFS.realpath(path.join(cwd, directoryPath));
+            if (!contained(directory)) throw new Error("Invalid project folder.");
+            const entries: ProjectEntry[] = [];
+            let truncated = false;
+            let inspected = 0;
+            const handle = await NodeFS.opendir(directory);
+            for await (const child of handle) {
+              signal.throwIfAborted();
+              if (++inspected > MAX_PROJECT_DIRECTORY_ENTRIES) {
+                truncated = true;
+                break;
+              }
+              const relativePath = directoryPath ? `${directoryPath}/${child.name}` : child.name;
+              if (
+                child.name === ".git" ||
+                child.name.includes("\\") ||
+                relativePath.length > 512 ||
+                (!child.isDirectory() && !child.isFile())
+              )
+                continue;
+              const realChild = await NodeFS.realpath(path.join(directory, child.name)).catch(
+                () => null,
+              );
+              if (!realChild || !contained(realChild)) continue;
+              entries.push({
+                path: relativePath,
+                kind: child.isDirectory() ? "directory" : "file",
+              });
+            }
+            entries.sort((a, b) => a.path.localeCompare(b.path));
+            return { entries, truncated };
+          },
+          catch: failure,
+        });
+        if (result.entries.length === 0) return result;
+        const ignored = yield* vcsProcess
+          .run({
+            operation: "WorkspaceEntries.list",
+            command: "git",
+            args: ["-c", "core.fsmonitor=false", "check-ignore", "-z", "--stdin"],
+            cwd,
+            stdin: result.entries.map((entry) => entry.path).join("\0") + "\0",
+            allowNonZeroExit: true,
+            timeoutMs: 5000,
+            maxOutputBytes: 1024 * 1024,
+          })
+          .pipe(Effect.orElseSucceed(() => null));
+        const ignoredPaths = new Set(
+          ignored && (ignored.exitCode === 0 || ignored.exitCode === 1)
+            ? ignored.stdout.split("\0")
+            : [],
+        );
+        return {
+          entries: result.entries.map((entry) =>
+            ignoredPaths.has(entry.path) ? { ...entry, ignored: true } : entry,
+          ),
+          truncated: result.truncated,
+        };
+      }
+
       return yield* Effect.gen(function* () {
         const index = yield* WorkspaceSearchIndex.WorkspaceSearchIndex;
         return yield* index.list();
@@ -202,5 +295,6 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(
+  Layer.provide(VcsProcess.layer),
   Layer.provide(WorkspaceSearchIndex.WorkspaceSearchIndexMap.layer),
 );

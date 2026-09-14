@@ -25,7 +25,11 @@ import type {
 } from "@t3tools/contracts";
 import { PREFERRED_DEFAULT_CODEX_MODELS, ServerSettingsError } from "@t3tools/contracts";
 
-import { createModelCapabilities, readCustomModelEntries } from "@t3tools/shared/model";
+import {
+  codexModelFamily,
+  createModelCapabilities,
+  readCustomModelEntries,
+} from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
@@ -131,7 +135,8 @@ export function mapCodexModelCapabilities(
   model: CodexSchema.V2ModelListResponse__Model,
 ): ModelCapabilities {
   const reasoningOptions = model.supportedReasoningEfforts.map(({ reasoningEffort }) =>
-    reasoningEffort === model.defaultReasoningEffort
+    reasoningEffort ===
+    (codexModelFamily(model.model) === "gpt-6-astra" ? "medium" : model.defaultReasoningEffort)
       ? {
           id: reasoningEffort,
           label: reasoningEffortLabel(reasoningEffort),
@@ -226,7 +231,8 @@ export function applyPreferredCodexDefaultModel(
     const preferredModel = models.find(
       (model) =>
         !model.isCustom &&
-        (model.slug === canonicalSlug || model.slug === `${canonicalSlug}-codex`),
+        (codexModelFamily(model.slug) === canonicalSlug ||
+          codexModelFamily(model.slug) === `${canonicalSlug}-codex`),
     );
     if (preferredModel) {
       preferredSlug = preferredModel.slug;

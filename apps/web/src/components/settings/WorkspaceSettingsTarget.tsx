@@ -1,3 +1,4 @@
+import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
@@ -24,7 +25,7 @@ export function resolveSettingsWorkspaceId(input: {
   return input.workspaceIds[0] ?? null;
 }
 
-export function WorkspaceSettingsTarget(props: {
+function LegacyWorkspaceSettingsTarget(props: {
   readonly children: (environment: EnvironmentPresentation) => ReactNode;
   readonly ariaLabel: string;
 }) {
@@ -107,5 +108,34 @@ export function WorkspaceSettingsTarget(props: {
         <p className="px-3 py-8 text-sm text-muted-foreground sm:px-4">{statusMessage}</p>
       )}
     </>
+  );
+}
+
+/** Providers and keybindings remain per workspace while honoring the common environment axis. */
+export function WorkspaceSettingsTarget(props: {
+  readonly children: (environment: EnvironmentPresentation) => ReactNode;
+  readonly ariaLabel: string;
+  readonly projectReadOnly?: boolean;
+}) {
+  const context = useOptionalSettingsScope();
+  if (!context) return <LegacyWorkspaceSettingsTarget {...props} />;
+  const environment = context.environment;
+  const readOnly =
+    props.projectReadOnly &&
+    (context.scope.kind === "project" || context.scope.kind === "checkout");
+  return environment ? (
+    <div key={environment.environmentId}>
+      <p className="px-4 pb-3 text-sm text-muted-foreground">
+        Workspace: {environment.label}
+        {readOnly ? " · Workspace-wide setting" : ""}
+      </p>
+      <fieldset disabled={readOnly} inert={readOnly || undefined}>
+        {props.children(environment)}
+      </fieldset>
+    </div>
+  ) : (
+    <p role="status" className="p-4 text-sm text-muted-foreground">
+      Connect the selected workspace to manage these settings.
+    </p>
   );
 }

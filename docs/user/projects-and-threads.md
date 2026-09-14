@@ -84,3 +84,14 @@ turn can trigger automatic panels again.
 Recognized GitLab merge-request links in MR descriptions and comments open in the current panel.
 On the merge-request page, navigation also updates the selected MR in the page URL. External media
 attachments remain inert.
+
+## Thread notifications
+
+Under **Settings → Preferences → Notifications**, enable thread alerts, sounds, or both. Alerts
+cover completed turns, requests for input or approval, and failures. While you are using another
+thread, an in-app alert can take you to the thread that needs attention. In the background, the
+browser tab shows a badge that clears when you return. Sounds become available after your first
+click or keypress in the app.
+
+Both options start disabled. Notifications run only while the browser app is open, and historical
+completions are not replayed when connecting or reconnecting.

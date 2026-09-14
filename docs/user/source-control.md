@@ -116,3 +116,38 @@ No MCP setup is needed. The command is supplied for the active turn and expires 
 finishes or the provider session stops. If a command times out, list the links before retrying:
 the association may already have changed. URLs must identify a GitLab host known to workspace
 project metadata, including when linking an MR from another repository.
+
+## Worktree setup progress
+
+Starting a thread in a new worktree shows fetch, checkout, submodule, setup-script, and agent
+stages. Checkout percentages come from Git when it reports them. Setup scripts show recent output
+and a link to their terminal; the first turn waits for script completion. Script failures remain
+visible while the thread continues so you can diagnose the checkout.
+
+**Cancel** stops setup, closes its script terminal, and removes the worktree and thread created by
+that attempt. The prompt returns to the draft. **Use project checkout** cancels setup and resends
+from the project's checkout inside the same Coder workspace. Cancellation is unavailable once the
+agent turn is dispatched.
+
+A folder without a Git repository or resolvable base commit uses the project checkout. When
+starting from origin, the helper fetches origin and uses its branch when available, otherwise it
+uses the local base branch. Submodules are initialized from cached or local sources; unavailable
+submodules produce a warning.
+
+## Diff display and comments
+
+**Settings → Preferences → Default diff file state** chooses whether files start expanded or
+collapsed in review diffs and a merge request's Code tab. Files start expanded by default; you can
+still toggle individual files or all files in the toolbar.
+
+The merge-request comment button floats at the bottom right across its tabs. Where GitLab grants
+the required permissions, it also offers **Close with comment** or **Reopen with comment**. If the
+comment posts but GitLab refuses the state change, the comment remains posted and T3 reports the
+failed action.
+
+## Reviewer updates
+
+After GitLab accepts a reviewer change, the reviewer picker, summary, and activity view update
+together. Completed reviews remain visible when their authors are no longer requested reviewers.
+If the selected reviewer is missing from the loaded candidates, those views refresh from GitLab.
+Labels can be displayed and used to filter requests; GitLab label editing is not available here.

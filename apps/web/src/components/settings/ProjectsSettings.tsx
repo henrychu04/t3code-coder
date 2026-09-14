@@ -1,185 +1,17 @@
-import {
-  Combobox,
-  ComboboxTrigger,
-  ComboboxPopup,
-  ComboboxSearchInput,
-  ComboboxEmpty,
-  ComboboxList,
-  ComboboxItem,
-} from "../ui/combobox";
-import { useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import {
   DEFAULT_SERVER_SETTINGS,
-  type EnvironmentId,
   type ModelSelection,
   type ProjectScript,
 } from "@t3tools/contracts";
-import { useEnvironments } from "../../state/environments";
-import { useProjects } from "../../state/entities";
-import { useAtomCommand } from "../../state/use-atom-command";
-import { serverEnvironment } from "../../state/server";
-import { projectSettingsTarget } from "../../projectSettingsTarget";
-import { SettingsPage, SettingsRow, SettingsSection } from "./SettingsPage";
+import { useOptionalScopedSettingsMixed } from "./useScopedSettings";
+import { SettingsRow } from "./SettingsPage";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Textarea } from "../ui/textarea";
 import { validateProjectSettings } from "./ProjectSettingsPanel.logic";
 
-export function ProjectsSettings() {
-  const { environments } = useEnvironments();
-  const projects = useProjects();
-  const [scope, setScope] = useState<EnvironmentId | null>(null);
-  const scopeOptions = useMemo(
-    () => [
-      { id: null, label: "All connected workspaces" },
-      ...environments.map((environment) => ({
-        id: environment.environmentId,
-        label: environment.label,
-      })),
-    ],
-    [environments],
-  );
-  const selectedScope = scopeOptions.find((option) => option.id === scope) ?? scopeOptions[0]!;
-  const targets = environments.filter(
-    (environment) =>
-      (scope === null || environment.environmentId === scope) &&
-      environment.connection.phase === "connected" &&
-      environment.serverConfig !== null,
-  );
-  const [notice, setNotice] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
-  const update = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
-  return (
-    <SettingsPage>
-      <SettingsSection
-        title="Project defaults"
-        description="Defaults are stored in each selected Coder workspace. Explicit project overrides and existing actions are preserved. Offline workspaces keep their previous values."
-      >
-        <SettingsRow
-          title="Coder workspace"
-          control={
-            <Combobox<{ id: EnvironmentId | null; label: string }>
-              items={scopeOptions}
-              value={selectedScope}
-              itemToStringLabel={(option) => option.label}
-              onValueChange={(option) => {
-                if (!option) return;
-                setScope(option.id);
-                setNotice(null);
-              }}
-            >
-              <ComboboxTrigger
-                render={<Button variant="outline" aria-label="Project defaults workspace" />}
-              >
-                {selectedScope.label}
-              </ComboboxTrigger>
-              <ComboboxPopup>
-                <ComboboxSearchInput
-                  placeholder="Search workspaces..."
-                  aria-label="Search project defaults workspaces"
-                />
-                <ComboboxEmpty>No workspaces found.</ComboboxEmpty>
-                <ComboboxList>
-                  {(option: (typeof scopeOptions)[number]) => (
-                    <ComboboxItem key={option.id ?? "all"} value={option}>
-                      {option.label}
-                    </ComboboxItem>
-                  )}
-                </ComboboxList>
-              </ComboboxPopup>
-            </Combobox>
-          }
-        />
-        {targets.length === 0 ? (
-          <p className="p-4" role="status">
-            Connect a Coder workspace to edit defaults.
-          </p>
-        ) : (
-          <DefaultsForm
-            key={JSON.stringify([scope, targets.map((target) => target.environmentId)])}
-            settings={targets[0]!.serverConfig!.settings}
-            providers={targets[0]!.serverConfig!.providers}
-            disabled={pending}
-            onSave={async (patch) => {
-              if (pending) return;
-              const selection = patch.defaultModelSelection;
-              if (
-                selection &&
-                targets.some(
-                  (target) =>
-                    !target.serverConfig?.providers.some(
-                      (provider) =>
-                        provider.instanceId === selection.instanceId &&
-                        provider.enabled &&
-                        provider.models.some((model) => model.slug === selection.model),
-                    ),
-                )
-              ) {
-                setNotice(
-                  "Select a model available in every selected workspace, or choose one workspace.",
-                );
-                return;
-              }
-              setPending(true);
-              setNotice(null);
-              try {
-                const results = await Promise.all(
-                  targets.map(async (target) => ({
-                    label: target.label,
-                    result: await update({ environmentId: target.environmentId, input: { patch } }),
-                  })),
-                );
-                const failed = results.filter(({ result }) => result._tag === "Failure");
-                setNotice(
-                  failed.length
-                    ? `Could not save defaults in: ${failed.map(({ label }) => label).join(", ")}. Other selected workspaces were updated.`
-                    : "Project defaults saved.",
-                );
-              } finally {
-                setPending(false);
-              }
-            }}
-          />
-        )}
-        {targets.length > 1 && (
-          <p className="p-4 text-sm text-muted-foreground">
-            The form starts with {targets[0]!.label}'s defaults. Saving applies these values to all
-            selected connected workspaces.
-          </p>
-        )}
-        {notice && (
-          <p role="status" className="p-4 text-sm">
-            {notice}
-          </p>
-        )}
-      </SettingsSection>
-      <SettingsSection
-        title="Project overrides"
-        description="Open a project to change its model, checkout, automatic pull, or scripts."
-      >
-        {projects.map((project) => (
-          <SettingsRow
-            key={`${project.environmentId}:${project.id}`}
-            title={project.title}
-            description={
-              environments.find(
-                (environment) => environment.environmentId === project.environmentId,
-              )?.label ?? project.environmentId
-            }
-            control={
-              <Link {...projectSettingsTarget(project)} className="text-primary underline">
-                Edit project
-              </Link>
-            }
-          />
-        ))}
-      </SettingsSection>
-    </SettingsPage>
-  );
-}
-
-function DefaultsForm({
+export function DefaultsForm({
   settings,
   providers,
   disabled,
@@ -188,17 +20,48 @@ function DefaultsForm({
   settings: typeof DEFAULT_SERVER_SETTINGS;
   providers: ReadonlyArray<import("@t3tools/contracts").ServerProvider>;
   disabled: boolean;
-  onSave: (patch: {
-    defaultModelSelection: ModelSelection | null;
-    defaultAutoPull: boolean;
-    defaultThreadEnvMode: "local" | "worktree";
-    defaultProjectScripts: ProjectScript[];
-  }) => Promise<void>;
+  onSave: (
+    patch: Partial<{
+      defaultModelSelection: ModelSelection | null;
+      defaultAutoPull: boolean;
+      defaultThreadEnvMode: "local" | "worktree";
+      defaultProjectScripts: ProjectScript[];
+    }>,
+  ) => Promise<void>;
 }) {
-  const [model, setModel] = useState(settings.defaultModelSelection);
-  const [autoPull, setAutoPull] = useState(settings.defaultAutoPull);
-  const [mode, setMode] = useState(settings.defaultThreadEnvMode);
-  const [scripts, setScripts] = useState([...settings.defaultProjectScripts]);
+  const mixedModel = useOptionalScopedSettingsMixed(["defaultModelSelection"]);
+  const mixedMode = useOptionalScopedSettingsMixed(["defaultThreadEnvMode"]);
+  const mixedAutoPull = useOptionalScopedSettingsMixed(["defaultAutoPull"]);
+  const [dirty, setDirty] = useState<Set<string>>(new Set());
+  const mark = (key: string) => setDirty((current) => new Set([...current, key]));
+  const [modelDraft, setModelValue] = useState(settings.defaultModelSelection);
+  const [autoPullDraft, setAutoPullValue] = useState(settings.defaultAutoPull);
+  const [modeDraft, setModeValue] = useState(settings.defaultThreadEnvMode);
+  const [scriptsDraft, setScriptsValue] = useState([...settings.defaultProjectScripts]);
+  // Follow subscription updates and inheritance resets for untouched fields,
+  // while preserving unsaved edits (including drafts from failed saves).
+  const model = !dirty.has("defaultModelSelection") ? settings.defaultModelSelection : modelDraft;
+  const autoPull = !dirty.has("defaultAutoPull") ? settings.defaultAutoPull : autoPullDraft;
+  const mode = !dirty.has("defaultThreadEnvMode") ? settings.defaultThreadEnvMode : modeDraft;
+  const scripts = !dirty.has("defaultProjectScripts")
+    ? settings.defaultProjectScripts
+    : scriptsDraft;
+  const setModel = (value: ModelSelection | null) => {
+    mark("defaultModelSelection");
+    setModelValue(value);
+  };
+  const setAutoPull = (value: boolean) => {
+    mark("defaultAutoPull");
+    setAutoPullValue(value);
+  };
+  const setMode = (value: "local" | "worktree") => {
+    mark("defaultThreadEnvMode");
+    setModeValue(value);
+  };
+  const setScripts = (value: ProjectScript[]) => {
+    mark("defaultProjectScripts");
+    setScriptsValue(value);
+  };
   const [error, setError] = useState<string | null>(null);
   const models = providers
     .filter((provider) => provider.enabled)
@@ -210,6 +73,7 @@ function DefaultsForm({
       className="space-y-4 p-4"
       onSubmit={(event) => {
         event.preventDefault();
+        if (disabled || dirty.size === 0) return;
         const validation = validateProjectSettings({
           title: "Defaults",
           defaultModelSelection: model,
@@ -219,22 +83,33 @@ function DefaultsForm({
         });
         setError(validation);
         if (!validation)
-          void onSave({
-            defaultModelSelection: model,
-            defaultAutoPull: autoPull,
-            defaultThreadEnvMode: mode,
-            defaultProjectScripts: scripts,
-          });
+          void onSave(
+            Object.fromEntries(
+              Object.entries({
+                defaultModelSelection: model,
+                defaultAutoPull: autoPull,
+                defaultThreadEnvMode: mode,
+                defaultProjectScripts: scripts,
+              }).filter(([key]) => dirty.has(key)),
+            ),
+          );
       }}
     >
       <fieldset disabled={disabled} className="space-y-4">
         <SettingsRow
           title="Default model"
+          settingKeys={["defaultModelSelection"]}
           control={
             <select
               aria-label="Default model"
               className="rounded border bg-background p-2"
-              value={model ? JSON.stringify([model.instanceId, model.model]) : ""}
+              value={
+                mixedModel && !dirty.has("defaultModelSelection")
+                  ? "mixed"
+                  : model
+                    ? JSON.stringify([model.instanceId, model.model])
+                    : ""
+              }
               onChange={(event) => {
                 const selected = models.find(
                   (entry) => JSON.stringify([entry.instanceId, entry.model]) === event.target.value,
@@ -242,6 +117,11 @@ function DefaultsForm({
                 setModel(selected ?? null);
               }}
             >
+              {mixedModel && !dirty.has("defaultModelSelection") && (
+                <option value="mixed" disabled>
+                  Mixed
+                </option>
+              )}
               <option value="">Use provider default</option>
               {models.map((entry) => (
                 <option
@@ -256,104 +136,122 @@ function DefaultsForm({
         />
         <SettingsRow
           title="New threads"
+          settingKeys={["defaultThreadEnvMode"]}
           control={
             <select
               aria-label="Default checkout mode"
-              value={mode}
+              value={mixedMode && !dirty.has("defaultThreadEnvMode") ? "mixed" : mode}
               className="rounded border bg-background p-2"
               onChange={(event) =>
                 setMode(event.target.value === "worktree" ? "worktree" : "local")
               }
             >
+              {mixedMode && !dirty.has("defaultThreadEnvMode") && (
+                <option value="mixed" disabled>
+                  Mixed
+                </option>
+              )}
               <option value="local">Current checkout</option>
               <option value="worktree">New worktree</option>
             </select>
           }
         />
-        <label className="flex gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={autoPull}
-            onChange={(event) => setAutoPull(event.target.checked)}
-          />
-          Automatically pull clean default-branch checkouts when the helper starts
-        </label>
-        <p className="text-sm">
-          Default scripts apply to projects that inherit actions. Saving does not run them.
-        </p>
-        {scripts.map((script, index) => (
-          <div key={script.id} className="space-y-2 rounded border p-3">
-            <Input
-              aria-label={`Default script ${index + 1} name`}
-              value={script.name}
-              onChange={(event) =>
-                setScripts(
-                  scripts.map((entry) =>
-                    entry.id === script.id ? { ...entry, name: event.target.value } : entry,
-                  ),
-                )
-              }
+        <SettingsRow title="Automatic pull" settingKeys={["defaultAutoPull"]}>
+          <label className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={mixedAutoPull && !dirty.has("defaultAutoPull") ? false : autoPull}
+              aria-checked={mixedAutoPull && !dirty.has("defaultAutoPull") ? "mixed" : autoPull}
+              ref={(input) => {
+                if (input) input.indeterminate = mixedAutoPull && !dirty.has("defaultAutoPull");
+              }}
+              onChange={(event) => setAutoPull(event.target.checked)}
             />
-            <Textarea
-              aria-label={`Default script ${index + 1} command`}
-              value={script.command}
-              onChange={(event) =>
-                setScripts(
-                  scripts.map((entry) =>
-                    entry.id === script.id ? { ...entry, command: event.target.value } : entry,
-                  ),
-                )
-              }
-            />
-            <label className="flex gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={script.runOnWorktreeCreate}
+            Automatically pull clean default-branch checkouts when the helper starts
+          </label>
+        </SettingsRow>
+        <SettingsRow title="Project scripts" settingKeys={["defaultProjectScripts"]}>
+          <p className="text-sm">
+            Default scripts apply to projects that inherit actions. Saving does not run them.
+          </p>
+          {scripts.map((script, index) => (
+            <div key={script.id} className="space-y-2 rounded border p-3">
+              <Input
+                aria-label={`Default script ${index + 1} name`}
+                value={script.name}
                 onChange={(event) =>
                   setScripts(
-                    scripts.map((entry) => ({
-                      ...entry,
-                      runOnWorktreeCreate:
-                        entry.id === script.id
-                          ? event.target.checked
-                          : event.target.checked
-                            ? false
-                            : entry.runOnWorktreeCreate,
-                    })),
+                    scripts.map((entry) =>
+                      entry.id === script.id ? { ...entry, name: event.target.value } : entry,
+                    ),
                   )
                 }
               />
-              Run when a worktree is created
-            </label>
+              <Textarea
+                aria-label={`Default script ${index + 1} command`}
+                value={script.command}
+                onChange={(event) =>
+                  setScripts(
+                    scripts.map((entry) =>
+                      entry.id === script.id ? { ...entry, command: event.target.value } : entry,
+                    ),
+                  )
+                }
+              />
+              <label className="flex gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={script.runOnWorktreeCreate}
+                  onChange={(event) =>
+                    setScripts(
+                      scripts.map((entry) => ({
+                        ...entry,
+                        runOnWorktreeCreate:
+                          entry.id === script.id
+                            ? event.target.checked
+                            : event.target.checked
+                              ? false
+                              : entry.runOnWorktreeCreate,
+                      })),
+                    )
+                  }
+                />
+                Run when a worktree is created
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setScripts(scripts.filter((entry) => entry.id !== script.id))}
+              >
+                Remove script
+              </Button>
+            </div>
+          ))}
+          <div className="flex gap-2">
             <Button
               type="button"
               variant="outline"
-              onClick={() => setScripts(scripts.filter((entry) => entry.id !== script.id))}
+              onClick={() =>
+                setScripts([
+                  ...scripts,
+                  {
+                    id: crypto.randomUUID(),
+                    name: "",
+                    command: "",
+                    icon: "play",
+                    runOnWorktreeCreate: false,
+                  },
+                ])
+              }
             >
-              Remove script
+              Add script
             </Button>
           </div>
-        ))}
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              setScripts([
-                ...scripts,
-                {
-                  id: crypto.randomUUID(),
-                  name: "",
-                  command: "",
-                  icon: "play",
-                  runOnWorktreeCreate: false,
-                },
-              ])
-            }
-          >
-            Add script
+        </SettingsRow>
+        <div>
+          <Button type="submit" disabled={disabled || dirty.size === 0}>
+            {disabled ? "Saving…" : "Save defaults"}
           </Button>
-          <Button type="submit">{disabled ? "Saving…" : "Save defaults"}</Button>
         </div>
         {error && <p role="alert">{error}</p>}
       </fieldset>

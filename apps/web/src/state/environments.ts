@@ -1,10 +1,10 @@
+import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
 import { useAtomValue } from "@effect/atom-react";
 import {
   connectionCatalogDisplayUrl,
   type EnvironmentPresentation as BaseEnvironmentPresentation,
 } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
@@ -63,5 +63,6 @@ export function useEnvironment(
 }
 
 export function useEnvironmentKeybindings(environmentId: EnvironmentId | null) {
-  return useEnvironment(environmentId)?.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
+  const keybindings = useEnvironment(environmentId)?.serverConfig?.keybindings;
+  return useMemo(() => mergeWithDefaultKeybindings(keybindings ?? []), [keybindings]);
 }

@@ -1,3 +1,4 @@
+import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
 import { useRightPanelStore } from "../rightPanelStore";
@@ -227,7 +228,12 @@ function CoderCommandPaletteDialog(props: {
         value: `new-thread-in:${targetProject.environmentId}:${targetProject.id}`,
         searchTerms: [
           group.displayName,
-          ...group.memberProjects.flatMap((project) => [project.title, project.workspaceRoot]),
+          ...group.memberProjects.flatMap((project) => [
+            project.title,
+            project.workspaceRoot,
+            environments.find((environment) => environment.environmentId === project.environmentId)
+              ?.label ?? project.environmentId,
+          ]),
         ],
         title: group.displayName,
         description: [targetProject.workspaceRoot, targetProject.environmentLabel]
@@ -238,7 +244,7 @@ function CoderCommandPaletteDialog(props: {
           await handleNewThread(scopeProjectRef(targetProject.environmentId, targetProject.id));
         },
       })),
-    [handleNewThread, projectPickerEntries],
+    [handleNewThread, projectPickerEntries, environments],
   );
   const settingsItems = useMemo<CommandPaletteActionItem[]>(
     () =>
@@ -297,6 +303,8 @@ function CoderCommandPaletteDialog(props: {
         searchTerms: [
           thread.title,
           projectTitle,
+          environments.find((environment) => environment.environmentId === thread.environmentId)
+            ?.label ?? thread.environmentId,
           thread.branch ?? "",
           match?.snippet ?? "",
           ...threadPullRequestSearchTerms(thread),
@@ -308,6 +316,10 @@ function CoderCommandPaletteDialog(props: {
           <ThreadCommandSubtitle
             project={project ?? null}
             projectTitle={projectTitle}
+            environmentLabel={
+              environments.find((environment) => environment.environmentId === thread.environmentId)
+                ?.label ?? thread.environmentId
+            }
             branch={thread.branch ?? null}
             worktreePath={thread.worktreePath ?? null}
             isCurrent={
@@ -487,6 +499,7 @@ function CoderCommandPaletteDialog(props: {
         value: "action:linked-mrs",
         icon: <MessageSquareIcon className="size-4" />,
         title: "Show linked merge requests",
+        disabled: visibleThreadPullRequests(activeThread.pullRequests).length === 0,
         searchTerms: ["linked", "mr", "merge requests"],
         run: async () => {
           useRightPanelStore.getState().open(ref, "pull-requests");

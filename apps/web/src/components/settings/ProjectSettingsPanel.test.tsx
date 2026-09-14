@@ -1,3 +1,4 @@
+import { SourceControlPreferences } from "./SourceControlPreferences";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
@@ -77,10 +78,6 @@ it("saves edits only to the selected Coder workspace and project", async () => {
     input: {
       projectId: "project",
       title: "Renamed",
-      defaultModelSelection: null,
-      defaultThreadEnvMode: null,
-      autoPull: false,
-      scripts: [],
     },
   });
   expect(JSON.stringify(renderer!.toJSON())).toContain("Project settings saved.");
@@ -127,10 +124,9 @@ it("renaming a project preserves inherited scripts and automatic pull", async ()
   );
   await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
   expect(mocks.update).toHaveBeenCalledOnce();
-  expect(mocks.update.mock.calls[0]![0].input).toMatchObject({
+  expect(mocks.update.mock.calls[0]![0].input).toEqual({
+    projectId: project.id,
     title: "Renamed",
-    scripts: [],
-    autoPull: false,
   });
 });
 it("reset does not erase a concurrent script edit", async () => {
@@ -194,5 +190,39 @@ it("stores and clears merge defaults only in the selected workspace", async () =
   expect(mocks.update).toHaveBeenLastCalledWith({
     environmentId: "workspace-a",
     input: { patch: { pullRequestMergeMethodOverrides: { project: null } } },
+  });
+});
+
+it("edits project writer preferences without losing inherited style fields", async () => {
+  const root = await mount();
+  const preferences = root.findByType(SourceControlPreferences);
+  await act(async () =>
+    preferences.props.updateSettings({
+      sourceControlWritingStyle: { mode: "conventional_commits" },
+    }),
+  );
+  expect(mocks.update).toHaveBeenLastCalledWith({
+    environmentId: "workspace-a",
+    input: {
+      patch: {
+        projectSettingsOverrides: {
+          project: {
+            sourceControlWritingStyle: {
+              ...DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle,
+              mode: "conventional_commits",
+            },
+          },
+        },
+      },
+    },
+  });
+  await act(async () =>
+    preferences.props.updateSettings({ sourceControlWriterModelSelection: null }),
+  );
+  expect(mocks.update).toHaveBeenLastCalledWith({
+    environmentId: "workspace-a",
+    input: {
+      patch: { projectSettingsOverrides: { project: { sourceControlWriterModelSelection: null } } },
+    },
   });
 });

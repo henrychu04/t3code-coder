@@ -1,3 +1,7 @@
+import { clampCollapsedComposerCursor } from "../composer-logic";
+import { expandLongTextContexts } from "../lib/composerInlineContext";
+import { ComposerContextNode } from "./ComposerContextNode";
+import { imageContextReference } from "../lib/composerInlineContext";
 import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@t3tools/contracts";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
@@ -39,7 +43,7 @@ const citation: AssistantCitation = {
 const citationSource = serializeAssistantCitation(citation).replaceAll("+", "%20");
 
 function createCitationEditor(text = "") {
-  const editor = createEditor({ nodes: [ComposerCitationNode] });
+  const editor = createEditor({ nodes: [ComposerCitationNode, ComposerContextNode] });
   editor.update(
     () => {
       const paragraph = $createParagraphNode();
@@ -615,4 +619,60 @@ describe("citation comment opening", () => {
       expect($consumeComposerCitationCommentRequest(requestRef)).toBeNull();
     });
   });
+});
+
+describe("inline context paste", () => {
+  it("keeps skills as skill text when pasting beside an image chip", () => {
+    vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
+    const editor = createCitationEditor();
+    const source = `${imageContextReference("11111111-1111-4111-8111-111111111111")} $review `;
+    pasteText(editor, source);
+    editor.getEditorState().read(() => expect($getRoot().getTextContent()).toBe(source));
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    imageContextReference("11111111-1111-4111-8111-111111111111"),
+    "long text ".repeat(5000),
+  ])("keeps context bytes intact through editor serialization", (source) => {
+    vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
+    const editor = createCitationEditor();
+    expect(pasteText(editor, source).defaultPrevented).toBe(true);
+    editor.getEditorState().read(() => {
+      expect(expandLongTextContexts($getRoot().getTextContent())).toBe(source);
+      expect(expandLongTextContexts($getRoot().getFirstChildOrThrow().getTextContent())).toBe(
+        source,
+      );
+    });
+    const restored = editor.parseEditorState(JSON.stringify(editor.getEditorState()));
+    restored.read(() => expect(expandLongTextContexts($getRoot().getTextContent())).toBe(source));
+    vi.unstubAllGlobals();
+  });
+});
+
+it("keeps long paste boundaries stable beside existing text", () => {
+  vi.stubGlobal("ClipboardEvent", TestClipboardEvent);
+  try {
+    const editor = createCitationEditor("Before ");
+    pasteText(editor, "x".repeat(40000));
+    editor.getEditorState().read(() => {
+      const paragraph = $getRoot().getFirstChildOrThrow();
+      if (!$isElementNode(paragraph)) throw new Error("paragraph");
+      const length = paragraph
+        .getChildren()
+        .reduce(
+          (sum, node) =>
+            sum + (node instanceof ComposerContextNode ? 1 : node.getTextContentSize()),
+          0,
+        );
+      expect(clampCollapsedComposerCursor($getRoot().getTextContent(), length)).toBe(length);
+      expect(expandLongTextContexts($getRoot().getTextContent())).toBe(
+        "Before " + "x".repeat(40000),
+      );
+    });
+    const shortEditor = createCitationEditor();
+    expect(pasteText(shortEditor, "x".repeat(32767)).defaultPrevented).toBe(false);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

@@ -7,6 +7,7 @@
  * fork.
  */
 import { ProviderDriverKind, type ServerProviderModel } from "@t3tools/contracts";
+import { codexModelFamily } from "@t3tools/shared/model";
 import * as Schema from "effect/Schema";
 
 import bundledManifestJson from "./model-manifest.json" with { type: "json" };
@@ -28,6 +29,7 @@ export function isLegacyModel(
   driverKind: ProviderDriverKind,
   slug: string,
 ): boolean {
+  slug = driverKind === CODEX_DRIVER_KIND ? codexModelFamily(slug) : slug;
   const currentModels = manifest.currentModels[driverKind];
   if (!currentModels) return false;
   if (currentModels.includes(slug)) return false;

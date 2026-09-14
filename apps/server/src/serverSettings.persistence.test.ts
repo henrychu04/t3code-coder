@@ -33,11 +33,16 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
       assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
         pullRequestMergeMethod: "squash",
         pullRequestMergeMethodOverrides: { [projectA]: "rebase", [projectB]: "merge" },
+        projectSettingsOverrides: {
+          [projectA]: { pullRequestMergeMethod: "rebase" },
+          [projectB]: { pullRequestMergeMethod: "merge" },
+        },
       });
       yield* settings.updateSettings({ pullRequestMergeMethodOverrides: { [projectA]: null } });
       assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
         pullRequestMergeMethod: "squash",
         pullRequestMergeMethodOverrides: { [projectB]: "merge" },
+        projectSettingsOverrides: { [projectB]: { pullRequestMergeMethod: "merge" } },
       });
     }).pipe(Effect.provide(settingsLayer)),
   );

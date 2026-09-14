@@ -24,6 +24,67 @@ const TestLayer = WorkspaceEntries.layer.pipe(
 
 it.layer(TestLayer)("WorkspaceEntries", (it) => {
   describe("list", () => {
+    it.effect(
+      "loads ignored children on demand while excluding Git metadata and symlink escapes",
+      () =>
+        Effect.gen(function* () {
+          const entries = yield* WorkspaceEntries.WorkspaceEntries;
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-coder-lazy-files-" });
+          const outside = yield* fs.makeTempDirectoryScoped({ prefix: "t3-coder-outside-files-" });
+          yield* fs.makeDirectory(path.join(root, "ignored"));
+          yield* fs.writeFileString(path.join(root, ".gitignore"), "ignored/\n");
+          yield* fs.writeFileString(path.join(root, "ignored", "visible.txt"), "bounded text");
+          yield* Effect.promise(() => execFileAsync("git", ["init"], { cwd: root }));
+          yield* Effect.promise(() => NodeFS.symlink(outside, path.join(root, "escape")));
+          const top = yield* entries.list({ cwd: root, directoryPath: "" });
+          expect(top.entries).toContainEqual({ path: "ignored", kind: "directory", ignored: true });
+          expect(
+            top.entries.some(
+              (entry) =>
+                entry.path === ".git" ||
+                entry.path === "escape" ||
+                entry.path.includes("visible.txt"),
+            ),
+          ).toBe(false);
+          const children = yield* entries.list({ cwd: root, directoryPath: "ignored" });
+          expect(children.entries).toEqual([
+            { path: "ignored/visible.txt", kind: "file", ignored: true },
+          ]);
+          for (const directoryPath of [
+            "escape",
+            "../outside",
+            ".git",
+            "ignored/../.git",
+            "/tmp",
+            "ignored\\escape",
+          ]) {
+            expect((yield* Effect.exit(entries.list({ cwd: root, directoryPath })))._tag).toBe(
+              "Failure",
+            );
+          }
+        }),
+    );
+    it.effect("bounds directory replies and reports truncation without scanning descendants", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-coder-bounded-folder-" });
+        yield* Effect.promise(() =>
+          Promise.all(
+            Array.from({ length: WorkspaceEntries.MAX_PROJECT_DIRECTORY_ENTRIES + 1 }, (_, i) =>
+              NodeFS.writeFile(path.join(root, `${i}.txt`), ""),
+            ),
+          ),
+        );
+        const result = yield* entries.list({ cwd: root, directoryPath: "" });
+        expect(result.entries).toHaveLength(WorkspaceEntries.MAX_PROJECT_DIRECTORY_ENTRIES);
+        expect(result.truncated).toBe(true);
+      }),
+    );
+
     it.effect("lists files and their ancestor directories without reading contents", () =>
       Effect.gen(function* () {
         const entries = yield* WorkspaceEntries.WorkspaceEntries;

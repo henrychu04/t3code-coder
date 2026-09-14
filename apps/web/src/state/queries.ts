@@ -272,6 +272,7 @@ export function useProjectPathSearch(
     error: isCurrentSearch ? result.error : null,
     isPending: !isCurrentSearch || result.isPending,
     searchedQuery: debouncedTarget.query ?? "",
+    truncated: result.data?.truncated ?? false,
     refresh: result.refresh,
   };
 }

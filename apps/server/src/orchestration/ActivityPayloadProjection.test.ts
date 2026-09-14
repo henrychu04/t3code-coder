@@ -170,3 +170,16 @@ describe("projectActivityPayload", () => {
     expect(projected.payload).toEqual(source.payload);
   });
 });
+
+it("preserves question text for matching native question tools without duplicating choices", () => {
+  const projected = projectActivityPayload(
+    activity({
+      title: "AskUserQuestion",
+      data: { input: { questions: [{ question: "Which option?", options: [{ label: "A" }] }] } },
+    }),
+  );
+  expect(projected.payload).toMatchObject({
+    data: { input: { questions: [{ question: "Which option?" }] } },
+  });
+  expect(JSON.stringify(projected.payload)).not.toContain('"options"');
+});

@@ -106,12 +106,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         captureScreenshotFile: screenshotArtifacts.captureFile,
         captureScreenshotBase64: screenshotArtifacts.captureBase64,
       });
-      const textGeneration = yield* makeCodexTextGeneration(
-        effectiveConfig,
-        processEnv,
-        attachmentsDir,
-        resolveMcpServerNames,
-      );
       const checkProvider = checkCodexProviderStatus(
         effectiveConfig,
         undefined,
@@ -138,6 +132,14 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
               cause,
             }),
         ),
+      );
+
+      const textGeneration = yield* makeCodexTextGeneration(
+        effectiveConfig,
+        processEnv,
+        attachmentsDir,
+        resolveMcpServerNames,
+        snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
       );
 
       return {

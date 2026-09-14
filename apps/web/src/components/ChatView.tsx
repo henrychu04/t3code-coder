@@ -1,3 +1,11 @@
+import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
+import { waitForRevertedMessage } from "../lib/waitForRevertedMessage";
+import { readScreenshotBlob } from "../lib/readScreenshotBlob";
+import { submittedImageAttachments } from "../lib/submittedImageAttachments";
+import { recallableComposerPrompt } from "./chat/composerPromptHistory";
+import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
+import type { ComposerPastedImage } from "../lib/composerPastedImages";
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
@@ -170,7 +178,7 @@ import {
   deriveAgentPanelModel,
   foldSubagentActivities,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { BranchToolbar } from "./BranchToolbar";
+import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import {
   DOUBLE_SHIFT_MAX_INTERVAL_MS,
   resolveDoubleShiftShortcutCommand,
@@ -251,6 +259,7 @@ import {
 } from "../state/entities";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
+import { WorktreeSetupCard } from "./chat/WorktreeSetupCard";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
@@ -325,6 +334,11 @@ import {
   rememberCheckoutIsRepo,
   resolveBackgroundDraftWorkspaceOptions,
   resolveDraftHeroState,
+  isPaintOnlyThreadTimeline,
+  peekHeldThreadTimeline,
+  peekRememberedThreadTimeline,
+  rememberReadyThreadTimeline,
+  resolveThreadSwitchTimeline,
   resolveThreadMetadataUpdateForNextTurn,
   resolveSendEnvMode,
   shouldWriteThreadErrorToCurrentServerThread,
@@ -1245,6 +1259,9 @@ function chatActionErrorMessage(error: unknown): string {
 }
 
 const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
+const EMPTY_HELD_TURN_DIFF_SUMMARIES: readonly never[] = [];
+const noopHeldTurnDiff = (_turnId: TurnId, _filePath?: string) => {};
+const noopHeldRevert = (_targetTurnCount: number) => {};
 
 /**
  * Drops the send-time anchored end space. That space is what holds a sent
@@ -1309,6 +1326,9 @@ export default function ChatView(props: ChatViewProps) {
     reportFailure: false,
   });
   const dismissThreadUserInput = useAtomCommand(threadEnvironment.dismissUserInput, {
+    reportFailure: false,
+  });
+  const readRewindImage = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
     reportFailure: false,
   });
   const revertThreadCheckpoint = useAtomCommand(threadEnvironment.revertCheckpoint, {
@@ -1411,6 +1431,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const branchToolbarRef = useRef<BranchToolbarHandle>(null);
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
   const [restingComposerControlsVisible, setRestingComposerControlsVisible] = useState(false);
@@ -1441,7 +1462,20 @@ export default function ChatView(props: ChatViewProps) {
     Record<string, LocalThreadErrorEntry>
   >({});
   const [isConnecting, _setIsConnecting] = useState(false);
-  const [isRevertingCheckpoint, setIsRevertingCheckpoint] = useState(false);
+  const isRevertingCheckpoint = useComposerDraftStore((state) =>
+    state.rewindingThreadKeys.has(routeThreadKey),
+  );
+  const setIsRevertingCheckpoint = useCallback(
+    (rewinding: boolean) => {
+      useComposerDraftStore.setState((state) => {
+        const keys = new Set(state.rewindingThreadKeys);
+        if (rewinding) keys.add(routeThreadKey);
+        else keys.delete(routeThreadKey);
+        return { rewindingThreadKeys: keys };
+      });
+    },
+    [routeThreadKey],
+  );
   const [maximizedRightPanelThreadKey, setMaximizedRightPanelThreadKey] = useState<string | null>(
     null,
   );
@@ -2170,6 +2204,18 @@ export default function ChatView(props: ChatViewProps) {
     timelineMessages,
     workLogEntries,
   ]);
+  const displayedTimeline = resolveThreadSwitchTimeline({
+    loading: threadDetailLoading,
+    activeThreadKey,
+    nextEntries: timelineEntries,
+    rememberedForActive: peekRememberedThreadTimeline<typeof timelineEntries>(activeThreadKey),
+  });
+  const displayedTimelineKey = displayedTimeline.displayThreadKey ?? routeThreadKey;
+  const paintOnlyDisplayedTimeline = isPaintOnlyThreadTimeline(
+    displayedTimeline.displayThreadKey,
+    activeThreadKey,
+  );
+  const displayedThreadRef = parseScopedThreadKey(displayedTimelineKey);
   const [dockedDraftHeroThreadKey, setDockedDraftHeroThreadKey] = useState<string | null>(null);
   const draftHeroDockRequested =
     activeThreadKey !== null && dockedDraftHeroThreadKey === activeThreadKey;
@@ -2192,6 +2238,19 @@ export default function ChatView(props: ChatViewProps) {
       })
     : null;
   const gitStatusCwd = activeThread?.worktreePath ?? gitCwd;
+  const worktreeSetupQuery = useEnvironmentQuery(
+    vcsEnvironment.worktreeSetup({ environmentId, input: { threadId: routeThreadRef.threadId } }),
+  );
+  const worktreeSetup = worktreeSetupQuery.data;
+  const [workLocallyResendDraftId, setWorkLocallyResendDraftId] = useState<DraftId | null>(null);
+  const worktreeSetupDraftIdRef = useRef(draftId);
+  worktreeSetupDraftIdRef.current = draftId;
+  useEffect(() => {
+    setWorkLocallyResendDraftId(null);
+  }, [draftId]);
+  const cancelWorktreeSetup = useAtomCommand(vcsEnvironment.cancelWorktreeSetup, {
+    reportFailure: false,
+  });
   const gitStatusQuery = useEnvironmentQuery(
     gitStatusCwd === null
       ? null
@@ -2258,6 +2317,20 @@ export default function ChatView(props: ChatViewProps) {
     (repositoryIdentity.provider === "gitlab" || repositoryIdentity.provider === "unknown")
       ? (repositoryIdentity.displayName ?? null)
       : null;
+  useLayoutEffect(() => {
+    if (threadDetailLoading || timelineEntries.length === 0) {
+      return;
+    }
+    rememberReadyThreadTimeline({
+      threadKey: activeThreadKey,
+      entries: timelineEntries,
+      markdownCwd: gitCwd,
+      workspaceRoot: activeWorkspaceRoot ?? null,
+    });
+  }, [activeThreadKey, activeWorkspaceRoot, gitCwd, threadDetailLoading, timelineEntries]);
+  const heldPaintContext = paintOnlyDisplayedTimeline
+    ? peekHeldThreadTimeline<typeof timelineEntries>()
+    : null;
   const activeTerminalLaunchContext =
     terminalUiLaunchContext?.threadId === activeThreadId ? terminalUiLaunchContext : null;
   // Git status arrives after the composer paints. A checkout seen earlier in
@@ -3393,6 +3466,21 @@ export default function ChatView(props: ChatViewProps) {
       void legendListRef.current?.scrollToEnd?.({ animated });
     });
   }, []);
+  const displayedTimelineKeyRef = useRef(displayedTimeline.displayThreadKey);
+  useLayoutEffect(() => {
+    const displayKey = displayedTimeline.displayThreadKey;
+    if (displayKey === null || displayKey !== activeThreadKey) {
+      displayedTimelineKeyRef.current = displayKey;
+      return;
+    }
+    if (displayedTimelineKeyRef.current === displayKey) {
+      return;
+    }
+    displayedTimelineKeyRef.current = displayKey;
+    // Keep the list mounted across jumps; pin the newly displayed thread to
+    // its end the way a remount used to via initialScrollAtEnd.
+    scrollToEnd();
+  }, [activeThreadKey, displayedTimeline.displayThreadKey, scrollToEnd]);
   useLayoutEffect(() => {
     if (timelineScrollModeRef.current !== "anchoring-new-turn") {
       return;
@@ -3701,7 +3789,6 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThread?.id, timelineEntries, getActiveTimelineTurnMetrics]);
 
   useEffect(() => {
-    setIsRevertingCheckpoint(false);
     isAtEndRef.current = true;
     timelineScrollIntentRef.current = null;
     timelineScrollModeRef.current = "following-end";
@@ -4233,13 +4320,8 @@ export default function ChatView(props: ChatViewProps) {
     activeEnvironmentUnavailable ||
     pendingApprovals.length > 0 ||
     pendingUserInputs.length > 0 ||
-    showPlanFollowUpPrompt ||
-    composerHasDraftContent;
-  const compactDisabledReason = compactDisabled
-    ? composerHasDraftContent
-      ? "Send or clear your draft before compacting"
-      : "Compacting is unavailable right now"
-    : null;
+    showPlanFollowUpPrompt;
+  const compactDisabledReason = compactDisabled ? "Compacting is unavailable right now" : null;
   const resumeCompactionBannerItem = useMemo<ComposerBannerStackItem | null>(() => {
     if (
       !activeThread ||
@@ -4458,6 +4540,15 @@ export default function ChatView(props: ChatViewProps) {
 
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
+
+  const getShortcutContext = useCallback(
+    () => ({
+      terminalFocus: getTerminalFocusOwner() !== null,
+      terminalOpen: Boolean(terminalUiState.terminalOpen),
+      modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+    }),
+    [composerRef, terminalUiState.terminalOpen],
+  );
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
@@ -4689,7 +4780,33 @@ export default function ChatView(props: ChatViewProps) {
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        composerRef.current?.toggleModelPicker();
+        if (!event.repeat) composerRef.current?.toggleModelPicker();
+        return;
+      }
+
+      if (
+        command === "composer.host" ||
+        command === "composer.effort" ||
+        command === "composer.mode" ||
+        command === "composer.workspace"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) composerRef.current?.openControl(command);
+        return;
+      }
+
+      if (command === "composer.branch") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.openBranchPicker();
+        return;
+      }
+
+      if (command === "composer.previousWorktree") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();
         return;
       }
     };
@@ -4724,6 +4841,7 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelOpen,
     supportsPinning,
     confirmAndUnpinThread,
+    getShortcutContext,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -4749,10 +4867,19 @@ export default function ChatView(props: ChatViewProps) {
     return () => window.removeEventListener("paste", handler, true);
   }, [activeThreadId, composerRef]);
 
+  const [pendingRevert, setPendingRevert] = useState<{
+    turnCount: number;
+    messageId: MessageId;
+    routeThreadKey: string;
+  } | null>(null);
+  if (pendingRevert && pendingRevert.routeThreadKey !== routeThreadKey) setPendingRevert(null);
+
   const onRevertToTurnCount = useCallback(
-    async (turnCount: number) => {
+    async (turnCount: number, messageId: MessageId, restoreFiles?: boolean) => {
       const localApi = readLocalApi();
       if (!localApi || !activeThread || isRevertingCheckpoint) return;
+      const message = activeThread.messages.find((message) => message.id === messageId);
+      if (!message || message.role !== "user") return;
 
       if (activeEnvironmentUnavailable && activeEnvironmentUnavailableLabel) {
         setThreadError(
@@ -4765,38 +4892,83 @@ export default function ChatView(props: ChatViewProps) {
         setThreadError(activeThread.id, "Interrupt the current turn before reverting checkpoints.");
         return;
       }
-      const confirmed = await localApi.dialogs.confirm(
-        [
-          `Revert this thread to checkpoint ${turnCount}?`,
-          "This will discard newer messages and turn diffs in this thread.",
-          "This action cannot be undone.",
-        ].join("\n"),
-        { variant: "destructive" },
-      );
-      if (!confirmed) {
+      if (restoreFiles === undefined) {
+        setPendingRevert({ turnCount, messageId, routeThreadKey });
         return;
       }
 
       setIsRevertingCheckpoint(true);
       setThreadError(activeThread.id, null);
-      const result = await revertThreadCheckpoint({
-        environmentId,
-        input: {
-          threadId: activeThread.id,
-          turnCount,
-        },
-      });
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
+      try {
+        const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
+        if (!workspaceId) throw new Error("The Coder workspace is not connected.");
+        const store = useComposerDraftStore.getState();
+        const images = submittedImageAttachments(message.text).images;
+        const currentImages = store.getComposerDraft(composerDraftTarget)?.pastedImages ?? [];
+        if (currentImages.some((image) => image.status !== "uploaded"))
+          throw new Error("Wait for image uploads to finish before rewinding.");
+        if (currentImages.length + images.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS)
+          throw new Error("Make room for this message's images before rewinding.");
+        const restoredImages: ComposerPastedImage[] = [];
+        for (const image of images) {
+          const blob = await readScreenshotBlob(
+            image,
+            "attachment",
+            async (input) => {
+              const result = await readRewindImage({ environmentId, input });
+              if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+              return result.value;
+            },
+            new AbortController().signal,
+          );
+          const extension =
+            image.mimeType === "image/png"
+              ? "png"
+              : image.mimeType === "image/webp"
+                ? "webp"
+                : "jpg";
+          restoredImages.push({
+            id: crypto.randomUUID(),
+            file: new File([blob], `${image.id}.${extension}`, { type: image.mimeType }),
+            workspaceId,
+            status: "uploaded",
+            path: `~/.t3-coder/attachments/${image.id}.${extension}`,
+          });
+        }
+        await waitForRevertedMessage(routeThreadRef, messageId, turnCount, async () => {
+          const result = await revertThreadCheckpoint({
+            environmentId,
+            input: { threadId: activeThread.id, turnCount, restoreFiles },
+          });
+          if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        });
+        const draft = store.getComposerDraft(composerDraftTarget);
+        store.setPrompt(
+          composerDraftTarget,
+          [draft?.prompt ?? "", recallableComposerPrompt(message.text)]
+            .filter(Boolean)
+            .join("\n\n"),
+        );
+        store.setPastedImages(composerDraftTarget, [
+          ...(draft?.pastedImages ?? []),
+          ...restoredImages,
+        ]);
+      } catch (error) {
         setThreadError(
           activeThread.id,
-          error instanceof Error ? error.message : "Failed to revert thread state.",
+          error instanceof Error ? error.message : "Failed to rewind thread.",
         );
+      } finally {
+        setIsRevertingCheckpoint(false);
       }
-      setIsRevertingCheckpoint(false);
     },
     [
       activeThread,
+      routeThreadKey,
+      routeThreadRef,
+      composerDraftTarget,
+      readRewindImage,
+      setIsRevertingCheckpoint,
       activeEnvironmentUnavailable,
       activeEnvironmentUnavailableLabel,
       environmentId,
@@ -4808,6 +4980,74 @@ export default function ChatView(props: ChatViewProps) {
       setThreadError,
     ],
   );
+
+  const onCompactContext = async () => {
+    if (compactDisabled || !activeThread || !clientSettingsHydrated || sendInFlightRef.current) {
+      return;
+    }
+    const context = composerRef.current?.getSendContext();
+    if (!context?.providerAvailable) return;
+
+    // Compaction is a standalone command; the draft and its attachments stay local.
+    const threadId = activeThread.id;
+    const messageId = newMessageId();
+    const createdAt = new Date().toISOString();
+    sendInFlightRef.current = true;
+    beginLocalDispatch();
+    setThreadError(threadId, null);
+    setOptimisticUserMessages((messages) => [
+      ...messages,
+      {
+        id: messageId,
+        role: "user",
+        text: "/compact",
+        turnId: null,
+        createdAt,
+        updatedAt: createdAt,
+        streaming: false,
+      },
+    ]);
+    scrollToEnd();
+    try {
+      const settingsResult = await persistThreadSettingsForNextTurn({
+        threadId,
+        createdAt,
+        modelSelection: context.selectedModelSelection,
+        ...(checkoutBranchMismatch ? { branch: checkoutBranchMismatch.currentBranch } : {}),
+        runtimeMode,
+        interactionMode: interactionMode,
+      });
+      const result =
+        settingsResult._tag === "Failure"
+          ? settingsResult
+          : await startThreadTurn({
+              environmentId,
+              input: {
+                threadId,
+                message: { messageId, role: "user", text: "/compact" },
+                modelSelection: context.selectedModelSelection,
+                runtimeMode,
+                interactionMode: interactionMode,
+                createdAt,
+              },
+            });
+      if (result._tag === "Failure") {
+        setOptimisticUserMessages((messages) =>
+          messages.filter((message) => message.id !== messageId),
+        );
+        resetLocalDispatch();
+        if (!isAtomCommandInterrupted(result)) {
+          const error = squashAtomCommandFailure(result);
+          setThreadError(
+            threadId,
+            error instanceof Error ? error.message : "Failed to compact context.",
+          );
+        }
+      }
+    } finally {
+      sendInFlightRef.current = false;
+    }
+  };
 
   const onSend = async (
     e?: { preventDefault: () => void },
@@ -4842,7 +5082,10 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (!sendCtx?.providerAvailable || pastedImageSendBlockReason(sendCtx.pastedImages)) {
+    if (
+      !sendCtx?.providerAvailable ||
+      pastedImageSendBlockReason(sendCtx.pastedImages, promptRef.current)
+    ) {
       return;
     }
     const {
@@ -5277,6 +5520,28 @@ export default function ChatView(props: ChatViewProps) {
       resetLocalDispatch();
     }
   };
+
+  const onSendRef = useRef(onSend);
+  onSendRef.current = onSend;
+  const workLocallyResendReady =
+    workLocallyResendDraftId !== null &&
+    workLocallyResendDraftId === draftId &&
+    isLocalDraftThread &&
+    !isSendBusy &&
+    !isConnecting &&
+    !isRevertingCheckpoint &&
+    !threadDetailLoading &&
+    clientSettingsHydrated &&
+    !activeEnvironmentUnavailable;
+  useEffect(() => {
+    if (!workLocallyResendReady || sendInFlightRef.current) return;
+    if (sendEnvMode !== "local") {
+      setDraftThreadContext(composerDraftTarget, { envMode: "local", startFromOrigin: false });
+      return;
+    }
+    setWorkLocallyResendDraftId(null);
+    void onSendRef.current();
+  }, [workLocallyResendReady, sendEnvMode, setDraftThreadContext, composerDraftTarget]);
 
   const onRespondToApproval = useCallback(
     async (requestId: ApprovalRequestId, decision: ProviderApprovalDecision) => {
@@ -5951,8 +6216,8 @@ export default function ChatView(props: ChatViewProps) {
   );
   const onRevertToTurnCountRef = useRef(onRevertToTurnCount);
   onRevertToTurnCountRef.current = onRevertToTurnCount;
-  const onRevertTimelineTurn = useCallback((turnCount: number) => {
-    void onRevertToTurnCountRef.current(turnCount);
+  const onRevertTimelineTurn = useCallback((turnCount: number, messageId: MessageId) => {
+    void onRevertToTurnCountRef.current(turnCount, messageId);
   }, []);
 
   // Empty state: no active thread
@@ -6050,6 +6315,8 @@ export default function ChatView(props: ChatViewProps) {
             ? (activeRightPanelSurface.environmentId as EnvironmentId)
             : activeThreadRef.environmentId
         }
+        getShortcutContext={getShortcutContext}
+        shortcutsEnabled={rightPanelOpen}
         reference={{
           ...(activeRightPanelSurface.host ? { host: activeRightPanelSurface.host } : {}),
           projectId: activeRightPanelSurface.projectId as ProjectId,
@@ -6169,49 +6436,121 @@ export default function ChatView(props: ChatViewProps) {
             </div>
             {/* Messages Wrapper */}
             <div className="relative flex min-h-0 flex-1 flex-col">
+              {worktreeSetup && !(worktreeSetup.phase === "done" && activeLatestTurn?.startedAt) ? (
+                <div className="mx-auto w-full max-w-3xl shrink-0 px-4 py-2">
+                  <WorktreeSetupCard
+                    snapshot={worktreeSetup}
+                    onCancel={
+                      worktreeSetup.phase === "running"
+                        ? () => {
+                            void cancelWorktreeSetup({
+                              environmentId,
+                              input: { threadId: worktreeSetup.threadId },
+                            });
+                          }
+                        : null
+                    }
+                    onWorkLocally={
+                      draftId && worktreeSetup.phase === "running"
+                        ? () => {
+                            const targetDraftId = draftId;
+                            void cancelWorktreeSetup({
+                              environmentId,
+                              input: { threadId: worktreeSetup.threadId },
+                            }).then((result) => {
+                              if (
+                                result._tag === "Success" &&
+                                result.value.cancelled &&
+                                worktreeSetupDraftIdRef.current === targetDraftId
+                              )
+                                setWorkLocallyResendDraftId(targetDraftId);
+                            });
+                          }
+                        : null
+                    }
+                    onOpenTerminal={
+                      worktreeSetup.setupScript && activeThreadRef
+                        ? () => {
+                            storeEnsureTerminal(
+                              activeThreadRef,
+                              worktreeSetup.setupScript!.terminalId,
+                              { open: true },
+                            );
+                          }
+                        : null
+                    }
+                  />
+                </div>
+              ) : null}
               {/* Messages — LegendList handles virtualization and scrolling internally */}
-              <MessagesTimeline
-                citationRequest={citationRequest}
-                citationHistoryLoading={threadDetailLoading}
-                onCiteAssistantText={citeAssistantText}
-                key={activeThread.id}
-                agentPanelModel={agentPanelModel}
-                onOpenAgents={addAgentsSurface}
-                isWorking={isWorking}
-                isCompacting={isCompacting}
-                activeTurnStartedAt={activeWorkStartedAt}
-                listRef={legendListRef}
-                timelineEntries={timelineEntries}
-                latestTurn={activeLatestTurn}
-                runningTurnId={activeRunningTurnId}
-                turnDiffSummaries={activeThread.checkpoints}
-                activeThreadEnvironmentId={activeThread.environmentId}
-                routeThreadKey={routeThreadKey}
-                onOpenTurnDiff={onOpenTurnDiff}
-                onRevertToTurnCount={onRevertTimelineTurn}
-                onUseArtifactTemplate={useArtifactTemplate}
-                isRevertingCheckpoint={isRevertingCheckpoint}
-                markdownCwd={gitCwd ?? undefined}
-                resolvedTheme={resolvedTheme}
-                timestampFormat={timestampFormat}
-                workspaceRoot={activeWorkspaceRoot}
-                skills={
-                  activeProviderStatus
-                    ? resolveProviderSkillsForCwd(activeProviderStatus, gitStatusCwd)
-                    : EMPTY_PROVIDER_SKILLS
-                }
-                anchorMessageId={timelineAnchorMessageId}
-                onAnchorReady={onTimelineAnchorReady}
-                contentInsetEndAdjustment={composerTimelineInset}
-                liveFollowEnabled={timelineLiveFollowEnabled}
-                onIsAtEndChange={onIsAtEndChange}
-                onContentOverflowChange={setTimelineOverflows}
-                onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
-                onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
-                hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
-                topFadeEnabled={!hasTimelineTopBanner}
-                loadEarlier={loadEarlierTurns}
-              />
+              <div
+                className="flex min-h-0 flex-1 flex-col bg-background"
+                inert={paintOnlyDisplayedTimeline || undefined}
+                aria-busy={threadDetailLoading}
+              >
+                <MessagesTimeline
+                  citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}
+                  citationHistoryLoading={threadDetailLoading}
+                  {...(!paintOnlyDisplayedTimeline
+                    ? {
+                        onCiteAssistantText: citeAssistantText,
+                        agentPanelModel,
+                        onOpenAgents: addAgentsSurface,
+                        onUseArtifactTemplate: useArtifactTemplate,
+                      }
+                    : {})}
+                  isWorking={!paintOnlyDisplayedTimeline && isWorking}
+                  isCompacting={!paintOnlyDisplayedTimeline && isCompacting}
+                  activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
+                  listRef={legendListRef}
+                  timelineEntries={displayedTimeline.entries}
+                  latestTurn={paintOnlyDisplayedTimeline ? null : activeLatestTurn}
+                  runningTurnId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
+                  turnDiffSummaries={
+                    paintOnlyDisplayedTimeline
+                      ? EMPTY_HELD_TURN_DIFF_SUMMARIES
+                      : activeThread.checkpoints
+                  }
+                  activeThreadEnvironmentId={
+                    displayedThreadRef?.environmentId ?? activeThread.environmentId
+                  }
+                  routeThreadKey={displayedTimelineKey}
+                  displayThreadKey={displayedTimelineKey}
+                  onOpenTurnDiff={paintOnlyDisplayedTimeline ? noopHeldTurnDiff : onOpenTurnDiff}
+                  onRevertToTurnCount={
+                    paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
+                  }
+                  isRevertingCheckpoint={!paintOnlyDisplayedTimeline && isRevertingCheckpoint}
+                  markdownCwd={
+                    paintOnlyDisplayedTimeline
+                      ? (heldPaintContext?.markdownCwd ?? undefined)
+                      : (gitCwd ?? undefined)
+                  }
+                  resolvedTheme={resolvedTheme}
+                  timestampFormat={timestampFormat}
+                  workspaceRoot={
+                    paintOnlyDisplayedTimeline
+                      ? (heldPaintContext?.workspaceRoot ?? undefined)
+                      : activeWorkspaceRoot
+                  }
+                  skills={
+                    activeProviderStatus
+                      ? resolveProviderSkillsForCwd(activeProviderStatus, gitStatusCwd)
+                      : EMPTY_PROVIDER_SKILLS
+                  }
+                  anchorMessageId={paintOnlyDisplayedTimeline ? null : timelineAnchorMessageId}
+                  onAnchorReady={onTimelineAnchorReady}
+                  contentInsetEndAdjustment={composerTimelineInset}
+                  liveFollowEnabled={!paintOnlyDisplayedTimeline && timelineLiveFollowEnabled}
+                  onIsAtEndChange={onIsAtEndChange}
+                  onContentOverflowChange={setTimelineOverflows}
+                  onToolOutputCollapsedAtEnd={onToolOutputCollapsedAtEnd}
+                  onManualNavigation={cancelTimelineLiveFollowForUserNavigation}
+                  hideEmptyPlaceholder={isDraftHeroState || threadDetailLoading}
+                  topFadeEnabled={!hasTimelineTopBanner}
+                  loadEarlier={paintOnlyDisplayedTimeline ? null : loadEarlierTurns}
+                />
+              </div>
 
               {/* scroll to end pill — shown when user has scrolled away from the live edge */}
               {showScrollToBottom && (
@@ -6300,7 +6639,7 @@ export default function ChatView(props: ChatViewProps) {
                             projectSelectionRequired={isLocalDraftThread && activeProject === null}
                             phase={phase}
                             isConnecting={isConnecting}
-                            isSendBusy={isSendBusy}
+                            isSendBusy={isSendBusy || isRevertingCheckpoint}
                             sendDisabledReason={threadDetailLoading ? "Messages loading" : null}
                             isPreparingWorktree={isPreparingWorktree}
                             bannerItems={composerBannerItems}
@@ -6349,6 +6688,7 @@ export default function ChatView(props: ChatViewProps) {
                             onPageScrollKeyDown={onComposerPageScrollKeyDown}
                             onPageScrollKeyUp={onComposerPageScrollKeyUp}
                             onPageScrollRelease={onComposerPageScrollRelease}
+                            onCompactContext={onCompactContext}
                             onSend={onSend}
                             onInterrupt={onInterrupt}
                             onImplementPlanInNewThread={onImplementPlanInNewThread}
@@ -6381,6 +6721,7 @@ export default function ChatView(props: ChatViewProps) {
                           {mountComposerContextStrip && (
                             <div className="pointer-events-auto">
                               <BranchToolbar
+                                ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
                                 showGitControls={isGitRepo}
@@ -6493,9 +6834,48 @@ export default function ChatView(props: ChatViewProps) {
         </Suspense>
       ) : null}
 
+      <AlertDialog
+        open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
+        onOpenChange={(open) => {
+          if (!open) setPendingRevert(null);
+        }}
+      >
+        <AlertDialogPopup>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit from here?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Rewind chat to before this message. Its prompt and pasted images return to the
+              composer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
+                setPendingRevert(null);
+                void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, true);
+              }}
+            >
+              Revert files too
+            </Button>
+            <Button
+              onClick={() => {
+                if (!pendingRevert || pendingRevert.routeThreadKey !== routeThreadKey) return;
+                setPendingRevert(null);
+                void onRevertToTurnCount(pendingRevert.turnCount, pendingRevert.messageId, false);
+              }}
+            >
+              Revert and keep changes
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogPopup>
+      </AlertDialog>
       <LinkPullRequestDialogHost />
       {!shouldUseRightPanelSheet && rightPanelPresent && activeThreadRef ? (
         <RightPanelTabs
+          widthStorageKey={`t3:panel-width:${activeThreadKey}`}
           mode="inline"
           open={rightPanelState.isOpen}
           key={activeThreadKey}
@@ -6514,7 +6894,10 @@ export default function ChatView(props: ChatViewProps) {
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddPullRequests={
-            isServerThread && serverConfig?.environment.capabilities.threadPullRequests
+            isServerThread &&
+            serverConfig?.environment.capabilities.threadPullRequests &&
+            visibleThreadPullRequests((activeThreadShell ?? activeThread)?.pullRequests ?? [])
+              .length > 0
               ? () => useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
               : undefined
           }
@@ -6558,7 +6941,10 @@ export default function ChatView(props: ChatViewProps) {
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequests={
-              isServerThread && serverConfig?.environment.capabilities.threadPullRequests
+              isServerThread &&
+              serverConfig?.environment.capabilities.threadPullRequests &&
+              visibleThreadPullRequests((activeThreadShell ?? activeThread)?.pullRequests ?? [])
+                .length > 0
                 ? () => useRightPanelStore.getState().open(activeThreadRef, "pull-requests")
                 : undefined
             }

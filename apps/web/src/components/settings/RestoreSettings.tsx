@@ -1,3 +1,4 @@
+import { useOptionalSettingsScope } from "./SettingsScopeContext";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "../../state/server";
 import { useEffect, useRef, useState } from "react";
@@ -26,6 +27,7 @@ export const CLIENT_RESET_LABELS = {
   glassOpacity: "Glass opacity",
   environmentIdentificationMode: "Environment identification",
   timestampFormat: "Time format",
+  diffFilesCollapsed: "Default diff file state",
   diffLayout: "Diff layout",
   diffIgnoreWhitespace: "Diff whitespace changes",
   wordWrap: "Word wrap",
@@ -51,6 +53,8 @@ export const CLIENT_RESET_LABELS = {
   fontSmoothing: "Font smoothing",
 } satisfies Partial<Record<keyof ClientSettings, string>>;
 export const WORKSPACE_RESET_LABELS = {
+  defaultRuntimeMode: "Default permissions",
+  responseStreamingMode: "Response streaming",
   defaultThreadEnvMode: "Default checkout mode",
   newWorktreesStartFromOrigin: "Start worktrees from origin",
   sidebarAutoSettleAfterDays: "Auto-settle inactive threads",
@@ -174,6 +178,7 @@ export function RestoreWorkspaceSettings({
   environmentId: EnvironmentId;
   settings: UnifiedSettings;
 }) {
+  const scope = useOptionalSettingsScope();
   const update = useAtomCommand(serverEnvironment.updateSettings);
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
@@ -183,42 +188,71 @@ export function RestoreWorkspaceSettings({
       mounted.current = false;
     };
   }, []);
-  const keys = changedSettings<ServerSettings>(
-    settings,
-    DEFAULT_SERVER_SETTINGS,
-    WORKSPACE_RESET_LABELS,
-  );
+  const targets = scope
+    ? scope.connectedEnvironments.flatMap((environment) =>
+        environment.serverConfig
+          ? [
+              {
+                environmentId: environment.environmentId,
+                settings: environment.serverConfig.settings,
+              },
+            ]
+          : [],
+      )
+    : [{ environmentId, settings }];
+  const readOnly =
+    scope?.scope.kind === "project" ||
+    scope?.scope.kind === "checkout" ||
+    scope?.scope.kind === "unavailable";
+  const keys = [
+    ...new Set(
+      targets.flatMap((target) =>
+        changedSettings<ServerSettings>(
+          target.settings,
+          DEFAULT_SERVER_SETTINGS,
+          WORKSPACE_RESET_LABELS,
+        ),
+      ),
+    ),
+  ];
   return (
     <SettingsRow
       id="restore-workspace-defaults"
       title="Restore workspace preferences"
-      description="Reset general and source control preferences in the selected Coder workspace."
+      description="Reset general and source control preferences in the selected connected Coder workspaces. Project overrides are preserved."
       control={
         <Button
           size="sm"
           variant="outline"
-          disabled={!keys.length}
+          disabled={!keys.length || readOnly}
           onClick={async () => {
+            if (readOnly || !keys.length) return;
             const names = keys.map(
               (key) => WORKSPACE_RESET_LABELS[key as keyof typeof WORKSPACE_RESET_LABELS],
             );
             if (
               !(await ensureLocalApi().dialogs.confirm(
-                `Restore this workspace's default settings?\nThis will reset: ${names.join(", ")}.`,
+                `Restore defaults in ${targets.length} selected workspace(s)?\nThis will reset: ${names.join(", ")}.`,
                 { variant: "destructive" },
               )) ||
               !mounted.current
             )
               return;
-            const result = await update({
-              environmentId,
-              input: {
-                patch: Object.fromEntries(keys.map((key) => [key, DEFAULT_SERVER_SETTINGS[key]])),
-              },
-            });
+            const results = await Promise.all(
+              targets.map((target) =>
+                update({
+                  environmentId: target.environmentId,
+                  input: {
+                    patch: Object.fromEntries(
+                      keys.map((key) => [key, DEFAULT_SERVER_SETTINGS[key]]),
+                    ),
+                  },
+                }),
+              ),
+            );
             if (mounted.current)
               setError(
-                result._tag === "Failure"
+                results.some((result) => result._tag === "Failure")
                   ? "Could not restore workspace preferences. Try again."
                   : null,
               );

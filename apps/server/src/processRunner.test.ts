@@ -294,7 +294,7 @@ describe("runProcess", () => {
       const stdoutLines: string[] = [];
       const stderrLines: string[] = [];
       const spawner = makeSpawner(() =>
-        Effect.succeed(makeHandle({ stdout: "one\ntwo", stderr: "warning\n" })),
+        Effect.succeed(makeHandle({ stdout: "one\ntwo", stderr: "10%\r50%\r\nwarning\n" })),
       );
 
       const result = yield* runWith(spawner)({
@@ -305,9 +305,9 @@ describe("runProcess", () => {
       });
 
       expect(stdoutLines).toEqual(["one", "two"]);
-      expect(stderrLines).toEqual(["warning"]);
+      expect(stderrLines).toEqual(["10%", "50%", "warning"]);
       expect(result.stdout).toBe("one\ntwo");
-      expect(result.stderr).toBe("warning\n");
+      expect(result.stderr).toBe("10%\r50%\r\nwarning\n");
     }),
   );
 

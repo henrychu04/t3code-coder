@@ -144,7 +144,11 @@
       "types": "./src/work-log/scrollAnchor.ts",
       "default": "./src/work-log/scrollAnchor.ts"
     },
-    "./threadPullRequestCompatibility": "./src/threadPullRequestCompatibility.ts"
+    "./threadPullRequestCompatibility": "./src/threadPullRequestCompatibility.ts",
+    "./work-log/user-input": {
+      "types": "./src/work-log/userInput.ts",
+      "default": "./src/work-log/userInput.ts"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

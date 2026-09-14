@@ -5903,85 +5903,197 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
+  it.effect("restarts Claude at the retained provider boundary when rewinding", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "full-access",
+      });
+
+      const firstTurn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "first",
+      });
+
+      const firstCompletedFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runHead, Effect.forkChild);
+
+      harness.query.emit({
+        type: "assistant",
+        uuid: "assistant-first",
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+        parent_tool_use_id: null,
+        message: { content: [], model: "claude-sonnet-4-6" },
+      } as unknown as SDKMessage);
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+        uuid: "result-first",
+      } as unknown as SDKMessage);
+
+      const firstCompleted = yield* Fiber.join(firstCompletedFiber);
+      assert.equal(firstCompleted._tag, "Some");
+      if (firstCompleted._tag === "Some" && firstCompleted.value.type === "turn.completed") {
+        assert.equal(String(firstCompleted.value.turnId), String(firstTurn.turnId));
+      }
+
+      const secondTurn = yield* adapter.sendTurn({
+        threadId: session.threadId,
+        input: "second",
+      });
+
+      const secondCompletedFiber = yield* Stream.filter(
+        adapter.streamEvents,
+        (event) => event.type === "turn.completed",
+      ).pipe(Stream.runHead, Effect.forkChild);
+
+      harness.query.emit({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        errors: [],
+        session_id: "550e8400-e29b-41d4-a716-446655440000",
+        uuid: "result-second",
+      } as unknown as SDKMessage);
+
+      const secondCompleted = yield* Fiber.join(secondCompletedFiber);
+      assert.equal(secondCompleted._tag, "Some");
+      if (secondCompleted._tag === "Some" && secondCompleted.value.type === "turn.completed") {
+        assert.equal(String(secondCompleted.value.turnId), String(secondTurn.turnId));
+      }
+
+      const threadBeforeRollback = yield* adapter.readThread(session.threadId);
+      assert.equal(threadBeforeRollback.turns.length, 2);
+
+      const rolledBack = yield* adapter.rollbackThread(session.threadId, 1);
+      assert.equal(rolledBack.turns.length, 1);
+      assert.equal(harness.query.closeCalls, 1);
+      assert.equal(
+        harness.getLastCreateQueryInput()?.options.resume,
+        "550e8400-e29b-41d4-a716-446655440000",
+      );
+      assert.equal(harness.getLastCreateQueryInput()?.options.resumeSessionAt, "assistant-first");
+      assert.equal(harness.getLastCreateQueryInput()?.options.forkSession, true);
+      assert.equal(rolledBack.turns[0]?.id, firstTurn.turnId);
+
+      const threadAfterRollback = yield* adapter.readThread(session.threadId);
+      assert.equal(threadAfterRollback.turns.length, 1);
+      assert.equal(threadAfterRollback.turns[0]?.id, firstTurn.turnId);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
   it.effect(
-    "supports rollbackThread by trimming in-memory turns and preserving earlier turns",
+    "keeps rewind boundaries across reconnect and retains a pending fork until Claude reports its durable session",
     () => {
       const harness = makeHarness();
       return Effect.gen(function* () {
         const adapter = yield* ClaudeAdapter;
-
-        const session = yield* adapter.startSession({
+        yield* adapter.startSession({
           threadId: THREAD_ID,
           provider: ProviderDriverKind.make("claudeAgent"),
-          runtimeMode: "full-access",
+          runtimeMode: "approval-required",
+          resumeCursor: {
+            resume: "550e8400-e29b-41d4-a716-446655440001",
+            turnCount: 2,
+            turnEndMessageIds: ["assistant-one", "assistant-two"],
+          },
         });
-
-        const firstTurn = yield* adapter.sendTurn({
-          threadId: session.threadId,
-          input: "first",
+        yield* adapter.rollbackThread(THREAD_ID, 1);
+        assert.equal(harness.getLastCreateQueryInput()?.options.resumeSessionAt, "assistant-one");
+        const sessions = yield* adapter.listSessions();
+        assert.deepEqual(sessions[0]?.resumeCursor, {
+          threadId: THREAD_ID,
+          resume: "550e8400-e29b-41d4-a716-446655440001",
+          forkAt: "assistant-one",
+          resumeSessionAt: "assistant-one",
+          turnCount: 1,
+          turnEndMessageIds: ["assistant-one"],
         });
-
-        const firstCompletedFiber = yield* Stream.filter(
-          adapter.streamEvents,
-          (event) => event.type === "turn.completed",
-        ).pipe(Stream.runHead, Effect.forkChild);
-
-        harness.query.emit({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          errors: [],
-          session_id: "sdk-session-rollback",
-          uuid: "result-first",
-        } as unknown as SDKMessage);
-
-        const firstCompleted = yield* Fiber.join(firstCompletedFiber);
-        assert.equal(firstCompleted._tag, "Some");
-        if (firstCompleted._tag === "Some" && firstCompleted.value.type === "turn.completed") {
-          assert.equal(String(firstCompleted.value.turnId), String(firstTurn.turnId));
-        }
-
-        const secondTurn = yield* adapter.sendTurn({
-          threadId: session.threadId,
-          input: "second",
-        });
-
-        const secondCompletedFiber = yield* Stream.filter(
-          adapter.streamEvents,
-          (event) => event.type === "turn.completed",
-        ).pipe(Stream.runHead, Effect.forkChild);
-
-        harness.query.emit({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          errors: [],
-          session_id: "sdk-session-rollback",
-          uuid: "result-second",
-        } as unknown as SDKMessage);
-
-        const secondCompleted = yield* Fiber.join(secondCompletedFiber);
-        assert.equal(secondCompleted._tag, "Some");
-        if (secondCompleted._tag === "Some" && secondCompleted.value.type === "turn.completed") {
-          assert.equal(String(secondCompleted.value.turnId), String(secondTurn.turnId));
-        }
-
-        const threadBeforeRollback = yield* adapter.readThread(session.threadId);
-        assert.equal(threadBeforeRollback.turns.length, 2);
-
-        const rolledBack = yield* adapter.rollbackThread(session.threadId, 1);
-        assert.equal(rolledBack.turns.length, 1);
-        assert.equal(rolledBack.turns[0]?.id, firstTurn.turnId);
-
-        const threadAfterRollback = yield* adapter.readThread(session.threadId);
-        assert.equal(threadAfterRollback.turns.length, 1);
-        assert.equal(threadAfterRollback.turns[0]?.id, firstTurn.turnId);
-      }).pipe(
-        Effect.provideService(Random.Random, makeDeterministicRandomService()),
-        Effect.provide(harness.layer),
-      );
+      }).pipe(Effect.provide(harness.layer));
     },
   );
+
+  it.effect("recovers legacy boundaries from the exact workspace transcript before forking", () =>
+    Effect.gen(function* () {
+      const temp = yield* Effect.acquireRelease(
+        Effect.sync(() =>
+          NodeFS.realpathSync(
+            NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-legacy-rewind-")),
+          ),
+        ),
+        (directory) =>
+          Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
+      );
+      const cwd = NodePath.join(temp, "project");
+      NodeFS.mkdirSync(cwd);
+      const configDir = NodePath.join(temp, "claude-config");
+      const transcriptDir = NodePath.join(configDir, "projects", cwd.replace(/[^a-zA-Z0-9]/g, "-"));
+      NodeFS.mkdirSync(transcriptDir, { recursive: true });
+      const sessionId = "550e8400-e29b-41d4-a716-446655440002";
+      const uuid = (n: number) => `550e8400-e29b-41d4-a716-${String(n).padStart(12, "0")}`;
+      NodeFS.writeFileSync(
+        NodePath.join(transcriptDir, `${sessionId}.jsonl`),
+        [1, 2, 3, 4]
+          .map((n) =>
+            JSON.stringify({
+              sessionId,
+              cwd,
+              uuid: uuid(n),
+              parentUuid: n === 1 ? null : uuid(n - 1),
+              type: n % 2 ? "user" : "assistant",
+              message: {
+                role: n % 2 ? "user" : "assistant",
+                content: "Test",
+                ...(n % 2 ? {} : { stop_reason: "end_turn" }),
+              },
+            }),
+          )
+          .join("\n") + "\n",
+      );
+      const harness = makeHarness({ cwd, environment: { CLAUDE_CONFIG_DIR: configDir } });
+      yield* Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          cwd,
+          runtimeMode: "approval-required",
+          resumeCursor: { resume: sessionId, turnCount: 2 },
+        });
+        yield* adapter.rollbackThread(THREAD_ID, 1);
+        assert.equal(harness.getLastCreateQueryInput()?.options.resumeSessionAt, uuid(2));
+        assert.equal(harness.getLastCreateQueryInput()?.options.forkSession, true);
+      }).pipe(Effect.provide(harness.layer));
+    }).pipe(Effect.scoped),
+  );
+
+  it.effect("rejects an unknown legacy rewind boundary before stopping the provider", () => {
+    const harness = makeHarness();
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        runtimeMode: "approval-required",
+        resumeCursor: { resume: "550e8400-e29b-41d4-a716-446655440002", turnCount: 2 },
+      });
+      const result = yield* Effect.exit(adapter.rollbackThread(THREAD_ID, 1));
+      assert.equal(result._tag, "Failure");
+      assert.equal(harness.query.closeCalls, 0);
+    }).pipe(Effect.provide(harness.layer));
+  });
 
   it.effect("updates model on sendTurn when model override is provided", () => {
     const harness = makeHarness();

@@ -16,6 +16,7 @@ import {
   CoderHelperRpcGroup,
 } from "@t3tools/coder-cli/rpc";
 import * as ServerConfig from "t3/src/config.ts";
+import { withTerminalOutputWindow } from "t3/src/terminal/OutputProtocol.ts";
 import { makeCoderRuntimeLayer } from "t3/src/coderRuntime.ts";
 
 export const coderHelperHandlers = CoderHelperRpcGroup.toLayer({
@@ -57,7 +58,11 @@ export const coderHelperStdioLayer = RpcServer.layer(CoderWorkspaceRpcGroup, {
   disableTracing: true,
 }).pipe(
   Layer.provide(Layer.merge(coderHelperHandlers, makeCoderRuntimeLayer())),
-  Layer.provide(RpcServer.layerProtocolStdio),
+  Layer.provide(
+    Layer.effect(RpcServer.Protocol, Effect.map(RpcServer.Protocol, withTerminalOutputWindow)).pipe(
+      Layer.provide(RpcServer.layerProtocolStdio),
+    ),
+  ),
   Layer.provide(RpcSerialization.layerNdjson),
   Layer.provide(NodeStdio.layer),
   Layer.provide(coderServerConfigLayer),
