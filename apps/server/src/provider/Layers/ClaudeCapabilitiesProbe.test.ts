@@ -442,3 +442,37 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
     }).pipe(Effect.scoped),
   );
 });
+
+it("prefers Fable 5.1 only when advertised by the workspace CLI", () => {
+  const input = { autoModeDisabled: false, bypassPermissionsDisabled: false };
+  const models = providerModelsFromClaudeCapabilities({
+    ...input,
+    models: [
+      {
+        value: "default",
+        resolvedModel: "claude-sonnet-5",
+        displayName: "Sonnet",
+        description: "Sonnet",
+      },
+      {
+        value: "fable",
+        resolvedModel: "claude-fable-5-1",
+        displayName: "Fable",
+        description: "Fable",
+      },
+    ],
+  });
+  assert.strictEqual(models.find((model) => model.isDefault)?.slug, "claude-fable-5-1");
+  const fallback = providerModelsFromClaudeCapabilities({
+    ...input,
+    models: [
+      {
+        value: "default",
+        resolvedModel: "claude-sonnet-5",
+        displayName: "Sonnet",
+        description: "Sonnet",
+      },
+    ],
+  });
+  assert.strictEqual(fallback.find((model) => model.isDefault)?.slug, "claude-sonnet-5");
+});

@@ -1,17 +1,36 @@
-# Project settings
+# Settings and project overrides
 
-Open the project picker in the sidebar and select the project's settings button. A new-thread
-header also has a **Project settings** button. Global **Settings → GitLab source control** links
-to each project's page.
+The **Workspace** and **Project** selectors at the top of Settings choose where changes apply.
+They start at **All workspaces** and **All projects** and stay selected when you change categories
+or search for a setting. Choose one workspace to edit it, or leave **All workspaces** to edit the
+selected connected workspaces together. Offline workspaces keep their current settings; this is a
+bulk edit, not a synchronized global default.
 
-The page follows upstream T3 Code's dedicated project-settings layout. Select the Coder workspace
-and project in the page header. Changes apply only to that checkout, even when the sidebar groups
-several checkouts together. Settings remain stored in the selected Linux Coder workspace.
+Choose a project to override settings for its checkouts in the selected workspaces. A layers icon
+beside each scoped setting shows the built-in default, workspace value, and project override.
+Open it to inspect those values in each workspace. Reset a project override to inherit again.
+Settings that do not support project overrides become read-only while a project is selected.
+
+Rows show **Mixed** when selected targets disagree. Changing a value applies the edited setting to
+the selected connected targets. In **Projects**, only fields you edit are saved; untouched mixed
+values remain unchanged. Failed saves retain the form draft for retry.
+
+Changing a workspace value preserves project overrides. The layers menu lists projects that
+have overrides: select one to open its scope, or choose **Reset all** to make those projects inherit
+that setting again. Browser preferences such as appearance ignore the workspace/project selection.
+Provider settings show one workspace at a time, using the active workspace until you pick another.
+
+## Project details
+
+Open the project picker in the sidebar and select the project's settings button, or use
+**Project settings** in a new-thread header. **Settings → Projects → Project details** also links
+to each checkout's page. Changes on that page apply only to that checkout, even when the sidebar
+groups several checkouts together, and stay stored in its Linux Coder workspace.
 
 Edit the project name, default model, current-checkout/new-worktree default, automatic pull, or
-project scripts, then choose **Save project settings**. Model and checkout defaults apply to new
-threads. **Reload settings** discards unsaved form changes and reads the latest displayed settings.
-If another client changes these settings while the form is open, reload before saving.
+scripts, then choose **Save project settings**. Model and checkout defaults apply to new threads.
+**Reload settings** discards unsaved changes and reads the latest displayed settings. If another
+client changes these settings while the form is open, reload before saving.
 
 ## Default merge method
 
@@ -42,20 +61,36 @@ authentication and GitLab preferences remain under global settings.
 ## Workspace defaults
 
 Open **Settings → Projects** to set the default model, checkout mode, automatic pull, and scripts.
-Choose one Coder workspace or **All connected workspaces**. The form starts with the first selected
-workspace's values; saving applies those values to the selected connected workspaces. Offline
-workspaces retain their settings. A model must be available in every selected workspace.
+Choose a workspace and, optionally, a project using the shared scope selectors. Saving applies
+only edited fields to the selected connected targets. Offline workspaces retain their settings.
+A model and its provider must be available in every selected workspace.
 
 Defaults apply to projects that inherit the corresponding preference. Existing project model and
 checkout overrides, explicit automatic-pull choices, and existing scripts are preserved. Changing
 the model default affects new threads; it does not change existing conversations. Automatic pull
 runs at helper startup and retains the clean-checkout, default-branch, and fast-forward checks.
 
-Open a project under **Project overrides** to edit its preferences. Turning off the model override
+Open a checkout under **Project details** to edit its preferences. Turning off the model override
 or choosing **Use default** for checkout mode restores inheritance. **Use workspace automatic-pull
 default** and **Use workspace default scripts** reset those individual overrides. Editing inherited
 scripts creates an independent project list; an explicit empty list disables scripts for that
 project. Saving scripts does not execute them.
+
+## Permissions, responses, and workflow overrides
+
+A project can override default permissions for new threads, response streaming, generated thread
+names, source-control writing style and writer model, starting new worktrees from origin, and
+automatic settlement rules. These controls save
+immediately in the selected Coder workspace. Reset an override to inherit the workspace value;
+changing the workspace default preserves explicit project choices.
+
+Source-control preferences include repository conventions, Conventional Commits, custom
+instructions, merge-request templates, and an optional dedicated writer model. Each project can
+restore the workspace writing style or writer-model choice independently.
+
+Existing project preferences migrate once into the override model. Resetting a preference remains
+an inheritance choice after reconnects and restarts. Existing threads keep their chosen model and
+permission mode.
 
 ## Provider usage
 

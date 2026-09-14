@@ -1,3 +1,5 @@
+import type { ServerProviderModel } from "@t3tools/contracts";
+import { codexModelFamily } from "@t3tools/shared/model";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -47,6 +49,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
   environment?: NodeJS.ProcessEnv,
   attachmentsDir?: string,
   mcpServerNameResolver?: CodexMcpServerNameResolver,
+  getModels: Effect.Effect<ReadonlyArray<ServerProviderModel>> = Effect.succeed([]),
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -137,6 +140,14 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
           }),
       ),
     );
+    const models = yield* getModels;
+    const requestedModel = input.modelSelection.model;
+    const model =
+      models.find((candidate) => candidate.slug === requestedModel)?.slug ??
+      models.find(
+        (candidate) => !candidate.isCustom && codexModelFamily(candidate.slug) === requestedModel,
+      )?.slug ??
+      requestedModel;
     const reasoningEffort =
       getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort") ??
       DEFAULT_TEXT_GENERATION_REASONING_EFFORT;
@@ -151,7 +162,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         "-s",
         "read-only",
         "--model",
-        input.modelSelection.model,
+        model,
         "--config",
         `model_reasoning_effort="${reasoningEffort}"`,
         ...(serviceTier ? ["--config", `service_tier="${serviceTier}"`] : []),

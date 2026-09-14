@@ -261,3 +261,18 @@ it("uses a bundled GitHub mark while keeping links inert and rejecting lookalike
   );
   expect(other).not.toContain('viewBox="0 0 1024 1024"');
 });
+
+describe("ChatMarkdown accessible headings", () => {
+  it("nests markdown headings below the message author without changing styles", () => {
+    const html = renderToStaticMarkup(
+      <ChatMarkdown
+        cwd="/tmp/project"
+        text={"# Top\n\n## Section\n\n###### Fine print"}
+        headingLevelOffset={3}
+      />,
+    );
+    expect(html).toContain('<h1 aria-level="4">Top</h1>');
+    expect(html).toContain('<h2 aria-level="5">Section</h2>');
+    expect(html).toContain('<h6 aria-level="6">Fine print</h6>');
+  });
+});

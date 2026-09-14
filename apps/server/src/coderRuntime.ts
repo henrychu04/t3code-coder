@@ -1,3 +1,4 @@
+import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as AgentMergeRequests from "./agentMergeRequests/AgentMergeRequests.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
 import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
@@ -69,7 +70,7 @@ const CoderOrchestrationLayerLive = OrchestrationLayerLive.pipe(
   Layer.provideMerge(RepositoryIdentityResolver.layer),
 );
 
-const CoderSettingsLive = ServerSettings.layer;
+const CoderSettingsLive = ServerSettings.layer.pipe(Layer.provide(SqlitePersistenceLayerLive));
 
 const CoderProviderSessionDirectoryLive = ProviderSessionDirectoryLive.pipe(
   Layer.provide(ProviderSessionRuntime.layer),
@@ -120,6 +121,7 @@ const CoderProjectSetupScriptRunnerLive = ProjectSetupScriptRunner.layer.pipe(
 );
 
 const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(
+  Layer.provide(SqlitePersistenceLayerLive),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderSourceControlLive),
   Layer.provideMerge(CoderTextGenerationLive),
@@ -136,6 +138,7 @@ const CoderVcsLive = Layer.mergeAll(
   GitVcsDriver.layer,
   CoderVcsDriverRegistryLive,
   VcsProvisioningService.layer.pipe(Layer.provide(CoderVcsDriverRegistryLive)),
+  WorktreeSetupTracker.layer,
   CoderGitWorkflowLive,
   CoderSourceControlRepositoriesLive,
   CoderVcsStatus.layer.pipe(Layer.provide(CoderGitWorkflowLive)),

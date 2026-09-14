@@ -1624,3 +1624,47 @@ it("wraps a command-only tool row when there is no expansion body", () => {
     /class="[^"]*whitespace-pre-wrap break-words select-text[^"]*"[^>]*>printf /,
   );
 });
+
+it("expands a subagent batch without navigating away from the conversation", async () => {
+  const openAgents = vi.fn();
+  let renderer!: ReactTestRenderer;
+  try {
+    await act(async () => {
+      renderer = create(
+        <MessagesTimeline
+          {...buildProps()}
+          onOpenAgents={openAgents}
+          timelineEntries={[
+            {
+              kind: "work",
+              id: "spawn-entry",
+              createdAt: MESSAGE_CREATED_AT,
+              entry: {
+                id: "spawn",
+                createdAt: MESSAGE_CREATED_AT,
+                turnId: TurnId.make("turn-spawn"),
+                label: "Spawned agent",
+                tone: "tool",
+                agentSpawn: { workflowId: null, agentTaskIds: ["agent-1"] },
+              },
+            },
+          ]}
+        />,
+      );
+    });
+    const toggle = renderer.root
+      .findAllByType("button")
+      .find((button) => button.props["aria-expanded"] === false);
+    expect(toggle).toBeDefined();
+    await act(async () => toggle!.props.onClick());
+    expect(openAgents).not.toHaveBeenCalled();
+    expect(
+      renderer.root
+        .findAllByType("button")
+        .some((button) => button.props["aria-expanded"] === true),
+    ).toBe(true);
+    expect(JSON.stringify(renderer.toJSON())).toContain("Open Agents panel");
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+  }
+});

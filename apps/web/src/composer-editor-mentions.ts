@@ -1,3 +1,7 @@
+import {
+  collectInlineComposerContexts,
+  type ComposerInlineContext,
+} from "./lib/composerInlineContext";
 import type { AssistantCitation } from "@t3tools/contracts";
 import { collectAssistantCitations } from "@t3tools/shared/assistantCitations";
 import {
@@ -10,6 +14,7 @@ import {
 } from "@t3tools/shared/composerInlineTokens";
 
 export type ComposerPromptSegment =
+  | { type: "context"; source: string; context: ComposerInlineContext }
   | {
       type: "text";
       text: string;
@@ -134,15 +139,24 @@ function forEachMentionMatch(
 export function collectComposerPromptInlineTokens(text: string) {
   const tokens = collectComposerInlineTokens(text);
   const citations = collectAssistantCitations(text);
-  if (citations.length === 0) return tokens;
+  const contexts = collectInlineComposerContexts(text);
+  if (citations.length === 0 && contexts.length === 0) return tokens;
 
   // An unfinished @ mention can otherwise consume the start of a citation's label.
   return [
     ...tokens.filter(
       (token) =>
-        !citations.some((citation) => token.start < citation.end && token.end > citation.start),
+        ![...citations, ...contexts].some(
+          (citation) => token.start < citation.end && token.end > citation.start,
+        ),
     ),
-    ...citations.map((match) => ({ ...match, type: "citation" as const })),
+    ...contexts,
+    ...citations
+      .filter(
+        (citation) =>
+          !contexts.some((context) => citation.start < context.end && citation.end > context.start),
+      )
+      .map((match) => ({ ...match, type: "citation" as const })),
   ].sort((left, right) => left.start - right.start);
 }
 
@@ -163,7 +177,9 @@ function splitPromptTextIntoComposerSegments(text: string): ComposerPromptSegmen
       pushTextSegment(segments, text.slice(cursor, match.start));
     }
 
-    if (match.type === "citation") {
+    if (match.type === "context") {
+      segments.push({ type: "context", context: match.context, source: match.source });
+    } else if (match.type === "citation") {
       segments.push({ type: "citation", citation: match.citation, source: match.source });
     } else if (match.type === "mention") {
       segments.push({

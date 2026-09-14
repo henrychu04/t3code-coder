@@ -1,3 +1,7 @@
+import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
+import { createIncrementalHighlightedDocument } from "../lib/incrementalHighlighting";
+import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
+import { toHtml } from "hast-util-to-html";
 import { rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
 import { ArtifactImageLink, isImageFilePath } from "./chat/ArtifactNavigation";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
@@ -56,7 +60,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { Components, Options as ReactMarkdownOptions } from "react-markdown";
+import type { Components, ExtraProps, Options as ReactMarkdownOptions } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
@@ -120,6 +124,7 @@ interface ChatMarkdownProps {
   /** Environment used to resolve internal MR links outside a thread. */
   readonly environmentId?: EnvironmentId | undefined;
   readonly onTaskListChange?: (input: { markerOffset: number; checked: boolean }) => void;
+  readonly headingLevelOffset?: number;
   readonly isStreaming?: boolean;
   readonly skills?: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   readonly className?: string;
@@ -594,7 +599,9 @@ function SuspenseShikiCodeBlock({
 }) {
   const language = extractFenceLanguage(className);
   const cacheKey = `${fnv1a32(code).toString(36)}:${code.length}:${language}:${themeName}`;
-  const cachedHtml = isStreaming ? null : highlightedCodeCache.get(cacheKey);
+  const [hasStreamed, setHasStreamed] = useState(isStreaming);
+  if (isStreaming && !hasStreamed) setHasStreamed(true);
+  const cachedHtml = hasStreamed ? null : highlightedCodeCache.get(cacheKey);
   if (cachedHtml != null) {
     return <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: cachedHtml }} />;
   }
@@ -605,6 +612,7 @@ function SuspenseShikiCodeBlock({
       themeName={themeName}
       cacheKey={cacheKey}
       isStreaming={isStreaming}
+      preserveLines={hasStreamed}
     />
   );
 }
@@ -615,27 +623,46 @@ function UncachedShikiCodeBlock({
   themeName,
   cacheKey,
   isStreaming,
+  preserveLines,
 }: {
   code: string;
   language: string;
   themeName: DiffThemeName;
   cacheKey: string;
   isStreaming: boolean;
+  preserveLines: boolean;
 }) {
   const highlighter = use(getSyntaxHighlighterPromise(language));
-  const html = useMemo(() => {
+  const incrementalHighlight = useMemo(
+    () =>
+      preserveLines ? createIncrementalHighlightedDocument(highlighter, language, themeName) : null,
+    [highlighter, language, preserveLines, themeName],
+  );
+  const highlighted = useMemo(() => {
     try {
-      return highlighter.codeToHtml(code, { lang: language, theme: themeName });
-    } catch (cause) {
-      console.warn(`Code highlighting failed for language "${language}".`, cause);
-      return highlighter.codeToHtml(code, { lang: "text", theme: themeName });
+      return incrementalHighlight
+        ? incrementalHighlight(code)
+        : highlighter.codeToHtml(code, { lang: language, theme: themeName });
+    } catch {
+      return preserveLines
+        ? highlighter.codeToHast(code, { lang: "text", theme: themeName })
+        : highlighter.codeToHtml(code, { lang: "text", theme: themeName });
     }
-  }, [code, highlighter, language, themeName]);
+  }, [code, highlighter, incrementalHighlight, language, preserveLines, themeName]);
+
   useEffect(() => {
-    if (!isStreaming)
+    if (!isStreaming) {
+      const html = typeof highlighted === "string" ? highlighted : toHtml(highlighted);
       highlightedCodeCache.set(cacheKey, html, Math.max(html.length * 2, code.length * 3));
-  }, [cacheKey, code, html, isStreaming]);
-  return <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: html }} />;
+    }
+  }, [cacheKey, code, highlighted, isStreaming]);
+  return typeof highlighted === "string" ? (
+    <div className="chat-markdown-shiki" dangerouslySetInnerHTML={{ __html: highlighted }} />
+  ) : (
+    <div className="chat-markdown-shiki">
+      <HighlightedCodeLines root={highlighted} />
+    </div>
+  );
 }
 
 function InertMarkdownImage({ alt }: { alt: string }) {
@@ -654,6 +681,7 @@ function useChatMarkdownState({
   panelRef,
   environmentId,
   onTaskListChange,
+  headingLevelOffset = 0,
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
   onUseArtifactTemplate,
@@ -729,6 +757,7 @@ function useChatMarkdownState({
     diffThemeName,
     environmentId,
     handleMergeRequestContextMenu,
+    headingLevelOffset,
     isStreaming,
     navigate,
     onTaskListChange,
@@ -810,7 +839,29 @@ function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, 
   target.scrollIntoView({ block: "nearest" });
 }
 
+function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
+  const Tag = `h${level}` as const;
+  return function MarkdownHeading({
+    node: _node,
+    ...props
+  }: ComponentProps<typeof Tag> & ExtraProps) {
+    const { headingLevelOffset } = useMarkdownState();
+    return (
+      <Tag
+        {...props}
+        aria-level={headingLevelOffset > 0 ? Math.min(level + headingLevelOffset, 6) : undefined}
+      />
+    );
+  };
+}
+
 const MARKDOWN_COMPONENTS: Components = {
+  h1: markdownHeadingRenderer(1),
+  h2: markdownHeadingRenderer(2),
+  h3: markdownHeadingRenderer(3),
+  h4: markdownHeadingRenderer(4),
+  h5: markdownHeadingRenderer(5),
+  h6: markdownHeadingRenderer(6),
   div({ node, children, ...props }) {
     const { onUseArtifactTemplate } = useMarkdownState();
     const artifactTemplate = artifactTemplateFromHastProperties(node?.properties);
@@ -1178,12 +1229,17 @@ function ChatMarkdown(props: ChatMarkdownProps) {
     parseRawHtml = true,
     extraRemarkPlugins = EMPTY_REMARK_PLUGINS,
   } = props;
+  const incrementalParsing =
+    props.isStreaming === true &&
+    extraRemarkPlugins.length === 0 &&
+    /(?:^|\n) {0,3}(?:`{3}|~{3})/.test(props.text);
   const remarkPlugins = useMemo(
     () => [
       ...(lineBreaks ? CHAT_MARKDOWN_REMARK_PLUGINS_WITH_BREAKS : CHAT_MARKDOWN_REMARK_PLUGINS),
       ...extraRemarkPlugins,
+      ...(incrementalParsing ? [createIncrementalMarkdownPlugin()] : []),
     ],
-    [extraRemarkPlugins, lineBreaks],
+    [extraRemarkPlugins, incrementalParsing, lineBreaks],
   );
 
   return (
@@ -1192,6 +1248,7 @@ function ChatMarkdown(props: ChatMarkdownProps) {
         "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
         className,
       )}
+      data-streaming={state.isStreaming ? "" : undefined}
       onCopy={state.handleCopy}
     >
       <MarkdownStateContext value={state}>

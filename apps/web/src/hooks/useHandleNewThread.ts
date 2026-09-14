@@ -1,3 +1,4 @@
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   scopedProjectKey,
   scopeProjectRef,
@@ -161,12 +162,14 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
-      const targetSettings =
-        serverConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
+      const targetSettings = resolveProjectSettings(
+        serverConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS,
+        projectRef.projectId,
+        project,
+      ).settings;
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({
-          projectDefaultSelection:
-            project?.defaultModelSelection ?? targetSettings.defaultModelSelection,
+          projectDefaultSelection: targetSettings.defaultModelSelection,
           carrySelection: carryModelSelection,
           carrySourceDraftId:
             currentRouteTarget?.kind === "draft" ? currentRouteTarget.draftId : null,
@@ -174,7 +177,7 @@ export function useNewThreadHandler() {
         });
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
         return resolveDefaultThreadEnvMode({
-          projectSetting: project?.defaultThreadEnvMode,
+          projectSetting: targetSettings.defaultThreadEnvMode,
           globalDefault: targetSettings.defaultThreadEnvMode,
         });
       };
@@ -424,7 +427,7 @@ export function useNewThreadHandler() {
               envMode: initialEnvMode,
               newWorktreesStartFromOrigin: targetSettings.newWorktreesStartFromOrigin,
             }),
-          runtimeMode: carryRuntimeMode ?? DEFAULT_RUNTIME_MODE,
+          runtimeMode: targetSettings.defaultRuntimeMode,
           ...(carryInteractionMode ? { interactionMode: carryInteractionMode } : {}),
         });
         applyStickyState(draftId);

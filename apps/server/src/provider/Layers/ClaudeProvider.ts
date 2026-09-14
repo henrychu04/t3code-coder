@@ -68,6 +68,41 @@ const MINIMUM_CLAUDE_OPUS_4_7_VERSION = "2.1.111";
 
 const CLAUDE_MODEL_CATALOG: ReadonlyArray<ServerProviderModel> = [
   {
+    slug: "claude-fable-5-1",
+    name: "Claude Fable 5.1",
+    isCustom: false,
+    capabilities: createModelCapabilities({
+      optionDescriptors: [
+        buildSelectOptionDescriptor({
+          id: "effort",
+          label: "Reasoning",
+          options: [
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium", isDefault: true },
+            { value: "high", label: "High" },
+            { value: "xhigh", label: "Extra High" },
+            { value: "max", label: "Max" },
+            {
+              value: "ultracode",
+              label: "Ultracode",
+              description: "xhigh effort plus multi-agent workflow orchestration",
+            },
+            { value: "ultrathink", label: "Ultrathink" },
+          ],
+          promptInjectedValues: ["ultrathink"],
+        }),
+        buildSelectOptionDescriptor({
+          id: "contextWindow",
+          label: "Context Window",
+          options: [
+            { value: "200k", label: "200k" },
+            { value: "1m", label: "1M", isDefault: true },
+          ],
+        }),
+      ],
+    }),
+  },
+  {
     slug: "claude-fable-5",
     name: "Claude Fable 5",
     isCustom: false,
@@ -414,6 +449,7 @@ export function normalizeClaudeCliEffort(
   }
   if (
     effort === "xhigh" &&
+    model !== "claude-fable-5-1" &&
     model !== "claude-fable-5" &&
     model !== "claude-opus-5" &&
     model !== "claude-opus-4-8" &&
@@ -665,7 +701,7 @@ function resolveClaudeCatalogSlug(model: ClaudeModelInfo): string | undefined {
     if (BUILT_IN_MODELS.some((entry) => entry.slug === normalized)) return normalized;
     switch (normalized) {
       case "fable":
-        return "claude-fable-5";
+        return "claude-fable-5-1";
       case "opus":
         return "claude-opus-5";
       case "sonnet":
@@ -715,11 +751,18 @@ export function providerModelsFromClaudeCapabilities(input: {
     });
   }
 
+  const preferredModels = resolved.some((model) => model.slug === "claude-fable-5-1")
+    ? resolved.map(({ isDefault: _isDefault, ...model }) => ({
+        ...model,
+        ...(model.slug === "claude-fable-5-1" ? { isDefault: true } : {}),
+      }))
+    : resolved;
+
   const customCapabilities = withSupportedRuntimeModes(
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     buildSupportedRuntimeModes({ fullAccess: !input.bypassPermissionsDisabled }),
   );
-  return providerModelsFromSettings(resolved, input.customModels ?? [], customCapabilities);
+  return providerModelsFromSettings(preferredModels, input.customModels ?? [], customCapabilities);
 }
 
 function parseClaudeInitializationCommands(

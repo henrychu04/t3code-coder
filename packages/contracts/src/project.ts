@@ -32,6 +32,7 @@ export const ProjectSearchEntriesInput = Schema.Struct({
 export type ProjectSearchEntriesInput = typeof ProjectSearchEntriesInput.Type;
 
 export const ProjectEntry = Schema.Struct({
+  ignored: Schema.optional(Schema.Boolean),
   path: TrimmedNonEmptyString,
   kind: ProjectEntryKind,
 });
@@ -85,6 +86,9 @@ export const ProjectTextSearchResult = Schema.Struct({
 export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
 
 export const ProjectListEntriesInput = Schema.Struct({
+  directoryPath: Schema.optional(
+    Schema.String.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
+  ),
   threadId: ThreadId,
   cwd: TrimmedNonEmptyString,
 });

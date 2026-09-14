@@ -40,6 +40,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
+import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
 import { Button } from "~/components/ui/button";
@@ -1584,6 +1586,9 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   const breadcrumbRef = useRef<HTMLDivElement>(null);
   const editorFindAvailable =
     props.relativePath !== null && file.data !== null && !file.data.truncated;
+  const tableDelimiter = props.relativePath
+    ? filePreviewDelimiter({ name: props.relativePath })
+    : null;
   const isMarkdown = props.relativePath ? isMarkdownPreviewFile(props.relativePath) : false;
   const breadcrumbs = useMemo(
     () => (props.relativePath ? fileBreadcrumbs(props.projectName, props.relativePath) : []),
@@ -1835,7 +1840,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             />
             <TooltipPopup>{isCopied ? "Copied" : "Copy path"}</TooltipPopup>
           </Tooltip>
-          {isMarkdown ? (
+          {isMarkdown || tableDelimiter ? (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1843,7 +1848,13 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
                     className="shrink-0"
                     pressed={renderMarkdown}
                     onPressedChange={setRenderMarkdown}
-                    aria-label={renderMarkdown ? "Show Markdown source" : "Show rendered Markdown"}
+                    aria-label={
+                      renderMarkdown
+                        ? "Show source"
+                        : tableDelimiter
+                          ? "Show table"
+                          : "Show rendered Markdown"
+                    }
                     variant="ghost"
                     size="sm"
                   >
@@ -1851,7 +1862,9 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
                   </Toggle>
                 }
               />
-              <TooltipPopup>{renderMarkdown ? "Show source" : "Render Markdown"}</TooltipPopup>
+              <TooltipPopup>
+                {renderMarkdown ? "Show source" : tableDelimiter ? "Show table" : "Render Markdown"}
+              </TooltipPopup>
             </Tooltip>
           ) : null}
           <Tooltip>
@@ -1913,7 +1926,14 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
               <Spinner className="size-5" />
             </div>
           ) : props.relativePath && file.data ? (
-            isMarkdown && renderMarkdown ? (
+            tableDelimiter && renderMarkdown ? (
+              <DelimitedTablePreview
+                key={props.relativePath}
+                name={props.relativePath}
+                text={file.data.contents}
+                delimiter={tableDelimiter}
+              />
+            ) : isMarkdown && renderMarkdown ? (
               // Markdown reconciles in place across text updates, so a file
               // switch needs a new key or the previous file's disclosure and
               // wrap state carries into the next document.

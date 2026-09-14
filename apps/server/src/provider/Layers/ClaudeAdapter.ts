@@ -1,3 +1,5 @@
+import { homedir } from "node:os";
+import { readClaudeRewindHistory } from "../Drivers/ClaudeRewindHistory.ts";
 import {
   makeTurnScreenshotCapture,
   type TurnScreenshotCapture,
@@ -132,6 +134,8 @@ interface ClaudeResumeState {
   readonly resume?: string;
   readonly resumeSessionAt?: string;
   readonly turnCount?: number;
+  readonly turnEndMessageIds?: ReadonlyArray<string | null>;
+  readonly forkAt?: string;
 }
 
 interface ClaudeTurnState {
@@ -283,6 +287,8 @@ function rememberPendingTaskModel(
 
 interface ClaudeSessionContext {
   session: ProviderSession;
+  startInput: Parameters<ClaudeAdapterShape["startSession"]>[0];
+  readonly turnEndMessageIds: Array<string | null>;
   readonly promptQueue: Queue.Queue<PromptQueueItem>;
   readonly query: ClaudeQueryRuntime;
   streamFiber: Fiber.Fiber<void, Error> | undefined;
@@ -293,6 +299,7 @@ interface ClaudeSessionContext {
    * effort override inherit this. */
   currentEffort: string | undefined;
   resumeSessionId: string | undefined;
+  pendingFork: { resume: string; forkAt: string } | undefined;
   readonly pendingApprovals: Map<ApprovalRequestId, PendingApproval>;
   readonly pendingUserInputs: Map<ApprovalRequestId, PendingUserInput>;
   readonly turns: Array<{
@@ -864,6 +871,8 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
     sessionId?: unknown;
     resumeSessionAt?: unknown;
     turnCount?: unknown;
+    turnEndMessageIds?: unknown;
+    forkAt?: unknown;
   };
 
   const threadIdCandidate = typeof cursor.threadId === "string" ? cursor.threadId : undefined;
@@ -886,6 +895,11 @@ function readClaudeResumeState(resumeCursor: unknown): ClaudeResumeState | undef
     ...(threadId ? { threadId } : {}),
     ...(resume ? { resume } : {}),
     ...(resumeSessionAt ? { resumeSessionAt } : {}),
+    ...(typeof cursor.forkAt === "string" ? { forkAt: cursor.forkAt } : {}),
+    ...(Array.isArray(cursor.turnEndMessageIds) &&
+    cursor.turnEndMessageIds.every((id) => id === null || typeof id === "string")
+      ? { turnEndMessageIds: cursor.turnEndMessageIds as Array<string | null> }
+      : {}),
     ...(turnCountValue !== undefined && Number.isInteger(turnCountValue) && turnCountValue >= 0
       ? { turnCount: turnCountValue }
       : {}),
@@ -2026,8 +2040,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     const resumeCursor = {
       threadId,
       ...(context.resumeSessionId ? { resume: context.resumeSessionId } : {}),
+      ...(context.pendingFork ?? {}),
       ...(context.lastAssistantUuid ? { resumeSessionAt: context.lastAssistantUuid } : {}),
-      turnCount: context.turns.length,
+      turnCount: context.turnEndMessageIds.length,
+      turnEndMessageIds: [...context.turnEndMessageIds],
     };
 
     context.session = {
@@ -2227,6 +2243,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
     const nextThreadId = message.session_id;
+    context.pendingFork = undefined;
     context.resumeSessionId = message.session_id;
     yield* updateResumeCursor(context);
 
@@ -2586,6 +2603,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       });
     }
 
+    context.turnEndMessageIds.push(context.lastAssistantUuid ?? null);
+    yield* updateResumeCursor(context);
     context.turns.push({
       id: turnState.turnId,
       items: [...turnState.items],
@@ -3147,8 +3166,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           );
         }
       }
-      context.lastAssistantUuid = message.uuid;
-      yield* updateResumeCursor(context);
       return;
     }
 
@@ -4164,8 +4181,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const resumeState = readClaudeResumeState(input.resumeCursor);
       const threadId = input.threadId;
       const existingResumeSessionId = resumeState?.resume;
-      const newSessionId = existingResumeSessionId === undefined ? yield* randomUUIDv4 : undefined;
-      const sessionId = existingResumeSessionId ?? newSessionId;
+      const newSessionId =
+        existingResumeSessionId === undefined || resumeState?.forkAt
+          ? yield* randomUUIDv4
+          : undefined;
+      const sessionId = newSessionId ?? existingResumeSessionId;
 
       const runtimeContext = yield* Effect.context<never>();
       const runFork = Effect.runForkWith(runtimeContext);
@@ -4627,6 +4647,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
+        ...(resumeState?.forkAt ? { resumeSessionAt: resumeState.forkAt, forkSession: true } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),
         includePartialMessages: true,
         canUseTool,
@@ -4688,8 +4709,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         resumeCursor: {
           ...(threadId ? { threadId } : {}),
           ...(sessionId ? { resume: sessionId } : {}),
+          ...(resumeState?.forkAt && existingResumeSessionId
+            ? { resume: existingResumeSessionId, forkAt: resumeState.forkAt }
+            : {}),
           ...(resumeState?.resumeSessionAt ? { resumeSessionAt: resumeState.resumeSessionAt } : {}),
           turnCount: resumeState?.turnCount ?? 0,
+          ...(resumeState?.turnEndMessageIds
+            ? { turnEndMessageIds: resumeState.turnEndMessageIds }
+            : {}),
         },
         createdAt: startedAt,
         updatedAt: startedAt,
@@ -4697,6 +4724,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
       const context: ClaudeSessionContext = {
         session,
+        startInput: input,
+        turnEndMessageIds: [
+          ...(resumeState?.turnEndMessageIds ??
+            Array.from({ length: resumeState?.turnCount ?? 0 }, () => null)),
+        ],
         promptQueue,
         query: queryRuntime,
         streamFiber: undefined,
@@ -4705,6 +4737,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         currentApiModelId: apiModelId,
         currentEffort: effectiveEffort ?? undefined,
         resumeSessionId: sessionId,
+        pendingFork:
+          resumeState?.forkAt && existingResumeSessionId
+            ? { resume: existingResumeSessionId, forkAt: resumeState.forkAt }
+            : undefined,
         pendingApprovals,
         pendingUserInputs,
         turns: [],
@@ -4807,6 +4843,8 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       input.modelSelection !== undefined && input.modelSelection.instanceId === boundInstanceId
         ? input.modelSelection
         : undefined;
+
+    if (modelSelection) context.startInput = { ...context.startInput, modelSelection };
 
     // A sendTurn while a real turn is running is a steer: the message is
     // queued into the live SDK agent loop and the work continues as the same
@@ -4955,10 +4993,82 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
   const rollbackThread: ClaudeAdapterShape["rollbackThread"] = Effect.fn("rollbackThread")(
     function* (threadId, numTurns) {
       const context = yield* requireSession(threadId);
-      const nextLength = Math.max(0, context.turns.length - numTurns);
-      context.turns.splice(nextLength);
-      yield* updateResumeCursor(context);
-      return yield* snapshotThread(context);
+      if (
+        !Number.isInteger(numTurns) ||
+        numTurns < 1 ||
+        numTurns > context.turnEndMessageIds.length
+      ) {
+        return yield* new ProviderAdapterValidationError({
+          provider: PROVIDER,
+          operation: "rollbackThread",
+          issue: "The requested Claude turn boundary is unavailable.",
+        });
+      }
+      const nextLength = context.turnEndMessageIds.length - numTurns;
+      let boundaries: readonly (string | null)[] = context.turnEndMessageIds;
+      if (
+        nextLength > 0 &&
+        !boundaries[nextLength - 1] &&
+        context.resumeSessionId &&
+        context.session.cwd &&
+        !context.turnState
+      ) {
+        const count = boundaries.length;
+        const recovered = yield* Effect.promise(() =>
+          readClaudeRewindHistory({
+            configDir:
+              claudeEnvironment.CLAUDE_CONFIG_DIR ??
+              path.join(claudeEnvironment.HOME ?? homedir(), ".claude"),
+            cwd: context.session.cwd!,
+            sessionId: context.resumeSessionId!,
+            knownBoundaries: [...boundaries],
+          }),
+        );
+        if (
+          context.turnState ||
+          context.turnEndMessageIds.length !== count ||
+          sessions.get(threadId) !== context
+        ) {
+          return yield* new ProviderAdapterValidationError({
+            provider: PROVIDER,
+            operation: "rollbackThread",
+            issue:
+              "The Claude session changed while recovering its rewind boundary. Try again when it is idle.",
+          });
+        }
+        if (recovered) boundaries = recovered;
+      }
+      const boundary = nextLength === 0 ? null : boundaries[nextLength - 1];
+      if (nextLength > 0 && (!boundary || !context.resumeSessionId)) {
+        return yield* new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "thread/rollback",
+          detail:
+            "This older Claude session has no verifiable rewind boundary in its saved history. Its history has not been changed.",
+        });
+      }
+      const retainedTurns = context.turns.slice(0, Math.max(0, context.turns.length - numTurns));
+      const retainedBoundaries = boundaries.slice(0, nextLength);
+      yield* stopSessionInternal(context, { emitExitEvent: false });
+      yield* startSession({
+        ...context.startInput,
+        ...(context.session.cwd ? { cwd: context.session.cwd } : {}),
+        runtimeMode: context.session.runtimeMode,
+        resumeCursor:
+          nextLength === 0
+            ? undefined
+            : {
+                threadId,
+                resume: context.resumeSessionId,
+                resumeSessionAt: boundary,
+                forkAt: boundary,
+                turnCount: nextLength,
+                turnEndMessageIds: retainedBoundaries,
+              },
+      });
+      const restarted = yield* requireSession(threadId);
+      restarted.turns.push(...retainedTurns);
+      return yield* snapshotThread(restarted);
     },
   );
 

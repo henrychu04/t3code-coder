@@ -1,3 +1,4 @@
+import { imageContextReference } from "../../lib/composerInlineContext";
 import type { AssistantCitation } from "@t3tools/contracts";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 import { formatAssistantCitationForComposer } from "../../composer-logic";
@@ -1187,6 +1188,7 @@ export interface ChatComposerProps {
   onPageScrollRelease: () => void;
 
   // Callbacks
+  onCompactContext: () => void;
   onSend: (e?: { preventDefault: () => void }, intent?: ComposerSubmissionIntent) => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -1280,6 +1282,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onPageScrollKeyUp,
     onPageScrollRelease,
     composerTerminalContextsRef,
+    onCompactContext,
     onSend,
     onInterrupt,
     onImplementPlanInNewThread,
@@ -1311,7 +1314,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerTerminalContexts = composerDraft.terminalContexts;
   const composerReviewComments = composerDraft.reviewComments;
   const composerPastedImages = composerDraft.pastedImages ?? EMPTY_PASTED_IMAGES;
-  const imageUploadBlockReason = pastedImageSendBlockReason(composerPastedImages);
+  const imageUploadBlockReason = pastedImageSendBlockReason(composerPastedImages, prompt);
   const effectiveSendDisabledReason = sendDisabledReason ?? imageUploadBlockReason;
   const isSendDisabled = effectiveSendDisabledReason !== null;
   const isUploadingClipboardImages = composerPastedImages.some(
@@ -2515,14 +2518,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : null;
   const compactThreadContext = useCallback(() => {
     if (compactDisabled) return;
-    promptRef.current = "/compact";
-    setComposerDraftPrompt(composerDraftTarget, "/compact");
-    submitComposer();
-    if (promptRef.current === "/compact") {
-      promptRef.current = "";
-      setComposerDraftPrompt(composerDraftTarget, "");
-    }
-  }, [compactDisabled, composerDraftTarget, promptRef, setComposerDraftPrompt, submitComposer]);
+    onCompactContext();
+  }, [compactDisabled, onCompactContext]);
   const expandMobileComposer = useCallback(() => {
     if (composerBlurFrameRef.current !== null) {
       window.cancelAnimationFrame(composerBlurFrameRef.current);
@@ -3070,7 +3067,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       setComposerSubmissionError("Paste images after resolving the current composer prompt.");
       return;
     }
+    const existingIds = new Set(composerPastedImages.map((image) => image.id));
     uploadClipboardImages(imageFiles);
+    const added =
+      useComposerDraftStore
+        .getState()
+        .getComposerDraft(composerDraftTarget)
+        ?.pastedImages?.filter((image) => !existingIds.has(image.id)) ?? [];
+    if (added.length)
+      insertComposerText(
+        added.map((image) => imageContextReference(image.id)).join(" ") + " ",
+        "cursor",
+      );
   };
 
   const handleInterruptPrimaryAction = useCallback(() => {
@@ -3985,6 +3993,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
               >
                 <ComposerPromptEditor
+                  images={composerPastedImages}
                   editorRef={composerEditorRef}
                   value={
                     isComposerApprovalState

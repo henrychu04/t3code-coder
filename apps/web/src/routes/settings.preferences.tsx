@@ -1,3 +1,9 @@
+import { ScopedSwitch } from "../components/settings/ScopedSwitch";
+import {
+  useScopedSettings,
+  useUpdateScopedSettings,
+} from "../components/settings/useScopedSettings";
+import { ResponseSettings } from "../components/settings/ResponseSettings";
 import {
   RestoreClientSettings,
   RestoreWorkspaceSettings,
@@ -39,15 +45,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import {
-  useClientSettings,
-  useEnvironmentSettings,
-  useUpdateClientSettings,
-  useUpdateEnvironmentSettings,
-} from "../hooks/useSettings";
+import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
 import { TextGenerationModelSettings } from "../components/settings/TextGenerationModelSettings";
 import type { EnvironmentPresentation } from "../state/environments";
-import { WorkspaceSettingsTarget } from "../components/settings/WorkspaceSettingsTarget";
+import { ScopedSettingsTarget } from "../components/settings/ScopedSettingsTarget";
 
 const TIMESTAMP_FORMAT_LABELS: Record<TimestampFormat, string> = {
   locale: "System default",
@@ -106,8 +107,8 @@ function AutoSettleDaysInput({
 
 function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPresentation }) {
   const environmentId = props.environment.environmentId;
-  const settings = useEnvironmentSettings(environmentId);
-  const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
   const providers = props.environment.serverConfig?.providers ?? [];
 
   return (
@@ -126,8 +127,10 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         title="New threads"
         description="Choose how new work starts inside the selected Coder workspace."
       >
+        <ResponseSettings settings={settings} onChange={updateSettings} />
         <SettingsRow
           id="default-checkout-mode"
+          settingKeys={["defaultThreadEnvMode"]}
           title="Default checkout mode"
           description="Work in the project checkout or create a dedicated Git worktree."
           resetAction={
@@ -177,6 +180,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         />
         <SettingsRow
           id="worktrees-from-origin"
+          settingKeys={["newWorktreesStartFromOrigin"]}
           title="Start worktrees from origin"
           description="Creates the worktree from the latest matching branch on origin instead of your local branch."
           resetAction={
@@ -194,7 +198,8 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
             ) : null
           }
           control={
-            <Switch
+            <ScopedSwitch
+              settingKeys={["newWorktreesStartFromOrigin"]}
               checked={settings.newWorktreesStartFromOrigin}
               onCheckedChange={(checked) =>
                 updateSettings({ newWorktreesStartFromOrigin: Boolean(checked) })
@@ -211,6 +216,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
       >
         <SettingsRow
           id="auto-settle-inactive-threads"
+          settingKeys={["sidebarAutoSettleAfterDays"]}
           title="Auto-settle inactive threads"
           description="Sidebar threads with no activity for this long settle automatically."
           resetAction={
@@ -227,7 +233,8 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
             ) : null
           }
           control={
-            <Switch
+            <ScopedSwitch
+              settingKeys={["sidebarAutoSettleAfterDays"]}
               checked={settings.sidebarAutoSettleAfterDays !== null}
               onCheckedChange={(checked) =>
                 updateSettings({
@@ -241,6 +248,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         {settings.sidebarAutoSettleAfterDays !== null ? (
           <SettingsRow
             id="days-before-auto-settle"
+            settingKeys={["sidebarAutoSettleAfterDays"]}
             title="Days before auto-settle"
             description="Any new activity un-settles a thread automatically."
             control={
@@ -253,6 +261,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         ) : null}
         <SettingsRow
           id="auto-settle-merged-threads"
+          settingKeys={["sidebarAutoSettleOnMerge"]}
           title="Auto-settle merged threads"
           description="Settle a thread when its merge request merges. Closed merge requests still settle automatically."
           resetAction={
@@ -269,7 +278,8 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
             ) : null
           }
           control={
-            <Switch
+            <ScopedSwitch
+              settingKeys={["sidebarAutoSettleOnMerge"]}
               checked={settings.sidebarAutoSettleOnMerge}
               onCheckedChange={(checked) =>
                 updateSettings({ sidebarAutoSettleOnMerge: Boolean(checked) })
@@ -293,12 +303,40 @@ function GeneralSettingsView() {
   return (
     <SettingsPage>
       <RestoreClientSettings />
-      <WorkspaceSettingsTarget ariaLabel="General settings workspace">
+      <ScopedSettingsTarget>
         {(environment) => (
           <WorkspaceGeneralSettings key={environment.environmentId} environment={environment} />
         )}
-      </WorkspaceSettingsTarget>
+      </ScopedSettingsTarget>
 
+      <SettingsSection
+        id="notifications"
+        title="Notifications"
+        description="Alerts stay in this browser while T3 Coder is open."
+      >
+        <SettingsRow
+          title="Thread alerts"
+          description="Show alerts for completed threads and requests for input. Badge the browser tab while it is in the background."
+          control={
+            <Switch
+              checked={settings.inAppNotificationsEnabled}
+              onCheckedChange={(checked) => updateSettings({ inAppNotificationsEnabled: checked })}
+            />
+          }
+        />
+        <SettingsRow
+          title="Notification sounds"
+          description="Play a sound when a thread finishes or needs your attention."
+          control={
+            <Switch
+              checked={settings.notificationMode === "sound"}
+              onCheckedChange={(checked) =>
+                updateSettings({ notificationMode: checked ? "sound" : "off" })
+              }
+            />
+          }
+        />
+      </SettingsSection>
       <SettingsSection title="Sidebar" description="Control project grouping and thread ordering.">
         <SettingsRow
           id="project-grouping"
@@ -592,6 +630,49 @@ function GeneralSettingsView() {
                 </SelectItem>
                 <SelectItem hideIndicator value="24-hour">
                   {TIMESTAMP_FORMAT_LABELS["24-hour"]}
+                </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          id="default-diff-file-state"
+          title="Default diff file state"
+          description="Start with files expanded or collapsed when opening diffs or a merge request's Code tab."
+          resetAction={
+            settings.diffFilesCollapsed !== DEFAULT_CLIENT_SETTINGS.diffFilesCollapsed ? (
+              <SettingResetButton
+                label="default diff file state"
+                onClick={() =>
+                  updateSettings({
+                    diffFilesCollapsed: DEFAULT_CLIENT_SETTINGS.diffFilesCollapsed,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.diffFilesCollapsed ? "collapsed" : "expanded"}
+              onValueChange={(value) => {
+                if (value === "expanded" || value === "collapsed") {
+                  updateSettings({ diffFilesCollapsed: value === "collapsed" });
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Default diff file state"
+              >
+                <SelectValue>{settings.diffFilesCollapsed ? "Collapsed" : "Expanded"}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                <SelectItem hideIndicator value="expanded">
+                  Expanded
+                </SelectItem>
+                <SelectItem hideIndicator value="collapsed">
+                  Collapsed
                 </SelectItem>
               </SelectPopup>
             </Select>

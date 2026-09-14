@@ -7,7 +7,7 @@ import * as PlatformError from "effect/PlatformError";
 import { ChildProcessSpawner } from "effect/unstable/process";
 import { assert, it } from "@effect/vitest";
 
-import { GitCommandError } from "@t3tools/contracts";
+import { CheckpointRef, GitCommandError } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
@@ -77,6 +77,70 @@ runVcsDriverContractSuite<GitVcsDriver.GitVcsDriver, GitContractError>({
   },
 });
 
+it.effect("restores empty checkpoints without changing paths outside the workspace", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.makeVcsDriverShape();
+    for (const nested of [false, true]) {
+      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-empty-checkpoint-" });
+      yield* runGit(root, ["init"]);
+      yield* runGit(root, ["config", "user.email", "test@test.com"]);
+      yield* runGit(root, ["config", "user.name", "Test"]);
+      if (nested) {
+        yield* fileSystem.writeFileString(path.join(root, "outside.txt"), "original\n");
+        yield* runGit(root, ["add", "."]);
+      }
+      yield* runGit(root, ["commit", "--allow-empty", "-m", "initial"]);
+      const cwd = nested ? path.join(root, "nested") : root;
+      yield* fileSystem.makeDirectory(cwd, { recursive: true });
+      const checkpointRef = CheckpointRef.make("refs/t3/checkpoints/empty");
+      yield* driver.checkpoints.captureCheckpoint({ cwd, checkpointRef });
+      if (nested) {
+        yield* fileSystem.writeFileString(path.join(root, "outside.txt"), "changed\n");
+        yield* runGit(root, ["add", "outside.txt"]);
+      }
+      for (const staged of [false, true]) {
+        const addedPath = path.join(cwd, "added.txt");
+        yield* fileSystem.writeFileString(addedPath, "new\n");
+        if (staged) yield* runGit(cwd, ["add", "added.txt"]);
+        assert.isTrue(
+          yield* driver.checkpoints.restoreCheckpoint({
+            cwd,
+            checkpointRef,
+            fallbackToHead: false,
+          }),
+        );
+        assert.isFalse(yield* fileSystem.exists(addedPath));
+      }
+      yield* fileSystem.writeFileString(
+        path.join(root, ".git", "info", "exclude"),
+        "ignored.txt\n",
+      );
+      yield* fileSystem.writeFileString(path.join(cwd, "ignored.txt"), "keep\n");
+      yield* fileSystem.makeDirectory(path.join(cwd, "untracked"));
+      yield* fileSystem.writeFileString(path.join(cwd, "untracked", "file.txt"), "remove\n");
+      assert.isTrue(
+        yield* driver.checkpoints.restoreCheckpoint({ cwd, checkpointRef, fallbackToHead: false }),
+      );
+      assert.strictEqual(yield* fileSystem.readFileString(path.join(cwd, "ignored.txt")), "keep\n");
+      assert.isFalse(yield* fileSystem.exists(path.join(cwd, "untracked")));
+      if (nested) {
+        assert.strictEqual(
+          yield* fileSystem.readFileString(path.join(root, "outside.txt")),
+          "changed\n",
+        );
+        const staged = yield* driver.execute({
+          operation: "test",
+          cwd: root,
+          args: ["diff", "--cached", "--name-only"],
+        });
+        assert.strictEqual(staged.stdout.trim(), "outside.txt");
+      }
+    }
+  }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
 it.effect("GitVcsDriver forwards execute env to the VCS process", () => {
   let observedEnv: NodeJS.ProcessEnv | undefined;
   let observedAppendTruncationMarker: boolean | undefined;
@@ -140,13 +204,31 @@ it.effect("GitVcsDriver derives the default worktree path from the repo and bran
     yield* runGit(repo, ["add", "README.md"]);
     yield* runGit(repo, ["commit", "-m", "Initial"]);
 
-    const created = yield* driver.createWorktree({
-      cwd: repo,
-      refName: "main",
-      newRefName: "t3code/fix-reconnect",
-      baseRefName: "main",
-      path: null,
-    });
+    const progress: string[] = [];
+    const created = yield* driver.createWorktree(
+      {
+        cwd: repo,
+        refName: "main",
+        newRefName: "t3code/fix-reconnect",
+        baseRefName: "main",
+        path: null,
+      },
+      {
+        progress: {
+          onWorktreeClaimed: (claimed) =>
+            Effect.gen(function* () {
+              assert.strictEqual(yield* fileSystem.exists(path.join(claimed, "README.md")), true);
+              progress.push("claimed");
+            }).pipe(Effect.orDie),
+          onSubmodulesFinished: ({ ok, detail }) =>
+            Effect.sync(() => {
+              assert.strictEqual(ok, true);
+              progress.push(detail ?? "finished");
+            }),
+        },
+      },
+    );
+    assert.deepStrictEqual(progress, ["claimed", "no submodules"]);
     assert.strictEqual(
       created.worktree.path.endsWith(
         path.join("worktrees", "semantic-repo", "t3code-fix-reconnect"),
@@ -977,4 +1059,44 @@ it.effect("Git status pauses for a linked worktree index lock and resumes after 
     yield* fs.remove(lock);
     assert.isTrue((yield* driver.statusDetailsLocal(worktree)).isRepo);
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+);
+
+it.effect(
+  "review recognizes renames and pathspec-like names without changing the real split index",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-coder-review-rename-" });
+      yield* runGit(cwd, ["init"]);
+      yield* runGit(cwd, ["config", "user.name", "Test"]);
+      yield* runGit(cwd, ["config", "user.email", "test@example.test"]);
+      yield* fs.writeFileString(path.join(cwd, "before.ts"), "one\ntwo\nthree\nfour\nfive\n");
+      yield* runGit(cwd, ["add", "."]);
+      yield* runGit(cwd, ["commit", "-m", "Initial"]);
+      yield* runGit(cwd, ["config", "core.splitIndex", "true"]);
+      yield* runGit(cwd, ["config", "splitIndex.sharedIndexExpire", "now"]);
+      yield* runGit(cwd, ["update-index", "--split-index"]);
+      const before = yield* fs.readFile(path.join(cwd, ".git", "index"));
+      const sharedBefore = (yield* fs.readDirectory(path.join(cwd, ".git")))
+        .filter((name) => name.startsWith("sharedindex."))
+        .sort();
+      yield* fs.rename(path.join(cwd, "before.ts"), path.join(cwd, "after.ts"));
+      yield* fs.writeFileString(path.join(cwd, "after.ts"), "one\ntwo\nTHREE\nfour\nfive\n");
+      yield* fs.writeFileString(path.join(cwd, ":(exclude)literal.ts"), "literal file\n");
+      const result = yield* driver.getReviewDiffPreview({ cwd, sourceKind: "working-tree" });
+      const diff = result.sources[0]?.diff ?? "";
+      assert.include(diff, "rename from before.ts");
+      assert.include(diff, "rename to after.ts");
+      assert.include(diff, "+THREE");
+      assert.include(diff, "+literal file");
+      assert.deepEqual(yield* fs.readFile(path.join(cwd, ".git", "index")), before);
+      assert.deepEqual(
+        (yield* fs.readDirectory(path.join(cwd, ".git")))
+          .filter((name) => name.startsWith("sharedindex."))
+          .sort(),
+        sharedBefore,
+      );
+    }).pipe(Effect.provide(GitContractLayer)),
 );

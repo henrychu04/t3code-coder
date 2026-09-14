@@ -4,7 +4,8 @@ export type CoderSettingsPath =
   | "/settings/shortcuts"
   | "/settings/general"
   | "/settings/source-control"
-  | "/settings/archived";
+  | "/settings/archived"
+  | "/settings/open-source-licenses";
 
 export interface SettingsSearchItem {
   readonly id: string;
@@ -17,6 +18,21 @@ export interface SettingsSearchItem {
 
 /** Coder-only settings destinations, including individual source-control controls. */
 export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
+  {
+    id: "notifications",
+    title: "Thread notifications and sounds",
+    to: "/settings/preferences",
+    section: "Notifications",
+    targetId: "notifications",
+    searchTerms: ["alert sound badge completed input approval"],
+  },
+  {
+    id: "open-source-licenses",
+    title: "Open source licenses",
+    to: "/settings/open-source-licenses",
+    section: "About",
+    searchTerms: ["third party notices attribution dependencies"],
+  },
   {
     id: "restore-client-defaults",
     title: "Restore browser preferences",

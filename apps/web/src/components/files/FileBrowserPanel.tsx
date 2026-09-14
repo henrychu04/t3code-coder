@@ -4,7 +4,7 @@ import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
 import type { ContextMenuItem, ContextMenuOpenContext } from "@pierre/trees";
 import { FileTree, useFileTree, useFileTreeSearch, useFileTreeSelector } from "@pierre/trees/react";
 import { ChevronsDownUpIcon, ChevronsUpDownIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { InputGroup, InputGroupInput } from "~/components/ui/input-group";
@@ -18,7 +18,8 @@ import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
-import { useProjectEntriesQuery } from "./projectFilesQueryState";
+import { useDirectoryEntries } from "./useDirectoryEntries";
+import { useProjectPathSearch } from "~/state/queries";
 
 function treePath(entry: ProjectEntry): string {
   return entry.kind === "directory" ? `${entry.path}/` : entry.path;
@@ -43,7 +44,7 @@ export function contextMenuFilePath(
   return path;
 }
 
-export default function FileBrowserPanel(props: {
+type FileBrowserPanelProps = {
   environmentId: EnvironmentId;
   threadId: ThreadId;
   cwd: string;
@@ -53,16 +54,42 @@ export default function FileBrowserPanel(props: {
   onOpenFile: (relativePath: string) => void;
   onRefreshSelectedFile?: () => void;
   workspaceMutationId: string | null;
-}) {
+};
+export default function FileBrowserPanel(props: FileBrowserPanelProps) {
+  return (
+    <FileBrowserPanelContents
+      key={JSON.stringify([props.environmentId, props.threadId, props.cwd])}
+      {...props}
+    />
+  );
+}
+function FileBrowserPanelContents(props: FileBrowserPanelProps) {
   const { resolvedTheme } = useTheme();
   const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
-  const entriesQuery = useProjectEntriesQuery(props.environmentId, props.threadId, props.cwd);
+  const directory = useDirectoryEntries(props.environmentId, props.threadId, props.cwd);
+  const [query, setQuery] = useState("");
+  const pathSearch = useProjectPathSearch(
+    { environmentId: props.environmentId, cwd: props.cwd, query: query.slice(0, 256) },
+    200,
+  );
+  const entries = useMemo(() => {
+    const result = new Map(directory.entries.map((entry) => [entry.path, entry]));
+    if (query.trim() && !pathSearch.isPending)
+      for (const entry of pathSearch.entries) {
+        if (!result.has(entry.path)) result.set(entry.path, entry);
+        const segments = entry.path.split("/");
+        for (let index = 1; index < segments.length; index++) {
+          const path = segments.slice(0, index).join("/");
+          if (!result.has(path)) result.set(path, { path, kind: "directory" });
+        }
+      }
+    return [...result.values()];
+  }, [directory.entries, pathSearch.entries, pathSearch.isPending, query]);
   useWorkspaceMutationRefresh({
     mutationId: props.workspaceMutationId,
-    refresh: entriesQuery.refresh,
+    refresh: directory.refresh,
     resourceKey: `files:${props.environmentId}:${props.cwd}`,
   });
-  const entries = entriesQuery.data?.entries ?? [];
   const entryKinds = useMemo(
     () => new Map(entries.map((entry) => [entry.path, entry.kind] as const)),
     [entries],
@@ -123,7 +150,7 @@ export default function FileBrowserPanel(props: {
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
-    initialExpansion: 1,
+    initialExpansion: "closed",
     icons: T3_PIERRE_ICONS,
     onSelectionChange: (selectedPaths) => {
       if (syncingSelectionRef.current) return;
@@ -134,6 +161,7 @@ export default function FileBrowserPanel(props: {
     },
     paths: [],
     search: false,
+    onSearchChange: (value) => setQuery(value ?? ""),
     unsafeCSS: PIERRE_TREE_UNSAFE_CSS,
   });
   const search = useFileTreeSearch(model);
@@ -143,11 +171,41 @@ export default function FileBrowserPanel(props: {
   const toggleAllDirectories = () => {
     setAllDirectoriesExpanded(model, directoryPaths, !allDirectoriesExpanded);
   };
+  const { load } = directory;
+  useEffect(() => {
+    const loadExpanded = () => {
+      if (model.isSearchOpen()) return;
+      for (const path of directoryPaths) {
+        const item = model.getItem(path);
+        if (item?.isDirectory() && "isExpanded" in item && item.isExpanded())
+          void load(path.replace(/\/$/, ""));
+      }
+    };
+    loadExpanded();
+    return model.subscribe(loadExpanded);
+  }, [directoryPaths, load, model]);
+  useEffect(() => {
+    model.setGitStatus(
+      entries
+        .filter((entry) => entry.ignored)
+        .map((entry) => ({ path: treePath(entry), status: "ignored" })),
+    );
+  }, [entries, model]);
+  useEffect(() => {
+    if (!props.selectedPath) return;
+    const controller = new AbortController();
+    const segments = props.selectedPath.split("/");
+    void (async () => {
+      for (let index = 0; index < segments.length && !controller.signal.aborted; index++)
+        await load(segments.slice(0, index).join("/"));
+    })();
+    return () => controller.abort();
+  }, [load, props.selectedPath]);
   const hasNoSearchMatches =
     search.isOpen && search.value.trim().length > 0 && search.matchingPaths.length === 0;
 
   useEffect(() => {
-    if (entriesQuery.data === null) return;
+    if (!directory.ready) return;
     if (previousTreePathsRef.current === treePaths) return;
     entryKindsRef.current = entryKinds;
     const previousTreePaths = previousTreePathsRef.current;
@@ -158,7 +216,7 @@ export default function FileBrowserPanel(props: {
     }
     const updates = buildFileTreePathUpdates(previousTreePaths, treePaths);
     if (updates.length > 0) model.batch(updates);
-  }, [entriesQuery.data, entryKinds, model, treePaths]);
+  }, [directory.ready, entryKinds, model, treePaths]);
 
   useEffect(() => {
     const selectedPath = props.selectedPath;
@@ -195,7 +253,7 @@ export default function FileBrowserPanel(props: {
   }, [entryKinds, model, props.selectedPath, props.selectedPathRevealId, treePaths]);
 
   const refresh = () => {
-    entriesQuery.refresh();
+    directory.refresh();
     props.onRefreshSelectedFile?.();
   };
 
@@ -214,9 +272,9 @@ export default function FileBrowserPanel(props: {
               />
             }
           >
-            <RefreshIcon refreshing={entriesQuery.isPending} />
+            <RefreshIcon refreshing={directory.isPending} />
           </TooltipTrigger>
-          <TooltipPopup>{entriesQuery.isPending ? "Refreshing…" : "Refresh files"}</TooltipPopup>
+          <TooltipPopup>{directory.isPending ? "Refreshing…" : "Refresh files"}</TooltipPopup>
         </Tooltip>
         <InputGroup variant="ghost" className="h-7 min-w-0 flex-1">
           <InputGroupInput
@@ -248,7 +306,7 @@ export default function FileBrowserPanel(props: {
                   size="icon-xs"
                   variant="ghost"
                   aria-label={
-                    allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"
+                    allDirectoriesExpanded ? "Collapse loaded folders" : "Expand loaded folders"
                   }
                   onClick={toggleAllDirectories}
                 />
@@ -261,13 +319,24 @@ export default function FileBrowserPanel(props: {
               )}
             </TooltipTrigger>
             <TooltipPopup>
-              {allDirectoriesExpanded ? "Collapse all folders" : "Expand all folders"}
+              {allDirectoriesExpanded ? "Collapse loaded folders" : "Expand loaded folders"}
             </TooltipPopup>
           </Tooltip>
         ) : null}
       </div>
-      {entriesQuery.error && entriesQuery.data === null ? (
-        <div className="p-4 text-xs text-destructive">{entriesQuery.error}</div>
+      {directory.truncated && (
+        <p role="status" className="px-3 py-2 text-xs text-muted-foreground">
+          Some folders exceed the 1,000-entry browsing limit. Use filename search or open a narrower
+          folder.
+        </p>
+      )}
+      {directory.error && directory.ready && (
+        <p role="status" className="px-3 py-2 text-xs text-destructive">
+          {directory.error}
+        </p>
+      )}
+      {directory.error && !directory.ready ? (
+        <div className="p-4 text-xs text-destructive">{directory.error}</div>
       ) : (
         <div className="relative min-h-0 flex-1">
           <FileTree

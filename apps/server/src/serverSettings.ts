@@ -1,3 +1,6 @@
+import { ModelSelection, ProjectScript, type ProjectSettingsOverrides } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 /**
  * ServerSettings - Server-authoritative settings service.
  *
@@ -40,7 +43,10 @@ import { writeFileStringAtomically } from "./atomicWrite.ts";
 import * as ServerConfig from "./config.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import {
+  applyServerSettingsPatch,
+  deriveLegacyProjectOverrides,
+} from "@t3tools/shared/serverSettings";
 
 const encodeServerSettings = Schema.encodeEffect(ServerSettings);
 const encodeServerSettingsJson = Schema.encodeUnknownEffect(fromJsonStringPretty(ServerSettings));
@@ -287,8 +293,86 @@ function stripDefaultServerSettings(current: unknown, defaults: unknown): unknow
   return Object.is(current, defaults) ? undefined : current;
 }
 
+const decodeProjectScriptsJson = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Array(ProjectScript)),
+);
+const decodeModelSelectionJson = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.NullOr(ModelSelection)),
+);
+
+interface LegacyProjectSettingsRow {
+  readonly projectId: string;
+  readonly defaultModelSelection: string | null;
+  readonly defaultThreadEnvMode: string | null;
+  readonly autoPull: number;
+  readonly scripts: string;
+}
+
+/**
+ * One-time fold of the legacy per-project fields into `projectSettingsOverrides`:
+ * the three `project*Overrides` maps and the settings columns on the project
+ * aggregate. Keys already present in the generic record win. Marked with
+ * `projectSettingsFolded` so a later reset in the UI survives restarts.
+ */
+export function foldLegacyProjectSettings(
+  settings: ServerSettings,
+  rows: ReadonlyArray<LegacyProjectSettingsRow>,
+): ServerSettings {
+  if (settings.projectSettingsFolded) return settings;
+  const entries: Record<string, ProjectSettingsOverrides> = {
+    ...settings.projectSettingsOverrides,
+  };
+  const set = <K extends keyof ProjectSettingsOverrides>(
+    projectId: string,
+    key: K,
+    value: ProjectSettingsOverrides[K] | undefined,
+  ) => {
+    if (value === undefined) return;
+    const entry = entries[projectId] ?? {};
+    if (Object.hasOwn(entry, key)) return;
+    entries[projectId] = { ...entry, [key]: value };
+  };
+  for (const [projectId, value] of Object.entries(settings.pullRequestMergeMethodOverrides)) {
+    set(projectId, "pullRequestMergeMethod", value);
+  }
+  for (const [projectId, value] of Object.entries(settings.projectAutoPullOverrides)) {
+    set(projectId, "defaultAutoPull", value);
+  }
+  // A stored null meant "reset to machine defaults", which is now plain
+  // inheritance; the project's own aggregate scripts must not resurface.
+  const resetScripts = new Set<string>();
+  for (const [projectId, value] of Object.entries(settings.projectScriptOverrides)) {
+    if (value === null) resetScripts.add(projectId);
+    else set(projectId, "defaultProjectScripts", value);
+  }
+  for (const row of rows) {
+    const model = decodeModelSelectionJson(row.defaultModelSelection ?? "null");
+    if (Option.isSome(model) && model.value !== null) {
+      set(row.projectId, "defaultModelSelection", model.value);
+    }
+    if (row.defaultThreadEnvMode === "local" || row.defaultThreadEnvMode === "worktree") {
+      set(row.projectId, "defaultThreadEnvMode", row.defaultThreadEnvMode);
+    }
+    if (row.autoPull === 1) set(row.projectId, "defaultAutoPull", true);
+    const scripts = decodeProjectScriptsJson(row.scripts);
+    if (Option.isSome(scripts) && scripts.value.length > 0 && !resetScripts.has(row.projectId)) {
+      set(row.projectId, "defaultProjectScripts", scripts.value);
+    }
+  }
+  const projectSettingsOverrides = Object.fromEntries(
+    Object.entries(entries).filter(([, entry]) => Object.keys(entry).length > 0),
+  );
+  return {
+    ...settings,
+    projectSettingsOverrides,
+    projectSettingsFolded: true,
+    ...deriveLegacyProjectOverrides({ projectSettingsOverrides }),
+  };
+}
+
 const make = Effect.gen(function* () {
   const { settingsPath } = yield* ServerConfig.ServerConfig;
+  const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
   const fs = yield* FileSystem.FileSystem;
   const pathService = yield* Path.Path;
   const writeSemaphore = yield* Semaphore.make(1);
@@ -325,21 +409,30 @@ const make = Effect.gen(function* () {
   );
 
   const loadSettingsFromDisk = Effect.gen(function* () {
-    if (!(yield* readConfigExists)) {
-      return DEFAULT_SERVER_SETTINGS;
+    let settings = DEFAULT_SERVER_SETTINGS;
+    if (yield* readConfigExists) {
+      const decoded = decodeServerSettingsJsonExit(yield* readRawConfig);
+      if (decoded._tag === "Failure") {
+        yield* Effect.logWarning("failed to parse settings.json, using defaults", {
+          path: settingsPath,
+        });
+        return DEFAULT_SERVER_SETTINGS;
+      }
+      settings = foldProviderInstanceEnabledFlags(decoded.value);
     }
-
-    const raw = yield* readRawConfig;
-    const decoded = decodeServerSettingsJsonExit(raw);
-    if (decoded._tag === "Failure") {
-      yield* Effect.logWarning("failed to parse settings.json, using defaults", {
-        path: settingsPath,
-        issues: Cause.pretty(decoded.cause),
-        cause: decoded.cause,
-      });
-      return DEFAULT_SERVER_SETTINGS;
-    }
-    return foldProviderInstanceEnabledFlags(decoded.value);
+    if (settings.projectSettingsFolded || Option.isNone(sqlOption)) return settings;
+    const rows = yield* sqlOption.value<LegacyProjectSettingsRow>`
+      SELECT project_id AS "projectId", default_model_selection_json AS "defaultModelSelection",
+        default_thread_env_mode AS "defaultThreadEnvMode", auto_pull AS "autoPull", scripts_json AS "scripts"
+      FROM projection_projects WHERE deleted_at IS NULL
+    `.pipe(
+      Effect.mapError(
+        (cause) => new ServerSettingsError({ settingsPath, operation: "read-file", cause }),
+      ),
+    );
+    const folded = foldLegacyProjectSettings(settings, rows);
+    if (folded !== settings) yield* writeSettingsAtomically(folded);
+    return folded;
   });
 
   const settingsCache = yield* Cache.make<typeof cacheKey, ServerSettings, ServerSettingsError>({

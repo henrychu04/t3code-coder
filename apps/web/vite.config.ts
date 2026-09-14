@@ -1,3 +1,4 @@
+import { thirdPartyLicensesPlugin } from "./vite/third-party-licenses.ts";
 import { readBuildVersion } from "../../scripts/build-info.ts";
 import tailwindcss from "@tailwindcss/vite";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
@@ -21,6 +22,15 @@ export default defineConfig({
   define: { "import.meta.env.APP_VERSION": JSON.stringify(readBuildVersion()) },
   assetsInclude: ["**/*.wasm"],
   plugins: [
+    thirdPartyLicensesPlugin({
+      bundleName: "web",
+      configFile: new URL("../../third-party-licenses.config.json", import.meta.url),
+      packageManifests: [
+        { bundle: "web", path: new URL("./package.json", import.meta.url) },
+        { bundle: "helper", path: new URL("../coder-helper/package.json", import.meta.url) },
+        { bundle: "gateway", path: new URL("../coder-gateway/package.json", import.meta.url) },
+      ],
+    }),
     tanstackRouter(),
     react(),
     babel({

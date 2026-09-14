@@ -30,6 +30,8 @@ export type ThreadEnvMode = typeof ThreadEnvMode.Type;
 export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.Type;
 
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
+  /** Helper supports project overrides and inheritance resets. */
+  projectSettingsOverrides: Schema.optionalKey(Schema.Boolean),
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Server can list and operate on hosted merge requests. */
   pullRequests: Schema.optionalKey(Schema.Boolean),

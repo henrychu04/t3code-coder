@@ -179,6 +179,18 @@
     "./assistantCitations": {
       "types": "./src/assistantCitations.ts",
       "default": "./src/assistantCitations.ts"
+    },
+    "./delimitedPreview": {
+      "types": "./src/delimitedPreview.ts",
+      "import": "./src/delimitedPreview.ts"
+    },
+    "./thirdPartyLicenses": {
+      "types": "./src/thirdPartyLicenses.ts",
+      "import": "./src/thirdPartyLicenses.ts"
+    },
+    "./projectSettings": {
+      "types": "./src/projectSettings.ts",
+      "import": "./src/projectSettings.ts"
     }
   },
   "scripts": {

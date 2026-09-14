@@ -33,6 +33,20 @@ describe("ClaudeCli", () => {
     assert.ok(!args.includes("--plugin-dir"));
   });
 
+  it("forks a rewind at an explicit assistant boundary without modifying the source session", () => {
+    const args = buildClaudeCliArgs({
+      pathToClaudeCodeExecutable: "claude",
+      resume: "source-session",
+      resumeSessionAt: "assistant-one",
+      forkSession: true,
+      sessionId: "new-session",
+    });
+    assert.ok(args.includes("--fork-session"));
+    assert.equal(args[args.indexOf("--resume") + 1], "source-session");
+    assert.equal(args[args.indexOf("--resume-session-at") + 1], "assistant-one");
+    assert.equal(args[args.indexOf("--session-id") + 1], "new-session");
+  });
+
   it("preserves bounded directories and emits settings exactly once", () => {
     const args = buildClaudeCliArgs({
       pathToClaudeCodeExecutable: "claude",

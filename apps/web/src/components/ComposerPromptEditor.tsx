@@ -1,3 +1,9 @@
+import {
+  ComposerContextNode,
+  $createComposerContextNode,
+  ComposerImagesContext,
+} from "./ComposerContextNode";
+import { EMPTY_PASTED_IMAGES, type ComposerPastedImage } from "../lib/composerPastedImages";
 import { LexicalComposer, type InitialConfigType } from "@lexical/react/LexicalComposer";
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
 import { ContentEditable } from "@lexical/react/LexicalContentEditable";
@@ -446,6 +452,7 @@ function $createComposerTerminalContextNode(
 }
 
 type ComposerInlineTokenNode =
+  | ComposerContextNode
   | ComposerMentionNode
   | ComposerSkillNode
   | ComposerCitationNode
@@ -453,6 +460,7 @@ type ComposerInlineTokenNode =
 
 function isComposerInlineTokenNode(candidate: unknown): candidate is ComposerInlineTokenNode {
   return (
+    candidate instanceof ComposerContextNode ||
     candidate instanceof ComposerMentionNode ||
     candidate instanceof ComposerSkillNode ||
     candidate instanceof ComposerCitationNode ||
@@ -852,6 +860,10 @@ function $setComposerEditorPrompt(
 
   const segments = splitPromptIntoComposerSegments(prompt, terminalContexts);
   for (const segment of segments) {
+    if (segment.type === "context") {
+      paragraph.append($createComposerContextNode(segment.source));
+      continue;
+    }
     if (segment.type === "citation") {
       paragraph.append($createComposerCitationNode(segment.citation, segment.source));
       continue;
@@ -912,6 +924,7 @@ export interface ComposerPromptEditorHandle {
 }
 
 interface ComposerPromptEditorProps {
+  images?: ReadonlyArray<ComposerPastedImage>;
   value: string;
   cursor: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
@@ -2059,6 +2072,7 @@ function ComposerPromptEditorInner({
 }
 
 export function ComposerPromptEditor({
+  images = EMPTY_PASTED_IMAGES,
   value,
   cursor,
   terminalContexts,
@@ -2087,6 +2101,7 @@ export function ComposerPromptEditor({
       namespace: "t3tools-composer-editor",
       editable: true,
       nodes: [
+        ComposerContextNode,
         ComposerMentionNode,
         ComposerSkillNode,
         ComposerCitationNode,
@@ -2107,28 +2122,30 @@ export function ComposerPromptEditor({
   );
 
   return (
-    <LexicalComposer key={COMPOSER_EDITOR_HMR_KEY} initialConfig={initialConfig}>
-      <ComposerPromptEditorInner
-        value={value}
-        cursor={cursor}
-        terminalContexts={terminalContexts}
-        skills={skills}
-        disabled={disabled}
-        placeholder={placeholder}
-        {...(containerClassName ? { containerClassName } : {})}
-        onRemoveTerminalContext={onRemoveTerminalContext}
-        onChange={onChange}
-        {...(onVisibleSelectionChange ? { onVisibleSelectionChange } : {})}
-        onPaste={onPaste}
-        {...(onCitationSubmitAndSend ? { onCitationSubmitAndSend } : {})}
-        editorRef={editorRef}
-        {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
-        {...(onPageScrollKeyDown ? { onPageScrollKeyDown } : {})}
-        {...(onPageScrollKeyUp ? { onPageScrollKeyUp } : {})}
-        {...(onPageScrollRelease ? { onPageScrollRelease } : {})}
-        {...(className ? { className } : {})}
-        {...(placeholderClassName ? { placeholderClassName } : {})}
-      />
-    </LexicalComposer>
+    <ComposerImagesContext value={images}>
+      <LexicalComposer key={COMPOSER_EDITOR_HMR_KEY} initialConfig={initialConfig}>
+        <ComposerPromptEditorInner
+          value={value}
+          cursor={cursor}
+          terminalContexts={terminalContexts}
+          skills={skills}
+          disabled={disabled}
+          placeholder={placeholder}
+          {...(containerClassName ? { containerClassName } : {})}
+          onRemoveTerminalContext={onRemoveTerminalContext}
+          onChange={onChange}
+          {...(onVisibleSelectionChange ? { onVisibleSelectionChange } : {})}
+          onPaste={onPaste}
+          {...(onCitationSubmitAndSend ? { onCitationSubmitAndSend } : {})}
+          editorRef={editorRef}
+          {...(onCommandKeyDown ? { onCommandKeyDown } : {})}
+          {...(onPageScrollKeyDown ? { onPageScrollKeyDown } : {})}
+          {...(onPageScrollKeyUp ? { onPageScrollKeyUp } : {})}
+          {...(onPageScrollRelease ? { onPageScrollRelease } : {})}
+          {...(className ? { className } : {})}
+          {...(placeholderClassName ? { placeholderClassName } : {})}
+        />
+      </LexicalComposer>
+    </ComposerImagesContext>
   );
 }

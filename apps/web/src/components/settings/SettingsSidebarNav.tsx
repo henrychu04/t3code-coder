@@ -1,5 +1,6 @@
 import {
   ArchiveIcon,
+  BookOpenIcon,
   BotIcon,
   GitPullRequestIcon,
   KeyboardIcon,
@@ -28,6 +29,7 @@ const SETTINGS_NAV_ITEMS = [
   { label: "Providers", to: "/settings/providers", icon: BotIcon },
   { label: "Coder connections", to: "/settings/general", icon: ServerIcon },
   { label: "GitLab source control", to: "/settings/source-control", icon: GitPullRequestIcon },
+  { label: "Open source licenses", to: "/settings/open-source-licenses", icon: BookOpenIcon },
   { label: "Archived threads", to: "/settings/archived", icon: ArchiveIcon },
 ] as const;
 

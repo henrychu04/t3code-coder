@@ -59,6 +59,7 @@ export const layer = Layer.effect(
           threadTitleRegeneration: true,
           threadPullRequestLinking: true,
           threadPullRequests: true,
+          projectSettingsOverrides: true,
         },
       },
     });

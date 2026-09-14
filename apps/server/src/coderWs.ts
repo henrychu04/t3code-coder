@@ -1,3 +1,8 @@
+import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
+import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
+import * as Fiber from "effect/Fiber";
+import * as Deferred from "effect/Deferred";
+import { projectSettingsCommandPatch } from "./projectSettingsCommand.ts";
 import { PullRequestSyncReactor } from "./orchestration/PullRequestSyncReactor.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
@@ -446,6 +451,8 @@ export const layer = CoderWsRpcGroup.toLayer(
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
+    const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
+    const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
     const sourceControlRepositories =
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
@@ -722,27 +729,68 @@ export const layer = CoderWsRpcGroup.toLayer(
       Effect.gen(function* () {
         const bootstrap = command.bootstrap;
         const { bootstrap: _bootstrap, ...turnStart } = command;
+        const threadId = command.threadId;
+        const tracked = bootstrap?.prepareWorktree !== undefined;
+        const track = (effect: Effect.Effect<void>) => (tracked ? effect : Effect.void);
+        let setupTerminalId: string | undefined;
+        let acceptedTurn: { readonly sequence: number } | undefined;
         let createdThread = false;
+        let bootstrapThreadDeleted = false;
         let createdWorktree: { readonly cwd: string; readonly path: string } | undefined;
         const cleanup = () =>
-          compensateFailedBootstrap({
-            ...(createdWorktree ? { worktree: createdWorktree } : {}),
-            removeWorktree: git.removeWorktree,
-            ...(createdThread
-              ? {
-                  deleteThread: commandId("bootstrap-cleanup").pipe(
-                    Effect.flatMap((nextCommandId) =>
-                      orchestration.dispatch({
-                        type: "thread.delete",
-                        commandId: nextCommandId,
-                        threadId: command.threadId,
-                      }),
-                    ),
-                  ),
-                }
-              : {}),
-          });
+          (setupTerminalId
+            ? terminals
+                .close({ threadId, terminalId: setupTerminalId, deleteHistory: true })
+                .pipe(Effect.ignore)
+            : Effect.void
+          ).pipe(
+            Effect.andThen(
+              compensateFailedBootstrap({
+                ...(createdWorktree ? { worktree: createdWorktree } : {}),
+                removeWorktree: git.removeWorktree,
+                ...(createdThread
+                  ? {
+                      deleteThread: commandId("bootstrap-cleanup")
+                        .pipe(
+                          Effect.flatMap((nextCommandId) =>
+                            orchestration.dispatch({
+                              type: "thread.delete",
+                              commandId: nextCommandId,
+                              threadId: command.threadId,
+                            }),
+                          ),
+                        )
+                        .pipe(
+                          Effect.tap(() =>
+                            Effect.sync(() => {
+                              bootstrapThreadDeleted = true;
+                            }),
+                          ),
+                        ),
+                    }
+                  : {}),
+              }),
+            ),
+          );
         const program = Effect.gen(function* () {
+          const prepareWorktree = bootstrap?.prepareWorktree;
+          yield* track(
+            worktreeSetupTracker.stageStatus(
+              threadId,
+              "fetch",
+              prepareWorktree?.startFromOrigin ? "running" : "skipped",
+            ),
+          );
+          const worktreeBase = prepareWorktree
+            ? yield* git.prepareWorktreeBase({
+                cwd: prepareWorktree.projectCwd,
+                baseBranch: prepareWorktree.baseBranch,
+                ...(prepareWorktree.startFromOrigin ? { startFromOrigin: true } : {}),
+              })
+            : null;
+          if (prepareWorktree?.startFromOrigin)
+            yield* track(worktreeSetupTracker.stageStatus(threadId, "fetch", "done"));
+
           if (bootstrap?.createThread) {
             const created = yield* orchestration.dispatch({
               type: "thread.create",
@@ -762,15 +810,54 @@ export const layer = CoderWsRpcGroup.toLayer(
             yield* threadDeletionReactor.drainThrough(created.sequence);
             createdThread = true;
           }
-          if (bootstrap?.prepareWorktree) {
-            const prepareWorktree = bootstrap.prepareWorktree;
-            const worktree = yield* git.createWorktree({
-              cwd: prepareWorktree.projectCwd,
-              refName: prepareWorktree.baseBranch,
-              newRefName: prepareWorktree.branch,
-              baseRefName: prepareWorktree.baseBranch,
-              path: null,
-            });
+          if (prepareWorktree && worktreeBase) {
+            yield* track(worktreeSetupTracker.stageStatus(threadId, "checkout", "running"));
+            const worktree = yield* git.createWorktree(
+              {
+                cwd: prepareWorktree.projectCwd,
+                refName: worktreeBase,
+                newRefName: prepareWorktree.branch,
+                baseRefName: prepareWorktree.baseBranch,
+                path: null,
+              },
+              {
+                progress: {
+                  onWorktreeClaimed: (path) =>
+                    Effect.sync(() => {
+                      createdWorktree = { cwd: prepareWorktree.projectCwd, path };
+                    }),
+                  onCheckoutProgress: ({ percent, completed, total }) =>
+                    worktreeSetupTracker.stage(threadId, "checkout", {
+                      percent,
+                      detail: `${completed}/${total} files`,
+                    }),
+                  onSubmodulesStarted: () =>
+                    worktreeSetupTracker
+                      .stageStatus(threadId, "checkout", "done")
+                      .pipe(
+                        Effect.andThen(
+                          worktreeSetupTracker.stageStatus(threadId, "submodules", "running"),
+                        ),
+                      ),
+                  onSubmoduleLine: (line) =>
+                    worktreeSetupTracker.stage(threadId, "submodules", { detail: line }),
+                  onSubmodulesFinished: ({ ok, detail }) =>
+                    worktreeSetupTracker.stageStatus(
+                      threadId,
+                      "submodules",
+                      !ok ? "warning" : detail === "no submodules" ? "skipped" : "done",
+                      detail,
+                    ),
+                },
+              },
+            );
+            yield* track(worktreeSetupTracker.stageStatus(threadId, "checkout", "done"));
+            yield* track(
+              worktreeSetupTracker.update(threadId, (snapshot) => ({
+                ...snapshot,
+                worktreePath: worktree.worktree.path,
+              })),
+            );
             createdWorktree = {
               cwd: prepareWorktree.projectCwd,
               path: worktree.worktree.path,
@@ -784,20 +871,144 @@ export const layer = CoderWsRpcGroup.toLayer(
             });
             yield* vcsStatus.refresh(worktree.worktree.path).pipe(Effect.ignore);
           }
-          return yield* orchestration.dispatch(turnStart);
-        });
-        return yield* program.pipe(
-          Effect.catchCause((cause) =>
-            Effect.uninterruptible(cleanup()).pipe(
-              Effect.ignore,
-              Effect.andThen(
-                Effect.fail(
-                  toDispatchError(Cause.squash(cause), "Failed to start the Claude turn."),
+          if (tracked && !createdWorktree) {
+            yield* worktreeSetupTracker.stageStatus(
+              threadId,
+              "checkout",
+              "skipped",
+              "using project checkout",
+            );
+            yield* worktreeSetupTracker.stageStatus(threadId, "submodules", "skipped");
+          }
+          const worktreePath = createdWorktree?.path ?? bootstrap?.createThread?.worktreePath;
+          if (bootstrap?.runSetupScript && worktreePath) {
+            yield* track(worktreeSetupTracker.stageStatus(threadId, "setup-script", "running"));
+            const result = yield* projectSetupScriptRunner
+              .runForThread({
+                threadId,
+                worktreePath,
+                ...(bootstrap.createThread ? { projectId: bootstrap.createThread.projectId } : {}),
+                ...(prepareWorktree ? { projectCwd: prepareWorktree.projectCwd } : {}),
+                ...(tracked
+                  ? {
+                      observeCompletion: {
+                        onOutputLine: (line: string) =>
+                          worktreeSetupTracker.appendTail(threadId, "setup-script", line),
+                      },
+                    }
+                  : {}),
+              })
+              .pipe(
+                Effect.catch(() =>
+                  track(
+                    worktreeSetupTracker.stageStatus(
+                      threadId,
+                      "setup-script",
+                      "failed",
+                      "failed to start",
+                    ),
+                  ).pipe(Effect.as(null)),
                 ),
-              ),
-            ),
+              );
+            if (result?.status === "started") {
+              setupTerminalId = result.terminalId;
+              yield* track(
+                worktreeSetupTracker.update(threadId, (snapshot) => ({
+                  ...snapshot,
+                  setupScript: {
+                    name: result.scriptName,
+                    command: result.scriptCommand,
+                    terminalId: result.terminalId,
+                  },
+                })),
+              );
+              if (result.completion) {
+                const completion = yield* result.completion;
+                yield* track(
+                  worktreeSetupTracker.stageStatus(
+                    threadId,
+                    "setup-script",
+                    completion.exitCode === 0 ? "done" : "failed",
+                    completion.exitCode === 0
+                      ? null
+                      : completion.exitCode === null
+                        ? "terminal closed"
+                        : `exit ${completion.exitCode}`,
+                  ),
+                );
+              }
+            } else if (result)
+              yield* track(
+                worktreeSetupTracker.stageStatus(
+                  threadId,
+                  "setup-script",
+                  "skipped",
+                  "no setup script",
+                ),
+              );
+          } else
+            yield* track(worktreeSetupTracker.stageStatus(threadId, "setup-script", "skipped"));
+          // Cancellation and turn dispatch must not overlap: once the agent
+          // starts, cleanup must never delete its thread or checkout.
+          return yield* Effect.uninterruptible(
+            Effect.gen(function* () {
+              yield* track(worktreeSetupTracker.stageStatus(threadId, "agent", "running"));
+              yield* track(worktreeSetupTracker.markUncancellable(threadId));
+              const result = yield* orchestration.dispatch(turnStart);
+              acceptedTurn = result;
+              yield* track(worktreeSetupTracker.stageStatus(threadId, "agent", "done"));
+              yield* track(worktreeSetupTracker.finish(threadId, "done"));
+              return result;
+            }),
+          );
+        });
+        const guardedProgram = program.pipe(
+          Effect.catchCause((cause) =>
+            acceptedTurn
+              ? Effect.succeed(acceptedTurn)
+              : Effect.uninterruptible(cleanup()).pipe(
+                  Effect.ignore,
+                  Effect.andThen(
+                    track(
+                      worktreeSetupTracker.finish(
+                        threadId,
+                        Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
+                        Cause.hasInterruptsOnly(cause) ? null : "Worktree setup failed.",
+                      ),
+                    ),
+                  ),
+                  Effect.andThen(
+                    Effect.fail(
+                      new OrchestrationDispatchCommandError({
+                        message: Cause.hasInterruptsOnly(cause)
+                          ? "Worktree setup cancelled."
+                          : toDispatchError(Cause.squash(cause), "Failed to start the turn.")
+                              .message,
+                        ...(bootstrapThreadDeleted
+                          ? { bootstrapThreadDisposition: "deleted" as const }
+                          : {}),
+                      }),
+                    ),
+                  ),
+                ),
           ),
         );
+        if (!tracked) return yield* guardedProgram;
+        // Gate the child until its snapshot and cancel handle exist. Keep
+        // cleanup inside that child so cancel waits for complete rollback.
+        const ready = yield* Deferred.make<void>();
+        const fiber = yield* Effect.forkChild(
+          Deferred.await(ready).pipe(Effect.andThen(guardedProgram)),
+        );
+        yield* worktreeSetupTracker.begin({
+          threadId,
+          branch: bootstrap?.prepareWorktree?.branch ?? null,
+          baseRef: bootstrap?.prepareWorktree?.baseBranch ?? null,
+          stages: ["fetch", "checkout", "submodules", "setup-script", "agent"],
+          fiber,
+        });
+        yield* Deferred.succeed(ready, undefined);
+        return yield* Fiber.join(fiber);
       });
 
     const dispatch = (command: OrchestrationCommand) =>
@@ -984,6 +1195,9 @@ export const layer = CoderWsRpcGroup.toLayer(
           .publishRepository(input)
           .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
+      [WS_METHODS.subscribeWorktreeSetup]: ({ threadId }) => worktreeSetupTracker.stream(threadId),
+      [WS_METHODS.worktreeSetupCancel]: ({ threadId }) =>
+        worktreeSetupTracker.cancel(threadId).pipe(Effect.map((cancelled) => ({ cancelled }))),
       [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.refStream(cwd),
       [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),
       [WS_METHODS.vcsPull]: (input) =>
@@ -1261,7 +1475,24 @@ export const layer = CoderWsRpcGroup.toLayer(
                     ),
                   ),
           ),
-          Effect.flatMap(dispatch),
+          Effect.flatMap((command) =>
+            Effect.gen(function* () {
+              const isProjectSettingsCommand =
+                command.type === "project.create" || command.type === "project.meta.update";
+              // A retry of an already accepted legacy project command must not
+              // resurrect overrides the user subsequently reset in settings.
+              const receipts = isProjectSettingsCommand
+                ? yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE command_id = ${command.commandId} AND status = 'accepted' LIMIT 1`
+                : [];
+              const result = yield* dispatch(command);
+              if (isProjectSettingsCommand && receipts.length === 0) {
+                const current = yield* settings.getSettings;
+                const patch = projectSettingsCommandPatch(current, command);
+                if (patch) yield* settings.updateSettings(patch);
+              }
+              return result;
+            }),
+          ),
           Effect.mapError((cause) => toDispatchError(cause, "Failed to dispatch the command.")),
         ),
       [ORCHESTRATION_WS_METHODS.getTurnDiff]: (input) =>

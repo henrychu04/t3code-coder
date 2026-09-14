@@ -38,7 +38,7 @@ describe("bundled model manifest", () => {
         "claude-opus-4-8",
       ].map((model) => [model, isLegacyModel(BUNDLED_MODEL_MANIFEST, CLAUDE, model)]),
       [
-        ["claude-fable-5", false],
+        ["claude-fable-5", true],
         ["claude-fable-5-codex", true],
         ["claude-opus-5", false],
         ["claude-sonnet-5", false],
@@ -75,4 +75,9 @@ describe("bundled model manifest", () => {
       ],
     );
   });
+});
+
+it("classifies qualified current Codex models by family", () => {
+  assert.strictEqual(isLegacyModel(BUNDLED_MODEL_MANIFEST, CODEX, "openai.gpt-6-astra"), false);
+  assert.strictEqual(isLegacyModel(BUNDLED_MODEL_MANIFEST, CODEX, "openai.gpt-5.4"), true);
 });

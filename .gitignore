@@ -23,3 +23,6 @@ __screenshots__/
 node_modules/
 *.log
 .env*
+
+# Build-time license notice cache
+.generated/third-party-licenses/

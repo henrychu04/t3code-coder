@@ -1,3 +1,9 @@
+import { SourceControlPreferences } from "./SourceControlPreferences";
+import type { ProjectSettingsOverrides } from "@t3tools/contracts";
+import { clearProjectSettingsOverrides } from "@t3tools/shared/projectSettings";
+import { ResponseSettings } from "./ResponseSettings";
+import { TextGenerationModelSettings } from "./TextGenerationModelSettings";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
 import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
@@ -133,8 +139,11 @@ export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
 export function ProjectSettingsPanel({ project }: { project: EnvironmentProject }) {
   const environment = useEnvironment(project.environmentId);
   const settings = useEnvironmentSettings(project.environmentId);
+  const scopedSettings = resolveProjectSettings(settings, project.id, project);
   const resolvedProject = {
     ...project,
+    defaultModelSelection: scopedSettings.overrides.defaultModelSelection ?? null,
+    defaultThreadEnvMode: scopedSettings.overrides.defaultThreadEnvMode ?? null,
     autoPull: resolveProjectAutoPull(settings, project.id, project.autoPull),
     scripts: resolveProjectScripts(settings, project),
   };
@@ -179,6 +188,12 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
       !current ||
       projectSettingsChanged(baseline, {
         ...current,
+        defaultModelSelection:
+          resolveProjectSettings(settings, current.id, current).overrides.defaultModelSelection ??
+          null,
+        defaultThreadEnvMode:
+          resolveProjectSettings(settings, current.id, current).overrides.defaultThreadEnvMode ??
+          null,
         autoPull: resolveProjectAutoPull(settings, current.id, current.autoPull),
         scripts: resolveProjectScripts(settings, current),
       })
@@ -213,15 +228,18 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
         environmentId: project.environmentId,
         input: {
           projectId: project.id,
-          ...normalized,
-          autoPull:
-            normalized.autoPull !== baseline.autoPull
-              ? normalized.autoPull
-              : (project.autoPull ?? false),
-          scripts:
-            JSON.stringify(normalized.scripts) !== JSON.stringify(baseline.scripts)
-              ? normalized.scripts
-              : project.scripts,
+          title: normalized.title,
+          ...(JSON.stringify(normalized.defaultModelSelection) !==
+          JSON.stringify(baseline.defaultModelSelection)
+            ? { defaultModelSelection: normalized.defaultModelSelection }
+            : {}),
+          ...(normalized.defaultThreadEnvMode !== baseline.defaultThreadEnvMode
+            ? { defaultThreadEnvMode: normalized.defaultThreadEnvMode }
+            : {}),
+          ...(normalized.autoPull !== baseline.autoPull ? { autoPull: normalized.autoPull } : {}),
+          ...(JSON.stringify(normalized.scripts) !== JSON.stringify(baseline.scripts)
+            ? { scripts: normalized.scripts }
+            : {}),
         },
       });
       if (result._tag === "Failure") {
@@ -249,6 +267,26 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
       setBaseline(normalized);
       setValues(normalized);
       setNotice("Project settings saved.");
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  };
+
+  const saveOverrides = async (next: ProjectSettingsOverrides | null) => {
+    if (saving.current || !connected) return;
+    saving.current = true;
+    setPending(true);
+    try {
+      const result = await updateSettings({
+        environmentId: project.environmentId,
+        input: { patch: { projectSettingsOverrides: { [project.id]: next } } },
+      });
+      setNotice(
+        result._tag === "Failure"
+          ? "Could not save project overrides."
+          : "Project overrides saved.",
+      );
     } finally {
       saving.current = false;
       setPending(false);
@@ -322,6 +360,157 @@ export function ProjectSettingsPanel({ project }: { project: EnvironmentProject 
         <p role="status">Project settings changed elsewhere. Reload settings before saving.</p>
       )}
       <fieldset disabled={pending || !connected} className="space-y-8 disabled:opacity-60">
+        <SettingsSection
+          title="Thread behavior"
+          description="Saved immediately. Reset an override to inherit the workspace default."
+        >
+          <ResponseSettings
+            settings={scopedSettings.settings}
+            overrides={scopedSettings.overrides}
+            onChange={(patch) => void saveOverrides({ ...scopedSettings.overrides, ...patch })}
+            onReset={(key) =>
+              void saveOverrides(clearProjectSettingsOverrides(settings, project.id, [key]))
+            }
+          />
+          {(
+            [
+              ["newWorktreesStartFromOrigin", "Start worktrees from origin"],
+              ["sidebarAutoSettleOnMerge", "Settle threads after merge"],
+            ] as const
+          ).map(([key, label]) => (
+            <SettingsRow
+              key={key}
+              title={label}
+              control={
+                <select
+                  aria-label={label}
+                  className="rounded border bg-background p-2 text-sm"
+                  value={
+                    scopedSettings.overrides[key] === undefined
+                      ? "inherit"
+                      : String(scopedSettings.overrides[key])
+                  }
+                  onChange={(event) =>
+                    void saveOverrides(
+                      event.target.value === "inherit"
+                        ? clearProjectSettingsOverrides(settings, project.id, [key])
+                        : { ...scopedSettings.overrides, [key]: event.target.value === "true" },
+                    )
+                  }
+                >
+                  <option value="inherit">Use workspace default</option>
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              }
+            />
+          ))}
+          <SettingsRow
+            title="Settle inactive threads"
+            control={
+              <select
+                aria-label="Settle inactive threads"
+                className="rounded border bg-background p-2 text-sm"
+                value={
+                  scopedSettings.overrides.sidebarAutoSettleAfterDays === undefined
+                    ? "inherit"
+                    : String(scopedSettings.overrides.sidebarAutoSettleAfterDays)
+                }
+                onChange={(event) =>
+                  void saveOverrides(
+                    event.target.value === "inherit"
+                      ? clearProjectSettingsOverrides(settings, project.id, [
+                          "sidebarAutoSettleAfterDays",
+                        ])
+                      : {
+                          ...scopedSettings.overrides,
+                          sidebarAutoSettleAfterDays:
+                            event.target.value === "null" ? null : Number(event.target.value),
+                        },
+                  )
+                }
+              >
+                <option value="inherit">Use workspace default</option>
+                <option value="null">Disabled</option>
+                {[
+                  ...new Set(
+                    [1, 3, 7, 14, 30, scopedSettings.overrides.sidebarAutoSettleAfterDays].filter(
+                      (value): value is number => typeof value === "number",
+                    ),
+                  ),
+                ]
+                  .sort((a, b) => a - b)
+                  .map((days) => (
+                    <option key={days} value={days}>
+                      {days} days
+                    </option>
+                  ))}
+              </select>
+            }
+          />
+        </SettingsSection>
+        <TextGenerationModelSettings
+          environmentId={project.environmentId}
+          settings={{ ...settings, ...scopedSettings.settings }}
+          providers={providers}
+          onChange={(textGenerationModelSelection) =>
+            void saveOverrides({ ...scopedSettings.overrides, textGenerationModelSelection })
+          }
+        />
+        {scopedSettings.overrides.textGenerationModelSelection && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              void saveOverrides(
+                clearProjectSettingsOverrides(settings, project.id, [
+                  "textGenerationModelSelection",
+                ]),
+              )
+            }
+          >
+            Use workspace generated-name model
+          </Button>
+        )}
+        <SourceControlPreferences
+          environmentId={project.environmentId}
+          settings={{ ...settings, ...scopedSettings.settings }}
+          providers={providers}
+          projectScoped
+          updateSettings={(patch) =>
+            void saveOverrides({
+              ...scopedSettings.overrides,
+              ...(patch.sourceControlWritingStyle === undefined
+                ? {}
+                : {
+                    sourceControlWritingStyle: {
+                      ...scopedSettings.settings.sourceControlWritingStyle,
+                      ...patch.sourceControlWritingStyle,
+                    },
+                  }),
+              ...(patch.sourceControlWriterModelSelection === undefined
+                ? {}
+                : { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }),
+            })
+          }
+        />
+        {(["sourceControlWritingStyle", "sourceControlWriterModelSelection"] as const).map(
+          (key) =>
+            scopedSettings.overrides[key] !== undefined && (
+              <Button
+                key={key}
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  void saveOverrides(clearProjectSettingsOverrides(settings, project.id, [key]))
+                }
+              >
+                {key === "sourceControlWritingStyle"
+                  ? "Use workspace writing style"
+                  : "Use workspace source control writer model"}
+              </Button>
+            ),
+        )}
         <SettingsSection title="Merge requests">
           <SettingsRow
             title="Default merge method"

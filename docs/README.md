@@ -18,6 +18,7 @@ the update here.
 - [Images and screenshots](./user/images-and-screenshots.md)
 - [Source control](./user/source-control.md)
 - [Keyboard shortcuts](./user/keybindings.md)
+- [Open source licenses](./user/open-source-licenses.md)
 - [Product decisions and upstream differences](./product-differences.md)
 
 ## Working on T3 Coder

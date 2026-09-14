@@ -88,6 +88,31 @@ export interface ExecuteGitProgress {
   }) => Effect.Effect<void, never>;
 }
 
+export interface CreateWorktreeProgress {
+  /**
+   * Fires once `git worktree add` has created and registered the directory,
+   * before the (possibly long) submodule step. Git refuses an existing path,
+   * so a path reported here belongs to this call and is safe to remove on
+   * cancel.
+   */
+  readonly onWorktreeClaimed?: (path: string) => Effect.Effect<void, never>;
+  readonly onCheckoutProgress?: (input: {
+    percent: number;
+    completed: number;
+    total: number;
+  }) => Effect.Effect<void, never>;
+  readonly onSubmodulesStarted?: () => Effect.Effect<void, never>;
+  readonly onSubmoduleLine?: (line: string) => Effect.Effect<void, never>;
+  readonly onSubmodulesFinished?: (input: {
+    ok: boolean;
+    detail: string | null;
+  }) => Effect.Effect<void, never>;
+}
+
+export interface CreateWorktreeOptions {
+  readonly progress?: CreateWorktreeProgress;
+}
+
 export interface GitRenameBranchInput {
   cwd: string;
   oldBranch: string;
@@ -138,6 +163,7 @@ export class GitVcsDriver extends Context.Service<
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
     readonly createWorktree: (
       input: VcsCreateWorktreeInput,
+      options?: CreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
@@ -885,16 +911,56 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
         return false;
       }
 
-      yield* execute({
+      const tracked = yield* execute({
         operation,
         cwd: input.cwd,
-        args: ["restore", "--source", commitOid, "--worktree", "--staged", "--", "."],
+        args: ["ls-files", "--cached", `--with-tree=${commitOid}`, "-z", "--", "."],
       });
-      yield* execute({
+      // An empty index and checkpoint have nothing for git restore's pathspec to match.
+      if (tracked.stdout.length > 0) {
+        yield* execute({
+          operation,
+          cwd: input.cwd,
+          args: ["restore", "--source", commitOid, "--worktree", "--staged", "--", "."],
+        });
+      }
+      // Restoring away the last tracked file can remove a nested workspace directory.
+      yield* fileSystem.makeDirectory(input.cwd, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new VcsProcessExitError({
+              operation,
+              command: "git restore",
+              cwd: input.cwd,
+              exitCode: 0,
+              detail: `Could not recreate the checkpoint workspace: ${cause.message}`,
+            }),
+        ),
+      );
+      const cleaned = yield* execute({
         operation,
         cwd: input.cwd,
         args: ["clean", "-fd", "--", "."],
+        allowNonZeroExit: true,
       });
+      if (cleaned.exitCode !== 0) {
+        // Git can remove every child, then fail trying to remove './' itself.
+        const emptiedWorkspace =
+          cleaned.exitCode === 1 &&
+          /^warning: failed to remove \.\/: [^\n]+$/.test(cleaned.stderr.trim()) &&
+          (yield* fileSystem.readDirectory(input.cwd).pipe(
+            Effect.map((entries) => entries.length === 0),
+            Effect.catch(() => Effect.succeed(false)),
+          ));
+        if (!emptiedWorkspace)
+          return yield* new VcsProcessExitError({
+            operation,
+            command: "git clean",
+            cwd: input.cwd,
+            exitCode: cleaned.exitCode,
+            detail: cleaned.stderr.trim() || "Could not clean the checkpoint workspace.",
+          });
+      }
 
       const headExists = yield* hasHeadCommit(input.cwd);
       if (headExists) {
@@ -1345,6 +1411,180 @@ const makeLocalGitService = Effect.gen(function* () {
     };
   });
 
+  const runGitStdout = (operation: string, cwd: string, args: ReadonlyArray<string>) =>
+    run(operation, cwd, args).pipe(Effect.map((result) => result.stdout));
+
+  const readTrackedReviewDiff = Effect.fn("readTrackedReviewDiff")(function* (
+    cwd: string,
+    ignoreWhitespace: boolean | undefined,
+  ) {
+    const result = yield* run(
+      "GitVcsDriver.readTrackedReviewDiff",
+      cwd,
+      [
+        "diff",
+        "--patch",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--minimal",
+        ...PATCH_RENDER_PREFIX_ARGS,
+        "--find-renames",
+        ...(ignoreWhitespace ? ["--ignore-all-space"] : []),
+        "HEAD",
+        "--",
+      ],
+      {
+        maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
+      },
+    );
+    return { diff: result.stdout, truncated: result.stdoutTruncated };
+  });
+
+  const readUnifiedWorkingTreeReviewDiff = Effect.fn("readUnifiedWorkingTreeReviewDiff")(function* (
+    cwd: string,
+    untrackedPaths: ReadonlyArray<string>,
+    pathsTruncated: boolean,
+    ignoreWhitespace: boolean | undefined,
+  ) {
+    const [stagedDeletionsStdout, indexValue] = yield* Effect.all(
+      [
+        runGitStdout("GitVcsDriver.readUnifiedWorkingTreeReviewDiff.stagedDeletions", cwd, [
+          "diff",
+          "--cached",
+          "--name-only",
+          "--diff-filter=D",
+          "-z",
+          "HEAD",
+          "--",
+        ]),
+        runGitStdout("GitVcsDriver.readUnifiedWorkingTreeReviewDiff.indexPath", cwd, [
+          "rev-parse",
+          "--git-path",
+          "index",
+        ]),
+      ],
+      { concurrency: 2 },
+    );
+    const stagedDeletions = new Set(stagedDeletionsStdout.split("\0").filter(Boolean));
+    const pathsToAdd = untrackedPaths.filter((relativePath) => !stagedDeletions.has(relativePath));
+    if (pathsToAdd.length === 0) {
+      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace);
+      return { ...tracked, truncated: pathsTruncated || tracked.truncated };
+    }
+
+    const indexPath = path.isAbsolute(indexValue.trim())
+      ? indexValue.trim()
+      : path.resolve(cwd, indexValue.trim());
+    const tempIndexPath = yield* fileSystem.makeTempFileScoped({
+      prefix: `t3code-review-index-${process.pid}-`,
+    });
+    yield* fileSystem.copyFile(indexPath, tempIndexPath);
+    const env = { GIT_INDEX_FILE: tempIndexPath } satisfies NodeJS.ProcessEnv;
+    const tempIndexConfig = [
+      "-c",
+      "core.splitIndex=false",
+      "-c",
+      "splitIndex.sharedIndexExpire=never",
+    ];
+    yield* run(
+      "GitVcsDriver.readUnifiedWorkingTreeReviewDiff.expandSplitIndex",
+      cwd,
+      [...tempIndexConfig, "update-index", "--no-split-index"],
+      { env },
+    );
+    yield* run(
+      "GitVcsDriver.readUnifiedWorkingTreeReviewDiff.addUntracked",
+      cwd,
+      [
+        ...tempIndexConfig,
+        "--literal-pathspecs",
+        "add",
+        "--intent-to-add",
+        "--pathspec-from-file=-",
+        "--pathspec-file-nul",
+      ],
+      { env, stdin: `${pathsToAdd.join("\0")}\0` },
+    );
+    const result = yield* run(
+      "GitVcsDriver.readUnifiedWorkingTreeReviewDiff.diff",
+      cwd,
+      [
+        ...tempIndexConfig,
+        "diff",
+        "--patch",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--minimal",
+        ...PATCH_RENDER_PREFIX_ARGS,
+        "--find-renames",
+        ...(ignoreWhitespace ? ["--ignore-all-space"] : []),
+        "HEAD",
+        "--",
+      ],
+      {
+        env,
+        maxOutputBytes: REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
+      },
+    );
+    return { diff: result.stdout, truncated: pathsTruncated || result.stdoutTruncated };
+  });
+
+  const readWorkingTreeReviewDiff = Effect.fn("readWorkingTreeReviewDiff")(function* (
+    cwd: string,
+    ignoreWhitespace: boolean | undefined,
+  ) {
+    const untrackedResult = yield* run(
+      "GitVcsDriver.readWorkingTreeReviewDiff.listUntracked",
+      cwd,
+      ["ls-files", "--others", "--exclude-standard", "-z"],
+      {
+        maxOutputBytes: REVIEW_UNTRACKED_PATHS_MAX_OUTPUT_BYTES,
+        appendTruncationMarker: true,
+      },
+    ).pipe(Effect.option);
+    if (untrackedResult._tag === "None") {
+      return yield* readTrackedReviewDiff(cwd, ignoreWhitespace);
+    }
+    const untrackedPaths = splitNullSeparatedPaths(
+      untrackedResult.value.stdout,
+      untrackedResult.value.stdoutTruncated,
+    );
+    if (untrackedPaths.length === 0) {
+      const tracked = yield* readTrackedReviewDiff(cwd, ignoreWhitespace);
+      return { ...tracked, truncated: untrackedResult.value.stdoutTruncated || tracked.truncated };
+    }
+
+    return yield* readUnifiedWorkingTreeReviewDiff(
+      cwd,
+      untrackedPaths,
+      untrackedResult.value.stdoutTruncated,
+      ignoreWhitespace,
+    ).pipe(
+      Effect.scoped,
+      Effect.catch(() =>
+        Effect.all([
+          readTrackedReviewDiff(cwd, ignoreWhitespace).pipe(
+            Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
+          ),
+          readUntrackedReviewDiffs(cwd).pipe(
+            Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
+          ),
+        ]).pipe(
+          Effect.map(([tracked, untracked]) => ({
+            diff: [tracked.diff.trimEnd(), untracked.diff.trimEnd()]
+              .filter((diff) => diff.length > 0)
+              .join("\n"),
+            truncated: tracked.truncated || untracked.truncated,
+          })),
+        ),
+      ),
+    );
+  });
+
   const getReviewDiffPreview: GitVcsDriver["Service"]["getReviewDiffPreview"] = Effect.fn(
     "GitVcsDriver.getReviewDiffPreview",
   )(function* (input) {
@@ -1355,27 +1595,16 @@ const makeLocalGitService = Effect.gen(function* () {
     const whitespace = input.ignoreWhitespace ? ["--ignore-all-space"] : [];
     const sources = [];
     if (input.sourceKind !== "branch-range") {
-      const tracked = yield* diffSource(input.cwd, "working-tree", "Dirty worktree", "HEAD", null, [
-        "diff",
-        "--patch",
-        "--no-color",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--minimal",
-        ...PATCH_RENDER_PREFIX_ARGS,
-        ...whitespace,
-        "HEAD",
-        "--",
-      ]);
-      const untracked = yield* readUntrackedReviewDiffs(input.cwd).pipe(
-        Effect.orElseSucceed(() => ({ diff: "", truncated: false })),
-      );
-      const diff = [tracked.diff.trimEnd(), untracked.diff.trimEnd()].filter(Boolean).join("\n");
+      const result = yield* readWorkingTreeReviewDiff(input.cwd, input.ignoreWhitespace);
       sources.push({
-        ...tracked,
-        diff,
-        diffHash: NodeCrypto.createHash("sha256").update(diff).digest("hex"),
-        truncated: tracked.truncated || untracked.truncated,
+        id: "working-tree",
+        kind: "working-tree" as const,
+        title: "Dirty worktree",
+        baseRef: "HEAD",
+        headRef: null,
+        diff: result.diff,
+        diffHash: NodeCrypto.createHash("sha256").update(result.diff).digest("hex"),
+        truncated: result.truncated,
       });
     }
     const automaticBranch =
@@ -1760,7 +1989,7 @@ const makeLocalGitService = Effect.gen(function* () {
 
   const createWorktree: GitVcsDriver["Service"]["createWorktree"] = Effect.fn(
     "GitVcsDriver.createWorktree",
-  )(function* (input) {
+  )(function* (input, options) {
     const targetBranch = input.newRefName ?? input.refName;
     const sanitizedBranch = targetBranch.replace(/\//g, "-");
     const repoName = path.basename(input.cwd);
@@ -1768,29 +1997,67 @@ const makeLocalGitService = Effect.gen(function* () {
     const args = ["worktree", "add"];
     if (input.newRefName) args.push("-b", input.newRefName);
     args.push(targetPath, input.refName);
-    yield* run("GitVcsDriver.createWorktree", input.cwd, args, { timeoutMs: 300_000 });
+    yield* run("GitVcsDriver.createWorktree", input.cwd, args, {
+      timeoutMs: 300_000,
+      env: { GIT_PROGRESS_DELAY: "0", LC_ALL: "C" },
+      progress: {
+        onStderrLine: (line) => {
+          const match = /Updating files:\s*(\d+)%\s*\((\d+)\/(\d+)\)/.exec(line);
+          return match && options?.progress?.onCheckoutProgress
+            ? options.progress.onCheckoutProgress({
+                percent: Math.max(0, Math.min(100, Number(match[1]))),
+                completed: Number(match[2]),
+                total: Number(match[3]),
+              })
+            : Effect.void;
+        },
+      },
+    });
+    yield* options?.progress?.onWorktreeClaimed?.(targetPath) ?? Effect.void;
     const hasSubmodules = yield* fileSystem
       .exists(path.join(targetPath, ".gitmodules"))
       .pipe(Effect.orElseSucceed(() => false));
     if (hasSubmodules) {
+      yield* options?.progress?.onSubmodulesStarted?.() ?? Effect.void;
       // Populate already-cached or local submodules without allowing Git to
       // open a non-loopback connection outside the Coder CLI boundary.
-      yield* run("GitVcsDriver.createWorktree.updateSubmodules", targetPath, [
-        "-c",
-        "protocol.allow=never",
-        "-c",
-        "protocol.file.allow=always",
-        "submodule",
-        "update",
-        "--init",
-        "--recursive",
-        "--no-fetch",
-      ]).pipe(
+      const submodules = yield* run(
+        "GitVcsDriver.createWorktree.updateSubmodules",
+        targetPath,
+        [
+          "-c",
+          "protocol.allow=never",
+          "-c",
+          "protocol.file.allow=always",
+          "submodule",
+          "update",
+          "--init",
+          "--recursive",
+          "--no-fetch",
+        ],
+        {
+          progress: {
+            onStdoutLine: (line) => options?.progress?.onSubmoduleLine?.(line) ?? Effect.void,
+            onStderrLine: (line) => options?.progress?.onSubmoduleLine?.(line) ?? Effect.void,
+          },
+        },
+      ).pipe(
         Effect.catch(() =>
           Effect.logWarning(
             "Worktree submodule checkout failed; the worktree was created with empty submodule paths.",
           ),
         ),
+      );
+      yield* (
+        options?.progress?.onSubmodulesFinished?.({
+          ok: submodules !== undefined,
+          detail: submodules ? null : "Some submodules are unavailable in the workspace cache.",
+        }) ?? Effect.void
+      );
+    } else {
+      yield* (
+        options?.progress?.onSubmodulesFinished?.({ ok: true, detail: "no submodules" }) ??
+          Effect.void
       );
     }
     if (input.newRefName && input.baseRefName) {

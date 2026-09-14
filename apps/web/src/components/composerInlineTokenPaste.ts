@@ -1,3 +1,5 @@
+import { longTextContextReference } from "../lib/composerInlineContext";
+import { $createComposerContextNode } from "./ComposerContextNode";
 import type { AssistantCitation } from "@t3tools/contracts";
 import {
   $createLineBreakNode,
@@ -39,10 +41,18 @@ export function registerComposerInlineTokenPaste(
       }
       // Token grammar requires trailing whitespace; a virtual newline lets a
       // mention at the very end of the pasted text still parse.
-      const tokens = collectComposerPromptInlineTokens(`${text}\n`).filter(
-        (token) =>
-          (token.type === "mention" || token.type === "citation") && token.end <= text.length,
-      );
+      const tokens = (
+        text.length >= 32 * 1024
+          ? [
+              {
+                type: "context" as const,
+                start: 0,
+                end: text.length,
+                source: longTextContextReference(text),
+              },
+            ]
+          : collectComposerPromptInlineTokens(`${text}\n`)
+      ).filter((token) => token.type !== "skill" && token.end <= text.length);
       if (tokens.length === 0) {
         return false;
       }
@@ -90,9 +100,11 @@ export function registerComposerInlineTokenPaste(
           appendText(text.slice(cursor, token.start));
         }
         nodes.push(
-          token.type === "citation"
-            ? options.createCitationNode(token.citation, token.source)
-            : options.createMentionNode(token.value),
+          token.type === "context"
+            ? $createComposerContextNode(token.source)
+            : token.type === "citation"
+              ? options.createCitationNode(token.citation, token.source)
+              : options.createMentionNode(token.value),
         );
         cursor = token.end;
       }

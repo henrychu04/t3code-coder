@@ -21,3 +21,5 @@ export * from "./rpc.ts";
 export * from "./providerUsageLimits.ts";
 
 export type * from "./coderGateway.ts";
+
+export * from "./worktreeSetup.ts";

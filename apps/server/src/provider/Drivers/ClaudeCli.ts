@@ -401,6 +401,7 @@ export type Options = {
   readonly persistSession?: boolean;
   readonly resume?: string;
   readonly resumeSessionAt?: string;
+  readonly forkSession?: boolean;
   readonly sessionId?: string;
   readonly settingSources?: ReadonlyArray<SettingSource>;
   readonly settings?: Record<string, unknown>;
@@ -639,6 +640,7 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
   if (options.includePartialMessages) args.push("--include-partial-messages");
   for (const directory of options.additionalDirectories ?? []) args.push("--add-dir", directory);
   if (options.resume) args.push("--resume", options.resume);
+  if (options.forkSession) args.push("--fork-session");
   if (options.resumeSessionAt) args.push("--resume-session-at", options.resumeSessionAt);
   if (options.sessionId) args.push("--session-id", options.sessionId);
   if (options.persistSession === false) args.push("--no-session-persistence");

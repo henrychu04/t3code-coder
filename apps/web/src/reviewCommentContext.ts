@@ -122,7 +122,8 @@ function parseReviewCommentContext(
   const body = extractReviewCommentBody(rawBody);
 
   return {
-    id: `review-comment:${index}:${sectionId}:${filePath}:${startIndex}:${endIndex}`,
+    id:
+      attributes.id || `review-comment:${index}:${sectionId}:${filePath}:${startIndex}:${endIndex}`,
     sectionId,
     sectionTitle: attributes.sectionTitle?.trim() || "Review",
     filePath,
@@ -132,6 +133,19 @@ function parseReviewCommentContext(
     text: body.text,
     diff: body.contents,
     fenceLanguage: body.language,
+    ...(attributes.selection
+      ? (() => {
+          try {
+            return {
+              selection: Schema.decodeSync(Schema.fromJsonString(ReviewCommentSelectionSchema))(
+                attributes.selection,
+              ),
+            };
+          } catch {
+            return {};
+          }
+        })()
+      : {}),
   };
 }
 
@@ -204,6 +218,10 @@ export function formatReviewCommentContext(comment: ReviewCommentContext): strin
   return [
     [
       "<review_comment",
+      ` id="${escapeReviewCommentAttribute(comment.id)}"`,
+      ...(comment.selection
+        ? [` selection="${escapeReviewCommentAttribute(JSON.stringify(comment.selection))}"`]
+        : []),
       ` sectionId="${escapeReviewCommentAttribute(comment.sectionId)}"`,
       ` sectionTitle="${escapeReviewCommentAttribute(comment.sectionTitle)}"`,
       ` filePath="${escapeReviewCommentAttribute(comment.filePath)}"`,

@@ -53,6 +53,7 @@ export function TextGenerationModelSettings(props: {
     >
       <SettingsRow
         title="Thread title model"
+        settingKeys={["textGenerationModelSelection"]}
         description="Used for new thread titles and initial branch names."
         resetAction={
           isDirty ? (
