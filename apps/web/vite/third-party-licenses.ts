@@ -10,7 +10,7 @@ import type { Plugin } from "vite-plus";
 export const THIRD_PARTY_LICENSES_FILE_NAME = "third-party-licenses.json";
 const SPDX_LICENSE_LIST_VERSION = "v3.28.0";
 const SPDX_LICENSE_LIST_REVISION = "c4a7237ec8f4654e867546f9f409749300f1bf4c";
-const GENERATED_NOTICE_CACHE_DIRECTORY = ".generated/third-party-licenses/spdx";
+const SPDX_NOTICE_DIRECTORY = "licenses/spdx";
 
 export interface ThirdPartyLicenseEntry {
   readonly bundles: ReadonlyArray<string>;
@@ -293,10 +293,10 @@ async function readConfig(configFile: string | URL | undefined): Promise<{
   };
 }
 
-function spdxLicenseCachePath(configDirectory: string, licenseId: string): string {
+function spdxLicensePath(configDirectory: string, licenseId: string): string {
   return NodePath.join(
     configDirectory,
-    GENERATED_NOTICE_CACHE_DIRECTORY,
+    SPDX_NOTICE_DIRECTORY,
     SPDX_LICENSE_LIST_VERSION,
     `${licenseId}.json`,
   );
@@ -314,12 +314,12 @@ function decodeSpdxLicenseDetails(value: unknown, expectedLicenseId: string): Sp
   return { licenseId: expectedLicenseId, licenseText: value.licenseText.trim() };
 }
 
-async function readCachedSpdxLicense(
+async function readLocalSpdxLicense(
   configDirectory: string,
   licenseId: string,
 ): Promise<SpdxLicenseDetails | null> {
   try {
-    const source = await NodeFSP.readFile(spdxLicenseCachePath(configDirectory, licenseId), "utf8");
+    const source = await NodeFSP.readFile(spdxLicensePath(configDirectory, licenseId), "utf8");
     return decodeSpdxLicenseDetails(JSON.parse(source) as unknown, licenseId);
   } catch (error) {
     const code = isRecord(error) && typeof error.code === "string" ? error.code : null;
@@ -340,7 +340,7 @@ async function downloadSpdxLicense(
     );
   }
   const details = decodeSpdxLicenseDetails((await response.json()) as unknown, licenseId);
-  const cachePath = spdxLicenseCachePath(configDirectory, licenseId);
+  const cachePath = spdxLicensePath(configDirectory, licenseId);
   await NodeFSP.mkdir(NodePath.dirname(cachePath), { recursive: true });
   await NodeFSP.writeFile(cachePath, `${JSON.stringify(details)}\n`, "utf8");
   return details;
@@ -351,9 +351,11 @@ async function resolveSpdxLicense(
   licenseId: string,
   allowMissing: boolean,
 ): Promise<SpdxLicenseDetails | null> {
-  const cached = await readCachedSpdxLicense(configDirectory, licenseId);
-  if (cached || allowMissing) return cached;
-  return downloadSpdxLicense(configDirectory, licenseId);
+  const local = await readLocalSpdxLicense(configDirectory, licenseId);
+  if (local || allowMissing) return local;
+  throw new Error(
+    `Missing bundled SPDX license ${licenseId}. Run pnpm licenses:sync with network access and commit the updated licenses/spdx files.`,
+  );
 }
 
 function renderGeneratedNotice(config: GeneratedNoticeConfigEntry, licenseText: string): string {
@@ -409,7 +411,13 @@ async function syncConfiguredGeneratedNotices(
   const licenseIds = [
     ...new Set(configuredGeneratedNotices(config).map((notice) => notice.licenseId)),
   ].sort((left, right) => left.localeCompare(right));
-  await Promise.all(licenseIds.map((licenseId) => resolveSpdxLicense(directory, licenseId, false)));
+  await Promise.all(
+    licenseIds.map(async (licenseId) => {
+      if (!(await readLocalSpdxLicense(directory, licenseId))) {
+        await downloadSpdxLicense(directory, licenseId);
+      }
+    }),
+  );
 }
 
 export async function syncThirdPartyLicenseNotices(configFile: string | URL): Promise<void> {
@@ -900,9 +908,6 @@ export async function generateThirdPartyLicenseManifest(input: {
     readConfig(input.configFile),
     collectProductionDependencyPackages(input.packageManifests),
   ]);
-  if (!(input.allowMissingGeneratedNotices ?? false)) {
-    await syncConfiguredGeneratedNotices(config, directory);
-  }
   if (input.bundledModuleIds && input.bundleName) {
     await addBundledModulePackages(collection, input.bundledModuleIds, input.bundleName);
   }

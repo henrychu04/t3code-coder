@@ -118,4 +118,8 @@ pnpm typecheck:web
 pnpm build
 ```
 
+After dependencies are installed, license-notice generation uses the checked-in SPDX texts in
+`licenses/spdx`; builds do not need access to `raw.githubusercontent.com`. Maintainers adding a new
+license can run `pnpm licenses:sync` with network access and commit the downloaded source text.
+
 Contributor and agent rules live in [AGENTS.md](./AGENTS.md).
