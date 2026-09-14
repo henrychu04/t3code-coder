@@ -147,6 +147,14 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { cn } from "~/lib/utils";
 import { getSourceControlPresentationForKind } from "~/sourceControlPresentation";
 
+function getShortcutContext() {
+  return {
+    terminalFocus: isTerminalFocused(),
+    terminalOpen: false,
+    modelPickerOpen: false,
+  };
+}
+
 export interface PullRequestsSearch extends PullRequestListPreferences {
   /**
    * Narrows the list to one server. Absent means every connected one, which is the default the
@@ -1878,6 +1886,8 @@ function PullRequestsRouteView() {
             <PullRequestDetailPanel
               panelRef={rightPanelRef ?? undefined}
               key={activePullRequestSurface.id}
+              getShortcutContext={getShortcutContext}
+              shortcutsEnabled={rightPanelState.isOpen}
               environmentId={panelEnvironmentId}
               reference={{
                 projectId: activePullRequestSurface.projectId as ProjectId,

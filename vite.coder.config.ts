@@ -36,6 +36,7 @@ export default defineConfig({
       "apps/server/src/provider/Layers/codexUsageLimits.test.ts",
       "apps/server/src/provider/Layers/claudeUsageLimits.test.ts",
       "apps/server/src/provider/providerUsageLimits.test.ts",
+      "apps/server/src/provider/providerSnapshot.test.ts",
       "apps/server/src/codexModelOptions.test.ts",
       "apps/server/src/provider/Drivers/ClaudeCli.test.ts",
       "apps/server/src/provider/Drivers/ClaudeRewindHistory.test.ts",

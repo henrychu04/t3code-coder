@@ -21,6 +21,7 @@ import {
   ArrowUpRightIcon,
   BookOpenIcon,
   CircleDotIcon,
+  CopyIcon,
   ChevronDownIcon,
   FileDiffIcon,
   FolderGit2Icon,
@@ -47,6 +48,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -56,6 +58,13 @@ import {
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useCopyToClipboard, writeTextToClipboard } from "~/hooks/useCopyToClipboard";
+import { isCommandPaletteOpen } from "~/commandPaletteBus";
+import {
+  resolveShortcutCommand,
+  shortcutLabelForCommand,
+  type ShortcutMatchContext,
+} from "~/keybindings";
+import { useEnvironmentKeybindings } from "~/state/environments";
 import {
   gitLabAuthorProfileUrl,
   changeRequestRepositoryUrl,
@@ -94,6 +103,7 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuSeparator,
+  MenuShortcut,
   MenuTrigger,
 } from "../ui/menu";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -368,6 +378,8 @@ function PullRequestBaseFreshnessWarning({
 export function PullRequestDetailPanel({
   environmentId,
   reference,
+  shortcutsEnabled,
+  getShortcutContext,
   listEntry = null,
   refreshToken: forcedRefreshToken = 0,
   onActed,
@@ -378,6 +390,8 @@ export function PullRequestDetailPanel({
   panelRef,
 }: {
   environmentId: EnvironmentId;
+  shortcutsEnabled: boolean;
+  getShortcutContext: () => ShortcutMatchContext;
   reference: PullRequestRef;
   /** Row fields already loaded by the pull-request list, used while richer detail arrives. */
   listEntry?: PullRequestListEntry | null;
@@ -526,6 +540,32 @@ export function PullRequestDetailPanel({
           },
     [activity, coreDetail],
   );
+  const keybindings = useEnvironmentKeybindings(environmentId);
+  const { copyToClipboard: copyReference } = useCopyToClipboard<string>({
+    target: "pull request reference",
+    onCopy: (label) => toastManager.add({ type: "success", title: `${label} copied` }),
+    onError: (error, label) =>
+      toastManager.add({
+        type: "error",
+        title: `Failed to copy ${label}`,
+        description: error.message,
+      }),
+  });
+  const copyFromShortcut = useEffectEvent((event: KeyboardEvent) => {
+    if (!shortcutsEnabled || event.defaultPrevented || isCommandPaletteOpen()) return;
+    const command = resolveShortcutCommand(event, keybindings, {
+      context: getShortcutContext(),
+    });
+    if (command !== "pullRequest.copyNumber") return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (!event.repeat) copyReference(`#${reference.number}`, "MR number");
+  });
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => copyFromShortcut(event);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
   const repositoryUrl = detail === null ? null : changeRequestRepositoryUrl(detail.url);
   const markdownContext = useMemo(() => ({ repositoryUrl, panelRef }), [repositoryUrl, panelRef]);
   const branchRefsQuery = useEnvironmentQuery(
@@ -1558,9 +1598,19 @@ export function PullRequestDetailPanel({
                     <ArrowUpRightIcon className="size-3.5" />
                     {openOnHostLabel(detail.provider)}
                   </MenuItem>
-                  <MenuItem onClick={() => void writeTextToClipboard(detail.url)}>
+                  <MenuItem onClick={() => copyReference(detail.url, "PR link")}>
                     <LinkIcon className="size-3.5" />
                     Copy link
+                    <MenuShortcut>
+                      {shortcutLabelForCommand(keybindings, "thread.copyReference")}
+                    </MenuShortcut>
+                  </MenuItem>
+                  <MenuItem onClick={() => copyReference(`#${reference.number}`, "PR number")}>
+                    <CopyIcon className="size-3.5" />
+                    Copy PR number
+                    <MenuShortcut>
+                      {shortcutLabelForCommand(keybindings, "pullRequest.copyNumber")}
+                    </MenuShortcut>
                   </MenuItem>
                   {detail.state === "open" && can("close") ? (
                     <>

@@ -84,3 +84,16 @@ build you are running — use that rather than any copied table.
 focus. It copies the visible merge request's link first, then the thread's linked or discovered
 merge-request link, then the thread ID. On the merge-request page it copies only the selected MR's
 link. If that panel's URL is still unavailable, the copy action is unavailable until the URL resolves; it never substitutes a different reference. The command palette also offers this action.
+
+## Composer controls
+
+Use `mod+shift+m` to choose a model, `mod+shift+h` for the Coder workspace,
+`mod+shift+e` for effort, `mod+shift+a` for permissions, `mod+shift+x` for checkout mode,
+and `mod+shift+g` for the Git branch. Use `mod+shift+l` to reuse the previous worktree.
+
+In the model picker, Left in an empty search field or Shift+Tab reaches the provider list.
+Up/Down moves, Enter chooses, and Right returns to search. `mod+shift+up` and
+`mod+shift+down` switch providers directly and clear the search.
+
+With a merge request open, `mod+shift+c` copies its URL and `mod+shift+k` copies its number
+with a `#` prefix. These shortcuts leave terminal input alone and can be changed in Settings.

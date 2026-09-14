@@ -178,7 +178,7 @@ import {
   deriveAgentPanelModel,
   foldSubagentActivities,
 } from "@t3tools/client-runtime/state/subagentRuntime";
-import { BranchToolbar } from "./BranchToolbar";
+import { BranchToolbar, type BranchToolbarHandle } from "./BranchToolbar";
 import {
   DOUBLE_SHIFT_MAX_INTERVAL_MS,
   resolveDoubleShiftShortcutCommand,
@@ -1431,6 +1431,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const branchToolbarRef = useRef<BranchToolbarHandle>(null);
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
   const [restingComposerControlsVisible, setRestingComposerControlsVisible] = useState(false);
@@ -4540,6 +4541,15 @@ export default function ChatView(props: ChatViewProps) {
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
+  const getShortcutContext = useCallback(
+    () => ({
+      terminalFocus: getTerminalFocusOwner() !== null,
+      terminalOpen: Boolean(terminalUiState.terminalOpen),
+      modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
+    }),
+    [composerRef, terminalUiState.terminalOpen],
+  );
+
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
@@ -4770,7 +4780,33 @@ export default function ChatView(props: ChatViewProps) {
       if (command === "modelPicker.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        composerRef.current?.toggleModelPicker();
+        if (!event.repeat) composerRef.current?.toggleModelPicker();
+        return;
+      }
+
+      if (
+        command === "composer.host" ||
+        command === "composer.effort" ||
+        command === "composer.mode" ||
+        command === "composer.workspace"
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) composerRef.current?.openControl(command);
+        return;
+      }
+
+      if (command === "composer.branch") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.openBranchPicker();
+        return;
+      }
+
+      if (command === "composer.previousWorktree") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) branchToolbarRef.current?.usePreviousWorktree();
         return;
       }
     };
@@ -4805,6 +4841,7 @@ export default function ChatView(props: ChatViewProps) {
     rightPanelOpen,
     supportsPinning,
     confirmAndUnpinThread,
+    getShortcutContext,
     toggleRightPanel,
     toggleRightPanelMaximized,
     toggleTerminalVisibility,
@@ -6278,6 +6315,8 @@ export default function ChatView(props: ChatViewProps) {
             ? (activeRightPanelSurface.environmentId as EnvironmentId)
             : activeThreadRef.environmentId
         }
+        getShortcutContext={getShortcutContext}
+        shortcutsEnabled={rightPanelOpen}
         reference={{
           ...(activeRightPanelSurface.host ? { host: activeRightPanelSurface.host } : {}),
           projectId: activeRightPanelSurface.projectId as ProjectId,
@@ -6682,6 +6721,7 @@ export default function ChatView(props: ChatViewProps) {
                           {mountComposerContextStrip && (
                             <div className="pointer-events-auto">
                               <BranchToolbar
+                                ref={branchToolbarRef}
                                 environmentId={activeThread.environmentId}
                                 threadId={activeThread.id}
                                 showGitControls={isGitRepo}

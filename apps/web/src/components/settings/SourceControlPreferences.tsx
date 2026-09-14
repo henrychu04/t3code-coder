@@ -1,3 +1,4 @@
+import { useOptionalScopedSettingsMixed } from "./useScopedSettings";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import type {
@@ -42,6 +43,7 @@ export function SourceControlPreferences({
   providers: ReadonlyArray<ServerProvider>;
   projectScoped?: boolean;
 }) {
+  const mixedWriter = useOptionalScopedSettingsMixed(["sourceControlWriterModelSelection"]);
   const style = settings.sourceControlWritingStyle;
   const defaultSelection = resolveAppModelSelectionState(settings, providers);
   const resolvedWriterSelection = resolveSourceControlWriterModelSelection(settings);
@@ -190,6 +192,7 @@ export function SourceControlPreferences({
           <div className="flex flex-wrap items-center justify-end gap-2">
             {usesDedicatedModel ? (
               <ProviderModelPicker
+                triggerLabel={mixedWriter ? "Mixed" : undefined}
                 environmentId={environmentId}
                 activeInstanceId={activeSelection.instanceId}
                 model={activeSelection.model}

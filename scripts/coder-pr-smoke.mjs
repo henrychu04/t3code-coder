@@ -163,6 +163,15 @@ const commandLogPath = NodePath.join(smokeRoot, "glab-commands.ndjson");
 await NodeFS.mkdir(helperHome, { recursive: true });
 await NodeFS.mkdir(fakeBin, { recursive: true });
 await NodeFS.mkdir(NodePath.dirname(configPath), { recursive: true });
+for (const executable of ["codex", "claude"]) {
+  const path = NodePath.join(fakeBin, executable);
+  await NodeFS.writeFile(
+    path,
+    "#!/bin/sh\nprintf '%s\\n' 'Provider unavailable in the isolated UI fixture' >&2\nexit 1\n",
+    { mode: 0o755 },
+  );
+}
+
 const repository = await seedRepository(helperHome);
 const glabPath = NodePath.join(fakeBin, "glab");
 await NodeFS.copyFile(fixturePath, glabPath);
