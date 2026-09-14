@@ -12,6 +12,7 @@ import { RpcClientError } from "effect/unstable/rpc";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
+import { reportErrorCause } from "../errors/diagnostics.ts";
 
 export class EnvironmentRpcUnavailableError extends Schema.TaggedError<EnvironmentRpcUnavailableError>()(
   "EnvironmentRpcUnavailableError",
@@ -135,7 +136,10 @@ export const request = Effect.fn("EnvironmentRpc.request")(function* <
     environmentId: supervisor.target.environmentId,
     method: tag,
   });
-  return yield* method(input).pipe(Effect.ensuring(completeObservation));
+  return yield* Effect.suspend(() => method(input)).pipe(
+    Effect.tapCause((cause) => Effect.sync(() => reportErrorCause(tag, cause))),
+    Effect.ensuring(completeObservation),
+  );
 });
 
 export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(
@@ -156,6 +160,7 @@ export function runStream<TTag extends EnvironmentStreamCommandRpcTag>(
       }),
     ),
   ).pipe(
+    Stream.tapCause((cause) => Effect.sync(() => reportErrorCause(tag, cause))),
     Stream.withSpan("EnvironmentRpc.runStream", {
       attributes: { "rpc.method": tag },
     }),
@@ -228,6 +233,7 @@ export function subscribeDynamic<TTag extends EnvironmentSubscriptionRpcTag>(
                       return method(input).pipe(Stream.ensuring(completeObservation));
                     }),
                   ).pipe(
+                    Stream.tapCause((cause) => Effect.sync(() => reportErrorCause(tag, cause))),
                     Stream.tapCause((cause) =>
                       options?.onDefect !== undefined &&
                       cause.reasons.some(

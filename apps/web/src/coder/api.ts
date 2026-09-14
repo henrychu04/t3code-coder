@@ -1,3 +1,4 @@
+import { reportErrorDiagnostic } from "@t3tools/client-runtime/errors";
 import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 
 import type {
@@ -23,39 +24,48 @@ export type {
   CoderWorkspaceMetrics,
   CoderDeploymentAuthenticationStatus,
 } from "@t3tools/contracts";
-async function readResponse(response: Response): Promise<Response> {
-  if (!response.ok) {
-    throw new Error((await response.text()) || `Request failed (${response.status}).`);
+async function fetchCoder(path: string, init?: RequestInit): Promise<Response> {
+  try {
+    const response = await fetch(path, init);
+    if (!response.ok) {
+      throw new Error((await response.text()) || `Request failed (${response.status}).`);
+    }
+    return response;
+  } catch (error) {
+    reportErrorDiagnostic("coder.gateway", error);
+    throw error;
   }
-  return response;
 }
 
 export async function loadCoderConfig(): Promise<CoderProfileConfig> {
-  const response = await fetch("/api/config", { cache: "no-store" }).then(readResponse);
+  const response = await fetchCoder("/api/config", { cache: "no-store" });
   return (await response.json()) as CoderProfileConfig;
 }
 
 export async function saveCoderConfig(config: CoderProfileConfig): Promise<CoderProfileConfig> {
-  const response = await fetch("/api/config", {
+  const response = await fetchCoder("/api/config", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(config),
-  }).then(readResponse);
+  });
   return (await response.json()) as CoderProfileConfig;
 }
 
 export async function loginToCoderDeployment(deploymentId: string): Promise<void> {
-  await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/login`, {
+  await fetchCoder(`/api/deployments/${encodeURIComponent(deploymentId)}/login`, {
     method: "POST",
-  }).then(readResponse);
+  });
 }
 
 export async function checkCoderDeploymentAuthentication(
   deploymentId: string,
 ): Promise<CoderDeploymentAuthenticationStatus> {
-  const response = await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/auth-status`, {
-    method: "POST",
-  }).then(readResponse);
+  const response = await fetchCoder(
+    `/api/deployments/${encodeURIComponent(deploymentId)}/auth-status`,
+    {
+      method: "POST",
+    },
+  );
   return ((await response.json()) as { readonly status: CoderDeploymentAuthenticationStatus })
     .status;
 }
@@ -63,9 +73,12 @@ export async function checkCoderDeploymentAuthentication(
 export async function discoverCoderWorkspaces(
   deploymentId: string,
 ): Promise<readonly DiscoveredCoderWorkspace[]> {
-  const response = await fetch(`/api/deployments/${encodeURIComponent(deploymentId)}/workspaces`, {
-    method: "POST",
-  }).then(readResponse);
+  const response = await fetchCoder(
+    `/api/deployments/${encodeURIComponent(deploymentId)}/workspaces`,
+    {
+      method: "POST",
+    },
+  );
   return ((await response.json()) as { readonly workspaces: readonly DiscoveredCoderWorkspace[] })
     .workspaces;
 }
@@ -73,7 +86,7 @@ export async function discoverCoderWorkspaces(
 export async function loadCoderPortForwardStatuses(): Promise<
   readonly CoderPortForwardRuntimeStatus[]
 > {
-  const response = await fetch("/api/port-forwards", { cache: "no-store" }).then(readResponse);
+  const response = await fetchCoder("/api/port-forwards", { cache: "no-store" });
   return (
     (await response.json()) as {
       readonly portForwards: readonly CoderPortForwardRuntimeStatus[];
@@ -82,17 +95,20 @@ export async function loadCoderPortForwardStatuses(): Promise<
 }
 
 export async function restartCoderPortForward(portForwardId: string): Promise<void> {
-  await fetch(`/api/port-forwards/${encodeURIComponent(portForwardId)}/restart`, {
+  await fetchCoder(`/api/port-forwards/${encodeURIComponent(portForwardId)}/restart`, {
     method: "POST",
-  }).then(readResponse);
+  });
 }
 
 export async function connectCoderWorkspace(
   workspaceId: string,
 ): Promise<ExecutionEnvironmentDescriptor> {
-  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
-    method: "POST",
-  }).then(readResponse);
+  const response = await fetchCoder(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/connection`,
+    {
+      method: "POST",
+    },
+  );
   return (
     (await response.json()) as {
       readonly info: { readonly environment: ExecutionEnvironmentDescriptor };
@@ -101,17 +117,20 @@ export async function connectCoderWorkspace(
 }
 
 export async function disconnectCoderWorkspace(workspaceId: string): Promise<void> {
-  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
+  await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/connection`, {
     method: "DELETE",
-  }).then(readResponse);
+  });
 }
 
 export async function loadCoderWorkspaceDiagnostics(
   workspaceId: string,
 ): Promise<readonly WorkspaceDiagnosticEvent[]> {
-  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`, {
-    cache: "no-store",
-  }).then(readResponse);
+  const response = await fetchCoder(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/diagnostics`,
+    {
+      cache: "no-store",
+    },
+  );
   const events = ((await response.json()) as { readonly events?: unknown }).events;
   if (!Array.isArray(events) || !events.every(isWorkspaceDiagnosticEvent)) {
     throw new Error("Coder returned invalid connection diagnostics.");
@@ -167,9 +186,9 @@ function isResourceMeasurement(
 export async function loadCoderWorkspaceMetrics(
   workspaceId: string,
 ): Promise<CoderWorkspaceMetrics> {
-  const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/metrics`, {
+  const response = await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/metrics`, {
     cache: "no-store",
-  }).then(readResponse);
+  });
   const value = (await response.json()) as unknown;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Coder returned invalid workspace resource usage.");
@@ -187,27 +206,27 @@ export async function loadCoderWorkspaceMetrics(
 }
 
 export async function restartCoderWorkspace(workspaceId: string): Promise<void> {
-  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/restart`, {
+  await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/restart`, {
     method: "POST",
-  }).then(readResponse);
+  });
 }
 
 export async function startCoderWorkspace(workspaceId: string): Promise<void> {
-  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/start`, {
+  await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/start`, {
     method: "POST",
-  }).then(readResponse);
+  });
 }
 
 export async function stopCoderWorkspace(workspaceId: string): Promise<void> {
-  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/stop`, {
+  await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/stop`, {
     method: "POST",
-  }).then(readResponse);
+  });
 }
 
 export async function updateCoderWorkspace(workspaceId: string): Promise<void> {
-  await fetch(`/api/workspaces/${encodeURIComponent(workspaceId)}/update`, {
+  await fetchCoder(`/api/workspaces/${encodeURIComponent(workspaceId)}/update`, {
     method: "POST",
-  }).then(readResponse);
+  });
 }
 
 export async function uploadCoderClipboardImage(

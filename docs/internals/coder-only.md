@@ -226,6 +226,15 @@ The loopback gateway has no application token. It binds only to `127.0.0.1`, val
 `Host` and `Origin` values for commands and upgrades, exposes no CORS policy, and treats local
 processes and managed browser extensions as trusted by the deployment environment.
 
+Browser diagnostics stay in DevTools. Filter the Console for `[t3-error]` to see failed RPC
+requests and streams, handled command failures, gateway HTTP/network failures, React errors,
+and unhandled browser errors/rejections. Reporting is independent of per-action toast handling
+and console-suppression options. Entries contain a timestamp, operation, error type, bounded
+message and available stack; known credential formats are redacted, and request bodies and
+arbitrary error fields are omitted. Repeated observations of the same error object are deduplicated
+and normal cancellations are ignored. No diagnostic upload, trace exporter, or saved log file is
+created. Errors caught and discarded outside these boundaries cannot be observed automatically.
+
 ## Supported hosts
 
 Development is supported on macOS. The production local host is Windows 11 with the OpenSSH Client
