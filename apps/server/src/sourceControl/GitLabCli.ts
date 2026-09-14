@@ -448,6 +448,23 @@ function normalizeHeadSelector(headSelector: string): string {
   return ownerBranch?.[1]?.trim() || trimmed;
 }
 
+function mergeRequestReferenceArgs(reference: string): ReadonlyArray<string> {
+  // Older glab versions interpret MR URLs as branch names. Keep the URL's repository
+  // and host explicit while using the numeric MR selector supported by those versions.
+  const url = URL.parse(reference);
+  if (
+    url === null ||
+    (url.protocol !== "https:" && url.protocol !== "http:") ||
+    url.username ||
+    url.password
+  ) {
+    return [reference];
+  }
+  const match = /^(\/.+)\/-\/merge_requests\/([1-9]\d*)(?:\/.*)?$/u.exec(url.pathname);
+  if (!match) return [reference];
+  return [match[2]!, "--repo", `${url.origin}${match[1]}`];
+}
+
 function sourceRefName(input: {
   readonly headSelector: string;
   readonly source?: SourceControlProvider.SourceControlRefSelector;
@@ -640,7 +657,7 @@ export const make = Effect.gen(function* () {
       executeMergeRequest({
         cwd: input.cwd,
         reference: input.reference,
-        args: ["mr", "view", input.reference, "--output", "json"],
+        args: ["mr", "view", ...mergeRequestReferenceArgs(input.reference), "--output", "json"],
       }).pipe(
         Effect.map((result) => result.stdout.trim()),
         Effect.flatMap((raw) =>
@@ -829,7 +846,7 @@ export const make = Effect.gen(function* () {
         args: [
           "mr",
           "checkout",
-          input.reference,
+          ...mergeRequestReferenceArgs(input.reference),
           ...(input.branch ? ["--branch", input.branch] : []),
           ...(input.force ? ["--force"] : []),
         ],

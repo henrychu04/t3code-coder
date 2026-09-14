@@ -104,6 +104,56 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
+  for (const repository of [
+    "https://gitlab.com/group/project",
+    "https://code.example.com:8443/group/subgroup/project",
+    "http://code.example.com/group/project",
+  ]) {
+    it.effect(`uses an explicit MR number and repository for URLs on ${repository}`, () =>
+      Effect.gen(function* () {
+        const reference = `${repository}/-/merge_requests/42/diffs?view=parallel#note_123`;
+        mockedRun.mockReturnValueOnce(
+          Effect.succeed(
+            processOutput(
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
+              JSON.stringify({
+                iid: 42,
+                title: "Checkout by URL",
+                web_url: `${repository}/-/merge_requests/42`,
+                target_branch: "main",
+                source_branch: "feature/checkout",
+              }),
+            ),
+          ),
+        );
+        mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("")));
+
+        const glab = yield* GitLabCli.GitLabCli;
+        const result = yield* glab.getMergeRequest({ cwd: "/repo", reference });
+        yield* glab.checkoutMergeRequest({
+          cwd: "/repo",
+          reference,
+          branch: "mr-42",
+          force: true,
+        });
+
+        expect(result.number).toBe(42);
+        expect(mockedRun).toHaveBeenNthCalledWith(
+          1,
+          expect.objectContaining({
+            args: ["mr", "view", "42", "--repo", repository, "--output", "json"],
+          }),
+        );
+        expect(mockedRun).toHaveBeenNthCalledWith(
+          2,
+          expect.objectContaining({
+            args: ["mr", "checkout", "42", "--repo", repository, "--branch", "mr-42", "--force"],
+          }),
+        );
+      }),
+    );
+  }
+
   it.effect("skips invalid entries when parsing MR lists", () =>
     Effect.gen(function* () {
       mockedRun.mockReturnValueOnce(
