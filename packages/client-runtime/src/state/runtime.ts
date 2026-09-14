@@ -24,6 +24,7 @@ import {
   subscribe,
 } from "../rpc/client.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import { reportErrorCause } from "../errors/diagnostics.ts";
 
 interface EnvironmentAtomOptions<Input, A, E, R> {
   readonly label: string;
@@ -394,7 +395,11 @@ export function createRuntimeCommand<R, ER, W, A, E>(
           const atom = runtime
             .atom(options.execute(input, registry))
             .pipe(Atom.withLabel(options.label));
-          return executeAtomQuery(registry, atom, { reportDefect: false, reportFailure: false });
+          return executeAtomQuery(registry, atom, {
+            label: options.label,
+            reportDefect: false,
+            reportFailure: false,
+          });
         }),
       ),
   };
@@ -419,7 +424,11 @@ function createRuntimeStreamCommand<R, ER, W, A, E>(
           const atom = runtime
             .atom(options.execute(input, registry))
             .pipe(Atom.withLabel(options.label));
-          return executeAtomQuery(registry, atom, { reportDefect: false, reportFailure: false });
+          return executeAtomQuery(registry, atom, {
+            label: options.label,
+            reportDefect: false,
+            reportFailure: false,
+          });
         }),
       ),
   };
@@ -435,6 +444,7 @@ function reportAtomCommandResult(
   }
 
   const label = options.label ?? "atom command";
+  if (reportErrorCause(label, result.cause) && reporter === console) return;
   if (Cause.hasDies(result.cause)) {
     if (options.reportDefect ?? true) {
       reporter.error(`[atom-command] ${label} defected`, result.cause);
