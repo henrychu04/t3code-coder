@@ -4,7 +4,7 @@ import { createHash, webcrypto } from "node:crypto";
 import { EnvironmentId, ScreenshotArtifactId, TurnId } from "@t3tools/contracts";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import {
   ArtifactNavigationContext,
   ArtifactTurnContext,
@@ -21,6 +21,7 @@ const artifact = {
   sizeBytes: 8,
   sourcePathKeys: [createHash("sha256").update("artifact\0screens/shot.png").digest("hex")],
 };
+beforeEach(() => vi.stubGlobal("IntersectionObserver", undefined));
 afterEach(() => vi.unstubAllGlobals());
 it("matches exact captured paths, never basenames, traversal, or legacy metadata", async () => {
   vi.stubGlobal("crypto", webcrypto);
@@ -120,7 +121,16 @@ it.each([
 it("keeps linked captured images visible and browses neighboring images", async () => {
   vi.stubGlobal("crypto", webcrypto);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  load.mockReturnValue({ artifact: { status: "loaded", url: "blob:artifact", retry: vi.fn() } });
+  const neighbor = {
+    ...artifact,
+    id: ScreenshotArtifactId.make("neighbor"),
+    name: "neighbor.png",
+    sourcePathKeys: [createHash("sha256").update("neighbor\0screens/neighbor.png").digest("hex")],
+  };
+  load.mockReturnValue({
+    neighbor: { status: "loaded", url: "blob:neighbor", retry: vi.fn() },
+    artifact: { status: "loaded", url: "blob:artifact", retry: vi.fn() },
+  });
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -131,7 +141,7 @@ it("keeps linked captured images visible and browses neighboring images", async 
         <ArtifactNavigationContext
           value={{
             environmentId: EnvironmentId.make("env"),
-            artifactsByTurn: new Map([[turn, [artifact]]]),
+            artifactsByTurn: new Map([[turn, [artifact, neighbor, artifact]]]),
             reveal: vi.fn(),
             request: null,
           }}
@@ -140,7 +150,7 @@ it("keeps linked captured images visible and browses neighboring images", async 
             <ChatMarkdown
               cwd="/project"
               text={
-                '[![Linked](screens/shot.png "Figure title")](screens/shot.png) ![Neighbor](screens/shot.png)'
+                '[![Linked](screens/shot.png "Figure title")](screens/shot.png) ![Neighbor](screens/neighbor.png)'
               }
             />
           </ArtifactTurnContext>
@@ -163,7 +173,7 @@ it("keeps linked captured images visible and browses neighboring images", async 
     await act(async () =>
       document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
     );
-    expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("Neighbor");
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("neighbor.png");
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -184,3 +194,111 @@ it("selects the latest view of a path when old bytes are later reused for anothe
   expect(await findLinkedArtifact("a.png", [redA, blueA, redB])).toBe(blueA);
   expect(await findLinkedArtifact("b.png", [redA, blueA, redB])).toBe(redB);
 });
+
+it("opens images from separate tool activities in one deduplicated turn gallery", async () => {
+  const { ScreenshotArtifactsRow } = await import("./ScreenshotArtifactsRow");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const neighbor = { ...artifact, id: ScreenshotArtifactId.make("second"), name: "second.png" };
+  load.mockReturnValue({
+    artifact: { status: "loaded", url: "blob:artifact", retry: vi.fn() },
+    second: { status: "loaded", url: "blob:second", retry: vi.fn() },
+  });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const turn = TurnId.make("turn");
+  const environmentId = EnvironmentId.make("env");
+  try {
+    await act(async () =>
+      root.render(
+        <ArtifactNavigationContext
+          value={{
+            environmentId,
+            artifactsByTurn: new Map([[turn, [artifact, neighbor, artifact]]]),
+            reveal: vi.fn(),
+            request: null,
+          }}
+        >
+          <ArtifactTurnContext value={turn}>
+            <ScreenshotArtifactsRow environmentId={environmentId} artifacts={[artifact]} />
+            <ScreenshotArtifactsRow environmentId={environmentId} artifacts={[neighbor]} />
+          </ArtifactTurnContext>
+        </ArtifactNavigationContext>,
+      ),
+    );
+    expect(host.textContent).toContain("Images in this turn · 2");
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Preview shot.png"]')!.click(),
+    );
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("shot.png");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+    );
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("second.png");
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("(2/2)");
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+    );
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("shot.png");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    load.mockReturnValue({});
+  }
+});
+
+it.each([true, false])(
+  "keeps an open gallery while turn captures arrive (inline: %s)",
+  async (inline) => {
+    vi.stubGlobal("crypto", webcrypto);
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const neighbor = { ...artifact, id: ScreenshotArtifactId.make("new"), name: "new.png" };
+    load.mockReturnValue({
+      artifact: { status: "loaded", url: "blob:artifact", retry: vi.fn() },
+      new: { status: "loaded", url: "blob:new", retry: vi.fn() },
+    });
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+    const turn = TurnId.make("turn");
+    const render = (artifacts: (typeof artifact)[]) =>
+      act(async () =>
+        root.render(
+          <ArtifactNavigationContext
+            value={{
+              environmentId: EnvironmentId.make("env"),
+              artifactsByTurn: new Map([[turn, artifacts]]),
+              reveal: vi.fn(),
+              request: null,
+            }}
+          >
+            <ArtifactTurnContext value={turn}>
+              <ChatMarkdown cwd="/project" text={`${inline ? "!" : ""}[Shot](screens/shot.png)`} />
+            </ArtifactTurnContext>
+          </ArtifactNavigationContext>,
+        ),
+      );
+    try {
+      await render([artifact]);
+      await vi.waitFor(() => expect(host.querySelector(inline ? "img" : "a")).not.toBeNull());
+      if (inline)
+        await act(async () => host.querySelector("img")!.dispatchEvent(new Event("load")));
+      await act(async () => host.querySelector<HTMLElement>(inline ? "img" : "a")!.click());
+      const dialog = document.querySelector('[role="dialog"]');
+      expect(dialog).not.toBeNull();
+      await render([artifact, neighbor]);
+      expect(document.querySelector('[role="dialog"]')).toBe(dialog);
+      await act(async () =>
+        document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+      );
+      expect(dialog?.textContent).toContain("(2/2)");
+      expect(dialog?.querySelector("img")?.alt).toBe("new.png");
+      await render([]);
+      expect(document.querySelector('[role="dialog"]')).toBeNull();
+    } finally {
+      await act(async () => root.unmount());
+      host.remove();
+      load.mockReturnValue({});
+    }
+  },
+);

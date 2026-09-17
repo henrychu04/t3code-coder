@@ -32,6 +32,31 @@ export const ArtifactNavigationContext = createContext<{
 } | null>(null);
 export const ArtifactTurnContext = createContext<TurnId | null>(null);
 
+/** Activity previews and Markdown open the same ordered, deduplicated turn gallery. */
+export function useTurnImageGallery() {
+  const navigation = useContext(ArtifactNavigationContext);
+  const turnId = useContext(ArtifactTurnContext);
+  const observations = turnId ? navigation?.artifactsByTurn.get(turnId) : undefined;
+  const seen = new Set<string>();
+  const artifacts = (observations ?? []).filter((artifact) => {
+    if (seen.has(artifact.id)) return false;
+    seen.add(artifact.id);
+    return true;
+  });
+  return {
+    artifacts,
+    previewFor(artifactId: string): ExpandedImagePreview | null {
+      const index = artifacts.findIndex((artifact) => artifact.id === artifactId);
+      return index < 0
+        ? null
+        : {
+            index,
+            images: artifacts.map((artifact) => ({ src: null, name: artifact.name, artifact })),
+          };
+    },
+  };
+}
+
 export function isImageFilePath(path: string): boolean {
   return /\.(?:png|jpe?g|webp|gif|svg|avif|bmp|ico|tiff?)$/i.test(path);
 }
@@ -103,12 +128,12 @@ function ArtifactImageLinkContent({
   copyMarkdown?: string | undefined;
 }) {
   const navigation = useContext(ArtifactNavigationContext);
+  const turnGallery = useTurnImageGallery();
   const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
   const turnId = useContext(ArtifactTurnContext);
   const artifacts = turnId ? navigation?.artifactsByTurn.get(turnId) : undefined;
   const [match, setMatch] = useState<{
     path: string;
-    artifacts: typeof artifacts;
     id: string;
   } | null>(null);
   useEffect(() => {
@@ -116,8 +141,7 @@ function ArtifactImageLinkContent({
     if (relativePath && artifacts) {
       void findLinkedArtifact(relativePath, artifacts)
         .then((artifact) => {
-          if (!cancelled)
-            setMatch(artifact ? { path: relativePath, artifacts, id: artifact.id } : null);
+          if (!cancelled) setMatch(artifact ? { path: relativePath, id: artifact.id } : null);
         })
         .catch(() => {
           if (!cancelled) setMatch(null);
@@ -127,7 +151,12 @@ function ArtifactImageLinkContent({
       cancelled = true;
     };
   }, [relativePath, artifacts]);
-  const id = match?.path === relativePath && match?.artifacts === artifacts ? match?.id : undefined;
+  // Keep the verified image mounted while newly arrived captures are matched.
+  // A different path or removal from this turn still invalidates it immediately.
+  const id =
+    match?.path === relativePath && artifacts?.some((artifact) => artifact.id === match?.id)
+      ? match?.id
+      : undefined;
   if (!id || !navigation)
     return (
       <span title="Image preview unavailable">
@@ -161,7 +190,10 @@ function ArtifactImageLinkContent({
           event.preventDefault();
           if (!navigation.environmentId || !artifact) return navigation.reveal(id);
           const element = event.currentTarget.querySelector("img") ?? event.currentTarget;
-          setPreview(markdownImageGallery(element, { src: null, name: artifact.name, artifact }));
+          setPreview(
+            turnGallery.previewFor(artifact.id) ??
+              markdownImageGallery(element, { src: null, name: artifact.name, artifact }),
+          );
         }}
       >
         {children}

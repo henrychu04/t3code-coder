@@ -90,8 +90,8 @@ function pump() {
   if (pumping) return;
   pumping = true;
   try {
-    // A project move or stash restore can change the destination. Re-key the job
-    // so the old transfer is cancelled and late results cannot overwrite the new one.
+    // Keep the draft image identity (including inline references) across moves.
+    // Cancel the old destination's job before starting its replacement.
     const state = useComposerDraftStore.getState();
     for (const [key, draft] of Object.entries(state.draftsByThreadKey)) {
       const environmentId =
@@ -102,7 +102,7 @@ function pump() {
       for (const image of draft.pastedImages ?? []) {
         if (image.workspaceId !== workspaceId) {
           updateImage(image.id, () => ({
-            id: crypto.randomUUID(),
+            id: image.id,
             file: image.file,
             workspaceId,
             status: "queued",
@@ -111,10 +111,10 @@ function pump() {
       }
     }
     const images = imagesInDrafts();
-    const ids = new Set(images.map((image) => image.id));
+    const imagesById = new Map(images.map((image) => [image.id, image]));
     const activeByWorkspace = new Map<string, number>();
     for (const [id, { controller, workspaceId }] of active) {
-      if (!ids.has(id)) controller.abort();
+      if (imagesById.get(id)?.workspaceId !== workspaceId) controller.abort();
       activeByWorkspace.set(workspaceId, (activeByWorkspace.get(workspaceId) ?? 0) + 1);
     }
     for (const image of images) {

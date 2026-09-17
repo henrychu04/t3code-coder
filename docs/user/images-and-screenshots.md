@@ -19,7 +19,8 @@ sending.
 Click a thumbnail to open the gallery and use its arrows or the left/right arrow keys to move between
 images. The compact composer shows up to three thumbnails with a count for the rest. Removing a
 queued image prevents its transfer; removing an active image cancels that transfer. Uploads stay
-with their originating draft when you switch threads. Moving a draft to a project in another
+with their originating draft when you switch threads. Image references in your prompt stay attached
+to the same image when you move a draft or restore a stash in another workspace. Moving a draft to a project in another
 workspace re-uploads the original images there; Send waits for those uploads.
 
 Images stay separate from the text while composing. They can be sent without accompanying text and
@@ -37,12 +38,17 @@ into the composer is the only way an image gets in.
 
 Images appear beside the tool activity that viewed or produced them. Assistant replies can also
 embed a captured image inline or link to it. Click a thumbnail or image link to enlarge it. The
-shared gallery supports previous/next arrows, left/right keys, zooming, and panning. When zoomed,
+shared gallery supports previous/next arrows, left/right keys, zooming, and panning. Activity
+thumbnails and assistant image links open all captured images from that turn in activity order,
+with duplicate captures listed once. **Images in this turn** opens the same gallery. When zoomed,
 arrow keys pan the image; use the gallery buttons to switch images.
 
-Inline images preserve their reported dimensions and share a gallery in message order. If an image
-fails to load, use **Retry**. Repeated previews share one read; the browser loads at most three images
-at once and bounds retained image bytes to 100 MiB. Image bytes are released when no displayed preview uses them.
+Inline images preserve their reported dimensions. If an image fails to load, use **Retry**.
+Previews load near the visible part of the conversation and release their bytes when scrolled away.
+Repeated previews share one read; the browser loads at most three images at once and bounds retained
+image bytes to 100 MiB. The gallery gives priority to the selected image and loads one full image at
+a time. When the memory budget is full, other previews show **Open to view** instead of an error.
+Opening the gallery moves keyboard focus inside it; closing it returns focus to the opener.
 
 Submitted messages retain their image previews after reload or reconnect, while the workspace
 copies exist. Unsent draft images still disappear on reload.

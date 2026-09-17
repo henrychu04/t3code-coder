@@ -10,6 +10,8 @@ import {
 import type { EnvironmentId, ScreenshotArtifactReference } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useTurnImageGallery } from "./ArtifactNavigation";
+import { useImagePreviewVisibility } from "./useImagePreviewVisibility";
 import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { ExpandedImageDialog, type ExpandedImagePreview } from "./ExpandedImageDialog";
 import { markdownImageGallery, markdownImageItems } from "./markdownImageGallery";
@@ -18,7 +20,7 @@ const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME =
   "h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]";
 const CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME = "inline-block!";
 const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME =
-  "aspect-video w-full overflow-hidden bg-muted/60 max-w-[min(100%,30rem)] rounded-lg border border-border/40";
+  "aspect-video w-[30rem] overflow-hidden bg-muted/60 max-w-[min(100%,30rem)] rounded-lg border border-border/40";
 function ChatMarkdownMediaUnavailableLabel({ alt, retry }: { alt: string; retry: () => void }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -213,28 +215,52 @@ export function CapturedMarkdownImage({
   imageProps?: Omit<ComponentProps<"img">, "src" | "srcSet" | "alt" | "style"> | undefined;
   copyMarkdown?: string | undefined;
 }) {
-  const images = useScreenshotArtifacts(environmentId, [artifact], true);
+  const { previewRef, visible } = useImagePreviewVisibility();
+  const turnGallery = useTurnImageGallery();
+  const images = useScreenshotArtifacts(environmentId, [artifact], visible);
   const image = images[artifact.id];
   const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
-  const style = authoredImageSizeStyle(width, height);
+  const style =
+    authoredImageSizeStyle(width, height) ??
+    authoredImageSizeStyle(artifact.dimensions?.width, artifact.dimensions?.height);
   const retry = () => {
-    if (image && image.status !== "loading") image.retry();
+    if (image && "retry" in image) image.retry();
   };
   return (
-    <>
-      <ChatMarkdownImage
-        src={image?.status === "loaded" ? image.url : null}
-        sourceFailed={image?.status === "error"}
-        alt={alt}
-        copyMarkdown={copyMarkdown}
-        imageProps={imageProps}
-        className={imageProps?.className}
-        standalone={standalone}
-        style={style}
-        retry={retry}
-        artifact={artifact}
-        onImageExpand={setPreview}
-      />
+    <span ref={previewRef} data-image-preview tabIndex={-1} className="inline-block max-w-full">
+      {image?.status === "deferred" || !visible ? (
+        <span
+          {...expandableMarkdownImageProps(
+            (preview) => setPreview(turnGallery.previewFor(artifact.id) ?? preview),
+            alt,
+          )}
+          ref={(element) => {
+            if (element)
+              markdownImageItems.set(element, { src: null, name: alt || artifact.name, artifact });
+          }}
+          className={cn(
+            "inline-flex cursor-zoom-in items-center justify-center rounded-lg border border-border/40 bg-muted/40 p-4 text-xs text-muted-foreground",
+            standalone && "aspect-video w-[30rem] max-w-full",
+          )}
+          style={style}
+        >
+          Open image{alt ? ` · ${alt}` : ""}
+        </span>
+      ) : (
+        <ChatMarkdownImage
+          src={image?.status === "loaded" ? image.url : null}
+          sourceFailed={image?.status === "error"}
+          alt={alt}
+          copyMarkdown={copyMarkdown}
+          imageProps={imageProps}
+          className={imageProps?.className}
+          standalone={standalone}
+          style={style}
+          retry={retry}
+          artifact={artifact}
+          onImageExpand={(preview) => setPreview(turnGallery.previewFor(artifact.id) ?? preview)}
+        />
+      )}
       {preview ? (
         <CapturedImageDialog
           environmentId={environmentId}
@@ -242,7 +268,7 @@ export function CapturedMarkdownImage({
           onClose={() => setPreview(null)}
         />
       ) : null}
-    </>
+    </span>
   );
 }
 
@@ -251,26 +277,39 @@ export function CapturedImageDialog({
   environmentId,
   preview,
   onClose,
+  source = "artifact",
 }: {
   environmentId: EnvironmentId;
   preview: ExpandedImagePreview;
   onClose: () => void;
+  source?: "artifact" | "attachment";
 }) {
-  const artifacts = preview.images.flatMap((item) => (item.artifact ? [item.artifact] : []));
-  const resources = useScreenshotArtifacts(environmentId, artifacts, true);
+  const turnGallery = useTurnImageGallery();
+  const initialArtifact = preview.images[preview.index]?.artifact;
+  const galleryImages =
+    (source === "artifact" && initialArtifact
+      ? turnGallery.previewFor(initialArtifact.id)?.images
+      : undefined) ?? preview.images;
+  const [index, setIndex] = useState(preview.index);
+  const item = galleryImages[index];
+  const artifacts = item?.artifact ? [item.artifact] : [];
+  const resources = useScreenshotArtifacts(environmentId, artifacts, true, source, true);
   return (
     <ExpandedImageDialog
       onClose={onClose}
+      onIndexChange={setIndex}
       preview={{
         ...preview,
-        images: preview.images.map((item) => {
+        index,
+        images: galleryImages.map((item) => {
           const resource = item.artifact ? resources[item.artifact.id] : undefined;
-          return resource
+          return item.artifact
             ? {
                 ...item,
-                src: resource.status === "loaded" ? resource.url : null,
-                loading: resource.status === "loading",
-                retry: resource.status === "loading" ? undefined : resource.retry,
+                src: resource?.status === "loaded" ? resource.url : null,
+                loading:
+                  !resource || resource.status === "loading" || resource.status === "deferred",
+                retry: resource && "retry" in resource ? resource.retry : undefined,
               }
             : item;
         }),

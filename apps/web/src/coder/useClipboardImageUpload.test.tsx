@@ -234,6 +234,8 @@ it.each(["uploading", "uploaded", "failed"] as const)(
     );
     await act(async () => current.upload([png()]));
     const original = images(a)[0]!;
+    const prompt = `[Image](t3-pasted-image://${original.id}) Describe this image`;
+    await act(async () => useComposerDraftStore.getState().setPrompt(a, prompt));
     if (status === "uploaded") {
       await act(async () => transfers[0]!.resolve("/original/image.png"));
     } else if (status === "failed") {
@@ -242,7 +244,7 @@ it.each(["uploading", "uploaded", "failed"] as const)(
     await act(async () => useComposerDraftStore.getState().moveComposerPrompt(a, b));
     expect(images(a)).toHaveLength(0);
     expect(images(b)[0]).toMatchObject({ status: "uploading", workspaceId: "another-workspace" });
-    expect(images(b)[0]!.id).not.toBe(original.id);
+    expect(images(b)[0]!.id).toBe(original.id);
     expect(images(b)[0]!.file).toBe(original.file);
     expect(pastedImageSendBlockReason(images(b))).not.toBeNull();
     expect(transfers).toHaveLength(2);
@@ -257,7 +259,10 @@ it.each(["uploading", "uploaded", "failed"] as const)(
       workspaceId: "another-workspace",
       path: "/destination/image.png",
     });
-    expect(pastedImageSendBlockReason(images(b))).toBeNull();
+    const movedPrompt = useComposerDraftStore.getState().getComposerDraft(b)!.prompt;
+    expect(movedPrompt).toBe(prompt);
+    expect(pastedImageSendBlockReason(images(b), movedPrompt)).toBeNull();
+    expect(appendPastedImagesToPrompt(movedPrompt, images(b))).toContain("/destination/image.png");
   },
 );
 
@@ -285,4 +290,22 @@ it("re-uploads original bytes when a completed attachment is restored into anoth
   await act(async () => transfers[1]!.resolve("/destination/image.png"));
   expect(appendPastedImagesToPrompt("", images(b))).toContain("/destination/image.png");
   expect(appendPastedImagesToPrompt("", images(b))).not.toContain("/original/image.png");
+});
+
+it("preserves inline image references when a stash is restored into another workspace", async () => {
+  vi.mocked(coderWorkspaceIdForEnvironment).mockImplementation((id) =>
+    id === b.environmentId ? "another-workspace" : "workspace",
+  );
+  await act(async () => current.upload([png()]));
+  await act(async () => transfers[0]!.resolve("/original/image.png"));
+  const stashedImages = images(a);
+  const prompt = `[Image](t3-pasted-image://${stashedImages[0]!.id}) Compare this`;
+  await act(async () => useComposerDraftStore.getState().clearComposerContent(a));
+  await act(async () => {
+    useComposerDraftStore.getState().setPastedImages(b, stashedImages);
+    useComposerDraftStore.getState().setPrompt(b, prompt);
+  });
+  await act(async () => transfers[1]!.resolve("/destination/image.png"));
+  expect(pastedImageSendBlockReason(images(b), prompt)).toBeNull();
+  expect(appendPastedImagesToPrompt(prompt, images(b))).toContain("/destination/image.png");
 });

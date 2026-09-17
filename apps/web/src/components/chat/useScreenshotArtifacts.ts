@@ -11,6 +11,7 @@ export function useScreenshotArtifacts(
   artifacts: ReadonlyArray<Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number }>,
   expanded: boolean,
   source: "artifact" | "attachment" = "artifact",
+  priority = false,
 ) {
   "use no memo"; // Resource entries mutate outside React; each subscription notification must reread them.
   const readArtifact = useAtomCommand(projectEnvironment.readScreenshotArtifact, {
@@ -40,12 +41,13 @@ export function useScreenshotArtifacts(
           );
         },
         rerender,
+        priority,
       ),
     );
     return () => {
       for (const release of releases) release();
     };
-  }, [environmentId, source, resourceKey, expanded, readArtifact]);
+  }, [environmentId, source, resourceKey, expanded, readArtifact, priority]);
   const images: Record<string, ImageResourceState> = {};
   if (expanded)
     for (const artifact of artifacts)

@@ -329,8 +329,9 @@ old or absent from the current browser snapshot can break resumed sessions and h
 
 Image previews use the upstream thumbnail grid and gallery navigation, with upstream's
 `ZoomableImage` component copied from commit `8d8189e67`. The adapted gallery excludes external
-asset URLs, videos, saving, export, and desktop actions. It uses upstream’s portal-based gallery
-and bounded helper stdio image transport.
+asset URLs, videos, saving, export, and desktop actions. It adapts upstream’s Base UI dialog from
+commit `3be02ae57` for keyboard focus and navigation, using bounded helper stdio image transport.
+Activity previews and Markdown share a deduplicated gallery of captured images from the same turn.
 
 Capture is driven by provider tool events. A Codex `imageView` completion immediately copies a
 validated image inside the active project, including an unchanged file. Codex MCP, dynamic-tool,
@@ -351,8 +352,10 @@ Submitted messages resolve generated attachment IDs through the same 512 KiB chu
 fixed attachment source selector. IDs are validated UUIDs; the helper selects only its own attachment
 or artifact directory and checks file type, size, no-follow opens, and image signature. There is no
 caller-supplied path. Submitted previews survive reload while the workspace copy exists; draft
-images remain memory-only. Thumbnails load automatically when their surface mounts and object
-URLs are revoked on unmount. No bytes persist in the gateway or browser storage.
+images remain memory-only. Thumbnails load near the viewport and release their image resources
+when scrolled away. Shared resources permit at most three concurrent reads and reserve at most
+100 MiB of image bytes. The selected gallery image gets priority; other previews can be evicted
+and deferred until space is available. No bytes persist in the gateway or browser storage.
 
 Activity images appear beside their tool row. Assistant Markdown images resolve against captured
 artifacts from that turn and render inline; image links open the same zoomable gallery. The latest

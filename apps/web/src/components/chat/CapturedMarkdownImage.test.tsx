@@ -1,24 +1,28 @@
 // @vitest-environment happy-dom
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ScreenshotArtifactId } from "@t3tools/contracts";
 import { CapturedMarkdownImage, CapturedImageDialog } from "./CapturedMarkdownImage";
 import { authoredImageSizeStyle } from "./markdownImageLayout";
-const mocks = vi.hoisted(() => ({ retry: vi.fn(), failed: false }));
+const mocks = vi.hoisted(() => ({ retry: vi.fn(), failed: false, deferred: false }));
 vi.mock("./useScreenshotArtifacts", () => ({
   useScreenshotArtifacts: (_env: unknown, artifacts: { id: string }[]) =>
     Object.fromEntries(
       artifacts.map(({ id }) => [
         id,
-        mocks.failed
-          ? { status: "error", retry: mocks.retry }
-          : { status: "loaded", url: `blob:${id}`, retry: mocks.retry },
+        mocks.deferred
+          ? { status: "deferred" }
+          : mocks.failed
+            ? { status: "error", retry: mocks.retry }
+            : { status: "loaded", url: `blob:${id}`, retry: mocks.retry },
       ]),
     ),
 }));
+beforeEach(() => vi.stubGlobal("IntersectionObserver", undefined));
 afterEach(() => {
   mocks.failed = false;
+  mocks.deferred = false;
   vi.clearAllMocks();
   vi.unstubAllGlobals();
 });
@@ -151,6 +155,42 @@ it("keeps a captured gallery open while retry refreshes its transport URL", asyn
     mocks.failed = false;
     await render();
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe("blob:retry");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("keeps a deferred screenshot's dimensions and opens it with the keyboard", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  mocks.deferred = true;
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <CapturedMarkdownImage
+          environmentId={EnvironmentId.make("env")}
+          artifact={{
+            id: ScreenshotArtifactId.make("one"),
+            name: "one.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+            dimensions: { width: 400, height: 200 },
+          }}
+          alt="Result chart"
+        />,
+      ),
+    );
+    const placeholder = host.querySelector<HTMLElement>('[role="button"]')!;
+    expect(placeholder.textContent).toContain("Open image");
+    expect(placeholder.style.aspectRatio).toBe("400 / 200");
+    await act(async () =>
+      placeholder.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
+    );
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')).toBeNull();
   } finally {
     await act(async () => root.unmount());
     host.remove();
