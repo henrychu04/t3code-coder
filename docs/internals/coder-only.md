@@ -80,15 +80,22 @@ gateway keeps it attached and reconnects the loopback WebSocket. If the helper o
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
 Shell and thread subscriptions always emit a `synchronized` item between their initial
 snapshot/replay and live events. The browser does not negotiate this guarantee: it keeps restored
-data in `synchronizing` state until the item arrives and requests a clean connection retry if it is
-missing for 15 seconds. These guarantees define helper protocol version 2; older helpers are not
-accepted or adapted.
+data in `synchronizing` state until the item arrives, except for upstream's warm resume behavior:
+a recently viewed live thread renders its retained snapshot immediately and only shows synchronization
+progress if replay changes its contents. Every subscription still waits for the completion marker
+internally and requests a clean connection retry if it is missing for 15 seconds. These guarantees
+define helper protocol version 2; older helpers are not accepted or adapted.
 
 Live shell and thread subscriptions retain at most 1,000 events and 8 MiB of serialized live data
 per subscription, including batches awaiting an RPC acknowledgement. Overflow detaches that live
 source even if the browser is stalled during snapshot loading or acknowledgement; reconnect uses
 the existing snapshot/replay and synchronization marker. Unused browser thread subscriptions are
-released immediately; settled snapshots remain in the bounded memory-only cache.
+released immediately. Following upstream's resume-snapshot design (`ea6af5924`), recent thread
+snapshots, including running messages and their applied event cursors, survive for five idle minutes
+without retaining RPC or environment scopes. The additional idle snapshot pool is limited to 24
+threads and 64 MiB of encoded data per browser atom registry; least recently used snapshots are
+removed when either limit is reached. Sizing runs after the live stream stops, outside the streaming
+update path. Settled snapshots also remain in the existing bounded memory-only cache.
 
 The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they

@@ -26,7 +26,7 @@ import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { request, subscribeDynamic } from "../rpc/client.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyThreadDetailEvent } from "./threadReducer.ts";
-import { THREAD_STATE_IDLE_TTL_MS } from "./threadRetention.ts";
+import { makeThreadSnapshotRetention, THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 import { makeSynchronizationCompletion } from "./synchronizationCompletion.ts";
 import {
@@ -131,39 +131,112 @@ function shouldPersistThread(thread: OrchestrationThread): boolean {
   return status !== "starting" && status !== "running";
 }
 
+interface ThreadResumeSnapshot {
+  readonly state: EnvironmentThreadState;
+  readonly sequence: number;
+  readonly persisted: boolean;
+}
+
+interface ThreadResumeCache {
+  snapshot: ThreadResumeSnapshot | undefined;
+  owner: object | undefined;
+  readonly onActive?: () => void;
+  readonly onIdle?: () => void;
+}
+
+function matchesThreadSnapshot(
+  current: ThreadResumeSnapshot,
+  thread: OrchestrationThread | null,
+  sequence: number,
+  page: Pick<EnvironmentThreadPageState, "beforeCursor" | "hasMore"> | undefined,
+): boolean {
+  if (current.sequence !== sequence || Option.getOrNull(current.state.data) !== thread)
+    return false;
+  const currentPage = Option.getOrUndefined(current.state.page);
+  return currentPage === undefined
+    ? page === undefined
+    : page !== undefined &&
+        currentPage.beforeCursor === page.beforeCursor &&
+        currentPage.hasMore === page.hasMore;
+}
+
+// A retained "live" state stays live: the cursor resume that follows only
+// replays what the thread missed, and on servers that send the completion
+// marker the first replayed event moves the status to "synchronizing" on its
+// own. Downgrading here would flash a sync label on every return to a
+// recently viewed thread.
+function cachedThreadState(value: EnvironmentThreadState): EnvironmentThreadState {
+  return {
+    ...value,
+    status:
+      value.status === "deleted" || (value.status === "live" && Option.isSome(value.data))
+        ? value.status
+        : statusWithoutLiveData(value.data),
+    error: Option.none(),
+    page: Option.map(value.page, (page) => ({ ...page, loadingOlder: false })),
+  };
+}
+
 export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make")(function* (
   threadId: ThreadIdType,
+  resumeCache?: ThreadResumeCache,
 ) {
   const supervisor = yield* EnvironmentSupervisor;
   const cache = yield* EnvironmentCacheStore;
   const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
-  const cached = yield* cache.loadThread(environmentId, threadId).pipe(
-    Effect.catch((error) =>
-      Effect.logWarning("Could not load cached thread.").pipe(
-        Effect.annotateLogs({
-          environmentId,
-          threadId,
-          error: error.message,
-        }),
-        Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
-      ),
-    ),
-  );
+  const retained = resumeCache?.snapshot;
+  const owner = {};
+  if (resumeCache) {
+    resumeCache.owner = owner;
+    resumeCache.onActive?.();
+    // Registered before the stream fibers so sizing happens once, after they
+    // stop. Retaining active messages must not serialize every streaming delta.
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        if (resumeCache.owner === owner) resumeCache.onIdle?.();
+      }),
+    );
+  }
+  const cached =
+    retained === undefined
+      ? yield* cache.loadThread(environmentId, threadId).pipe(
+          Effect.catch((error) =>
+            Effect.logWarning("Could not load cached thread.").pipe(
+              Effect.annotateLogs({
+                environmentId,
+                threadId,
+                error: error.message,
+              }),
+              Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
+            ),
+          ),
+        )
+      : Option.none<OrchestrationThreadDetailSnapshot>();
   const cachedThread = Option.map(cached, (snapshot) => snapshot.thread);
-  const state = yield* SubscriptionRef.make<EnvironmentThreadState>({
-    data: cachedThread,
-    status: statusWithoutLiveData(cachedThread),
-    error: Option.none(),
-    // A cached windowed snapshot restores its page cursor so "load earlier"
-    // works while rendering from cache; a cached full snapshot has no page.
-    page: Option.flatMap(cached, (snapshot) => pageStateFromSnapshot(snapshot.page)),
-  });
+  const initialState: EnvironmentThreadState = retained
+    ? cachedThreadState(retained.state)
+    : {
+        data: cachedThread,
+        status: statusWithoutLiveData(cachedThread),
+        error: Option.none(),
+        // A cached windowed snapshot restores its page cursor so "load earlier"
+        // works while rendering from cache; a cached full snapshot has no page.
+        page: Option.flatMap(cached, (snapshot) => pageStateFromSnapshot(snapshot.page)),
+      };
+  const state = yield* SubscriptionRef.make(initialState);
   // Seed the resume cursor from the cached snapshot so a warm cache can catch up
   // via `afterSequence` instead of re-downloading the full thread body.
-  const lastSequence = yield* SubscriptionRef.make(
-    Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence }),
-  );
+  const initialSequence =
+    retained?.sequence ??
+    Option.match(cached, { onNone: () => 0, onSome: (snapshot) => snapshot.snapshotSequence });
+  const lastSequence = yield* SubscriptionRef.make(initialSequence);
+  let committed: ThreadResumeSnapshot = {
+    state: initialState,
+    sequence: initialSequence,
+    persisted: retained?.persisted ?? Option.isSome(cached),
+  };
+  if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
   // Bumped whenever loaded history may have been rewritten out from under an
   // in-flight older-page fetch (snapshot replacement, revert, deletion). A
   // page response captured under an older epoch is discarded, not merged.
@@ -172,6 +245,25 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // merges. Without it, a revert or snapshot processed between loadOlderTurns'
   // epoch check and its merge could still slip resurrected history in.
   const applyLock = yield* Semaphore.make(1);
+  // Save only completed data/cursor updates. A canceled scope must not cache
+  // a cursor whose event has not reached the data yet.
+  const remember = Effect.gen(function* () {
+    const current = yield* SubscriptionRef.get(state);
+    const sequence = yield* SubscriptionRef.get(lastSequence);
+    committed = {
+      state: current,
+      sequence,
+      persisted:
+        committed.persisted &&
+        matchesThreadSnapshot(
+          committed,
+          Option.getOrNull(current.data),
+          sequence,
+          Option.getOrUndefined(current.page),
+        ),
+    };
+    if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
+  });
   // An older page whose thread watermark is ahead of the live state, parked
   // until the subscription catches up (see mergeOlderPage's caller). At most
   // one can exist because loadOlderTurns no-ops while loadingOlder is true.
@@ -184,7 +276,28 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const persist = Effect.fn("EnvironmentThreadState.persist")(function* (
     snapshot: OrchestrationThreadDetailSnapshot,
   ) {
+    if (resumeCache !== undefined && resumeCache.owner !== owner) return;
+    if (
+      committed.persisted &&
+      matchesThreadSnapshot(committed, snapshot.thread, snapshot.snapshotSequence, snapshot.page)
+    )
+      return;
     yield* cache.saveThread(environmentId, snapshot).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          if (
+            !matchesThreadSnapshot(
+              committed,
+              snapshot.thread,
+              snapshot.snapshotSequence,
+              snapshot.page,
+            )
+          )
+            return;
+          committed = { ...committed, persisted: true };
+          if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
+        }),
+      ),
       Effect.catch((error) =>
         Effect.logWarning("Could not persist the thread cache.").pipe(
           Effect.annotateLogs({
@@ -299,6 +412,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       error: Option.none(),
       page: Option.none(),
     });
+    yield* remember;
+    if (resumeCache !== undefined && resumeCache.owner !== owner) return;
     yield* cache.removeThread(environmentId, threadId).pipe(
       Effect.catch((error) =>
         Effect.logWarning("Could not remove the cached thread.").pipe(
@@ -401,7 +516,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const applyItem = Effect.fn("EnvironmentThreadState.applyItem")(function* (
     item: OrchestrationThreadStreamItem,
   ) {
-    yield* applyLock.withPermits(1)(applyItemLocked(item));
+    yield* applyLock.withPermits(1)(applyItemLocked(item).pipe(Effect.andThen(remember)));
   });
 
   const applyItems = Effect.fn("EnvironmentThreadState.applyItems")(function* (
@@ -422,6 +537,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         ) {
           for (const item of items) {
             yield* applyItemLocked(item);
+            yield* remember;
           }
           return;
         }
@@ -441,6 +557,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         yield* SubscriptionRef.set(lastSequence, sequence);
         if (thread !== current.data.value) yield* setThread(thread, "keep");
         if (synchronized) yield* applyItemLocked({ kind: "synchronized" });
+        yield* remember;
       }),
     );
   });
@@ -499,6 +616,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         ...(snapshot.page === undefined ? {} : { page: { ...snapshot.page, snapshotSequence } }),
       });
     }
+    yield* remember;
   });
 
   const loadOlderTurns = Effect.fn("EnvironmentThreadState.loadOlderTurns")(function* () {
@@ -594,18 +712,29 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       service.changes.pipe(Stream.filter(ConnectionWakeups.shouldResubscribeAfterWakeup)),
   });
 
-  const setSynchronizing = SubscriptionRef.update(state, (current) =>
-    current.status === "deleted"
-      ? current
-      : { ...current, status: "synchronizing" as const, error: Option.none() },
-  );
-  yield* setSynchronizing;
+  // Only the first subscription after a warm live resume keeps the retained
+  // status. A replacement session or foreground resubscribe on the same scope
+  // may have missed events, so those show sync progress until confirmed.
+  const resumingLive = yield* Ref.make(initialState.status === "live");
+  const markSynchronizing = Effect.gen(function* () {
+    if (yield* Ref.get(resumingLive)) return;
+    // Connection notifications do not establish that a terminated load restarted.
+    // Clear its diagnostic only when this subscription actually tries again.
+    yield* SubscriptionRef.update(state, (current) =>
+      current.status === "deleted"
+        ? current
+        : { ...current, status: "synchronizing" as const, error: Option.none() },
+    );
+  });
+
+  yield* markSynchronizing;
   yield* Effect.forkScoped(
     subscribeDynamic(
       ORCHESTRATION_WS_METHODS.subscribeThread,
       Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* () {
         yield* synchronizationCompletion.startWaiting;
-        yield* setSynchronizing;
+        yield* markSynchronizing;
+        yield* Ref.set(resumingLive, false);
 
         const current = yield* SubscriptionRef.get(state);
         const sequence = yield* SubscriptionRef.get(lastSequence);
@@ -667,56 +796,93 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   yield* Effect.addFinalizer(() => Effect.sync(deregister));
 
   yield* Effect.addFinalizer(() =>
-    Effect.all([SubscriptionRef.get(state), SubscriptionRef.get(lastSequence)]).pipe(
-      Effect.flatMap(([current, snapshotSequence]) =>
-        Option.match(current.data, {
-          onNone: () => Effect.void,
-          onSome: (thread) =>
-            shouldPersistThread(thread)
-              ? persist({
-                  snapshotSequence,
-                  thread,
-                  ...Option.match(current.page, {
-                    onNone: () => ({}),
-                    onSome: (page) =>
-                      ({
-                        page: {
-                          beforeCursor: page.beforeCursor,
-                          hasMore: page.hasMore,
-                          snapshotSequence,
-                        },
-                      }) as const,
-                  }),
-                })
-              : Effect.void,
-        }),
-      ),
-    ),
+    Effect.suspend(() => {
+      const { state: current, sequence: snapshotSequence } = committed;
+      return Option.match(current.data, {
+        onNone: () => Effect.void,
+        onSome: (thread) =>
+          shouldPersistThread(thread)
+            ? persist({
+                snapshotSequence,
+                thread,
+                ...Option.match(current.page, {
+                  onNone: () => ({}),
+                  onSome: (page) =>
+                    ({
+                      page: {
+                        beforeCursor: page.beforeCursor,
+                        hasMore: page.hasMore,
+                        snapshotSequence,
+                      },
+                    }) as const,
+                }),
+              })
+            : Effect.void,
+      });
+    }),
   );
 
   return state;
 });
 
-function threadStateChanges(environmentId: EnvironmentIdType, threadId: ThreadIdType) {
+function threadStateChanges(
+  environmentId: EnvironmentIdType,
+  threadId: ThreadIdType,
+  resumeCache?: ThreadResumeCache,
+) {
   return followStreamInEnvironment(
     environmentId,
-    Stream.unwrap(makeEnvironmentThreadState(threadId).pipe(Effect.map(SubscriptionRef.changes))),
+    Stream.unwrap(
+      makeEnvironmentThreadState(threadId, resumeCache).pipe(Effect.map(SubscriptionRef.changes)),
+    ),
   );
 }
 
 export function createEnvironmentThreadStateAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | EnvironmentCacheStore | R, E>,
 ) {
+  // The Coder browser also bounds idle snapshots by count and bytes. This
+  // budget belongs to the atom registry, just like upstream's resume snapshots.
+  const retentionAtom = Atom.make(() => makeThreadSnapshotRetention<ThreadResumeSnapshot>());
+  // Cache definitions must outlive collectible live-atom definitions. The
+  // registry retains these nodes without retaining environment or RPC scopes.
+  const resumeFamily = Atom.family((key: string) =>
+    Atom.make((get): ThreadResumeCache => {
+      const retention = get(retentionAtom);
+      const resume: ThreadResumeCache = {
+        snapshot: undefined,
+        owner: undefined,
+        onActive: () => retention.release(resume),
+        onIdle: () => retention.retain(resume),
+      };
+      get.addFinalizer(() => {
+        retention.release(resume);
+        resume.snapshot = undefined;
+      });
+      return resume;
+    }).pipe(
+      Atom.setIdleTTL(THREAD_SNAPSHOT_IDLE_TTL_MS),
+      Atom.withLabel(`environment-thread-resume:${key}`),
+    ),
+  );
   const family = Atom.family((key: string) => {
     const { environmentId, threadId } = parseThreadKey(key);
+    const resumeAtom = resumeFamily(key);
     return runtime
-      .atom(threadStateChanges(environmentId, threadId), {
-        initialValue: EMPTY_ENVIRONMENT_THREAD_STATE,
-      })
-      .pipe(
-        Atom.setIdleTTL(THREAD_STATE_IDLE_TTL_MS),
-        Atom.withLabel(`environment-thread-state:${key}`),
-      );
+      .atom(
+        (get) => {
+          get.mount(resumeAtom);
+          const resume = get.once(resumeAtom);
+          const live = threadStateChanges(environmentId, threadId, resume);
+          return resume.snapshot === undefined
+            ? live
+            : Stream.concat(Stream.succeed(cachedThreadState(resume.snapshot.state)), live);
+        },
+        {
+          initialValue: EMPTY_ENVIRONMENT_THREAD_STATE,
+        },
+      )
+      .pipe(Atom.setIdleTTL(0), Atom.withLabel(`environment-thread-state:${key}`));
   });
 
   return {
