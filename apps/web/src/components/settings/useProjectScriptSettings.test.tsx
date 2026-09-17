@@ -103,3 +103,44 @@ it("stops on failure and allows a retry", async () => {
   });
   expect(mocks.update).toHaveBeenCalledTimes(3);
 });
+
+it("reuses the action ID when retrying after a partial bulk save", async () => {
+  const retryTargets = targets.map((target) => ({ ...target }));
+  function RetryHarness() {
+    actions = useProjectScriptSettings(retryTargets);
+    return null;
+  }
+  await act(async () => renderer.update(<RetryHarness />));
+  let failSecond = true;
+  mocks.update.mockImplementation(async ({ environmentId, input }) => {
+    if (environmentId === "two" && failSecond)
+      return { _tag: "Failure", cause: Cause.fail(new Error("Disconnected")) };
+    const target = retryTargets.find((entry) => entry.environmentId === environmentId)!;
+    target.settings = {
+      ...target.settings,
+      projectSettingsOverrides: input.patch.projectSettingsOverrides,
+    };
+    return { _tag: "Success", value: undefined };
+  });
+  const input = {
+    name: "Build",
+    command: "pnpm build",
+    icon: "build" as const,
+    runOnWorktreeCreate: false,
+  };
+  await act(async () => {
+    expect(await actions.submit(null, input)).toMatchObject({ _tag: "Failure" });
+  });
+  await act(async () => renderer.update(<RetryHarness />));
+  failSecond = false;
+  await act(async () => {
+    expect(await actions.submit(null, input)).toMatchObject({ _tag: "Success" });
+  });
+  for (const target of retryTargets) {
+    const scripts =
+      target.settings.projectSettingsOverrides[ProjectId.make("shared-id")]!.defaultProjectScripts!;
+    expect(
+      scripts.filter((entry) => entry.command === "pnpm build").map((entry) => entry.id),
+    ).toEqual(["build"]);
+  }
+});

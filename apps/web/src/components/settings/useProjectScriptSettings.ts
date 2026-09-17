@@ -49,6 +49,7 @@ export function useProjectScriptSettings(
   const projects = useProjects();
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const failedCreation = useRef<{ key: string; id: string } | null>(null);
   const updateSettings = useAtomCommand(serverEnvironment.updateSettings, "project actions update");
   async function persist(
     transform: (current: readonly ProjectScript[]) => readonly ProjectScript[] | null,
@@ -95,7 +96,8 @@ export function useProjectScriptSettings(
     }
   }
 
-  function submit(scriptId: string | null, input: NewProjectScriptInput) {
+  async function submit(scriptId: string | null, input: NewProjectScriptInput) {
+    if (savingRef.current) return persist(() => null);
     const existingIds = [
       ...projects.flatMap((project) => project.scripts.map((script) => script.id)),
       ...targets.flatMap(({ settings, project }) =>
@@ -108,9 +110,17 @@ export function useProjectScriptSettings(
         ].map((script) => script.id),
       ),
     ];
-    const id = scriptId ?? nextProjectScriptId(input.name, existingIds);
+    const creationKey = JSON.stringify([
+      targets.map((target) => [target.environmentId, target.project?.id ?? null]),
+      input,
+    ]);
+    const id =
+      scriptId ??
+      (failedCreation.current?.key === creationKey
+        ? failedCreation.current.id
+        : nextProjectScriptId(input.name, existingIds));
     const next = buildProjectScript(id, input);
-    return persist((current) => {
+    const result = await persist((current) => {
       const updated = current.map((script) =>
         script.id === id
           ? next
@@ -118,8 +128,13 @@ export function useProjectScriptSettings(
             ? { ...script, runOnWorktreeCreate: false }
             : script,
       );
-      return scriptId === null ? [...updated, next] : updated;
+      return scriptId === null && !current.some((script) => script.id === id)
+        ? [...updated, next]
+        : updated;
     });
+    if (scriptId === null)
+      failedCreation.current = result._tag === "Failure" ? { key: creationKey, id } : null;
+    return result;
   }
 
   return { saving, persist, submit };
