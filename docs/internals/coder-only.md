@@ -93,9 +93,12 @@ the existing snapshot/replay and synchronization marker. Unused browser thread s
 released immediately. Following upstream's resume-snapshot design (`ea6af5924`), recent thread
 snapshots, including running messages and their applied event cursors, survive for five idle minutes
 without retaining RPC or environment scopes. The additional idle snapshot pool is limited to 24
-threads and 64 MiB of encoded data per browser atom registry; least recently used snapshots are
-removed when either limit is reached. Sizing runs after the live stream stops, outside the streaming
-update path. Settled snapshots also remain in the existing bounded memory-only cache.
+threads and 64 MiB of conservatively estimated data per browser atom registry; least recently used
+snapshots are removed when either limit is reached. Sizing uses string lengths without serializing
+or encoding message bodies, and stops after 8,192 values or 64 levels of nesting. Snapshots exceeding
+those limits are dropped. This can evict large or complex threads earlier than exact byte accounting,
+but avoids scanning large message bodies when navigating away. Settled snapshots also remain in the
+existing bounded memory-only cache.
 
 The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they

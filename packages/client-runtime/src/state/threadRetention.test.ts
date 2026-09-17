@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@effect/vitest";
+import { describe, expect, it, vi } from "@effect/vitest";
 
 import { makeThreadSnapshotRetention } from "./threadRetention.ts";
 
@@ -34,18 +34,53 @@ describe("idle thread snapshot limits", () => {
     expect(idle.snapshot).toBe("idle");
   });
 
-  it("enforces the aggregate 64 MiB UTF-8 budget and rejects an oversized snapshot", () => {
+  it("enforces the aggregate 64 MiB estimate and rejects an oversized snapshot", () => {
     const retention = makeThreadSnapshotRetention<string>();
-    const first = { snapshot: "a".repeat(32 * 1024 * 1024) as string | undefined };
+    const first = { snapshot: "a".repeat(6 * 1024 * 1024) as string | undefined };
     retention.retain(first);
-    const second = { snapshot: "é".repeat(16 * 1024 * 1024) as string | undefined };
+    expect(first.snapshot).toBeDefined();
+    const second = { snapshot: "é".repeat(6 * 1024 * 1024) as string | undefined };
     retention.retain(second);
-    // Each JSON string also includes quotes, so the combined size exceeds 64 MiB.
+    // Each string is conservatively charged six bytes per UTF-16 code unit.
     expect(first.snapshot).toBeUndefined();
     expect(second.snapshot).toBeDefined();
     const oversized = { snapshot: "a".repeat(64 * 1024 * 1024) as string | undefined };
     retention.retain(oversized);
     expect(oversized.snapshot).toBeUndefined();
     expect(second.snapshot).toBeDefined();
+  });
+
+  it("does not serialize or encode large message bodies when a thread becomes idle", () => {
+    const retention = makeThreadSnapshotRetention<object>();
+    const stringify = vi.spyOn(JSON, "stringify");
+    const encode = vi.spyOn(TextEncoder.prototype, "encode");
+    try {
+      const retained = { snapshot: { messages: [{ text: "x".repeat(8 * 1024 * 1024) }] } };
+      const oversized = { snapshot: { messages: [{ text: "x".repeat(32 * 1024 * 1024) }] } };
+      retention.retain(retained);
+      retention.retain(oversized);
+      expect(retained.snapshot).toBeDefined();
+      expect(oversized.snapshot).toBeUndefined();
+      expect(stringify).not.toHaveBeenCalled();
+      expect(encode).not.toHaveBeenCalled();
+    } finally {
+      stringify.mockRestore();
+      encode.mockRestore();
+    }
+  });
+
+  it("drops excessively wide or deep snapshots without exhausting the call stack", () => {
+    const retention = makeThreadSnapshotRetention<unknown>();
+    const wide = { snapshot: Array.from({ length: 8_193 }, () => 0) as unknown };
+    let nested: unknown = "leaf";
+    for (let index = 0; index < 100; index++) nested = [nested];
+    const deep = { snapshot: nested };
+    retention.retain(wide);
+    retention.retain(deep);
+    expect(wide.snapshot).toBeUndefined();
+    expect(deep.snapshot).toBeUndefined();
+    const next = { snapshot: "small" };
+    retention.retain(next);
+    expect(next.snapshot).toBe("small");
   });
 });
