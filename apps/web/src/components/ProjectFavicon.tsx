@@ -1,72 +1,135 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import {
-  BotIcon,
-  BookOpenIcon,
-  BracesIcon,
-  CircuitBoardIcon,
-  CloudCogIcon,
-  Code2Icon,
-  DatabaseIcon,
-  FlaskConicalIcon,
-  FolderCodeIcon,
-  Gamepad2Icon,
-  Globe2Icon,
-  ImageIcon,
-  Layers3Icon,
-  MonitorIcon,
-  MusicIcon,
-  PackageIcon,
-  ServerIcon,
-  ShieldCheckIcon,
-  ShoppingBagIcon,
-  SmartphoneIcon,
-  TerminalIcon,
-  VideoIcon,
-} from "lucide-react";
-import type { ComponentType } from "react";
-import { selectProjectIcon, type ProjectIconName } from "../projectIconModel";
+import type { ProjectIconOverride } from "@t3tools/contracts";
+import { FolderCodeIcon } from "lucide-react";
+import type { IconName } from "lucide-react/dynamic";
+import { lazy, Suspense, type ComponentType } from "react";
+import { deriveProjectIdentity } from "../projectIdentity";
+import { projectIconColorClassName } from "../projectIconColors";
 import { cn } from "~/lib/utils";
+const DynamicIcon = lazy(() =>
+  import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
+);
+function DynamicProjectIconFallback() {
+  return <FolderCodeIcon className="size-full text-[inherit]" />;
+}
 
-const PROJECT_ICONS: Record<ProjectIconName, ComponentType<{ className?: string }>> = {
-  ai: BotIcon,
-  book: BookOpenIcon,
-  braces: BracesIcon,
-  circuit: CircuitBoardIcon,
-  cloud: CloudCogIcon,
-  code: Code2Icon,
-  database: DatabaseIcon,
-  desktop: MonitorIcon,
-  "folder-code": FolderCodeIcon,
-  game: Gamepad2Icon,
-  image: ImageIcon,
-  layers: Layers3Icon,
-  mobile: SmartphoneIcon,
-  music: MusicIcon,
-  package: PackageIcon,
-  security: ShieldCheckIcon,
-  server: ServerIcon,
-  shopping: ShoppingBagIcon,
-  terminal: TerminalIcon,
-  test: FlaskConicalIcon,
-  video: VideoIcon,
-  web: Globe2Icon,
-};
-
-/**
- * Automatic upstream icons use project metadata already in memory.
- * Never fetch a favicon or resolve a workspace image path in the browser.
- */
-export type ProjectFaviconProject = Pick<EnvironmentProject, "title" | "workspaceRoot">;
-
+/** Upstream metadata icons and monograms, without workspace image reads. */
+export type ProjectFaviconProject = Pick<EnvironmentProject, "title" | "workspaceRoot"> &
+  Partial<Pick<EnvironmentProject, "environmentId" | "id" | "projectIcon">>;
+export function ProjectIconGraphic({
+  icon,
+  className,
+}: {
+  icon: ProjectIconOverride;
+  className?: string | undefined;
+}) {
+  if (icon.kind === "emoji")
+    return (
+      <ProjectFaviconFallback icon={FolderCodeIcon} emoji={icon.emoji} className={className} />
+    );
+  const colorClassName = projectIconColorClassName(icon.color);
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "inline-flex size-3.5 shrink-0 items-center justify-center",
+        colorClassName,
+        className,
+      )}
+    >
+      <Suspense fallback={<DynamicProjectIconFallback />}>
+        <DynamicIcon
+          name={icon.name as IconName}
+          className={cn("size-full", colorClassName)}
+          fallback={DynamicProjectIconFallback}
+        />
+      </Suspense>
+    </span>
+  );
+}
 export function ProjectFavicon(input: {
   readonly project: ProjectFaviconProject | null | undefined;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly fallbackIcon?: ComponentType<{ className?: string }>;
 }) {
-  const selection = selectProjectIcon(
-    input.project?.title ?? "",
-    input.project?.workspaceRoot ?? "",
+  if (input.project?.projectIcon)
+    return <ProjectIconGraphic icon={input.project.projectIcon} className={input.className} />;
+  return (
+    <ProjectFaviconFallback
+      icon={input.fallbackIcon ?? FolderCodeIcon}
+      className={input.className}
+      {...(!input.fallbackIcon && input.project ? { projectName: input.project.title } : {})}
+    />
   );
-  const Icon = input.fallbackIcon ?? PROJECT_ICONS[selection.icon];
-  return <Icon className={cn("size-3.5 shrink-0 text-icon-muted", input.className)} />;
+}
+
+function ProjectFaviconFallback({
+  className,
+  icon: Icon,
+  emoji,
+  projectName,
+}: {
+  readonly className?: string | undefined;
+  readonly icon: ComponentType<{ className?: string }>;
+  readonly emoji?: string | undefined;
+  readonly projectName?: string | undefined;
+}) {
+  if (projectName && projectName.trim().length > 0) {
+    const identity = deriveProjectIdentity(projectName);
+    return (
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 16 16"
+        className={cn(
+          "size-4 shrink-0 overflow-hidden rounded-[25%] font-mono select-none",
+          className,
+        )}
+        style={{
+          backgroundColor: identity.background,
+          backgroundImage: `linear-gradient(145deg, ${identity.highlight}, ${identity.background} 72%)`,
+        }}
+      >
+        <text
+          x="8"
+          y="10.8"
+          textAnchor="middle"
+          fill="white"
+          className="font-mono"
+          fontSize="8.25"
+          fontWeight="700"
+          textLength="12"
+          lengthAdjust="spacingAndGlyphs"
+          textRendering="geometricPrecision"
+        >
+          {identity.monogram}
+        </text>
+        <rect
+          x="0.25"
+          y="0.25"
+          width="15.5"
+          height="15.5"
+          rx="3.75"
+          fill="none"
+          strokeWidth="0.5"
+          className="stroke-black/10 dark:stroke-white/10"
+        />
+      </svg>
+    );
+  }
+
+  if (emoji) {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn(
+          "inline-flex size-3.5 shrink-0 items-center justify-center leading-none [container-type:size]",
+          className,
+        )}
+      >
+        <span className="text-[length:80cqh] leading-none">{emoji}</span>
+      </span>
+    );
+  }
+
+  return <Icon className={cn("size-3.5 shrink-0 text-icon-muted", className)} />;
 }

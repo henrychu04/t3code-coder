@@ -1,3 +1,4 @@
+import { ProjectGetConfigInput, ProjectGetConfigResult } from "./t3ProjectFile.ts";
 import {
   WorktreeSetupSubscribeInput,
   WorktreeSetupStreamEvent,
@@ -160,6 +161,7 @@ import {
 } from "./screenshotArtifact.ts";
 
 export const WS_METHODS = {
+  projectsGetConfig: "projects.getConfig",
   projectsSearchEntries: "projects.searchEntries",
   projectsSearchText: "projects.searchText",
   projectsListEntries: "projects.listEntries",
@@ -266,6 +268,11 @@ const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, 
   payload: ServerRemoveKeybindingInput,
   success: ServerRemoveKeybindingResult,
   error: KeybindingsConfigError,
+});
+
+const WsProjectsGetConfigRpc = Rpc.make(WS_METHODS.projectsGetConfig, {
+  payload: ProjectGetConfigInput,
+  success: ProjectGetConfigResult,
 });
 
 const WsProjectsSearchEntriesRpc = Rpc.make(WS_METHODS.projectsSearchEntries, {
@@ -704,6 +711,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsServerUpdateSettingsRpc,
   WsServerUpsertKeybindingRpc,
   WsServerRemoveKeybindingRpc,
+  WsProjectsGetConfigRpc,
   WsProjectsSearchEntriesRpc,
   WsProjectsSearchTextRpc,
   WsProjectsListEntriesRpc,

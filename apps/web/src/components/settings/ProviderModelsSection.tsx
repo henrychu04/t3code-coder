@@ -11,6 +11,7 @@ import type {
 
 import { cn } from "../../lib/utils";
 import { sortModelsForProviderInstance } from "../../modelOrdering";
+import { Input } from "../ui/input";
 import { Button } from "../ui/button";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -65,16 +66,22 @@ export function ProviderModelsSection({
 }: ProviderModelsSectionProps) {
   const [editing, setEditing] = useState<CustomModelDefinition | null>(null);
   const customEntries = useMemo(() => readCustomModelEntries(customModels), [customModels]);
+  const [filter, setFilter] = useState("");
   const hiddenModelSet = useMemo(() => new Set(hiddenModels), [hiddenModels]);
   const favoriteModelSet = useMemo(() => new Set(favoriteModels), [favoriteModels]);
   const builtInModels = useMemo(() => models.filter((model) => !model.isCustom), [models]);
   const orderedModels = useMemo(() => {
-    return sortModelsForProviderInstance(builtInModels, {
+    const ordered = sortModelsForProviderInstance(builtInModels, {
       favoriteModels: favoriteModelSet,
       groupFavorites: true,
       modelOrder,
     });
-  }, [builtInModels, favoriteModelSet, modelOrder]);
+    return [
+      ...ordered.filter((m) => favoriteModelSet.has(m.slug)),
+      ...ordered.filter((m) => !favoriteModelSet.has(m.slug) && !hiddenModelSet.has(m.slug)),
+      ...ordered.filter((m) => !favoriteModelSet.has(m.slug) && hiddenModelSet.has(m.slug)),
+    ];
+  }, [builtInModels, favoriteModelSet, modelOrder, hiddenModelSet]);
 
   const handleToggleHidden = (slug: string) => {
     if (hiddenModelSet.has(slug)) {
@@ -177,11 +184,24 @@ export function ProviderModelsSection({
           </Button>
         ) : null}
       </div>
+      {builtInModels.length > 8 ? (
+        <Input
+          aria-label="Filter models"
+          placeholder="Filter models"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+      ) : null}
       <div className="mt-1 text-xs text-muted-foreground">
         {builtInModels.length} model{builtInModels.length === 1 ? "" : "s"} available.
       </div>
       <div className="mt-2 max-h-40 overflow-y-auto pb-1 lg:min-h-0 lg:max-h-none lg:flex-1">
         {orderedModels.map((model, index) => {
+          if (
+            filter &&
+            !`${model.name} ${model.slug}`.toLowerCase().includes(filter.toLowerCase().trim())
+          )
+            return null;
           const caps = model.capabilities;
           const capLabels: string[] = [];
           const isHidden = hiddenModelSet.has(model.slug);
@@ -189,9 +209,13 @@ export function ProviderModelsSection({
           const previousModel = orderedModels[index - 1];
           const nextModel = orderedModels[index + 1];
           const canMoveUp =
-            previousModel !== undefined && favoriteModelSet.has(previousModel.slug) === isFavorite;
+            previousModel !== undefined &&
+            favoriteModelSet.has(previousModel.slug) === isFavorite &&
+            (isFavorite || hiddenModelSet.has(previousModel.slug) === isHidden);
           const canMoveDown =
-            nextModel !== undefined && favoriteModelSet.has(nextModel.slug) === isFavorite;
+            nextModel !== undefined &&
+            favoriteModelSet.has(nextModel.slug) === isFavorite &&
+            (isFavorite || hiddenModelSet.has(nextModel.slug) === isHidden);
           const descriptors = caps?.optionDescriptors ?? [];
           if (descriptors.some((descriptor) => descriptor.id === "fastMode")) {
             capLabels.push("Fast mode");

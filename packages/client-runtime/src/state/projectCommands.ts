@@ -55,6 +55,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.projectId]),
   };
   return {
+    getConfig: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:config",
+      tag: WS_METHODS.projectsGetConfig,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+    }),
     searchEntries: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:search-entries",
       tag: WS_METHODS.projectsSearchEntries,

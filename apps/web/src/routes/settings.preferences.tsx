@@ -1,13 +1,23 @@
+import { BackgroundActivitySettings } from "../components/settings/BackgroundActivitySettings";
+import { ENVIRONMENT_MACHINE_KINDS, type EnvironmentMachineKind } from "@t3tools/contracts";
+import {
+  EnvironmentMachineIcon,
+  ENVIRONMENT_MACHINE_KIND_LABELS,
+} from "../components/EnvironmentMachineIcon";
+import { NotificationSettings } from "../components/settings/NotificationSettings";
+import { DraftInput } from "../components/ui/draft-input";
+import { ProjectActionsSettings } from "../components/settings/ProjectActionsSettings";
+import { useSettingsScope } from "../components/settings/SettingsScopeContext";
+import { useT3ProjectFile } from "../hooks/useT3ProjectFile";
+import { ProjectDefaultModelSetting } from "../components/settings/ProjectDefaultSettings";
 import { ScopedSwitch } from "../components/settings/ScopedSwitch";
 import {
   useScopedSettings,
+  useScopedSettingsMixed,
   useUpdateScopedSettings,
 } from "../components/settings/useScopedSettings";
 import { ResponseSettings } from "../components/settings/ResponseSettings";
-import {
-  RestoreClientSettings,
-  RestoreWorkspaceSettings,
-} from "../components/settings/RestoreSettings";
+import { RestoreWorkspaceSettings } from "../components/settings/RestoreSettings";
 import {
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
@@ -110,9 +120,85 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const providers = props.environment.serverConfig?.providers ?? [];
+  const { target, targets } = useSettingsScope();
+  const repository = useT3ProjectFile(targets.length === 1 ? target : null);
+  const repositoryDefault = repository.file?.defaultThreadEnvMode;
+  const mixedCheckoutMode = useScopedSettingsMixed(["defaultThreadEnvMode"]);
+  const checkoutMode =
+    target?.sources.defaultThreadEnvMode === "project"
+      ? settings.defaultThreadEnvMode
+      : (repositoryDefault ?? settings.defaultThreadEnvMode);
 
   return (
     <>
+      <SettingsSection title="Workspace identity">
+        <SettingsRow
+          title="Workspace icon"
+          id="environment-icon"
+          settingKeys={["environmentIcon"]}
+          control={
+            <Select
+              value={settings.environmentIcon ?? "server"}
+              onValueChange={(value) => {
+                if (value && ENVIRONMENT_MACHINE_KINDS.includes(value as EnvironmentMachineKind))
+                  updateSettings({ environmentIcon: value as EnvironmentMachineKind });
+              }}
+            >
+              <SelectTrigger aria-label="Workspace icon">
+                <EnvironmentMachineIcon
+                  className="size-4"
+                  kind={settings.environmentIcon ?? "server"}
+                />
+                <SelectValue>
+                  {ENVIRONMENT_MACHINE_KIND_LABELS[settings.environmentIcon ?? "server"]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup>
+                {ENVIRONMENT_MACHINE_KINDS.map((kind) => (
+                  <SelectItem key={kind} value={kind}>
+                    {ENVIRONMENT_MACHINE_KIND_LABELS[kind]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+      </SettingsSection>
+      <BackgroundActivitySettings />
+      <SettingsSection title="Recovery">
+        <SettingsRow
+          id="continue-threads-after-server-update"
+          title="Continue threads after restarts"
+          settingKeys={["continueThreadsAfterServerUpdate"]}
+          description="Resume interrupted work when the workspace helper starts again after a crash or restart."
+          control={
+            <Switch
+              aria-label="Continue threads after restarts"
+              checked={settings.continueThreadsAfterServerUpdate}
+              onCheckedChange={(continueThreadsAfterServerUpdate) =>
+                updateSettings({ continueThreadsAfterServerUpdate })
+              }
+            />
+          }
+        />
+      </SettingsSection>
+      <SettingsSection title="Projects">
+        <SettingsRow
+          id="add-project-starts-in"
+          title="Add project starts in"
+          settingKeys={["addProjectBaseDirectory"]}
+          description="Starting folder for Add Project in the selected workspace. Leave empty to use the workspace home."
+          control={
+            <DraftInput
+              aria-label="Add project starts in"
+              value={settings.addProjectBaseDirectory}
+              onCommit={(addProjectBaseDirectory) => updateSettings({ addProjectBaseDirectory })}
+              placeholder="~/"
+            />
+          }
+        />
+      </SettingsSection>
+
       <RestoreWorkspaceSettings environmentId={environmentId} settings={settings} />
       <TextGenerationModelSettings
         environmentId={environmentId}
@@ -127,12 +213,17 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
         title="New threads"
         description="Choose how new work starts inside the selected Coder workspace."
       >
+        <ProjectDefaultModelSetting />
         <ResponseSettings settings={settings} onChange={updateSettings} />
         <SettingsRow
           id="default-checkout-mode"
           settingKeys={["defaultThreadEnvMode"]}
           title="Default checkout mode"
-          description="Work in the project checkout or create a dedicated Git worktree."
+          description={
+            repositoryDefault
+              ? `Repository default: ${repositoryDefault === "worktree" ? "Worktree" : "Local"} (t3.json)`
+              : "Work in the project checkout or create a dedicated Git worktree."
+          }
           resetAction={
             settings.defaultThreadEnvMode !== DEFAULT_SERVER_SETTINGS.defaultThreadEnvMode ? (
               <SettingResetButton
@@ -147,7 +238,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
           }
           control={
             <Select
-              value={settings.defaultThreadEnvMode}
+              value={mixedCheckoutMode ? null : checkoutMode}
               onValueChange={(value) => {
                 if (value === "local" || value === "worktree") {
                   updateSettings({ defaultThreadEnvMode: value });
@@ -160,11 +251,9 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
                 aria-label="Default checkout mode"
               >
                 <SelectValue>
-                  {
-                    { local: "Project checkout", worktree: "New worktree" }[
-                      settings.defaultThreadEnvMode
-                    ]
-                  }
+                  {mixedCheckoutMode
+                    ? "Mixed"
+                    : { local: "Project checkout", worktree: "New worktree" }[checkoutMode]}
                 </SelectValue>
               </SelectTrigger>
               <SelectPopup align="end" alignItemWithTrigger={false}>
@@ -294,6 +383,7 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
 }
 
 function GeneralSettingsView() {
+  const { scope } = useSettingsScope();
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
   );
@@ -302,12 +392,40 @@ function GeneralSettingsView() {
 
   return (
     <SettingsPage>
-      <RestoreClientSettings />
       <ScopedSettingsTarget>
         {(environment) => (
           <WorkspaceGeneralSettings key={environment.environmentId} environment={environment} />
         )}
       </ScopedSettingsTarget>
+      {scope.kind === "all" || scope.kind === "environment" ? <ProjectActionsSettings /> : null}
+      <SettingsSection title="Composer">
+        <SettingsRow
+          id="plan-mode"
+          title="Plan mode"
+          description="Restore Build/Plan, /plan, /default, and Shift+Tab. Off uses build mode."
+          control={
+            <Switch
+              aria-label="Plan mode"
+              checked={settings.planModeEnabled}
+              onCheckedChange={(planModeEnabled) => updateSettings({ planModeEnabled })}
+            />
+          }
+        />
+        <SettingsRow
+          id="context-window-indicator"
+          title="Context window indicator"
+          description="Show context window usage in the composer."
+          control={
+            <Switch
+              aria-label="Context window indicator"
+              checked={settings.contextWindowMeterEnabled}
+              onCheckedChange={(contextWindowMeterEnabled) =>
+                updateSettings({ contextWindowMeterEnabled })
+              }
+            />
+          }
+        />
+      </SettingsSection>
 
       <SettingsSection
         id="notifications"
@@ -324,18 +442,7 @@ function GeneralSettingsView() {
             />
           }
         />
-        <SettingsRow
-          title="Notification sounds"
-          description="Play a sound when a thread finishes or needs your attention."
-          control={
-            <Switch
-              checked={settings.notificationMode === "sound"}
-              onCheckedChange={(checked) =>
-                updateSettings({ notificationMode: checked ? "sound" : "off" })
-              }
-            />
-          }
-        />
+        <NotificationSettings />
       </SettingsSection>
       <SettingsSection title="Sidebar" description="Control project grouping and thread ordering.">
         <SettingsRow

@@ -158,7 +158,7 @@ describe("workspace provider settings", () => {
     expect(markup).toContain('aria-label="Reset auto-compact window to default"');
     expect(markup).not.toContain("Binary path");
     expect(markup).not.toContain("CLAUDE_CONFIG_DIR path");
-    expect(markup).not.toContain("Display name");
+    expect(markup).toContain("Display name");
     expect(markup).not.toContain("Environment variables");
     expect(markup).not.toContain("Update now");
   });

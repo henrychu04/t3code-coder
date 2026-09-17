@@ -2136,17 +2136,20 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
           model: "gpt-5",
         },
         faviconPath: "brand/icon.svg",
+        projectIcon: { kind: "emoji", emoji: "🚀" },
       });
 
       const projectRows = yield* sql<{
         readonly scriptsJson: string;
         readonly defaultModelSelection: string;
         readonly faviconPath: string | null;
+        readonly projectIcon: string | null;
       }>`
         SELECT
           scripts_json AS "scriptsJson",
           default_model_selection_json AS "defaultModelSelection",
-          favicon_path AS "faviconPath"
+          favicon_path AS "faviconPath",
+          project_icon_json AS "projectIcon"
         FROM projection_projects
         WHERE project_id = 'project-scripts'
       `;
@@ -2156,8 +2159,30 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
             '[{"id":"script-1","name":"Build","command":"bun run build","icon":"build","runOnWorktreeCreate":false}]',
           defaultModelSelection: '{"instanceId":"codex","model":"gpt-5"}',
           faviconPath: "brand/icon.svg",
+          projectIcon: '{"kind":"emoji","emoji":"🚀"}',
         },
       ]);
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const snapshot = yield* snapshotQuery.getSnapshot();
+      assert.deepEqual(
+        snapshot.projects.find((project) => project.id === "project-scripts")?.projectIcon,
+        { kind: "emoji", emoji: "🚀" },
+      );
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-icon-reset"),
+        projectId: ProjectId.make("project-scripts"),
+        projectIcon: null,
+      });
+      const reset = yield* snapshotQuery.getSnapshot();
+      assert.equal(
+        reset.projects.find((project) => project.id === "project-scripts")?.projectIcon,
+        null,
+      );
+      const resetRows = yield* sql<{
+        readonly icon: string | null;
+      }>`SELECT project_icon_json AS icon FROM projection_projects WHERE project_id = 'project-scripts'`;
+      assert.equal(resetRows[0]?.icon, null);
     }),
   );
 

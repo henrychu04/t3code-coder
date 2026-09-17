@@ -1,787 +1,485 @@
-import { SourceControlPreferences } from "./SourceControlPreferences";
-import type { ProjectSettingsOverrides } from "@t3tools/contracts";
-import { clearProjectSettingsOverrides } from "@t3tools/shared/projectSettings";
-import { ResponseSettings } from "./ResponseSettings";
-import { TextGenerationModelSettings } from "./TextGenerationModelSettings";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import type { PullRequestMergeMethod } from "@t3tools/contracts";
-import { PULL_REQUEST_MERGE_METHOD_LABELS } from "../pullRequest/pullRequestDetail.logic";
-import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
-import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
-import { serverEnvironment } from "../../state/server";
-import { useCanGoBack, useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
+  mapAtomCommandResult,
+  settlePromise,
   squashAtomCommandFailure,
+  type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
-import { createModelSelection } from "@t3tools/shared/model";
-import { ArrowLeftIcon } from "lucide-react";
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { type EnvironmentId, type ProjectIconOverride } from "@t3tools/contracts";
+import { useLocation, useNavigate } from "@tanstack/react-router";
+import * as Cause from "effect/Cause";
+import { Trash2Icon } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { parseProjectSettingsKey, projectSettingsTarget } from "../../projectSettingsTarget";
-import { readProject, useProject, useProjects } from "../../state/entities";
-import { useEnvironment, useEnvironments } from "../../state/environments";
+import { useComposerDraftStore } from "../../composerDraftStore";
+import { readLocalApi } from "../../localApi";
+import {
+  type SidebarProjectGroupMember,
+  type SidebarProjectSnapshot,
+} from "../../sidebarProjectGrouping";
+import { useEnvironments } from "../../state/environments";
+import { useThreadShells } from "../../state/entities";
 import { projectEnvironment } from "../../state/projects";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { getModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveCoderProviderInstanceEntries,
-  sortProviderInstanceEntries,
-} from "../../providerInstances";
-import { ProviderModelPicker } from "../chat/ProviderModelPicker";
-import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { WorkspacePageContainer } from "../WorkspacePageContainer";
-import { SidebarInset } from "../ui/sidebar";
+import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
-import { Switch } from "../ui/switch";
-import { Textarea } from "../ui/textarea";
-import { SettingsRow, SettingsSection } from "./SettingsPage";
-import {
-  projectSettingsChanged,
-  projectSettingsValues,
-  validateProjectSettings,
-} from "./ProjectSettingsPanel.logic";
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import { SettingResetButton, SettingsRow, SettingsSection } from "./SettingsPage";
+import { SettingsPage as SettingsPageContainer } from "./SettingsPage";
+import { ProjectActionsSettings } from "./ProjectActionsSettings";
+import { projectGroupTitleNeedsUpdate } from "./ProjectSettingsPanel.logic";
+import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 
-/** Upstream's dedicated project route, scoped to a single workspace-owned checkout. */
-export function ProjectSettingsPage({ projectKey }: { projectKey: string }) {
-  const ref = parseProjectSettingsKey(projectKey);
-  const project = useProject(ref);
-  const projects = useProjects();
-  const { environments, isReady } = useEnvironments();
-  const navigate = useNavigate();
-  const canGoBack = useCanGoBack();
-  const goBack = useCallback(() => {
-    if (canGoBack) window.history.back();
-    else void navigate({ to: "/" });
-  }, [canGoBack, navigate]);
+const ProjectIconPickerDialog = lazy(() =>
+  import("./ProjectIconPickerDialog").then((module) => ({
+    default: module.ProjectIconPickerDialog,
+  })),
+);
+
+function memberKey(member: { environmentId: string; id: string }): string {
+  return `${member.environmentId}:${member.id}`;
+}
+
+export type ProjectSettingsCategory = "general" | "integrations" | "source-control";
+
+export function ProjectSettingsPanel({
+  projectKey,
+  environmentId = null,
+  checkoutKey = null,
+}: {
+  projectKey: string;
+  environmentId?: EnvironmentId | null;
+  checkoutKey?: string | null;
+}) {
+  const groups = useSettingsProjectGroups();
+  const navigate = useNavigate({ from: "/settings" });
+  const pathname = useLocation({ select: (location) => location.pathname });
+
+  const selected = groups.find((group) => group.projectKey === projectKey) ?? null;
+  const members = useMemo(
+    () =>
+      selected?.memberProjects.filter(
+        (member) =>
+          (environmentId === null || member.environmentId === environmentId) &&
+          (checkoutKey === null || member.physicalProjectKey === checkoutKey),
+      ) ?? [],
+    [selected, environmentId, checkoutKey],
+  );
+
+  // Remember the members of the last rendered group so a grouping-rule change
+  // (which changes the group key) can follow the project to its new group.
+  const lastSelectionRef = useRef<{
+    key: string;
+    environmentId: EnvironmentId | null;
+    checkoutKey: string | null;
+    memberKeys: string[];
+  } | null>(null);
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.key !== "Escape" ||
-        document.querySelector('[role="dialog"]')
-      )
-        return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
-      )
-        return;
-      event.preventDefault();
-      goBack();
+    if (!selected || members.length === 0) return;
+    lastSelectionRef.current = {
+      key: selected.projectKey,
+      environmentId,
+      checkoutKey,
+      memberKeys: members.map((member) => member.physicalProjectKey),
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [goBack]);
+  }, [selected, members, environmentId, checkoutKey]);
 
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-      <WorkspacePageHeader>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Back from project settings"
-          onClick={goBack}
-        >
-          <ArrowLeftIcon />
-        </Button>
-        <h1 className="font-medium">Project settings</h1>
-        <select
-          aria-label="Project settings checkout"
-          className="ml-auto min-w-0 max-w-sm rounded border bg-background p-1 text-sm"
-          value={project ? projectSettingsTarget(project).params.projectKey : ""}
-          onChange={(event) => {
-            const selected = projects.find(
-              (candidate) =>
-                projectSettingsTarget(candidate).params.projectKey === event.target.value,
-            );
-            if (selected) void navigate(projectSettingsTarget(selected));
-          }}
-        >
-          {!project && <option value="">Select a project</option>}
-          {projects.map((candidate) => (
-            <option
-              key={projectSettingsTarget(candidate).params.projectKey}
-              value={projectSettingsTarget(candidate).params.projectKey}
-            >
-              {candidate.title} ·{" "}
-              {environments.find(
-                (environment) => environment.environmentId === candidate.environmentId,
-              )?.label ?? candidate.environmentId}
-            </option>
-          ))}
-        </select>
-      </WorkspacePageHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <WorkspacePageContainer width="wide">
-          {project ? (
-            <ProjectSettingsPanel key={projectKey} project={project} />
-          ) : (
-            <p role="status">
-              {!ref
-                ? "Invalid project settings link."
-                : !isReady
-                  ? "Loading project settings…"
-                  : "Project unavailable. Connect its Coder workspace or select another project."}
-            </p>
-          )}
-        </WorkspacePageContainer>
+  // A grouping-rule change replaces the group key mid-visit; follow the
+  // project to its new key instead of parking on the not-found state.
+  useEffect(() => {
+    if (members.length > 0) return;
+    const last = lastSelectionRef.current;
+    if (
+      last?.key !== projectKey ||
+      last.environmentId !== environmentId ||
+      last.checkoutKey !== checkoutKey
+    )
+      return;
+    const successor = groups.find((group) =>
+      group.memberProjects.some((member) => last.memberKeys.includes(member.physicalProjectKey)),
+    );
+    if (successor) {
+      void navigate({
+        to: pathname,
+        search: () => ({
+          project: successor.projectKey,
+          machine: environmentId ?? undefined,
+          checkout: checkoutKey ?? undefined,
+        }),
+        replace: true,
+        hashScrollIntoView: false,
+      });
+    }
+  }, [groups, navigate, pathname, projectKey, members.length, environmentId, checkoutKey]);
+
+  if (!selected) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-8 text-sm text-muted-foreground">
+        {groups.length === 0
+          ? "Add a project from the sidebar to configure it here."
+          : "This project is no longer available."}
       </div>
-    </SidebarInset>
+    );
+  }
+  if (members.length === 0)
+    return (
+      <p className="p-8 text-sm text-muted-foreground">
+        This checkout is no longer available in the selected project and environment.
+      </p>
+    );
+  const scopedGroup = {
+    ...selected,
+    memberProjects: members,
+    environmentId: members[0]!.environmentId,
+    id: members[0]!.id,
+  };
+  return (
+    <ProjectDetail
+      key={`${selected.projectKey}:${environmentId ?? "all"}:${checkoutKey ?? "all"}`}
+      group={scopedGroup}
+      hasOtherMembers={members.length < selected.memberProjects.length}
+    />
   );
 }
 
-export function ProjectSettingsPanel({ project }: { project: EnvironmentProject }) {
-  const environment = useEnvironment(project.environmentId);
-  const settings = useEnvironmentSettings(project.environmentId);
-  const scopedSettings = resolveProjectSettings(settings, project.id, project);
-  const resolvedProject = {
-    ...project,
-    defaultModelSelection: scopedSettings.overrides.defaultModelSelection ?? null,
-    defaultThreadEnvMode: scopedSettings.overrides.defaultThreadEnvMode ?? null,
-    autoPull: resolveProjectAutoPull(settings, project.id, project.autoPull),
-    scripts: resolveProjectScripts(settings, project),
-  };
-  const updateSettings = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
+function ProjectDetail({
+  group,
+  hasOtherMembers,
+}: {
+  group: SidebarProjectSnapshot;
+  hasOtherMembers: boolean;
+}) {
+  const navigate = useNavigate({ from: "/settings" });
+  const { environments } = useEnvironments();
+  const environmentById = useMemo(
+    () => new Map(environments.map((environment) => [environment.environmentId, environment])),
+    [environments],
+  );
+  const representative =
+    group.memberProjects.find(
+      (member) => environmentById.get(member.environmentId)?.serverConfig != null,
+    ) ?? group.memberProjects[0]!;
+  const threads = useThreadShells();
   const updateProject = useAtomCommand(projectEnvironment.update, { reportFailure: false });
-  const [baseline, setBaseline] = useState<ReturnType<typeof projectSettingsValues> | null>(() =>
-    environment?.serverConfig ? projectSettingsValues(resolvedProject) : null,
-  );
-  const [values, setValues] = useState(baseline);
-  const [pending, setPending] = useState(false);
-  const saving = useRef(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  // Capture the first hydrated snapshot only; later changes must remain stale.
-  if (baseline === null || values === null) {
-    if (environment?.serverConfig) {
-      const initialValues = projectSettingsValues(resolvedProject);
-      setBaseline(initialValues);
-      setValues(initialValues);
-    }
-    return <p role="status">Loading project settings…</p>;
-  }
-  const connected = environment?.connection.phase === "connected";
-  const stale = projectSettingsChanged(baseline, resolvedProject);
-  const providers = environment?.serverConfig?.providers ?? [];
-  const selection =
-    values.defaultModelSelection ??
-    settings.defaultModelSelection ??
-    resolveAppModelSelectionState(settings, providers);
-  const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveCoderProviderInstanceEntries(providers), settings),
-  );
-  const modelOptionsByInstance = getModelOptionsByInstance(
-    settings,
-    providers,
-    selection.instanceId,
-    selection.model,
-  );
+  const deleteProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
+  const projectNameEditedRef = useRef(false);
 
-  const isCurrent = () => {
-    const current = readProject({ environmentId: project.environmentId, projectId: project.id });
-    if (
-      !current ||
-      projectSettingsChanged(baseline, {
-        ...current,
-        defaultModelSelection:
-          resolveProjectSettings(settings, current.id, current).overrides.defaultModelSelection ??
-          null,
-        defaultThreadEnvMode:
-          resolveProjectSettings(settings, current.id, current).overrides.defaultThreadEnvMode ??
-          null,
-        autoPull: resolveProjectAutoPull(settings, current.id, current.autoPull),
-        scripts: resolveProjectScripts(settings, current),
-      })
-    ) {
-      setNotice("Project settings changed elsewhere. Reload settings before saving.");
-      return false;
-    }
-    return true;
-  };
+  const faviconPath = representative.faviconPath ?? null;
+  const projectIcon = representative.projectIcon ?? null;
+  const reportFailure = useCallback((title: string, result: AtomCommandResult<void, unknown>) => {
+    if (result._tag !== "Failure" || isAtomCommandInterrupted(result)) return;
+    const error = squashAtomCommandFailure(result);
+    toastManager.add(
+      stackedThreadToast({
+        type: "error",
+        title,
+        description: error instanceof Error ? error.message : "An error occurred.",
+      }),
+    );
+  }, []);
 
-  const save = async () => {
-    if (saving.current || !connected || !isCurrent()) return;
-    const normalized = {
-      ...values,
-      title: values.title.trim(),
-      scripts: values.scripts.map((script) => ({
-        ...script,
-        name: script.name.trim(),
-        command: script.command.trim(),
-      })),
-    };
-    const validation = validateProjectSettings(normalized);
-    if (validation) {
-      setNotice(validation);
-      return;
-    }
-    saving.current = true;
-    setPending(true);
-    setNotice(null);
-    try {
-      const result = await updateProject({
-        environmentId: project.environmentId,
-        input: {
-          projectId: project.id,
-          title: normalized.title,
-          ...(JSON.stringify(normalized.defaultModelSelection) !==
-          JSON.stringify(baseline.defaultModelSelection)
-            ? { defaultModelSelection: normalized.defaultModelSelection }
-            : {}),
-          ...(normalized.defaultThreadEnvMode !== baseline.defaultThreadEnvMode
-            ? { defaultThreadEnvMode: normalized.defaultThreadEnvMode }
-            : {}),
-          ...(normalized.autoPull !== baseline.autoPull ? { autoPull: normalized.autoPull } : {}),
-          ...(JSON.stringify(normalized.scripts) !== JSON.stringify(baseline.scripts)
-            ? { scripts: normalized.scripts }
-            : {}),
-        },
+  // Group-shared fields live on each physical project record, so a
+  // group-level edit fans out to every member.
+  const updateAllMembers = useCallback(
+    async (
+      input: Partial<{
+        title: string;
+        faviconPath: string | null;
+        projectIcon: ProjectIconOverride | null;
+      }>,
+      failureTitle: string,
+    ): Promise<AtomCommandResult<void, unknown>> => {
+      const unavailable = group.memberProjects.find((member) => {
+        const environment = environmentById.get(member.environmentId);
+        return environment?.connection.phase !== "connected" || !environment.serverConfig;
       });
-      if (result._tag === "Failure") {
-        if (!isAtomCommandInterrupted(result)) {
-          const error = squashAtomCommandFailure(result);
-          setNotice(error instanceof Error ? error.message : "Could not save project settings.");
+      if (unavailable) {
+        const error = new Error(
+          `Connect ${unavailable.environmentLabel ?? "the selected environment"} and try again.`,
+        );
+        const result: AtomCommandResult<void, unknown> = AsyncResult.failure(Cause.fail(error));
+        reportFailure(failureTitle, result);
+        return result;
+      }
+      for (const member of group.memberProjects) {
+        const result = mapAtomCommandResult(
+          await updateProject({
+            environmentId: member.environmentId,
+            input: { projectId: member.id, ...input },
+          }),
+          () => undefined,
+        );
+        if (result._tag === "Failure") {
+          // A partial fan-out is possible: earlier members already took the
+          // write. Name the environment so the user knows where it stopped.
+          reportFailure(
+            group.memberProjects.length > 1
+              ? `${failureTitle} on ${member.environmentLabel ?? "the current environment"}`
+              : failureTitle,
+            result,
+          );
+          return result;
         }
-        return;
       }
-      const patch = {
-        ...(normalized.autoPull !== baseline.autoPull
-          ? { projectAutoPullOverrides: { [project.id]: normalized.autoPull } }
-          : {}),
-        ...(JSON.stringify(normalized.scripts) !== JSON.stringify(baseline.scripts)
-          ? { projectScriptOverrides: { [project.id]: normalized.scripts } }
-          : {}),
-      };
-      const overrideResult = Object.keys(patch).length
-        ? await updateSettings({ environmentId: project.environmentId, input: { patch } })
-        : { _tag: "Success" };
-      if (overrideResult._tag === "Failure") {
-        setNotice("Project saved, but overrides could not be saved. Reload before retrying.");
-        return;
-      }
-      setBaseline(normalized);
-      setValues(normalized);
-      setNotice("Project settings saved.");
-    } finally {
-      saving.current = false;
-      setPending(false);
-    }
-  };
+      return AsyncResult.success(undefined);
+    },
+    [environmentById, group.memberProjects, reportFailure, updateProject],
+  );
 
-  const saveOverrides = async (next: ProjectSettingsOverrides | null) => {
-    if (saving.current || !connected) return;
-    saving.current = true;
-    setPending(true);
-    try {
-      const result = await updateSettings({
-        environmentId: project.environmentId,
-        input: { patch: { projectSettingsOverrides: { [project.id]: next } } },
-      });
-      setNotice(
-        result._tag === "Failure"
-          ? "Could not save project overrides."
-          : "Project overrides saved.",
+  const renameGroup = useCallback(
+    async (nextTitle: string, wasEdited: boolean) => {
+      const title = nextTitle.trim();
+      if (!title) {
+        toastManager.add({ type: "warning", title: "Project title cannot be empty" });
+        return;
+      }
+      if (
+        !projectGroupTitleNeedsUpdate(
+          group.memberProjects.map((member) => member.title),
+          title,
+          wasEdited,
+        )
+      ) {
+        return;
+      }
+      await updateAllMembers({ title }, "Failed to rename project");
+    },
+    [group.memberProjects, updateAllMembers],
+  );
+
+  // ----- project icon -----
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [isSavingFavicon, setIsSavingFavicon] = useState(false);
+  const savingFaviconRef = useRef(false);
+  const setProjectIcon = useCallback(
+    async (input: { faviconPath: string | null; projectIcon: ProjectIconOverride | null }) => {
+      if (savingFaviconRef.current) return;
+      savingFaviconRef.current = true;
+      setIsSavingFavicon(true);
+      try {
+        await updateAllMembers(input, "Failed to update project icon");
+      } finally {
+        savingFaviconRef.current = false;
+        setIsSavingFavicon(false);
+      }
+    },
+    [updateAllMembers],
+  );
+
+  const hasMultipleCheckouts = group.memberProjects.length > 1;
+
+  const removeMembers = useCallback(
+    async (members: ReadonlyArray<SidebarProjectGroupMember>) => {
+      const api = readLocalApi();
+      if (!api) return;
+
+      const memberKeys = new Set(members.map(memberKey));
+      const projectThreads = threads.filter((thread) =>
+        memberKeys.has(`${thread.environmentId}:${thread.projectId}`),
       );
-    } finally {
-      saving.current = false;
-      setPending(false);
-    }
-  };
+      const isWholeGroup = members.length === group.memberProjects.length;
+      const targetKind = hasOtherMembers || !isWholeGroup ? "checkout" : "project";
+      const singleMember = members.length === 1 ? members[0]! : null;
+      const targetLabel = singleMember?.title ?? group.displayName;
+      const confirmed = await settlePromise(() =>
+        api.dialogs.confirm(
+          [
+            projectThreads.length > 0
+              ? `Remove ${targetKind} "${targetLabel}" and delete its ${projectThreads.length} thread${projectThreads.length === 1 ? "" : "s"}?`
+              : `Remove ${targetKind} "${targetLabel}"?`,
+            ...(singleMember
+              ? [
+                  `Path: ${singleMember.workspaceRoot}`,
+                  ...(singleMember.environmentLabel
+                    ? [`Environment: ${singleMember.environmentLabel}`]
+                    : []),
+                ]
+              : [`This removes ${members.length} grouped project entries.`]),
+            ...(projectThreads.length > 0
+              ? [
+                  "This permanently clears conversation history for those threads and any archived threads.",
+                ]
+              : ["This permanently clears any archived conversation history."]),
+            isWholeGroup && !hasOtherMembers
+              ? "This removes only the project entries, not the files on disk."
+              : "Other entries in this grouped project are unaffected.",
+            "This action cannot be undone.",
+          ].join("\n"),
+          { variant: "destructive" },
+        ),
+      );
+      if (confirmed._tag === "Failure" || !confirmed.value) return;
 
-  const resetInherited = async (kind: "scripts" | "autoPull") => {
-    if (saving.current || !connected || !isCurrent()) return;
-    saving.current = true;
-    setPending(true);
-    setNotice(null);
-    try {
-      const clearLegacy = await updateProject({
-        environmentId: project.environmentId,
-        input: {
-          projectId: project.id,
-          ...(kind === "scripts" ? { scripts: [] } : { autoPull: false }),
-        },
-      });
-      if (clearLegacy._tag === "Failure") {
-        setNotice("Could not reset the project setting.");
-        return;
+      const draftStore = useComposerDraftStore.getState();
+      for (const member of members) {
+        const result = mapAtomCommandResult(
+          await deleteProject({
+            environmentId: member.environmentId,
+            input: {
+              projectId: member.id,
+              force: true,
+            },
+          }),
+          () => undefined,
+        );
+        if (result._tag === "Failure") {
+          reportFailure(`Failed to remove "${member.title}"`, result);
+          return;
+        }
+        const projectRef = scopeProjectRef(member.environmentId, member.id);
+        draftStore.clearProjectDraftThreadId(projectRef);
       }
-      const result = await updateSettings({
-        environmentId: project.environmentId,
-        input: {
-          patch:
-            kind === "scripts"
-              ? { projectScriptOverrides: { [project.id]: null } }
-              : { projectAutoPullOverrides: { [project.id]: null } },
-        },
-      });
-      if (result._tag === "Failure") {
-        setNotice("Project updated, but the override could not be reset. Reload before retrying.");
-        return;
+
+      if (isWholeGroup && !hasOtherMembers) {
+        void navigate({ to: "/", replace: true });
       }
-      const next = {
-        ...baseline,
-        ...(kind === "scripts"
-          ? { scripts: settings.defaultProjectScripts }
-          : { autoPull: settings.defaultAutoPull }),
-      };
-      setBaseline(next);
-      setValues((current) => ({
-        ...(current ?? values),
-        ...(kind === "scripts" ? { scripts: next.scripts } : { autoPull: next.autoPull }),
-      }));
-      setNotice("Now using the workspace default.");
-    } finally {
-      saving.current = false;
-      setPending(false);
-    }
-  };
+    },
+    [
+      deleteProject,
+      group.displayName,
+      group.memberProjects.length,
+      hasOtherMembers,
+      navigate,
+      reportFailure,
+      threads,
+    ],
+  );
+
+  const checkoutChoices = (
+    <SettingsSection title="Checkouts">
+      {group.memberProjects.map((member) => (
+        <SettingsRow
+          key={member.physicalProjectKey}
+          title={member.environmentLabel ?? "Environment"}
+          description={member.workspaceRoot}
+          control={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void removeMembers([member])}
+              aria-label={`Remove checkout ${member.workspaceRoot}`}
+            >
+              Remove
+            </Button>
+          }
+        />
+      ))}
+    </SettingsSection>
+  );
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-      className="space-y-8"
-    >
-      <p className="text-sm text-muted-foreground">
-        Changes apply only to {project.title} in {environment?.label ?? "this Coder workspace"}.
-        They are stored in the workspace; other checkouts are unchanged.
-      </p>
-      {!connected && (
-        <p role="status">Connect this Coder workspace to edit its project settings.</p>
-      )}
-      {stale && (
-        <p role="status">Project settings changed elsewhere. Reload settings before saving.</p>
-      )}
-      <fieldset disabled={pending || !connected} className="space-y-8 disabled:opacity-60">
-        <SettingsSection
-          title="Thread behavior"
-          description="Saved immediately. Reset an override to inherit the workspace default."
-        >
-          <ResponseSettings
-            settings={scopedSettings.settings}
-            overrides={scopedSettings.overrides}
-            onChange={(patch) => void saveOverrides({ ...scopedSettings.overrides, ...patch })}
-            onReset={(key) =>
-              void saveOverrides(clearProjectSettingsOverrides(settings, project.id, [key]))
-            }
-          />
-          {(
-            [
-              ["newWorktreesStartFromOrigin", "Start worktrees from origin"],
-              ["sidebarAutoSettleOnMerge", "Settle threads after merge"],
-            ] as const
-          ).map(([key, label]) => (
-            <SettingsRow
-              key={key}
-              title={label}
-              control={
-                <select
-                  aria-label={label}
-                  className="rounded border bg-background p-2 text-sm"
-                  value={
-                    scopedSettings.overrides[key] === undefined
-                      ? "inherit"
-                      : String(scopedSettings.overrides[key])
-                  }
-                  onChange={(event) =>
-                    void saveOverrides(
-                      event.target.value === "inherit"
-                        ? clearProjectSettingsOverrides(settings, project.id, [key])
-                        : { ...scopedSettings.overrides, [key]: event.target.value === "true" },
-                    )
-                  }
-                >
-                  <option value="inherit">Use workspace default</option>
-                  <option value="true">Enabled</option>
-                  <option value="false">Disabled</option>
-                </select>
-              }
-            />
-          ))}
-          <SettingsRow
-            title="Settle inactive threads"
-            control={
-              <select
-                aria-label="Settle inactive threads"
-                className="rounded border bg-background p-2 text-sm"
-                value={
-                  scopedSettings.overrides.sidebarAutoSettleAfterDays === undefined
-                    ? "inherit"
-                    : String(scopedSettings.overrides.sidebarAutoSettleAfterDays)
-                }
-                onChange={(event) =>
-                  void saveOverrides(
-                    event.target.value === "inherit"
-                      ? clearProjectSettingsOverrides(settings, project.id, [
-                          "sidebarAutoSettleAfterDays",
-                        ])
-                      : {
-                          ...scopedSettings.overrides,
-                          sidebarAutoSettleAfterDays:
-                            event.target.value === "null" ? null : Number(event.target.value),
-                        },
-                  )
-                }
-              >
-                <option value="inherit">Use workspace default</option>
-                <option value="null">Disabled</option>
-                {[
-                  ...new Set(
-                    [1, 3, 7, 14, 30, scopedSettings.overrides.sidebarAutoSettleAfterDays].filter(
-                      (value): value is number => typeof value === "number",
-                    ),
-                  ),
-                ]
-                  .sort((a, b) => a - b)
-                  .map((days) => (
-                    <option key={days} value={days}>
-                      {days} days
-                    </option>
-                  ))}
-              </select>
-            }
-          />
-        </SettingsSection>
-        <TextGenerationModelSettings
-          environmentId={project.environmentId}
-          settings={{ ...settings, ...scopedSettings.settings }}
-          providers={providers}
-          onChange={(textGenerationModelSelection) =>
-            void saveOverrides({ ...scopedSettings.overrides, textGenerationModelSelection })
-          }
-        />
-        {scopedSettings.overrides.textGenerationModelSelection && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              void saveOverrides(
-                clearProjectSettingsOverrides(settings, project.id, [
-                  "textGenerationModelSelection",
-                ]),
-              )
-            }
-          >
-            Use workspace generated-name model
-          </Button>
-        )}
-        <SourceControlPreferences
-          environmentId={project.environmentId}
-          settings={{ ...settings, ...scopedSettings.settings }}
-          providers={providers}
-          projectScoped
-          updateSettings={(patch) =>
-            void saveOverrides({
-              ...scopedSettings.overrides,
-              ...(patch.sourceControlWritingStyle === undefined
-                ? {}
-                : {
-                    sourceControlWritingStyle: {
-                      ...scopedSettings.settings.sourceControlWritingStyle,
-                      ...patch.sourceControlWritingStyle,
-                    },
-                  }),
-              ...(patch.sourceControlWriterModelSelection === undefined
-                ? {}
-                : { sourceControlWriterModelSelection: patch.sourceControlWriterModelSelection }),
-            })
-          }
-        />
-        {(["sourceControlWritingStyle", "sourceControlWriterModelSelection"] as const).map(
-          (key) =>
-            scopedSettings.overrides[key] !== undefined && (
-              <Button
-                key={key}
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  void saveOverrides(clearProjectSettingsOverrides(settings, project.id, [key]))
-                }
-              >
-                {key === "sourceControlWritingStyle"
-                  ? "Use workspace writing style"
-                  : "Use workspace source control writer model"}
-              </Button>
-            ),
-        )}
-        <SettingsSection title="Merge requests">
-          <SettingsRow
-            title="Default merge method"
-            description="Saved immediately for this project. GitLab's allowed methods still apply."
-            control={
-              <select
-                aria-label="Default merge method"
-                className="rounded border bg-background p-1 text-sm"
-                value={settings.pullRequestMergeMethodOverrides[project.id] ?? "last-used"}
-                onChange={async (event) => {
-                  const value = event.target.value;
-                  if (saving.current) return;
-                  saving.current = true;
-                  setPending(true);
-                  try {
-                    const result = await updateSettings({
-                      environmentId: project.environmentId,
-                      input: {
-                        patch: {
-                          pullRequestMergeMethodOverrides: {
-                            [project.id]:
-                              value === "last-used" ? null : (value as PullRequestMergeMethod),
-                          },
-                        },
-                      },
-                    });
-                    setNotice(
-                      result._tag === "Failure"
-                        ? "Could not save the default merge method."
-                        : "Default merge method saved.",
-                    );
-                  } finally {
-                    saving.current = false;
-                    setPending(false);
-                  }
-                }}
-              >
-                <option value="last-used">Last used in this workspace</option>
-                {Object.entries(PULL_REQUEST_MERGE_METHOD_LABELS).map(([method, label]) => (
-                  <option key={method} value={method}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            }
-          />
-        </SettingsSection>
-        <SettingsSection title="Project">
+    <>
+      <SettingsPageContainer className="gap-6">
+        <SettingsSection id="project-overview" title="Project">
           <SettingsRow
             title="Name"
+            description="The shared name for this project group in the sidebar and thread lists."
             control={
               <Input
+                key={`${group.projectKey}:${group.displayName}`}
+                className="w-full sm:w-64"
                 aria-label="Project name"
-                value={values.title}
-                onChange={(event) => setValues({ ...values, title: event.target.value })}
+                defaultValue={group.displayName}
+                onChange={() => {
+                  projectNameEditedRef.current = true;
+                }}
+                onBlur={(event) => {
+                  const wasEdited = projectNameEditedRef.current;
+                  projectNameEditedRef.current = false;
+                  void renameGroup(event.currentTarget.value, wasEdited);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
               />
             }
           />
           <SettingsRow
-            title="Model"
-            description="Default model for new threads. Existing threads are unchanged."
-            control={
-              <div className="flex flex-wrap items-center gap-2">
-                <Switch
-                  aria-label="Override project model"
-                  checked={values.defaultModelSelection !== null}
-                  onCheckedChange={(enabled) =>
-                    setValues({
-                      ...values,
-                      defaultModelSelection: enabled
-                        ? createModelSelection(
-                            selection.instanceId,
-                            selection.model,
-                            selection.options,
-                          )
-                        : null,
-                    })
-                  }
+            title="Project icon"
+            description={
+              projectIcon?.kind === "lucide"
+                ? `${projectIcon.name} · ${projectIcon.color}`
+                : projectIcon?.kind === "emoji"
+                  ? projectIcon.emoji
+                  : (faviconPath ?? "Automatic")
+            }
+            resetAction={
+              group.memberProjects.some(
+                (member) => member.faviconPath != null || member.projectIcon != null,
+              ) ? (
+                <SettingResetButton
+                  label="project icon"
+                  disabled={isSavingFavicon}
+                  onClick={() => void setProjectIcon({ faviconPath: null, projectIcon: null })}
                 />
-                {values.defaultModelSelection ? (
-                  <ProviderModelPicker
-                    environmentId={project.environmentId}
-                    activeInstanceId={selection.instanceId}
-                    model={selection.model}
-                    lockedProvider={null}
-                    instanceEntries={instanceEntries}
-                    modelOptionsByInstance={modelOptionsByInstance}
-                    disabled={pending || !connected}
-                    triggerAriaLabel="Project default model"
-                    onInstanceModelChange={(instanceId, model) =>
-                      setValues({
-                        ...values,
-                        defaultModelSelection: createModelSelection(instanceId, model),
-                      })
-                    }
-                  />
-                ) : (
-                  <span className="text-sm">Use workspace default</span>
-                )}
+              ) : null
+            }
+            control={
+              <div className="flex items-center gap-2">
+                <ProjectFavicon project={representative} className="size-6" />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  type="button"
+                  aria-label="Choose a project icon"
+                  disabled={isSavingFavicon}
+                  onClick={() => setIconPickerOpen(true)}
+                >
+                  Choose icon
+                </Button>
               </div>
             }
           />
-          <SettingsRow
-            title="Workspace"
-            description="Where new threads start inside this Linux Coder workspace."
-            control={
-              <select
-                aria-label="New-thread workspace"
-                className="rounded border bg-background p-2 text-sm"
-                value={values.defaultThreadEnvMode ?? "inherit"}
-                onChange={(event) =>
-                  setValues({
-                    ...values,
-                    defaultThreadEnvMode:
-                      event.target.value === "worktree"
-                        ? "worktree"
-                        : event.target.value === "local"
-                          ? "local"
-                          : null,
-                  })
-                }
-              >
-                <option value="inherit">Use default</option>
-                <option value="local">Current checkout</option>
-                <option value="worktree">New worktree</option>
-              </select>
-            }
-          />
-          <SettingsRow
-            title="Automatically pull"
-            description="Fast-forward the default branch only when the checkout has no changed files, untracked files, or local commits."
-            control={
-              <Switch
-                aria-label="Automatically pull the default branch"
-                checked={values.autoPull}
-                onCheckedChange={(autoPull) => setValues({ ...values, autoPull })}
-              />
-            }
-          />
         </SettingsSection>
-        <div className="flex gap-2">
-          <Button type="button" variant="outline" onClick={() => void resetInherited("autoPull")}>
-            Use workspace automatic-pull default
-          </Button>
-          <Button type="button" variant="outline" onClick={() => void resetInherited("scripts")}>
-            Use workspace default scripts
-          </Button>
-        </div>
-        <SettingsSection title="Checkout">
+        <ProjectActionsSettings />
+        {hasMultipleCheckouts ? checkoutChoices : null}
+        <SettingsSection title="Danger">
           <SettingsRow
-            title="Coder workspace"
-            description={environment?.label ?? project.environmentId}
-          />
-          <SettingsRow title="Project path">
-            <code className="break-all text-xs">{project.workspaceRoot}</code>
-          </SettingsRow>
-        </SettingsSection>
-        <SettingsSection
-          title="Scripts"
-          description="Commands are stored with this project. Saving does not run them. At most one setup script can run when a new worktree is created in the workspace."
-        >
-          {values.scripts.map((script, index) => (
-            <div key={script.id} className="space-y-3 p-4">
-              <Input
-                aria-label={`Script ${index + 1} name`}
-                value={script.name}
-                onChange={(event) =>
-                  setValues({
-                    ...values,
-                    scripts: values.scripts.map((item) =>
-                      item.id === script.id ? { ...item, name: event.target.value } : item,
-                    ),
-                  })
-                }
-              />
-              <Textarea
-                aria-label={`Script ${index + 1} command`}
-                value={script.command}
-                onChange={(event) =>
-                  setValues({
-                    ...values,
-                    scripts: values.scripts.map((item) =>
-                      item.id === script.id ? { ...item, command: event.target.value } : item,
-                    ),
-                  })
-                }
-              />
-              <label className="flex items-center gap-2 text-sm">
-                <Switch
-                  aria-label={`Run script ${index + 1} on worktree creation`}
-                  checked={script.runOnWorktreeCreate}
-                  onCheckedChange={(checked) =>
-                    setValues({
-                      ...values,
-                      scripts: values.scripts.map((item) => ({
-                        ...item,
-                        runOnWorktreeCreate:
-                          item.id === script.id
-                            ? checked
-                            : checked
-                              ? false
-                              : item.runOnWorktreeCreate,
-                      })),
-                    })
-                  }
-                />
-                Run on worktree creation
-              </label>
+            title={
+              hasOtherMembers
+                ? "Remove checkout"
+                : group.memberProjects.length > 1
+                  ? "Remove this project everywhere"
+                  : "Remove project"
+            }
+            description={
+              hasOtherMembers
+                ? "Deletes the selected machine's checkout entries and their threads. Other machines and files on disk are not touched."
+                : group.memberProjects.length > 1
+                  ? `Deletes all ${group.memberProjects.length} checkout entries and their threads on every machine. Files on disk are not touched.`
+                  : "Deletes the project entry and its threads. Files on disk are not touched."
+            }
+            control={
               <Button
-                type="button"
-                variant="outline"
                 size="sm"
-                onClick={() =>
-                  setValues({
-                    ...values,
-                    scripts: values.scripts.filter((item) => item.id !== script.id),
-                  })
-                }
+                variant="destructive-outline"
+                onClick={() => void removeMembers(group.memberProjects)}
               >
-                Remove script {index + 1}
+                <Trash2Icon />
+                {hasOtherMembers
+                  ? "Remove checkout"
+                  : group.memberProjects.length > 1
+                    ? "Remove all entries"
+                    : "Remove project"}
               </Button>
-            </div>
-          ))}
-          <div className="p-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() =>
-                setValues({
-                  ...values,
-                  scripts: [
-                    ...values.scripts,
-                    {
-                      id: crypto.randomUUID(),
-                      name: "",
-                      command: "",
-                      icon: "play",
-                      runOnWorktreeCreate: false,
-                    },
-                  ],
-                })
-              }
-            >
-              Add script
-            </Button>
-          </div>
+            }
+          />
         </SettingsSection>
-      </fieldset>
-      {notice && <p role="status">{notice}</p>}
-      <div className="flex gap-2">
-        <Button
-          type="submit"
-          disabled={pending || !connected || stale || !projectSettingsChanged(baseline, values)}
-        >
-          {pending ? "Saving…" : "Save project settings"}
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            const next = projectSettingsValues(resolvedProject);
-            setBaseline(next);
-            setValues(next);
-            setNotice(null);
-          }}
-        >
-          Reload settings
-        </Button>
-      </div>
-    </form>
+      </SettingsPageContainer>
+
+      {iconPickerOpen ? (
+        <Suspense fallback={null}>
+          <ProjectIconPickerDialog
+            current={projectIcon}
+            open
+            onOpenChange={setIconPickerOpen}
+            onSelect={(icon) => void setProjectIcon({ faviconPath: null, projectIcon: icon })}
+          />
+        </Suspense>
+      ) : null}
+    </>
   );
 }

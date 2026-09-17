@@ -1,7 +1,7 @@
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
-import { adjacentModelPickerProvider } from "./ModelPickerContent";
+import { adjacentModelPickerProvider, shouldOfferModelPickerSetup } from "./ModelPickerContent";
 function entry(status: ServerProvider["status"], driver = "codex") {
   return deriveProviderInstanceEntries([
     {
@@ -89,4 +89,21 @@ describe("adjacentModelPickerProvider", () => {
       }),
     ).toBe(claude.instanceId);
   });
+});
+
+it("offers setup for unready providers and permits keyboard access to their setup view", () => {
+  const ready = entry("ready");
+  const unavailable = entry("error");
+  expect(shouldOfferModelPickerSetup(ready, [{ slug: "model", name: "Model" }])).toBe(false);
+  expect(shouldOfferModelPickerSetup(unavailable, [])).toBe(true);
+  expect(shouldOfferModelPickerSetup(entry("disabled"), [])).toBe(false);
+  expect(
+    adjacentModelPickerProvider({
+      entries: [ready, unavailable],
+      selectedInstanceId: ready.instanceId,
+      direction: 1,
+      disabledInstanceIds: undefined,
+      selectableUnavailableInstanceIds: new Set([unavailable.instanceId]),
+    }),
+  ).toBe(unavailable.instanceId);
 });

@@ -1,3 +1,5 @@
+import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
+import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import type {
   EnvironmentId,
   ServerConfig,
@@ -76,6 +78,7 @@ function RootRouteNotFoundView() {
 }
 
 function RootRouteView() {
+  useEnvironmentThemeSync();
   const pathname = useLocation({ select: (location) => location.pathname });
 
   useEffect(() => {
@@ -107,6 +110,7 @@ function RootRouteView() {
         <ThreadNotificationCoordinator />
         <EventRouter />
         {appShell}
+        <ThemeEditorHost />
       </AnchoredToastProvider>
     </ToastProvider>
   );

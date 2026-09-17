@@ -1,3 +1,5 @@
+import { EnvironmentThemeService } from "./environmentTheme.ts";
+import { readProjectConfig } from "./project/configMetadata.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
 import * as Fiber from "effect/Fiber";
@@ -435,6 +437,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const config = yield* ServerConfig.ServerConfig;
+    const environmentThemes = yield* EnvironmentThemeService;
     const environment = yield* CoderEnvironment.CoderEnvironment;
     yield* CoderRuntimeStartup.CoderRuntimeStartup;
     const orchestration = yield* OrchestrationEngine.OrchestrationEngineService;
@@ -1042,6 +1045,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         keybindings: keybindingsSnapshot.keybindings,
         issues: keybindingsSnapshot.issues,
         providers: providerSnapshots,
+        environmentThemes: yield* environmentThemes.current,
         settings: serverSettings,
       };
     });
@@ -1063,6 +1067,12 @@ export const layer = CoderWsRpcGroup.toLayer(
         keybindings
           .removeKeybindingRule(input)
           .pipe(Effect.map((nextKeybindings) => ({ keybindings: nextKeybindings, issues: [] }))),
+      [WS_METHODS.projectsGetConfig]: ({ projectId }) =>
+        Effect.gen(function* () {
+          const project = yield* projections.getProjectShellById(projectId);
+          if (Option.isNone(project)) return { status: "unavailable" as const, file: null };
+          return readProjectConfig(project.value.workspaceRoot);
+        }).pipe(Effect.orElseSucceed(() => ({ status: "unavailable" as const, file: null }))),
       [WS_METHODS.projectsSearchEntries]: (input) =>
         workspaceEntries.search(input).pipe(
           Effect.mapError(
@@ -1416,7 +1426,16 @@ export const layer = CoderWsRpcGroup.toLayer(
                 type: "snapshot" as const,
                 config: initialConfig,
               }),
-              Stream.merge(providerChanges, Stream.merge(settingChanges, keybindingChanges)),
+              Stream.merge(
+                environmentThemes.streamChanges.pipe(
+                  Stream.map((themes) => ({
+                    version: 1 as const,
+                    type: "environmentThemesUpdated" as const,
+                    payload: { themes },
+                  })),
+                ),
+                Stream.merge(providerChanges, Stream.merge(settingChanges, keybindingChanges)),
+              ),
             );
           }),
         ),

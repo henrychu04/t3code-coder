@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { DEFAULT_CLIENT_SETTINGS } from "@t3tools/contracts";
-import { BundledThemeSettings } from "./BundledThemeSettings";
+import { CustomThemeSettings } from "./CustomThemeSettings";
 import { RestoreClientSettings } from "./RestoreSettings";
 import { THEME_HALVES_STORAGE_KEY, parseThemeHalves, resolveThemeHalf } from "../../themePalette";
 import { readThemePreference, readAppearanceModePreference } from "../../hooks/useTheme";
@@ -46,7 +46,7 @@ function effective(mode: "light" | "dark") {
   );
 }
 it("shows the stock theme as selected on a fresh browser", async () => {
-  await act(async () => root.render(<BundledThemeSettings />));
+  await act(async () => root.render(<CustomThemeSettings />));
   await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: "t3code:theme" })));
   expect(
     host.querySelector('button[aria-label="Use T3 Code dark mode"]')?.getAttribute("aria-pressed"),
@@ -61,7 +61,7 @@ it.each([false, true])(
     window.localStorage.setItem("t3code:theme", "grove");
     if (mixed)
       window.localStorage.setItem(THEME_HALVES_STORAGE_KEY, JSON.stringify({ light: "ocean" }));
-    await act(async () => root.render(<BundledThemeSettings />));
+    await act(async () => root.render(<CustomThemeSettings />));
     await act(async () =>
       window.dispatchEvent(new StorageEvent("storage", { key: "t3code:theme" })),
     );
@@ -78,7 +78,7 @@ it.each([false, true])(
 it("chooses the whole stock theme without writing the card's display ID", async () => {
   window.localStorage.setItem("t3code:theme", "grove");
   window.localStorage.setItem(THEME_HALVES_STORAGE_KEY, JSON.stringify({ dark: "ocean" }));
-  await act(async () => root.render(<BundledThemeSettings />));
+  await act(async () => root.render(<CustomThemeSettings />));
   await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: "t3code:theme" })));
   await click("Use T3 Code theme");
   expect(["system", "light", "dark"]).toContain(window.localStorage.getItem("t3code:theme"));

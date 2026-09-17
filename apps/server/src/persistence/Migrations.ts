@@ -1,3 +1,4 @@
+import Migration0052 from "./Migrations/052_ProjectionProjectIcon.ts";
 /**
  * MigrationsLive - Migration runner with inline loader
  *
@@ -109,6 +110,7 @@ const migrationEntries = [
   [49, "ProjectionThreadsActiveOrderKey", Migration0049],
   [50, "RepairPendingUserInputCounts", Migration0050],
   [51, "ProjectionThreadPullRequests", Migration0051],
+  [52, "ProjectionProjectIcon", Migration0052],
 ] as const;
 
 const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

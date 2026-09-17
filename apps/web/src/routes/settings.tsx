@@ -1,3 +1,4 @@
+import { SettingsScopeBoundary } from "../components/settings/SettingsScopeBoundary";
 import { SettingsScopeProvider } from "../components/settings/SettingsScopeContext";
 import { SettingsScopePicker } from "../components/settings/SettingsScopePicker";
 import {
@@ -12,13 +13,14 @@ import {
   useNavigate,
   useLocation,
 } from "@tanstack/react-router";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { SidebarInset } from "../components/ui/sidebar";
 
 function SettingsLayout() {
   const navigate = useNavigate();
   const search = Route.useSearch();
+  const [restoreCount, setRestoreCount] = useState(0);
   const pathname = useLocation({ select: (location) => location.pathname });
   const canGoBack = useCanGoBack();
   const navigateBack = useCallback(() => {
@@ -32,6 +34,11 @@ function SettingsLayout() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.key !== "Escape") return;
+      if (
+        event.target instanceof HTMLElement &&
+        event.target.closest('[role="dialog"], [aria-modal="true"], [data-slot$="popup"]')
+      )
+        return;
       event.preventDefault();
       if (document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
@@ -50,12 +57,23 @@ function SettingsLayout() {
           void navigate({
             to: pathname,
             search: { project: undefined, machine: undefined, checkout: undefined, ...next },
-            replace: true,
+            hash: "",
+            resetScroll: false,
           })
         }
       >
-        <SettingsScopePicker />
-        <Outlet />
+        <SettingsScopePicker
+          pathname={pathname}
+          onRestoreDefaults={() => setRestoreCount((count) => count + 1)}
+        />
+        <div
+          key={`${JSON.stringify(search)}:${restoreCount}`}
+          className="min-h-0 flex flex-1 flex-col"
+        >
+          <SettingsScopeBoundary pathname={pathname}>
+            <Outlet />
+          </SettingsScopeBoundary>
+        </div>
       </SettingsScopeProvider>
     </SidebarInset>
   );

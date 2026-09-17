@@ -52,6 +52,12 @@ export function applyServerConfigProjection(
         latestEvent: event,
         source: "live",
       }));
+    case "environmentThemesUpdated":
+      return Option.map(current, (projection) => ({
+        config: { ...projection.config, environmentThemes: event.payload.themes },
+        latestEvent: event,
+        source: "live",
+      }));
     case "settingsUpdated":
       return Option.map(current, (projection) => ({
         config: { ...projection.config, settings: event.payload.settings },

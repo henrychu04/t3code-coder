@@ -1,3 +1,6 @@
+import { useProjects } from "../state/entities";
+import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
+import { commandForProjectScript } from "../projectScripts";
 import type {
   KeybindingCommand,
   KeybindingShortcut,
@@ -28,6 +31,7 @@ import { Kbd } from "../components/ui/kbd";
 import { serverEnvironment } from "../state/server";
 import type { EnvironmentPresentation } from "../state/environments";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useSettingsScope } from "../components/settings/SettingsScopeContext";
 import { WorkspaceSettingsTarget } from "../components/settings/WorkspaceSettingsTarget";
 
 const CATEGORIES = ["Files", "Navigation", "Panels", "Chat", "Terminal"] as const;
@@ -65,8 +69,10 @@ function sameRule(
   return JSON.stringify(ruleInput(left)) === JSON.stringify(ruleInput(right));
 }
 
-function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPresentation }) {
-  const environmentId = props.environment.environmentId;
+export function WorkspaceShortcutsSettings(props: {
+  readonly environment: EnvironmentPresentation;
+}) {
+  const { connectedEnvironments } = useSettingsScope();
   const keybindings = props.environment.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS;
   const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding);
   const removeKeybinding = useAtomCommand(serverEnvironment.removeKeybinding);
@@ -102,7 +108,33 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
     return result;
   }, []);
 
-  const actions = KEYBINDING_ACTIONS;
+  const projects = useProjects().filter(
+    (project) => project.environmentId === props.environment.environmentId,
+  );
+  const scriptActions = new Map<KeybindingCommand, string>();
+  for (const script of [
+    ...(props.environment.serverConfig?.settings.defaultProjectScripts ?? []),
+    ...projects.flatMap((project) =>
+      props.environment.serverConfig
+        ? resolveProjectScripts(props.environment.serverConfig.settings, project)
+        : [],
+    ),
+  ]) {
+    const command = commandForProjectScript(script.id);
+    if (command) scriptActions.set(command, `Run project action: ${script.name}`);
+  }
+  for (const binding of keybindings) {
+    if (binding.command.startsWith("script.") && !scriptActions.has(binding.command))
+      scriptActions.set(binding.command, binding.command);
+  }
+  const actions = [
+    ...KEYBINDING_ACTIONS,
+    ...Array.from(scriptActions, ([command, label]) => ({
+      command,
+      label,
+      category: "Chat" as const,
+    })),
+  ];
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleActions = actions.filter(
     (action) =>
@@ -123,18 +155,24 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
     }
     setBusy(command);
     setError(null);
-    const result = await upsertKeybinding({
-      environmentId,
-      input: {
-        key: keybindingKeyForShortcut(shortcut),
-        command,
-        ...(normalizedWhen ? { when: normalizedWhen } : {}),
-        ...(replace ? { replace: ruleInput(replace) } : {}),
-      },
-    });
+    const results = await Promise.all(
+      connectedEnvironments.map((target) =>
+        upsertKeybinding({
+          environmentId: target.environmentId,
+          input: {
+            key: keybindingKeyForShortcut(shortcut),
+            command,
+            ...(normalizedWhen ? { when: normalizedWhen } : {}),
+            ...(replace ? { replace: ruleInput(replace) } : {}),
+          },
+        }),
+      ),
+    );
     setBusy(null);
-    if (result._tag === "Failure") {
-      setError("Could not save that shortcut. Check the workspace connection and try again.");
+    if (results.some((result) => result._tag !== "Success")) {
+      setError(
+        "Could not save on every selected workspace. Successful changes were kept; reconnect and retry.",
+      );
       return;
     }
     setPending(null);
@@ -144,37 +182,50 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
   const remove = async (binding: ResolvedKeybindingRule) => {
     setBusy(binding.command);
     setError(null);
-    const result = await removeKeybinding({ environmentId, input: ruleInput(binding) });
+    const results = await Promise.all(
+      connectedEnvironments.map((target) =>
+        removeKeybinding({ environmentId: target.environmentId, input: ruleInput(binding) }),
+      ),
+    );
     setBusy(null);
-    if (result._tag === "Failure") {
-      setError("Could not remove that shortcut. Check the workspace connection and try again.");
+    if (results.some((result) => result._tag !== "Success")) {
+      setError(
+        "Could not remove the shortcut on every selected workspace. Successful changes were kept; reconnect and retry.",
+      );
     }
   };
 
   const reset = async (command: KeybindingCommand) => {
     setBusy(command);
     setError(null);
-    const current = bindingsByCommand.get(command) ?? [];
-    for (const binding of current) {
-      const result = await removeKeybinding({ environmentId, input: ruleInput(binding) });
-      if (result._tag === "Failure") {
-        setError("Could not reset that shortcut. Check the workspace connection and try again.");
-        setBusy(null);
-        return;
-      }
-    }
-    for (const defaultBinding of defaultsByCommand.get(command) ?? []) {
-      const result = await upsertKeybinding({
-        environmentId,
-        input: {
-          ...ruleInput(defaultBinding),
-        },
-      });
-      if (result._tag === "Failure") {
-        setError("Could not restore the default shortcut because it conflicts with another rule.");
-        setBusy(null);
-        return;
-      }
+    const results = await Promise.all(
+      connectedEnvironments.map(async (target) => {
+        const current = (target.serverConfig?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS).filter(
+          (binding) => binding.command === command,
+        );
+        for (const binding of current) {
+          const result = await removeKeybinding({
+            environmentId: target.environmentId,
+            input: ruleInput(binding),
+          });
+          if (result._tag !== "Success") return false;
+        }
+        for (const binding of defaultsByCommand.get(command) ?? []) {
+          const result = await upsertKeybinding({
+            environmentId: target.environmentId,
+            input: ruleInput(binding),
+          });
+          if (result._tag !== "Success") return false;
+        }
+        return true;
+      }),
+    );
+    if (results.some((saved) => !saved)) {
+      setBusy(null);
+      setError(
+        "Could not reset the shortcut on every selected workspace. Successful changes were kept; reconnect and retry.",
+      );
+      return;
     }
     setBusy(null);
     setPending(null);
@@ -185,9 +236,9 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
     <div className="space-y-12">
       <div className="space-y-2 px-3 sm:px-4" id="keyboard-shortcuts">
         <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-          IntelliJ-inspired defaults are stored in the selected Coder workspace. Click a shortcut,
-          then press the replacement. For Search project files, press Shift twice to assign the
-          Search Everywhere gesture.
+          Shortcuts are stored in the selected connected Coder workspaces. The displayed bindings
+          come from the workspace shown above. Click a shortcut, then press the replacement. For
+          Search project files, press Shift twice to assign the Search Everywhere gesture.
         </p>
         <p className="max-w-2xl text-xs leading-5 text-muted-foreground">
           Some shortcuts are reserved by the browser and may not reach T3 Coder.
@@ -215,7 +266,12 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
               const candidateKey = candidate ? keybindingKeyForShortcut(candidate) : null;
               const contextRule = pending?.replace ?? defaultsByCommand.get(action.command)?.at(-1);
               const candidateWhen =
-                pending?.when ?? keybindingWhenForNode(contextRule?.whenAst) ?? "";
+                pending?.when ??
+                (contextRule
+                  ? (keybindingWhenForNode(contextRule.whenAst) ?? "")
+                  : action.command.startsWith("script.")
+                    ? "!terminalFocus"
+                    : "");
               const conflict = candidateKey
                 ? keybindings.find(
                     (binding) =>
@@ -267,7 +323,7 @@ function WorkspaceShortcutsSettings(props: { readonly environment: EnvironmentPr
                         const targetWhen =
                           pendingForTarget?.when ??
                           keybindingWhenForNode((target ?? defaultRule)?.whenAst) ??
-                          "";
+                          (action.command.startsWith("script.") ? "!terminalFocus" : "");
                         const isDefault =
                           target !== null &&
                           DEFAULT_RESOLVED_KEYBINDINGS.some((binding) => sameRule(binding, target));

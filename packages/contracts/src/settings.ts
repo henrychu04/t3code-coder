@@ -1,3 +1,4 @@
+import { EnvironmentMachineKind } from "./environment.ts";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
@@ -124,7 +125,12 @@ export const EnvironmentIdentificationMode = Schema.Literals(["artwork", "pill",
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
 
-export const NotificationMode = Schema.Literals(["off", "sound"]);
+export const NotificationMode = Schema.Literals([
+  "off",
+  "sound",
+  "notifications",
+  "notifications-and-sound",
+]);
 export type NotificationMode = typeof NotificationMode.Type;
 
 const ModelFavorites = Schema.Array(
@@ -238,6 +244,7 @@ export const ClientSettingsSchema = Schema.Struct({
   // Legacy plan mode. The composer's Build/Plan toggle was removed from the
   // default UI; this beta flag restores it (plus the /plan and /default slash
   // commands) for users who still rely on the old workflow.
+  contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   composerCollapseOnScroll: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
@@ -493,6 +500,16 @@ export const ProjectSettingsOverrides = Schema.Struct({
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
 export const ServerSettings = Schema.Struct({
+  providerHealthRefreshInterval: Schema.DurationFromMillis.pipe(
+    Schema.withDecodingDefault(Effect.succeed(300000)),
+  ),
+  continueThreadsAfterServerUpdate: Schema.Boolean.pipe(
+    Schema.withDecodingDefault(Effect.succeed(false)),
+  ),
+  environmentIcon: Schema.NullOr(EnvironmentMachineKind).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  addProjectBaseDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   responseStreamingMode: ResponseStreamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
   ),
@@ -680,6 +697,10 @@ const ClaudeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
+  continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
+  environmentIcon: Schema.optionalKey(Schema.NullOr(EnvironmentMachineKind)),
+  addProjectBaseDirectory: Schema.optionalKey(TrimmedString),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   projectSettingsOverrides: Schema.optionalKey(
@@ -749,6 +770,7 @@ export const ClientSettingsPatch = Schema.Struct({
   providerPreferencesByEnvironment: Schema.optionalKey(
     Schema.Record(EnvironmentId, EnvironmentProviderPreferences),
   ),
+  contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
