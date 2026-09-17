@@ -129,7 +129,9 @@ export function createImageResourceStore(maxBytes = 100 * 1024 * 1024, concurren
           entry.controller?.abort();
           if (entry.state.status === "loaded") releaseBytes(entry);
         }
-        pump();
+        // React cleans up the previous gallery selection before subscribing to
+        // the next one. Let that priority claim arrive before starting previews.
+        queueMicrotask(pump);
       };
     },
   };

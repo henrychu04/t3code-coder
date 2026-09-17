@@ -98,3 +98,44 @@ it("does not evict an image while a gallery still owns its priority subscription
   await vi.waitFor(() => expect(store.get("b").status).toBe("loaded"));
   releaseB();
 });
+
+it("prioritizes the next gallery image before filling the last read slot with a background preview", async () => {
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  const store = createImageResourceStore();
+  const blob = new Blob([new Uint8Array(MAX_SCREENSHOT_ARTIFACT_BYTES)]);
+  const calls: string[] = [];
+  const releases: (() => void)[] = [];
+  const finishes: ((b: Blob) => void)[] = [];
+  const load = (key: string) => async () => {
+    calls.push(key);
+    return blob;
+  };
+  for (const key of ["cached-a", "cached-b"]) {
+    releases.push(store.subscribe(key, load(key), () => {}));
+    await vi.waitFor(() => expect(store.get(key).status).toBe("loaded"));
+  }
+  const releaseFirst = store.subscribe("first", load("first"), () => {}, true);
+  await vi.waitFor(() => expect(store.get("first").status).toBe("loaded"));
+  for (const key of ["background-a", "background-b", "background-c"])
+    releases.push(
+      store.subscribe(
+        key,
+        () => {
+          calls.push(key);
+          return new Promise<Blob>((r) => finishes.push(r));
+        },
+        () => {},
+      ),
+    );
+  releaseFirst();
+  releases.push(store.subscribe("next", load("next"), () => {}, true));
+  try {
+    expect(calls).toContain("next");
+    expect(calls).not.toContain("background-c");
+  } finally {
+    for (const release of releases) release();
+    for (const finish of finishes) finish(blob);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+});

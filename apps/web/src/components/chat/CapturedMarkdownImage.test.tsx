@@ -2,8 +2,9 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ScreenshotArtifactId } from "@t3tools/contracts";
+import { EnvironmentId, ScreenshotArtifactId, TurnId } from "@t3tools/contracts";
 import { CapturedMarkdownImage, CapturedImageDialog } from "./CapturedMarkdownImage";
+import { ArtifactNavigationContext, ArtifactTurnContext } from "./ArtifactNavigation";
 import { authoredImageSizeStyle } from "./markdownImageLayout";
 const mocks = vi.hoisted(() => ({ retry: vi.fn(), failed: false, deferred: false }));
 vi.mock("./useScreenshotArtifacts", () => ({
@@ -63,7 +64,8 @@ it("preserves authored sizing and browses registered images in message order", a
       for (const img of host.querySelectorAll("img")) img.dispatchEvent(new Event("load"));
     });
     const first = host.querySelector<HTMLImageElement>('img[alt="Caption first"]')!;
-    expect(first.id).toBe("image-first");
+    expect(first.closest("[data-image-preview]")?.id).toBe("image-first");
+    expect(host.querySelectorAll("#image-first")).toHaveLength(1);
     expect(first.title).toBe("Authored title");
     expect(first.classList.contains("authored-class")).toBe(true);
     expect(first.dataset.markdownCopy).toBe("![Caption first](first.png)");
@@ -194,5 +196,146 @@ it("keeps a deferred screenshot's dimensions and opens it with the keyboard", as
   } finally {
     await act(async () => root.unmount());
     host.remove();
+  }
+});
+
+it("preserves gallery selection through insertion, reordering, and removal of turn images", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const environmentId = EnvironmentId.make("env");
+  const turn = TurnId.make("turn");
+  const references = ["a", "b", "c", "d"].map((id) => ({
+    id: ScreenshotArtifactId.make(id),
+    name: id,
+    mimeType: "image/png" as const,
+    sizeBytes: 3,
+  }));
+  const render = (ids: string[]) => {
+    const artifacts = ids.map((id) => references.find((image) => image.id === id)!);
+    return act(async () =>
+      root.render(
+        <ArtifactNavigationContext
+          value={{
+            environmentId,
+            artifactsByTurn: new Map([[turn, artifacts]]),
+            request: null,
+            reveal: () => {},
+          }}
+        >
+          <ArtifactTurnContext value={turn}>
+            <CapturedImageDialog
+              environmentId={environmentId}
+              onClose={() => {}}
+              preview={{
+                index: artifacts.findIndex((image) => image.id === "b"),
+                images: artifacts.map((artifact) => ({ artifact, name: artifact.name, src: null })),
+              }}
+            />
+          </ArtifactTurnContext>
+        </ArtifactNavigationContext>,
+      ),
+    );
+  };
+  const selected = () => document.querySelector('[role="dialog"] img')?.getAttribute("src");
+  const next = () =>
+    act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+    );
+  try {
+    await render(["a", "b", "c"]);
+    expect(selected()).toBe("blob:b");
+    await render(["b", "c"]);
+    expect(selected()).toBe("blob:b");
+    await next();
+    expect(selected()).toBe("blob:c");
+    await render(["d", "a", "b", "c"]);
+    expect(selected()).toBe("blob:c");
+    await render(["c", "b", "d"]);
+    expect(selected()).toBe("blob:c");
+    await render(["d", "b"]);
+    expect(selected()).toBe("blob:d");
+    await render(["c", "d", "b"]);
+    expect(selected()).toBe("blob:d");
+    await next();
+    expect(selected()).toBe("blob:b");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("keeps one stable Markdown anchor through offscreen, loaded, deferred, and failed states", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  let observerCallback: IntersectionObserverCallback | undefined;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        observerCallback = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const render = () =>
+    act(async () =>
+      root.render(
+        <CapturedMarkdownImage
+          environmentId={EnvironmentId.make("env")}
+          artifact={{
+            id: ScreenshotArtifactId.make("figure"),
+            name: "figure.png",
+            mimeType: "image/png",
+            sizeBytes: 3,
+          }}
+          alt="Figure"
+          imageProps={{
+            id: "user-content-figure",
+            title: "Figure title",
+            className: "authored-class",
+          }}
+          copyMarkdown="![Figure](figure.png)"
+        />,
+      ),
+    );
+  const setVisible = (isIntersecting: boolean) =>
+    act(async () =>
+      observerCallback!(
+        [{ isIntersecting } as IntersectionObserverEntry],
+        {} as IntersectionObserver,
+      ),
+    );
+  try {
+    await render();
+    const anchor = host.querySelector("#user-content-figure");
+    expect(anchor).not.toBeNull();
+    const expectAnchor = () => {
+      expect(host.querySelectorAll("#user-content-figure")).toHaveLength(1);
+      expect(host.querySelector("#user-content-figure")).toBe(anchor);
+    };
+    const placeholder = host.querySelector<HTMLElement>('[role="button"]')!;
+    expect(placeholder.title).toBe("Figure title");
+    expect(placeholder.classList.contains("authored-class")).toBe(true);
+    expect(placeholder.dataset.markdownCopy).toBe("![Figure](figure.png)");
+    await setVisible(true);
+    await act(async () => host.querySelector("img")!.dispatchEvent(new Event("load")));
+    expectAnchor();
+    await setVisible(false);
+    expectAnchor();
+    mocks.deferred = true;
+    await setVisible(true);
+    expect(host.textContent).toContain("Open image");
+    expectAnchor();
+    mocks.deferred = false;
+    mocks.failed = true;
+    await render();
+    expect(host.textContent).toContain("Image unavailable");
+    expectAnchor();
+  } finally {
+    await act(async () => root.unmount());
   }
 });

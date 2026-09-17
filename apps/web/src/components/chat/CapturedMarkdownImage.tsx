@@ -220,6 +220,7 @@ export function CapturedMarkdownImage({
   const images = useScreenshotArtifacts(environmentId, [artifact], visible);
   const image = images[artifact.id];
   const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
+  const { id: anchorId, ...authoredImageProps } = imageProps ?? {};
   const style =
     authoredImageSizeStyle(width, height) ??
     authoredImageSizeStyle(artifact.dimensions?.width, artifact.dimensions?.height);
@@ -227,9 +228,17 @@ export function CapturedMarkdownImage({
     if (image && "retry" in image) image.retry();
   };
   return (
-    <span ref={previewRef} data-image-preview tabIndex={-1} className="inline-block max-w-full">
+    <span
+      id={anchorId}
+      ref={previewRef}
+      data-image-preview
+      tabIndex={-1}
+      className="inline-block max-w-full"
+    >
       {image?.status === "deferred" || !visible ? (
         <span
+          title={imageProps?.title}
+          data-markdown-copy={copyMarkdown}
           {...expandableMarkdownImageProps(
             (preview) => setPreview(turnGallery.previewFor(artifact.id) ?? preview),
             alt,
@@ -241,6 +250,7 @@ export function CapturedMarkdownImage({
           className={cn(
             "inline-flex cursor-zoom-in items-center justify-center rounded-lg border border-border/40 bg-muted/40 p-4 text-xs text-muted-foreground",
             standalone && "aspect-video w-[30rem] max-w-full",
+            imageProps?.className,
           )}
           style={style}
         >
@@ -252,7 +262,7 @@ export function CapturedMarkdownImage({
           sourceFailed={image?.status === "error"}
           alt={alt}
           copyMarkdown={copyMarkdown}
-          imageProps={imageProps}
+          imageProps={authoredImageProps}
           className={imageProps?.className}
           standalone={standalone}
           style={style}
@@ -290,14 +300,21 @@ export function CapturedImageDialog({
     (source === "artifact" && initialArtifact
       ? turnGallery.previewFor(initialArtifact.id)?.images
       : undefined) ?? preview.images;
-  const [index, setIndex] = useState(preview.index);
+  const [selectedId, setSelectedId] = useState(initialArtifact?.id);
+  const index = Math.max(
+    0,
+    galleryImages.findIndex((image) => image.artifact?.id === selectedId),
+  );
   const item = galleryImages[index];
+  // Keep selection stable as turn activities change; select the first remaining
+  // image if the selected artifact itself disappears.
+  if (item?.artifact && item.artifact.id !== selectedId) setSelectedId(item.artifact.id);
   const artifacts = item?.artifact ? [item.artifact] : [];
   const resources = useScreenshotArtifacts(environmentId, artifacts, true, source, true);
   return (
     <ExpandedImageDialog
       onClose={onClose}
-      onIndexChange={setIndex}
+      onIndexChange={(nextIndex) => setSelectedId(galleryImages[nextIndex]?.artifact?.id)}
       preview={{
         ...preview,
         index,
