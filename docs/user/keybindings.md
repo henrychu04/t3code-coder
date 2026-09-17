@@ -97,3 +97,22 @@ Up/Down moves, Enter chooses, and Right returns to search. `mod+shift+up` and
 
 With a merge request open, `mod+shift+c` copies its URL and `mod+shift+k` copies its number
 with a `#` prefix. These shortcuts leave terminal input alone and can be changed in Settings.
+
+## Selected workspaces
+
+The displayed bindings come from the representative workspace. Add, edit, remove, and reset apply
+to every selected connected workspace. A failed save keeps successful changes in the other
+workspaces; reconnect and retry. Reset uses each workspace's own current rules.
+
+You can configure **Stop current thread**, **Pin or unpin current thread**, and **Copy MR URL or
+thread ID**. Stop has no default shortcut.
+
+## Project actions
+
+Saved project actions appear as **Run project action: name**. Assign a shortcut to run that action
+in a new terminal in the active thread's checkout or worktree. The thread must already exist in the
+workspace. Commands use the active project's effective actions, including inherited workspace
+defaults. Bindings use `script.{id}.run`, so matching action IDs in different projects run each
+project's own command. Legacy action IDs that cannot be represented as a shortcut remain editable.
+
+New action shortcuts default to `!terminalFocus` so they do not intercept terminal input.

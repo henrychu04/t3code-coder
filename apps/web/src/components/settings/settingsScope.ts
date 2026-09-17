@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import { parseProjectSettingsKey } from "../../projectSettingsTarget";
 
 import type {
   SidebarProjectGroupMember,
@@ -58,6 +59,31 @@ export function validateSettingsScopeSearch(raw: Record<string, unknown>): Setti
     ...(machine === undefined ? {} : { machine }),
     ...(checkout === undefined ? {} : { checkout }),
   };
+}
+
+/** Old project URLs identify one checkout, even when its logical group has other members. */
+export function resolveLegacyProjectSettingsSearch(
+  search: SettingsScopeSearch,
+  groups: readonly SidebarProjectSnapshot[],
+): SettingsScopeSearch {
+  if (!search.project || groups.some((group) => group.projectKey === search.project)) return search;
+  const ref = parseProjectSettingsKey(search.project);
+  if (!ref) return search;
+  for (const group of groups) {
+    const member = group.memberProjects.find(
+      (candidate) =>
+        candidate.environmentId === ref.environmentId && candidate.id === ref.projectId,
+    );
+    if (member) {
+      return {
+        project: group.projectKey,
+        machine: search.machine ?? member.environmentId,
+        checkout: search.checkout ?? member.physicalProjectKey,
+      };
+    }
+  }
+  // Keep missing links unavailable; a later workspace snapshot can resolve them.
+  return search;
 }
 
 /** Resolves only existing targets. An unavailable selection never broadens a subsequent write. */

@@ -394,6 +394,30 @@ templates are read from the committed base tree. The gateway never runs Git or `
 connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other
 hosted providers remain unavailable.
 
+Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
+of emoji text. Choices persist on workspace-owned project records and travel through the existing
+project metadata command/event stream over helper stdio. SQLite migration 052 adds the nullable
+`project_icon_json` projection column; resetting a choice stores null. The browser renders bundled
+vectors, emoji, or upstream's name-based monograms. No image-path lookup, transfer, or external fetch
+is introduced.
+
+## Fixed settings metadata
+
+Settings parity uses two bounded metadata reads in the Linux helper. `projects.getConfig` accepts
+only a project ID, resolves an active project through the projection query, and reads the fixed
+`t3.json` file at its real root (at most 64 KiB). It returns only decoded script fields and checkout
+mode, or a missing/invalid/unavailable status. It accepts no caller path, returns no raw file, and
+never logs parser input or file contents. Importing an action remains an explicit settings write.
+
+Workspace themes come only from `<stateDir>/themes/*.json`. The helper examines at most 32 candidate
+files, at most 32 KiB each and 192 KiB total accepted source bytes. Reads reject symlinks, non-regular
+files, invalid UTF-8, NUL bytes, and oversized files, and bind the opened file to the expected
+directory. A symlinked theme directory is rejected. Reserved theme IDs and invalid or colorless
+files are skipped. The watcher is scoped to the helper lifecycle; a sequenced, bounded publication
+stream prevents stale changes from overwriting a reconnect snapshot. Only decoded theme metadata
+travels over the existing server-config stdio stream. It introduces no listener, general file API,
+local file transfer, credential handling, or telemetry.
+
 ## Distribution
 
 `npm start` builds the web client and a Linux x86-64 helper bundle from the checked-out source and

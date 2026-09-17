@@ -86,10 +86,7 @@ const LEGACY_FILE_SEARCH_COMMAND = "fileViewer.searchFiles";
 const RETIRED_KEYBINDING_COMMANDS = new Set<string>(["themeEditor.toggle", "editor.openFavorite"]);
 
 function isRetiredKeybindingCommand(command: unknown): boolean {
-  return (
-    typeof command === "string" &&
-    (RETIRED_KEYBINDING_COMMANDS.has(command) || command.startsWith("script."))
-  );
+  return typeof command === "string" && RETIRED_KEYBINDING_COMMANDS.has(command);
 }
 
 export const ResolvedKeybindingFromConfig = KeybindingRule.pipe(

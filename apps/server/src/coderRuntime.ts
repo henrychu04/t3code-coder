@@ -1,3 +1,5 @@
+import { reconcileProviderSessions } from "./coderRestartRecovery.ts";
+import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import * as AgentMergeRequests from "./agentMergeRequests/AgentMergeRequests.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
@@ -225,6 +227,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* keybindings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
+    yield* reconcileProviderSessions.pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
     yield* projectionSnapshotQuery.getShellSnapshot().pipe(
       Effect.flatMap((snapshot) =>
@@ -275,9 +278,11 @@ export const makeCoderRuntimeLayer = () => {
     Layer.provideMerge(coderReactor),
     Layer.provideMerge(CoderRuntimeDependenciesLive),
   );
-  const services = Layer.mergeAll(runtimeStartup, CoderRuntimeDependenciesLive).pipe(
-    Layer.provideMerge(VcsProcess.layer),
-  );
+  const services = Layer.mergeAll(
+    runtimeStartup,
+    CoderRuntimeDependenciesLive,
+    EnvironmentTheme.layer,
+  ).pipe(Layer.provideMerge(VcsProcess.layer));
 
   return CoderWs.layer.pipe(Layer.provide(services));
 };

@@ -7,6 +7,12 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/provider/makeManagedServerProvider.test.ts",
+      "apps/server/src/keybindings.test.ts",
+      "apps/server/src/coderRestartRecovery.test.ts",
+      "apps/server/src/environmentTheme.test.ts",
+      "apps/server/src/project/configMetadata.test.ts",
+      "apps/server/src/persistence/Migrations/052_ProjectionProjectIcon.test.ts",
       "apps/server/src/agentMergeRequests/*.test.ts",
       "apps/server/src/coderPullRequestLink.test.ts",
       "apps/server/src/persistence/Migrations/051_ProjectionThreadPullRequests.test.ts",

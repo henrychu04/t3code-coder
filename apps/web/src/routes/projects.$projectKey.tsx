@@ -1,7 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { ProjectSettingsPage } from "../components/settings/ProjectSettingsPanel";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-// The loopback Coder gateway owns access; no upstream pairing/authentication gate.
+// Preserve existing checkout links inside the shared settings layout.
 export const Route = createFileRoute("/projects/$projectKey")({
-  component: () => <ProjectSettingsPage projectKey={Route.useParams().projectKey} />,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: "/settings/projects",
+      search: { project: params.projectKey, machine: undefined, checkout: undefined },
+      replace: true,
+    });
+  },
 });

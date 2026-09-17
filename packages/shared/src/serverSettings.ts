@@ -180,6 +180,9 @@ export function applyServerSettingsPatch(
         ? current.defaultModelSelection
         : patch.defaultModelSelection,
     defaultProjectScripts: patch.defaultProjectScripts ?? current.defaultProjectScripts,
+    ...(patch.providerHealthRefreshInterval === undefined
+      ? {}
+      : { providerHealthRefreshInterval: patch.providerHealthRefreshInterval }),
     ...(patch.automaticGitFetchInterval === undefined
       ? {}
       : { automaticGitFetchInterval: patch.automaticGitFetchInterval }),

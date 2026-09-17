@@ -1,228 +1,165 @@
-import { SourceControlPreferences } from "./SourceControlPreferences";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+import { Cause } from "effect";
 import { ProjectSettingsPanel } from "./ProjectSettingsPanel";
 import { Input } from "../ui/input";
-
 const mocks = vi.hoisted(() => ({
+  groups: vi.fn(),
+  environments: vi.fn(),
   update: vi.fn(),
-  readProject: vi.fn(),
-  environment: vi.fn(),
-  settings: vi.fn(),
+  remove: vi.fn(),
+  confirm: vi.fn(),
+  clear: vi.fn(),
+  navigate: vi.fn(),
+  toast: vi.fn(),
 }));
-vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mocks.update }));
-vi.mock("../../state/projects", () => ({ projectEnvironment: { update: {} } }));
-vi.mock("../../state/entities", () => ({
-  readProject: mocks.readProject,
-  useProject: vi.fn(),
-  useProjects: vi.fn(),
+vi.mock("./useSettingsProjectGroups", () => ({ useSettingsProjectGroups: mocks.groups }));
+vi.mock("../../state/environments", () => ({ useEnvironments: mocks.environments }));
+vi.mock("../../state/entities", () => ({ useThreadShells: () => [] }));
+vi.mock("../../state/projects", () => ({
+  projectEnvironment: { update: "update", delete: "delete" },
 }));
-vi.mock("../../state/environments", () => ({
-  useEnvironment: mocks.environment,
-  useEnvironments: vi.fn(),
+vi.mock("../../state/use-atom-command", () => ({
+  useAtomCommand: (operation: string) => (operation === "update" ? mocks.update : mocks.remove),
 }));
-vi.mock("../../hooks/useSettings", () => ({
-  useEnvironmentSettings: mocks.settings,
+vi.mock("../../composerDraftStore", () => ({
+  useComposerDraftStore: { getState: () => ({ clearProjectDraftThreadId: mocks.clear }) },
 }));
-vi.mock("../chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
-
-const project = {
-  id: ProjectId.make("project"),
-  environmentId: EnvironmentId.make("workspace-a"),
-  title: "Smoke project",
-  workspaceRoot: "/repo",
-  defaultModelSelection: null,
-  defaultThreadEnvMode: null,
-  autoPull: false,
+vi.mock("../../localApi", () => ({
+  readLocalApi: () => ({ dialogs: { confirm: mocks.confirm } }),
+}));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => mocks.navigate,
+  useLocation: ({ select }: { select: (value: unknown) => unknown }) =>
+    select({ pathname: "/settings/projects" }),
+}));
+vi.mock("../ui/toast", () => ({
+  toastManager: { add: mocks.toast },
+  stackedThreadToast: (value: unknown) => value,
+}));
+vi.mock("../ProjectFavicon", () => ({ ProjectFavicon: () => null }));
+vi.mock("./ProjectActionsSettings", () => ({ ProjectActionsSettings: () => null }));
+vi.mock("./SettingsPage", () => ({
+  SettingsPage: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SettingsSection: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
+  SettingsRow: ({ control }: { control: React.ReactNode }) => <div>{control}</div>,
+  SettingResetButton: () => null,
+}));
+const members = ["one", "two"].map((id) => ({
+  id: `project-${id}`,
+  environmentId: id,
+  physicalProjectKey: id,
+  title: "Project",
+  workspaceRoot: `/repo/${id}`,
+  environmentLabel: id,
   scripts: [],
-} as unknown as EnvironmentProject;
+}));
+const group = { projectKey: "group", displayName: "Project", memberProjects: members };
 let renderer: ReactTestRenderer | undefined;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.resetAllMocks();
-  mocks.environment.mockReturnValue({
-    connection: { phase: "connected" },
-    label: "Workspace A",
-    serverConfig: { providers: [] },
+  mocks.groups.mockReturnValue([group]);
+  mocks.environments.mockReturnValue({
+    environments: members.map((member) => ({
+      environmentId: member.environmentId,
+      connection: { phase: "connected" },
+      serverConfig: {},
+    })),
   });
-  mocks.settings.mockReturnValue(DEFAULT_UNIFIED_SETTINGS);
-  mocks.readProject.mockReturnValue(project);
   mocks.update.mockResolvedValue({ _tag: "Success", value: undefined });
+  mocks.remove.mockResolvedValue({ _tag: "Success", value: undefined });
+  mocks.confirm.mockResolvedValue(true);
 });
 afterEach(async () => {
   if (renderer) await act(async () => renderer!.unmount());
   renderer = undefined;
   vi.unstubAllGlobals();
 });
-async function mount() {
+async function mount(checkoutKey?: string) {
   await act(async () => {
-    renderer = create(<ProjectSettingsPanel project={project} />);
+    renderer = create(
+      <ProjectSettingsPanel projectKey="group" {...(checkoutKey ? { checkoutKey } : {})} />,
+    );
   });
   return renderer!.root;
 }
-
-it("saves edits only to the selected Coder workspace and project", async () => {
-  const root = await mount();
-  await act(async () => root.findByType(Input).props.onChange({ target: { value: "Renamed" } }));
-  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
-  expect(mocks.readProject).toHaveBeenCalledWith({
-    environmentId: "workspace-a",
-    projectId: "project",
-  });
-  expect(mocks.update).toHaveBeenCalledOnce();
-  expect(mocks.update).toHaveBeenCalledWith({
-    environmentId: "workspace-a",
-    input: {
-      projectId: "project",
-      title: "Renamed",
-    },
-  });
-  expect(JSON.stringify(renderer!.toJSON())).toContain("Project settings saved.");
-});
-
-it("does not overwrite settings changed since the form was opened", async () => {
-  const root = await mount();
-  mocks.readProject.mockReturnValue({ ...project, autoPull: true });
-  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
-  expect(mocks.update).not.toHaveBeenCalled();
-  expect(JSON.stringify(renderer!.toJSON())).toContain("changed elsewhere");
-});
-
-it("disables edits and dispatch when the workspace is disconnected", async () => {
-  const root = await mount();
-  mocks.environment.mockReturnValue({
-    connection: { phase: "offline" },
-    label: "Workspace A",
-    serverConfig: null,
-  });
-  await act(async () => renderer!.update(<ProjectSettingsPanel project={project} />));
-  expect(root.findByType("fieldset").props.disabled).toBe(true);
-  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
-  expect(mocks.update).not.toHaveBeenCalled();
-});
-
-it("renaming a project preserves inherited scripts and automatic pull", async () => {
-  mocks.settings.mockReturnValue({
-    ...DEFAULT_UNIFIED_SETTINGS,
-    defaultAutoPull: true,
-    defaultProjectScripts: [
-      {
-        id: "default",
-        name: "Default",
-        command: "echo setup",
-        icon: "play",
-        runOnWorktreeCreate: false,
-      },
-    ],
-  });
-  const root = await mount();
-  await act(async () =>
-    root.findAllByType(Input)[0]!.props.onChange({ target: { value: "Renamed" } }),
-  );
-  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
-  expect(mocks.update).toHaveBeenCalledOnce();
-  expect(mocks.update.mock.calls[0]![0].input).toEqual({
-    projectId: project.id,
-    title: "Renamed",
-  });
-});
-it("reset does not erase a concurrent script edit", async () => {
-  const root = await mount();
-  mocks.readProject.mockReturnValue({
-    ...project,
-    scripts: [
-      {
-        id: "new",
-        name: "New setup",
-        command: "new command",
-        icon: "play",
-        runOnWorktreeCreate: true,
-      },
-    ],
-  });
-  const button = root
-    .findAllByType("button")
-    .find((node) => node.children.join("") === "Use workspace default scripts")!;
-  await act(async () => button.props.onClick());
-  expect(mocks.update).not.toHaveBeenCalled();
-});
-
-it("captures hydrated defaults once and preserves edits when later settings become stale", async () => {
-  mocks.environment.mockReturnValue({ connection: { phase: "connected" }, serverConfig: null });
+async function rename() {
+  const input = renderer!.root.findByType(Input);
+  await act(async () => input.props.onChange());
+  await act(async () => input.props.onBlur({ currentTarget: { value: "Renamed" } }));
+}
+it("renames all selected checkouts on blur", async () => {
   await mount();
-  expect(JSON.stringify(renderer!.toJSON())).toContain("Loading project settings");
-  expect(renderer!.root.findAllByType("form")).toHaveLength(0);
-
-  mocks.environment.mockReturnValue({
-    connection: { phase: "connected" },
-    serverConfig: { providers: [] },
-  });
-  mocks.settings.mockReturnValue({ ...DEFAULT_UNIFIED_SETTINGS, defaultAutoPull: true });
-  await act(async () => renderer!.update(<ProjectSettingsPanel project={project} />));
-  const root = renderer!.root;
-  const saveButton = () =>
-    root.findAllByType("button").find((node) => node.props.type === "submit")!;
-  await act(async () =>
-    root.findByType(Input).props.onChange({ target: { value: "Unsaved edit" } }),
+  await rename();
+  expect(mocks.update.mock.calls.map(([arg]) => arg)).toEqual(
+    members.map((member) => ({
+      environmentId: member.environmentId,
+      input: { projectId: member.id, title: "Renamed" },
+    })),
   );
-
-  expect(saveButton().props.disabled).toBe(false);
-  mocks.settings.mockReturnValue(DEFAULT_UNIFIED_SETTINGS);
-  await act(async () => renderer!.update(<ProjectSettingsPanel project={project} />));
-  expect(saveButton().props.disabled).toBe(true);
-  expect(root.findByType(Input).props.value).toBe("Unsaved edit");
-  await act(async () => root.findByType("form").props.onSubmit({ preventDefault() {} }));
+});
+it("does not rename any member while one is disconnected", async () => {
+  mocks.environments.mockReturnValue({
+    environments: [{ environmentId: "one", connection: { phase: "connected" }, serverConfig: {} }],
+  });
+  await mount();
+  await rename();
   expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.toast).toHaveBeenCalled();
 });
-
-it("stores and clears merge defaults only in the selected workspace", async () => {
+it("cancelling grouped removal leaves projects and drafts intact", async () => {
+  mocks.confirm.mockResolvedValue(false);
   const root = await mount();
-  const select = root.findByProps({ "aria-label": "Default merge method" });
-  await act(async () => select.props.onChange({ target: { value: "squash" } }));
-  expect(mocks.update).toHaveBeenLastCalledWith({
-    environmentId: "workspace-a",
-    input: { patch: { pullRequestMergeMethodOverrides: { project: "squash" } } },
-  });
-  await act(async () => select.props.onChange({ target: { value: "last-used" } }));
-  expect(mocks.update).toHaveBeenLastCalledWith({
-    environmentId: "workspace-a",
-    input: { patch: { pullRequestMergeMethodOverrides: { project: null } } },
-  });
+  await act(async () =>
+    root
+      .findAllByType("button")
+      .find((node) => node.children.includes("Remove all entries"))!
+      .props.onClick(),
+  );
+  expect(mocks.remove).not.toHaveBeenCalled();
+  expect(mocks.clear).not.toHaveBeenCalled();
 });
-
-it("edits project writer preferences without losing inherited style fields", async () => {
+it("removes a whole group and clears only its drafts after confirmation", async () => {
   const root = await mount();
-  const preferences = root.findByType(SourceControlPreferences);
   await act(async () =>
-    preferences.props.updateSettings({
-      sourceControlWritingStyle: { mode: "conventional_commits" },
-    }),
+    root
+      .findAllByType("button")
+      .find((node) => node.children.includes("Remove all entries"))!
+      .props.onClick(),
   );
-  expect(mocks.update).toHaveBeenLastCalledWith({
-    environmentId: "workspace-a",
-    input: {
-      patch: {
-        projectSettingsOverrides: {
-          project: {
-            sourceControlWritingStyle: {
-              ...DEFAULT_UNIFIED_SETTINGS.sourceControlWritingStyle,
-              mode: "conventional_commits",
-            },
-          },
-        },
-      },
-    },
-  });
+  expect(mocks.confirm.mock.calls[0]![0]).toContain("2 grouped project entries");
+  expect(mocks.remove).toHaveBeenCalledTimes(2);
+  expect(mocks.clear.mock.calls.map(([ref]) => ref)).toEqual(
+    members.map((member) => ({ environmentId: member.environmentId, projectId: member.id })),
+  );
+  expect(mocks.navigate).toHaveBeenCalledWith({ to: "/", replace: true });
+});
+it("stops on a partial removal failure without clearing the failed checkout draft", async () => {
+  mocks.remove
+    .mockResolvedValueOnce({ _tag: "Success" })
+    .mockResolvedValueOnce({ _tag: "Failure", cause: Cause.fail(new Error("Disconnected")) });
+  const root = await mount();
   await act(async () =>
-    preferences.props.updateSettings({ sourceControlWriterModelSelection: null }),
+    root
+      .findAllByType("button")
+      .find((node) => node.children.includes("Remove all entries"))!
+      .props.onClick(),
   );
-  expect(mocks.update).toHaveBeenLastCalledWith({
-    environmentId: "workspace-a",
-    input: {
-      patch: { projectSettingsOverrides: { project: { sourceControlWriterModelSelection: null } } },
-    },
+  expect(mocks.clear).toHaveBeenCalledTimes(1);
+  expect(mocks.navigate).not.toHaveBeenCalled();
+  expect(mocks.toast).toHaveBeenCalled();
+});
+it("follows the selected physical project when grouping changes", async () => {
+  await mount("one");
+  mocks.groups.mockReturnValue([{ ...group, projectKey: "new-group" }]);
+  await act(async () =>
+    renderer!.update(<ProjectSettingsPanel projectKey="group" checkoutKey="one" />),
+  );
+  const navigation = mocks.navigate.mock.calls[0]![0];
+  expect(navigation.search()).toEqual({
+    project: "new-group",
+    machine: undefined,
+    checkout: "one",
   });
 });

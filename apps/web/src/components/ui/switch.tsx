@@ -27,7 +27,7 @@ function Switch({
       data-size={size}
       data-slot="switch"
       data-mixed={mixed ? "" : undefined}
-      aria-checked={mixed ? "mixed" : undefined}
+      {...(mixed ? { "aria-checked": "mixed" as const } : {})}
       {...props}
     >
       <SwitchPrimitive.Thumb

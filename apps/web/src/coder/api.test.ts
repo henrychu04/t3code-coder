@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   checkCoderDeploymentAuthentication,
   discoverCoderWorkspaces,
+  loadCoderPortForwardStatuses,
   loadCoderWorkspaceDiagnostics,
   loadCoderWorkspaceMetrics,
   restartCoderWorkspace,
@@ -110,5 +111,34 @@ describe("Coder workspace lifecycle API", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/workspaces/workspace%20one/update", {
       method: "POST",
     });
+  });
+});
+
+describe("settings status cancellation", () => {
+  it.each([
+    [
+      "domain authentication",
+      (signal: AbortSignal) => checkCoderDeploymentAuthentication("one", signal),
+      { status: "authenticated" },
+    ],
+    [
+      "workspace discovery",
+      (signal: AbortSignal) => discoverCoderWorkspaces("one", signal),
+      { workspaces: [] },
+    ],
+    [
+      "port forwards",
+      (signal: AbortSignal) => loadCoderPortForwardStatuses(signal),
+      { portForwards: [] },
+    ],
+  ] as const)("passes the polling signal to %s requests", async (_name, read, body) => {
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => Response.json(body));
+    vi.stubGlobal("fetch", fetchMock);
+    await read(controller.signal);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: controller.signal }),
+    );
   });
 });

@@ -250,3 +250,29 @@ describe("thread notifications", () => {
     expect(state.badge).toHaveBeenLastCalledWith(0);
   });
 });
+
+it.each(["notifications", "notifications-and-sound"] as const)(
+  "shows system completion notifications for %s",
+  async (mode) => {
+    state.mode = mode;
+    state.inApp = false;
+    state.focused = false;
+    await render();
+    await complete();
+    await render();
+    expect(state.notification).toHaveBeenCalledExactlyOnceWith(
+      "Thread completed",
+      expect.objectContaining({ body: "Fix the login form", tag: "env-1:thread-1" }),
+    );
+    if (mode === "notifications-and-sound") expect(state.sound).toHaveBeenCalledTimes(1);
+    else expect(state.sound).not.toHaveBeenCalled();
+  },
+);
+it("does not create a system notification when permission is denied", async () => {
+  state.mode = "notifications";
+  state.focused = false;
+  Object.assign(Notification, { permission: "denied" });
+  await render();
+  await complete();
+  expect(state.notification).not.toHaveBeenCalled();
+});

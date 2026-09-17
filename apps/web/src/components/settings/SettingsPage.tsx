@@ -1,3 +1,8 @@
+import {
+  scrollToSettingsTarget,
+  SettingsSearchTargetProvider,
+  useSettingsSearchTarget,
+} from "./settingsSearchTarget";
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
 import * as Equal from "effect/Equal";
 import { useOptionalSettingsScope } from "./SettingsScopeContext";
@@ -9,26 +14,65 @@ import {
   listProjectOverrides,
 } from "./scopedSettings";
 import { SettingInheritance, type SettingOverridingProject } from "./SettingInheritance";
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useCallback, useRef } from "react";
 import { Undo2Icon } from "lucide-react";
-import { useLocation } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { cn } from "../../lib/utils";
 import { WorkspacePageContainer } from "../WorkspacePageContainer";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-export function SettingsPage({ children }: { readonly children: ReactNode }) {
+export function SettingsPage({
+  children,
+  className,
+}: {
+  readonly children: ReactNode;
+  readonly className?: string | undefined;
+}) {
+  const navigate = useNavigate();
   const hash = useLocation({ select: (location) => location.hash });
+  const highlightTarget = useLocation({
+    select: (location) => location.state.settingsTargetHighlight !== false,
+  });
+  const targetId = hash.replace(/^#/, "") || null;
+  const handledTarget = useRef<string | null>(null);
+  const clearTargetHash = useCallback(() => {
+    if (handledTarget.current === targetId) return;
+    handledTarget.current = targetId;
+    void navigate({
+      hash: "",
+      replace: true,
+      resetScroll: false,
+      hashScrollIntoView: false,
+      state: { settingsTargetHighlight: true },
+    });
+  }, [navigate, targetId]);
+  // Also reach static anchors outside a SettingsRow, including the header's restore button.
   useEffect(() => {
-    if (!hash) return;
-    const target = document.getElementById(hash.replace(/^#/u, ""));
-    target?.scrollIntoView({ block: "center" });
-  }, [hash]);
+    if (!targetId) handledTarget.current = null;
+    if (
+      targetId &&
+      handledTarget.current !== targetId &&
+      scrollToSettingsTarget(targetId, { highlight: highlightTarget })
+    )
+      clearTargetHash();
+  }, [targetId, highlightTarget, clearTargetHash]);
   return (
-    <div className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto">
-      <WorkspacePageContainer className="gap-12">{children}</WorkspacePageContainer>
-    </div>
+    <SettingsSearchTargetProvider
+      targetId={targetId}
+      highlightTarget={highlightTarget}
+      onTargetHandled={clearTargetHash}
+    >
+      <div
+        data-settings-page-scroll
+        className="topbar-scroll-fade scrollbar-gutter-both min-h-0 flex-1 overflow-y-auto"
+      >
+        <WorkspacePageContainer className={cn("gap-8", className)}>
+          {children}
+        </WorkspacePageContainer>
+      </div>
+    </SettingsSearchTargetProvider>
   );
 }
 
@@ -39,26 +83,36 @@ export function SettingsSection({
   title,
   unframed = false,
   headerAction,
+  hideTitle = false,
 }: {
   readonly children: ReactNode;
   readonly description?: string;
-  readonly id?: string;
+  readonly id?: string | undefined;
   readonly title: string;
   readonly unframed?: boolean;
   readonly headerAction?: ReactNode;
+  readonly hideTitle?: boolean;
 }) {
+  const targetRef = useSettingsSearchTarget<HTMLElement>(id);
   return (
-    <section className="space-y-3" id={id}>
+    <section
+      ref={targetRef}
+      tabIndex={id ? -1 : undefined}
+      className={cn(!hideTitle && "space-y-2.5")}
+      id={id}
+    >
       <div
+        data-settings-scroll-target
         className={cn(
-          "flex items-center justify-between gap-4 px-3 sm:px-4",
+          hideTitle && "sr-only",
+          "flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4",
           unframed && "min-h-8",
         )}
       >
         <div>
           <h2
             className={cn(
-              "text-lg font-semibold tracking-tight",
+              "flex min-h-7 items-center text-sm font-normal tracking-[-0.005em] text-foreground/70",
               unframed && "tracking-[-0.025em] text-foreground",
             )}
           >
@@ -74,7 +128,7 @@ export function SettingsSection({
         className={
           unframed
             ? "relative space-y-1 overflow-visible text-foreground"
-            : "divide-y divide-border/70 rounded-xl border bg-card/40"
+            : "relative overflow-visible rounded-xl border border-border/60 bg-card/40 shadow-xs/5 [&>*+*]:border-t [&>*+*]:border-border/50 [&>[data-slot=settings-row]]:rounded-none"
         }
       >
         {children}
@@ -90,17 +144,19 @@ function ScopedSettingsRow({
   description,
   id,
   resetAction,
+  status,
   title,
   settingKeys = [],
 }: {
   readonly settingKeys?: readonly (keyof ServerSettings)[];
   readonly children?: ReactNode;
-  readonly className?: string;
+  readonly className?: string | undefined;
   readonly control?: ReactNode;
-  readonly description?: string;
-  readonly id?: string;
+  readonly description?: ReactNode;
+  readonly id?: string | undefined;
   readonly resetAction?: ReactNode;
-  readonly title: string;
+  readonly status?: ReactNode;
+  readonly title: ReactNode;
 }) {
   const context = useOptionalSettingsScope();
   const clear = useClearScopedSettings();
@@ -142,7 +198,11 @@ function ScopedSettingsRow({
   const renderedReset =
     unavailable || readOnly ? null : projectScope && scopedKeys.length ? (
       source === "project" || source === "mixed" ? (
-        <SettingResetButton label={title} inherit onClick={() => clear(scopedKeys)} />
+        <SettingResetButton
+          label={typeof title === "string" ? title : "setting"}
+          inherit
+          onClick={() => clear(scopedKeys)}
+        />
       ) : null
     ) : (
       resetAction
@@ -180,50 +240,42 @@ function ScopedSettingsRow({
       />
     ) : null;
   return (
-    <div
+    <SettingsRowLayout
       id={id}
-      className={cn(
-        "flex flex-col gap-3 px-4 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-8",
-        className,
-      )}
+      className={className}
+      title={title}
+      description={description}
+      status={status}
+      inheritance={renderedInheritance}
+      resetAction={renderedReset}
+      mixed={mixed}
+      control={
+        control ? (
+          <div className="flex w-full flex-col items-start gap-1 sm:w-auto sm:items-end">
+            <fieldset
+              disabled={readOnly || unavailable}
+              inert={readOnly || unavailable || undefined}
+              className="flex w-full items-center gap-2 disabled:opacity-50 sm:w-auto"
+            >
+              {control}
+            </fieldset>
+            {readOnly ? (
+              <span className="text-xs text-muted-foreground">Workspace-wide setting</span>
+            ) : unavailable ? (
+              <span className="text-xs text-muted-foreground">Connect the selected workspace</span>
+            ) : null}
+          </div>
+        ) : null
+      }
     >
-      <div className="min-w-0 space-y-1">
-        <div className="flex min-h-5 items-center gap-1.5">
-          <h3 className="text-sm font-medium">{title}</h3>
-          {renderedInheritance}
-          {renderedReset}
-          {mixed && <span className="text-xs font-medium text-warning">Mixed</span>}
-        </div>
-        {description ? (
-          <p className="max-w-xl text-[13px] leading-[1.45] text-muted-foreground/80">
-            {description}
-          </p>
-        ) : null}
-        {readOnly || unavailable ? (
-          <fieldset disabled inert className="opacity-50">
-            {children}
-          </fieldset>
-        ) : (
-          children
-        )}
-      </div>
-      {control ? (
-        <div className="flex flex-col items-start gap-1 sm:items-end">
-          <fieldset
-            disabled={readOnly || unavailable}
-            inert={readOnly || unavailable || undefined}
-            className="flex items-center disabled:opacity-50"
-          >
-            {control}
-          </fieldset>
-          {readOnly ? (
-            <span className="text-xs text-muted-foreground">Workspace-wide setting</span>
-          ) : unavailable ? (
-            <span className="text-xs text-muted-foreground">Connect the selected workspace</span>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
+      {children && (readOnly || unavailable) ? (
+        <fieldset disabled inert className="opacity-50">
+          {children}
+        </fieldset>
+      ) : (
+        children
+      )}
+    </SettingsRowLayout>
   );
 }
 
@@ -261,18 +313,29 @@ export function SettingResetButton(props: {
 export function SettingsSelect({
   ariaLabel,
   children,
+  id,
+  disabled,
+  className,
   onChange,
   value,
 }: {
   readonly ariaLabel: string;
   readonly children: ReactNode;
+  readonly id?: string | undefined;
+  readonly disabled?: boolean;
+  readonly className?: string | undefined;
   readonly onChange: (value: string) => void;
   readonly value: string;
 }) {
   return (
     <select
       aria-label={ariaLabel}
-      className="h-8 min-w-44 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      id={id}
+      disabled={disabled}
+      className={cn(
+        "h-8 min-w-44 rounded-md border border-input bg-background px-2.5 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-64",
+        className,
+      )}
       onChange={(event) => onChange(event.currentTarget.value)}
       value={value}
     >
@@ -281,49 +344,66 @@ export function SettingsSelect({
   );
 }
 
-function UnscopedSettingsRow({
+/** Shared presentation for server settings, browser preferences, and fork resource rows. */
+function SettingsRowLayout({
   children,
   className,
   control,
   description,
   id,
   resetAction,
+  status,
   title,
-}: {
-  readonly children?: ReactNode;
-  readonly className?: string;
-  readonly control?: ReactNode;
-  readonly description?: string;
-  readonly id?: string;
-  readonly resetAction?: ReactNode;
-  readonly title: string;
+  inheritance,
+  mixed,
+}: Parameters<typeof ScopedSettingsRow>[0] & {
+  inheritance?: ReactNode;
+  mixed?: boolean;
 }) {
+  const targetRef = useSettingsSearchTarget<HTMLDivElement>(id);
   return (
     <div
       id={id}
-      className={cn(
-        "flex flex-col gap-3 px-4 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-8",
-        className,
-      )}
+      ref={targetRef}
+      tabIndex={id ? -1 : undefined}
+      data-slot="settings-row"
+      className={cn("rounded-xl px-3 sm:px-4", children ? "pt-3 pb-1" : "py-3", className)}
     >
-      <div className="min-w-0 space-y-1">
-        <div className="flex min-h-5 items-center gap-1.5">
-          <h3 className="text-sm font-medium">{title}</h3>
-          {resetAction}
+      <div className="flex flex-col gap-3 sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(10rem,auto)] sm:items-center sm:gap-8">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex min-h-5 items-center gap-1.5">
+            <h3 className="min-w-0 text-sm font-medium tracking-[-0.005em] text-foreground">
+              {title}
+            </h3>
+            {inheritance ? (
+              <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                {inheritance}
+              </span>
+            ) : null}
+            <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+              {resetAction}
+            </span>
+            {mixed ? <span className="text-xs font-medium text-warning">Mixed</span> : null}
+          </div>
+          {description ? (
+            <p className="max-w-xl break-words text-[13px] leading-[1.45] text-muted-foreground/80">
+              {description}
+            </p>
+          ) : null}
+          {status ? <div className="pt-0.5 text-xs text-muted-foreground">{status}</div> : null}
         </div>
-        {description ? (
-          <p className="max-w-xl text-[13px] leading-[1.45] text-muted-foreground/80">
-            {description}
-          </p>
+        {control ? (
+          <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">
+            {control}
+          </div>
         ) : null}
-        {children}
       </div>
-      {control ? <div className="flex items-center sm:justify-end">{control}</div> : null}
+      {children}
     </div>
   );
 }
 
 export function SettingsRow(props: Parameters<typeof ScopedSettingsRow>[0]) {
   const context = useOptionalSettingsScope();
-  return context ? <ScopedSettingsRow {...props} /> : <UnscopedSettingsRow {...props} />;
+  return context ? <ScopedSettingsRow {...props} /> : <SettingsRowLayout {...props} />;
 }

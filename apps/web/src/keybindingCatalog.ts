@@ -1,4 +1,5 @@
 import {
+  STATIC_KEYBINDING_COMMANDS,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
   THREAD_JUMP_KEYBINDING_COMMANDS,
   type KeybindingCommand,
@@ -10,7 +11,7 @@ export interface KeybindingActionDefinition {
   readonly category: "Files" | "Navigation" | "Panels" | "Chat" | "Terminal";
 }
 
-export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
+const KNOWN_KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
   { command: "fileViewer.find", label: "Find in current file", category: "Files" },
   { command: "projectSearch.toggle", label: "Find text in project", category: "Files" },
   { command: "filePicker.toggle", label: "Search project files", category: "Files" },
@@ -60,3 +61,21 @@ export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
     category: "Terminal",
   },
 ];
+
+// Derive the list from the wire contract so new runtime commands remain configurable.
+export const KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> =
+  STATIC_KEYBINDING_COMMANDS.map(
+    (command) =>
+      KNOWN_KEYBINDING_ACTIONS.find((action) => action.command === command) ?? {
+        command,
+        label:
+          (
+            {
+              "thread.stop": "Stop current thread",
+              "thread.pin": "Pin or unpin current thread",
+              "thread.copyReference": "Copy MR URL or thread ID",
+            } as Partial<Record<KeybindingCommand, string>>
+          )[command] ?? command,
+        category: "Chat",
+      },
+  );

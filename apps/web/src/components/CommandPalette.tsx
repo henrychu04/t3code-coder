@@ -59,7 +59,7 @@ import {
   type CommandPaletteSubmenuItem,
 } from "./CommandPalette.logic";
 import { CommandPaletteResults } from "./CommandPaletteResults";
-import { SETTINGS_SEARCH_ITEMS } from "./settings/settingsSearch";
+import { useAvailableSettingsSearchItems } from "./settings/useAvailableSettingsSearchItems";
 import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
@@ -246,9 +246,10 @@ function CoderCommandPaletteDialog(props: {
       })),
     [handleNewThread, projectPickerEntries, environments],
   );
+  const availableSettingsItems = useAvailableSettingsSearchItems();
   const settingsItems = useMemo<CommandPaletteActionItem[]>(
     () =>
-      SETTINGS_SEARCH_ITEMS.map((item) => ({
+      availableSettingsItems.map((item) => ({
         kind: "action",
         value: `setting:${item.id}`,
         searchTerms: [item.title, item.section, ...item.searchTerms],
@@ -259,10 +260,12 @@ function CoderCommandPaletteDialog(props: {
           await navigate({
             to: item.to,
             hash: item.targetId ?? item.id,
+            hashScrollIntoView: false,
+            state: { settingsTargetHighlight: true },
           });
         },
       })),
-    [navigate],
+    [navigate, availableSettingsItems],
   );
   const projectViewGroups = useMemo<CommandPaletteGroup[]>(
     () =>
