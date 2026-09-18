@@ -33,7 +33,7 @@ export function SkillInlineText(props: { text: string; skills: ReadonlyArray<Inl
       nodes.push(props.text.slice(cursor, start));
     }
     nodes.push(<SkillChip key={`${start}:${name}`} skill={skill} rawText={rawText} />);
-    cursor = start + rawText.length;
+    cursor = (match.index ?? 0) + match[0].length;
   }
 
   if (cursor === 0) {

@@ -1,3 +1,4 @@
+import { PullRequestGlyphIcon } from "./pullRequest/pullRequestIcons";
 import { parseChangeRequestUrl } from "../lib/openPullRequestLink";
 import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import {
@@ -33,6 +34,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 export interface PrStatusIndicator {
   label: string;
   colorClass: string;
+  Icon: PullRequestGlyphIcon;
   tooltip: string;
   tooltipLead: string;
   tooltipTitle: string;
@@ -135,54 +137,20 @@ export function prStatusIndicator(
   pr: ThreadPr,
   provider: VcsStatusResult["sourceControlProvider"] | null | undefined,
 ): PrStatusIndicator | null {
-  function formatPrState(pr: NonNullable<ThreadPr>): string {
-    if (pr.state === "open" && pr.isDraft === true) return "Draft";
-    return pr.state.charAt(0).toUpperCase() + pr.state.slice(1);
-  }
-
-  function formatPrStatusLead(pr: NonNullable<ThreadPr>, changeRequestShortName: string): string {
-    return `${changeRequestShortName} #${pr.number} - ${formatPrState(pr)}`;
-  }
   if (!pr) return null;
   const presentation = resolveChangeRequestPresentation(provider);
+  const state = resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true });
 
-  const tooltipLead = formatPrStatusLead(pr, presentation.shortName);
-  const tooltip = `${tooltipLead}: ${pr.title}`;
-
-  if (pr.state === "open") {
-    const isDraft = pr.isDraft === true;
-    return {
-      label: `${presentation.shortName} ${isDraft ? "draft" : "open"}`,
-      colorClass: isDraft
-        ? "text-zinc-500 dark:text-zinc-400/80"
-        : "text-emerald-600 dark:text-emerald-300/90",
-      tooltip,
-      tooltipLead,
-      tooltipTitle: pr.title,
-      url: pr.url,
-    };
-  }
-  if (pr.state === "closed") {
-    return {
-      label: `${presentation.shortName} closed`,
-      colorClass: "text-red-600 dark:text-red-300/90",
-      tooltip,
-      tooltipLead,
-      tooltipTitle: pr.title,
-      url: pr.url,
-    };
-  }
-  if (pr.state === "merged") {
-    return {
-      label: `${presentation.shortName} merged`,
-      colorClass: "text-violet-600 dark:text-violet-300/90",
-      tooltip,
-      tooltipLead,
-      tooltipTitle: pr.title,
-      url: pr.url,
-    };
-  }
-  return null;
+  const tooltipLead = `${presentation.shortName} #${pr.number} - ${state.label}`;
+  return {
+    label: `${presentation.shortName} ${state.label.toLowerCase()}`,
+    colorClass: state.toneClassName,
+    Icon: state.Icon,
+    tooltip: `${tooltipLead}: ${pr.title}`,
+    tooltipLead,
+    tooltipTitle: pr.title,
+    url: pr.url,
+  };
 }
 
 export function ChangeRequestStatusIcon({

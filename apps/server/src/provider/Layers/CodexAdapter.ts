@@ -62,6 +62,7 @@ import {
   makeCodexSessionRuntime,
   type CodexSessionRuntimeError,
   type CodexSessionRuntimeOptions,
+  type CodexSessionRuntimeSendTurnInput,
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
@@ -1916,7 +1917,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
           attachmentsDir: options.attachmentsDir,
           attachment,
         }).pipe(
-          Effect.map((resolved) => ({ type: "image" as const, url: resolved.dataUrl })),
+          Effect.map((resolved) => ({ type: "localImage" as const, path: resolved.path })),
           Effect.mapError(
             (cause) =>
               new ProviderAdapterRequestError({

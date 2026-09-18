@@ -243,6 +243,7 @@ export const ServerConfig = Schema.Struct({
   providers: ServerProviders,
   environmentThemes: Schema.optional(Schema.Array(EnvironmentTheme).check(Schema.isMaxLength(32))),
   settings: ServerSettings,
+  reasoningMessages: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
 

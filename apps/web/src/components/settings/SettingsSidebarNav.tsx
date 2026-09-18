@@ -12,6 +12,7 @@ import {
   BookOpenIcon,
   BotIcon,
   GitBranchIcon,
+  HardDriveIcon,
   PanelsTopLeftIcon,
   KeyboardIcon,
   Link2Icon,

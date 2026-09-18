@@ -1091,6 +1091,27 @@ it.effect(
       assert.include(diff, "rename to after.ts");
       assert.include(diff, "+THREE");
       assert.include(diff, "+literal file");
+      assert.isAtLeast(result.sources[0]?.files?.length ?? 0, 2);
+      const selected = yield* driver.getReviewDiffPreview({
+        cwd,
+        file: { path: "after.ts", previousPath: "before.ts", sourceKind: "working-tree" },
+      });
+      assert.include(selected.sources[0]?.diff ?? "", "rename from before.ts");
+      assert.notInclude(selected.sources[0]?.diff ?? "", "literal file");
+      const literal = yield* driver.getReviewDiffPreview({
+        cwd,
+        file: { path: ":(exclude)literal.ts", previousPath: null, sourceKind: "working-tree" },
+      });
+      assert.include(literal.sources[0]?.diff ?? "", "+literal file");
+      assert.notInclude(literal.sources[0]?.diff ?? "", "+THREE");
+      const invalid = yield* driver
+        .getReviewDiffPreview({
+          cwd,
+          file: { path: "../outside", previousPath: null, sourceKind: "working-tree" },
+        })
+        .pipe(Effect.flip);
+      assert.include(invalid.message, "Invalid diff path");
+
       assert.deepEqual(yield* fs.readFile(path.join(cwd, ".git", "index")), before);
       assert.deepEqual(
         (yield* fs.readDirectory(path.join(cwd, ".git")))

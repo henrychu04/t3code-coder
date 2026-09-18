@@ -180,7 +180,7 @@ function Row({
   layout = "inline",
   ...props
 }: useRender.ComponentProps<"div"> & {
-  layout?: "inline" | "wrap-actions" | "wrap-actions-narrow";
+  layout?: "inline" | "wrap-actions" | "wrap-actions-narrow" | "approval";
 }) {
   const rowProps = {
     className: cn(
@@ -208,6 +208,7 @@ function Icon({ className, ...props }: ComponentProps<"span">) {
       data-slot="composer-banner-icon"
       className={cn(
         "col-start-1 row-start-1 flex w-(--composer-banner-icon-column) min-w-0 flex-none items-center justify-center text-muted-foreground [&>svg]:size-3",
+        "group-data-[composer-banner-layout=approval]/banner-row:pt-0.5 group-data-[composer-banner-layout=approval]/banner-row:text-warning group-data-[composer-banner-layout=approval]/banner-row:[&>svg]:size-4",
         className,
       )}
       {...props}
@@ -221,6 +222,7 @@ function Content({ className, ...props }: ComponentProps<"span">) {
       data-slot="composer-banner-content"
       className={cn(
         "col-start-2 row-start-1 flex min-w-0 items-center gap-1 *:data-[slot=composer-banner-separator]:mx-0",
+        "@max-[560px]:group-data-[composer-banner-layout=approval]/banner-row:col-end-4",
         "group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:col-[1/3] group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:ps-2 sm:group-not-has-[>[data-slot=composer-banner-icon]]/banner-row:ps-1.5",
         "group-not-has-[>[data-slot=composer-banner-icon],>[data-slot=composer-banner-actions]]/banner-row:pe-2 sm:group-not-has-[>[data-slot=composer-banner-icon],>[data-slot=composer-banner-actions]]/banner-row:pe-1.5",
         className,

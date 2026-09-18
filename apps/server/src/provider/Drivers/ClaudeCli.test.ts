@@ -16,6 +16,7 @@ describe("ClaudeCli", () => {
       pathToClaudeCodeExecutable: "claude",
       settingSources: ["user", "project", "local"],
       includePartialMessages: true,
+      thinking: { type: "adaptive", display: "summarized" },
       sessionId: "session-id",
     });
 
@@ -27,6 +28,7 @@ describe("ClaudeCli", () => {
       "stream-json",
       "--print",
     ]);
+    assert.equal(args[args.indexOf("--thinking-display") + 1], "summarized");
     assert.ok(args.includes("--strict-mcp-config"));
     assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
     assert.ok(!args.includes("--chrome"));

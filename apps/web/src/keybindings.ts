@@ -8,6 +8,7 @@ import {
   type ModelPickerJumpKeybindingCommand,
   type ThreadJumpKeybindingCommand,
 } from "@t3tools/contracts";
+const isElectron = false;
 import { isMacPlatform } from "./lib/utils";
 
 export interface ShortcutEventLike {
@@ -473,6 +474,23 @@ export function isChatNewLocalShortcut(
   options?: ShortcutMatchOptions,
 ): boolean {
   return matchesCommandShortcut(event, keybindings, "chat.newLocal", options);
+}
+
+/**
+ * Whether the keypress is the rich-text bold chord (Mod+B without extra
+ * modifiers). Tiptap binds the same chord, so app shortcuts captured ahead
+ * of the editor must yield when the rich-text composer is focused.
+ */
+export function isRichTextBoldShortcut(event: ShortcutEventLike): boolean {
+  if (event.type !== undefined && event.type !== "keydown") {
+    return false;
+  }
+  return (
+    event.key.toLowerCase() === "b" &&
+    (event.metaKey || event.ctrlKey) &&
+    !event.altKey &&
+    !event.shiftKey
+  );
 }
 
 export function isTerminalClearShortcut(

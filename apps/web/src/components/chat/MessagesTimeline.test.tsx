@@ -164,7 +164,9 @@ beforeAll(async () => {
     removeItem: () => {},
     clear: () => {},
   });
+  vi.stubGlobal("Element", class Element {});
   vi.stubGlobal("window", {
+    Element: globalThis.Element,
     matchMedia,
     addEventListener: () => {},
     removeEventListener: () => {},

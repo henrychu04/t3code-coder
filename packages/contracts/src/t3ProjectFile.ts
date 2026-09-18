@@ -9,6 +9,7 @@ export const T3ProjectFileScript = Schema.Struct({
   command: TrimmedNonEmptyString.check(Schema.isMaxLength(16_384)),
   icon: Schema.optionalKey(ProjectScriptIcon),
   runOnWorktreeCreate: Schema.optionalKey(Schema.Boolean),
+  async: Schema.optionalKey(Schema.Boolean),
 });
 export type T3ProjectFileScript = typeof T3ProjectFileScript.Type;
 export const T3ProjectFile = Schema.Struct({

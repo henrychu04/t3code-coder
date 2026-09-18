@@ -38,6 +38,7 @@ export function workspaceConnectionStatusText(
         title: "Waiting for network…",
         description: `${workspace} will reconnect when the network is available.`,
       };
+    case "unsupported":
     case "error":
       return {
         title: `Couldn’t reconnect to ${workspace}`,

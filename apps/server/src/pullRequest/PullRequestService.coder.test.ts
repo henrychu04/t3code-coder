@@ -1,3 +1,4 @@
+import { PullRequestFilesViewedRepository } from "../persistence/PullRequestFilesViewed.ts";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
 import { assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -144,12 +145,13 @@ const provider: PullRequestProviderApi = {
 const service = PullRequestService.make.pipe(
   Effect.provideService(PullRequestReadCache.PullRequestReadCache, {
     get: (_key, lookup) => lookup,
-    invalidate: Effect.void,
+    invalidate: () => Effect.void,
   }),
   Effect.provide(
     Layer.mergeAll(
       Layer.succeed(PullRequestProviderRegistry, fromProviders([provider])),
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => undefined,
         resolveHandle: () => Effect.die("Unexpected provider refinement"),
       }),
       Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
@@ -160,6 +162,7 @@ const service = PullRequestService.make.pipe(
         getProjectShellById: (projectId) =>
           Effect.succeed(projectId === project.id ? Option.some(project) : Option.none()),
       }),
+      Layer.mock(PullRequestFilesViewedRepository)({}),
       SourceControlRateLimit.layer,
     ),
   ),
@@ -206,7 +209,7 @@ it.effect("publishes a refresh revision after a provider turn", () =>
     );
     yield* Effect.yieldNow;
 
-    yield* pullRequests.refreshAfterTurn;
+    yield* pullRequests.refreshAfterTurn(project.id);
 
     expect(Option.getOrThrow(yield* Fiber.join(nextRefresh))).toBeGreaterThan(0);
   }),

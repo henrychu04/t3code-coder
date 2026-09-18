@@ -1,3 +1,10 @@
+import {
+  visibleThreadPullRequests,
+  threadPullRequestKeysEqual,
+} from "@t3tools/shared/threadPullRequests";
+import type { ThreadPullRequestLink } from "@t3tools/contracts";
+type LegacyLinkedPullRequest = { repository: string; number: number };
+import type { PullRequestChecksState } from "@t3tools/contracts";
 import type { PullRequestMergeMethod } from "@t3tools/contracts";
 import type {
   PullRequestAction,
@@ -962,4 +969,79 @@ export function resolvePullRequestMergeMethod(
     if (method && allowed.includes(method)) return method;
   }
   return allowed[0] ?? "merge";
+}
+
+export type PullRequestPrimaryControl =
+  | "resolve"
+  | "ready"
+  | "merge"
+  | "enable-auto-merge"
+  | "auto-merge-armed"
+  | "merged"
+  | "closed"
+  | null;
+export function resolvePullRequestPrimaryControl(input: {
+  readonly state: PullRequestState;
+  readonly isDraft: boolean;
+  readonly mergeability: PullRequestMergeability;
+  readonly checksState: PullRequestChecksState | null;
+  readonly autoMergeEnabled: boolean | undefined;
+  readonly hasMergeMethod: boolean;
+  readonly canMerge: boolean;
+  readonly canMarkReady: boolean;
+  readonly canEnableAutoMerge: boolean;
+}): PullRequestPrimaryControl {
+  if (input.state === "merged") return "merged";
+  if (input.state === "closed") return "closed";
+  if (input.mergeability === "conflicting") return "resolve";
+  if (input.isDraft) return input.canMarkReady ? "ready" : null;
+  if (input.autoMergeEnabled) return "auto-merge-armed";
+  if (!input.hasMergeMethod) return null;
+  if (
+    input.autoMergeEnabled === false &&
+    input.checksState !== null &&
+    input.checksState !== "passing" &&
+    input.canEnableAutoMerge
+  ) {
+    return "enable-auto-merge";
+  }
+  return input.canMerge ? "merge" : null;
+}
+
+export function pullRequestPanelContext(
+  thread: {
+    readonly projectId: string | null;
+    readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
+    readonly linkedPullRequest?: LegacyLinkedPullRequest | null | undefined;
+    readonly branchPullRequest?: LegacyLinkedPullRequest | null | undefined;
+  },
+  surface: {
+    readonly projectId: string;
+    readonly host?: string | undefined;
+    readonly repository: string;
+    readonly number: number;
+  },
+): "page" | "thread" {
+  if (thread.projectId !== surface.projectId) return "page";
+  const links = visibleThreadPullRequests(thread.pullRequests ?? []);
+  if (links.length > 0) {
+    const repository = surface.repository.toLowerCase();
+    return links.some((link) =>
+      surface.host !== undefined
+        ? threadPullRequestKeysEqual(link, {
+            host: surface.host,
+            repository: surface.repository,
+            number: surface.number,
+          })
+        : link.number === surface.number && link.repository.toLowerCase() === repository,
+    )
+      ? "thread"
+      : "page";
+  }
+  const legacy = thread.linkedPullRequest ?? thread.branchPullRequest ?? null;
+  return legacy !== null &&
+    legacy.repository === surface.repository &&
+    legacy.number === surface.number
+    ? "thread"
+    : "page";
 }

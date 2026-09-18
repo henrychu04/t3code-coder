@@ -342,7 +342,7 @@ describe("draft promotion during worktree setup", () => {
   const serverThreadRef = { environmentId, threadId };
 
   it.each([null, "idle", "starting", "ready"] as const)(
-    "keeps the draft mounted while the first turn waits with session %s",
+    "promotes a persisted send while worktree setup waits with session %s",
     (status) => {
       const serverThread = makeThread({
         messages: [
@@ -364,7 +364,7 @@ describe("draft promotion during worktree setup", () => {
           serverThread,
           backgroundSubmissionPending: false,
         }),
-      ).toBeNull();
+      ).toEqual(serverThreadRef);
     },
   );
 
@@ -1267,10 +1267,10 @@ describe("proactive panels", () => {
     ).toBe(false);
   });
 
-  it("opens a completed turn diff only for changed files", () => {
+  it("opens a completed turn diff only for substantial changes", () => {
     const changedCheckpoint = {
       status: "ready",
-      files: [{ path: "src/app.ts", kind: "modified", additions: 1, deletions: 0 }],
+      files: [{ path: "src/app.ts", kind: "modified", additions: 50, deletions: 0 }],
     } satisfies Pick<TurnDiffSummary, "status" | "files">;
     const unchangedCheckpoint = {
       status: "ready",

@@ -1,3 +1,5 @@
+const isWorktreeSetupActivity = (kind: string) =>
+  kind === "worktree-setup" || kind === "setup-script.requested" || kind === "setup-script.started";
 import {
   foldUserInputActivities,
   isQuestionAnswer,
@@ -616,8 +618,8 @@ export function deriveWorkLogEntries(
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of foldUserInputActivities(ordered)) {
     if (
-      activity.tone !== "error" &&
-      (activity.kind === "setup-script.requested" || activity.kind === "setup-script.started")
+      isWorktreeSetupActivity(activity.kind) &&
+      (activity.tone !== "error" || activity.kind === "worktree-setup")
     ) {
       continue;
     }
@@ -1765,11 +1767,14 @@ function mergeTimelineEntrySuffix(
   return merged;
 }
 
-/** Text and update time do not change a streaming assistant message's timeline structure. */
+function streamsText(role: string): boolean {
+  return role === "assistant" || role === "reasoning";
+}
+
 export function isStreamingMessageTextUpdate(previous: ChatMessage, next: ChatMessage): boolean {
   if (
-    previous.role !== "assistant" ||
-    next.role !== "assistant" ||
+    !streamsText(previous.role) ||
+    previous.role !== next.role ||
     !previous.streaming ||
     !next.streaming
   ) {

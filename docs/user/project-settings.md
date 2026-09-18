@@ -49,6 +49,12 @@ The merge-request panel uses your current selection, then the project default, t
 method selected in that workspace. If GitLab disallows a method, the panel selects an allowed
 one. Choosing a default does not merge a request or bypass GitLab permissions.
 
+Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
+
+When no image is found, web and desktop show a two-character monogram with a color
+from the icon palette, derived from the saved project name. For example, `Nebula` becomes `NA`,
+`Silver Orchard` becomes `SO`, and `M7 Forge` becomes `M7`.
+
 ## Keep the default branch current
 
 Enable **Automatically pull** to keep the default-branch checkout up to date with its configured

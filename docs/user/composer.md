@@ -19,6 +19,30 @@ At phone-sized browser widths, existing threads animate between compact and expa
 Terminal context and other draft details return when the compact composer is expanded. Pasted
 image thumbnails appear above the input; their workspace references are added when the message sends.
 
+## Rich text and multiple models
+
+The composer formats supported Markdown as you type. Turn off **Rich text composer** in
+**Settings → Preferences** to show formatting markers literally. File mentions, skills, images,
+terminal context, and review comments remain editable context chips in either mode.
+
+In a new draft, select multiple models to send the same prompt to separate background threads.
+Each selected model gets its own new worktree in the current Coder workspace. Select a base branch
+before sending. The composer becomes available while those threads finish checkout and setup.
+If a send fails, its model selection and prompt can be restored without replacing a newer draft.
+When delivery is uncertain, open the reported thread before explicitly allowing a retry.
+
+## Send while the agent is working
+
+With **Follow-up behavior → Queue** in **Settings → Preferences**, a message sent during a running
+turn waits at the end of the conversation. It sends after the next completed tool call or when
+the turn ends. Use its arrow to send now, or its X to return it to the composer. Choose **Steer**
+to send follow-ups immediately instead. Already queued messages keep their place.
+
+Stop returns queued messages to the composer. If their combined images exceed the per-message
+limit, the remaining messages stay intact in the queue, held until you act. Drafts and queues
+remain in browser memory. A queued send waits while the agent needs approval or an answer.
+Use `mod+shift+Enter` to send the oldest queued message now without replacing your current draft.
+
 ## Inline context
 
 Review comments and pasted images appear as chips within the prompt alongside file mentions,
@@ -35,7 +59,8 @@ when moved between threads or restored from a prompt stash.
 ## Images
 
 Paste an image straight into the composer to share it with Codex or Claude. PNG, JPEG, and WebP images up
-to 20 MiB are accepted; anything else — or anything larger — is rejected before it is sent. The
+to 50 MiB are accepted as sources and compressed to at most 10 MiB before upload. Unsupported
+formats and images that cannot meet the upload limit are rejected before sending. The
 image is validated, not just renamed, and is stored at a generated path inside the workspace so
 the provider can read it. There are no general file attachments: images pasted into the composer are the
 only upload.
@@ -76,7 +101,8 @@ Editing a recalled prompt turns it into a normal draft. History stays in browser
 
 Choose **Edit from here** beneath a sent message to rewind to before that message. Choose
 **Revert and keep changes** to leave workspace files as they are, or **Revert files too** to
-restore the checkpoint as well. The selected prompt and its pasted images return to the composer
+restore the checkpoint as well. File restore requires a worktree that is not shared with another
+thread or agent session; project-directory threads rewind conversation history only. The selected prompt and its pasted images return to the composer
 for editing and resending, below any unsent draft. Restoration waits for the rewind to finish.
 
 Rewind removes the selected message and later conversation from the active thread and provider

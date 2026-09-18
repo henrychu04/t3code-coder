@@ -150,6 +150,7 @@ type SDKAssistantMessage = {
 };
 
 type StreamEvent =
+  | { readonly type: "message_start"; readonly message?: unknown }
   | {
       readonly type: "message_delta";
       readonly usage: unknown;
@@ -390,6 +391,7 @@ export type Options = {
   readonly effort?: "low" | "medium" | "high" | "xhigh" | "max";
   readonly env?: NodeJS.ProcessEnv;
   readonly includePartialMessages?: boolean;
+  readonly thinking?: { readonly type: "adaptive"; readonly display: "summarized" };
   readonly model?: string;
   readonly onUserDialog?: (
     request: UserDialogRequest,
@@ -638,6 +640,7 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
     args.push("--allow-dangerously-skip-permissions");
   }
   if (options.includePartialMessages) args.push("--include-partial-messages");
+  if (options.thinking?.display === "summarized") args.push("--thinking-display", "summarized");
   for (const directory of options.additionalDirectories ?? []) args.push("--add-dir", directory);
   if (options.resume) args.push("--resume", options.resume);
   if (options.forkSession) args.push("--fork-session");

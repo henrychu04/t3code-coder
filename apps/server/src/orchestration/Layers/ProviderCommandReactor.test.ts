@@ -426,7 +426,7 @@ describe("ProviderCommandReactor", () => {
               }
             }
             if (
-              command.type === "thread.meta.update" &&
+              command.type === "thread.title.generate.complete" &&
               String(command.commandId).includes("thread-title-rename")
             ) {
               generatedTitleMetadataDispatchAttempts += 1;
@@ -659,12 +659,27 @@ describe("ProviderCommandReactor", () => {
       readonly worktreePath?: string;
     },
   ) {
+    if (input.title !== undefined) {
+      const thread = (await harness.readModel()).threads.find(
+        (thread) => thread.id === ThreadId.make("thread-1"),
+      )!;
+      await harness.runEffect(
+        harness.engine.dispatch({
+          type: "thread.title.generate.complete",
+          commandId: CommandId.make(`cmd-generated-initial-title-${input.id}`),
+          threadId: thread.id,
+          title: input.title,
+          expectedTitle: thread.title,
+          expectedVersion: thread.titleState?.version ?? null,
+          needsRefinement: false,
+        }),
+      );
+    }
     await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.meta.update",
         commandId: CommandId.make(`cmd-generated-name-seed-${input.id}`),
         threadId: ThreadId.make("thread-1"),
-        ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.branch !== undefined ? { branch: input.branch } : {}),
         ...(input.worktreePath !== undefined ? { worktreePath: input.worktreePath } : {}),
       }),
@@ -744,7 +759,10 @@ describe("ProviderCommandReactor", () => {
     const harness = await createHarness();
     await harness.runEffect(
       harness.engine.dispatch({
-        type: "thread.meta.update",
+        type: "thread.title.generate.complete",
+        expectedTitle: "Thread",
+        expectedVersion: null,
+        needsRefinement: false,
         commandId: CommandId.make("seed-attached-compact"),
         threadId: ThreadId.make("thread-1"),
         title: "/compact",
@@ -1404,7 +1422,10 @@ describe("ProviderCommandReactor", () => {
 
     await Effect.runPromise(
       harness.engine.dispatch({
-        type: "thread.meta.update",
+        type: "thread.title.generate.complete",
+        expectedTitle: "Thread",
+        expectedVersion: null,
+        needsRefinement: false,
         commandId: CommandId.make("cmd-thread-title-seed"),
         threadId: ThreadId.make("thread-1"),
         title: seededTitle,
@@ -2037,7 +2058,10 @@ describe("ProviderCommandReactor", () => {
 
     await Effect.runPromise(
       harness.engine.dispatch({
-        type: "thread.meta.update",
+        type: "thread.title.generate.complete",
+        expectedTitle: "Thread",
+        expectedVersion: null,
+        needsRefinement: false,
         commandId: CommandId.make("cmd-thread-title-formatted-seed"),
         threadId: ThreadId.make("thread-1"),
         title: seededTitle,

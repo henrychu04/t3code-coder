@@ -35,6 +35,11 @@ const CAPABILITIES: PullRequestCapabilities = {
   updateMethods: ["rebase"],
   search: true,
   reactions: true,
+  // GitLab keeps a reader's viewed files in one browser's local storage, where nothing outside
+  // that browser can read or write them. So the marks made here are this environment's own: they
+  // follow the reader between the clients connected to it, but they are not the ones gitlab.com
+  // shows, and the surface says so rather than implying a review can be carried on from there.
+  viewedFiles: "environment",
   review: {
     inlineComment: true,
     reply: true,

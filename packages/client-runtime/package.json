@@ -148,7 +148,8 @@
     "./work-log/user-input": {
       "types": "./src/work-log/userInput.ts",
       "default": "./src/work-log/userInput.ts"
-    }
+    },
+    "./worktree-setup": "./src/worktreeSetup.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

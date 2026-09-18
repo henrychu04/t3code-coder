@@ -38,6 +38,36 @@ type SerializedContextNode = Spread<
 
 function ContextChip({ source, nodeKey }: { source: string; nodeKey: NodeKey }) {
   const [editor] = useLexicalComposerContext();
+  return (
+    <CoderComposerContextChip
+      source={source}
+      disabled={!editor.isEditable()}
+      onSave={(next) => {
+        editor.update(
+          () => {
+            const node = $getNodeByKey(nodeKey);
+            if (node instanceof ComposerContextNode && node.isAttached()) {
+              if (collectInlineComposerContexts(next).length > 0)
+                node.getWritable().__source = next;
+              else node.replace($createTextNode(next));
+            }
+          },
+          { tag: HISTORY_PUSH_TAG },
+        );
+      }}
+    />
+  );
+}
+
+export function CoderComposerContextChip({
+  source,
+  disabled,
+  onSave,
+}: {
+  source: string;
+  disabled: boolean;
+  onSave: (source: string) => void;
+}) {
   const images = use(ComposerImagesContext);
   const context = collectInlineComposerContexts(source)[0]?.context;
   const [open, setOpen] = useState(false);
@@ -70,23 +100,13 @@ function ContextChip({ source, nodeKey }: { source: string; nodeKey: NodeKey }) 
         ? FileTextIcon
         : MessageCircleIcon;
   const save = () => {
-    if (context.kind === "image" || !editor.isEditable()) return;
-    editor.update(
-      () => {
-        const node = $getNodeByKey(nodeKey);
-        if (node instanceof ComposerContextNode && node.isAttached()) {
-          if (context.kind === "text") {
-            if (comment.length >= 32 * 1024)
-              node.getWritable().__source = longTextContextReference(comment);
-            else node.replace($createTextNode(comment));
-          } else
-            node.getWritable().__source = formatReviewCommentContext({
-              ...context.comment,
-              text: comment,
-            });
-        }
-      },
-      { tag: HISTORY_PUSH_TAG },
+    if (context.kind === "image" || disabled) return;
+    onSave(
+      context.kind === "text"
+        ? comment.length >= 32 * 1024
+          ? longTextContextReference(comment)
+          : comment
+        : formatReviewCommentContext({ ...context.comment, text: comment }),
     );
     setOpen(false);
   };

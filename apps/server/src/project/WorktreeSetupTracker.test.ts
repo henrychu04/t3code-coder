@@ -36,6 +36,38 @@ describe("WorktreeSetupTracker", () => {
       expect((yield* tracker.get(threadId))?.phase).toBe("done");
     }),
   );
+  it.effect(
+    "does not permit cancellation after handoff while an async setup script is running",
+    () =>
+      Effect.gen(function* () {
+        const tracker = yield* WorktreeSetupTracker.make;
+        const entered = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const fiber = yield* Effect.forkChild(
+          Effect.uninterruptible(
+            Effect.gen(function* () {
+              yield* Deferred.succeed(entered, undefined);
+              yield* Deferred.await(release);
+              yield* tracker.stageStatus(threadId, "agent", "done");
+            }),
+          ),
+        );
+        yield* tracker.begin({
+          threadId,
+          branch: null,
+          baseRef: null,
+          stages: ["setup-script", "agent"],
+          fiber,
+        });
+        yield* tracker.stageStatus(threadId, "setup-script", "running");
+        yield* Deferred.await(entered);
+        const cancelling = yield* Effect.forkChild(tracker.cancel(threadId));
+        yield* Effect.yieldNow;
+        yield* Deferred.succeed(release, undefined);
+        expect(yield* Fiber.join(cancelling)).toBe(false);
+        expect((yield* tracker.get(threadId))?.phase).toBe("running");
+      }),
+  );
   it.effect("records stage transitions, checkout progress, and the final phase", () =>
     Effect.gen(function* () {
       const tracker = yield* WorktreeSetupTracker.make;

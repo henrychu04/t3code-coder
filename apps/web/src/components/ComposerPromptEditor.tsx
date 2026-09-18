@@ -956,15 +956,9 @@ interface ComposerPromptEditorProps {
 }
 
 /**
- * Client rect of the line the collapsed caret is on, as seen from `edge`.
- * A caret at a soft-wrap boundary belongs to two visual lines and the
- * range reports a rect for each, so take the one farthest from the edge
- * under test: an ambiguous caret then never claims the key and the arrow
- * moves the caret as usual. A collapsed range reports zero-height rects at
- * some positions, so probe the adjacent character on the same side. When
- * the range container is the paragraph itself (an empty line, or a caret
- * beside an inline chip) measure the child next to the caret before
- * falling back to the paragraph.
+ * The composer editor. Tiptap in both modes: the `richTextEnabled` setting
+ * toggles Markdown styling, never the engine. Plain mode renders every
+ * marker as a literal character and serializes byte-identically.
  */
 function caretLineRect(range: Range, edge: "start" | "end"): DOMRect | null {
   const collapsedRects = Array.from(range.getClientRects()).filter((rect) => rect.height > 0);

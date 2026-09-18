@@ -172,6 +172,8 @@ interface ComposerDraftStoreState {
   getDraftSession: (draftId: DraftId) => DraftSessionState | null;
   /** Resolves a server-thread ref back to a matching draft session when one exists. */
   getDraftSessionByRef: (threadRef: ScopedThreadRef) => DraftSessionState | null;
+  /** The draft id that reserved a server-thread ref, while its draft record still exists. */
+  getDraftIdByRef: (threadRef: ScopedThreadRef) => DraftId | null;
   getDraftThreadByRef: (threadRef: ScopedThreadRef) => DraftThreadState | null;
   getDraftThread: (threadRef: ComposerThreadTarget) => DraftThreadState | null;
   listDraftThreadKeys: () => string[];
@@ -972,6 +974,16 @@ const composerDraftStore = create<ComposerDraftStoreState>()((setBase, get) => {
       return null;
     },
     getDraftSession: (draftId) => get().draftThreadsByThreadKey[draftId] ?? null,
+    getDraftIdByRef: (threadRef) => {
+      for (const [id, draft] of Object.entries(get().draftThreadsByThreadKey)) {
+        if (
+          draft.environmentId === threadRef.environmentId &&
+          draft.threadId === threadRef.threadId
+        )
+          return DraftId.make(id);
+      }
+      return null;
+    },
     getDraftSessionByRef: (threadRef) => {
       for (const draftSession of Object.values(get().draftThreadsByThreadKey)) {
         if (
@@ -2099,4 +2111,21 @@ export function finalizePromotedDraftThreadsByRef(
   for (const threadRef of serverThreadRefs) {
     finalizePromotedDraftThreadByRef(threadRef);
   }
+}
+
+export function restoreFailedBackgroundDraftThread(
+  draftId: DraftId,
+  draftThread: DraftThreadState,
+  threadId: ThreadId,
+): void {
+  useComposerDraftStore.setState((state) => ({
+    draftThreadsByThreadKey: {
+      ...state.draftThreadsByThreadKey,
+      [draftId]: {
+        ...draftThread,
+        threadId,
+        promotedTo: null,
+      },
+    },
+  }));
 }
