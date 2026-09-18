@@ -4381,7 +4381,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     ((settings.contextWindowMeterEnabled && activeContextWindow) ||
                     reserveContextWindowMeter
                       ? "pr-28"
-                      : "pr-12"),
+                      : "pr-20"),
                 )}
               >
                 <ComposerPromptEditor
@@ -4500,12 +4500,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isComposerResting && "hidden",
                   )}
                 >
-                  <ComposerImagePicker
-                    disabled={
-                      isConnecting || projectSelectionRequired || pendingUserInputs.length > 0
-                    }
-                    onFiles={addComposerImages}
-                  />
                   {composerControlsInStrip ? null : composerControls}
                 </div>
 
@@ -4518,6 +4512,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   }
                   className="flex shrink-0 flex-nowrap items-center justify-end gap-2"
                 >
+                  <ComposerImagePicker
+                    disabled={
+                      isConnecting || projectSelectionRequired || pendingUserInputs.length > 0
+                    }
+                    onFiles={addComposerImages}
+                  />
                   <ComposerFooterPrimaryActions
                     compact={isComposerPrimaryActionsCompact}
                     activeContextWindow={
