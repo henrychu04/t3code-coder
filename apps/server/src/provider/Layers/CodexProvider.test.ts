@@ -264,7 +264,10 @@ it.layer(NodeServices.layer)("Codex provider availability", (it) => {
 
       assert.equal(provider.installed, false);
       assert.equal(provider.status, "error");
-      assert.equal(provider.message, "Codex CLI (`codex`) was not found on PATH.");
+      assert.equal(
+        provider.message,
+        "Could not start Codex CLI (`codex`). Check Settings → Providers → Codex → Binary path on the server.",
+      );
     }),
   );
 });

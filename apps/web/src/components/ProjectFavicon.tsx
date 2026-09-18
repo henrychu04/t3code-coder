@@ -5,6 +5,7 @@ import type { IconName } from "lucide-react/dynamic";
 import { lazy, Suspense, type ComponentType } from "react";
 import { deriveProjectIdentity } from "../projectIdentity";
 import { projectIconColorClassName } from "../projectIconColors";
+import { ProjectMonogram } from "./ProjectMonogram";
 import { cn } from "~/lib/utils";
 const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
@@ -23,6 +24,8 @@ export function ProjectIconGraphic({
   icon: ProjectIconOverride;
   className?: string | undefined;
 }) {
+  if (icon.kind === "monogram")
+    return <ProjectMonogram text={icon.text} color={icon.color} className={className} />;
   if (icon.kind === "emoji")
     return (
       <ProjectFaviconFallback icon={FolderCodeIcon} emoji={icon.emoji} className={className} />
@@ -77,43 +80,7 @@ function ProjectFaviconFallback({
   if (projectName && projectName.trim().length > 0) {
     const identity = deriveProjectIdentity(projectName);
     return (
-      <svg
-        aria-hidden="true"
-        viewBox="0 0 16 16"
-        className={cn(
-          "size-4 shrink-0 overflow-hidden rounded-[25%] font-mono select-none",
-          className,
-        )}
-        style={{
-          backgroundColor: identity.background,
-          backgroundImage: `linear-gradient(145deg, ${identity.highlight}, ${identity.background} 72%)`,
-        }}
-      >
-        <text
-          x="8"
-          y="10.8"
-          textAnchor="middle"
-          fill="white"
-          className="font-mono"
-          fontSize="8.25"
-          fontWeight="700"
-          textLength="12"
-          lengthAdjust="spacingAndGlyphs"
-          textRendering="geometricPrecision"
-        >
-          {identity.monogram}
-        </text>
-        <rect
-          x="0.25"
-          y="0.25"
-          width="15.5"
-          height="15.5"
-          rx="3.75"
-          fill="none"
-          strokeWidth="0.5"
-          className="stroke-black/10 dark:stroke-white/10"
-        />
-      </svg>
+      <ProjectMonogram text={identity.monogram} color={identity.color} className={className} />
     );
   }
 

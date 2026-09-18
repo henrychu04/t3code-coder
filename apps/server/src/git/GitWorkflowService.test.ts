@@ -140,6 +140,7 @@ const layer = it.layer(
           runForThread: runSetupScript,
         }),
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          resolveLink: () => undefined,
           get: () => Effect.succeed(provider),
         }),
       ),
@@ -976,6 +977,7 @@ it.effect("coalesces status reads and invalidates them explicitly", () => {
             }),
         }),
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          resolveLink: () => undefined,
           get: () => Effect.succeed(provider),
         }),
       ),
@@ -1034,6 +1036,7 @@ it.effect("commits, pushes, and creates a GitLab merge request through the workf
     Layer.provideMerge(gitLayer),
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => undefined,
         get: () => Effect.succeed(workflowProvider),
       }),
     ),
@@ -1129,6 +1132,7 @@ it.effect("serializes a branch switch behind an in-flight pull", () =>
       Layer.provide(workflowSupport),
       Layer.provide(
         Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+          resolveLink: () => undefined,
           get: () => Effect.succeed(provider),
         }),
       ),
@@ -1204,6 +1208,7 @@ for (const scenario of [
         Layer.provide(workflowSupport),
         Layer.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => undefined,
             get: () => Effect.succeed(provider),
           }),
         ),

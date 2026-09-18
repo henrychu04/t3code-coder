@@ -32,6 +32,7 @@ it.effect("combines Git, GitLab discovery, and the workspace write policy", () =
     ),
     Layer.provide(
       Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => undefined,
         discover: Effect.succeed([
           {
             kind: "gitlab",

@@ -1,6 +1,7 @@
 import { LinkBranchPullRequestButton } from "./pullRequest/LinkBranchPullRequestButton";
 import { readThreadReference } from "../lib/threadReference";
 import { projectSettingsTarget } from "../projectSettingsTarget";
+import { requestCustomSnooze } from "./CustomSnoozeDialog";
 import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
@@ -154,6 +155,7 @@ import {
   resolveSidebarThreadStatus,
   searchSidebarThreads,
   shouldCreateNewThreadInCurrentProject,
+  shouldNavigateAfterThreadPark,
   shouldRecedeSidebarThread,
   resolveWorkingStartedAt,
   sidebarListItemId,
@@ -418,7 +420,7 @@ function SidebarThreadTooltip({
 function SnoozePopoverButton(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSnooze: (preset: SnoozePreset) => void;
+  onSnooze: (preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   timestampFormat: TimestampFormat;
 }) {
   const { open, onOpenChange, onSnooze, timestampFormat } = props;
@@ -468,6 +470,19 @@ function SnoozePopoverButton(props: {
             </span>
           </button>
         ))}
+        <div className="my-1 border-t border-border/60" />
+        <button
+          type="button"
+          className="flex w-full cursor-pointer rounded-md px-2 py-1.5 text-left text-xs text-foreground/90 hover:bg-accent hover:text-foreground"
+          onClick={async (event) => {
+            event.stopPropagation();
+            onOpenChange(false);
+            const choice = await requestCustomSnooze();
+            if (choice) onSnooze(choice);
+          }}
+        >
+          Custom…
+        </button>
       </PopoverPopup>
     </Popover>
   );
@@ -963,7 +978,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   onContextMenu: (threadRef: ScopedThreadRef, position: { x: number; y: number }) => void;
   onSettle: (threadRef: ScopedThreadRef) => void;
   onUnsettle: (threadRef: ScopedThreadRef) => void;
-  onSnooze: (threadRef: ScopedThreadRef, preset: SnoozePreset) => void;
+  onSnooze: (threadRef: ScopedThreadRef, preset: Pick<SnoozePreset, "snoozedUntil">) => void;
   onUnsnooze: (threadRef: ScopedThreadRef) => void;
   onUnpin: (threadRef: ScopedThreadRef) => void;
   onAcknowledgeWoke: (threadRef: ScopedThreadRef, visitedAt: string) => void;
@@ -1302,7 +1317,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [onUnpin, threadRef],
   );
   const handleSnoozePreset = useCallback(
-    (preset: SnoozePreset) => {
+    (preset: Pick<SnoozePreset, "snoozedUntil">) => {
       onSnooze(threadRef, preset);
     },
     [onSnooze, threadRef],
@@ -2885,7 +2900,15 @@ export default function Sidebar() {
           }
           // Only move forward if the user is still on the settled thread —
           // a navigation made during the await wins over ours.
-          if (routeThreadKeyRef.current === threadKey) {
+          if (
+            shouldNavigateAfterThreadPark({
+              threadKey,
+              currentThreadKey: routeThreadKeyRef.current,
+              action: "settle",
+              now: new Date().toISOString(),
+              thread: readThreadShell(threadRef),
+            })
+          ) {
             navigateAfterSettle?.();
           }
         } finally {
@@ -3414,7 +3437,17 @@ export default function Sidebar() {
             const settled = await run(settleThread(threadRef), "Failed to settle thread").finally(
               () => settlingThreadKeysRef.current.delete(activeKey),
             );
-            if (settled && routeThreadKeyRef.current === activeKey) navigateAfterSettle?.();
+            if (
+              settled &&
+              shouldNavigateAfterThreadPark({
+                threadKey: activeKey,
+                currentThreadKey: routeThreadKeyRef.current,
+                action: "settle",
+                now: new Date().toISOString(),
+                thread: readThreadShell(threadRef),
+              })
+            )
+              navigateAfterSettle?.();
             return;
           }
           case "move-active":
@@ -3490,7 +3523,7 @@ export default function Sidebar() {
   const performSnooze = useCallback(
     async (
       threadRef: ScopedThreadRef,
-      preset: SnoozePreset,
+      preset: Pick<SnoozePreset, "snoozedUntil">,
       opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
     ) => {
       const threadKey = scopedThreadKey(threadRef);
@@ -3511,7 +3544,15 @@ export default function Sidebar() {
         }
         // Only move forward if the user is still on the snoozed thread —
         // a navigation made during the await wins over ours.
-        if (routeThreadKeyRef.current === threadKey) {
+        if (
+          shouldNavigateAfterThreadPark({
+            threadKey,
+            currentThreadKey: routeThreadKeyRef.current,
+            action: "snooze",
+            now: new Date().toISOString(),
+            thread: readThreadShell(threadRef),
+          })
+        ) {
           navigateAfterSnooze?.();
         }
         return { status: "success" } as const;
@@ -3524,7 +3565,7 @@ export default function Sidebar() {
   const attemptSnooze = useCallback(
     (
       threadRef: ScopedThreadRef,
-      preset: SnoozePreset,
+      preset: Pick<SnoozePreset, "snoozedUntil">,
       opts: { coSnoozingKeys?: ReadonlySet<string> } = {},
     ) => {
       void (async () => {
@@ -3620,10 +3661,13 @@ export default function Sidebar() {
                   {
                     id: "snooze",
                     label: `Snooze (${count})`,
-                    children: snoozePresets.map((preset) => ({
-                      id: `snooze:${preset.id}`,
-                      label: `${preset.label} (${preset.whenLabel})`,
-                    })),
+                    children: [
+                      ...snoozePresets.map((preset) => ({
+                        id: `snooze:${preset.id}`,
+                        label: `${preset.label} (${preset.whenLabel})`,
+                      })),
+                      { id: "snooze:custom", label: "Custom…", separatorBefore: true },
+                    ],
                   },
                 ]
               : []),
@@ -3636,9 +3680,10 @@ export default function Sidebar() {
       );
       if (clicked._tag === "Failure") return;
       if (clicked.value?.startsWith("snooze:")) {
-        const preset = snoozePresets.find(
-          (candidate) => `snooze:${candidate.id}` === clicked.value,
-        );
+        const preset =
+          clicked.value === "snooze:custom"
+            ? await requestCustomSnooze()
+            : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
         if (preset) {
           // Post-snooze navigation must skip threads snoozing in this same
           // batch — they are all leaving the card block together.
@@ -3842,10 +3887,24 @@ export default function Sidebar() {
         const isPinned = thread.pinnedAt != null;
         // Presets resolve at menu-open time (same as the popover).
         const snoozePresets = resolveSnoozePresets(new Date(), timestampFormat);
+        const threadProjectGroup =
+          projectGroups.find((project) =>
+            project.memberProjectRefs.some(
+              (projectRef) =>
+                projectRef.environmentId === thread.environmentId &&
+                projectRef.projectId === thread.projectId,
+            ),
+          ) ?? null;
         const clicked = await settlePromise(() =>
           api.contextMenu.show(
             buildThreadActionMenuItems({
               branch: thread.branch ?? null,
+              projectFilter: threadProjectGroup
+                ? {
+                    label: threadProjectGroup.displayName,
+                    isActive: projectScopeKey === threadProjectGroup.projectKey,
+                  }
+                : null,
               isPinned,
               isSettled,
               isSnoozed,
@@ -3866,13 +3925,25 @@ export default function Sidebar() {
         );
         if (clicked._tag === "Failure") return;
         if (clicked.value?.startsWith("snooze:")) {
-          const preset = snoozePresets.find(
-            (candidate) => `snooze:${candidate.id}` === clicked.value,
-          );
+          const preset =
+            clicked.value === "snooze:custom"
+              ? await requestCustomSnooze()
+              : snoozePresets.find((candidate) => `snooze:${candidate.id}` === clicked.value);
           if (preset) attemptSnooze(threadRef, preset);
           return;
         }
         switch (clicked.value) {
+          case "filter-by-project":
+            // This item is the only scope control here, so picking the
+            // already-scoped project again is the way back to all projects.
+            if (threadProjectGroup) {
+              setProjectScopeKey(
+                projectScopeKey === threadProjectGroup.projectKey
+                  ? null
+                  : threadProjectGroup.projectKey,
+              );
+            }
+            return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -4037,7 +4108,10 @@ export default function Sidebar() {
       handleMultiSelectContextMenu,
       markThreadUnread,
       projectCwdByKey,
+      projectScopeKey,
+      projectByKey,
       serverConfigs,
+      setProjectScopeKey,
       startThreadRename,
       updateThreadMetadata,
       timestampFormat,

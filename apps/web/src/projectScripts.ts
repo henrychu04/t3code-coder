@@ -4,7 +4,14 @@ import type { ProjectScript } from "@t3tools/contracts";
 import type { NewProjectScriptInput } from "./components/projectScriptEditor";
 const MAX_SCRIPT_ID_LENGTH = 64;
 export function buildProjectScript(id: string, input: NewProjectScriptInput): ProjectScript {
-  return { id, ...input };
+  return {
+    id,
+    name: input.name,
+    command: input.command,
+    icon: input.icon,
+    runOnWorktreeCreate: input.runOnWorktreeCreate,
+    ...(input.runOnWorktreeCreate && input.waitForSetup ? { async: false } : {}),
+  };
 }
 function normalizeScriptId(value: string): string {
   const cleaned = value

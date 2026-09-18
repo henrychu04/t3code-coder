@@ -27,12 +27,7 @@ import {
   FolderGit2Icon,
   GitBranchIcon,
   GitCommitHorizontalIcon,
-  GitMergeIcon,
-  GitPullRequestClosedIcon,
-  GitPullRequestDraftIcon,
-  GitPullRequestIcon,
   HammerIcon,
-  LayersIcon,
   MessageCircleQuestionIcon,
   MessageSquareIcon,
   LinkIcon,
@@ -136,6 +131,7 @@ import {
   pullRequestFindingKey,
   pullRequestHandoffLabels,
   readableFailure,
+  resolvePullRequestPrimaryControl,
   resolveBaseFreshness,
   resolvePullRequestMergeMethod,
   PULL_REQUEST_MERGE_METHOD_LABELS,
@@ -158,6 +154,7 @@ import {
   resolvePullRequestState,
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
+import { PullRequestGlyph } from "./pullRequestIcons";
 
 type DetailTab = "summary" | "timeline" | "code";
 
@@ -364,7 +361,7 @@ function PullRequestBaseFreshnessWarning({
                 disabled={pending}
                 onClick={() => onUpdate(method)}
               >
-                <GitMergeIcon aria-hidden className="size-3" />
+                <PullRequestGlyph.merged aria-hidden className="size-3" />
                 {method === "rebase" ? "Update with rebase" : "Update branch"}
               </Button>
             ))}
@@ -377,7 +374,7 @@ function PullRequestBaseFreshnessWarning({
 
 export function PullRequestDetailPanel({
   environmentId,
-  reference,
+  reference: requestedReference,
   shortcutsEnabled,
   getShortcutContext,
   listEntry = null,
@@ -422,13 +419,12 @@ export function PullRequestDetailPanel({
    * again is at best a no-op and at worst git refusing a branch two checkouts.
    */
   context?: "page" | "thread";
-  /**
-   * The open thread's composer. Beside the thread whose own pull request this is, hand-offs
-   * land here instead of opening a new thread — the branch is already under the reader's feet.
-   */
+  /** The open thread's composer. */
   composerDraftTarget?: ScopedThreadRef | DraftId;
   panelRef?: ScopedThreadRef | undefined;
 }) {
+  const reference = requestedReference;
+  const projects = useProjects();
   const pullRequestKey = `${reference.projectId}:${reference.host ?? ""}:${reference.repository}#${reference.number}`;
   const matchingListEntry =
     listEntry?.projectId === reference.projectId &&
@@ -660,7 +656,7 @@ export function PullRequestDetailPanel({
   const [titleSaving, setTitleSaving] = useState(false);
   const newThread = useNewThreadHandler();
   const { environments } = useEnvironments();
-  const projects = useProjects();
+
   const unavailableGitHubUrl = useMemo(() => {
     const identity = projects.find(
       (project) => project.id === reference.projectId && project.environmentId === environmentId,
@@ -802,10 +798,7 @@ export function PullRequestDetailPanel({
     reviewComments?: ReadonlyArray<ReviewCommentContext>;
   };
 
-  // Beside the thread whose own pull request this is, a task belongs in that thread's composer:
-  // the branch is already checked out under it, so opening a second thread would only scatter
-  // the work.
-  const attachTarget = pullRequestComposerTarget(context, composerDraftTarget);
+  const attachTarget = composerDraftTarget ?? null;
   const handoffLabels = pullRequestHandoffLabels(attachTarget !== null);
 
   const writeTaskToComposer = (target: ScopedThreadRef | DraftId, task: ThreadTask) => {
@@ -1158,17 +1151,22 @@ export function PullRequestDetailPanel({
   // One live action holds the slot. Conflicts take priority because every other completion action
   // depends on resolving them first, even for a reader who cannot merge on the host themselves.
   const primaryAction =
-    detail === null || detail.state !== "open"
+    detail === null
       ? null
-      : conflicting
-        ? "resolve"
-        : detail.isDraft && can("ready")
-          ? "ready"
-          : !can("merge")
-            ? null
-            : allowedMergeMethods.length > 0
-              ? "merge"
-              : null;
+      : resolvePullRequestPrimaryControl({
+          state: detail.state,
+          isDraft: detail.isDraft,
+          mergeability: detail.mergeability,
+          checksState: pullRequestChecksState(detail.checks),
+          autoMergeEnabled: detail.autoMergeEnabled,
+          hasMergeMethod: allowedMergeMethods.length > 0,
+          canMerge: can("merge"),
+          canMarkReady: can("ready"),
+          canEnableAutoMerge: can("enable-auto-merge"),
+        });
+  const armedAutoMergeLabel = "Auto-merge enabled";
+  const pendingAutoMergeLabel = "Enable auto-merge";
+  const showsMergeNow = primaryAction === "auto-merge-armed" && can("merge");
   // What the menu's action group holds. Named once so the separators around it are drawn from
   // the same answer as its contents, rather than on the assumption that it has any.
   const showsDraftToggle =
@@ -1398,8 +1396,8 @@ export function PullRequestDetailPanel({
                         variant="info"
                         className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px]"
                       >
-                        <GitMergeIcon aria-hidden className="size-3" />
-                        Auto-merge
+                        <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                        <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
                       </Badge>
                     }
                   />
@@ -1425,7 +1423,7 @@ export function PullRequestDetailPanel({
                             handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"
                           }
                         >
-                          <TriangleAlertIcon aria-hidden className="size-3.5" />
+                          <PullRequestGlyph.conflicting aria-hidden className="size-3.5" />
                           <span className="@max-[30rem]/pr-header:hidden">
                             {handoff === "conflicts" ? "Preparing..." : "Resolve conflicts"}
                           </span>
@@ -1438,17 +1436,109 @@ export function PullRequestDetailPanel({
                   </TooltipPopup>
                 </Tooltip>
               ) : primaryAction === "ready" ? (
-                <Button size="xs" disabled={actionPending} onClick={() => void perform("ready")}>
-                  Ready for review
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="inline-flex shrink-0">
+                        <Button
+                          size="xs"
+                          variant="default"
+                          disabled={actionPending}
+                          onClick={() => void perform("ready")}
+                          aria-label="Ready for review"
+                        >
+                          <PullRequestGlyph.pullRequest aria-hidden className="size-3.5" />
+                          <span className="@max-[30rem]/pr-header:hidden">Ready for review</span>
+                        </Button>
+                      </span>
+                    }
+                  />
+                  <TooltipPopup side="top">Ready for review</TooltipPopup>
+                </Tooltip>
+              ) : primaryAction === "enable-auto-merge" ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="inline-flex shrink-0">
+                        <Button
+                          size="xs"
+                          variant="default"
+                          disabled={actionPending}
+                          onClick={() =>
+                            setConfirmation({ open: true, action: "enable-auto-merge" })
+                          }
+                          aria-label={
+                            pendingAction === "enable-auto-merge"
+                              ? "Enabling..."
+                              : pendingAutoMergeLabel
+                          }
+                        >
+                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                          <span className="@max-[30rem]/pr-header:hidden">
+                            {pendingAction === "enable-auto-merge"
+                              ? "Enabling..."
+                              : pendingAutoMergeLabel}
+                          </span>
+                        </Button>
+                      </span>
+                    }
+                  />
+                  <TooltipPopup side="top">
+                    {pendingAction === "enable-auto-merge" ? "Enabling..." : pendingAutoMergeLabel}
+                  </TooltipPopup>
+                </Tooltip>
+              ) : primaryAction === "auto-merge-armed" ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Badge
+                        size="control"
+                        variant="info"
+                        role="img"
+                        aria-label={armedAutoMergeLabel}
+                      >
+                        <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                        <span className="@max-[30rem]/pr-header:hidden">{armedAutoMergeLabel}</span>
+                      </Badge>
+                    }
+                  />
+                  <TooltipPopup side="top">
+                    {armedAutoMergeLabel}: the host will merge this on its own once its requirements
+                    are met
+                  </TooltipPopup>
+                </Tooltip>
               ) : primaryAction === "merge" ? (
-                <Button
-                  size="xs"
-                  disabled={actionPending}
-                  onClick={() => setConfirmation({ open: true, action: "merge" })}
-                >
-                  {pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <span className="inline-flex shrink-0">
+                        <Button
+                          size="xs"
+                          variant="default"
+                          disabled={actionPending}
+                          onClick={() => setConfirmation({ open: true, action: "merge" })}
+                          aria-label={
+                            pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel
+                          }
+                        >
+                          <PullRequestGlyph.merged aria-hidden className="size-3.5" />
+                          <span className="@max-[30rem]/pr-header:hidden">
+                            {pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel}
+                          </span>
+                        </Button>
+                      </span>
+                    }
+                  />
+                  <TooltipPopup side="top">
+                    {pendingAction === "merge" ? "Merging..." : selectedMergeMethodLabel}
+                  </TooltipPopup>
+                </Tooltip>
+              ) : (primaryAction === "merged" || primaryAction === "closed") &&
+                statePresentation !== null ? (
+                <Badge size="control" variant="outline" className={statePresentation.toneClassName}>
+                  <statePresentation.Icon className="size-3.5" />
+                  {statePresentation.label}
+                </Badge>
               ) : null}
               <Menu>
                 <MenuTrigger
@@ -1518,24 +1608,31 @@ export function PullRequestDetailPanel({
                           onClick={() => void perform(detail.isDraft ? "ready" : "draft")}
                         >
                           {detail.isDraft ? (
-                            <GitPullRequestIcon className="size-3.5" />
+                            <PullRequestGlyph.pullRequest className="size-3.5" />
                           ) : (
-                            <GitPullRequestDraftIcon className="size-3.5" />
+                            <PullRequestGlyph.draft className="size-3.5" />
                           )}
                           {detail.isDraft ? "Ready for review" : "Convert to draft"}
                         </MenuItem>
                       ) : null}
-                      {/* The same merge, left with the host to carry out once the things it
-                          waits on are done. It is offered beside the merge rather than instead
-                          of it, because the reader who can wait and the reader who cannot are
-                          the same person on different days — and a conflicting branch is neither,
-                          since nothing the host waits for will clear it. */}
+                      {showsMergeNow ? (
+                        <MenuItem
+                          disabled={actionPending}
+                          onClick={() => setConfirmation({ open: true, action: "merge" })}
+                        >
+                          <PullRequestGlyph.merged className="size-3.5" />
+                          Merge now
+                        </MenuItem>
+                      ) : null}
+                      {/* The same merge, left with the host to carry out once its requirements
+                          pass. A conflicting branch cannot be armed because nothing the host
+                          waits for will clear the conflict. */}
                       {autoMergeArmed && can("disable-auto-merge") ? (
                         <MenuItem
                           disabled={actionPending}
                           onClick={() => void perform("disable-auto-merge")}
                         >
-                          <GitMergeIcon className="size-3.5" />
+                          <PullRequestGlyph.merged className="size-3.5" />
                           Disable auto-merge
                         </MenuItem>
                       ) : !autoMergeArmed &&
@@ -1549,7 +1646,7 @@ export function PullRequestDetailPanel({
                             setConfirmation({ open: true, action: "enable-auto-merge" })
                           }
                         >
-                          <GitMergeIcon className="size-3.5" />
+                          <PullRequestGlyph.merged className="size-3.5" />
                           Enable auto-merge
                         </MenuItem>
                       ) : null}
@@ -1580,7 +1677,7 @@ export function PullRequestDetailPanel({
                                 {/* The radio item lays its children out as one block, so the
                                     icon and the label need their own row to share a line. */}
                                 <span className="flex min-w-0 items-center gap-2">
-                                  <GitMergeIcon className="size-3.5" />
+                                  <PullRequestGlyph.merged className="size-3.5" />
                                   <span>{PULL_REQUEST_MERGE_METHOD_LABELS[method]}</span>
                                 </span>
                               </MenuRadioItem>
@@ -1623,7 +1720,7 @@ export function PullRequestDetailPanel({
                         disabled={actionPending}
                         onClick={() => setConfirmation({ open: true, action: "close" })}
                       >
-                        <GitPullRequestClosedIcon className="size-3.5" />
+                        <PullRequestGlyph.closed className="size-3.5" />
                         Close pull request
                       </MenuItem>
                     </>
@@ -1631,7 +1728,7 @@ export function PullRequestDetailPanel({
                     <>
                       <MenuSeparator />
                       <MenuItem disabled={actionPending} onClick={() => void perform("reopen")}>
-                        <GitPullRequestIcon className="size-3.5" />
+                        <PullRequestGlyph.reopen className="size-3.5" />
                         Reopen pull request
                       </MenuItem>
                     </>
@@ -1693,7 +1790,7 @@ export function PullRequestDetailPanel({
                         render={
                           <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
                             {isStackedPullRequest ? (
-                              <LayersIcon
+                              <PullRequestGlyph.stack
                                 aria-label="Stacked pull request"
                                 className="size-3 shrink-0"
                               />
@@ -1874,7 +1971,7 @@ export function PullRequestDetailPanel({
                         render={
                           <span className="inline-flex min-w-0 max-w-[40%] shrink-0 items-center gap-1">
                             {isStackedPullRequest ? (
-                              <LayersIcon
+                              <PullRequestGlyph.stack
                                 aria-label="Stacked pull request"
                                 className="size-3 shrink-0"
                               />
@@ -1957,10 +2054,11 @@ export function PullRequestDetailPanel({
 
         {detail ? (
           <nav
-            className="col-span-2 flex min-w-0 items-center gap-1 overflow-x-auto border-t border-border/60 px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 px-4 py-2"
             aria-label="Pull request tabs"
           >
             <ToggleGroup
+              className="shrink-0"
               size="segmented"
               variant="segmented"
               value={[tab]}

@@ -1,4 +1,6 @@
-import { Outlet, createFileRoute } from "@tanstack/react-router";
+import { ThreadRouteView } from "../components/ThreadRouteView";
+import { resolveThreadRouteTarget } from "../threadRoutes";
+import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 
 import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
@@ -110,10 +112,14 @@ function ChatRouteGlobalShortcuts() {
 }
 
 function ChatRouteLayout() {
+  const threadTarget = useParams({
+    strict: false,
+    select: (params) => resolveThreadRouteTarget(params),
+  });
   return (
     <>
       <ChatRouteGlobalShortcuts />
-      <Outlet />
+      {threadTarget ? <ThreadRouteView target={threadTarget} /> : <Outlet />}
     </>
   );
 }

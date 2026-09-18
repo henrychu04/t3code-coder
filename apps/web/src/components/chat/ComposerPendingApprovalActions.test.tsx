@@ -1,24 +1,43 @@
+// @vitest-environment happy-dom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { ApprovalRequestId } from "@t3tools/contracts";
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
-
+import { describe, expect, it, vi } from "vite-plus/test";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 
 describe("ComposerPendingApprovalActions", () => {
-  it("states that the persistent approval lasts for this session", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerPendingApprovalActions
-        requestId={ApprovalRequestId.make("approval-1")}
-        isResponding={false}
-        onRespondToApproval={async () => undefined}
-      />,
-    );
-
-    expect(markup).toContain(">Cancel<");
-    expect(markup).toContain("Always allow this session");
-    expect(markup).not.toContain(">Always allow<");
-    expect(markup).toContain("h-5");
-    expect(markup).toContain("sm:text-[11px]");
-    expect(markup).not.toContain("sm:h-6");
+  it("keeps common decisions visible and exposes session-scoped approval in the overflow menu", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+    const respond = vi.fn(async () => undefined);
+    try {
+      await act(async () =>
+        root.render(
+          <ComposerPendingApprovalActions
+            requestId={ApprovalRequestId.make("approval")}
+            isResponding={false}
+            onRespondToApproval={respond}
+          />,
+        ),
+      );
+      expect(container.textContent).toContain("Approve");
+      expect(container.textContent).toContain("Decline");
+      const more = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="More approval options"]',
+      )!;
+      await act(async () => more.click());
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain("Always allow this session"),
+      );
+      const option = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) =>
+        item.textContent?.includes("Always allow this session"),
+      )!;
+      await act(async () => option.click());
+      expect(respond).toHaveBeenCalledWith(ApprovalRequestId.make("approval"), "acceptForSession");
+    } finally {
+      await act(async () => root.unmount());
+      container.remove();
+    }
   });
 });

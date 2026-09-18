@@ -9,6 +9,7 @@ describe("CommandPaletteResults", () => {
     const html = renderToStaticMarkup(
       <Command mode="none" value="">
         <CommandPaletteResults
+          isActionsOnly={false}
           groups={[
             {
               value: "threads-search",

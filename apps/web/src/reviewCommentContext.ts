@@ -1,3 +1,4 @@
+import { PullRequestContextMetadata } from "@t3tools/contracts";
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
 import type { PullRequestReviewPosition } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -22,6 +23,7 @@ export const ReviewCommentContextSchema = Schema.Struct({
   diff: Schema.String,
   fenceLanguage: Schema.optional(Schema.String),
   selection: Schema.optional(ReviewCommentSelectionSchema),
+  pullRequest: Schema.optional(PullRequestContextMetadata),
 });
 
 export interface ReviewCommentContext {
@@ -36,6 +38,7 @@ export interface ReviewCommentContext {
   readonly diff: string;
   readonly fenceLanguage?: string | undefined;
   readonly selection?: ReviewCommentSelection | undefined;
+  readonly pullRequest?: PullRequestContextMetadata | undefined;
 }
 
 interface DiffReviewLine {
@@ -133,6 +136,19 @@ function parseReviewCommentContext(
     text: body.text,
     diff: body.contents,
     fenceLanguage: body.language,
+    ...(attributes.pullRequest
+      ? (() => {
+          try {
+            return {
+              pullRequest: Schema.decodeSync(Schema.fromJsonString(PullRequestContextMetadata))(
+                attributes.pullRequest,
+              ),
+            };
+          } catch {
+            return {};
+          }
+        })()
+      : {}),
     ...(attributes.selection
       ? (() => {
           try {
@@ -219,6 +235,9 @@ export function formatReviewCommentContext(comment: ReviewCommentContext): strin
     [
       "<review_comment",
       ` id="${escapeReviewCommentAttribute(comment.id)}"`,
+      ...(comment.pullRequest
+        ? [` pullRequest="${escapeReviewCommentAttribute(JSON.stringify(comment.pullRequest))}"`]
+        : []),
       ...(comment.selection
         ? [` selection="${escapeReviewCommentAttribute(JSON.stringify(comment.selection))}"`]
         : []),

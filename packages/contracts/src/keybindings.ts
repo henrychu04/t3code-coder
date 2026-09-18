@@ -36,6 +36,7 @@ export type ModelPickerJumpKeybindingCommand =
 const THREAD_KEYBINDING_COMMANDS = [
   "thread.stop",
   "thread.copyReference",
+  "thread.steerQueuedMessage",
   "thread.previous",
   "thread.next",
   "thread.settle",
@@ -68,6 +69,9 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "projectSearch.toggle",
   "fileViewer.find",
   "fileViewer.goToLine",
+  "theme.select",
+  "themeEditor.toggle",
+  "appearance.cycle",
   "composer.stash",
   "composer.host",
   "composer.effort",

@@ -748,6 +748,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           // load or large replay gap does not download the full thread.
           turnLimit: INITIAL_THREAD_USER_TURN_LIMIT,
           targetBytes: INITIAL_THREAD_TARGET_BYTES,
+          reasoningMessages: true,
         };
       }),
       {

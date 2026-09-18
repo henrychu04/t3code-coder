@@ -8,6 +8,20 @@ import {
 } from "./settingsSearch";
 
 describe("settings search catalog", () => {
+  it("finds individual shortcuts by their command and default keys", () => {
+    expect(
+      searchSettings("filePicker.toggle").some(
+        (item) => item.id === "keybinding-filePicker.toggle",
+      ),
+    ).toBe(true);
+    const shortcut = SETTINGS_SEARCH_ITEMS.find(
+      (item) => item.id === "keybinding-commandPalette.toggle",
+    )!;
+    expect(shortcut.to).toBe("/settings/shortcuts");
+    expect(shortcut.secondary).toBe(true);
+    expect(shortcut.searchTerms.length).toBeGreaterThan(1);
+  });
+
   it("uses unique action ids", () => {
     const ids = SETTINGS_SEARCH_ITEMS.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);

@@ -66,7 +66,7 @@ interface RightPanelStoreState {
    */
   openProactive: (
     ref: ScopedThreadRef,
-    surface: Extract<RightPanelSurface, { kind: "diff" | "pull-request" }>,
+    surface: Extract<RightPanelSurface, { kind: "diff" | "pull-request" | "pull-requests" }>,
     expectedUserActionRevision: number,
   ) => boolean;
   open: (

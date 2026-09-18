@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vite-plus/test";
-import { commandForProjectScript, projectScriptIdFromCommand } from "./projectScripts";
+import {
+  buildProjectScript,
+  commandForProjectScript,
+  projectScriptIdFromCommand,
+} from "./projectScripts";
 import { KEYBINDING_ACTIONS } from "./keybindingCatalog";
 import { STATIC_KEYBINDING_COMMANDS } from "@t3tools/contracts";
 describe("project-action shortcuts", () => {
@@ -18,4 +22,19 @@ describe("project-action shortcuts", () => {
       [...STATIC_KEYBINDING_COMMANDS].sort(),
     );
   });
+});
+
+it("keeps setup asynchronous unless the user selects wait for completion", () => {
+  const input = {
+    name: "Setup",
+    command: "pnpm install",
+    icon: "build" as const,
+    runOnWorktreeCreate: true,
+    waitForSetup: false,
+  };
+  expect(buildProjectScript("setup", input).async).toBeUndefined();
+  expect(buildProjectScript("setup", { ...input, waitForSetup: true }).async).toBe(false);
+  expect(
+    buildProjectScript("setup", { ...input, runOnWorktreeCreate: false, waitForSetup: true }).async,
+  ).toBeUndefined();
 });

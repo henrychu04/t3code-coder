@@ -246,7 +246,10 @@ function FileBrowserPanelContents(props: FileBrowserPanelProps) {
       if (item && "expand" in item) item.expand();
     }
     selectedItem.select();
-    model.scrollToPath(selectedPath, { focus: true, offset: "center" });
+    model.scrollToPath(selectedPath, {
+      focus: true,
+      offset: "center",
+    });
     queueMicrotask(() => {
       syncingSelectionRef.current = false;
     });

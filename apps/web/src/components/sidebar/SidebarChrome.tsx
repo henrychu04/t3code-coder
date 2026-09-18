@@ -1,3 +1,4 @@
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
@@ -191,7 +192,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
           />
           {pullRequestsSupported ? (
             <SidebarUtilityItem
-              icon={<GitPullRequestIcon />}
+              icon={<PullRequestGlyph.pullRequest />}
               label="Merge Requests"
               onClick={handlePullRequestsClick}
             />

@@ -95,3 +95,9 @@ click or keypress in the app.
 
 Both options start disabled. Notifications run only while the browser app is open, and historical
 completions are not replayed when connecting or reconnecting.
+
+## Custom snooze
+
+Choose **Snooze → Custom…** from a thread menu to select a date and time in your local time zone,
+or a duration in minutes, hours, or days. Durations start when confirmed; a day means 24 hours.
+You can snooze selected threads together. Choose **Wake thread** to bring a thread back early.

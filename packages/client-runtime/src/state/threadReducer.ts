@@ -246,6 +246,9 @@ export function applyThreadDetailEvent(
         thread: {
           ...thread,
           ...(event.payload.title !== undefined ? { title: event.payload.title } : {}),
+          ...(event.payload.titleState !== undefined
+            ? { titleState: event.payload.titleState }
+            : {}),
           ...(event.payload.titleRegeneration !== undefined
             ? { titleRegeneration: event.payload.titleRegeneration }
             : {}),
@@ -367,6 +370,9 @@ export function applyThreadDetailEvent(
         id: event.payload.messageId,
         role: event.payload.role,
         text: event.payload.text,
+        ...(event.payload.attachments === undefined
+          ? {}
+          : { attachments: event.payload.attachments }),
         turnId: event.payload.turnId,
         streaming: event.payload.streaming,
         createdAt: event.payload.createdAt,
@@ -384,6 +390,7 @@ export function applyThreadDetailEvent(
             : message.text.length > 0
               ? message.text
               : entry.text,
+          ...(message.attachments === undefined ? {} : { attachments: message.attachments }),
           streaming: message.streaming,
           ...(message.turnId !== undefined ? { turnId: message.turnId } : {}),
           ...(message.streaming ? {} : { updatedAt: message.updatedAt }),

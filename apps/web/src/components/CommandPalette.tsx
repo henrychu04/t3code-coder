@@ -1,3 +1,23 @@
+import { ProjectFilePicker } from "./files/ProjectFilePicker";
+import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
+import type { SearchOverlayMode } from "./CommandPalette.logic";
+import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
+import { readPullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
+import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
+import { FolderIcon } from "lucide-react";
+import { sortThreads } from "~/lib/threadSort";
+import { buildRootGroups } from "./CommandPalette.logic";
+import { useTheme } from "../hooks/useTheme";
+import { useCustomThemes } from "../hooks/useCustomThemes";
+import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
+import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
+import { getThemeDefinition } from "../themePalette";
+import {
+  STANDARD_THEME_CARDS,
+  getThemeCardDefinition,
+  ThemePreviewCircle,
+} from "./settings/ThemePreviewCircles";
+import { MonitorIcon, MoonIcon, SunIcon, PaletteIcon } from "lucide-react";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
@@ -31,7 +51,6 @@ import {
 
 import { onOpenCommandPalette, type CommandPaletteOpenDetail } from "../commandPaletteBus";
 import { ComposerHandleContext } from "../composerHandleContext";
-import { openFileViewerCommand } from "../fileViewerCommandBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useClientSettings } from "../hooks/useSettings";
 import { resolveShortcutCommand } from "../keybindings";
@@ -64,7 +83,22 @@ import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
 
+const APPEARANCE_OPTIONS = [
+  { mode: "system", label: "System", icon: MonitorIcon },
+  { mode: "light", label: "Light", icon: SunIcon },
+  { mode: "dark", label: "Dark", icon: MoonIcon },
+] as const;
+
+function notifyThemeSaveFailure(): void {
+  toastManager.add({
+    type: "error",
+    title: "Couldn't save theme selection",
+    description: "Try again.",
+  });
+}
+
 export function CommandPalette({ children }: { readonly children: ReactNode }) {
+  const { appearanceMode, setAppearanceMode, theme, themeHalves, resolvedTheme } = useTheme();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -78,12 +112,14 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
     () =>
       onOpenCommandPalette((detail) => {
         setOpenDetail(detail);
-        if (detail.open === "new-thread-in") {
+        if (detail.open === "change-theme") {
+          dispatch({ _tag: "OpenChangeTheme" });
+        } else if (detail.open === "new-thread-in") {
           dispatch({ _tag: "OpenNewThreadIn" });
         } else if (detail.open === "add-project") {
           dispatch({ _tag: "OpenAddProject" });
         } else {
-          dispatch({ _tag: "SetOpen", open: true });
+          dispatch({ _tag: "OpenCommand" });
         }
       }),
     [],
@@ -95,15 +131,54 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
       const command = resolveShortcutCommand(event, keybindings, {
         context: { terminalFocus: isTerminalFocused() },
       });
-      if (command !== "commandPalette.toggle") return;
+      if (command === "appearance.cycle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        const nextMode =
+          appearanceMode === "system" ? "light" : appearanceMode === "light" ? "dark" : "system";
+        if (!setAppearanceMode(nextMode)) {
+          notifyThemeSaveFailure();
+        } else {
+          toastManager.add({
+            id: "appearance-cycle",
+            title: `Appearance: ${APPEARANCE_OPTIONS.find((option) => option.mode === nextMode)?.label}`,
+            timeout: 1500,
+          });
+        }
+        return;
+      }
+      if (command === "themeEditor.toggle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat)
+          toggleThemeEditorForTheme({ theme, themeHalves, initialAppearance: resolvedTheme });
+        return;
+      }
+      if (command === "theme.select") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        dispatch({ _tag: "OpenChangeTheme" });
+        return;
+      }
+      const mode =
+        command === "commandPalette.toggle"
+          ? "command"
+          : command === "filePicker.toggle"
+            ? "files"
+            : command === "projectSearch.toggle"
+              ? "content"
+              : null;
+      if (!mode) return;
       event.preventDefault();
       event.stopPropagation();
       setOpenDetail({});
-      dispatch({ _tag: "ToggleMode", mode: "command" });
+      if (!event.repeat) dispatch({ _tag: "ToggleMode", mode });
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings]);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [keybindings, appearanceMode, setAppearanceMode, theme, themeHalves, resolvedTheme]);
 
   const addProjectOpen = state.open && state.openIntent?.kind === "add-project";
   const setOpen = useCallback((open: boolean) => dispatch({ _tag: "SetOpen", open }), []);
@@ -114,8 +189,18 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
         {children}
         {state.open && !addProjectOpen ? (
           <CommandDialogPopup
-            aria-label="Command palette"
-            className="overflow-hidden p-0"
+            aria-label={
+              state.mode === "files"
+                ? "File picker"
+                : state.mode === "content"
+                  ? "Search project contents"
+                  : "Command palette"
+            }
+            className={
+              state.mode === "content"
+                ? "flex h-[min(44rem,80vh)] flex-col overflow-hidden p-0"
+                : "overflow-hidden p-0"
+            }
             data-command-palette="true"
             finalFocus={() => {
               composerHandleRef.current?.focusAtEnd();
@@ -123,13 +208,20 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
             }}
             onBackdropPointerDown={() => setOpen(false)}
           >
-            <CoderCommandPaletteDialog
-              clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
-              openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
-              openDetail={openDetail}
-              openIntent={state.openIntent}
-              setOpen={setOpen}
-            />
+            {state.mode === "files" ? (
+              <ProjectFilePicker setOpen={setOpen} />
+            ) : state.mode === "content" ? (
+              <ProjectContentSearchDialog onOpenChange={setOpen} />
+            ) : (
+              <CoderCommandPaletteDialog
+                setMode={(mode) => dispatch({ _tag: "ToggleMode", mode })}
+                clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
+                openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
+                openDetail={openDetail}
+                openIntent={state.openIntent}
+                setOpen={setOpen}
+              />
+            )}
           </CommandDialogPopup>
         ) : null}
       </CommandDialog>
@@ -139,6 +231,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
 }
 
 function CoderCommandPaletteDialog(props: {
+  readonly setMode: (mode: SearchOverlayMode) => void;
   readonly openDetail: CommandPaletteOpenDetail;
   readonly clearOpenIntent: () => void;
   readonly openAddProject: () => void;
@@ -151,6 +244,7 @@ function CoderCommandPaletteDialog(props: {
   const projects = useProjects();
   const threads = useThreadShells();
   const { environments } = useEnvironments();
+  const threadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -176,7 +270,38 @@ function CoderCommandPaletteDialog(props: {
           linkedPullRequestUrl:
             activeThread?.linkedPullRequest?.url ?? activeThread?.branchPullRequest?.url ?? null,
         });
-  const [view, setView] = useState<"root" | "projects">("root");
+  const {
+    theme,
+    themeHalves,
+    resolvedTheme,
+    appearanceMode,
+    setAppearanceMode,
+    setTheme,
+    setThemeHalf,
+  } = useTheme();
+  const customThemes = useCustomThemes();
+  const environmentThemes = useEnvironmentThemeDefinitions();
+  const themeCards = useMemo(() => {
+    const seen = new Set<string>();
+    return [
+      ...STANDARD_THEME_CARDS.map((card) => ({ ...card, id: null })),
+      ...[...BUILT_IN_THEMES, ...customThemes, ...environmentThemes]
+        .filter((definition) => {
+          if (seen.has(definition.id)) return false;
+          seen.add(definition.id);
+          return true;
+        })
+        .map(getThemeCardDefinition),
+    ];
+  }, [customThemes, environmentThemes]);
+  const [viewStack, setViewStack] = useState<
+    ReadonlyArray<{
+      value: string;
+      groups: ReadonlyArray<CommandPaletteGroup>;
+      parentQuery: string;
+    }>
+  >([]);
+  const view = viewStack.at(-1)?.value ?? "root";
   const [query, setQuery] = useState(props.openDetail.query ?? "");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
 
@@ -255,6 +380,7 @@ function CoderCommandPaletteDialog(props: {
         searchTerms: [item.title, item.section, ...item.searchTerms],
         title: item.title,
         description: item.section,
+        ...(item.secondary === undefined ? {} : { secondary: item.secondary }),
         icon: <SettingsIcon className="size-4 shrink-0 text-icon-muted" />,
         run: async () => {
           await navigate({
@@ -275,25 +401,17 @@ function CoderCommandPaletteDialog(props: {
     [projectItems],
   );
 
-  useLayoutEffect(() => {
-    if (props.openIntent?.kind !== "new-thread-in") return;
-    setView("projects");
-    setQuery("");
-    props.clearOpenIntent();
-  }, [props.clearOpenIntent, props.openIntent]);
-
   const projectByRef = new Map(
     projects.map((project) => [`${project.environmentId}:${project.id}`, project]),
   );
   const messageMatchByThreadKey = new Map(
     messageSearch.matches.map((match) => [`${match.environmentId}:${match.threadId}`, match]),
   );
-  const visibleThreads =
-    query.trim().length > 0
-      ? threads
-      : threads
-          .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-          .slice(0, 12);
+  const sortedThreads = sortThreads(
+    threads.filter((thread) => thread.archivedAt === null),
+    threadSortOrder,
+  );
+  const visibleThreads = query.trim().length > 0 ? sortedThreads : sortedThreads.slice(0, 12);
   const threadItems: CommandPaletteActionItem[] = visibleThreads
     .filter((thread) => thread.archivedAt === null)
     .map((thread) => {
@@ -311,6 +429,7 @@ function CoderCommandPaletteDialog(props: {
           thread.branch ?? "",
           match?.snippet ?? "",
           ...threadPullRequestSearchTerms(thread),
+          thread.id,
         ],
         title: thread.title,
         titleLeadingContent: <ThreadRowLeadingStatus thread={thread} />,
@@ -360,7 +479,8 @@ function CoderCommandPaletteDialog(props: {
         (thread): CommandPaletteActionItem => ({
           kind: "action",
           value: `linked-thread:${thread.id}`,
-          title: thread.title,
+          title: thread.title || "Untitled thread",
+          description: thread.archivedAt === null ? "Linked thread" : "Archived thread",
           icon: <MessageSquareIcon className="size-4" />,
           searchTerms: [query],
           run: async () => {
@@ -428,7 +548,8 @@ function CoderCommandPaletteDialog(props: {
       icon: <FileIcon className="size-4 text-icon-muted" />,
       disabled: !projectSearchAvailable,
       shortcutCommand: "filePicker.toggle",
-      run: async () => openFileViewerCommand("filePicker.toggle"),
+      keepOpen: true,
+      run: async () => props.setMode("files"),
     },
     {
       kind: "action",
@@ -439,7 +560,8 @@ function CoderCommandPaletteDialog(props: {
       icon: <SearchIcon className="size-4 text-icon-muted" />,
       disabled: !projectSearchAvailable,
       shortcutCommand: "projectSearch.toggle",
-      run: async () => openFileViewerCommand("projectSearch.toggle"),
+      keepOpen: true,
+      run: async () => props.setMode("content"),
     },
     {
       kind: "action",
@@ -511,55 +633,237 @@ function CoderCommandPaletteDialog(props: {
     );
   }
 
-  const rootGroups: CommandPaletteGroup[] = [
-    { value: "actions", label: "Actions", items: actionItems },
-    ...(query.trim().length > 0 && projectItems.length > 0
-      ? [{ value: "projects-search", label: "Projects", items: projectItems }]
-      : []),
-    ...(query.trim().length > 0
-      ? [{ value: "settings-search", label: "Settings", items: settingsItems }]
-      : []),
-    ...(threadItems.length > 0
-      ? [
-          {
-            value: query.trim().length > 0 ? "threads-search" : "recent-threads",
-            label: query.trim().length > 0 ? "Threads" : "Recent threads",
-            items: threadItems,
+  const changeThemeItem: CommandPaletteSubmenuItem = {
+    kind: "submenu",
+    value: "action:change-theme",
+    searchTerms: ["change theme", "appearance", "colors", "palette"],
+    title: "Change theme",
+    icon: <PaletteIcon className={"size-4 shrink-0"} />,
+    shortcutCommand: "theme.select",
+    groups: [
+      {
+        value: "themes",
+        label: "Change theme",
+        items: themeCards.map(({ id, label, previews }) => ({
+          kind: "action",
+          value: id === null ? "theme:standard" : `theme:palette:${id}`,
+          title: label,
+          description: previews.length === 1 ? `For ${previews[0]!.mode} mode` : undefined,
+          searchTerms: [label, "theme", "appearance"],
+          icon: <PaletteIcon className={"size-4 shrink-0"} />,
+          titleTrailingContent: (
+            <span className="flex shrink-0 items-center gap-2">
+              {(themeHalves?.[resolvedTheme] ?? getThemeDefinition(theme)?.id ?? null) === id ? (
+                <span className="text-xs text-muted-foreground/70">Current</span>
+              ) : null}
+              <span className="flex items-center gap-1" aria-hidden>
+                {previews.map((preview) => (
+                  <ThemePreviewCircle
+                    key={preview.mode}
+                    colors={preview.colors}
+                    mode={preview.mode}
+                    className="size-3 border-0"
+                  />
+                ))}
+              </span>
+            </span>
+          ),
+          run: async () => {
+            const saved =
+              previews.length === 1 && id !== null
+                ? setThemeHalf(previews[0]!.mode, id)
+                : setTheme(id ?? appearanceMode);
+            if (!saved) notifyThemeSaveFailure();
           },
-        ]
-      : []),
-  ];
-  const activeGroups = view === "projects" ? projectViewGroups : rootGroups;
-  const filteredGroups = filterCommandPaletteGroups({ groups: activeGroups, query });
+        })),
+      },
+    ],
+  };
+  actionItems.push(changeThemeItem);
+
+  const changeAppearanceItem: CommandPaletteSubmenuItem = {
+    kind: "submenu",
+    value: "action:change-appearance",
+    searchTerms: ["change appearance", "light", "dark", "system", "mode", "toggle"],
+    title: "Change appearance",
+    icon: <MonitorIcon className={"size-4 shrink-0"} />,
+    shortcutCommand: "appearance.cycle",
+    groups: [
+      {
+        value: "appearance",
+        label: "Change appearance",
+        items: APPEARANCE_OPTIONS.map(({ mode, label, icon: Icon }) => ({
+          kind: "action",
+          value: `appearance:${mode}`,
+          title: label,
+          searchTerms: [label, "appearance", "mode"],
+          icon: <Icon className={"size-4 shrink-0"} />,
+          titleTrailingContent:
+            appearanceMode === mode ? (
+              <span className="text-xs text-muted-foreground/70">Current</span>
+            ) : undefined,
+          run: async () => {
+            if (!setAppearanceMode(mode)) notifyThemeSaveFailure();
+          },
+        })),
+      },
+    ],
+  };
+  actionItems.push(changeAppearanceItem);
+
+  actionItems.push({
+    kind: "action",
+    value: "action:theme-editor",
+    searchTerms: ["theme", "appearance", "colors", "palette", "customize"],
+    title: "Toggle theme editor",
+    icon: <PaletteIcon className={"size-4 text-icon-muted"} />,
+    shortcutCommand: "themeEditor.toggle",
+    run: async () => {
+      toggleThemeEditorForTheme({
+        theme,
+        themeHalves,
+        initialAppearance: resolvedTheme,
+      });
+    },
+  });
+
+  if (
+    environments.some(
+      (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
+    )
+  ) {
+    actionItems.push({
+      kind: "action",
+      value: "action:pull-requests",
+      searchTerms: ["merge requests", "mrs", "mr", "gitlab", "review", "merge", "branch"],
+      title: "Open merge requests",
+      icon: <PullRequestGlyph.pullRequest className={"size-4 text-icon-muted"} />,
+      run: async () => {
+        await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+      },
+    });
+  }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:settings",
+    searchTerms: ["settings", "preferences", "configuration", "keybindings"],
+    title: "Open settings",
+    icon: <SettingsIcon className={"size-4 text-icon-muted"} />,
+    run: async () => {
+      await navigate({ to: "/settings" });
+    },
+  });
+
+  // Target the active thread or draft's project, falling back to the first sidebar group.
+  const contextualProjectGroup =
+    (contextualProjectRef
+      ? projectGroups.find((group) =>
+          group.memberProjects.some(
+            (project) =>
+              project.environmentId === contextualProjectRef.environmentId &&
+              project.id === contextualProjectRef.projectId,
+          ),
+        )
+      : undefined) ?? projectGroups[0];
+  if (contextualProjectGroup) {
+    actionItems.push({
+      kind: "action",
+      value: "action:project-settings",
+      searchTerms: [
+        "project",
+        "settings",
+        "name",
+        "icon",
+        "scripts",
+        "model",
+        "workspace",
+        "grouping",
+        "checkout",
+        "remove",
+        "t3.json",
+      ],
+      title: "Project settings",
+      description: contextualProjectGroup.displayName,
+      icon: <FolderIcon className={"size-4 text-icon-muted"} />,
+      run: async () => {
+        await navigate({
+          to: "/projects/$projectKey",
+          params: { projectKey: contextualProjectGroup.projectKey },
+        });
+      },
+    });
+  }
+
+  const rootGroups = buildRootGroups({ actionItems, recentThreadItems: threadItems });
+  useLayoutEffect(() => {
+    const kind = props.openIntent?.kind;
+    if (kind !== "change-theme" && kind !== "new-thread-in") return;
+    setViewStack([
+      {
+        value: kind === "change-theme" ? "action:change-theme" : "action:new-thread-in",
+        groups: kind === "change-theme" ? changeThemeItem.groups : projectViewGroups,
+        parentQuery: "",
+      },
+    ]);
+    setQuery("");
+    props.clearOpenIntent();
+  }, [props.openIntent, props.clearOpenIntent, changeThemeItem.groups, projectViewGroups]);
+  const activeGroups = viewStack.at(-1)?.groups ?? rootGroups;
+  const filteredGroups = filterCommandPaletteGroups({
+    activeGroups,
+    query,
+    isInSubmenu: view !== "root",
+    projectSearchItems: projectItems,
+    settingsSearchItems: settingsItems,
+    threadSearchItems: threadItems,
+  });
 
   const executeItem = (item: CommandPaletteActionItem | CommandPaletteSubmenuItem) => {
     if (item.kind === "submenu") {
-      setView("projects");
+      setViewStack((stack) => [
+        ...stack,
+        { value: item.value, groups: item.groups, parentQuery: query },
+      ]);
       setQuery("");
       setHighlightedItemValue(null);
       return;
     }
     if (!item.keepOpen) props.setOpen(false);
-    void item.run();
+    void item.run().catch((error: unknown) => {
+      toastManager.add({
+        type: "error",
+        title: "Unable to run command",
+        description: error instanceof Error ? error.message : "Try again.",
+      });
+    });
   };
 
   return (
     <CommandPaletteContent
       key={view}
       autoHighlight="always"
-      escapeLabel={view === "projects" ? "Back" : "Close"}
-      footerActionLabel={view === "projects" ? "Start thread" : "Open"}
+      escapeLabel={view !== "root" ? "Back" : "Close"}
+      footerActionLabel={view === "action:new-thread-in" ? "Start thread" : "Open"}
       inputProps={{
-        placeholder: view === "projects" ? "Choose a project…" : "Search commands and threads…",
+        placeholder:
+          view === "action:change-theme"
+            ? "Choose a theme…"
+            : view === "action:change-appearance"
+              ? "Choose appearance…"
+              : view === "action:new-thread-in"
+                ? "Choose a project…"
+                : "Search commands and threads…",
         onKeyDown: (event) => {
           if (
             (event.key === "Escape" || event.key === "Backspace") &&
-            view === "projects" &&
+            view !== "root" &&
             query.length === 0
           ) {
             event.preventDefault();
             event.stopPropagation();
-            setView("root");
+            setQuery(viewStack.at(-1)?.parentQuery ?? "");
+            setViewStack((stack) => stack.slice(0, -1));
           }
         },
       }}
@@ -572,11 +876,12 @@ function CoderCommandPaletteDialog(props: {
         setQuery(value);
       }}
       panelClassName="max-h-[min(34rem,76vh)]"
-      showBackHint={view === "projects"}
+      showBackHint={view !== "root"}
       testId="command-palette"
       value={query}
     >
       <CommandPaletteResults
+        isActionsOnly={query.trimStart().startsWith(">")}
         groups={filteredGroups}
         highlightedItemValue={highlightedItemValue}
         keybindings={keybindings}

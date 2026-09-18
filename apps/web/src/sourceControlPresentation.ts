@@ -1,4 +1,5 @@
 import { GitPullRequestIcon } from "lucide-react";
+import { PullRequestGlyph } from "./components/pullRequest/pullRequestIcons";
 import type { ElementType } from "react";
 import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
 export {
@@ -54,7 +55,7 @@ export function getSourceControlPresentation(
       return {
         providerName: provider?.name || presentation.providerName,
         terminology: getChangeRequestTerminology(provider),
-        Icon: GitPullRequestIcon,
+        Icon: PullRequestGlyph.pullRequest,
       };
   }
 }

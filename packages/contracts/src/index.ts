@@ -11,6 +11,7 @@ export * from "./server.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
 export * from "./sourceControl.ts";
+export * from "./projectClone.ts";
 export * from "./pullRequest.ts";
 export * from "./vcs.ts";
 export * from "./orchestration.ts";
@@ -25,3 +26,6 @@ export type * from "./coderGateway.ts";
 export * from "./worktreeSetup.ts";
 
 export * from "./t3ProjectFile.ts";
+
+export * from "./composerContext.ts";
+export * from "./composerContextClipboard.ts";

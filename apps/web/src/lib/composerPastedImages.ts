@@ -1,3 +1,4 @@
+import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import { collectDraftImageReferences, expandLongTextContexts } from "./composerInlineContext";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
 
@@ -58,4 +59,27 @@ export function appendPastedImagesToPrompt(
       : [],
   );
   return [prompt, links.join(" ")].filter((part) => part.length > 0).join("\n\n");
+}
+
+/** Preserve display names without accepting them as upload or workspace paths. */
+export function pastedImageAttachmentsForIds(
+  ids: readonly string[],
+  images: ReadonlyArray<ComposerPastedImage>,
+) {
+  return ids.map((id) => {
+    const image = images.find(
+      (candidate) =>
+        candidate.status === "uploaded" &&
+        extractComposerPastedImageAttachmentIds(serializeComposerFileLink(candidate.path)).includes(
+          id,
+        ),
+    );
+    const name = image?.file.name
+      .split(/[\\/]/)
+      .at(-1)
+      ?.replace(/[\x00-\x1f\x7f]/g, "")
+      .trim()
+      .slice(0, 255);
+    return { type: "image" as const, id, ...(name ? { name } : {}) };
+  });
 }

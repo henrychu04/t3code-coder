@@ -78,6 +78,8 @@ describe("CheckpointDiffQuery.layer", () => {
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
+            getDeletedWorktreeThreads: () => Effect.die("unused"),
             getPendingRequestActivities: () => Effect.die("unused"),
             getSnapshot: () =>
               Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
@@ -192,6 +194,8 @@ describe("CheckpointDiffQuery.layer", () => {
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
+            getDeletedWorktreeThreads: () => Effect.die("unused"),
             getPendingRequestActivities: () => Effect.die("unused"),
             getSnapshot: () =>
               Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
@@ -281,6 +285,8 @@ describe("CheckpointDiffQuery.layer", () => {
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
+            getDeletedWorktreeThreads: () => Effect.die("unused"),
             getPendingRequestActivities: () => Effect.die("unused"),
             getSnapshot: () =>
               Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
@@ -355,6 +361,8 @@ describe("CheckpointDiffQuery.layer", () => {
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
+            getDeletedWorktreeThreads: () => Effect.die("unused"),
             getPendingRequestActivities: () => Effect.die("unused"),
             getSnapshot: () =>
               Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),
@@ -414,6 +422,8 @@ describe("CheckpointDiffQuery.layer", () => {
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
+            listActivitiesByKind: () => Effect.die("unused"),
+            getDeletedWorktreeThreads: () => Effect.die("unused"),
             getPendingRequestActivities: () => Effect.die("unused"),
             getSnapshot: () =>
               Effect.die("CheckpointDiffQuery should not request the full orchestration snapshot"),

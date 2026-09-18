@@ -1,3 +1,6 @@
+import * as StorageCleanup from "./storageCleanup.ts";
+import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
+import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import { reconcileProviderSessions } from "./coderRestartRecovery.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -83,10 +86,6 @@ const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
   Layer.provideMerge(ScreenshotArtifacts.layer),
 );
 
-const CoderTextGenerationLive = TextGeneration.layer.pipe(
-  Layer.provide(CoderProviderInstancesLive),
-);
-
 const CoderProviderLive = ProviderServiceLive.pipe(
   Layer.provide(AgentMergeRequests.layer.pipe(Layer.provide(CoderOrchestrationLayerLive))),
   Layer.provide(ProviderAdapterRegistryLive),
@@ -106,6 +105,11 @@ const CoderVcsDriverRegistryLive = VcsDriverRegistry.layer.pipe(
 const CoderSourceControlLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provideMerge(GitLabCli.layer),
   Layer.provideMerge(CoderVcsDriverRegistryLive),
+);
+
+const CoderTextGenerationLive = TextGeneration.layer.pipe(
+  Layer.provide(CoderProviderInstancesLive),
+  Layer.provide(CoderSourceControlLive),
 );
 
 const CoderSourceControlDiscoveryLive = SourceControlDiscovery.layer.pipe(
@@ -143,6 +147,7 @@ const CoderVcsLive = Layer.mergeAll(
   WorktreeSetupTracker.layer,
   CoderGitWorkflowLive,
   CoderSourceControlRepositoriesLive,
+  ProjectCloneTracker.layer.pipe(Layer.provide(CoderSourceControlRepositoriesLive)),
   CoderVcsStatus.layer.pipe(Layer.provide(CoderGitWorkflowLive)),
   ReviewService.layer.pipe(
     Layer.provideMerge(GitVcsDriver.layer),
@@ -151,6 +156,7 @@ const CoderVcsLive = Layer.mergeAll(
 );
 
 const CoderPullRequestsLive = PullRequestService.layer.pipe(
+  Layer.provide(PullRequestFilesViewed.layer.pipe(Layer.provide(SqlitePersistenceLayerLive))),
   Layer.provide(PullRequestReadCache.layer),
   Layer.provideMerge(PullRequestProviderRegistry.layer),
   Layer.provideMerge(CoderSourceControlLive),
@@ -214,6 +220,7 @@ const CoderRuntimeDependenciesLive = CoderRuntimeFeaturesLive.pipe(
 const CoderRuntimeStartupLive = Layer.effect(
   CoderRuntimeStartup.CoderRuntimeStartup,
   Effect.gen(function* () {
+    const storageCleanup = yield* StorageCleanup.StorageCleanup;
     const keybindings = yield* Keybindings.Keybindings;
     const settings = yield* ServerSettings.ServerSettingsService;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
@@ -228,6 +235,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* reconcileProviderSessions.pipe(Scope.provide(reactorScope));
+    yield* storageCleanup.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
     yield* projectionSnapshotQuery.getShellSnapshot().pipe(
       Effect.flatMap((snapshot) =>
@@ -275,6 +283,7 @@ export const makeCoderRuntimeLayer = () => {
     Layer.provide(CoderRuntimeDependenciesLive),
   );
   const runtimeStartup = CoderRuntimeStartupLive.pipe(
+    Layer.provideMerge(StorageCleanup.layer.pipe(Layer.provide(CoderRuntimeDependenciesLive))),
     Layer.provideMerge(coderReactor),
     Layer.provideMerge(CoderRuntimeDependenciesLive),
   );

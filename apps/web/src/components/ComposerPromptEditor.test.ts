@@ -17,7 +17,7 @@ import {
   PASTE_COMMAND,
 } from "lexical";
 
-import { registerComposerInlineTokenPaste } from "./composerInlineTokenPaste";
+import { registerComposerInlineTokenPaste } from "./legacyComposerInlineTokenPaste";
 import {
   $consumeComposerCitationCommentRequest,
   $createComposerCitationNode,

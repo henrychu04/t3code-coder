@@ -25,7 +25,9 @@ const TestLayer = Layer.mergeAll(
   ServerConfig.layerTest(process.cwd(), { prefix: "t3-source-control-repository-test-" }).pipe(
     Layer.provide(NodeServices.layer),
   ),
-  Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({}),
+  Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+    resolveLink: () => undefined,
+  }),
   Layer.mock(GitVcsDriver.GitVcsDriver)({
     execute: (input) =>
       Effect.sync(() => {
@@ -121,6 +123,7 @@ for (const [repository, protocol, expectedUrl] of [
       const service = yield* SourceControlRepositoryService.make.pipe(
         Effect.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => undefined,
             get: () => Effect.succeed(provider),
           }),
         ),
@@ -146,7 +149,7 @@ for (const [repository, protocol, expectedUrl] of [
         ...(protocol === undefined ? {} : { protocol }),
         destinationPath: path.join(root, "project"),
       });
-      assert.deepStrictEqual(calls, [["clone", "--", expectedUrl, "project"]]);
+      assert.deepStrictEqual(calls, [["clone", "--progress", "--", expectedUrl, "project"]]);
       assert.strictEqual(result.remoteUrl, expectedUrl);
       const directUrl = "remoteUrl" in source;
       assert.strictEqual(lookupCount, directUrl ? 0 : 1);
@@ -182,6 +185,7 @@ it.effect(
       const service = yield* SourceControlRepositoryService.make.pipe(
         Effect.provide(
           Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+            resolveLink: () => undefined,
             get: () => Effect.succeed(provider),
           }),
         ),

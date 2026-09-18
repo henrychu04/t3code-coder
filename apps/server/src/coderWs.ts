@@ -1,3 +1,10 @@
+import {
+  EventId,
+  WORKTREE_SETUP_ACTIVITY_KIND,
+  worktreeSetupActivityId,
+  type WorktreeSetupSnapshot,
+} from "@t3tools/contracts";
+import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import { EnvironmentThemeService } from "./environmentTheme.ts";
 import { readProjectConfig } from "./project/configMetadata.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -462,6 +469,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const sourceControlRepositories =
       yield* SourceControlRepositoryService.SourceControlRepositoryService;
     const gitLabCli = yield* GitLabCli.GitLabCli;
+    const projectClones = yield* ProjectCloneTracker.ProjectCloneTracker;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const pullRequestSync = yield* PullRequestSyncReactor;
     const refreshLinkedPullRequest = (reference: PullRequestRef) =>
@@ -728,6 +736,39 @@ export const layer = CoderWsRpcGroup.toLayer(
       return { branch: input.newBranch, worktreePath: nextWorktreePath };
     });
 
+    const recordWorktreeSetup = (snapshot: WorktreeSetupSnapshot) =>
+      commandId("worktree-setup-activity").pipe(
+        Effect.flatMap((commandId) =>
+          orchestration.dispatch({
+            type: "thread.activity.append",
+            commandId,
+            threadId: snapshot.threadId,
+            activity: {
+              id: EventId.make(worktreeSetupActivityId(snapshot.threadId)),
+              tone:
+                snapshot.phase === "failed" ||
+                snapshot.stages.some((stage) => stage.status === "failed")
+                  ? "error"
+                  : "info",
+              kind: WORKTREE_SETUP_ACTIVITY_KIND,
+              summary:
+                snapshot.phase === "running"
+                  ? "Setting up worktree"
+                  : snapshot.phase === "done"
+                    ? "Worktree ready"
+                    : snapshot.phase === "cancelled"
+                      ? "Worktree setup cancelled"
+                      : "Worktree setup failed",
+              payload: snapshot,
+              turnId: null,
+              createdAt: snapshot.startedAt,
+            },
+            createdAt: snapshot.endedAt ?? snapshot.startedAt,
+          }),
+        ),
+        Effect.ignoreCause({ log: true }),
+      );
+
     const dispatchBootstrap = (
       command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
     ) =>
@@ -738,6 +779,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         const tracked = bootstrap?.prepareWorktree !== undefined;
         const track = (effect: Effect.Effect<void>) => (tracked ? effect : Effect.void);
         let setupTerminalId: string | undefined;
+        let pendingSetupScript: Fiber.Fiber<void, never> | null = null;
         let acceptedTurn: { readonly sequence: number } | undefined;
         let createdThread = false;
         let bootstrapThreadDeleted = false;
@@ -812,8 +854,23 @@ export const layer = CoderWsRpcGroup.toLayer(
             });
             // The successful create is an exact queue fence: every deletion
             // for the prior incarnation committed before this sequence.
-            yield* threadDeletionReactor.drainThrough(created.sequence);
             createdThread = true;
+            yield* threadDeletionReactor.drainThrough(created.sequence);
+            yield* orchestration.dispatch({
+              type: "thread.message.user.append",
+              commandId: yield* commandId("bootstrap-message"),
+              threadId,
+              message: {
+                messageId: command.message.messageId,
+                text: command.message.text,
+                attachments: command.attachments ?? [],
+              },
+              createdAt: command.createdAt,
+            });
+            if (tracked) {
+              const snapshot = yield* worktreeSetupTracker.get(threadId);
+              if (snapshot) yield* recordWorktreeSetup(snapshot);
+            }
           }
           if (prepareWorktree && worktreeBase) {
             yield* track(worktreeSetupTracker.stageStatus(threadId, "checkout", "running"));
@@ -886,6 +943,12 @@ export const layer = CoderWsRpcGroup.toLayer(
             yield* worktreeSetupTracker.stageStatus(threadId, "submodules", "skipped");
           }
           const worktreePath = createdWorktree?.path ?? bootstrap?.createThread?.worktreePath;
+          if (prepareWorktree?.requireWorktree && !createdWorktree) {
+            return yield* new OrchestrationDispatchCommandError({
+              message: "A separate worktree is required for this send.",
+            });
+          }
+
           if (bootstrap?.runSetupScript && worktreePath) {
             yield* track(worktreeSetupTracker.stageStatus(threadId, "setup-script", "running"));
             const result = yield* projectSetupScriptRunner
@@ -928,19 +991,25 @@ export const layer = CoderWsRpcGroup.toLayer(
                 })),
               );
               if (result.completion) {
-                const completion = yield* result.completion;
-                yield* track(
-                  worktreeSetupTracker.stageStatus(
-                    threadId,
-                    "setup-script",
-                    completion.exitCode === 0 ? "done" : "failed",
-                    completion.exitCode === 0
-                      ? null
-                      : completion.exitCode === null
-                        ? "terminal closed"
-                        : `exit ${completion.exitCode}`,
+                const completionEffect = result.completion.pipe(
+                  Effect.flatMap((completion) =>
+                    track(
+                      worktreeSetupTracker.stageStatus(
+                        threadId,
+                        "setup-script",
+                        completion.exitCode === 0 ? "done" : "failed",
+                        completion.exitCode === 0
+                          ? null
+                          : completion.exitCode === null
+                            ? "terminal closed"
+                            : `exit ${completion.exitCode}`,
+                      ),
+                    ),
                   ),
                 );
+                const completionFiber = yield* Effect.forkDetach(completionEffect);
+                if (result.async) pendingSetupScript = completionFiber;
+                else yield* Fiber.join(completionFiber);
               }
             } else if (result)
               yield* track(
@@ -962,7 +1031,21 @@ export const layer = CoderWsRpcGroup.toLayer(
               const result = yield* orchestration.dispatch(turnStart);
               acceptedTurn = result;
               yield* track(worktreeSetupTracker.stageStatus(threadId, "agent", "done"));
-              yield* track(worktreeSetupTracker.finish(threadId, "done"));
+              const settle = tracked
+                ? worktreeSetupTracker
+                    .finish(threadId, "done")
+                    .pipe(
+                      Effect.flatMap((snapshot) =>
+                        snapshot ? recordWorktreeSetup(snapshot) : Effect.void,
+                      ),
+                    )
+                : Effect.void;
+              if (pendingSetupScript)
+                yield* Fiber.join(pendingSetupScript).pipe(
+                  Effect.andThen(settle),
+                  Effect.forkDetach,
+                );
+              else yield* settle;
               return result;
             }),
           );
@@ -975,11 +1058,21 @@ export const layer = CoderWsRpcGroup.toLayer(
                   Effect.ignore,
                   Effect.andThen(
                     track(
-                      worktreeSetupTracker.finish(
-                        threadId,
-                        Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
-                        Cause.hasInterruptsOnly(cause) ? null : "Worktree setup failed.",
-                      ),
+                      worktreeSetupTracker
+                        .finish(
+                          threadId,
+                          Cause.hasInterruptsOnly(cause) ? "cancelled" : "failed",
+                          Cause.hasInterruptsOnly(cause) ? null : "Worktree setup failed.",
+                        )
+                        .pipe(
+                          Effect.flatMap((snapshot) =>
+                            snapshot &&
+                            !bootstrapThreadDeleted &&
+                            (!bootstrap?.createThread || createdThread)
+                              ? recordWorktreeSetup(snapshot)
+                              : Effect.void,
+                          ),
+                        ),
                     ),
                   ),
                   Effect.andThen(
@@ -991,7 +1084,9 @@ export const layer = CoderWsRpcGroup.toLayer(
                               .message,
                         ...(bootstrapThreadDeleted
                           ? { bootstrapThreadDisposition: "deleted" as const }
-                          : {}),
+                          : bootstrap?.createThread && !createdThread
+                            ? { bootstrapThreadDisposition: "not-created" as const }
+                            : {}),
                       }),
                     ),
                   ),
@@ -1049,6 +1144,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         providers: providerSnapshots,
         environmentThemes: yield* environmentThemes.current,
         settings: serverSettings,
+        reasoningMessages: true,
       };
     });
 
@@ -1208,6 +1304,25 @@ export const layer = CoderWsRpcGroup.toLayer(
         gitLabCli.reprobeWriteAccess({ cwd: config.cwd }),
       [WS_METHODS.sourceControlLookupRepository]: (input) =>
         sourceControlRepositories.lookupRepository(input),
+      [WS_METHODS.projectCloneStart]: (input) =>
+        projectClones.start(input, {
+          createProject: (project) =>
+            Effect.gen(function* () {
+              yield* orchestration.dispatch({
+                type: "project.create",
+                commandId: yield* commandId("clone-project"),
+                ...project,
+              });
+            }).pipe(
+              Effect.mapError((cause) => toDispatchError(cause, "Failed to create project.")),
+            ),
+          onCloned: ({ workspaceRoot }) => vcsStatus.refresh(workspaceRoot).pipe(Effect.ignore),
+        }),
+      [WS_METHODS.projectCloneCancel]: ({ projectId }) =>
+        projectClones.cancel(projectId).pipe(Effect.map((applied) => ({ applied }))),
+      [WS_METHODS.projectCloneRetry]: ({ projectId }) =>
+        projectClones.retry(projectId).pipe(Effect.map((applied) => ({ applied }))),
+      [WS_METHODS.subscribeProjectClones]: () => projectClones.stream,
       [WS_METHODS.sourceControlCloneRepository]: (input) =>
         sourceControlRepositories.cloneRepository(input),
       [WS_METHODS.sourceControlPublishRepository]: (input) =>
@@ -1319,6 +1434,8 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
       [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
       [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
+      [WS_METHODS.pullRequestsFilesViewed]: (input) => pullRequests.filesViewed(input),
+      [WS_METHODS.pullRequestsSetFilesViewed]: (input) => pullRequests.setFilesViewed(input),
       [WS_METHODS.pullRequestsDiff]: (input) => pullRequests.diff(input),
       [WS_METHODS.pullRequestsDiffFileContents]: (input) => pullRequests.diffFileContents(input),
       [WS_METHODS.pullRequestsRunAction]: (input) =>
@@ -1484,7 +1601,8 @@ export const layer = CoderWsRpcGroup.toLayer(
           }),
         ),
       [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
-        normalizeDispatchCommand(command).pipe(
+        ProjectCloneTracker.rejectCommandsDuringClone(projectClones, command).pipe(
+          Effect.andThen(normalizeDispatchCommand(command)),
           Effect.tap((command) =>
             command.type !== "thread.pull-request.link"
               ? Effect.void
@@ -1514,6 +1632,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                 ? yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE command_id = ${command.commandId} AND status = 'accepted' LIMIT 1`
                 : [];
               const result = yield* dispatch(command);
+              yield* ProjectCloneTracker.discardCloneForDeletedProject(projectClones, command);
               if (isProjectSettingsCommand && receipts.length === 0) {
                 const current = yield* settings.getSettings;
                 const patch = projectSettingsCommandPatch(current, command);

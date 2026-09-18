@@ -8,7 +8,8 @@ export type EnvironmentConnectionPhase =
   | "connecting"
   | "reconnecting"
   | "connected"
-  | "error";
+  | "error"
+  | "unsupported";
 
 export interface EnvironmentConnectionPresentation {
   readonly phase: EnvironmentConnectionPhase;
@@ -46,7 +47,7 @@ function presentConnectionState(
       };
     case "blocked":
       return {
-        phase: "error",
+        phase: state.lastFailure?.reason === "unsupported" ? "unsupported" : "error",
         error: state.lastFailure?.message ?? null,
         traceId: state.lastFailure?.traceId ?? null,
       };
@@ -67,6 +68,8 @@ function connectionStatusText(connection: EnvironmentConnectionPresentation): st
         : "Reconnecting...";
     case "connected":
       return "Connected";
+    case "unsupported":
+      return "Client not supported";
     case "error":
       return connection.error
         ? `Connection failed. Reason: ${connection.error}`

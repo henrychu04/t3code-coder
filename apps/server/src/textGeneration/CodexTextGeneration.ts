@@ -340,6 +340,8 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       const { prompt, outputSchema } = buildThreadTitlePrompt({
         message: input.message,
         previousTitle: input.previousTitle,
+        linkedContext: input.linkedContext,
+        attachments: input.attachments,
       });
       const imagePaths = yield* resolveImagePaths(input, "generateThreadTitle");
       const generated = yield* runCodexJson({
@@ -350,7 +352,11 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         modelSelection: input.modelSelection,
         imagePaths,
       }).pipe(Effect.scoped);
-      return { title: sanitizeThreadTitle(generated.title) };
+
+      return {
+        title: sanitizeThreadTitle(generated.title),
+        ...(generated.needsRefinement ? { needsRefinement: true } : {}),
+      } satisfies TextGeneration.ThreadTitleGenerationResult;
     });
 
   return {

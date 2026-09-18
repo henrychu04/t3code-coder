@@ -89,6 +89,10 @@ interface AnnotatableCodeViewProps {
   options: StyledDiffCodeViewOptions<DiffCommentAnnotationGroup>;
   viewerRef?: Ref<AnnotatableCodeViewHandle>;
   className?: string;
+  renderCodeViewFooter?: () => ReactNode;
+  unsafeCSSExtra?: string;
+  renderHeaderMetadata?: (fileDiff: FileDiffMetadata) => ReactNode;
+  renderHeaderFilenameSuffix?: (fileDiff: FileDiffMetadata) => ReactNode;
   renderHeaderPrefix: (
     fileDiff: FileDiffMetadata,
     fileKey: string,
@@ -109,6 +113,10 @@ export function AnnotatableCodeView({
   options,
   viewerRef,
   className,
+  renderCodeViewFooter,
+  unsafeCSSExtra,
+  renderHeaderMetadata,
+  renderHeaderFilenameSuffix,
   renderHeaderPrefix,
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
@@ -258,6 +266,14 @@ export function AnnotatableCodeView({
       key={codeViewKey}
       {...(viewerRef ? { viewerRef } : {})}
       {...(className ? { className } : {})}
+      {...(unsafeCSSExtra ? { unsafeCSSExtra } : {})}
+      {...(renderHeaderMetadata
+        ? {
+            renderHeaderMetadata: (item: CodeViewItem<DiffCommentAnnotationGroup>) =>
+              item.type === "diff" ? renderHeaderMetadata(item.fileDiff) : null,
+          }
+        : {})}
+      {...(renderCodeViewFooter ? { renderCodeViewFooter } : {})}
       items={items}
       selectedLines={selectedLines}
       onSelectedLinesChange={setSelectedLines}

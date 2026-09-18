@@ -48,6 +48,10 @@ export const layer = Layer.effect(
         serverVersion: process.env.T3_CODER_BUILD_VERSION?.trim() || packageJson.version,
         capabilities: {
           repositoryIdentity: true,
+          requiredWorktreeBootstrap: true,
+          projectCloneTracking: true,
+          storageCleanup: true,
+          projectWorktreeCleanup: true,
           pullRequests: true,
           connectionProbe: true,
           threadSettlement: true,

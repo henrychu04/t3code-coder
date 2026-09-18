@@ -1,3 +1,4 @@
+import * as NodePath from "node:path";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -383,8 +384,8 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
         input: "Inspect this image",
         attachments: [
           {
-            type: "image",
-            url: `data:image/png;base64,${bytes.toString("base64")}`,
+            type: "localImage",
+            path: NodePath.join(attachmentsDir, attachmentId),
           },
         ],
       });

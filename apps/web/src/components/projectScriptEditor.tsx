@@ -68,6 +68,7 @@ export interface NewProjectScriptInput {
   command: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
+  waitForSetup: boolean;
 }
 
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
@@ -77,6 +78,7 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   command: "",
   icon: "play",
   runOnWorktreeCreate: false,
+  waitForSetup: false,
 };
 
 /** What the editor dialog should open with. `scriptId: null` means "add". */
@@ -95,6 +97,7 @@ export function editorRequestForScript(script: ProjectScript): ProjectScriptEdit
       command: script.command,
       icon: script.icon,
       runOnWorktreeCreate: script.runOnWorktreeCreate,
+      waitForSetup: script.runOnWorktreeCreate && script.async === false,
     },
   };
 }
@@ -124,6 +127,7 @@ export function ProjectScriptEditorDialog({
   const [icon, setIcon] = useState<ProjectScriptIcon>("play");
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
+  const [waitForSetup, setWaitForSetup] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [savingRequest, setSavingRequest] = useState<ProjectScriptEditorRequest | null>(null);
@@ -151,6 +155,7 @@ export function ProjectScriptEditorDialog({
     setIcon(request.initial.icon);
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
+    setWaitForSetup(request.initial.waitForSetup);
     setValidationError(request.error ?? null);
     setSavingRequest(null);
   }, [request]);
@@ -184,6 +189,7 @@ export function ProjectScriptEditorDialog({
         command: trimmedCommand,
         icon,
         runOnWorktreeCreate,
+        waitForSetup: runOnWorktreeCreate && waitForSetup,
       } satisfies NewProjectScriptInput;
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
@@ -302,6 +308,18 @@ export function ProjectScriptEditorDialog({
                   <Switch
                     checked={runOnWorktreeCreate}
                     onCheckedChange={(checked) => setRunOnWorktreeCreate(Boolean(checked))}
+                  />
+                </label>
+                <label
+                  className={`flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035] ${
+                    runOnWorktreeCreate ? "" : "opacity-60"
+                  }`}
+                >
+                  <span>Wait for it to finish before the agent starts</span>
+                  <Switch
+                    checked={waitForSetup}
+                    disabled={!runOnWorktreeCreate}
+                    onCheckedChange={(checked) => setWaitForSetup(Boolean(checked))}
                   />
                 </label>
                 {validationError && <p className="text-sm text-destructive">{validationError}</p>}

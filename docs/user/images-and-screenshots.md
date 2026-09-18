@@ -68,6 +68,9 @@ workspace copies and survive reload while those copies exist; unsent drafts disa
 
 Older conversations can still display their previously saved artifacts. Those legacy copies live
 in `$HOME/.t3-coder/artifacts`, outside worktrees; deleting a worktree does not delete them.
+Opt-in saved-artifact retention under **Settings → Storage** can remove expired legacy copies.
+Their links then stop opening. Retention is off by default and excludes submitted attachments
+and current workspace source images.
 
 The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
 Attachment sizing follows main. Coder-specific differences are bounded helper stdio transport,

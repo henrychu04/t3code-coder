@@ -191,7 +191,7 @@ export const ClientSettingsSchema = Schema.Struct({
   confirmThreadArchive: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   confirmThreadDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   confirmThreadUnpin: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  diffFilesCollapsed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  diffFilesCollapsed: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   diffIgnoreWhitespace: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   panelAnimationDurationMs: PanelAnimationDurationMs.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PANEL_ANIMATION_DURATION_MS)),
@@ -247,6 +247,14 @@ export const ClientSettingsSchema = Schema.Struct({
   contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   planModeEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   composerCollapseOnScroll: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  // Rich text is the default; users can opt out for literal Markdown editing.
+  composerRichTextEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sendShortcut: Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("enter")),
+  ),
+  followUpBehavior: Schema.Literals(["queue", "steer"]).pipe(
+    Schema.withDecodingDefault(Effect.succeed("queue")),
+  ),
   proactivePanelsEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   // Legacy sidebar (the original per-project tree). Deliberately a fresh key
   // (was `sidebarV2Enabled` + `sidebarV2ConfiguredByUser`): decoding drops the
@@ -460,7 +468,28 @@ export const DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL = Duration.seconds(15);
 export const ResponseStreamingMode = Schema.Literals(["turn", "paragraph", "token"]);
 export type ResponseStreamingMode = typeof ResponseStreamingMode.Type;
 
+const StorageRetentionDays = Schema.NullOr(
+  Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 })),
+);
+
+export const WorktreeCleanupRules = Schema.Struct({
+  worktreeAfterDays: StorageRetentionDays,
+  worktreeOnMerge: Schema.Boolean,
+  worktreeOnDelete: Schema.Boolean,
+  worktreeUnchanged: Schema.Boolean,
+});
+export type WorktreeCleanupRules = typeof WorktreeCleanupRules.Type;
+
+export const WorktreeCleanup = Schema.NullOr(
+  Schema.Union([
+    Schema.Struct({ mode: Schema.Literal("off") }),
+    Schema.Struct({ mode: Schema.Literal("custom"), rules: WorktreeCleanupRules }),
+  ]),
+);
+export type WorktreeCleanup = typeof WorktreeCleanup.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
+  "worktreeCleanup",
   "defaultModelSelection",
   "defaultRuntimeMode",
   "defaultThreadEnvMode",
@@ -483,6 +512,7 @@ export type ProjectScopedServerSettingKey = (typeof PROJECT_SCOPED_SERVER_SETTIN
  * model, no dedicated writer model, never auto-settle).
  */
 export const ProjectSettingsOverrides = Schema.Struct({
+  worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
@@ -499,7 +529,25 @@ export const ProjectSettingsOverrides = Schema.Struct({
 } satisfies Record<ProjectScopedServerSettingKey, unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
+export const StorageCleanupSettings = Schema.Struct({
+  worktreeAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  worktreeOnMerge: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  worktreeOnDelete: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  worktreeUnchanged: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  browserArtifactsAfterDays: StorageRetentionDays.pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
+  ),
+  logsAfterDays: StorageRetentionDays.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+});
+export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
+
 export const ServerSettings = Schema.Struct({
+  worktreeCleanup: WorktreeCleanup.pipe(Schema.withDecodingDefault(Effect.succeed(null))),
+  storageCleanup: StorageCleanupSettings.pipe(
+    Schema.withDecodingDefault(
+      Effect.succeed(Schema.decodeUnknownSync(StorageCleanupSettings)({})),
+    ),
+  ),
   providerHealthRefreshInterval: Schema.DurationFromMillis.pipe(
     Schema.withDecodingDefault(Effect.succeed(300000)),
   ),
@@ -697,6 +745,32 @@ const ClaudeSettingsPatch = Schema.Struct({
 });
 
 export const ServerSettingsPatch = Schema.Struct({
+  worktreeCleanup: Schema.optionalKey(
+    Schema.NullOr(
+      Schema.Union([
+        Schema.Struct({ mode: Schema.Literal("off") }),
+        Schema.Struct({
+          mode: Schema.Literal("custom"),
+          rules: Schema.Struct({
+            worktreeAfterDays: Schema.optionalKey(StorageRetentionDays),
+            worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
+            worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
+            worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+          }),
+        }),
+      ]),
+    ),
+  ),
+  storageCleanup: Schema.optionalKey(
+    Schema.Struct({
+      worktreeAfterDays: Schema.optionalKey(StorageRetentionDays),
+      worktreeOnMerge: Schema.optionalKey(Schema.Boolean),
+      worktreeOnDelete: Schema.optionalKey(Schema.Boolean),
+      worktreeUnchanged: Schema.optionalKey(Schema.Boolean),
+      browserArtifactsAfterDays: Schema.optionalKey(StorageRetentionDays),
+      logsAfterDays: Schema.optionalKey(StorageRetentionDays),
+    }),
+  ),
   providerHealthRefreshInterval: Schema.optionalKey(Schema.DurationFromMillis),
   continueThreadsAfterServerUpdate: Schema.optionalKey(Schema.Boolean),
   environmentIcon: Schema.optionalKey(Schema.NullOr(EnvironmentMachineKind)),
@@ -773,6 +847,9 @@ export const ClientSettingsPatch = Schema.Struct({
   contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),
   planModeEnabled: Schema.optionalKey(Schema.Boolean),
   composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),
+  composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),
+  sendShortcut: Schema.optionalKey(Schema.Literals(["enter", "mod-enter-multiline", "mod-enter"])),
+  followUpBehavior: Schema.optionalKey(Schema.Literals(["queue", "steer"])),
   proactivePanelsEnabled: Schema.optionalKey(Schema.Boolean),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),

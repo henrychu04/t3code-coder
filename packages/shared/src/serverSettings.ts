@@ -121,6 +121,7 @@ export function applyServerSettingsPatch(
   const {
     projectAutoPullOverrides,
     pullRequestMergeMethodOverrides,
+    worktreeCleanup: worktreeCleanupPatch,
     projectSettingsOverrides: projectPatch,
     ...ordinaryPatch
   } = patch;
@@ -171,8 +172,30 @@ export function applyServerSettingsPatch(
         legacy.projectScriptOverrides[id as ProjectId] = null;
     }
   }
+  const storageCleanup = { ...current.storageCleanup, ...patch.storageCleanup };
   const next = {
     ...deepMerge(current, ordinaryPatch),
+    ...(worktreeCleanupPatch === undefined
+      ? {}
+      : {
+          worktreeCleanup:
+            worktreeCleanupPatch?.mode === "custom"
+              ? {
+                  mode: "custom" as const,
+                  rules: {
+                    worktreeAfterDays: storageCleanup.worktreeAfterDays,
+                    worktreeOnMerge: storageCleanup.worktreeOnMerge,
+                    worktreeOnDelete: storageCleanup.worktreeOnDelete,
+                    worktreeUnchanged: storageCleanup.worktreeUnchanged,
+                    ...(current.worktreeCleanup?.mode === "custom"
+                      ? current.worktreeCleanup.rules
+                      : {}),
+                    ...worktreeCleanupPatch.rules,
+                  },
+                }
+              : worktreeCleanupPatch,
+        }),
+
     projectSettingsOverrides,
     ...legacy,
     defaultModelSelection:

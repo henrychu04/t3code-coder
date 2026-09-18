@@ -1842,6 +1842,130 @@ it.layer(BaseTestLayer)("OrchestrationProjectionPipeline", (it) => {
       ]);
     }),
   );
+
+  it.effect("does not let a later missing placeholder clobber a ready checkpoint", () =>
+    Effect.gen(function* () {
+      const projectionPipeline = yield* OrchestrationProjectionPipeline;
+      const eventStore = yield* OrchestrationEventStore;
+      const sql = yield* SqlClient.SqlClient;
+      const appendAndProject = (event: Parameters<typeof eventStore.append>[0]) =>
+        eventStore
+          .append(event)
+          .pipe(Effect.flatMap((savedEvent) => projectionPipeline.projectEvent(savedEvent)));
+
+      yield* appendAndProject({
+        type: "project.created",
+        eventId: EventId.make("evt-checkpoint-guard-1"),
+        aggregateKind: "project",
+        aggregateId: ProjectId.make("project-checkpoint-guard"),
+        occurredAt: "2026-02-26T14:00:00.000Z",
+        commandId: CommandId.make("cmd-checkpoint-guard-1"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-checkpoint-guard-1"),
+        metadata: {},
+        payload: {
+          projectId: ProjectId.make("project-checkpoint-guard"),
+          title: "Project Checkpoint Guard",
+          workspaceRoot: "/tmp/project-checkpoint-guard",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt: "2026-02-26T14:00:00.000Z",
+          updatedAt: "2026-02-26T14:00:00.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.created",
+        eventId: EventId.make("evt-checkpoint-guard-2"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-checkpoint-guard"),
+        occurredAt: "2026-02-26T14:00:01.000Z",
+        commandId: CommandId.make("cmd-checkpoint-guard-2"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-checkpoint-guard-2"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-checkpoint-guard"),
+          projectId: ProjectId.make("project-checkpoint-guard"),
+          title: "Thread Checkpoint Guard",
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("codex"),
+            model: "gpt-5-codex",
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          createdAt: "2026-02-26T14:00:01.000Z",
+          updatedAt: "2026-02-26T14:00:01.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-checkpoint-guard-3"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-checkpoint-guard"),
+        occurredAt: "2026-02-26T14:00:02.000Z",
+        commandId: CommandId.make("cmd-checkpoint-guard-3"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-checkpoint-guard-3"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-checkpoint-guard"),
+          turnId: TurnId.make("turn-ready"),
+          checkpointTurnCount: 1,
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-checkpoint-guard/turn/1"),
+          status: "ready",
+          files: [],
+          assistantMessageId: MessageId.make("assistant-ready"),
+          completedAt: "2026-02-26T14:00:02.000Z",
+        },
+      });
+
+      yield* appendAndProject({
+        type: "thread.turn-diff-completed",
+        eventId: EventId.make("evt-checkpoint-guard-4"),
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-checkpoint-guard"),
+        occurredAt: "2026-02-26T14:00:03.000Z",
+        commandId: CommandId.make("cmd-checkpoint-guard-4"),
+        causationEventId: null,
+        correlationId: CorrelationId.make("cmd-checkpoint-guard-4"),
+        metadata: {},
+        payload: {
+          threadId: ThreadId.make("thread-checkpoint-guard"),
+          turnId: TurnId.make("turn-ready"),
+          checkpointTurnCount: 1,
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/thread-checkpoint-guard/turn/1"),
+          status: "missing",
+          files: [],
+          assistantMessageId: MessageId.make("assistant-ready"),
+          completedAt: "2026-02-26T14:00:03.000Z",
+        },
+      });
+
+      const turnRows = yield* sql<{
+        readonly turnId: string;
+        readonly checkpointStatus: string | null;
+        readonly checkpointRef: string | null;
+      }>`
+        SELECT
+          turn_id AS "turnId",
+          checkpoint_status AS "checkpointStatus",
+          checkpoint_ref AS "checkpointRef"
+        FROM projection_turns
+        WHERE thread_id = 'thread-checkpoint-guard'
+      `;
+      assert.deepEqual(turnRows, [
+        {
+          turnId: "turn-ready",
+          checkpointStatus: "ready",
+          checkpointRef: "refs/t3/checkpoints/thread-checkpoint-guard/turn/1",
+        },
+      ]);
+    }),
+  );
 });
 
 it.layer(makeProjectionPipelinePrefixedTestLayer("t3-pending-turn-terminal-test-"))(
@@ -2186,6 +2310,50 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
     }),
   );
 
+  it.effect("persists and clears a project monogram", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-monogram");
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-monogram-create"),
+        projectId,
+        title: "Monogram",
+        workspaceRoot: "/tmp/project-monogram",
+        defaultModelSelection: null,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-monogram-save"),
+        projectId,
+        projectIcon: { kind: "monogram", text: "T3", color: "violet" },
+      });
+      const saved = yield* sql<{
+        readonly icon: string | null;
+      }>`SELECT project_icon_json AS icon FROM projection_projects WHERE project_id = ${projectId}`;
+      assert.deepEqual(saved, [
+        { icon: '{"kind":"lucide","name":"folder-code","color":"violet","monogramText":"T3"}' },
+      ]);
+      const persisted = yield* sql<{ readonly icon: string }>`
+        SELECT json_extract(payload_json, '$.projectIcon') AS icon FROM orchestration_events
+        WHERE command_id = ${CommandId.make("cmd-monogram-save")}
+      `;
+      assert.deepEqual(persisted, saved);
+      yield* engine.dispatch({
+        type: "project.meta.update",
+        commandId: CommandId.make("cmd-monogram-clear"),
+        projectId,
+        projectIcon: null,
+      });
+      const cleared = yield* sql<{
+        readonly icon: string | null;
+      }>`SELECT project_icon_json AS icon FROM projection_projects WHERE project_id = ${projectId}`;
+      assert.deepEqual(cleared, [{ icon: null }]);
+    }),
+  );
+
   it.effect("re-creating a deleted thread id starts from an empty projection", () =>
     Effect.gen(function* () {
       const engine = yield* OrchestrationEngineService;
@@ -2322,6 +2490,71 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       assert.deepEqual(detail.activities, []);
       assert.isNull(detail.latestTurn);
       assert.isNull(detail.session);
+    }),
+  );
+  it.effect("persists image display names through message projection and snapshot reads", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const snapshots = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("image-metadata-project");
+      const threadId = ThreadId.make("image-metadata-thread");
+      const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" };
+      const attachments = [
+        {
+          type: "image" as const,
+          id: "00000000-0000-4000-8000-000000000001.png",
+          name: "diagram.png",
+        },
+      ];
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("image-metadata-project-create"),
+        projectId,
+        title: "Images",
+        workspaceRoot: "/tmp/image-metadata",
+        defaultModelSelection: modelSelection,
+        createdAt,
+      });
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("image-metadata-thread-create"),
+        threadId,
+        projectId,
+        title: "Images",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      });
+      yield* engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("image-metadata-turn"),
+        threadId,
+        message: {
+          messageId: MessageId.make("image-metadata-message"),
+          role: "user",
+          text: "Describe this",
+        },
+        attachments,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt,
+      });
+      const rows = yield* sql<{
+        attachments: string;
+      }>`SELECT attachments_json AS attachments FROM projection_thread_messages WHERE message_id = 'image-metadata-message'`;
+      assert.deepStrictEqual(JSON.parse(rows[0]!.attachments), attachments);
+      const detail = Option.getOrThrow(yield* snapshots.getThreadDetailById(threadId));
+      assert.deepStrictEqual(detail.messages[0]!.attachments, attachments);
+      const snapshot = yield* snapshots.getSnapshot();
+      assert.deepStrictEqual(
+        snapshot.threads.find((thread) => thread.id === threadId)!.messages[0]!.attachments,
+        attachments,
+      );
     }),
   );
 });

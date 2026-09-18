@@ -12,6 +12,7 @@ export interface KeybindingActionDefinition {
 }
 
 const KNOWN_KEYBINDING_ACTIONS: ReadonlyArray<KeybindingActionDefinition> = [
+  { command: "themeEditor.toggle", label: "Toggle theme editor", category: "Panels" },
   { command: "fileViewer.find", label: "Find in current file", category: "Files" },
   { command: "projectSearch.toggle", label: "Find text in project", category: "Files" },
   { command: "filePicker.toggle", label: "Search project files", category: "Files" },

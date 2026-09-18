@@ -315,6 +315,13 @@ export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => voi
             ) : (
               <GitLabCloneProject
                 environmentId={environmentId}
+                supportsTracking={
+                  environment?.serverConfig?.environment.capabilities.projectCloneTracking === true
+                }
+                onStarted={async (projectId) => {
+                  await handleNewThread(scopeProjectRef(environmentId, projectId));
+                  onClose();
+                }}
                 onClone={addProject}
                 onError={setError}
               />
@@ -366,12 +373,17 @@ function GitLabCloneProject({
   environmentId,
   onClone,
   onError,
+  onStarted,
+  supportsTracking,
 }: {
   readonly environmentId: EnvironmentId;
   readonly onClone: (path: string) => Promise<void>;
+  readonly onStarted: (projectId: ReturnType<typeof newProjectId>) => Promise<void>;
+  readonly supportsTracking: boolean;
   readonly onError: (message: string | null) => void;
 }) {
   const cloneRepository = useAtomCommand(sourceControlEnvironment.cloneRepository);
+  const startProjectClone = useAtomCommand(sourceControlEnvironment.startProjectClone);
   const [repository, setRepository] = useState("");
   const [destinationPath, setDestinationPath] = useState("");
   const [destinationEdited, setDestinationEdited] = useState(false);
@@ -398,6 +410,23 @@ function GitLabCloneProject({
     setCloning(true);
     onError(null);
     try {
+      if (supportsTracking) {
+        const projectId = newProjectId();
+        const result = await startProjectClone({
+          environmentId,
+          input: {
+            projectId,
+            title: repositoryDirectoryName(repository) || "GitLab project",
+            createdAt: new Date().toISOString(),
+            provider: "gitlab",
+            ...source,
+            destinationPath: destinationPath.trim(),
+          },
+        });
+        if (result._tag === "Failure") throw squashAtomCommandFailure(result);
+        await onStarted(projectId);
+        return;
+      }
       const result = await cloneRepository({
         environmentId,
         input: {

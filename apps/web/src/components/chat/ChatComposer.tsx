@@ -1,3 +1,22 @@
+import type { ProjectId, PullRequestListInput } from "@t3tools/contracts";
+import { filterComposerPullRequestMatches } from "@t3tools/shared/composerPullRequestMatches";
+import {
+  pullRequestEnvironment,
+  usePullRequestList,
+  type EnvironmentQueryTarget,
+} from "~/state/pullRequests";
+import { useDebouncedValue } from "~/state/queries";
+import { buildPullRequestReferenceContext } from "../pullRequest/pullRequestDetail.logic";
+import {
+  matchesPullRequestQuery,
+  rankPullRequestMatches,
+} from "../pullRequest/pullRequestList.logic";
+import { formatReviewCommentContext } from "~/reviewCommentContext";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
+import { requestConfirmDialog } from "~/confirmDialog";
+import { collectDraftImageReferences } from "~/lib/composerInlineContext";
+import { resolveComposerFileTarget } from "~/fileContextMenu";
+import { useRightPanelStore } from "~/rightPanelStore";
 import { ComposerImagePicker } from "./ComposerImagePicker";
 import { imageContextReference } from "../../lib/composerInlineContext";
 import type { AssistantCitation } from "@t3tools/contracts";
@@ -66,6 +85,7 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DISCONNECTED_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
+import { listContinuationForEnter, listIndentForTab } from "../../composer-list-continuation";
 import { deriveComposerSendState, threadShellHasStarted } from "../ChatView.logic";
 import {
   type DraftId,
@@ -111,6 +131,7 @@ import {
 import { measureRestingComposerControls } from "./restingComposerControlsMeasurement";
 import { type ComposerPromptEditorHandle, ComposerPromptEditor } from "../ComposerPromptEditor";
 import { ProviderModelPicker } from "./ProviderModelPicker";
+import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { type ComposerCommandItem, ComposerCommandMenu } from "./ComposerCommandMenu";
 import { ComposerPendingApprovalActions } from "./ComposerPendingApprovalActions";
 import { CompactComposerControlsMenu } from "./CompactComposerControlsMenu";
@@ -728,6 +749,9 @@ import {
   LockOpenIcon,
   PenLineIcon,
   SparklesIcon,
+  PlayIcon,
+  ShieldIcon,
+  XIcon,
 } from "lucide-react";
 import { proposedPlanTitle } from "../../proposedPlan";
 import { getProviderInteractionModeToggle } from "../../providerModels";
@@ -994,7 +1018,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
   isEnvironmentUnavailable: boolean;
   hasSendableContent: boolean;
   preserveComposerFocusOnPointerDown?: boolean;
-  showSendWhileRunning?: boolean;
   onPreviousPendingQuestion: () => void;
   onInterrupt: () => void;
   onImplementPlanInNewThread: () => void;
@@ -1031,7 +1054,6 @@ const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryActions(
         isPreparingWorktree={props.isPreparingWorktree}
         hasSendableContent={props.hasSendableContent}
         preserveComposerFocusOnPointerDown={props.preserveComposerFocusOnPointerDown ?? false}
-        showSendWhileRunning={props.showSendWhileRunning ?? false}
         onPreviousPendingQuestion={props.onPreviousPendingQuestion}
         onInterrupt={props.onInterrupt}
         onImplementPlanInNewThread={props.onImplementPlanInNewThread}
@@ -1084,6 +1106,7 @@ export interface ChatComposerHandle {
     selectedModelOptionsForDispatch: unknown;
     selectedModelSelection: ModelSelection;
     runtimeMode: RuntimeMode;
+    multipleModelSelections: ReadonlyArray<ModelSelection> | null;
     providerAvailable: boolean;
     selectedProvider: ProviderDriverKind;
     selectedModel: string;
@@ -1091,18 +1114,30 @@ export interface ChatComposerHandle {
   };
   /** Validate the fully composed text immediately before a provider turn starts. */
   validateProviderInput: (providerInput: string) => boolean;
+  setMultipleModelSelections: (selections: ReadonlyArray<ModelSelection>) => void;
 }
 
 // --------------------------------------------------------------------------
 // Props
 // --------------------------------------------------------------------------
 
+const COMPOSER_PULL_REQUEST_LIST_LIMIT = 99;
+const COMPOSER_PULL_REQUEST_RESULT_LIMIT = 12;
+const EMPTY_PULL_REQUEST_LIST_TARGETS: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>> =
+  [];
 export interface ChatComposerProps {
+  pullRequestProjectId: ProjectId | null;
+  pullRequestRepository: string | null;
   composerDraftTarget: ScopedThreadRef | DraftId;
   environmentId: EnvironmentId;
   routeKind: "server" | "draft";
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
+  multipleModelSelections: ReadonlyArray<ModelSelection> | null;
+  supportsMultipleModels: boolean;
+  onMultipleModelSelectionsChange: React.Dispatch<
+    React.SetStateAction<ReadonlyArray<ModelSelection> | null>
+  >;
 
   // Thread context
   activeThreadId: ThreadId | null;
@@ -1213,7 +1248,11 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
-  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onProviderModelSelect: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    options?: { focusComposer?: boolean },
+  ) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -1229,10 +1268,15 @@ export interface ChatComposerProps {
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
     composerDraftTarget,
+    pullRequestProjectId,
+    pullRequestRepository,
     environmentId,
     routeKind,
     routeThreadRef,
     draftId,
+    multipleModelSelections,
+    supportsMultipleModels,
+    onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
     activeThreadEnvironmentId: _activeThreadEnvironmentId,
     activeThread,
@@ -1454,7 +1498,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     () => providerInstanceEntries.find((entry) => entry.instanceId === selectedInstanceId),
     [providerInstanceEntries, selectedInstanceId],
   );
-  const noProviderAvailable = selectedProviderEntry === undefined;
+  const noProviderAvailable =
+    selectedProviderEntry === undefined && multipleModelSelections === null;
   // Before the catalog arrives, every thread resolves to "no provider". Send
   // stays blocked either way; only the chrome waits, keeping the picker with
   // the thread's own selection instead of swapping in the setup button and
@@ -1603,6 +1648,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     remove: removeClipboardImage,
     retry: retryClipboardImage,
   } = useClipboardImageUpload(environmentId, composerDraftTarget, setImageAttachmentError);
+  const removeComposerImage = (imageId: string) => {
+    const image = composerPastedImages.find((candidate) => candidate.id === imageId);
+    const referenced = collectDraftImageReferences(promptRef.current).some(
+      (reference) => reference.id === imageId,
+    );
+    if (!referenced) {
+      removeClipboardImage(imageId);
+      return;
+    }
+    const confirmation = requestConfirmDialog(
+      `Remove ${image?.file.name ?? "this image"} from the message?\nIt is referenced in your text; removing it also removes every reference.`,
+      { variant: "destructive" },
+    );
+    if (!confirmation) {
+      removeClipboardImage(imageId);
+      return;
+    }
+    void confirmation.then((confirmed) => {
+      if (confirmed) removeClipboardImage(imageId);
+    });
+  };
+
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -1623,6 +1690,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Refs
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const openPullRequest = useOpenPrLink(routeThreadRef);
+  const composerFileActions = useMemo(() => {
+    const resolve = (path: string) =>
+      routeKind === "server" && gitCwd ? resolveComposerFileTarget(path, gitCwd) : null;
+    return {
+      openPullRequest,
+      canOpenMention: (path: string) => Boolean(resolve(path)?.relativePath),
+      openMention: (path: string) => {
+        const target = resolve(path);
+        if (target?.relativePath) {
+          useRightPanelStore.getState().openFile(routeThreadRef, target.relativePath, target.line);
+        }
+      },
+    };
+  }, [routeKind, gitCwd, routeThreadRef, openPullRequest]);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const providerInputRejectedRef = useRef(false);
@@ -1670,6 +1752,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // ------------------------------------------------------------------
   const composerTriggerKind = composerTrigger?.kind ?? null;
   const pathTriggerQuery = composerTrigger?.kind === "path" ? composerTrigger.query : "";
+  const pullRequestTriggerQuery =
+    composerTrigger?.kind === "pull-request" ? composerTrigger.query : "";
+  const pullRequestTextQuery =
+    composerTriggerKind === "pull-request" &&
+    pullRequestTriggerQuery.length > 0 &&
+    !/^\d+$/u.test(pullRequestTriggerQuery)
+      ? pullRequestTriggerQuery
+      : null;
+  const debouncedPullRequestTextQuery = useDebouncedValue(pullRequestTextQuery, 180);
+  const settledPullRequestTextQuery =
+    pullRequestTextQuery === debouncedPullRequestTextQuery ? pullRequestTextQuery : null;
   const isPathTrigger = composerTriggerKind === "path";
   const workspaceEntries = useComposerPathSearch({
     environmentId,
@@ -1696,6 +1789,68 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         projectSlashCommands.data ?? [],
       ),
     [projectSlashCommands.data, selectedProviderStatus, gitCwd],
+  );
+
+  const pullRequestListTargets = useMemo(
+    () =>
+      composerTriggerKind !== "pull-request" ||
+      pullRequestProjectId === null ||
+      (pullRequestTextQuery !== null && settledPullRequestTextQuery === null)
+        ? EMPTY_PULL_REQUEST_LIST_TARGETS
+        : [
+            {
+              environmentId,
+              input: {
+                state: "all" as const,
+                projectId: pullRequestProjectId,
+                limit: COMPOSER_PULL_REQUEST_LIST_LIMIT,
+                ...(settledPullRequestTextQuery === null
+                  ? {}
+                  : { query: settledPullRequestTextQuery }),
+              },
+            },
+          ],
+    [
+      composerTriggerKind,
+      environmentId,
+      pullRequestProjectId,
+      pullRequestTextQuery,
+      settledPullRequestTextQuery,
+    ],
+  );
+  const pullRequestLookup = usePullRequestList(pullRequestListTargets);
+  const pullRequestTriggerNumber = useMemo(() => {
+    if (composerTrigger?.kind !== "pull-request" || composerTrigger.query.length === 0) {
+      return null;
+    }
+    const number = Number(composerTrigger.query);
+    return Number.isSafeInteger(number) && number > 0 ? number : null;
+  }, [composerTrigger]);
+  const debouncedPullRequestNumber = useDebouncedValue(pullRequestTriggerNumber, 180);
+  const settledPullRequestNumber =
+    pullRequestTriggerNumber === debouncedPullRequestNumber ? pullRequestTriggerNumber : null;
+  const recentHasExactPullRequest =
+    settledPullRequestNumber !== null &&
+    pullRequestLookup.data?.entries.some(
+      (entry) =>
+        entry.projectId === pullRequestProjectId &&
+        entry.repository.trim().toLowerCase() === pullRequestRepository?.trim().toLowerCase() &&
+        entry.number === settledPullRequestNumber,
+    ) === true;
+  const exactPullRequestLookup = useEnvironmentQuery(
+    settledPullRequestNumber === null ||
+      pullRequestProjectId === null ||
+      pullRequestRepository === null ||
+      recentHasExactPullRequest
+      ? null
+      : pullRequestEnvironment.detail({
+          environmentId,
+          input: {
+            projectId: pullRequestProjectId,
+            repository: pullRequestRepository,
+            number: settledPullRequestNumber,
+          },
+        }),
   );
 
   const composerMenuItems = useMemo<ComposerCommandItem[]>(() => {
@@ -1784,8 +1939,64 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           (skill.scope ? `${skill.scope} skill` : "Run provider skill"),
       }));
     }
+    if (
+      composerTrigger.kind === "pull-request" &&
+      pullRequestProjectId !== null &&
+      pullRequestRepository !== null
+    ) {
+      const exactPullRequest =
+        exactPullRequestLookup.data?.number === pullRequestTriggerNumber
+          ? [exactPullRequestLookup.data]
+          : [];
+      const matches = /^\d*$/u.test(composerTrigger.query)
+        ? filterComposerPullRequestMatches({
+            entries: [...exactPullRequest, ...(pullRequestLookup.data?.entries ?? [])],
+            projectId: pullRequestProjectId,
+            repository: pullRequestRepository,
+            query: composerTrigger.query,
+            limit: COMPOSER_PULL_REQUEST_RESULT_LIMIT,
+          })
+        : rankPullRequestMatches(
+            (pullRequestLookup.data?.entries ?? []).filter((entry) => {
+              if (
+                entry.projectId !== pullRequestProjectId ||
+                entry.repository.trim().toLowerCase() !== pullRequestRepository.trim().toLowerCase()
+              ) {
+                return false;
+              }
+              const provider = pullRequestLookup.data?.providers.find(
+                (candidate) => candidate.host === entry.host,
+              );
+              return (
+                provider?.searchesOnHost === true ||
+                matchesPullRequestQuery(entry, composerTrigger.query)
+              );
+            }),
+            composerTrigger.query,
+          ).slice(0, COMPOSER_PULL_REQUEST_RESULT_LIMIT);
+      return matches.map((pullRequest) => ({
+        id: `pull-request:${pullRequest.projectId}:${pullRequest.repository}:${pullRequest.number}`,
+        type: "pull-request",
+        pullRequest: {
+          number: pullRequest.number,
+          title: pullRequest.title,
+          url: pullRequest.url,
+          headBranch: pullRequest.headBranch,
+          baseBranch: pullRequest.baseBranch,
+          state: pullRequest.state,
+          isDraft: pullRequest.isDraft,
+        },
+        label: `#${pullRequest.number}`,
+        description: pullRequest.title,
+      }));
+    }
     return [];
   }, [
+    exactPullRequestLookup.data,
+    pullRequestLookup.data,
+    pullRequestProjectId,
+    pullRequestRepository,
+    pullRequestTriggerNumber,
     composerTrigger,
     availableSlashCommands,
     planModeUiEnabled,
@@ -1856,15 +2067,43 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const isComposerMenuLoading =
     (composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending) ||
+    (composerTriggerKind === "pull-request" &&
+      pullRequestProjectId !== null &&
+      pullRequestRepository !== null &&
+      (pullRequestLookup.isPending ||
+        pullRequestTextQuery !== debouncedPullRequestTextQuery ||
+        pullRequestTriggerNumber !== debouncedPullRequestNumber ||
+        exactPullRequestLookup.isPending)) ||
     (composerTriggerKind === "slash-command" && projectSlashCommands.isPending);
   const composerMenuEmptyState = useMemo(() => {
     if (composerTriggerKind === "skill") {
       return "No skills found. Try / to browse provider commands.";
     }
+    if (composerTriggerKind === "pull-request") {
+      if (pullRequestProjectId === null || pullRequestRepository === null) {
+        return "Merge requests are not available for this project.";
+      }
+      if (
+        pullRequestLookup.error !== null ||
+        pullRequestLookup.data?.errors.some((error) => error.projectId === pullRequestProjectId)
+      ) {
+        return "Merge requests could not be read for this project.";
+      }
+      return composerTrigger?.query
+        ? `No merge request matches ${composerTrigger.query}.`
+        : "No merge requests found in this repository.";
+    }
     return composerTriggerKind === "path"
       ? "No matching files or folders."
       : "No matching command.";
-  }, [composerTriggerKind]);
+  }, [
+    composerTrigger,
+    composerTriggerKind,
+    pullRequestLookup.data?.errors,
+    pullRequestLookup.error,
+    pullRequestProjectId,
+    pullRequestRepository,
+  ]);
 
   // ------------------------------------------------------------------
   // Provider traits UI
@@ -2159,6 +2398,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       expandedCursor: number,
       cursorAdjacentToMention: boolean,
       terminalContextIds: string[],
+      restoredTerminalContexts?: TerminalContextDraft[],
     ) => {
       expandComposerForEditorChange();
       if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
@@ -2186,7 +2426,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!terminalContextIdListsEqual(composerTerminalContexts, terminalContextIds)) {
         setComposerDraftTerminalContexts(
           composerDraftTarget,
-          syncTerminalContextsByIds(composerTerminalContexts, terminalContextIds),
+          syncTerminalContextsByIds(
+            restoredTerminalContexts ?? composerTerminalContexts,
+            terminalContextIds,
+          ),
         );
       }
       setComposerCursor(nextCursor);
@@ -2217,6 +2460,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       replacement: string,
       options?: {
         expectedText?: string;
+        expandedCursorAfterReplace?: number;
         focusEditorAfterReplace?: boolean;
         citationComment?: { start: number; sourceAnchor: AssistantCitationSourceAnchor };
       },
@@ -2231,7 +2475,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return false;
       }
       const next = replaceTextRange(promptRef.current, rangeStart, rangeEnd, replacement);
-      const nextCursor = collapseExpandedComposerCursor(next.text, next.cursor);
+      const nextCursor = collapseExpandedComposerCursor(
+        next.text,
+        options?.expandedCursorAfterReplace ?? next.cursor,
+      );
       const nextExpandedCursor = expandCollapsedComposerCursor(next.text, nextCursor);
       if (options?.citationComment) {
         composerEditorRef.current?.requestCitationComment({
@@ -2315,6 +2562,26 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       const { snapshot, trigger } = resolveActiveComposerTrigger();
       if (!trigger) return;
+      if (item.type === "pull-request") {
+        if (
+          trigger.kind !== "pull-request" ||
+          !composerMenuItemsRef.current.some((candidate) => candidate.id === item.id)
+        )
+          return;
+        const replacement = `${formatReviewCommentContext(buildPullRequestReferenceContext(item.pullRequest))} `;
+        const end = extendReplacementRangeForTrailingSpace(
+          snapshot.value,
+          trigger.rangeEnd,
+          replacement,
+        );
+        if (
+          applyPromptReplacement(trigger.rangeStart, end, replacement, {
+            expectedText: snapshot.value.slice(trigger.rangeStart, end),
+          })
+        )
+          setComposerHighlightedItemId(null);
+        return;
+      }
       if (item.type === "path") {
         const replacement = `${serializeComposerFileLink(item.path)} `;
         const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
@@ -2633,6 +2900,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const onComposerCommandKey = (
     key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
     event: KeyboardEvent,
+    isTaskItem = false,
   ) => {
     if (key === "Tab" && event.shiftKey) {
       if (!planModeUiEnabled) return false;
@@ -2667,11 +2935,39 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             shiftKey: event.shiftKey,
             modifierKey: event.metaKey || event.ctrlKey,
             isDraftThread: routeKind === "draft",
+            isRunning: phase === "running",
+            sendShortcut: settings.sendShortcut,
+            prompt: promptRef.current,
           })
         : null;
     if (submissionIntent) {
       submitComposer(undefined, submissionIntent);
       return true;
+    }
+    // Native task splitting preserves marks and chips on both sides of the caret.
+    if (key === "Enter" && isTaskItem) return false;
+    if (!event.isComposing && (key === "Enter" || (key === "Tab" && !event.shiftKey))) {
+      const selection = composerEditorRef.current?.readSelectionRange();
+      const snapshot = readComposerSnapshot();
+      if (selection && selection.start === selection.end && snapshot.value === promptRef.current) {
+        const edit =
+          key === "Enter"
+            ? listContinuationForEnter(snapshot.value, selection.start)
+            : listIndentForTab(snapshot.value, selection.start, selection.end);
+        if (
+          edit &&
+          applyPromptReplacement(
+            edit.start,
+            edit.end,
+            edit.replacement,
+            key === "Tab"
+              ? { expandedCursorAfterReplace: selection.start + edit.replacement.length }
+              : undefined,
+          )
+        ) {
+          return true;
+        }
+      }
     }
     return false;
   };
@@ -3364,7 +3660,42 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       <ProviderModelPicker
         environmentId={environmentId}
         isComposerOwned
-        disabled={providerCatalogPending}
+        disabled={providerCatalogPending || isSendBusy}
+        {...(routeKind === "draft" && supportsMultipleModels
+          ? {
+              ...(multipleModelSelections !== null
+                ? { selectedModels: multipleModelSelections }
+                : {}),
+              onToggleModel: (instanceId: ProviderInstanceId, model: string) => {
+                const current = multipleModelSelections ?? [selectedModelSelection];
+                const matchesModel = (selection: ModelSelection) => {
+                  if (selection.instanceId !== instanceId) return false;
+                  const entry = providerInstanceEntries.find(
+                    (entry) => entry.instanceId === selection.instanceId,
+                  );
+                  const resolvedModel = resolveModelPickerSelectedModel({
+                    driverKind: entry?.driverKind,
+                    model: selection.model,
+                    options: modelOptionsByInstance.get(selection.instanceId) ?? [],
+                  });
+                  return (resolvedModel?.slug ?? selection.model) === model;
+                };
+                const exists = current.some(matchesModel);
+                const next = exists
+                  ? current.filter((selection) => !matchesModel(selection))
+                  : [...current, createModelSelection(instanceId, model)];
+                if (next.length > 1) {
+                  setMultipleModelSelections(next);
+                } else {
+                  setMultipleModelSelections(null);
+                  const remaining = next[0] ?? selectedModelSelection;
+                  onProviderModelSelect(remaining.instanceId, remaining.model, {
+                    focusComposer: false,
+                  });
+                }
+              },
+            }
+          : {})}
         activeInstanceId={
           providerCatalogPending
             ? (activeThreadModelSelection?.instanceId ?? selectedInstanceId)
@@ -3404,7 +3735,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : {})}
         onOpenChange={setIsComposerModelPickerOpen}
         getModelDisabledReason={getModelDisabledReason}
-        onInstanceModelChange={onProviderModelSelect}
+        onInstanceModelChange={(instanceId, model) => onProviderModelSelect(instanceId, model)}
       />
 
       {composerControlsCompact ? (
@@ -3619,11 +3950,21 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedModelOptionsForDispatch,
         selectedModelSelection,
         runtimeMode: effectiveRuntimeMode,
-        providerAvailable: !noProviderAvailable,
+        multipleModelSelections:
+          routeKind === "draft" && multipleModelSelections !== null
+            ? multipleModelSelections.map((selection) =>
+                selection.instanceId === selectedModelSelection.instanceId &&
+                selection.model === selectedModelSelection.model
+                  ? selectedModelSelection
+                  : selection,
+              )
+            : null,
+        providerAvailable: multipleModelSelections !== null || !noProviderAvailable,
         selectedProvider,
         selectedModel,
         selectedProviderModels,
       }),
+      setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
         const validationMessage = getComposerSubmissionValidationMessage({
           prompt: promptRef.current,
@@ -3662,6 +4003,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedModelOptionsForDispatch,
       selectedModelSelection,
       effectiveRuntimeMode,
+      multipleModelSelections,
+      setMultipleModelSelections,
+      routeKind,
       noProviderAvailable,
       selectedPromptEffort,
       selectedProvider,
@@ -3761,27 +4105,41 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
                 variant={activePendingApproval ? "warning" : "info"}
+                density={activePendingApproval ? "spacious" : "default"}
               >
-                {!isComposerCollapsedMobile && activePendingApproval ? (
-                  <div className="flex min-w-0 flex-wrap items-center gap-1 px-3 py-1.5 sm:px-4">
-                    <ComposerPendingApprovalPanel
-                      approval={activePendingApproval}
-                      pendingCount={pendingApprovals.length}
-                    />
-                    <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+                {activePendingApproval ? (
+                  <ComposerBanner.Row
+                    layout="approval"
+                    data-chat-composer-collapsed-controls="true"
+                  >
+                    <ComposerBanner.Icon>
+                      <ShieldIcon />
+                    </ComposerBanner.Icon>
+                    <ComposerBanner.Content>
+                      <ComposerPendingApprovalPanel
+                        approval={activePendingApproval}
+                        pendingCount={pendingApprovals.length}
+                      />
+                    </ComposerBanner.Content>
+                    <ComposerBanner.Actions>
                       <ComposerPendingApprovalActions
                         requestId={activePendingApproval.requestId}
                         isResponding={respondingRequestIds.includes(
                           activePendingApproval.requestId,
                         )}
+                        options={activePendingApproval.options}
                         onRespondToApproval={onRespondToApproval}
                       />
-                    </div>
-                  </div>
+                    </ComposerBanner.Actions>
+                  </ComposerBanner.Row>
                 ) : !isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
-                    respondingRequestIds={respondingRequestIds}
+                    respondingRequestIds={
+                      activePendingIsResponding && activePendingUserInput
+                        ? [...respondingRequestIds, activePendingUserInput.requestId]
+                        : respondingRequestIds
+                    }
                     answers={activePendingDraftAnswers}
                     questionIndex={activePendingQuestionIndex}
                     onToggleOption={onSelectActivePendingUserInputOption}
@@ -3793,28 +4151,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     key={activeProposedPlan.id}
                     planTitle={proposedPlanTitle(activeProposedPlan.planMarkdown) ?? null}
                   />
-                ) : isComposerCollapsedMobile && activePendingApproval ? (
-                  <div data-chat-composer-collapsed-controls="true">
-                    <ComposerPendingApprovalPanel
-                      approval={activePendingApproval}
-                      pendingCount={pendingApprovals.length}
-                      className="px-3 pt-2 sm:px-4"
-                    />
-                    <div className="flex flex-wrap items-center justify-end gap-1 px-3 pt-2 pb-3 sm:px-4">
-                      <ComposerPendingApprovalActions
-                        requestId={activePendingApproval.requestId}
-                        isResponding={respondingRequestIds.includes(
-                          activePendingApproval.requestId,
-                        )}
-                        onRespondToApproval={onRespondToApproval}
-                      />
-                    </div>
-                  </div>
                 ) : isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <div data-chat-composer-collapsed-controls="true">
                     <ComposerPendingUserInputPanel
                       pendingUserInputs={pendingUserInputs}
-                      respondingRequestIds={respondingRequestIds}
+                      respondingRequestIds={
+                        activePendingIsResponding && activePendingUserInput
+                          ? [...respondingRequestIds, activePendingUserInput.requestId]
+                          : respondingRequestIds
+                      }
                       answers={activePendingDraftAnswers}
                       questionIndex={activePendingQuestionIndex}
                       onToggleOption={onSelectActivePendingUserInputOption}
@@ -3910,7 +4255,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerPastedImages
                   images={composerPastedImages}
                   compact={isComposerCollapsedMobile || isComposerResting}
-                  onRemove={removeClipboardImage}
+                  onRemove={removeComposerImage}
                   onRetry={retryClipboardImage}
                 />
               </ComposerBanner.Root>
@@ -4040,6 +4385,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
               >
                 <ComposerPromptEditor
+                  key={clipboardUploadTarget}
+                  fileActions={composerFileActions}
+                  richTextEnabled={settings.composerRichTextEnabled}
                   images={composerPastedImages}
                   editorRef={composerEditorRef}
                   value={
@@ -4194,7 +4542,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isPreparingWorktree={isPreparingWorktree}
                     hasSendableContent={composerSendState.hasSendableContent}
                     preserveComposerFocusOnPointerDown={isMobileViewport || isComposerResting}
-                    showSendWhileRunning={isMobileViewport}
                     onPreviousPendingQuestion={onPreviousActivePendingUserInputQuestion}
                     onInterrupt={handleInterruptPrimaryAction}
                     onImplementPlanInNewThread={handleImplementPlanInNewThreadPrimaryAction}

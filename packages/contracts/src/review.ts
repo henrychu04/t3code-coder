@@ -11,8 +11,23 @@ export const ReviewDiffPreviewInput = Schema.Struct({
   baseRef: Schema.optional(TrimmedNonEmptyString),
   ignoreWhitespace: Schema.optionalKey(Schema.Boolean),
   sourceKind: Schema.optionalKey(ReviewDiffPreviewSourceKind),
+  file: Schema.optionalKey(
+    Schema.Struct({
+      path: Schema.NonEmptyString,
+      previousPath: Schema.NullOr(Schema.NonEmptyString),
+      sourceKind: ReviewDiffPreviewSourceKind,
+    }),
+  ),
 });
 export type ReviewDiffPreviewInput = typeof ReviewDiffPreviewInput.Type;
+
+export const ReviewDiffFileStat = Schema.Struct({
+  path: Schema.String,
+  previousPath: Schema.NullOr(Schema.String),
+  additions: Schema.Number,
+  deletions: Schema.Number,
+});
+export type ReviewDiffFileStat = typeof ReviewDiffFileStat.Type;
 
 export const ReviewDiffPreviewSource = Schema.Struct({
   id: TrimmedNonEmptyString,
@@ -23,6 +38,8 @@ export const ReviewDiffPreviewSource = Schema.Struct({
   diff: Schema.String,
   diffHash: TrimmedNonEmptyString,
   truncated: Schema.Boolean,
+  /** Complete statistics, independent of patch limits. Absent on older servers. */
+  files: Schema.optionalKey(Schema.Array(ReviewDiffFileStat)),
 });
 export type ReviewDiffPreviewSource = typeof ReviewDiffPreviewSource.Type;
 

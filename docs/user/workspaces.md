@@ -94,3 +94,11 @@ the CPU and memory graphs.
 **A port forward will not start.** Check that the workspace port is actually listening inside the
 workspace and the local port is free. A failed forward stays stopped until you restart it
 explicitly, so configuration problems never loop in the background.
+
+## Worktree setup scripts
+
+A new worktree records checkout and setup progress in its conversation. Setup scripts run
+asynchronously by default. In the project script editor, enable **Wait for it to finish before
+the agent starts** to wait instead; this saves `async: false`. The script terminal and completion
+status remain available in the setup activity.
+After the agent starts, cancelling setup cannot remove its checkout or restart it locally.

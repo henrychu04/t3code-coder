@@ -7,6 +7,11 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/storageCleanup.test.ts",
+      "apps/server/src/persistence/Migrations/055_ProjectionMessageAttachments.test.ts",
+      "apps/server/src/project/ProjectCloneTracker.test.ts",
+      "apps/server/src/textGeneration/ThreadTitleContext.test.ts",
+      "apps/server/src/orchestration/decider.userMessageAppend.test.ts",
       "apps/server/src/provider/makeManagedServerProvider.test.ts",
       "apps/server/src/keybindings.test.ts",
       "apps/server/src/coderRestartRecovery.test.ts",
