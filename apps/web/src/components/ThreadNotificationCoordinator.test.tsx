@@ -1,3 +1,7 @@
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ThreadId, TurnId } from "@t3tools/contracts";
+import { useUiStateStore } from "../uiStateStore";
+import { hasUnseenCompletion } from "./Sidebar.logic";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import * as Option from "effect/Option";
 import { act } from "react";
@@ -81,6 +85,29 @@ vi.mock("./ui/toast", () => ({
 
 import { ThreadNotificationCoordinator } from "./ThreadNotificationCoordinator";
 
+const threadKey = scopedThreadKey(
+  scopeThreadRef(EnvironmentId.make("env-1"), ThreadId.make("thread-1")),
+);
+
+function hasSidebarCompletion() {
+  return hasUnseenCompletion({
+    hasActionableProposedPlan: false,
+    hasPendingApprovals: false,
+    hasPendingUserInput: false,
+    interactionMode: "default",
+    session: null,
+    latestTurn: {
+      turnId: TurnId.make("turn-1"),
+      state: state.completedAt ? "completed" : "running",
+      assistantMessageId: null,
+      requestedAt: "2026-09-13T09:00:00.000Z",
+      startedAt: "2026-09-13T09:00:00.000Z",
+      completedAt: state.completedAt,
+    },
+    lastVisitedAt: useUiStateStore.getState().threadLastVisitedAtById[threadKey],
+  });
+}
+
 let renderer: ReactTestRenderer | undefined;
 
 async function render() {
@@ -97,6 +124,7 @@ async function complete() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useUiStateStore.setState({ threadLastVisitedAtById: {} });
   Object.assign(state, {
     mode: "off",
     inApp: true,
@@ -131,6 +159,40 @@ afterEach(async () => {
 });
 
 describe("thread notifications", () => {
+  it.each([true, false])(
+    "shows a sidebar check for the first observed completion with alerts enabled=%s",
+    async (enabled) => {
+      state.inApp = enabled;
+      await render();
+      expect(hasSidebarCompletion()).toBe(false);
+      await complete();
+      expect(hasSidebarCompletion()).toBe(true);
+      await render();
+      expect(hasSidebarCompletion()).toBe(true);
+    },
+  );
+
+  it("baselines historical completions but shows the next completion", async () => {
+    state.completedAt = "2026-09-13T09:30:00.000Z";
+    await render();
+    expect(hasSidebarCompletion()).toBe(false);
+    await complete();
+    expect(hasSidebarCompletion()).toBe(true);
+  });
+
+  it("preserves unread completions through reconnect and clears them when read", async () => {
+    await render();
+    await complete();
+    state.live = false;
+    await render();
+    state.live = true;
+    await render();
+    expect(hasSidebarCompletion()).toBe(true);
+    useUiStateStore.getState().markThreadVisited(threadKey, state.completedAt!);
+    await render();
+    expect(hasSidebarCompletion()).toBe(false);
+  });
+
   it("alerts once with system alerts off and opens the completed thread", async () => {
     await render();
     await complete();

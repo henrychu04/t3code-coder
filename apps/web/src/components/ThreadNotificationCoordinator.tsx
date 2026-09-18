@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate, useParams } from "@tanstack/react-router";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useRef } from "react";
@@ -14,6 +15,7 @@ import {
   setNotificationBadge,
   unlockNotificationAudio,
 } from "../threadNotifications";
+import { useUiStateStore } from "../uiStateStore";
 import { resolveSidebarThreadStatus } from "./Sidebar.logic";
 import { toastManager } from "./ui/toast";
 
@@ -75,8 +77,6 @@ export function ThreadNotificationCoordinator() {
     };
   }, [mode]);
 
-  if (mode === "off" && !inAppNotificationsEnabled) return null;
-
   return environments.map((environment) => (
     <EnvironmentNotifications
       key={environment.environmentId}
@@ -113,6 +113,18 @@ function EnvironmentNotifications({
     }
     const next = new Map<ThreadId, { attention: string | null; completion: number | null }>();
     for (const thread of shell.snapshot.value.threads) {
+      // Visit state is memory-only in Coder. Baseline historical completions
+      // once so future completions can show Done even without opening the
+      // thread first. Never advance an existing marker: that would eat unread
+      // completions on reconnect. Keep this active even when alerts are off.
+      const threadKey = scopedThreadKey(scopeThreadRef(environmentId, thread.id));
+      const uiState = useUiStateStore.getState();
+      if (uiState.threadLastVisitedAtById[threadKey] === undefined) {
+        uiState.markThreadVisited(
+          threadKey,
+          thread.latestTurn?.completedAt ?? new Date(0).toISOString(),
+        );
+      }
       let status = resolveSidebarThreadStatus(thread);
       if (status === "ready" && thread.latestTurn?.state === "error") status = "failed";
       const prior = previous.current.get(thread.id);
@@ -128,6 +140,7 @@ function EnvironmentNotifications({
           ? completedAt
           : (prior?.completion ?? null);
       next.set(thread.id, { attention, completion });
+      if (mode === "off" && !inAppNotificationsEnabled) continue;
       if (!prior || thread.archivedAt !== null) continue;
       const kind =
         attention && attention !== prior.attention
