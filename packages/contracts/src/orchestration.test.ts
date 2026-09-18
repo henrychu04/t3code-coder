@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { CommandId, ProjectId, ThreadId } from "./baseSchemas.ts";
 
 import {
+  PastedImageAttachment,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
@@ -1234,3 +1235,16 @@ it.effect("project favicon overrides accept only supported image files", () =>
 );
 
 const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
+
+it("keeps attachment display metadata separate from its validated storage id", () => {
+  const decode = Schema.decodeUnknownSync(PastedImageAttachment);
+  const id = "11111111-1111-4111-8111-111111111111.png";
+  assert.deepEqual(decode({ type: "image", id }), { type: "image", id });
+  assert.deepEqual(decode({ type: "image", id, name: "checkout.png" }), {
+    type: "image",
+    id,
+    name: "checkout.png",
+  });
+  assert.throws(() => decode({ type: "image", id: "../checkout.png", name: "checkout.png" }));
+  assert.throws(() => decode({ type: "image", id, name: "x".repeat(256) }));
+});

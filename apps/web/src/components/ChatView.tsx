@@ -1,3 +1,4 @@
+import { pastedImageAttachmentsForIds } from "~/lib/composerPastedImages";
 import { useProjectClone } from "../state/projectClones";
 import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/contracts";
 import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
@@ -5491,10 +5492,10 @@ export default function ChatView(props: ChatViewProps) {
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
         return;
       }
-      const pastedImageAttachments = followUp.pastedImageAttachmentIds.map((id) => ({
-        type: "image" as const,
-        id,
-      }));
+      const pastedImageAttachments = pastedImageAttachmentsForIds(
+        followUp.pastedImageAttachmentIds,
+        pastedImagesForSend,
+      );
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -5608,8 +5609,9 @@ export default function ChatView(props: ChatViewProps) {
       effort: ctxSelectedPromptEffort,
       text: messageTextForSend,
     });
-    const pastedImageAttachments = extractComposerPastedImageAttachmentIds(outgoingMessageText).map(
-      (id) => ({ type: "image" as const, id }),
+    const pastedImageAttachments = pastedImageAttachmentsForIds(
+      extractComposerPastedImageAttachmentIds(outgoingMessageText),
+      pastedImagesForSend,
     );
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       // A queued message that no longer fits is held at the head for the

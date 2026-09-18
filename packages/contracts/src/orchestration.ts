@@ -171,6 +171,8 @@ export type PastedImageAttachmentId = typeof PastedImageAttachmentId.Type;
 export const PastedImageAttachment = Schema.Struct({
   type: Schema.Literal("image"),
   id: PastedImageAttachmentId,
+  /** Display metadata only; workspace reads always use the opaque generated id. */
+  name: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(255))),
 });
 export type PastedImageAttachment = typeof PastedImageAttachment.Type;
 // Correlation id is command id by design in this model.

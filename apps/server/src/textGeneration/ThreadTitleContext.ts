@@ -40,7 +40,9 @@ export function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMess
     const cached = formatted.get(section.index);
     if (cached !== undefined) return cached;
     const text = assistantCitationsToPlainText(section.message.text).trim();
-    const names = section.message.attachments?.map((attachment) => attachment.id).join(", ");
+    const names = section.message.attachments
+      ?.map((attachment) => attachment.name ?? attachment.id)
+      .join(", ");
     const contents = [text, ...(names ? [`[Attachments: ${names}]`] : [])]
       .filter(Boolean)
       .join("\n");

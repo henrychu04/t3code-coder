@@ -70,6 +70,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "fileViewer.find",
   "fileViewer.goToLine",
   "theme.select",
+  "themeEditor.toggle",
   "appearance.cycle",
   "composer.stash",
   "composer.host",

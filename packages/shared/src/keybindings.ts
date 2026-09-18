@@ -49,6 +49,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command: "fileViewer.goToLine",
     when: "fileOpen && fileViewerFocus && !terminalFocus",
   },
+  { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
   { key: "mod+alt+a", command: "theme.select", when: "!terminalFocus" },
   { key: "mod+alt+shift+a", command: "appearance.cycle", when: "!terminalFocus" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },

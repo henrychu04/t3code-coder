@@ -4,7 +4,7 @@ import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/compose
 import { afterEach, expect, it } from "vite-plus/test";
 import { composerDraftHasUserContent, useComposerDraftStore } from "../composerDraftStore";
 import { usePromptStashStore } from "../promptStashStore";
-import { appendPastedImagesToPrompt } from "./composerPastedImages";
+import { appendPastedImagesToPrompt, pastedImageAttachmentsForIds } from "./composerPastedImages";
 
 const ref = scopeThreadRef(EnvironmentId.make("image-test"), ThreadId.make("one"));
 const other = scopeThreadRef(ref.environmentId, ThreadId.make("two"));
@@ -70,4 +70,18 @@ it("keeps preview bytes in memory when an image-only draft is stashed and restor
     image.file,
   );
   expect(usePromptStashStore.getState().entries).toEqual([]);
+});
+
+it("preserves image display names while references still use generated ids", () => {
+  const id = "11111111-1111-4111-8111-111111111111.png";
+  expect(pastedImageAttachmentsForIds([id], [image])).toEqual([
+    { type: "image", id, name: "Screenshot.png" },
+  ]);
+  expect(pastedImageAttachmentsForIds([id], [])).toEqual([{ type: "image", id }]);
+  expect(
+    pastedImageAttachmentsForIds(
+      [id],
+      [{ ...image, file: new File(["image"], "C:\\private\\Screenshot.png") }],
+    )[0]?.name,
+  ).toBe("Screenshot.png");
 });
