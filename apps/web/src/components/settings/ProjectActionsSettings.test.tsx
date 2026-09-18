@@ -101,6 +101,7 @@ it("offers only new scripts and requires an explicit import", async () => {
     command: "pnpm test",
     icon: "play",
     runOnWorktreeCreate: false,
+    waitForSetup: false,
   });
 });
 it("opens the editor with the failed import ready to correct", async () => {

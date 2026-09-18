@@ -49,6 +49,7 @@ import { validateSettingsScopeSearch } from "./settingsScope";
 const SETTINGS_SECTION_ICONS: Readonly<
   Record<SettingsPath, ComponentType<{ className?: string }>>
 > = {
+  "/settings/storage": HardDriveIcon,
   "/settings/preferences": Settings2Icon,
   "/settings/open-source-licenses": BookOpenIcon,
   "/settings/appearance": PaletteIcon,

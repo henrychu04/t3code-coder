@@ -10,6 +10,7 @@ import {
   clearProjectSettingsOverrides,
   hasProjectSettingsOverrides,
   resolveProjectSettings,
+  resolveWorktreeCleanup,
   withProjectSettingsOverrides,
 } from "./projectSettings.ts";
 import { applyServerSettingsPatch } from "./serverSettings.ts";
@@ -212,4 +213,16 @@ describe("projectSettingsOverrides patches", () => {
       [otherProjectId]: { defaultThreadEnvMode: "worktree" },
     });
   });
+});
+
+it("lets projects disable or override worktree cleanup without changing artifact retention", () => {
+  const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    storageCleanup: { worktreeAfterDays: 8, browserArtifactsAfterDays: 14 },
+    projectSettingsOverrides: { [projectId]: { worktreeCleanup: { mode: "off" } } },
+  });
+  expect(resolveWorktreeCleanup(settings, projectId).worktreeAfterDays).toBeNull();
+  expect(resolveWorktreeCleanup(settings, otherProjectId).worktreeAfterDays).toBe(8);
+  expect(
+    resolveProjectSettings(settings, projectId).settings.storageCleanup.browserArtifactsAfterDays,
+  ).toBe(14);
 });

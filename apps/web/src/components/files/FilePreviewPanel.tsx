@@ -1567,6 +1567,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
     props.cwd,
     props.relativePath,
   );
+  const previewPath = file.isNotFile ? null : props.relativePath;
   useWorkspaceMutationRefresh({
     enabled: props.relativePath !== null && !props.selectedFilePending,
     mutationId: props.workspaceMutationId,
@@ -1584,12 +1585,9 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
   const [findRevealRequestId, setFindRevealRequestId] = useState(0);
   const lastFindMatchKeyRef = useRef<string | null>(null);
   const breadcrumbRef = useRef<HTMLDivElement>(null);
-  const editorFindAvailable =
-    props.relativePath !== null && file.data !== null && !file.data.truncated;
-  const tableDelimiter = props.relativePath
-    ? filePreviewDelimiter({ name: props.relativePath })
-    : null;
-  const isMarkdown = props.relativePath ? isMarkdownPreviewFile(props.relativePath) : false;
+  const editorFindAvailable = previewPath !== null && file.data !== null && !file.data.truncated;
+  const tableDelimiter = previewPath ? filePreviewDelimiter({ name: previewPath }) : null;
+  const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
   const breadcrumbs = useMemo(
     () => (props.relativePath ? fileBreadcrumbs(props.projectName, props.relativePath) : []),
     [props.projectName, props.relativePath],
@@ -1673,7 +1671,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
           .some(
             (target) => target instanceof Element && target.closest("[data-file-viewer]") !== null,
           ),
-        fileOpen: props.relativePath !== null,
+        fileOpen: previewPath !== null,
       };
       const command = resolveShortcutCommand(event, keybindings, { context });
       if (command !== "fileViewer.find" && command !== "fileViewer.goToLine") {
@@ -1912,10 +1910,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
       ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
-          className={cn(
-            "min-w-0 flex-1 flex-col overflow-hidden",
-            props.relativePath ? "flex" : "hidden",
-          )}
+          className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
           {props.relativePath && file.error && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-destructive">
@@ -1993,11 +1988,11 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             )
           ) : null}
         </div>
-        {explorerOpen || props.relativePath === null ? (
+        {explorerOpen || previewPath === null ? (
           <aside
             className={cn(
               "flex min-h-0 shrink-0 bg-background",
-              props.relativePath
+              previewPath
                 ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60"
                 : "min-w-0 flex-1",
             )}

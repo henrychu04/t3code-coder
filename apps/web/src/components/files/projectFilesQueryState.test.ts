@@ -1,10 +1,14 @@
-import type { ProjectReadFileResult } from "@t3tools/contracts";
+import { ProjectReadFileError, type ProjectReadFileResult } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { projectFileDataFromResult, projectFileReadMatches } from "./projectFilesQueryState";
+import {
+  projectFileDataFromResult,
+  projectFileReadMatches,
+  projectFileIsNotFile,
+} from "./projectFilesQueryState";
 
 const file: ProjectReadFileResult = {
   relativePath: "notes.txt",
@@ -29,4 +33,34 @@ describe("project file query state", () => {
     expect(projectFileReadMatches(file, "saved", "revision-2")).toBe(true);
     expect(projectFileReadMatches(file, "old", "revision-1")).toBe(false);
   });
+});
+
+it("reveals a directory only after a validated not-file response, not on access or binary failures", () => {
+  expect(
+    projectFileIsNotFile(
+      AsyncResult.failure(
+        Cause.fail(
+          new ProjectReadFileError({
+            failure: "path_not_file",
+            cwd: "/workspace",
+            relativePath: "src",
+          }),
+        ),
+      ),
+    ),
+  ).toBe(true);
+  for (const failure of [
+    "workspace_not_owned_by_thread",
+    "resolved_path_outside_root",
+    "binary_file",
+  ] as const) {
+    expect(
+      projectFileIsNotFile(
+        AsyncResult.failure(
+          Cause.fail(new ProjectReadFileError({ cwd: "/workspace", failure, relativePath: "src" })),
+        ),
+      ),
+    ).toBe(false);
+  }
+  expect(projectFileIsNotFile(AsyncResult.success(file))).toBe(false);
 });

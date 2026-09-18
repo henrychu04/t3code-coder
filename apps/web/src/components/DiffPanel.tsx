@@ -475,7 +475,10 @@ export default function DiffPanel({
   });
   const refreshBranchDiffPreview = branchDiffPreview.refresh;
   const refreshDiffFromUserAction = refreshBranchDiffPreview;
-  const onFileContextMenu = useFileContextMenuHandler(activeThread?.environmentId ?? null);
+  const onFileContextMenu = useFileContextMenuHandler(
+    activeThread?.environmentId ?? null,
+    routeThreadRef,
+  );
   const activeRepositoryRoot = activeThread?.worktreePath
     ? undefined
     : activeProject?.repositoryIdentity?.rootPath;

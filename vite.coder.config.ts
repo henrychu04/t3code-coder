@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/storageCleanup.test.ts",
       "apps/server/src/project/ProjectCloneTracker.test.ts",
       "apps/server/src/textGeneration/ThreadTitleContext.test.ts",
       "apps/server/src/orchestration/decider.userMessageAppend.test.ts",

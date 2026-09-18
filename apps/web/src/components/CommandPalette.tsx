@@ -1,3 +1,14 @@
+import { useTheme } from "../hooks/useTheme";
+import { useCustomThemes } from "../hooks/useCustomThemes";
+import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
+import { BUILT_IN_THEMES } from "@t3tools/shared/themePalettes";
+import { getThemeDefinition } from "../themePalette";
+import {
+  STANDARD_THEME_CARDS,
+  getThemeCardDefinition,
+  ThemePreviewCircle,
+} from "./settings/ThemePreviewCircles";
+import { MonitorIcon, MoonIcon, SunIcon, PaletteIcon } from "lucide-react";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { threadPullRequestSearchTerms } from "@t3tools/shared/threadPullRequests";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
@@ -64,7 +75,22 @@ import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { ThreadCommandSubtitle } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
 
+const APPEARANCE_OPTIONS = [
+  { mode: "system", label: "System", icon: MonitorIcon },
+  { mode: "light", label: "Light", icon: SunIcon },
+  { mode: "dark", label: "Dark", icon: MoonIcon },
+] as const;
+
+function notifyThemeSaveFailure(): void {
+  toastManager.add({
+    type: "error",
+    title: "Couldn't save theme selection",
+    description: "Try again.",
+  });
+}
+
 export function CommandPalette({ children }: { readonly children: ReactNode }) {
+  const { appearanceMode, setAppearanceMode } = useTheme();
   const [state, dispatch] = useReducer(reduceCommandPaletteUiState, {
     open: false,
     mode: "command",
@@ -78,7 +104,9 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
     () =>
       onOpenCommandPalette((detail) => {
         setOpenDetail(detail);
-        if (detail.open === "new-thread-in") {
+        if (detail.open === "change-theme") {
+          dispatch({ _tag: "OpenChangeTheme" });
+        } else if (detail.open === "new-thread-in") {
           dispatch({ _tag: "OpenNewThreadIn" });
         } else if (detail.open === "add-project") {
           dispatch({ _tag: "OpenAddProject" });
@@ -95,6 +123,30 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
       const command = resolveShortcutCommand(event, keybindings, {
         context: { terminalFocus: isTerminalFocused() },
       });
+      if (command === "appearance.cycle") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        const nextMode =
+          appearanceMode === "system" ? "light" : appearanceMode === "light" ? "dark" : "system";
+        if (!setAppearanceMode(nextMode)) {
+          notifyThemeSaveFailure();
+        } else {
+          toastManager.add({
+            id: "appearance-cycle",
+            title: `Appearance: ${APPEARANCE_OPTIONS.find((option) => option.mode === nextMode)?.label}`,
+            timeout: 1500,
+          });
+        }
+        return;
+      }
+      if (command === "theme.select") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.repeat) return;
+        dispatch({ _tag: "OpenChangeTheme" });
+        return;
+      }
       if (command !== "commandPalette.toggle") return;
       event.preventDefault();
       event.stopPropagation();
@@ -103,7 +155,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [keybindings]);
+  }, [keybindings, appearanceMode, setAppearanceMode]);
 
   const addProjectOpen = state.open && state.openIntent?.kind === "add-project";
   const setOpen = useCallback((open: boolean) => dispatch({ _tag: "SetOpen", open }), []);
@@ -176,7 +228,39 @@ function CoderCommandPaletteDialog(props: {
           linkedPullRequestUrl:
             activeThread?.linkedPullRequest?.url ?? activeThread?.branchPullRequest?.url ?? null,
         });
-  const [view, setView] = useState<"root" | "projects">("root");
+  const {
+    theme,
+    themeHalves,
+    resolvedTheme,
+    appearanceMode,
+    setAppearanceMode,
+    setTheme,
+    setThemeHalf,
+  } = useTheme();
+  const customThemes = useCustomThemes();
+  const environmentThemes = useEnvironmentThemeDefinitions();
+  const themeCards = useMemo(() => {
+    const seen = new Set<string>();
+    return [
+      ...STANDARD_THEME_CARDS.map((card) => ({ ...card, id: null })),
+      ...[...BUILT_IN_THEMES, ...customThemes, ...environmentThemes]
+        .filter((definition) => {
+          if (seen.has(definition.id)) return false;
+          seen.add(definition.id);
+          return true;
+        })
+        .map(getThemeCardDefinition),
+    ];
+  }, [customThemes, environmentThemes]);
+  const [view, setView] = useState<"root" | "projects" | "themes" | "appearance">(
+    props.openIntent?.kind === "change-theme" ? "themes" : "root",
+  );
+  useLayoutEffect(() => {
+    if (props.openIntent?.kind !== "change-theme") return;
+    props.clearOpenIntent();
+    setView("themes");
+    setQuery("");
+  }, [props.openIntent, props.clearOpenIntent]);
   const [query, setQuery] = useState(props.openDetail.query ?? "");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
 
@@ -511,6 +595,84 @@ function CoderCommandPaletteDialog(props: {
     );
   }
 
+  const changeThemeItem: CommandPaletteSubmenuItem = {
+    kind: "submenu",
+    value: "action:change-theme",
+    searchTerms: ["change theme", "appearance", "colors", "palette"],
+    title: "Change theme",
+    icon: <PaletteIcon className={"size-4 shrink-0"} />,
+    shortcutCommand: "theme.select",
+    groups: [
+      {
+        value: "themes",
+        label: "Change theme",
+        items: themeCards.map(({ id, label, previews }) => ({
+          kind: "action",
+          value: id === null ? "theme:standard" : `theme:palette:${id}`,
+          title: label,
+          description: previews.length === 1 ? `For ${previews[0]!.mode} mode` : undefined,
+          searchTerms: [label, "theme", "appearance"],
+          icon: <PaletteIcon className={"size-4 shrink-0"} />,
+          titleTrailingContent: (
+            <span className="flex shrink-0 items-center gap-2">
+              {(themeHalves?.[resolvedTheme] ?? getThemeDefinition(theme)?.id ?? null) === id ? (
+                <span className="text-xs text-muted-foreground/70">Current</span>
+              ) : null}
+              <span className="flex items-center gap-1" aria-hidden>
+                {previews.map((preview) => (
+                  <ThemePreviewCircle
+                    key={preview.mode}
+                    colors={preview.colors}
+                    mode={preview.mode}
+                    className="size-3 border-0"
+                  />
+                ))}
+              </span>
+            </span>
+          ),
+          run: async () => {
+            const saved =
+              previews.length === 1 && id !== null
+                ? setThemeHalf(previews[0]!.mode, id)
+                : setTheme(id ?? appearanceMode);
+            if (!saved) notifyThemeSaveFailure();
+          },
+        })),
+      },
+    ],
+  };
+  actionItems.push(changeThemeItem);
+
+  const changeAppearanceItem: CommandPaletteSubmenuItem = {
+    kind: "submenu",
+    value: "action:change-appearance",
+    searchTerms: ["change appearance", "light", "dark", "system", "mode", "toggle"],
+    title: "Change appearance",
+    icon: <MonitorIcon className={"size-4 shrink-0"} />,
+    shortcutCommand: "appearance.cycle",
+    groups: [
+      {
+        value: "appearance",
+        label: "Change appearance",
+        items: APPEARANCE_OPTIONS.map(({ mode, label, icon: Icon }) => ({
+          kind: "action",
+          value: `appearance:${mode}`,
+          title: label,
+          searchTerms: [label, "appearance", "mode"],
+          icon: <Icon className={"size-4 shrink-0"} />,
+          titleTrailingContent:
+            appearanceMode === mode ? (
+              <span className="text-xs text-muted-foreground/70">Current</span>
+            ) : undefined,
+          run: async () => {
+            if (!setAppearanceMode(mode)) notifyThemeSaveFailure();
+          },
+        })),
+      },
+    ],
+  };
+  actionItems.push(changeAppearanceItem);
+
   const rootGroups: CommandPaletteGroup[] = [
     { value: "actions", label: "Actions", items: actionItems },
     ...(query.trim().length > 0 && projectItems.length > 0
@@ -529,12 +691,25 @@ function CoderCommandPaletteDialog(props: {
         ]
       : []),
   ];
-  const activeGroups = view === "projects" ? projectViewGroups : rootGroups;
+  const activeGroups =
+    view === "themes"
+      ? changeThemeItem.groups
+      : view === "appearance"
+        ? changeAppearanceItem.groups
+        : view === "projects"
+          ? projectViewGroups
+          : rootGroups;
   const filteredGroups = filterCommandPaletteGroups({ groups: activeGroups, query });
 
   const executeItem = (item: CommandPaletteActionItem | CommandPaletteSubmenuItem) => {
     if (item.kind === "submenu") {
-      setView("projects");
+      setView(
+        item.value === "action:change-theme"
+          ? "themes"
+          : item.value === "action:change-appearance"
+            ? "appearance"
+            : "projects",
+      );
       setQuery("");
       setHighlightedItemValue(null);
       return;
@@ -547,14 +722,21 @@ function CoderCommandPaletteDialog(props: {
     <CommandPaletteContent
       key={view}
       autoHighlight="always"
-      escapeLabel={view === "projects" ? "Back" : "Close"}
+      escapeLabel={view !== "root" ? "Back" : "Close"}
       footerActionLabel={view === "projects" ? "Start thread" : "Open"}
       inputProps={{
-        placeholder: view === "projects" ? "Choose a project…" : "Search commands and threads…",
+        placeholder:
+          view === "themes"
+            ? "Choose a theme…"
+            : view === "appearance"
+              ? "Choose appearance…"
+              : view === "projects"
+                ? "Choose a project…"
+                : "Search commands and threads…",
         onKeyDown: (event) => {
           if (
             (event.key === "Escape" || event.key === "Backspace") &&
-            view === "projects" &&
+            view !== "root" &&
             query.length === 0
           ) {
             event.preventDefault();
@@ -572,7 +754,7 @@ function CoderCommandPaletteDialog(props: {
         setQuery(value);
       }}
       panelClassName="max-h-[min(34rem,76vh)]"
-      showBackHint={view === "projects"}
+      showBackHint={view !== "root"}
       testId="command-palette"
       value={query}
     >

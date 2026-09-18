@@ -99,6 +99,8 @@ export function ProjectActionsSettings() {
                           ...script,
                           icon: script.icon ?? "play",
                           runOnWorktreeCreate: script.runOnWorktreeCreate ?? false,
+                          waitForSetup:
+                            script.runOnWorktreeCreate === true && script.async === false,
                         };
                         void submit(null, initial).then((result) => {
                           if (result._tag === "Failure")

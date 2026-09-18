@@ -122,7 +122,9 @@ claim: shared provider protocols may still report subscription metadata.
       links may open the gallery. Browser image bytes remain bounded and memory-only. Do not expose
       external images, download/export actions, or a general file-reading API.
     - Existing artifact IDs remain readable for older conversations through the bounded legacy
-      chunk RPC. Never delete users' saved attachments or artifacts automatically.
+      chunk RPC. Submitted composer attachments remain preserved. Saved legacy image artifacts may be deleted by
+      the upstream-compatible, opt-in artifact retention policy; cleanup is disabled by default.
+      Never delete current workspace source images through this policy.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and

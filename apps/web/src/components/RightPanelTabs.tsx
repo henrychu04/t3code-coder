@@ -1,3 +1,4 @@
+import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 import type { PullRequestState } from "@t3tools/contracts";
 import {
   Bot,
@@ -5,7 +6,6 @@ import {
   ChevronRight,
   FileDiff,
   Files,
-  GitPullRequest,
   Plus,
   TerminalSquare,
 } from "lucide-react";
@@ -252,7 +252,7 @@ function RightPanelEmptyState(props: {
     {
       label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
       description: "View the current GitLab merge request.",
-      icon: GitPullRequest,
+      icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
       available: props.onAddPullRequests !== undefined || props.pullRequestAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
@@ -445,9 +445,10 @@ function SurfaceIcon({
             : status?.state === "open"
               ? "text-emerald-600 dark:text-emerald-300/90"
               : "text-muted-foreground";
-    return <GitPullRequest className={cn("size-3.5", toneClassName)} />;
+    return <PullRequestGlyph.pullRequest className={cn("size-3.5", toneClassName)} />;
   }
-  if (surface.kind === "pull-requests") return <GitPullRequest className="size-3.5" />;
+  if (surface.kind === "pull-requests")
+    return <PullRequestGlyph.pullRequest className="size-3.5" />;
   if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
 }
@@ -564,7 +565,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     },
     {
       label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
-      icon: GitPullRequest,
+      icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
       available: props.onAddPullRequests !== undefined || props.pullRequestAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequest,

@@ -288,6 +288,20 @@ export class GitVcsDriver extends Context.Service<
       input: VcsCreateWorktreeInput,
       options?: CreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
+    readonly resolveCommit: (input: {
+      cwd: string;
+      revision: string;
+    }) => Effect.Effect<{ commitSha: string }, GitCommandError>;
+    readonly resolvePrimaryRemoteName: (cwd: string) => Effect.Effect<string, GitCommandError>;
+    readonly resolveDefaultBranchName: (
+      cwd: string,
+      remoteName: string,
+    ) => Effect.Effect<string | null, GitCommandError>;
+    readonly fetchRemoteTrackingBranch: (input: {
+      cwd: string;
+      remoteName: string;
+      remoteBranch: string;
+    }) => Effect.Effect<void, GitCommandError>;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
@@ -2370,6 +2384,51 @@ const makeLocalGitService = Effect.gen(function* () {
       timeoutMs: 15_000,
     }).pipe(Effect.asVoid);
 
+  const resolveCommit: GitVcsDriver["Service"]["resolveCommit"] = (input) =>
+    runGitStdout("GitVcsDriver.resolveCommit", input.cwd, [
+      "rev-parse",
+      "--verify",
+      `${input.revision}^{commit}`,
+    ]).pipe(Effect.map((stdout) => ({ commitSha: stdout.trim() })));
+  const resolvePrimaryRemoteName = Effect.fn("resolvePrimaryRemoteName")(function* (cwd: string) {
+    const remotes = (yield* runGitStdout("GitVcsDriver.listRemoteNames", cwd, ["remote"]))
+      .split("\n")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    if (remotes.includes("origin")) return "origin";
+    if (remotes[0]) return remotes[0];
+    return yield* new GitCommandError({
+      operation: "GitVcsDriver.resolvePrimaryRemoteName",
+      cwd,
+      command: "git remote",
+      detail: "No git remote is configured for this repository.",
+    });
+  });
+  const resolveDefaultBranchName: GitVcsDriver["Service"]["resolveDefaultBranchName"] = (
+    cwd,
+    remoteName,
+  ) =>
+    run(
+      "GitVcsDriver.resolveDefaultBranchName",
+      cwd,
+      ["symbolic-ref", `refs/remotes/${remoteName}/HEAD`],
+      { allowNonZeroExit: true },
+    ).pipe(
+      Effect.map((result) => {
+        const prefix = `refs/remotes/${remoteName}/`;
+        const ref = result.stdout.trim();
+        return result.exitCode === 0 && ref.startsWith(prefix) ? ref.slice(prefix.length) : null;
+      }),
+    );
+  const fetchRemoteTrackingBranch: GitVcsDriver["Service"]["fetchRemoteTrackingBranch"] = (input) =>
+    run("GitVcsDriver.fetchRemoteTrackingBranch", input.cwd, [
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      input.remoteName,
+      `+refs/heads/${input.remoteBranch}:refs/remotes/${input.remoteName}/${input.remoteBranch}`,
+    ]).pipe(Effect.asVoid);
+
   const removeWorktree: GitVcsDriver["Service"]["removeWorktree"] = Effect.fn(
     "GitVcsDriver.removeWorktree",
   )(function* (input) {
@@ -2544,6 +2603,10 @@ const makeLocalGitService = Effect.gen(function* () {
     getReviewDiffFileContents,
     listRefs,
     createWorktree,
+    resolveCommit,
+    resolvePrimaryRemoteName,
+    resolveDefaultBranchName,
+    fetchRemoteTrackingBranch,
     removeWorktree,
     pruneWorktrees,
     renameBranch: (input) =>

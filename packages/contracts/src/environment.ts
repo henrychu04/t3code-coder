@@ -76,6 +76,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server persists a pull request reference on thread.meta.update. */
   threadPullRequests: Schema.optionalKey(Schema.Boolean),
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),
+  storageCleanup: Schema.optionalKey(Schema.Boolean),
+  projectWorktreeCleanup: Schema.optionalKey(Schema.Boolean),
   projectCloneTracking: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;

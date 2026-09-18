@@ -1,3 +1,4 @@
+import * as StorageCleanup from "./storageCleanup.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
 import { reconcileProviderSessions } from "./coderRestartRecovery.ts";
@@ -219,6 +220,7 @@ const CoderRuntimeDependenciesLive = CoderRuntimeFeaturesLive.pipe(
 const CoderRuntimeStartupLive = Layer.effect(
   CoderRuntimeStartup.CoderRuntimeStartup,
   Effect.gen(function* () {
+    const storageCleanup = yield* StorageCleanup.StorageCleanup;
     const keybindings = yield* Keybindings.Keybindings;
     const settings = yield* ServerSettings.ServerSettingsService;
     const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
@@ -233,6 +235,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
     yield* reconcileProviderSessions.pipe(Scope.provide(reactorScope));
+    yield* storageCleanup.start().pipe(Scope.provide(reactorScope));
     yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
     yield* projectionSnapshotQuery.getShellSnapshot().pipe(
       Effect.flatMap((snapshot) =>
@@ -280,6 +283,7 @@ export const makeCoderRuntimeLayer = () => {
     Layer.provide(CoderRuntimeDependenciesLive),
   );
   const runtimeStartup = CoderRuntimeStartupLive.pipe(
+    Layer.provideMerge(StorageCleanup.layer.pipe(Layer.provide(CoderRuntimeDependenciesLive))),
     Layer.provideMerge(coderReactor),
     Layer.provideMerge(CoderRuntimeDependenciesLive),
   );

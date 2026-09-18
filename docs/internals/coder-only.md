@@ -419,3 +419,11 @@ downloads an application update. The first connection may download the pinned No
 through Nix if it is not already in the workspace's Nix store. On the first connection to a
 workspace in each local gateway session, the gateway replaces the remote helper directory with
 that locally built bundle through Coder before starting it in the foreground.
+
+### Workspace retention
+
+The helper runs upstream's opt-in storage cleanup policies. Worktree cleanup holds the same
+workspace lease as provider startup and terminal open/restart, rechecks sessions and Git state,
+and preserves branches and thread history. Artifact retention maps upstream's browser-artifact
+store to the legacy `screenshotArtifactsDir`; it never visits `attachmentsDir` or current image
+source paths. Artifact, worktree, and rotated-log policies are disabled by default.

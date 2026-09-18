@@ -55,6 +55,7 @@ it("adds an action to each workspace's own list without replacing mixed values",
       command: "pnpm build",
       icon: "build",
       runOnWorktreeCreate: true,
+      waitForSetup: false,
     });
   });
   expect(mocks.update).toHaveBeenCalledTimes(2);
@@ -88,6 +89,7 @@ it("stops on failure and allows a retry", async () => {
       command: "pnpm build",
       icon: "build",
       runOnWorktreeCreate: false,
+      waitForSetup: false,
     });
   });
   expect(result).toMatchObject({ _tag: "Failure" });
@@ -99,6 +101,7 @@ it("stops on failure and allows a retry", async () => {
       command: "pnpm build",
       icon: "build",
       runOnWorktreeCreate: false,
+      waitForSetup: false,
     });
   });
   expect(mocks.update).toHaveBeenCalledTimes(3);
@@ -127,6 +130,7 @@ it("reuses the action ID when retrying after a partial bulk save", async () => {
     command: "pnpm build",
     icon: "build" as const,
     runOnWorktreeCreate: false,
+    waitForSetup: false,
   };
   await act(async () => {
     expect(await actions.submit(null, input)).toMatchObject({ _tag: "Failure" });

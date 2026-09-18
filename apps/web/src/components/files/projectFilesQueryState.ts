@@ -161,6 +161,13 @@ function errorMessage(cause: unknown): string | null {
 
 const isProjectReadFileError = Schema.is(ProjectReadFileError);
 
+export function projectFileIsNotFile(
+  result: AsyncResult.AsyncResult<ProjectReadFileResult, unknown>,
+): boolean {
+  const cause = failureCause(result);
+  return isProjectReadFileError(cause) && cause.failure === "path_not_file";
+}
+
 export function useProjectEntriesQuery(
   environmentId: EnvironmentId,
   threadId: ThreadId,
@@ -182,7 +189,7 @@ export function useProjectFileQuery(
   threadId: ThreadId,
   cwd: string,
   relativePath: string | null,
-): ProjectQueryState<ProjectReadFileResult> {
+): ProjectQueryState<ProjectReadFileResult> & { readonly isNotFile: boolean } {
   const atom = relativePath
     ? getProjectFileQueryAtom(environmentId, threadId, cwd, relativePath)
     : EMPTY_PROJECT_FILE_QUERY_ATOM;
@@ -194,7 +201,8 @@ export function useProjectFileQuery(
   const data = projectFileDataFromResult(result);
   return {
     data: optimistic?.data ?? data,
-    error: errorMessage(result),
+    error: errorMessage(failureCause(result)),
+    isNotFile: projectFileIsNotFile(result),
     isPending: result.waiting,
     refresh: useCallback(() => {
       const optimisticAtom = optimisticFileAtom(

@@ -3,6 +3,7 @@ import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connect
 import type { ResolvedSettingsScope } from "./settingsScope";
 import { validateSettingsScopeSearch, type SettingsScopeSearch } from "./settingsScope";
 export type CoderSettingsPath =
+  | "/settings/storage"
   | "/settings/projects"
   | "/settings/providers"
   | "/settings/preferences"
@@ -34,6 +35,13 @@ export interface SettingsSearchItem {
 
 /** Coder-only settings destinations, including individual source-control controls. */
 export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
+  {
+    id: "storage-cleanup",
+    title: "Storage cleanup",
+    to: "/settings/storage",
+    section: "Storage",
+    searchTerms: ["worktrees artifacts retention logs cleanup"],
+  },
   {
     id: "plan-mode",
     title: "Plan mode",
@@ -481,6 +489,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
 ];
 
 export const SETTINGS_SECTION_LABELS: Readonly<Record<CoderSettingsPath, string>> = {
+  "/settings/storage": "Storage",
   "/settings/preferences": "General",
   "/settings/appearance": "Appearance",
   "/settings/shortcuts": "Keyboard shortcuts",

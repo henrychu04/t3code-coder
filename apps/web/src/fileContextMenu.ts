@@ -1,10 +1,12 @@
+import type { ScopedThreadRef } from "@t3tools/contracts";
+import { useRightPanelStore } from "./rightPanelStore";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback } from "react";
 import type { ContextMenuItem } from "./localApiTypes";
 import { readLocalApi } from "./localApi";
 import { useCopyToClipboard } from "./hooks/useCopyToClipboard";
 
-export type FileContextMenuAction = "copy-path";
+export type FileContextMenuAction = "copy-path" | "open";
 export interface FileContextMenuTarget {
   readonly environmentId: EnvironmentId | null;
   readonly filePath: string;
@@ -30,13 +32,22 @@ export function resolveFileContextMenuRelativePath(target: FileContextMenuTarget
 
 export function buildFileContextMenuItems(
   target: FileContextMenuTarget,
+  canOpen = false,
 ): readonly ContextMenuItem<FileContextMenuAction>[] {
   return resolveFileContextMenuRelativePath(target) === null
     ? []
-    : [{ id: "copy-path", label: "Copy path", icon: "copy" }];
+    : [
+        ...(canOpen
+          ? [{ id: "open" as const, label: "Open in Files", icon: "file" as const }]
+          : []),
+        { id: "copy-path", label: "Copy path", icon: "copy" },
+      ];
 }
 
-export function useFileContextMenuHandler(environmentId: EnvironmentId | null) {
+export function useFileContextMenuHandler(
+  environmentId: EnvironmentId | null,
+  threadRef?: ScopedThreadRef | null,
+) {
   const { copyToClipboard } = useCopyToClipboard();
   return useCallback(
     (target: FileContextMenuTarget, event?: { clientX: number; clientY: number }) => {
@@ -46,13 +57,15 @@ export function useFileContextMenuHandler(environmentId: EnvironmentId | null) {
       if (!path || !api) return;
       void api.contextMenu
         .show(
-          buildFileContextMenuItems(target),
+          buildFileContextMenuItems(target, threadRef?.environmentId === environmentId),
           event ? { x: event.clientX, y: event.clientY } : undefined,
         )
         .then((action) => {
+          if (action === "open" && threadRef?.environmentId === environmentId)
+            useRightPanelStore.getState().openFile(threadRef, path);
           if (action === "copy-path") copyToClipboard(path, undefined);
         });
     },
-    [environmentId, copyToClipboard],
+    [environmentId, copyToClipboard, threadRef],
   );
 }

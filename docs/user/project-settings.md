@@ -184,3 +184,25 @@ workspace is connected.
 and write access for the connected workspaces selected in the breadcrumb. Use **Check status**
 to refresh a workspace and **Check write access** to run its write probe. Errors remain beside
 the affected workspace. Project-detail links on this page follow the selected scope as well.
+
+## Storage cleanup
+
+Open **Settings → Storage** to configure retention for selected Coder workspaces. Cleanup is off
+by default. Enabled policies run when the helper starts, when settings change, and hourly while
+the helper is running. Offline workspaces retain their settings and resume cleanup on reconnect.
+
+Worktree rules can remove T3-managed checkouts after inactivity, after their branch is merged,
+when unchanged from the remote default branch, or after deleting their last thread. Active sessions,
+terminals, shared checkouts, uncommitted changes, and ignored files other than `node_modules`
+prevent removal. Branches and conversation history stay; resuming a thread recreates its worktree.
+Choose a project to inherit the workspace policy, turn cleanup off, or define custom rules.
+
+Saved image artifacts and rotated logs have separate workspace-wide retention periods. Artifact
+retention applies to legacy copies in `$HOME/.t3-coder/artifacts`: expired links stop opening.
+Submitted composer attachments, current workspace source images, and current logs are kept.
+
+## Theme shortcuts
+
+Use **Change theme** in the command palette, or `mod+alt+a`, to select a theme without leaving chat.
+**Change appearance** selects System, Light, or Dark independently. `mod+alt+shift+a` cycles those
+modes. Customize both shortcuts in **Settings → Keyboard shortcuts**.

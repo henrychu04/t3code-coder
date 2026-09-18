@@ -97,7 +97,8 @@ explicitly, so configuration problems never loop in the background.
 
 ## Worktree setup scripts
 
-A new worktree records checkout and setup progress in its conversation. Setup scripts normally
-finish before the agent starts. A project script with `async: true` lets the agent start while the
-script continues; its terminal and completion status remain available in the setup activity.
+A new worktree records checkout and setup progress in its conversation. Setup scripts run
+asynchronously by default. In the project script editor, enable **Wait for it to finish before
+the agent starts** to wait instead; this saves `async: false`. The script terminal and completion
+status remain available in the setup activity.
 After the agent starts, cancelling setup cannot remove its checkout or restart it locally.

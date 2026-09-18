@@ -13,6 +13,13 @@ describe("Coder file context menus", () => {
       { id: "copy-path", label: "Copy path", icon: "copy" },
     ]);
   });
+  it("opens validated project files in the existing Files surface", () => {
+    expect(buildFileContextMenuItems(target, true).map((item) => item.id)).toEqual([
+      "open",
+      "copy-path",
+    ]);
+    expect(buildFileContextMenuItems({ ...target, filePath: "../secret" }, true)).toEqual([]);
+  });
   it.each([
     "../secret",
     "/etc/passwd",

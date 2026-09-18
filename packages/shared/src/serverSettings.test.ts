@@ -172,3 +172,33 @@ describe("workspace merge method defaults", () => {
     expect(initial.pullRequestMergeMethodOverrides[a]).toBe("merge");
   });
 });
+
+it("merges custom cleanup rules without losing inherited retention and replaces policy modes", () => {
+  const defaults = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+    storageCleanup: { worktreeAfterDays: 8, logsAfterDays: 30, browserArtifactsAfterDays: 14 },
+  });
+  const custom = applyServerSettingsPatch(defaults, {
+    worktreeCleanup: { mode: "custom", rules: { worktreeOnMerge: true } },
+  });
+  expect(custom.worktreeCleanup).toEqual({
+    mode: "custom",
+    rules: {
+      worktreeAfterDays: 8,
+      worktreeOnMerge: true,
+      worktreeOnDelete: false,
+      worktreeUnchanged: false,
+    },
+  });
+  const changed = applyServerSettingsPatch(custom, {
+    worktreeCleanup: { mode: "custom", rules: { worktreeAfterDays: null } },
+  });
+  expect(changed.worktreeCleanup).toMatchObject({
+    rules: { worktreeAfterDays: null, worktreeOnMerge: true },
+  });
+  expect(changed.storageCleanup.logsAfterDays).toBe(30);
+  expect(changed.storageCleanup.browserArtifactsAfterDays).toBe(14);
+  expect(
+    applyServerSettingsPatch(changed, { worktreeCleanup: { mode: "off" } }).worktreeCleanup,
+  ).toEqual({ mode: "off" });
+  expect(applyServerSettingsPatch(changed, { worktreeCleanup: null }).worktreeCleanup).toBeNull();
+});

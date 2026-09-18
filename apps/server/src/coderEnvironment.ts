@@ -50,6 +50,8 @@ export const layer = Layer.effect(
           repositoryIdentity: true,
           requiredWorktreeBootstrap: true,
           projectCloneTracking: true,
+          storageCleanup: true,
+          projectWorktreeCleanup: true,
           pullRequests: true,
           connectionProbe: true,
           threadSettlement: true,

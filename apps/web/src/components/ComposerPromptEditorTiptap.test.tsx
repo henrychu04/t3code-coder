@@ -4,9 +4,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { ThreadId } from "@t3tools/contracts";
 import {
-  ComposerPromptEditorTiptap,
+  ComposerPromptEditor as ComposerPromptEditorTiptap,
   type ComposerPromptEditorHandle,
-} from "./ComposerPromptEditorTiptap";
+} from "./ComposerPromptEditor";
 import type { TerminalContextDraft } from "../lib/terminalContext";
 
 vi.mock("./chat/ComposerPendingTerminalContexts", () => ({
