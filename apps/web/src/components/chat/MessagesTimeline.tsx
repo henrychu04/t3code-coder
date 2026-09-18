@@ -1,3 +1,4 @@
+import { workEntryViewedImagePath } from "./MessagesTimeline.logic";
 import {
   getQuestionAnswerHistory,
   getQuestionAnswerPreview,
@@ -2952,9 +2953,9 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
   const timeline = use(TimelineRowCtx);
-  const imagePath = workEntry.itemType === "image_view" ? workEntry.detail?.trim() : undefined;
+  const imagePath = workEntryViewedImagePath(workEntry);
   const viewedImage =
-    imagePath && !/[\r\n]/.test(imagePath) && /\.(?:png|jpe?g|webp)$/i.test(imagePath)
+    imagePath
       ? resolveMarkdownFileLinkMeta(imagePath, workspaceRoot)
       : null;
   const groupView = use(WorkGroupViewCtx);
@@ -3106,7 +3107,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             inline
             cwd={workspaceRoot}
             threadRef={timeline.threadRef}
-            relativePath={viewedImage.workspaceRelativePath}
+            filePath={viewedImage.workspaceRelativePath ?? viewedImage.filePath}
             maxHeightRem={16}
             alt={viewedImage.basename}
           >

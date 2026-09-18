@@ -161,7 +161,7 @@ export async function testLiveProviderImages(
           const chunk = await rpc("projects.readImage", {
             threadId,
             cwd: "/srv/t3-image-check",
-            relativePath,
+            filePath: relativePath,
             offset,
             limit: 512 * 1024,
             ...(first ? { revision: first.revision } : {}),
@@ -184,9 +184,9 @@ export async function testLiveProviderImages(
       }
       // Real RPC ownership and containment failures must not expose image bytes.
       for (const input of [
-        { threadId: randomUUID(), cwd: "/srv/t3-image-check", relativePath: "fixture.png" },
-        { threadId, cwd: "/srv", relativePath: "t3-image-check/fixture.png" },
-        { threadId, cwd: "/srv/t3-image-check", relativePath: "../outside.png" },
+        { threadId: randomUUID(), cwd: "/srv/t3-image-check", filePath: "fixture.png" },
+        { threadId, cwd: "/srv", filePath: "t3-image-check/fixture.png" },
+        { threadId, cwd: "/srv/t3-image-check", filePath: "https://example.com/outside.png" },
       ])
         await assert.rejects(rpc("projects.readImage", { ...input, offset: 0, limit: 512 }));
       results.push({

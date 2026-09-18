@@ -964,6 +964,40 @@ describe("deriveWorkLogEntries", () => {
     ]);
   });
 
+  it("preserves main's explicit image path through tool lifecycle updates", () => {
+    const entries = deriveWorkLogEntries([
+      makeActivity({
+        id: "image-start",
+        sequence: 1,
+        kind: "tool.updated",
+        summary: "Generate image",
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolCallId: "image-tool",
+          status: "inProgress",
+          data: { imagePath: "/tmp/generated.png" },
+        },
+      }),
+      makeActivity({
+        id: "image-done",
+        kind: "tool.completed",
+        summary: "Generate image",
+        sequence: 2,
+        payload: {
+          itemType: "dynamic_tool_call",
+          toolCallId: "image-tool",
+          status: "completed",
+          detail: "Image generated",
+        },
+      }),
+    ]);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      viewedImagePath: "/tmp/generated.png",
+      toolLifecycleStatus: "completed",
+    });
+  });
+
   it("preserves validated screenshot artifact metadata for visual artifact rows", () => {
     const [entry] = deriveWorkLogEntries([
       makeActivity({

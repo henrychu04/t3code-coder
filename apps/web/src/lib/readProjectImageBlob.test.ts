@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vite-plus/test";
 import { ThreadId } from "@t3tools/contracts";
 import { readProjectImageBlob } from "./readProjectImageBlob";
-const target = { threadId: ThreadId.make("thread"), cwd: "/project", relativePath: "new.png" };
+const target = { threadId: ThreadId.make("thread"), cwd: "/project", filePath: "new.png" };
 const chunk = {
   dimensions: { width: 64, height: 64 },
   mimeType: "image/png" as const,

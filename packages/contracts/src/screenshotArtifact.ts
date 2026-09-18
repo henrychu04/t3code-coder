@@ -64,11 +64,11 @@ export class ScreenshotArtifactReadError extends Schema.TaggedError<ScreenshotAr
   },
 ) {}
 
-/** On-demand image reads use the thread's project, never capture associations. */
+/** On-demand image paths resolve on the environment machine, relative to the verified thread root. */
 export const ProjectImageReadInput = Schema.Struct({
   threadId: ThreadId,
   cwd: TrimmedNonEmptyString,
-  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
+  filePath: TrimmedNonEmptyString.check(Schema.isMaxLength(4096)),
   offset: NonNegativeInt,
   limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES)),
   revision: Schema.optional(Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))),

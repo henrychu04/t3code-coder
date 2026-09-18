@@ -1,3 +1,4 @@
+import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { projectScriptIdFromCommand } from "../projectScripts";
 import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
@@ -4935,6 +4936,7 @@ export default function ChatView(props: ChatViewProps) {
     return () => window.removeEventListener("paste", handler, true);
   }, [activeThreadId, composerRef]);
 
+  const [isWorkspaceFileDragActive, setIsWorkspaceFileDragActive] = useState(false);
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;
     messageId: MessageId;
@@ -6494,7 +6496,28 @@ export default function ChatView(props: ChatViewProps) {
         {/* Main content area with optional plan sidebar */}
         <div className="flex min-h-0 min-w-0 flex-1">
           {/* Chat column */}
-          <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-chat-workspace="true">
+          <div
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+            data-chat-workspace="true"
+            data-chat-workspace-drop-target="true"
+            {...makeWorkspaceFileDropHandlers({
+              setDragActive: setIsWorkspaceFileDragActive,
+              addFiles: (files) => composerRef.current?.addDroppedFiles(files),
+            })}
+          >
+            {isWorkspaceFileDragActive ? (
+              <div
+                className="pointer-events-none absolute inset-2 z-40 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary/60 bg-primary/[0.035]"
+                data-chat-workspace-drop-overlay="true"
+              >
+                <div
+                  role="status"
+                  className="rounded-full border border-primary/25 bg-background/95 px-4 py-2.5 text-sm font-medium shadow-lg"
+                >
+                  Drop images to attach
+                </div>
+              </div>
+            ) : null}
             {/* Provider status overlays the timeline without changing its content height. */}
             <div className="pointer-events-none absolute inset-x-0 top-0 z-20">
               <ProviderStatusBanner

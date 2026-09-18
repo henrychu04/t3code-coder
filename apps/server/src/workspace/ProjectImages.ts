@@ -1,10 +1,11 @@
-// Coder adaptation of main's exact-file assets: read the current project image on demand.
+// Coder adaptation of main's exact-file assets: read the current environment image on demand.
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace-only Linux filesystem adapter.
 import { readImageDimensions } from "@t3tools/shared/imageDimensions";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { homedir } from "node:os";
 import {
   MAX_SCREENSHOT_ARTIFACT_BYTES,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
@@ -19,16 +20,6 @@ import { detectStoredScreenshotMimeType } from "./ScreenshotArtifacts.ts";
 const reads = Semaphore.makeUnsafe(3);
 const unavailable = () =>
   new ProjectImageReadError({ message: "Image is unavailable or has changed. Retry the image." });
-const contained = (root: string, file: string) => {
-  const relative = path.relative(root, file);
-  return (
-    relative !== "" &&
-    relative !== ".." &&
-    !relative.startsWith(`..${path.sep}`) &&
-    !path.isAbsolute(relative)
-  );
-};
-
 /** The caller must verify that cwd belongs to threadId before invoking this read. */
 export const readProjectImage = (
   input: ProjectImageReadInput,
@@ -37,10 +28,11 @@ export const readProjectImage = (
     Effect.tryPromise({
       try: async () => {
         if (
-          input.relativePath.includes("\\") ||
-          input.relativePath.includes("\0") ||
-          path.isAbsolute(input.relativePath) ||
-          input.relativePath.split("/").some((part) => !part || part === "." || part === "..") ||
+          input.filePath.includes("\\") ||
+          input.filePath.includes("\0") ||
+          !input.filePath.trim() ||
+          /^[a-z][a-z0-9+.-]*:/i.test(input.filePath) ||
+          input.filePath.startsWith("//") ||
           !Number.isInteger(input.offset) ||
           input.offset < 0 ||
           (input.offset > 0 && !input.revision) ||
@@ -50,11 +42,14 @@ export const readProjectImage = (
         )
           throw unavailable();
         const root = await fs.realpath(input.cwd);
-        const requested = path.join(root, input.relativePath);
-        const before = await fs.lstat(requested, { bigint: true });
-        if (!before.isFile() || before.isSymbolicLink()) throw unavailable();
+        // Like main's media-file assets, relative paths resolve from the thread root;
+        // absolute paths and symlinks name an exact image elsewhere in the workspace machine.
+        const requested = input.filePath.startsWith("~/")
+          ? path.resolve(homedir(), input.filePath.slice(2))
+          : path.resolve(root, input.filePath);
         const resolved = await fs.realpath(requested);
-        if (!contained(root, resolved)) throw unavailable();
+        const before = await fs.lstat(resolved, { bigint: true });
+        if (!before.isFile() || before.isSymbolicLink()) throw unavailable();
         const handle = await fs.open(
           resolved,
           constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
@@ -64,7 +59,7 @@ export const readProjectImage = (
           const openedPath = await fs.realpath(
             process.platform === "linux" ? `/proc/self/fd/${handle.fd}` : resolved,
           );
-          if (!contained(root, openedPath)) throw unavailable();
+          if (openedPath !== resolved) throw unavailable();
           const stat = await handle.stat({ bigint: true });
           if (
             !stat.isFile() ||
@@ -82,7 +77,7 @@ export const readProjectImage = (
           if (input.revision && input.revision !== revision) throw unavailable();
           const totalBytes = Number(stat.size);
           const mimeType = await detectStoredScreenshotMimeType(handle, totalBytes);
-          const extension = path.extname(input.relativePath).toLowerCase();
+          const extension = path.extname(input.filePath).toLowerCase();
           if (
             !mimeType ||
             !(mimeType === "image/png"

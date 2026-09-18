@@ -28,7 +28,7 @@ it.effect(
       const input = {
         threadId: ThreadId.make("thread"),
         cwd,
-        relativePath: "copied.png",
+        filePath: "copied.png",
         offset: 0,
         limit: 16,
       };
@@ -56,7 +56,7 @@ it.effect(
         fs.rename(path.join(cwd, "copied.png"), path.join(cwd, "renamed.png")),
       );
       expect((yield* readProjectImage(input).pipe(Effect.result))._tag).toBe("Failure");
-      expect((yield* readProjectImage({ ...input, relativePath: "renamed.png" })).mimeType).toBe(
+      expect((yield* readProjectImage({ ...input, filePath: "renamed.png" })).mimeType).toBe(
         "image/png",
       );
       yield* Effect.promise(() =>
@@ -77,7 +77,7 @@ it.effect(
     }),
 );
 it.effect(
-  "rejects escapes, symlinks, unsupported or oversized files, and unversioned continuation reads",
+  "reads exact images outside the project and rejects non-images and invalid continuation reads",
   () =>
     Effect.gen(function* () {
       const root = yield* fixture;
@@ -96,25 +96,33 @@ it.effect(
       const input = {
         threadId: ThreadId.make("thread"),
         cwd,
-        relativePath: "ok.png",
+        filePath: "ok.png",
         offset: 0,
         limit: 512,
       };
-      for (const relativePath of [
+      for (const filePath of [
         "../outside.png",
-        "/outside.png",
+        path.join(root, "outside.png"),
         "escape/outside.png",
         "link.png",
+        "./ok.png",
+        "dir/../ok.png",
+      ]) {
+        expect((yield* readProjectImage({ ...input, filePath })).dataBase64).toBe(
+          png.toString("base64"),
+        );
+      }
+      for (const filePath of [
+        "https://example.com/outside.png",
+        "//example.com/outside.png",
         "fake.png",
         "wrong.jpg",
         "large.png",
         "missing.png",
-        "./ok.png",
-        "dir/../ok.png",
         "dir\\ok.png",
         "ok.png\0",
       ]) {
-        const result = yield* readProjectImage({ ...input, relativePath }).pipe(Effect.result);
+        const result = yield* readProjectImage({ ...input, filePath }).pipe(Effect.result);
         expect(result._tag).toBe("Failure");
         if (result._tag === "Failure") expect(JSON.stringify(result.failure)).not.toContain(root);
       }

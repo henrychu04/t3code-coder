@@ -40,7 +40,7 @@ behavior, notify the maintainer before making that removal.
 
 The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
 client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace
-targets, structured port-forward rules, and an optional Coder executable path. A clipboard image may
+targets, structured port-forward rules, and an optional Coder executable path. An attached image may
 be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
 copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, prompt stashes, active workspace projections,
@@ -264,19 +264,19 @@ The T3 gateway does not make external HTTP requests. The installed Coder CLI is 
 allowed to make a non-loopback workspace connection. Structured port-forward rules use foreground
 `coder port-forward` processes and bind only to IPv4 loopback; reverse forwarding, arbitrary bind
 addresses, and raw tunnel arguments are not exposed. The gateway may invoke OpenSSH `scp` for helper
-bootstrap and validated clipboard-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
+bootstrap and validated composer-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
 no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
 
-General user-facing file transfer remains disabled. One exception is an image pasted into the
+General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts
 signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS temporary directory,
 and copies it through helper-scoped SCP to a generated path beneath
 `$HOME/.t3-coder/attachments`. It then deletes the local staging file and returns the generated path
-to the draft's in-memory attachment state. The browser queues at most three concurrent clipboard
+to the draft's in-memory attachment state. The browser queues at most three concurrent image
 transfers per workspace, matching upstream's per-environment limit. Workspaces have independent
 queues; drafts in the same workspace share its limit. Completed images retain their workspace
-identity. Moving or restoring images into another workspace queues their original pasted bytes
+identity. Moving or restoring images into another workspace queues their original image bytes
 for that destination and cancels any old transfer. The browser retains failed images for explicit
 retry and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
@@ -327,14 +327,16 @@ only for project-content search. It does not change ordinary file-read or edit l
 not authorize uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace
 connections.
 
-The UI exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
+The Files surface exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
 explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
 Image previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
-resolve project image paths without capture events or source-path fingerprints. The helper verifies
-that the requested root belongs to the thread, validates the project-relative path and actual opened
-file, rejects symlink escapes and non-files, and validates PNG/JPEG/WebP signatures and extensions.
+resolve image paths without capture events or source-path fingerprints. The helper verifies
+that the requested root belongs to the thread, resolves relative paths from that root and accepts
+absolute or home-relative image paths elsewhere on the Linux workspace machine. Symlinks resolve
+to an exact file; the helper checks its opened path, device and inode, rejects non-files, and
+validates PNG/JPEG/WebP signatures and extensions. No remote URLs or general file reads are accepted.
 Each image is limited to 20 MiB and each stdio chunk to 512 KiB. A revision based on file identity,
 size, and modification/change timestamps must remain constant across chunks; a changed file fails
 with a generic retryable error. No file content or path is included in image errors.
@@ -347,11 +349,12 @@ The artifact directory is no longer created for new workspaces. Draft attachment
 browser memory; submitted copies remain under the workspace attachment directory.
 
 The UI retains main's thumbnail, Markdown, zoom/pan, and gallery presentation with Coder transport.
-Project image links open a gallery directly; inline images load near the viewport. The shared
+Environment image links open a gallery directly; inline images load near the viewport. The shared
 memory-only image resource store permits three concurrent reads and reserves at most 100 MiB.
 Selected gallery images take priority over other previews; deferred previews can still be opened.
 The gateway persists no image bytes and opens no additional route or workspace connection.
-External images, video, download/export, and outside-project file previews remain excluded.
+External web images, video, and download/export remain excluded. Outside-project access is limited
+to validated image previews; the text Files surface and search retain project containment.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be

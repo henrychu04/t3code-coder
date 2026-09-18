@@ -1,4 +1,4 @@
-// Adapted from upstream 8d8189e67 ChatMarkdownImage. Only captured Blob URLs are rendered.
+// Adapted from upstream 8d8189e67 ChatMarkdownImage. Coder supplies validated, memory-only Blob URLs.
 import {
   useCallback,
   useState,

@@ -978,7 +978,7 @@ const MARKDOWN_COMPONENTS: Components = {
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ProjectImageLink cwd={cwd} threadRef={threadRef} relativePath={fileLink.workspaceRelativePath}>
+        <ProjectImageLink cwd={cwd} threadRef={threadRef} filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}>
           {children}
         </ProjectImageLink>
       );
@@ -1147,7 +1147,7 @@ const MARKDOWN_COMPONENTS: Components = {
           width={width}
           height={height}
           standalone={node?.properties?.dataStandalone === true}
-          relativePath={fileLink.workspaceRelativePath}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
         >
           {alt || fileLink.basename}
         </ProjectImageLink>
@@ -1163,7 +1163,7 @@ const MARKDOWN_COMPONENTS: Components = {
         : null;
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ProjectImageLink cwd={cwd} threadRef={threadRef} relativePath={fileLink.workspaceRelativePath}>
+        <ProjectImageLink cwd={cwd} threadRef={threadRef} filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}>
           {children}
         </ProjectImageLink>
       );

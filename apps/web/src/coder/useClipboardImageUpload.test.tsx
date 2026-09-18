@@ -211,7 +211,7 @@ it("enforces the attachment limit including queued and failed images", async () 
   await act(async () => current.upload(Array.from({ length: 8 }, png)));
   await act(async () => current.upload([png()]));
   expect(images()).toHaveLength(8);
-  expect(onError).toHaveBeenLastCalledWith("You can attach up to 8 pasted images per message.");
+  expect(onError).toHaveBeenLastCalledWith("You can attach up to 8 images per message.");
 });
 
 it("rejects unsupported and oversized images before enqueueing", async () => {
@@ -223,7 +223,7 @@ it("rejects unsupported and oversized images before enqueueing", async () => {
   });
   expect(transfers).toHaveLength(0);
   expect(images()).toHaveLength(0);
-  expect(onError).toHaveBeenLastCalledWith("Clipboard image exceeds the 20 MiB limit.");
+  expect(onError).toHaveBeenLastCalledWith("Image exceeds the 20 MiB limit.");
 });
 
 it.each(["uploading", "uploaded", "failed"] as const)(
@@ -308,4 +308,15 @@ it("preserves inline image references when a stash is restored into another work
   await act(async () => transfers[1]!.resolve("/destination/image.png"));
   expect(pastedImageSendBlockReason(images(b), prompt)).toBeNull();
   expect(appendPastedImagesToPrompt(prompt, images(b))).toContain("/destination/image.png");
+});
+
+it("accepts picked or dropped images with missing MIME metadata and rejects other files", async () => {
+  const selected = new File(["image"], "photo.PNG");
+  await act(async () => current.upload([selected]));
+  expect(images()[0]?.file.type).toBe("image/png");
+  expect(images()[0]?.file.name).toBe("photo.PNG");
+  expect(transfers).toHaveLength(1);
+  await act(async () => current.upload([new File(["text"], "notes.txt")]));
+  expect(onError).toHaveBeenLastCalledWith("Image must be PNG, JPEG, or WebP.");
+  expect(transfers).toHaveLength(1);
 });

@@ -25,7 +25,7 @@ export function isImageFilePath(path: string): boolean {
 }
 const InsideImageLink = createContext(false);
 export function ProjectImageLink(props: {
-  relativePath: string | null;
+  filePath: string | null;
   cwd?: string | undefined;
   threadRef?: ScopedThreadRef | undefined;
   children: ReactNode;
@@ -40,12 +40,22 @@ export function ProjectImageLink(props: {
 }) {
   const nested = useContext(InsideImageLink);
   if (nested && !props.inline) return <>{props.children}</>;
-  if (!props.relativePath || !props.cwd || !props.threadRef)
+  if (!props.filePath || !props.cwd || !props.threadRef)
     return <span title="Image preview unavailable">{props.children}</span>;
+  if (!/\.(?:png|jpe?g|webp)$/i.test(props.filePath))
+    return (
+      <span
+        id={props.imageProps?.id}
+        className="inline-flex max-w-full flex-wrap gap-1 text-xs text-muted-foreground"
+        title="Supported image formats: PNG, JPEG, and WebP"
+      >
+        {props.children} · Unsupported image format. Use PNG, JPEG, or WebP.
+      </span>
+    );
   const target = {
     threadId: props.threadRef.threadId,
     cwd: props.cwd,
-    relativePath: props.relativePath,
+    filePath: props.filePath,
   };
   return (
     <InsideImageLink value={true}>
@@ -94,12 +104,24 @@ function ProjectImageContent(
       props.maxHeightRem,
     ) ?? { width: "30rem", height: "auto", aspectRatio: "16 / 9", maxWidth: "100%" };
 
-  const alt = props.alt ?? props.target.relativePath.split("/").at(-1) ?? "Image";
+  const alt = props.alt ?? props.target.filePath.split("/").at(-1) ?? "Image";
   const item = {
     src: image?.status === "loaded" ? image.url : null,
     name: alt,
     projectImage: props.target,
   };
+  const registerPreview = useCallback(
+    (element: HTMLSpanElement | null) => {
+      previewRef(element);
+      if (element)
+        markdownImageItems.set(element, {
+          src: image?.status === "loaded" ? image.url : null,
+          name: alt,
+          projectImage: props.target,
+        });
+    },
+    [previewRef, image, alt, props.target],
+  );
   const retry = () => {
     if (image && "retry" in image) image.retry();
   };
@@ -110,7 +132,8 @@ function ProjectImageContent(
       {props.inline ? (
         <span
           id={id}
-          ref={previewRef}
+          ref={registerPreview}
+          data-project-image
           data-image-preview
           tabIndex={-1}
           className="inline-block max-w-full"

@@ -1,4 +1,4 @@
-// Adapted from upstream 3be02ae57 ExpandedImageDialog: layout, navigation and zoom/pan.
+// Adapted from main f328db30d ExpandedImageDialog: layout, navigation and zoom/pan.
 // Coder supplies memory-only Blob URLs; external assets and media export are omitted.
 import type { ProjectImageTarget } from "../../lib/readProjectImageBlob";
 import type { ScreenshotArtifactReference } from "@t3tools/contracts";
@@ -12,7 +12,7 @@ import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
 
 // Same state dimensions as upstream, with retry supplied by the Coder transport.
 const EXPANDED_MEDIA_STATE_CLASS_NAME =
-  "flex aspect-auto h-48 min-h-0 w-[min(92vw,32rem)] flex-col items-center justify-center gap-3 rounded-lg border border-border/70 bg-black p-6 text-center text-sm text-white shadow-2xl";
+  "flex aspect-auto h-48 min-h-0 w-[min(var(--media-width),32rem)] flex-col items-center justify-center gap-3 rounded-lg border border-border/70 bg-black p-6 text-center text-sm text-white shadow-2xl";
 
 export interface ExpandedImagePreview {
   images: {
@@ -106,7 +106,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         bottomStickOnMobile={false}
         backdropClassName="z-[60]"
         viewportClassName="z-[60] grid-rows-1 place-items-center px-4 py-6"
-        className="row-start-1 flex max-h-[92vh] w-[92vw] max-w-[92vw] items-center justify-center overflow-visible"
+        className="row-start-1 flex max-h-[92vh] w-[92vw] max-w-[92vw] items-center justify-center overflow-visible [--media-width:92vw] [--media-height:min(86vh,calc(100vh-160px))] sm:[--media-width:calc(92vw-96px)]"
         onKeyDown={onKeyDown}
         initialFocus={closeButtonRef}
         finalFocus={() => {
@@ -120,14 +120,14 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         }}
       >
         <DialogTitle className="sr-only">Expanded image preview</DialogTitle>
-        <div className="relative isolate z-10 max-h-[92vh] max-w-[92vw]">
+        <div className="relative isolate z-10 max-h-[92vh] max-w-[var(--media-width)]">
           <Button
             type="button"
             size="icon-xs"
-            variant="ghost"
+            variant="media-close"
             ref={closeButtonRef}
             onClick={onClose}
-            className="absolute right-2 top-2 z-20"
+            className="absolute right-0 -top-10 z-20"
             aria-label="Close image preview"
           >
             <XIcon />
@@ -138,7 +138,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
             </div>
           ) : item.src === null || failedImageSrc === item.src ? (
             <div role="alert" className={EXPANDED_MEDIA_STATE_CLASS_NAME}>
-              <p>Image unavailable.</p>
+              <p>Image unavailable. The file may have been moved or deleted.</p>
               {item.retry ? (
                 <Button
                   type="button"
@@ -161,7 +161,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               onError={() => setFailedImageSrc(item.src)}
             />
           )}
-          <div className="mt-2 flex max-w-[92vw] items-center justify-center gap-1.5 text-xs text-white/80">
+          <div className="mt-2 flex max-w-[var(--media-width)] items-center justify-center gap-1.5 text-xs text-white/80">
             <span className="truncate" aria-live="polite" aria-atomic="true">
               {item.name}
               {preview.images.length > 1 ? ` (${index + 1}/${preview.images.length})` : ""}
@@ -172,23 +172,23 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           <>
             <Button
               type="button"
-              size="icon-xl"
-              variant="overlay"
-              className="absolute left-2 top-1/2 z-20 -translate-y-1/2 sm:left-6"
+              size="icon"
+              variant="media-navigation"
+              className="left-0 top-auto -bottom-12 translate-y-0 rounded-full bg-white/10 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
               aria-label="Previous image"
               onClick={() => navigateImage(-1)}
             >
-              <ChevronLeftIcon className="size-7" />
+              <ChevronLeftIcon className="size-5" />
             </Button>
             <Button
               type="button"
-              size="icon-xl"
-              variant="overlay"
-              className="absolute right-2 top-1/2 z-20 -translate-y-1/2 sm:right-6"
+              size="icon"
+              variant="media-navigation"
+              className="right-0 top-auto -bottom-12 translate-y-0 rounded-full bg-white/10 sm:top-1/2 sm:bottom-auto sm:-translate-y-1/2"
               aria-label="Next image"
               onClick={() => navigateImage(1)}
             >
-              <ChevronRightIcon className="size-7" />
+              <ChevronRightIcon className="size-5" />
             </Button>
           </>
         ) : null}

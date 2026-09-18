@@ -369,6 +369,7 @@ export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
   if (
     entry.requestKind === "file-read" ||
     entry.itemType === "image_view" ||
+    entry.viewedImagePath !== undefined ||
     (entry.itemType === "dynamic_tool_call" && entry.toolTitle === "Read File")
   ) {
     return "read";
@@ -386,6 +387,18 @@ export function toolGroupAction(entry: WorkLogEntry): ToolGroupAction {
   if (workLogEntryIsLocalCodeSearch(entry)) return "code-search";
   if (entry.itemType === "web_search") return "search";
   return workLogEntryIsToolLike(entry) ? "other" : "update";
+}
+
+/** Adapted from main's work-log presentation: explicit metadata wins over read detail. */
+export function workEntryViewedImagePath(entry: WorkLogEntry): string | null {
+  const isImagePath = (value: string | undefined): value is string =>
+    value !== undefined &&
+    !/[\r\n]/.test(value) &&
+    /\.(?:png|jpe?g|webp|gif|svg|avif|bmp|ico|tiff?)$/i.test(value);
+  const explicit = entry.viewedImagePath?.trim();
+  if (isImagePath(explicit)) return explicit;
+  const detail = entry.detail?.trim();
+  return toolGroupAction(entry) === "read" && isImagePath(detail) ? detail : null;
 }
 
 function toolGroupActionCount(

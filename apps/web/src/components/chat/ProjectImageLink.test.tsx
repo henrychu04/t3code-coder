@@ -12,7 +12,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("IntersectionObserver", undefined);
   load.mockImplementation((_env, target, enabled) =>
-    enabled && target ? { status: "loaded", url: `blob:${target.relativePath}`, retry } : undefined,
+    enabled && target ? { status: "loaded", url: `blob:${target.filePath}`, retry } : undefined,
   );
 });
 afterEach(() => {
@@ -34,8 +34,8 @@ it("previews copied and renamed project files without captured activities or pat
       ),
     );
     expect(host.querySelectorAll("img")).toHaveLength(2);
-    expect(load.mock.calls.some(([, target]) => target?.relativePath === "copied.png")).toBe(true);
-    expect(load.mock.calls.some(([, target]) => target?.relativePath === "renamed.png")).toBe(true);
+    expect(load.mock.calls.some(([, target]) => target?.filePath === "copied.png")).toBe(true);
+    expect(load.mock.calls.some(([, target]) => target?.filePath === "renamed.png")).toBe(true);
     await act(async () => {
       for (const image of host.querySelectorAll("img")) image.dispatchEvent(new Event("load"));
     });
@@ -54,7 +54,7 @@ it("previews copied and renamed project files without captured activities or pat
     host.remove();
   }
 });
-it("opens file links on demand and keeps outside-project and external images inert", async () => {
+it("opens file links on demand, reads outside-project images, and keeps external images inert", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -70,7 +70,12 @@ it("opens file links on demand and keeps outside-project and external images ine
         />,
       ),
     );
-    expect(load.mock.calls.every(([, , enabled]) => !enabled)).toBe(true);
+    expect(
+      load.mock.calls.some(
+        ([, target, enabled]) => enabled && target.filePath === "/outside/image.png",
+      ),
+    ).toBe(true);
+    expect(host.querySelector('img[alt="Remote"]')).toBeNull();
     expect(host.querySelectorAll('a[title="Preview image"]')).toHaveLength(1);
     await act(async () =>
       host.querySelector<HTMLAnchorElement>('a[title="Preview image"]')!.click(),
@@ -79,7 +84,7 @@ it("opens file links on demand and keeps outside-project and external images ine
     expect(
       load.mock.calls
         .filter(([, , enabled]) => enabled)
-        .every(([, target]) => target.relativePath === "new.png"),
+        .every(([, target]) => ["new.png", "/outside/image.png"].includes(target.filePath)),
     ).toBe(true);
   } finally {
     await act(async () => root.unmount());
@@ -132,7 +137,7 @@ it.each([true, false])(
           inline
           cwd="/project"
           threadRef={threadRef}
-          relativePath="copy.png"
+          filePath="copy.png"
           alt="Image"
         >
           Image
@@ -179,3 +184,64 @@ it.each([true, false])(
     }
   },
 );
+
+it("explains unsupported formats without fetching or offering a futile retry", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <ChatMarkdown
+          cwd="/project"
+          threadRef={threadRef}
+          text="![Logo](/tmp/logo.svg) [Animation](movie.gif)"
+        />,
+      ),
+    );
+    expect(host.textContent).toContain("Unsupported image format. Use PNG, JPEG, or WebP.");
+    expect(host.textContent).not.toContain("Retry image");
+    expect(load).not.toHaveBeenCalled();
+    expect(host.querySelector("a, img, button")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+  }
+});
+
+it("keeps unloaded images in gallery navigation and loads the selected image on demand", async () => {
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <ChatMarkdown
+          cwd="/project"
+          threadRef={threadRef}
+          text="![First](first.png) ![Second](/tmp/second.png)"
+        />,
+      ),
+    );
+    expect(host.querySelectorAll("img")).toHaveLength(0);
+    expect(load.mock.calls.every(([, , enabled]) => !enabled)).toBe(true);
+    await act(async () => host.querySelector<HTMLElement>('[aria-label="Preview First"]')!.click());
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+      "blob:first.png",
+    );
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+    );
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+      "blob:/tmp/second.png",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

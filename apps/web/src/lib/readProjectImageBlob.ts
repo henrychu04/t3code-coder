@@ -5,7 +5,7 @@ import {
   type ProjectImageReadInput,
 } from "@t3tools/contracts";
 import type { ImageResourceBlob } from "../components/chat/imageResources";
-export type ProjectImageTarget = Pick<ProjectImageReadInput, "threadId" | "cwd" | "relativePath">;
+export type ProjectImageTarget = Pick<ProjectImageReadInput, "threadId" | "cwd" | "filePath">;
 
 export async function readProjectImageBlob(
   target: ProjectImageTarget,

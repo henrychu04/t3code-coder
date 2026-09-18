@@ -44,7 +44,7 @@ export function ComposerPastedImages({
   const visible = compact ? images.slice(0, visibleCount) : images;
   if (images.length === 0) return null;
   return (
-    <div aria-label="Pasted images" className={cn("px-3 sm:px-4", compact ? "py-1.5" : "py-3")}>
+    <div aria-label="Attached images" className={cn("px-3 sm:px-4", compact ? "py-1.5" : "py-3")}>
       <div className="flex max-w-full flex-wrap items-center gap-2">
         {visible.map((image) => (
           <div
