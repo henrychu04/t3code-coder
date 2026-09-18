@@ -292,6 +292,7 @@ export function WorkspaceShortcutsSettings(props: {
               return (
                 <div
                   key={action.command}
+                  id={`keybinding-${action.command}`}
                   className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center"
                 >
                   <div className="min-w-0 flex-1">

@@ -70,6 +70,13 @@ import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection
 import { formatProviderSkillDisplayName } from "@t3tools/client-runtime/providerSkills";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { didComposerSelectionChangeVisibly } from "./composerSelection";
+import { ContextChipPopover } from "./contextChipParts";
+
+const ComposerFileActionsContext = createContext<{
+  openMention: (path: string) => void;
+  canOpenMention: (path: string) => boolean;
+}>({ openMention: () => {}, canOpenMention: () => false });
+
 const TerminalContexts = createContext<ReadonlyArray<TerminalContextDraft>>([]);
 
 export interface ComposerPromptEditorHandle {
@@ -102,6 +109,10 @@ export interface ComposerPromptEditorProps {
    * literal character.
    */
   richTextEnabled?: boolean;
+  fileActions?: {
+    openMention: (path: string) => void;
+    canOpenMention: (path: string) => boolean;
+  };
   images?: ReadonlyArray<ComposerPastedImage>;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   onRemoveTerminalContext: (contextId: string) => void;
@@ -197,10 +208,13 @@ const ComposerMentionExtension = Node.create({
 });
 
 function ComposerMentionNodeView({ node }: NodeViewProps) {
+  const actions = use(ComposerFileActionsContext);
   const path = (node.attrs.path as string) ?? "";
   const chip = (
     <Button
       variant="chip"
+      onClick={() => actions.openMention(path)}
+      disabled={!actions.canOpenMention(path)}
       aria-label={`Preview ${path}`}
       className={`${FILE_TAG_CHIP_CLASS_NAME} cursor-pointer focus-visible:outline-2`}
       contentEditable={false}
@@ -254,6 +268,7 @@ const ComposerSkillExtension = Node.create({
 });
 
 function ComposerSkillNodeView({ node }: NodeViewProps) {
+  const actions = use(ComposerFileActionsContext);
   const skills = use(RichComposerSkillsContext);
   const skillName = (node.attrs.skillName as string) ?? "";
   const skillLabel = (node.attrs.skillLabel as string) || skillName;
@@ -261,23 +276,34 @@ function ComposerSkillNodeView({ node }: NodeViewProps) {
   const skill = skills.find((candidate) => candidate.name === skillName);
   return (
     <NodeViewWrapper as="span" className={COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <span className={COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME}>
-              <span
-                aria-hidden="true"
-                className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME}
-                dangerouslySetInnerHTML={{ __html: SKILL_CHIP_ICON_SVG }}
-              />
-              <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{skillLabel}</span>
-            </span>
-          }
-        />
-        <TooltipPopup>
-          {skill?.description ?? skillDescription ?? "No description is available for this skill."}
-        </TooltipPopup>
-      </Tooltip>
+      <ContextChipPopover
+        accessibleLabel={`Skill ${skillLabel}`}
+        triggerClassName={COMPOSER_INLINE_SKILL_CHIP_CLASS_NAME}
+        chip={
+          <>
+            <span
+              aria-hidden="true"
+              className={COMPOSER_INLINE_CHIP_ICON_CLASS_NAME}
+              dangerouslySetInnerHTML={{ __html: SKILL_CHIP_ICON_SVG }}
+            />
+            <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{skillLabel}</span>
+          </>
+        }
+      >
+        <div className="space-y-3 p-2 text-sm">
+          <p className="font-medium">{skillLabel}</p>
+          <p>
+            {skill?.description ??
+              skillDescription ??
+              "No description is available for this skill."}
+          </p>
+          {skill?.path && actions.canOpenMention(skill.path) ? (
+            <Button variant="outline" size="sm" onClick={() => actions.openMention(skill.path)}>
+              View instructions
+            </Button>
+          ) : null}
+        </div>
+      </ContextChipPopover>
     </NodeViewWrapper>
   );
 }
@@ -1225,74 +1251,78 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   );
 
   return (
-    <RichComposerSkillsContext value={skills}>
-      <ComposerImagesContext value={images}>
-        <TerminalContexts value={terminalContexts}>
-          <ComposerCitationCommentContext value={citationCommentActions}>
-            <div
-              className={cn(
-                "relative [font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]",
-                containerClassName,
-              )}
-            >
-              <EditorContent
-                editor={editor}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Control" ||
-                    event.key === "Meta" ||
-                    event.key === "Alt" ||
-                    event.key === "Shift"
-                  ) {
-                    onPageScrollRelease?.();
-                  }
-                  if (event.key !== "PageUp" && event.key !== "PageDown") return;
-                  const target = event.currentTarget.querySelector(
-                    '[data-testid="composer-editor"]',
-                  ) as HTMLElement | null;
-                  if (!target) return;
-                  const pageScrollKey = getTimelinePageScrollKey({
-                    altKey: event.altKey,
-                    clientHeight: target.clientHeight,
-                    ctrlKey: event.ctrlKey,
-                    defaultPrevented: event.defaultPrevented,
-                    isComposing: event.nativeEvent.isComposing,
-                    key: event.key,
-                    keyCode: event.keyCode,
-                    metaKey: event.metaKey,
-                    scrollHeight: target.scrollHeight,
-                    scrollTop: target.scrollTop,
-                    shiftKey: event.shiftKey,
-                  });
-                  if (!pageScrollKey) {
-                    onPageScrollRelease?.();
-                    return;
-                  }
-                  if (!onPageScrollKeyDown) return;
-                  event.preventDefault();
-                  onPageScrollKeyDown(pageScrollKey);
-                }}
-                onKeyUp={(event) => onPageScrollKeyUp?.(event.key)}
-                onBlur={onPageScrollRelease}
-                onPasteCapture={onPaste}
-                onCopyCapture={(event) => handleCopyCut(event, false)}
-                onCutCapture={(event) => handleCopyCut(event, true)}
-              />
-              {isEmpty && placeholder ? (
-                <div
-                  className={cn(
-                    "pointer-events-none absolute inset-0 leading-relaxed text-placeholder/75",
-                    placeholderClassName,
-                  )}
-                >
-                  {placeholder}
-                </div>
-              ) : null}
-            </div>
-          </ComposerCitationCommentContext>
-        </TerminalContexts>
-      </ComposerImagesContext>
-    </RichComposerSkillsContext>
+    <ComposerFileActionsContext
+      value={props.fileActions ?? { openMention: () => {}, canOpenMention: () => false }}
+    >
+      <RichComposerSkillsContext value={skills}>
+        <ComposerImagesContext value={images}>
+          <TerminalContexts value={terminalContexts}>
+            <ComposerCitationCommentContext value={citationCommentActions}>
+              <div
+                className={cn(
+                  "relative [font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]",
+                  containerClassName,
+                )}
+              >
+                <EditorContent
+                  editor={editor}
+                  onKeyDown={(event) => {
+                    if (
+                      event.key === "Control" ||
+                      event.key === "Meta" ||
+                      event.key === "Alt" ||
+                      event.key === "Shift"
+                    ) {
+                      onPageScrollRelease?.();
+                    }
+                    if (event.key !== "PageUp" && event.key !== "PageDown") return;
+                    const target = event.currentTarget.querySelector(
+                      '[data-testid="composer-editor"]',
+                    ) as HTMLElement | null;
+                    if (!target) return;
+                    const pageScrollKey = getTimelinePageScrollKey({
+                      altKey: event.altKey,
+                      clientHeight: target.clientHeight,
+                      ctrlKey: event.ctrlKey,
+                      defaultPrevented: event.defaultPrevented,
+                      isComposing: event.nativeEvent.isComposing,
+                      key: event.key,
+                      keyCode: event.keyCode,
+                      metaKey: event.metaKey,
+                      scrollHeight: target.scrollHeight,
+                      scrollTop: target.scrollTop,
+                      shiftKey: event.shiftKey,
+                    });
+                    if (!pageScrollKey) {
+                      onPageScrollRelease?.();
+                      return;
+                    }
+                    if (!onPageScrollKeyDown) return;
+                    event.preventDefault();
+                    onPageScrollKeyDown(pageScrollKey);
+                  }}
+                  onKeyUp={(event) => onPageScrollKeyUp?.(event.key)}
+                  onBlur={onPageScrollRelease}
+                  onPasteCapture={onPaste}
+                  onCopyCapture={(event) => handleCopyCut(event, false)}
+                  onCutCapture={(event) => handleCopyCut(event, true)}
+                />
+                {isEmpty && placeholder ? (
+                  <div
+                    className={cn(
+                      "pointer-events-none absolute inset-0 leading-relaxed text-placeholder/75",
+                      placeholderClassName,
+                    )}
+                  >
+                    {placeholder}
+                  </div>
+                ) : null}
+              </div>
+            </ComposerCitationCommentContext>
+          </TerminalContexts>
+        </ComposerImagesContext>
+      </RichComposerSkillsContext>
+    </ComposerFileActionsContext>
   );
 }
 

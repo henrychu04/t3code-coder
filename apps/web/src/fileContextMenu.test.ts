@@ -1,3 +1,4 @@
+import { resolveComposerFileTarget } from "./fileContextMenu";
 import { describe, expect, it } from "vite-plus/test";
 import { buildFileContextMenuItems, resolveFileContextMenuRelativePath } from "./fileContextMenu";
 
@@ -42,5 +43,31 @@ describe("Coder file context menus", () => {
         repositoryRoot: "/workspace/project/nested",
       }),
     ).toBe("nested/src/main.ts");
+  });
+});
+
+describe("composer file targets", () => {
+  it.each(["Makefile", "folder/雪 #1.txt", "./src/main.ts", "/workspace/project/src/main.ts"])(
+    "opens contained paths: %s",
+    (path) => {
+      expect(resolveComposerFileTarget(path, "/workspace/project")).not.toBeNull();
+    },
+  );
+  it.each([
+    "../secret",
+    "/workspace/project-other/secret",
+    "/etc/passwd",
+    "https://example.com/file",
+    "src/../../secret",
+    "a\\b",
+    "a\0b",
+  ])("rejects unsafe targets: %s", (path) => {
+    expect(resolveComposerFileTarget(path, "/workspace/project")).toBeNull();
+  });
+  it("retains the referenced line", () => {
+    expect(resolveComposerFileTarget("src/main.ts:42", "/workspace/project")).toEqual({
+      relativePath: "src/main.ts",
+      line: 42,
+    });
   });
 });

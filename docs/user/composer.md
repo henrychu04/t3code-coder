@@ -49,7 +49,12 @@ Review comments and pasted images appear as chips within the prompt alongside fi
 skills, and assistant citations. Select a review-comment chip to edit its text or inspect the
 selected diff; the annotation in the diff viewer updates with it. Select an image chip to preview
 its in-memory draft image. Deleting an image chip removes its inline placement; use **Remove** on
-the thumbnail to omit the image from the message.
+the thumbnail to omit the image from the message. If the prompt still references that image,
+confirming removal removes both the thumbnail and its references.
+
+In an existing thread, select a file mention to open the current file in **Files**. Skill chips
+show their descriptions; **View instructions** opens the skill file when it is inside the
+thread’s project or worktree.
 
 Pasted plain-text fragments of at least 32,768 characters fold into a **Long text** chip. Select it to
 read or edit the text. Folding keeps the full text in the prompt: it counts toward the message

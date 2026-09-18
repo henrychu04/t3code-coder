@@ -1,3 +1,5 @@
+import { sortThreads } from "~/lib/threadSort";
+import { buildRootGroups } from "./CommandPalette.logic";
 import { useTheme } from "../hooks/useTheme";
 import { useCustomThemes } from "../hooks/useCustomThemes";
 import { useEnvironmentThemeDefinitions } from "../hooks/useEnvironmentTheme";
@@ -203,6 +205,7 @@ function CoderCommandPaletteDialog(props: {
   const projects = useProjects();
   const threads = useThreadShells();
   const { environments } = useEnvironments();
+  const threadSortOrder = useClientSettings((settings) => settings.sidebarThreadSortOrder);
   const groupingSettings = useClientSettings(selectProjectGroupingSettings);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -339,6 +342,7 @@ function CoderCommandPaletteDialog(props: {
         searchTerms: [item.title, item.section, ...item.searchTerms],
         title: item.title,
         description: item.section,
+        ...(item.secondary === undefined ? {} : { secondary: item.secondary }),
         icon: <SettingsIcon className="size-4 shrink-0 text-icon-muted" />,
         run: async () => {
           await navigate({
@@ -372,12 +376,11 @@ function CoderCommandPaletteDialog(props: {
   const messageMatchByThreadKey = new Map(
     messageSearch.matches.map((match) => [`${match.environmentId}:${match.threadId}`, match]),
   );
-  const visibleThreads =
-    query.trim().length > 0
-      ? threads
-      : threads
-          .toSorted((left, right) => right.updatedAt.localeCompare(left.updatedAt))
-          .slice(0, 12);
+  const sortedThreads = sortThreads(
+    threads.filter((thread) => thread.archivedAt === null),
+    threadSortOrder,
+  );
+  const visibleThreads = query.trim().length > 0 ? sortedThreads : sortedThreads.slice(0, 12);
   const threadItems: CommandPaletteActionItem[] = visibleThreads
     .filter((thread) => thread.archivedAt === null)
     .map((thread) => {
@@ -395,6 +398,7 @@ function CoderCommandPaletteDialog(props: {
           thread.branch ?? "",
           match?.snippet ?? "",
           ...threadPullRequestSearchTerms(thread),
+          thread.id,
         ],
         title: thread.title,
         titleLeadingContent: <ThreadRowLeadingStatus thread={thread} />,
@@ -444,7 +448,8 @@ function CoderCommandPaletteDialog(props: {
         (thread): CommandPaletteActionItem => ({
           kind: "action",
           value: `linked-thread:${thread.id}`,
-          title: thread.title,
+          title: thread.title || "Untitled thread",
+          description: thread.archivedAt === null ? "Linked thread" : "Archived thread",
           icon: <MessageSquareIcon className="size-4" />,
           searchTerms: [query],
           run: async () => {
@@ -673,24 +678,7 @@ function CoderCommandPaletteDialog(props: {
   };
   actionItems.push(changeAppearanceItem);
 
-  const rootGroups: CommandPaletteGroup[] = [
-    { value: "actions", label: "Actions", items: actionItems },
-    ...(query.trim().length > 0 && projectItems.length > 0
-      ? [{ value: "projects-search", label: "Projects", items: projectItems }]
-      : []),
-    ...(query.trim().length > 0
-      ? [{ value: "settings-search", label: "Settings", items: settingsItems }]
-      : []),
-    ...(threadItems.length > 0
-      ? [
-          {
-            value: query.trim().length > 0 ? "threads-search" : "recent-threads",
-            label: query.trim().length > 0 ? "Threads" : "Recent threads",
-            items: threadItems,
-          },
-        ]
-      : []),
-  ];
+  const rootGroups = buildRootGroups({ actionItems, recentThreadItems: threadItems });
   const activeGroups =
     view === "themes"
       ? changeThemeItem.groups
@@ -699,7 +687,14 @@ function CoderCommandPaletteDialog(props: {
         : view === "projects"
           ? projectViewGroups
           : rootGroups;
-  const filteredGroups = filterCommandPaletteGroups({ groups: activeGroups, query });
+  const filteredGroups = filterCommandPaletteGroups({
+    activeGroups,
+    query,
+    isInSubmenu: view !== "root",
+    projectSearchItems: projectItems,
+    settingsSearchItems: settingsItems,
+    threadSearchItems: threadItems,
+  });
 
   const executeItem = (item: CommandPaletteActionItem | CommandPaletteSubmenuItem) => {
     if (item.kind === "submenu") {

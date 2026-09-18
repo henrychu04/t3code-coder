@@ -1,3 +1,7 @@
+import { requestConfirmDialog } from "~/confirmDialog";
+import { collectDraftImageReferences } from "~/lib/composerInlineContext";
+import { resolveComposerFileTarget } from "~/fileContextMenu";
+import { useRightPanelStore } from "~/rightPanelStore";
 import { ComposerImagePicker } from "./ComposerImagePicker";
 import { imageContextReference } from "../../lib/composerInlineContext";
 import type { AssistantCitation } from "@t3tools/contracts";
@@ -1620,6 +1624,28 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     remove: removeClipboardImage,
     retry: retryClipboardImage,
   } = useClipboardImageUpload(environmentId, composerDraftTarget, setImageAttachmentError);
+  const removeComposerImage = (imageId: string) => {
+    const image = composerPastedImages.find((candidate) => candidate.id === imageId);
+    const referenced = collectDraftImageReferences(promptRef.current).some(
+      (reference) => reference.id === imageId,
+    );
+    if (!referenced) {
+      removeClipboardImage(imageId);
+      return;
+    }
+    const confirmation = requestConfirmDialog(
+      `Remove ${image?.file.name ?? "this image"} from the message?\nIt is referenced in your text; removing it also removes every reference.`,
+      { variant: "destructive" },
+    );
+    if (!confirmation) {
+      removeClipboardImage(imageId);
+      return;
+    }
+    void confirmation.then((confirmed) => {
+      if (confirmed) removeClipboardImage(imageId);
+    });
+  };
+
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -1640,6 +1666,19 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // Refs
   // ------------------------------------------------------------------
   const composerEditorRef = useRef<ComposerPromptEditorHandle>(null);
+  const composerFileActions = useMemo(() => {
+    const resolve = (path: string) =>
+      routeKind === "server" && gitCwd ? resolveComposerFileTarget(path, gitCwd) : null;
+    return {
+      canOpenMention: (path: string) => Boolean(resolve(path)?.relativePath),
+      openMention: (path: string) => {
+        const target = resolve(path);
+        if (target?.relativePath) {
+          useRightPanelStore.getState().openFile(routeThreadRef, target.relativePath, target.line);
+        }
+      },
+    };
+  }, [routeKind, gitCwd, routeThreadRef]);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const providerInputRejectedRef = useRef(false);
@@ -4006,7 +4045,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 <ComposerPastedImages
                   images={composerPastedImages}
                   compact={isComposerCollapsedMobile || isComposerResting}
-                  onRemove={removeClipboardImage}
+                  onRemove={removeComposerImage}
                   onRetry={retryClipboardImage}
                 />
               </ComposerBanner.Root>
@@ -4136,6 +4175,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 )}
               >
                 <ComposerPromptEditor
+                  fileActions={composerFileActions}
                   richTextEnabled={settings.composerRichTextEnabled}
                   images={composerPastedImages}
                   editorRef={composerEditorRef}

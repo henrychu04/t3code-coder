@@ -1,3 +1,4 @@
+import { splitPathAndPosition } from "./terminal-links";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useRightPanelStore } from "./rightPanelStore";
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -28,6 +29,24 @@ export function resolveFileContextMenuRelativePath(target: FileContextMenuTarget
   return relative.split("/").some((part) => !part || part === "." || part === "..")
     ? null
     : relative;
+}
+
+/** Composer mentions are explicit file paths, so extensionless names are valid too. */
+export function resolveComposerFileTarget(filePath: string, workspaceRoot: string | null) {
+  const root = workspaceRoot?.replace(/\/+$/, "");
+  if (!root) return null;
+  const { path, line } = splitPathAndPosition(filePath);
+  const relative = path.startsWith(`${root}/`)
+    ? path.slice(root.length + 1)
+    : path.replace(/^\.\//, "");
+  const relativePath = resolveFileContextMenuRelativePath({
+    environmentId: null,
+    workspaceRoot: root,
+    filePath: relative,
+  });
+  if (!relativePath) return null;
+  const lineNumber = line ? Number.parseInt(line, 10) : undefined;
+  return { relativePath, line: lineNumber };
 }
 
 export function buildFileContextMenuItems(

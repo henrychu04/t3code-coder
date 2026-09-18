@@ -1,3 +1,5 @@
+import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { KEYBINDING_ACTIONS } from "~/keybindingCatalog";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import type { ResolvedSettingsScope } from "./settingsScope";
@@ -30,11 +32,29 @@ export interface SettingsSearchItem {
   readonly section: string;
   readonly searchTerms: ReadonlyArray<string>;
   readonly targetId?: string;
+  /** Command shortcuts sort below the settings they control. */
+  readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
 }
 
 /** Coder-only settings destinations, including individual source-control controls. */
 export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
+  ...KEYBINDING_ACTIONS.toSorted((left, right) => left.label.localeCompare(right.label)).map(
+    (action): SettingsSearchItem => ({
+      id: `keybinding-${action.command}`,
+      title: action.label,
+      to: "/settings/shortcuts",
+      section: "Keyboard shortcuts",
+      scope: "environment-defaults",
+      searchTerms: [
+        action.command,
+        ...DEFAULT_KEYBINDINGS.filter((binding) => binding.command === action.command).map(
+          (binding) => binding.key,
+        ),
+      ],
+      secondary: true,
+    }),
+  ),
   {
     id: "storage-cleanup",
     title: "Storage cleanup",
@@ -538,7 +558,12 @@ export function searchSettings(
                   : 0;
       return [{ item, index, rank }];
     })
-    .toSorted((left, right) => right.rank - left.rank || left.index - right.index)
+    .toSorted(
+      (left, right) =>
+        Number(left.item.secondary ?? false) - Number(right.item.secondary ?? false) ||
+        right.rank - left.rank ||
+        left.index - right.index,
+    )
     .map(({ item }) => item);
 }
 

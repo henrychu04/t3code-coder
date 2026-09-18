@@ -1,10 +1,22 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  filterCommandPaletteGroups,
+  filterCommandPaletteGroups as upstreamFilterCommandPaletteGroups,
   reduceCommandPaletteUiState,
   type CommandPaletteGroup,
 } from "./CommandPalette.logic";
+
+const filterCommandPaletteGroups = (input: {
+  groups: ReadonlyArray<CommandPaletteGroup>;
+  query: string;
+}) =>
+  upstreamFilterCommandPaletteGroups({
+    activeGroups: input.groups,
+    query: input.query,
+    isInSubmenu: false,
+    projectSearchItems: [],
+    threadSearchItems: [],
+  });
 
 describe("reduceCommandPaletteUiState", () => {
   const closed = { open: false, mode: "command", openIntent: null } as const;

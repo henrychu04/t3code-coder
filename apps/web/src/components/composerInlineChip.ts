@@ -27,3 +27,6 @@ export const SKILL_CHIP_ICON_SVG = `<svg width="100%" height="100%" viewBox="0 0
 
 export const COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME =
   "ml-[0.17em] inline-flex size-[1.17em] shrink-0 cursor-pointer items-center justify-center rounded-sm text-muted-foreground/72 transition-colors hover:bg-foreground/6 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
+
+export const CONTEXT_INLINE_CHIP_FOCUS_CLASS_NAME =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--contrast-foreground)]";
