@@ -20,6 +20,7 @@ import {
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
   ProviderDriverKind,
+  type ProviderApprovalOption,
   type ScreenshotArtifactReference,
   type ToolLifecycleItemType,
   type UserInputQuestion,
@@ -115,6 +116,7 @@ const derivedWorkLogEntryByActivity = new WeakMap<
 export interface PendingApproval {
   requestId: ApprovalRequestId;
   requestKind: "command" | "file-read" | "file-change";
+  options?: ReadonlyArray<ProviderApprovalOption>;
   createdAt: string;
   detail?: string;
 }

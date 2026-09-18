@@ -356,6 +356,7 @@ import {
   latestTurnStartFailureId,
   isBranchMismatchDismissedForSession,
   shouldDockDraftHeroForSubmission,
+  shouldShowPlanFollowUpPrompt,
   shouldReleaseTimelineAnchorForToolActivity,
   shouldShowBranchMismatchBanner,
   getStartedThreadModelChangeBlockReason,
@@ -1584,19 +1585,8 @@ export default function ChatView(props: ChatViewProps) {
   const environmentUnavailableSendToastSlotRef = useRef(0);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
 
-  const publishComposerOverlayHeight = useCallback(
-    (height: number) => {
-      const nextHeight = Math.ceil(height);
-      if (nextHeight <= 0) return;
-      const nextInset = resolveComposerTimelineInset({
-        currentInset: composerTimelineInsetRef.current,
-        overlayHeight: nextHeight,
-        isResting: composerRestingRef.current,
-      });
-      if (composerTimelineInsetRef.current !== nextInset) {
-        composerTimelineInsetRef.current = nextInset;
-        setComposerTimelineInset(nextInset);
-      }
+  const publishScrollToEndClearance = useCallback(
+    (overlayHeight: number) => {
       const mainSurface = composerOverlayElement?.querySelector<HTMLElement>(
         '[data-chat-composer-main-surface="true"]',
       );
@@ -1606,7 +1596,7 @@ export default function ChatView(props: ChatViewProps) {
       const clearance =
         composerOverlayElement && mainSurface && button
           ? resolveScrollToEndClearance({
-              overlayHeight: nextHeight,
+              overlayHeight,
               mainSurfaceTop: mainSurface.getBoundingClientRect().top,
               button: button.getBoundingClientRect(),
               attachments: Array.from(
@@ -1616,10 +1606,28 @@ export default function ChatView(props: ChatViewProps) {
                 (element) => element.getBoundingClientRect(),
               ),
             })
-          : nextHeight;
+          : overlayHeight;
       setScrollToEndClearance(clearance);
     },
     [composerOverlayElement],
+  );
+  const publishComposerOverlayHeight = useCallback(
+    (height: number) => {
+      const nextHeight = Math.ceil(height);
+      if (nextHeight <= 0) return;
+      composerOverlayHeightRef.current = nextHeight;
+      const nextInset = resolveComposerTimelineInset({
+        currentInset: composerTimelineInsetRef.current,
+        overlayHeight: nextHeight,
+        isResting: composerRestingRef.current,
+      });
+      if (composerTimelineInsetRef.current !== nextInset) {
+        composerTimelineInsetRef.current = nextInset;
+        setComposerTimelineInset(nextInset);
+      }
+      publishScrollToEndClearance(nextHeight);
+    },
+    [publishScrollToEndClearance],
   );
   // The composer reports its resting flag from a layout effect, which runs
   // before this component's own layout effects and before any resize
@@ -1644,7 +1652,17 @@ export default function ChatView(props: ChatViewProps) {
     const observer = new ResizeObserver(updateHeight);
     observer.observe(composerOverlayElement);
     return () => observer.disconnect();
-  }, [composerOverlayElement, publishComposerOverlayHeight, showScrollToBottom]);
+  }, [composerOverlayElement, publishComposerOverlayHeight]);
+  // The pill mounts and unmounts in the same commits that expand or rest the
+  // composer, and a fast fling lands there while the previous resting tween
+  // still pins the overlay at its old height. Measuring the overlay here would
+  // publish that stale height against the new resting flag, drop the timeline
+  // reservation, and yank the scroll position. The pill only needs its
+  // clearance, so it reuses the height the composer last published.
+  useLayoutEffect(() => {
+    if (!composerOverlayElement) return;
+    publishScrollToEndClearance(composerOverlayHeightRef.current);
+  }, [composerOverlayElement, publishScrollToEndClearance, showScrollToBottom]);
 
   const terminalUiState = useTerminalUiStateStore((state) =>
     selectThreadTerminalUiState(state.terminalUiStateByThreadKey, routeThreadRef),
@@ -2250,16 +2268,21 @@ export default function ChatView(props: ChatViewProps) {
     [threadActivities],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  const activePendingRequestKey = JSON.stringify([
+    environmentId,
+    activeThreadId,
+    activePendingUserInput?.requestId,
+  ]);
   const activePendingDraftAnswers = useMemo(
     () =>
       activePendingUserInput
-        ? (pendingUserInputAnswersByRequestId[activePendingUserInput.requestId] ??
+        ? (pendingUserInputAnswersByRequestId[activePendingRequestKey] ??
           EMPTY_PENDING_USER_INPUT_ANSWERS)
         : EMPTY_PENDING_USER_INPUT_ANSWERS,
-    [activePendingUserInput, pendingUserInputAnswersByRequestId],
+    [activePendingRequestKey, activePendingUserInput, pendingUserInputAnswersByRequestId],
   );
   const activePendingQuestionIndex = activePendingUserInput
-    ? (pendingUserInputQuestionIndexByRequestId[activePendingUserInput.requestId] ?? 0)
+    ? (pendingUserInputQuestionIndexByRequestId[activePendingRequestKey] ?? 0)
     : 0;
   const activePendingProgress = useMemo(
     () =>
@@ -2295,11 +2318,16 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  const showPlanFollowUpPrompt =
-    pendingUserInputs.length === 0 &&
-    interactionMode === "plan" &&
-    latestTurnSettled &&
-    hasActionableProposedPlan(activeProposedPlan);
+  const composerHasAttachments = useComposerDraftStore(
+    (store) => (store.getComposerDraft(composerDraftTarget)?.pastedImages?.length ?? 0) > 0,
+  );
+  const showPlanFollowUpPrompt = shouldShowPlanFollowUpPrompt({
+    pendingUserInputCount: pendingUserInputs.length,
+    interactionMode,
+    latestTurnSettled,
+    hasActionableProposedPlan: hasActionableProposedPlan(activeProposedPlan),
+    hasComposerAttachments: composerHasAttachments,
+  });
   const activePendingApproval = pendingApprovals[0] ?? null;
   const {
     beginLocalDispatch,
@@ -6422,10 +6450,10 @@ export default function ChatView(props: ChatViewProps) {
       }
       setPendingUserInputQuestionIndexByRequestId((existing) => ({
         ...existing,
-        [activePendingUserInput.requestId]: nextQuestionIndex,
+        [activePendingRequestKey]: nextQuestionIndex,
       }));
     },
-    [activePendingUserInput],
+    [activePendingRequestKey, activePendingUserInput],
   );
 
   const onSelectActivePendingUserInputOption = useCallback(
@@ -6445,11 +6473,11 @@ export default function ChatView(props: ChatViewProps) {
 
         return {
           ...existing,
-          [activePendingUserInput.requestId]: {
-            ...existing[activePendingUserInput.requestId],
+          [activePendingRequestKey]: {
+            ...existing[activePendingRequestKey],
             [questionId]: togglePendingUserInputOptionSelection(
               question,
-              existing[activePendingUserInput.requestId]?.[questionId],
+              existing[activePendingRequestKey]?.[questionId],
               optionLabel,
             ),
           },
@@ -6458,7 +6486,12 @@ export default function ChatView(props: ChatViewProps) {
       promptRef.current = "";
       composerRef.current?.resetCursorState({ cursor: 0 });
     },
-    [activePendingProgress?.activeQuestion, activePendingUserInput, composerRef],
+    [
+      activePendingProgress?.activeQuestion,
+      activePendingRequestKey,
+      activePendingUserInput,
+      composerRef,
+    ],
   );
 
   const onChangeActivePendingUserInputCustomAnswer = useCallback(
@@ -6475,10 +6508,10 @@ export default function ChatView(props: ChatViewProps) {
       promptRef.current = value;
       setPendingUserInputAnswersByRequestId((existing) => ({
         ...existing,
-        [activePendingUserInput.requestId]: {
-          ...existing[activePendingUserInput.requestId],
+        [activePendingRequestKey]: {
+          ...existing[activePendingRequestKey],
           [questionId]: setPendingUserInputCustomAnswer(
-            existing[activePendingUserInput.requestId]?.[questionId],
+            existing[activePendingRequestKey]?.[questionId],
             value,
           ),
         },
@@ -6492,7 +6525,7 @@ export default function ChatView(props: ChatViewProps) {
         composerRef.current?.focusAt(nextCursor);
       }
     },
-    [activePendingUserInput, composerRef],
+    [activePendingRequestKey, activePendingUserInput, composerRef],
   );
 
   const onAdvanceActivePendingUserInput = useCallback(() => {

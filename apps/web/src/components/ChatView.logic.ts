@@ -6,6 +6,7 @@ import {
   type MessageId,
   type ModelSelection,
   type ProviderDriverKind,
+  type ProviderInteractionMode,
   type ServerProvider,
   type ScopedProjectRef,
   type ScopedThreadRef,
@@ -972,4 +973,20 @@ export function toolGroupConsumesUpwardNavigation(target: EventTarget | null): b
     if (element === group) break;
   }
   return false;
+}
+
+export function shouldShowPlanFollowUpPrompt(input: {
+  pendingUserInputCount: number;
+  interactionMode: ProviderInteractionMode;
+  latestTurnSettled: boolean;
+  hasActionableProposedPlan: boolean;
+  hasComposerAttachments: boolean;
+}): boolean {
+  return (
+    input.pendingUserInputCount === 0 &&
+    input.interactionMode === "plan" &&
+    input.latestTurnSettled &&
+    input.hasActionableProposedPlan &&
+    !input.hasComposerAttachments
+  );
 }

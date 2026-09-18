@@ -1248,7 +1248,11 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
-  onProviderModelSelect: (instanceId: ProviderInstanceId, model: string) => void;
+  onProviderModelSelect: (
+    instanceId: ProviderInstanceId,
+    model: string,
+    options?: { focusComposer?: boolean },
+  ) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   toggleInteractionMode: () => void;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -3685,7 +3689,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 } else {
                   setMultipleModelSelections(null);
                   const remaining = next[0] ?? selectedModelSelection;
-                  onProviderModelSelect(remaining.instanceId, remaining.model);
+                  onProviderModelSelect(remaining.instanceId, remaining.model, {
+                    focusComposer: false,
+                  });
                 }
               },
             }
@@ -3729,7 +3735,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : {})}
         onOpenChange={setIsComposerModelPickerOpen}
         getModelDisabledReason={getModelDisabledReason}
-        onInstanceModelChange={onProviderModelSelect}
+        onInstanceModelChange={(instanceId, model) => onProviderModelSelect(instanceId, model)}
       />
 
       {composerControlsCompact ? (
@@ -4099,27 +4105,41 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               <ComposerBanner.Root
                 data-chat-composer-top-drawer="true"
                 variant={activePendingApproval ? "warning" : "info"}
+                density={activePendingApproval ? "spacious" : "default"}
               >
-                {!isComposerCollapsedMobile && activePendingApproval ? (
-                  <div className="flex min-w-0 flex-wrap items-center gap-1 px-3 py-1.5 sm:px-4">
-                    <ComposerPendingApprovalPanel
-                      approval={activePendingApproval}
-                      pendingCount={pendingApprovals.length}
-                    />
-                    <div className="flex min-w-0 flex-wrap items-center gap-0.5">
+                {activePendingApproval ? (
+                  <ComposerBanner.Row
+                    layout="approval"
+                    data-chat-composer-collapsed-controls="true"
+                  >
+                    <ComposerBanner.Icon>
+                      <ShieldIcon />
+                    </ComposerBanner.Icon>
+                    <ComposerBanner.Content>
+                      <ComposerPendingApprovalPanel
+                        approval={activePendingApproval}
+                        pendingCount={pendingApprovals.length}
+                      />
+                    </ComposerBanner.Content>
+                    <ComposerBanner.Actions>
                       <ComposerPendingApprovalActions
                         requestId={activePendingApproval.requestId}
                         isResponding={respondingRequestIds.includes(
                           activePendingApproval.requestId,
                         )}
+                        options={activePendingApproval.options}
                         onRespondToApproval={onRespondToApproval}
                       />
-                    </div>
-                  </div>
+                    </ComposerBanner.Actions>
+                  </ComposerBanner.Row>
                 ) : !isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <ComposerPendingUserInputPanel
                     pendingUserInputs={pendingUserInputs}
-                    respondingRequestIds={respondingRequestIds}
+                    respondingRequestIds={
+                      activePendingIsResponding && activePendingUserInput
+                        ? [...respondingRequestIds, activePendingUserInput.requestId]
+                        : respondingRequestIds
+                    }
                     answers={activePendingDraftAnswers}
                     questionIndex={activePendingQuestionIndex}
                     onToggleOption={onSelectActivePendingUserInputOption}
@@ -4131,28 +4151,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     key={activeProposedPlan.id}
                     planTitle={proposedPlanTitle(activeProposedPlan.planMarkdown) ?? null}
                   />
-                ) : isComposerCollapsedMobile && activePendingApproval ? (
-                  <div data-chat-composer-collapsed-controls="true">
-                    <ComposerPendingApprovalPanel
-                      approval={activePendingApproval}
-                      pendingCount={pendingApprovals.length}
-                      className="px-3 pt-2 sm:px-4"
-                    />
-                    <div className="flex flex-wrap items-center justify-end gap-1 px-3 pt-2 pb-3 sm:px-4">
-                      <ComposerPendingApprovalActions
-                        requestId={activePendingApproval.requestId}
-                        isResponding={respondingRequestIds.includes(
-                          activePendingApproval.requestId,
-                        )}
-                        onRespondToApproval={onRespondToApproval}
-                      />
-                    </div>
-                  </div>
                 ) : isComposerCollapsedMobile && pendingUserInputs.length > 0 ? (
                   <div data-chat-composer-collapsed-controls="true">
                     <ComposerPendingUserInputPanel
                       pendingUserInputs={pendingUserInputs}
-                      respondingRequestIds={respondingRequestIds}
+                      respondingRequestIds={
+                        activePendingIsResponding && activePendingUserInput
+                          ? [...respondingRequestIds, activePendingUserInput.requestId]
+                          : respondingRequestIds
+                      }
                       answers={activePendingDraftAnswers}
                       questionIndex={activePendingQuestionIndex}
                       onToggleOption={onSelectActivePendingUserInputOption}
