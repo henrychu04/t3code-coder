@@ -3,7 +3,6 @@ import * as NodeAssert from "node:assert/strict";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it, vi } from "@effect/vitest";
 import {
-  ScreenshotArtifactId,
   ApprovalRequestId,
   CodexSettings,
   EventId,
@@ -194,32 +193,18 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
     }),
   );
 
-  it.effect("preserves an unchanged image on its Codex imageView activity immediately", () =>
+  it.effect("exposes the viewed file path without creating a captured artifact", () =>
     Effect.gen(function* () {
       const factory = makeRuntimeFactory();
-      const save = vi.fn(() =>
-        Effect.succeed({
-          digest: "saved",
-          reference: {
-            id: ScreenshotArtifactId.make("saved"),
-            name: "existing.png",
-            mimeType: "image/png" as const,
-            sizeBytes: 8,
-          },
-        }),
-      );
       const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
         makeRuntime: factory.factory,
         resolveMcpServerNames: resolveNoMcpServers,
-        captureScreenshotFile: save,
       });
       const threadId = asThreadId("existing-image");
       yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
       yield* adapter.sendTurn({ threadId, input: "view it" });
       const eventsFiber = yield* adapter.streamEvents.pipe(
-        Stream.takeUntil(
-          (event) => event.type === "item.completed" && Boolean(event.payload.artifacts),
-        ),
+        Stream.takeUntil((event) => event.type === "item.completed"),
         Stream.runCollect,
         Effect.forkChild,
       );
@@ -244,8 +229,8 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
       NodeAssert.equal(event?.itemId, "view-1");
       NodeAssert.equal(event?.type, "item.completed");
       if (event?.type === "item.completed")
-        NodeAssert.equal(event.payload.artifacts?.[0]?.id, "saved");
-      NodeAssert.equal(save.mock.calls.length, 1);
+        NodeAssert.equal(event.payload.detail, "/project/existing.png");
+      if (event?.type === "item.completed") NodeAssert.equal(event.payload.artifacts, undefined);
       yield* adapter.stopAll();
     }),
   );
@@ -284,38 +269,21 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
   );
 
   for (const ending of ["completed", "failed", "aborted", "exited", "stop"] as const) {
-    it.effect(`preserves Codex images on their tool activity when ${ending}`, () =>
+    it.effect(`redacts tool image bytes without capturing them when ${ending}`, () =>
       Effect.gen(function* () {
         const factory = makeRuntimeFactory();
-        const capturedImages: string[] = [];
-        const artifact = (id: string) => ({
-          digest: id,
-          reference: {
-            id: ScreenshotArtifactId.make(id),
-            name: `${id}.png`,
-            mimeType: "image/png" as const,
-            sizeBytes: 8,
-          },
-        });
         const adapter = yield* makeCodexAdapter(decodeCodexSettings({}), {
           makeRuntime: factory.factory,
           resolveMcpServerNames: resolveNoMcpServers,
-          captureScreenshotBase64: ({ dataBase64 }) => {
-            capturedImages.push(dataBase64);
-            return Effect.succeed(artifact("tool"));
-          },
-          captureScreenshotFile: () => Effect.succeed(artifact("file")),
         });
         const threadId = asThreadId(`screenshots-${ending}`);
         yield* adapter.startSession({ threadId, cwd: "/project", runtimeMode: "full-access" });
         yield* adapter.sendTurn({ threadId, input: "verify" });
-        // Steering must retain the existing capture and artifact budget.
+        // Steering keeps the provider event consumer active.
         yield* adapter.sendTurn({ threadId, input: "also check mobile" });
         const runtime = factory.lastRuntime!;
         const eventsFiber = yield* adapter.streamEvents.pipe(
-          Stream.takeUntil(
-            (event) => event.type === "item.completed" && Boolean(event.payload.artifacts),
-          ),
+          Stream.takeUntil((event) => event.type === "item.completed"),
           Stream.runCollect,
           Effect.forkChild,
         );
@@ -379,12 +347,8 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
         NodeAssert.equal(result?.type, "item.completed");
         if (result?.type === "item.completed") {
           NodeAssert.equal(result.turnId, "turn-1");
-          NodeAssert.deepStrictEqual(
-            result.payload.artifacts?.map((entry) => entry.id),
-            ["tool"],
-          );
+          NodeAssert.equal(result.payload.artifacts, undefined);
         }
-        NodeAssert.deepStrictEqual(capturedImages, ["secret-image-base64"]);
         NodeAssert.doesNotMatch(JSON.stringify(events), /secret-image-base64/);
         yield* adapter.stopAll();
       }).pipe(TestClock.withLive),

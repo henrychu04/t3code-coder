@@ -1,5 +1,6 @@
 // Adapted from upstream 3be02ae57 ExpandedImageDialog: layout, navigation and zoom/pan.
 // Coder supplies memory-only Blob URLs; external assets and media export are omitted.
+import type { ProjectImageTarget } from "../../lib/readProjectImageBlob";
 import type { ScreenshotArtifactReference } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Dialog, DialogPopup, DialogTitle } from "../ui/dialog";
@@ -16,6 +17,7 @@ const EXPANDED_MEDIA_STATE_CLASS_NAME =
 export interface ExpandedImagePreview {
   images: {
     src: string | null;
+    projectImage?: ProjectImageTarget | undefined;
     artifact?:
       | (Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number })
       | undefined;

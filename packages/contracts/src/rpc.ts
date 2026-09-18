@@ -154,6 +154,9 @@ import {
   SourceControlWriteAccess,
 } from "./sourceControl.ts";
 import {
+  ProjectImageReadInput,
+  ProjectImageChunk,
+  ProjectImageReadError,
   ScreenshotArtifactChunk,
   ScreenshotArtifactReadError,
   ScreenshotArtifactReadInput,
@@ -164,6 +167,7 @@ export const WS_METHODS = {
   projectsSearchText: "projects.searchText",
   projectsListEntries: "projects.listEntries",
   projectsReadFile: "projects.readFile",
+  projectsReadImage: "projects.readImage",
   projectsWriteFile: "projects.writeFile",
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
@@ -290,6 +294,12 @@ const WsProjectsReadFileRpc = Rpc.make(WS_METHODS.projectsReadFile, {
   payload: ProjectReadFileInput,
   success: ProjectReadFileResult,
   error: ProjectReadFileError,
+});
+
+const WsProjectsReadImageRpc = Rpc.make(WS_METHODS.projectsReadImage, {
+  payload: ProjectImageReadInput,
+  success: ProjectImageChunk,
+  error: ProjectImageReadError,
 });
 
 const WsProjectsWriteFileRpc = Rpc.make(WS_METHODS.projectsWriteFile, {
@@ -708,6 +718,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsProjectsSearchTextRpc,
   WsProjectsListEntriesRpc,
   WsProjectsReadFileRpc,
+  WsProjectsReadImageRpc,
   WsProjectsWriteFileRpc,
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,

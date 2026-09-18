@@ -17,7 +17,6 @@ import {
   ProviderDriverKind,
   ProviderItemId,
   ProviderRuntimeEvent,
-  ScreenshotArtifactId,
   type RuntimeMode,
   ThreadId,
   ProviderInstanceId,
@@ -1409,51 +1408,8 @@ describe("ClaudeAdapterLive", () => {
     );
   });
 
-  it.effect("attaches tool-result images to their activity without retaining base64", () => {
-    const capturedInputs: Array<{
-      dataBase64: string;
-      mimeType: string;
-      name?: string;
-      capturedDigests: ReadonlySet<string>;
-    }> = [];
-    const capturedFiles: Array<{
-      cwd: string;
-      filePath: string;
-      capturedDigests: ReadonlySet<string>;
-    }> = [];
-    const harness = makeHarness({
-      adapterOptions: {
-        captureScreenshotFile: (input) => {
-          capturedFiles.push({
-            cwd: input.cwd,
-            filePath: input.filePath,
-            capturedDigests: new Set(input.capturedDigests),
-          });
-          return Effect.succeed({
-            reference: {
-              id: ScreenshotArtifactId.make("5e2df9f0-9e4e-4a68-a812-3024f8f2d4e1"),
-              name: "final.webp",
-              mimeType: "image/webp",
-              sizeBytes: 256,
-            },
-            digest: "filesystem-screenshot-digest",
-          });
-        },
-        captureScreenshotBase64: (input) => {
-          if (input.capturedDigests.has("screenshot-digest")) return Effect.succeed(undefined);
-          capturedInputs.push({ ...input, capturedDigests: new Set(input.capturedDigests) });
-          return Effect.succeed({
-            reference: {
-              id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
-              name: "home.png",
-              mimeType: "image/png",
-              sizeBytes: 128,
-            },
-            digest: "screenshot-digest",
-          });
-        },
-      },
-    });
+  it.effect("redacts tool-result image bytes without creating captures", () => {
+    const harness = makeHarness();
     return Effect.gen(function* () {
       const adapter = yield* ClaudeAdapter;
       const runtimeEventsFiber = yield* Stream.takeUntil(
@@ -1518,32 +1474,12 @@ describe("ClaudeAdapterLive", () => {
       } as unknown as SDKMessage);
 
       const runtimeEvents = Array.from(yield* Fiber.join(runtimeEventsFiber));
-      const artifactEvent = runtimeEvents.find(
-        (event) => event.type === "item.completed" && event.payload.artifacts !== undefined,
+      assert.equal(
+        runtimeEvents.some(
+          (event) => event.type === "item.completed" && event.payload.artifacts !== undefined,
+        ),
+        false,
       );
-      assert.equal(artifactEvent?.type, "item.completed");
-      if (artifactEvent?.type === "item.completed") {
-        assert.equal(artifactEvent.payload.itemType, "dynamic_tool_call");
-        assert.equal(artifactEvent.itemId, "tool-screenshot-1");
-        assert.deepEqual(artifactEvent.payload.artifacts, [
-          {
-            id: ScreenshotArtifactId.make("c56a4180-65aa-42ec-a945-5fd21dec0538"),
-            name: "home.png",
-            mimeType: "image/png",
-            sizeBytes: 128,
-          },
-        ]);
-      }
-      assert.deepEqual(capturedInputs, [
-        {
-          capturedDigests: new Set<string>(),
-          dataBase64: "secret-image-base64",
-          mimeType: "image/png",
-          name: "test-results/home.png",
-        },
-      ]);
-      assert.equal(capturedFiles.length, 1);
-      assert.equal(capturedFiles[0]?.filePath, "test-results/home.png");
       assert.notMatch(JSON.stringify(runtimeEvents), /secret-image-base64/u);
       assert.notMatch(
         JSON.stringify(yield* adapter.readThread(session.threadId)),

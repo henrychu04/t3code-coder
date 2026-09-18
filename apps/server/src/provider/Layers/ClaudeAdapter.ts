@@ -1,10 +1,5 @@
 import { homedir } from "node:os";
 import { readClaudeRewindHistory } from "../Drivers/ClaudeRewindHistory.ts";
-import {
-  makeTurnScreenshotCapture,
-  type TurnScreenshotCapture,
-  type ScreenshotCaptureOptions,
-} from "../../workspace/TurnScreenshotCapture.ts";
 import * as FileSystem from "effect/FileSystem";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
@@ -155,7 +150,6 @@ interface ClaudeTurnState {
   readonly capturedProposedPlanKeys: Set<string>;
   latestAssistantUsage: unknown | undefined;
   compactedSinceLatestAssistantUsage: boolean;
-  readonly screenshotCapture: TurnScreenshotCapture;
   nextSyntheticAssistantBlockIndex: number;
   authenticationFailureMessage: string | undefined;
   rejectedRateLimitTypes: Set<string>;
@@ -343,7 +337,7 @@ interface ClaudeQueryRuntime extends AsyncIterable<SDKMessage> {
   readonly close: () => void;
 }
 
-export interface ClaudeAdapterLiveOptions extends ScreenshotCaptureOptions {
+export interface ClaudeAdapterLiveOptions {
   readonly instanceId?: ProviderInstanceId;
   readonly environment?: NodeJS.ProcessEnv;
   readonly createQuery?: (input: {
@@ -1643,7 +1637,7 @@ function sanitizedToolResultBlock(
     type: "tool_result",
     tool_use_id: block.tool_use_id,
     ...(block.is_error === true ? { is_error: true } : {}),
-    content: "[image content stored as a T3 screenshot artifact]",
+    content: "[image content omitted by T3]",
   };
 }
 
@@ -1659,14 +1653,6 @@ function sanitizedUserMessageForTurnHistory(message: SDKUserMessage): unknown {
       return sanitizedToolResultBlock(block, images);
     }),
   };
-}
-
-function screenshotNameFromTool(tool: ToolInFlight): string | undefined {
-  for (const key of ["file_path", "filePath", "path"]) {
-    const value = tool.input[key];
-    if (typeof value === "string" && value.trim().length > 0) return value;
-  }
-  return undefined;
 }
 
 function extractExitPlanModePlan(value: unknown): string | undefined {
@@ -1958,26 +1944,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
 
   const offerRuntimeEvent = (event: ProviderRuntimeEvent): Effect.Effect<void> =>
     Queue.offer(runtimeEventQueue, event).pipe(Effect.asVoid);
-
-  const emitCapturedScreenshots = Effect.fn("emitCapturedScreenshots")(function* (
-    context: ClaudeSessionContext,
-    turnState: ClaudeTurnState,
-  ) {
-    const payload = yield* turnState.screenshotCapture.finish;
-    if (!payload) return;
-    const stamp = yield* makeEventStamp();
-    yield* offerRuntimeEvent({
-      type: "item.completed",
-      eventId: stamp.eventId,
-      provider: PROVIDER,
-      createdAt: stamp.createdAt,
-      threadId: context.session.threadId,
-      turnId: turnState.turnId,
-      itemId: RuntimeItemId.make(yield* randomUUIDv4),
-      payload,
-      providerRefs: nativeProviderRefs(context),
-    });
-  });
 
   const updateSessionCwdFromWorktreeTool = Effect.fn("updateSessionCwdFromWorktreeTool")(function* (
     context: ClaudeSessionContext,
@@ -2559,8 +2525,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       return;
     }
 
-    yield* emitCapturedScreenshots(context, turnState);
-
     for (const [index, tool] of context.inFlightTools.entries()) {
       const toolStamp = yield* makeEventStamp();
       yield* offerRuntimeEvent({
@@ -2976,22 +2940,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       if (!toolResult.isError) {
         yield* updateSessionCwdFromWorktreeTool(context, tool, toolUseResult, sanitizedMessage);
       }
-      const imagePath = screenshotNameFromTool(tool);
-      const isImagePath = imagePath && /\.(?:png|jpe?g|webp)$/i.test(imagePath);
-      const capturedImages =
-        !toolResult.isError &&
-        context.turnState &&
-        (toolResult.images.length > 0 ||
-          ((tool.itemType === "image_view" || readToolImagePath(tool.toolName, tool.input)) &&
-            isImagePath))
-          ? yield* context.turnState.screenshotCapture.captureImages(
-              toolResult.images.map((image) => ({
-                ...image,
-                ...(imagePath ? { name: imagePath } : {}),
-              })),
-              isImagePath ? imagePath : undefined,
-            )
-          : undefined;
       const toolData = {
         toolName: tool.toolName,
         input: tool.input,
@@ -3064,7 +3012,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         payload: {
           itemType: tool.itemType,
           status: itemStatus,
-          ...(capturedImages ?? {}),
           title: tool.title,
           ...(tool.detail ? { detail: tool.detail } : {}),
           ...(tool.agentId ? { agentId: tool.agentId } : {}),
@@ -3184,7 +3131,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedProposedPlanKeys: new Set(),
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
-        screenshotCapture: yield* makeTurnScreenshotCapture(context.session.cwd, options),
         nextSyntheticAssistantBlockIndex: -1,
         authenticationFailureMessage: undefined,
         rejectedRateLimitTypes: new Set(),
@@ -4038,9 +3984,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           detail: "Failed to close Claude runtime query.",
           cause,
         }),
-    }).pipe(
-      Effect.onError(() => Effect.sync(() => context.turnState?.screenshotCapture.dispose())),
-    );
+    });
 
     context.stopped = true;
 
@@ -4816,7 +4760,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               context.streamFiber = undefined;
             }
             return handleStreamExit(context, exit).pipe(
-              Effect.ensuring(Effect.sync(() => context.turnState?.screenshotCapture.dispose())),
               Effect.catch((cause) =>
                 Effect.logError("Failed to close Claude runtime stream.", { cause }),
               ),
@@ -4923,7 +4866,6 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         capturedProposedPlanKeys: new Set(),
         latestAssistantUsage: undefined,
         compactedSinceLatestAssistantUsage: false,
-        screenshotCapture: yield* makeTurnScreenshotCapture(context.session.cwd, options),
         nextSyntheticAssistantBlockIndex: -1,
         authenticationFailureMessage: undefined,
         rejectedRateLimitTypes: new Set(),
@@ -4955,14 +4897,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     yield* Queue.offer(context.promptQueue, {
       type: "message",
       message,
-    }).pipe(
-      Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)),
-      Effect.onError(() =>
-        Effect.sync(() => {
-          if (steeringTurnState === null) context.turnState?.screenshotCapture.dispose();
-        }),
-      ),
-    );
+    }).pipe(Effect.mapError((cause) => toRequestError(input.threadId, "turn/start", cause)));
 
     return {
       threadId: context.session.threadId,
@@ -5129,10 +5064,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
     emitExitEvent: boolean,
   ) {
     const results = yield* Effect.forEach(contexts, (context) =>
-      stopSessionInternal(context, { emitExitEvent }).pipe(
-        Effect.ensuring(Effect.sync(() => context.turnState?.screenshotCapture.dispose())),
-        Effect.result,
-      ),
+      stopSessionInternal(context, { emitExitEvent }).pipe(Effect.result),
     );
 
     for (const result of results) {

@@ -73,10 +73,11 @@ function expandableMarkdownImageProps(
     },
   };
 }
-function ChatMarkdownImage(props: {
+export function ChatMarkdownImage(props: {
   /** Null while the URL is being resolved; the last decoded image stays up. */
   readonly src: string | null;
   readonly sourceFailed?: boolean | undefined;
+  readonly onDecoded?: ((image: HTMLImageElement) => void) | undefined;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
@@ -87,7 +88,8 @@ function ChatMarkdownImage(props: {
     | Omit<ComponentProps<"img">, "src" | "alt" | "className" | "style">
     | undefined;
   readonly retry: () => void;
-  readonly artifact: ScreenshotArtifactReference;
+  readonly artifact?: ScreenshotArtifactReference | undefined;
+  readonly projectImage?: import("../../lib/readProjectImageBlob").ProjectImageTarget | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
@@ -100,18 +102,23 @@ function ChatMarkdownImage(props: {
   const markLoadedIfComplete = useCallback(
     (image: HTMLImageElement | null) => {
       if (!image) return;
-      if (image.complete && image.naturalWidth > 0) setLoadedSrc(image.currentSrc || image.src);
+      if (image.complete && image.naturalWidth > 0) {
+        setLoadedSrc(image.currentSrc || image.src);
+        props.onDecoded?.(image);
+      }
       markdownImageItems.set(image, {
         src,
         name: props.alt.trim() || "image",
         retry: props.retry,
         artifact: props.artifact,
+        projectImage: props.projectImage,
       });
     },
-    [props.retry, props.alt, props.artifact, src],
+    [props.retry, props.alt, props.artifact, props.projectImage, props.onDecoded, src],
   );
   const imageEvents = (loadingSrc: string) => ({
-    onLoad: () => {
+    onLoad: (event: { currentTarget: HTMLImageElement }) => {
+      props.onDecoded?.(event.currentTarget);
       setLoadedSrc(loadingSrc);
       setFailedSrc(null);
     },

@@ -182,7 +182,7 @@ local client -> 127.0.0.1:configured port -> coder port-forward -> workspace ser
 
 The workspace helper owns the existing T3 orchestration store, project records, threads, provider
 sessions, repository-local Git and filesystem operations, terminals, and checkpoints. Its durable
-state remains in the workspace. Validated screenshot artifacts are also stored in the workspace;
+state remains in the workspace. Legacy screenshot artifacts also remain in the workspace;
 the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts workspace-installed provider executables directly with argument-array spawning.
@@ -321,51 +321,27 @@ The UI exposes no upload, download, export, drag-and-drop, absolute path, or loc
 explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
-Screenshot artifacts have no per-turn count limit or total storage quota. The 20 MiB per-image
-limit, signature validation, project containment, bounded chunk reads, and bounded browser memory
-still apply. Preserved artifacts live beneath `$HOME/.t3-coder/artifacts`, outside project worktrees;
-deleting a worktree alone does not reclaim those copies. Workspace storage cleanup is user-controlled.
+Image previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
+resolve project image paths without capture events or source-path fingerprints. The helper verifies
+that the requested root belongs to the thread, validates the project-relative path and actual opened
+file, rejects symlink escapes and non-files, and validates PNG/JPEG/WebP signatures and extensions.
+Each image is limited to 20 MiB and each stdio chunk to 512 KiB. A revision based on file identity,
+size, and modification/change timestamps must remain constant across chunks; a changed file fails
+with a generic retryable error. No file content or path is included in image errors.
 
-Workspace attachments and screenshot artifacts have no automatic age-based purge.
-Provider session transcripts can retain attachment paths after a browser disconnect or thread
-change, and artifact capture does not record a durable owning thread. Safe reclamation requires
-ownership and reference tracking across those lifetimes; deleting files merely because they are
-old or absent from the current browser snapshot can break resumed sessions and historical turns.
+The helper does not create screenshot artifact copies or coordinate per-turn image capture. New
+previews use current source files, so changing, moving, or deleting a file affects future reads.
+There is no per-turn image count or storage quota. Existing artifact IDs and submitted attachment
+IDs remain readable through the legacy bounded chunk RPC; their workspace copies are not purged.
+The artifact directory is no longer created for new workspaces. Draft attachment bytes stay in
+browser memory; submitted copies remain under the workspace attachment directory.
 
-Image previews use the upstream thumbnail grid and gallery navigation, with upstream's
-`ZoomableImage` component copied from commit `8d8189e67`. The adapted gallery excludes external
-asset URLs, videos, saving, export, and desktop actions. It adapts upstream’s Base UI dialog from
-commit `3be02ae57` for keyboard focus and navigation, using bounded helper stdio image transport.
-Activity previews and Markdown share a deduplicated gallery of captured images from the same turn.
-
-Capture is driven by provider tool events. A Codex `imageView` completion immediately copies a
-validated image inside the active project, including an unchanged file. Codex MCP, dynamic-tool,
-and generation results and Claude tool-result image blocks preserve their returned image bytes.
-Claude image-read activity can also capture a contained file when it has no returned image bytes.
-No filesystem watcher runs and no end-of-turn scan collects unrelated files. A path-only event is
-best effort: the original may change between the provider read and capture.
-
-The turn shares a ten-image budget and content deduplication across activities. Each tool activity
-gets its own opaque artifact references immediately; repeated content reuses the saved copy. Source-path fingerprints belong to the current
-activity rather than the deduplicated copy. A single tool-returned image may be associated with
-its validated source path even when the tool resized or re-encoded it.
-Capture failures and limit omissions become activity notices. Signature-validated PNG, JPEG and
-WebP are limited to 20 MiB. Capture is disabled on completion, interruption, failed start or shutdown.
-Stored activity contains metadata and opaque source-path fingerprints, not image bytes.
-
-Submitted messages resolve generated attachment IDs through the same 512 KiB chunk RPC, with a
-fixed attachment source selector. IDs are validated UUIDs; the helper selects only its own attachment
-or artifact directory and checks file type, size, no-follow opens, and image signature. There is no
-caller-supplied path. Submitted previews survive reload while the workspace copy exists; draft
-images remain memory-only. Thumbnails load near the viewport and release their image resources
-when scrolled away. Shared resources permit at most three concurrent reads and reserve at most
-100 MiB of image bytes. The selected gallery image gets priority; other previews can be evicted
-and deferred until space is available. No bytes persist in the gateway or browser storage.
-
-Activity images appear beside their tool row. Assistant Markdown images resolve against captured
-artifacts from that turn and render inline; image links open the same zoomable gallery. The latest
-matching capture is preferred when a path has multiple versions in one turn. Unknown references
-and external images remain inert. Older aggregate Visual artifacts activities remain readable.
+The UI retains main's thumbnail, Markdown, zoom/pan, and gallery presentation with Coder transport.
+Project image links open a gallery directly; inline images load near the viewport. The shared
+memory-only image resource store permits three concurrent reads and reserves at most 100 MiB.
+Selected gallery images take priority over other previews; deferred previews can still be opened.
+The gateway persists no image bytes and opens no additional route or workspace connection.
+External images, video, download/export, and outside-project file previews remain excluded.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be

@@ -20,6 +20,8 @@ export async function testLiveProviderImages(
     models = {},
     prompt = "Inspect the attached image, then use your image-viewing tool (Read or view_image) to inspect fixture.png in this project. Describe the image briefly and embed it using ![Inspected image](fixture.png). Do not modify any files or run shell commands.",
     expectedImageBytes = png,
+    imagePaths = ["fixture.png"],
+    expectImageView = true,
   } = {},
 ) {
   const results = [];
@@ -94,7 +96,7 @@ export async function testLiveProviderImages(
         type: "thread.create",
         threadId,
         projectId,
-        title: `${instanceId} image capture`,
+        title: `${instanceId} image preview`,
         modelSelection,
         runtimeMode,
         interactionMode,
@@ -132,66 +134,72 @@ export async function testLiveProviderImages(
         `${instanceId} image turn did not complete`,
       );
       activeThread = undefined;
-      const images = thread.activities.flatMap((activity) => activity.payload?.artifacts ?? []);
-      if (images.length === 0) {
-        console.log(
-          JSON.stringify({
-            instanceId,
-            threadId,
-            sessionStatus: thread.session?.status,
-            activities: thread.activities.map((a) => ({
-              kind: a.kind,
-              summary: a.summary,
-              itemType: a.payload?.itemType,
-              warning: a.payload?.imageCaptureWarning,
-            })),
-            replies: thread.messages.filter((m) => m.role === "assistant").map((m) => m.text),
-          }),
+      assert.equal(
+        thread.activities.some((activity) => activity.payload?.artifacts?.length),
+        false,
+        "New provider turns must not create captured artifacts",
+      );
+      const imageViews = thread.activities.filter(
+        (activity) => activity.payload?.itemType === "image_view",
+      );
+      assert.equal(
+        imageViews.length > 0,
+        expectImageView,
+        "Unexpected provider image-view activity",
+      );
+      const replies = thread.messages.filter((m) => m.role === "assistant").map((m) => m.text);
+      const images = [];
+      for (const relativePath of imagePaths) {
+        assert.ok(
+          replies.some((text) => text.includes(relativePath)),
+          "The provider must reference the image path",
         );
-      }
-      assert.ok(images.length > 0, `${instanceId} did not produce a captured image activity`);
-      for (const image of images) {
         const chunks = [];
         let offset = 0;
+        let first;
         do {
-          const chunk = await rpc("workspace.readScreenshotArtifact", {
-            artifactId: image.id,
+          const chunk = await rpc("projects.readImage", {
+            threadId,
+            cwd: "/srv/t3-image-check",
+            relativePath,
             offset,
             limit: 512 * 1024,
+            ...(first ? { revision: first.revision } : {}),
           });
-          assert.equal(chunk.totalBytes, image.sizeBytes);
+          first ??= chunk;
+          assert.equal(chunk.totalBytes, first.totalBytes);
           assert.equal(chunk.offset, offset);
-          assert.equal(chunk.mimeType, image.mimeType);
+          assert.equal(chunk.mimeType, first.mimeType);
+          assert.equal(chunk.revision, first.revision);
           const bytes = Buffer.from(chunk.dataBase64, "base64");
           assert.ok(bytes.length > 0 && bytes.length <= 512 * 1024);
           chunks.push(bytes);
           offset += bytes.length;
-          assert.equal(chunk.nextOffset, offset === image.sizeBytes ? null : offset);
-        } while (offset < image.sizeBytes);
+          assert.equal(chunk.nextOffset, offset === first.totalBytes ? null : offset);
+        } while (offset < first.totalBytes);
         const bytes = Buffer.concat(chunks);
-        assert.equal(bytes.length, image.sizeBytes);
         if (expectedImageBytes)
-          assert.deepEqual(
-            bytes,
-            expectedImageBytes,
-            "Captured bytes must match the unchanged project fixture",
-          );
+          assert.deepEqual(bytes, expectedImageBytes, "Preview bytes must match the project file");
+        images.push({ relativePath, mimeType: first.mimeType, sizeBytes: bytes.length });
       }
-      const restored = (await snapshot()).thread;
-      assert.deepEqual(
-        restored.activities.flatMap((activity) => activity.payload?.artifacts ?? []),
-        images,
-      );
+      // Real RPC ownership and containment failures must not expose image bytes.
+      for (const input of [
+        { threadId: randomUUID(), cwd: "/srv/t3-image-check", relativePath: "fixture.png" },
+        { threadId, cwd: "/srv", relativePath: "t3-image-check/fixture.png" },
+        { threadId, cwd: "/srv/t3-image-check", relativePath: "../outside.png" },
+      ])
+        await assert.rejects(rpc("projects.readImage", { ...input, offset: 0, limit: 512 }));
       results.push({
         instanceId,
         model: modelSelection.model,
         threadId,
         projectId,
         images,
+        imageViewPaths: imageViews.map((activity) => activity.payload?.detail).filter(Boolean),
         replies: thread.messages.filter((m) => m.role === "assistant").map((m) => m.text),
       });
       console.log(
-        `PASS: ${instanceId} real image tool, originating activity, and captured image read.`,
+        `PASS: ${instanceId} real provider image links and on-demand project image reads.`,
       );
     }
     return results;

@@ -3,7 +3,7 @@ import { createIncrementalHighlightedDocument } from "../lib/incrementalHighligh
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { toHtml } from "hast-util-to-html";
 import { rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
-import { ArtifactImageLink, isImageFilePath } from "./chat/ArtifactNavigation";
+import { ProjectImageLink, isImageFilePath } from "./chat/ProjectImageLink";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { defaultUrlTransform } from "react-markdown";
@@ -978,9 +978,9 @@ const MARKDOWN_COMPONENTS: Components = {
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+        <ProjectImageLink cwd={cwd} threadRef={threadRef} relativePath={fileLink.workspaceRelativePath}>
           {children}
-        </ArtifactImageLink>
+        </ProjectImageLink>
       );
     }
     if (threadRef && fileLink?.workspaceRelativePath) {
@@ -1128,11 +1128,13 @@ const MARKDOWN_COMPONENTS: Components = {
     srcSet: _srcSet,
     ...imageProps
   }) {
-    const { cwd } = useMarkdownState();
+    const { cwd, threadRef } = useMarkdownState();
     const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
     if (fileLink)
       return (
-        <ArtifactImageLink
+        <ProjectImageLink
+          cwd={cwd}
+          threadRef={threadRef}
           inline
           imageProps={{
             id,
@@ -1148,7 +1150,7 @@ const MARKDOWN_COMPONENTS: Components = {
           relativePath={fileLink.workspaceRelativePath}
         >
           {alt || fileLink.basename}
-        </ArtifactImageLink>
+        </ProjectImageLink>
       );
     return <InertMarkdownImage alt={alt ?? ""} />;
   },
@@ -1161,9 +1163,9 @@ const MARKDOWN_COMPONENTS: Components = {
         : null;
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ArtifactImageLink relativePath={fileLink.workspaceRelativePath}>
+        <ProjectImageLink cwd={cwd} threadRef={threadRef} relativePath={fileLink.workspaceRelativePath}>
           {children}
-        </ArtifactImageLink>
+        </ProjectImageLink>
       );
     }
     if (threadRef && fileLink?.workspaceRelativePath) {

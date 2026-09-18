@@ -100,26 +100,25 @@ claim: shared provider protocols may still report subscription metadata.
       files, oversized files, regex failures, cancellation, and time budgets.
     - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
       reads, or non-Coder workspace connections.
-  - **Images: composer paste-in and turn-scoped screenshot artifacts.** Accept PNG, JPEG, and WebP
+  - **Images: composer paste-in and on-demand project previews.** Accept PNG, JPEG, and WebP
     images only, validate their signatures rather than trusting metadata, and reject images larger
     than 20 MiB.
     - Pasted images: generate filenames internally and copy only into
       `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
       Submitted image references may read these validated workspace copies by opaque generated ID
       through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
-    - Image artifacts: capture images when the provider reports
-      viewing a file inside the active project (including unchanged files), or returns image bytes
-      from a tool. Capture at the tool event, not by observing unrelated filesystem writes. Copy to
-      generated paths beneath `$HOME/.t3-coder/artifacts` and attach opaque IDs and metadata to the
-      originating activity. Reuse preserved copies for duplicate content and report capture failures.
-      Do not impose a per-turn image count limit, total artifact storage quota, or automatic
-      retention purge; workspace storage cleanup is user-controlled. Keep the per-image size limit
-      and bounded browser loading. Path-only events cannot guarantee the exact bytes the provider saw.
-    - Submitted thumbnails, activity previews, and captured images embedded in assistant Markdown
-      may load automatically through bounded chunks over the existing helper stdio RPC. Image links
-      may open the shared gallery. Markdown resolves only against captured images from that turn.
-      Do not expose arbitrary paths, external images, download/export actions, local persistence,
-      or a general file-reading API. Retain signature, size, symlink and project-containment checks.
+    - Project image previews follow main's file-based flow. Markdown image references, image links,
+      and expanded image-view activities may read the current image without a preceding capture or
+      provider event. Accept only validated project-relative paths, verify the root belongs to the
+      requesting thread, and reject path/symlink escapes, non-images, and files over 20 MiB.
+      Serve bounded chunks over helper stdio, with a file revision checked across chunks. Do not
+      create artifact copies, source-path associations, turn capture budgets, or storage quotas.
+      File changes are visible on a fresh read; moving or deleting a source may break its preview.
+    - Submitted thumbnails and project images may load automatically near the viewport. Image
+      links may open the gallery. Browser image bytes remain bounded and memory-only. Do not expose
+      external images, download/export actions, or a general file-reading API.
+    - Existing artifact IDs remain readable for older conversations through the bounded legacy
+      chunk RPC. Never delete users' saved attachments or artifacts automatically.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and

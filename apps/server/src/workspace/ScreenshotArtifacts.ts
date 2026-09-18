@@ -1,7 +1,4 @@
-import { readImageDimensions } from "@t3tools/shared/imageDimensions";
-import { detectImageMimeType } from "@t3tools/shared/imageSignature";
 // @effect-diagnostics nodeBuiltinImport:off -- Workspace artifact storage is a Linux filesystem adapter.
-import { createHash, randomUUID } from "node:crypto";
 import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -9,12 +6,10 @@ import * as NodePath from "node:path";
 import {
   MAX_SCREENSHOT_ARTIFACT_BYTES,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
-  ScreenshotArtifactId,
   ScreenshotArtifactReadError,
   type ScreenshotArtifactChunk,
   type ScreenshotArtifactMimeType,
   type ScreenshotArtifactReadInput,
-  type ScreenshotArtifactReference,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -23,7 +18,6 @@ import * as Layer from "effect/Layer";
 import { ServerConfig } from "../config.ts";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const MAX_BASE64_IMAGE_CHARS = Math.ceil(MAX_SCREENSHOT_ARTIFACT_BYTES / 3) * 4 + 4;
 const ARTIFACT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -33,12 +27,7 @@ const extensionByMimeType: Record<ScreenshotArtifactMimeType, string> = {
   "image/webp": "webp",
 };
 
-export interface CapturedScreenshotArtifact {
-  readonly reference: ScreenshotArtifactReference;
-  readonly digest: string;
-}
-
-async function detectStoredScreenshotMimeType(
+export async function detectStoredScreenshotMimeType(
   handle: NodeFS.FileHandle,
   size: number,
 ): Promise<ScreenshotArtifactMimeType | undefined> {
@@ -71,182 +60,18 @@ async function detectStoredScreenshotMimeType(
   return undefined;
 }
 
-function safeArtifactName(value: string | undefined, mimeType: ScreenshotArtifactMimeType): string {
-  const fallback = `screenshot.${extensionByMimeType[mimeType]}`;
-  if (!value) return fallback;
-  const normalized = NodePath.basename(value)
-    .replace(/[\u0000-\u001f\u007f]/g, "")
-    .trim();
-  return normalized.length > 0 ? normalized.slice(0, 200) : fallback;
-}
-
-function isPathWithinRoot(root: string, candidate: string): boolean {
-  const relative = NodePath.relative(root, candidate);
-  return relative.length > 0 && relative !== ".." && !relative.startsWith(`..${NodePath.sep}`);
-}
-
-function isPathAtOrWithinRoot(root: string, candidate: string): boolean {
-  return (
-    NodePath.resolve(root) === NodePath.resolve(candidate) || isPathWithinRoot(root, candidate)
-  );
-}
-
 export class ScreenshotArtifacts extends Context.Service<
   ScreenshotArtifacts,
   {
-    readonly captureFile: (input: {
-      readonly cwd: string;
-      readonly filePath: string;
-      readonly existingOnly?: boolean;
-      /** A single tool-returned image associated with this validated source path. */
-      readonly sourceArtifact?: CapturedScreenshotArtifact;
-      readonly capturedArtifacts?: ReadonlyMap<string, ScreenshotArtifactReference>;
-      readonly capturedDigests?: ReadonlySet<string> | undefined;
-    }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
-    readonly captureBase64: (input: {
-      readonly dataBase64: string;
-      readonly capturedDigests?: ReadonlySet<string> | undefined;
-      readonly mimeType: string;
-      readonly name?: string;
-    }) => Effect.Effect<CapturedScreenshotArtifact | undefined>;
     readonly readChunk: (
       input: ScreenshotArtifactReadInput,
     ) => Effect.Effect<ScreenshotArtifactChunk, ScreenshotArtifactReadError>;
   }
 >()("t3/workspace/ScreenshotArtifacts") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public Read-only compatibility for submitted attachments and previously captured images. */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig;
-
-  const persistBytes = Effect.fn("ScreenshotArtifacts.persistBytes")(function* (input: {
-    readonly bytes: Buffer;
-    readonly capturedDigests?: ReadonlySet<string> | undefined;
-    readonly mimeType?: string;
-    readonly name?: string;
-  }) {
-    if (input.bytes.byteLength === 0 || input.bytes.byteLength > MAX_SCREENSHOT_ARTIFACT_BYTES) {
-      return undefined;
-    }
-    const detectedMimeType = detectImageMimeType(input.bytes);
-    if (!detectedMimeType || (input.mimeType && input.mimeType !== detectedMimeType)) {
-      return undefined;
-    }
-
-    const digest = createHash("sha256").update(input.bytes).digest("hex");
-    if (input.capturedDigests?.has(digest)) return undefined;
-
-    const id = ScreenshotArtifactId.make(randomUUID());
-    const extension = extensionByMimeType[detectedMimeType];
-    const finalPath = NodePath.join(config.screenshotArtifactsDir, `${id}.${extension}`);
-    const temporaryPath = `${finalPath}.tmp`;
-    const persisted = yield* Effect.tryPromise({
-      try: async () => {
-        await NodeFS.mkdir(config.screenshotArtifactsDir, { recursive: true, mode: 0o700 });
-        await NodeFS.chmod(config.screenshotArtifactsDir, 0o700);
-        await NodeFS.writeFile(temporaryPath, input.bytes, { flag: "wx", mode: 0o600 });
-        await NodeFS.rename(temporaryPath, finalPath);
-      },
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.as(true),
-      Effect.catch(() => Effect.succeed(false)),
-      Effect.ensuring(
-        Effect.promise(() => NodeFS.rm(temporaryPath, { force: true })).pipe(Effect.ignore),
-      ),
-    );
-    if (!persisted) return undefined;
-    const dimensions = readImageDimensions(input.bytes);
-
-    return {
-      reference: {
-        id,
-        name: safeArtifactName(input.name, detectedMimeType),
-        mimeType: detectedMimeType,
-        sizeBytes: input.bytes.byteLength,
-        ...(dimensions ? { dimensions } : {}),
-      },
-      digest,
-    } satisfies CapturedScreenshotArtifact;
-  });
-
-  const captureFile: ScreenshotArtifacts["Service"]["captureFile"] = Effect.fn(
-    "ScreenshotArtifacts.captureFile",
-  )(function* (input) {
-    return yield* Effect.tryPromise({
-      try: async () => {
-        const root = await NodeFS.realpath(input.cwd);
-        const requestedPath = NodePath.isAbsolute(input.filePath)
-          ? NodePath.resolve(input.filePath)
-          : NodePath.resolve(root, input.filePath);
-        const lexicalRoot = NodePath.resolve(input.cwd);
-        const sourceRoot = isPathWithinRoot(lexicalRoot, requestedPath) ? lexicalRoot : root;
-        if (!isPathWithinRoot(sourceRoot, requestedPath)) return undefined;
-        const requestedStat = await NodeFS.lstat(requestedPath);
-        if (!requestedStat.isFile() || requestedStat.isSymbolicLink()) return undefined;
-        if (requestedStat.size === 0 || requestedStat.size > MAX_SCREENSHOT_ARTIFACT_BYTES) {
-          return undefined;
-        }
-        const resolvedPath = await NodeFS.realpath(requestedPath);
-        if (!isPathWithinRoot(root, resolvedPath)) return undefined;
-        if (isPathAtOrWithinRoot(config.screenshotArtifactsDir, resolvedPath)) return undefined;
-        return {
-          bytes: await NodeFS.readFile(resolvedPath),
-          name: NodePath.basename(resolvedPath),
-          relativePath: NodePath.relative(sourceRoot, requestedPath),
-        };
-      },
-      catch: (cause) => cause,
-    }).pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
-      Effect.flatMap((candidate) =>
-        Effect.gen(function* () {
-          if (
-            !candidate ||
-            candidate.bytes.length > MAX_SCREENSHOT_ARTIFACT_BYTES ||
-            !detectImageMimeType(candidate.bytes)
-          )
-            return undefined;
-          const digest = createHash("sha256").update(candidate.bytes).digest("hex");
-          const existing = input.capturedArtifacts?.get(digest);
-          const captured: CapturedScreenshotArtifact | undefined =
-            input.sourceArtifact ??
-            (existing
-              ? { reference: existing, digest }
-              : input.existingOnly
-                ? undefined
-                : yield* persistBytes({ ...candidate, capturedDigests: input.capturedDigests }));
-          if (!captured) return undefined;
-          const key = createHash("sha256")
-            .update(`${captured.reference.id}\0${candidate.relativePath}`)
-            .digest("hex");
-          return {
-            ...captured,
-            reference: {
-              ...captured.reference,
-              sourcePathKeys: [key],
-            },
-          };
-        }),
-      ),
-    );
-  });
-
-  const captureBase64: ScreenshotArtifacts["Service"]["captureBase64"] = Effect.fn(
-    "ScreenshotArtifacts.captureBase64",
-  )(function* (input) {
-    if (input.dataBase64.length === 0 || input.dataBase64.length > MAX_BASE64_IMAGE_CHARS) {
-      return undefined;
-    }
-    const bytes = Buffer.from(input.dataBase64, "base64");
-    return yield* persistBytes({
-      bytes,
-      capturedDigests: input.capturedDigests,
-      mimeType: input.mimeType,
-      ...(input.name ? { name: input.name } : {}),
-    });
-  });
-
   const readChunk: ScreenshotArtifacts["Service"]["readChunk"] = Effect.fn(
     "ScreenshotArtifacts.readChunk",
   )(function* (input) {
@@ -319,7 +144,7 @@ export const make = Effect.gen(function* () {
     } satisfies ScreenshotArtifactChunk;
   });
 
-  return ScreenshotArtifacts.of({ captureFile, captureBase64, readChunk });
+  return ScreenshotArtifacts.of({ readChunk });
 });
 
 export const layer = Layer.effect(ScreenshotArtifacts, make);

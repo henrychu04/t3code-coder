@@ -36,41 +36,34 @@ into the composer is the only way an image gets in.
 
 ## Images in agent messages
 
-Images appear beside the tool activity that viewed or produced them. Assistant replies can also
-embed a captured image inline or link to it. Click a thumbnail or image link to enlarge it. The
-shared gallery supports previous/next arrows, left/right keys, zooming, and panning. Activity
-thumbnails and assistant image links open all captured images from that turn in activity order,
-with duplicate captures listed once. **Images in this turn** opens the same gallery. When zoomed,
-arrow keys pan the image; use the gallery buttons to switch images.
+Select an image or image link to open its preview. The gallery supports previous/next arrows,
+keyboard navigation, zooming, and panning. When zoomed, arrow keys pan the image; use the gallery
+buttons to switch images. Expand an image-view tool activity to preview the file it names.
 
-Inline images preserve their reported dimensions. If an image fails to load, use **Retry**.
-Previews load near the visible part of the conversation and release their bytes when scrolled away.
-Repeated previews share one read; the browser loads at most three images at once and bounds retained
-image bytes to 100 MiB. The gallery gives priority to the selected image and loads one full image at
-a time. When the memory budget is full, other previews show **Open to view** instead of an error.
-Opening the gallery moves keyboard focus inside it; closing it returns focus to the opener.
+Like main, previews read the original file on the environment's machine. An assistant can generate,
+copy, or rename an image and embed its final project path without viewing it first or publishing it
+through another tool. Relative paths and absolute paths inside the active project work. Supported
+formats are PNG, JPEG, and WebP, up to 20 MiB per image.
 
-Submitted messages retain their image previews after reload or reconnect, while the workspace
-copies exist. Unsent draft images still disappear on reload.
+A fresh read shows the current file. Moving or deleting it can break its preview, and editing it can
+change what you see in an older conversation. Keep the source file if you need the preview later.
+T3 no longer creates screenshot artifact copies or matches Markdown against turn captures. Images
+returned only as tool bytes, without a project file path, do not get a separate preview.
 
-T3 preserves supported image bytes returned by tools and images viewed inside the active project,
-including existing files. These preserved copies remain available if the original project file is
-later changed or deleted. For tools reporting only a path, capture happens immediately after the
-event, so a concurrent file change can still affect which version is saved. Merely writing an image
-file does not add it to the conversation.
+If an image fails to load, use **Retry image**. File changes during a chunked read reject that read;
+retry starts again with the current file. Inline previews load near the viewport and release their
+bytes when scrolled away. Repeated previews share a read. The browser permits three concurrent image
+reads and bounds retained image bytes to 100 MiB. Opening the gallery gives its selected image
+priority, including when other previews have been deferred. Closing it returns keyboard focus to
+the opener.
 
-PNG, JPEG, and WebP images of up to 20 MiB each are preserved without a per-turn image count
-limit or total storage quota. Repeated views of identical image bytes in a turn reuse the same copy.
-The activity shows a notice if an image could not be preserved, such as a failed storage write or
-an unsupported image. This is not a guarantee that every image visible to a provider is captured.
+There is no per-turn preview count limit, total storage quota, or automatic purge. Images stay in
+the project and workspace cleanup is user-controlled. Submitted image attachments still use their
+workspace copies and survive reload while those copies exist; unsent drafts disappear on reload.
 
-Preserved images live in `$HOME/.t3-coder/artifacts` in the Coder workspace, separately from project
-worktrees. Removing a worktree alone does not delete them. Storage cleanup is user-controlled;
-removing preserved copies makes their historical previews unavailable. T3 does not automatically
-purge images based on age, count, or total storage use.
+Older conversations can still display their previously saved artifacts. Those legacy copies live
+in `$HOME/.t3-coder/artifacts`, outside worktrees; deleting a worktree does not delete them.
 
-Images stay in the Coder workspace. There are no save, export, or download actions, and external
-images are not loaded. Unrecognized image references show an unavailable explanation. Older
-conversations with a Visual artifacts activity can still display their saved images.
-
-The thumbnail and gallery interactions follow [upstream's image previews](https://github.com/pingdotgg/t3code/blob/8d8189e67/docs/user/composer.md#images-and-videos-in-messages), adapted to preserve workspace copies and use Coder-only transport.
+The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
+Coder-specific differences are project-contained image access, bounded helper stdio transport,
+paste-only uploads, and no external images, videos, save, export, or download actions.

@@ -26,6 +26,8 @@ import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
 import { useAssistantCitationTarget, type CitationHistoryPage } from "./useAssistantCitationTarget";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
+import { ProjectImageLink } from "./ProjectImageLink";
+import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import { ScreenshotArtifactsRow } from "./ScreenshotArtifactsRow";
 import { submittedImageAttachments } from "../../lib/submittedImageAttachments";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
@@ -2598,6 +2600,7 @@ export function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
   visibleLabel: string,
+  viewedImagePath: string | null = null,
 ): string | null {
   const blocks: string[] = [];
   const seen = new Set<string>([visibleLabel.trim()]);
@@ -2610,12 +2613,20 @@ export function buildToolCallExpandedBody(
   const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
   addBlock(raw ?? command);
-  addBlock(workEntry.detail);
+  if (workEntry.detail?.trim() !== viewedImagePath?.trim()) addBlock(workEntry.detail);
+  const viewedImagePaths = new Set(
+    viewedImagePath
+      ? [viewedImagePath.trim(), formatWorkspaceRelativePath(viewedImagePath, workspaceRoot)]
+      : [],
+  );
   const changedFiles = [
     ...new Set(
-      (workEntry.changedFiles ?? []).map((filePath) =>
-        formatWorkspaceRelativePath(filePath, workspaceRoot),
-      ),
+      (workEntry.changedFiles ?? []).flatMap((filePath) => {
+        const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
+        return viewedImagePaths.has(filePath) || viewedImagePaths.has(formattedPath)
+          ? []
+          : [formattedPath];
+      }),
     ),
   ];
   if (changedFiles.length > 0) {
@@ -2940,6 +2951,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry } = props;
+  const timeline = use(TimelineRowCtx);
+  const imagePath = workEntry.itemType === "image_view" ? workEntry.detail?.trim() : undefined;
+  const viewedImage =
+    imagePath && !/[\r\n]/.test(imagePath) && /\.(?:png|jpe?g|webp)$/i.test(imagePath)
+      ? resolveMarkdownFileLinkMeta(imagePath, workspaceRoot)
+      : null;
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
@@ -2974,8 +2991,13 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     showWarningIndicator || showDestructiveRowStyle ? "circle-alert" : workEntryIconName(workEntry);
   const expandedBody = workEntry.questionAnswer
     ? getQuestionAnswerHistory(workEntry.questionAnswer)
-    : buildToolCallExpandedBody(workEntry, workspaceRoot, displayText);
-  const canExpand = expandedBody !== null;
+    : buildToolCallExpandedBody(
+        workEntry,
+        workspaceRoot,
+        displayText,
+        viewedImage ? (imagePath ?? null) : null,
+      );
+  const canExpand = expandedBody !== null || Boolean(viewedImage);
   // Ordinary tool failures stay muted; only runtime errors and warnings get
   // color. The red treatment is reserved for severe failures.
   const iconWrapperClass = cn(
@@ -3074,6 +3096,24 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </span>
         </div>
       </div>
+      {expanded && viewedImage && timeline?.threadRef ? (
+        <div
+          className="mt-1 ms-7 cursor-default"
+          onClick={stopRowToggle}
+          onPointerDown={stopRowToggle}
+        >
+          <ProjectImageLink
+            inline
+            cwd={workspaceRoot}
+            threadRef={timeline.threadRef}
+            relativePath={viewedImage.workspaceRelativePath}
+            maxHeightRem={16}
+            alt={viewedImage.basename}
+          >
+            {viewedImage.basename}
+          </ProjectImageLink>
+        </div>
+      ) : null}
       {expanded && canExpand && expandedBody ? (
         <div
           className="mt-1 ms-7 cursor-default rounded-md bg-muted/40 px-3 py-2"

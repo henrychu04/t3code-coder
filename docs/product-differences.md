@@ -69,8 +69,8 @@ hosted source-control provider is registered.
 
 The Files surface lists, reads, searches, and edits text files inside the active project. It does
 not provide general upload, download, export, synchronization, or access to arbitrary local or
-workspace paths. Pasted prompt images and turn-scoped screenshot artifacts are narrow,
-validated exceptions.
+workspace paths. Pasted prompt images and on-demand project image previews are narrow,
+validated exceptions. Image previews follow main’s current-file behavior through the helper.
 
 ## Improved for this product
 
@@ -82,7 +82,7 @@ validated exceptions.
   without turning the app into a file-transfer client.
 - Bounded caches, resumable terminal traffic, paged thread history, and explicit oversized-diff
   results keep long-running sessions responsive.
-- Screenshot artifacts let users review visual verification without introducing a browser-preview
+- Project image previews use the existing helper connection without introducing a browser-preview
   service or a general file-download path.
 - The smaller distribution is easier to review because unsupported clients, services, providers,
   and external integrations are absent.

@@ -60,7 +60,6 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
       paths.providerStatusCacheDir,
       paths.worktreesDir,
       paths.attachmentsDir,
-      paths.screenshotArtifactsDir,
     ].map((directory) => fileSystem.makeDirectory(directory, { recursive: true })),
     { concurrency: "unbounded" },
   );

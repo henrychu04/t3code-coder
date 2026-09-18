@@ -1,16 +1,28 @@
-import { MAX_SCREENSHOT_ARTIFACT_BYTES } from "@t3tools/contracts";
+import {
+  MAX_SCREENSHOT_ARTIFACT_BYTES,
+  type ScreenshotArtifactDimensions,
+} from "@t3tools/contracts";
+
+export interface ImageResourceBlob extends Blob {
+  readonly imageDimensions?: ScreenshotArtifactDimensions | undefined;
+}
 
 export type ImageResourceState =
   | { readonly status: "loading" | "deferred" }
   | { readonly status: "error"; readonly retry: () => void }
-  | { readonly status: "loaded"; readonly url: string; readonly retry: () => void };
+  | {
+      readonly status: "loaded";
+      readonly url: string;
+      readonly dimensions?: ScreenshotArtifactDimensions | undefined;
+      readonly retry: () => void;
+    };
 
 const LOADING: ImageResourceState = { status: "loading" };
 const DEFERRED: ImageResourceState = { status: "deferred" };
 type Entry = {
   state: ImageResourceState;
   listeners: Map<() => void, boolean>;
-  load: (signal: AbortSignal) => Promise<Blob>;
+  load: (signal: AbortSignal) => Promise<ImageResourceBlob>;
   controller: AbortController | undefined;
   bytes: number;
   queued: boolean;
@@ -86,7 +98,7 @@ export function createImageResourceStore(maxBytes = 100 * 1024 * 1024, concurren
             const url = URL.createObjectURL(blob);
             retainedBytes -= entry.bytes - blob.size;
             entry.bytes = blob.size;
-            entry.state = { status: "loaded", url, retry };
+            entry.state = { status: "loaded", url, retry, dimensions: blob.imageDimensions };
           })
           .catch(() => {
             if (!controller.signal.aborted) entry.state = { status: "error", retry };
