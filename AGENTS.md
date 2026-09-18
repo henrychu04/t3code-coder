@@ -47,7 +47,7 @@ claim: shared provider protocols may still report subscription metadata.
 - Keep the local gateway on IPv4 loopback with an ephemeral port, exact Host/Origin checks, no
   CORS, and no application authentication token.
 - The installed Coder CLI is the only process allowed to make a non-loopback workspace connection.
-  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated clipboard-image
+  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated composer-image
   uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
   to a workspace. Use argument-array spawning with `shell: false` and include
   `--no-version-warning` in every underlying Coder invocation. Network telemetry and direct
@@ -65,7 +65,7 @@ claim: shared provider protocols may still report subscription metadata.
   provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
   non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
-  rules, and ephemeral staging of validated clipboard images in an OS temporary directory. Delete
+  rules, and ephemeral staging of validated composer images in an OS temporary directory. Delete
   staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
@@ -100,24 +100,29 @@ claim: shared provider protocols may still report subscription metadata.
       files, oversized files, regex failures, cancellation, and time budgets.
     - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
       reads, or non-Coder workspace connections.
-  - **Images: composer paste-in and turn-scoped screenshot artifacts.** Accept PNG, JPEG, and WebP
-    images only, validate their signatures rather than trusting metadata, and reject images larger
-    than 20 MiB.
-    - Pasted images: generate filenames internally and copy only into
-      `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
+  - **Images: composer attachments and on-demand environment previews.** Accept PNG, JPEG, and WebP
+    images only and validate their signatures rather than trusting metadata. Composer source files
+    may be up to 50 MiB; use main's compression algorithm to prepare images at or below 10 MiB.
+    The browser upload API, gateway body/signature validation, and provider-input reader must share
+    main's 10 MiB attachment limit. Current-file previews retain their separate 20 MiB read bound.
+    - Images pasted, selected, or dropped into the composer: generate filenames internally and copy
+      only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
       Submitted image references may read these validated workspace copies by opaque generated ID
       through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
-    - Image artifacts: capture at most 10 unique images per provider turn when the provider reports
-      viewing a file inside the active project (including unchanged files), or returns image bytes
-      from a tool. Capture at the tool event, not by observing unrelated filesystem writes. Copy to
-      generated paths beneath `$HOME/.t3-coder/artifacts` and attach opaque IDs and metadata to the
-      originating activity. Reuse preserved copies for duplicate content and report capture failures
-      or limits. Path-only events cannot guarantee the exact bytes the provider saw.
-    - Submitted thumbnails, activity previews, and captured images embedded in assistant Markdown
-      may load automatically through bounded chunks over the existing helper stdio RPC. Image links
-      may open the shared gallery. Markdown resolves only against captured images from that turn.
-      Do not expose arbitrary paths, external images, download/export actions, local persistence,
-      or a general file-reading API. Retain signature, size, symlink and project-containment checks.
+    - Image previews follow main's file-based flow. Markdown image references, image links,
+      and expanded image-view activities may read the current image without a preceding capture or
+      provider event. Verify the root belongs to the requesting thread, resolve relative paths from
+      that root, and allow exact absolute image paths elsewhere on the Linux workspace machine,
+      including symlinks. Verify the actual opened file identity and reject non-images and files
+      over 20 MiB. This does not authorize general file reads or outside-project text editing.
+      Serve bounded chunks over helper stdio, with a file revision checked across chunks. Do not
+      create artifact copies, source-path associations, turn capture budgets, or storage quotas.
+      File changes are visible on a fresh read; moving or deleting a source may break its preview.
+    - Submitted thumbnails and environment images may load automatically near the viewport. Image
+      links may open the gallery. Browser image bytes remain bounded and memory-only. Do not expose
+      external images, download/export actions, or a general file-reading API.
+    - Existing artifact IDs remain readable for older conversations through the bounded legacy
+      chunk RPC. Never delete users' saved attachments or artifacts automatically.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and
@@ -129,7 +134,7 @@ claim: shared provider protocols may still report subscription metadata.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
   OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
   forwarding, arbitrary tunnels, or providers other than Codex and Claude. OpenSSH use is limited
-  to helper bootstrap and validated clipboard-image uploads through a `coder ssh --stdio`
+  to helper bootstrap and validated composer-image uploads through a `coder ssh --stdio`
   ProxyCommand.
 - External markdown links remain inert except user-clicked HTTP(S) links to `gitlab.com` or
   self-hosted hosts identified by project repository metadata as GitLab. Known merge requests keep

@@ -1532,6 +1532,15 @@ setTimeout(() => process.exit(0), 100);
       () => undefined,
     );
 
+    const tooLarge = await request({
+      url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
+      method: "POST",
+      headers: { Origin: gateway.url, "Content-Type": "image/png" },
+      body: Buffer.alloc(10 * 1024 * 1024 + 1),
+    });
+    strictEqual(tooLarge.statusCode, 413);
+    strictEqual(tooLarge.body, "Image exceeds 10 MiB.");
+
     const invalid = await request({
       url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
       method: "POST",

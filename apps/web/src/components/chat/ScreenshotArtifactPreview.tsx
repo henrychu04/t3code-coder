@@ -10,7 +10,7 @@ export function ScreenshotArtifactPreview({
   readonly onError?: (() => void) | undefined;
   readonly artifact: Omit<ScreenshotArtifactReference, "sizeBytes">;
   readonly image?:
-    | { readonly status: "loading" | "error" }
+    | { readonly status: "loading" | "deferred" | "error" }
     | { readonly status: "loaded"; readonly url: string }
     | undefined;
 }) {
@@ -20,7 +20,7 @@ export function ScreenshotArtifactPreview({
     : undefined;
   return (
     <span
-      className="flex max-h-48 items-center justify-center overflow-hidden bg-background/70"
+      className="flex size-full max-h-48 items-center justify-center overflow-hidden bg-background/70"
       style={{ aspectRatio: dimensions ? `${dimensions.width} / ${dimensions.height}` : "16 / 9" }}
     >
       {image?.status === "loaded" ? (
@@ -33,6 +33,8 @@ export function ScreenshotArtifactPreview({
           src={image.url}
           onError={onError}
         />
+      ) : image?.status === "deferred" ? (
+        <span className="text-muted-foreground text-xs">Open to view</span>
       ) : image?.status === "error" ? (
         <span className="px-2 text-center text-destructive text-xs">Unavailable</span>
       ) : (

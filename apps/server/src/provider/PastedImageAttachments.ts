@@ -4,10 +4,9 @@ import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import type { PastedImageAttachment } from "@t3tools/contracts";
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, type PastedImageAttachment } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
-const MAX_PASTED_IMAGE_BYTES = 20 * 1024 * 1024;
 
 type PastedImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
@@ -58,7 +57,7 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
         );
         try {
           const stat = await handle.stat();
-          if (!stat.isFile() || stat.size === 0 || stat.size > MAX_PASTED_IMAGE_BYTES) {
+          if (!stat.isFile() || stat.size === 0 || stat.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
             throw new Error("Pasted image attachment has an invalid size or file type.");
           }
           const bytes = await handle.readFile();

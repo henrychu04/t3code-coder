@@ -40,7 +40,7 @@ behavior, notify the maintainer before making that removal.
 
 The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
 client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace
-targets, structured port-forward rules, and an optional Coder executable path. A clipboard image may
+targets, structured port-forward rules, and an optional Coder executable path. An attached image may
 be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
 copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage; messages, drafts, prompt stashes, active workspace projections,
@@ -192,7 +192,7 @@ local client -> 127.0.0.1:configured port -> coder port-forward -> workspace ser
 
 The workspace helper owns the existing T3 orchestration store, project records, threads, provider
 sessions, repository-local Git and filesystem operations, terminals, and checkpoints. Its durable
-state remains in the workspace. Validated screenshot artifacts are also stored in the workspace;
+state remains in the workspace. Legacy screenshot artifacts also remain in the workspace;
 the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts workspace-installed provider executables directly with argument-array spawning.
@@ -264,19 +264,24 @@ The T3 gateway does not make external HTTP requests. The installed Coder CLI is 
 allowed to make a non-loopback workspace connection. Structured port-forward rules use foreground
 `coder port-forward` processes and bind only to IPv4 loopback; reverse forwarding, arbitrary bind
 addresses, and raw tunnel arguments are not exposed. The gateway may invoke OpenSSH `scp` for helper
-bootstrap and validated clipboard-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
+bootstrap and validated composer-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
 no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
 
-General user-facing file transfer remains disabled. One exception is an image pasted into the
+General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts
-signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS temporary directory,
+signature-validated PNG, JPEG, or WebP content up to 10 MiB, stages it in an OS temporary directory,
 and copies it through helper-scoped SCP to a generated path beneath
 `$HOME/.t3-coder/attachments`. It then deletes the local staging file and returns the generated path
-to the draft's in-memory attachment state. The browser queues at most three concurrent clipboard
-transfers per workspace, matching upstream's per-environment limit. Workspaces have independent
+to the draft's in-memory attachment state. The browser queues at most three concurrent image
+transfers per workspace, matching upstream's per-environment limit. Source images up to 50 MiB
+are prepared with main's byte-limit compression algorithm before transfer: images at or below
+10 MiB pass through unchanged, and larger images are resized and re-encoded to fit. Preparation
+shares the queue's concurrency bound, remains cancellable at the transfer boundary, and updates
+the draft to use the prepared bytes. The browser upload API, gateway, and workspace provider-input
+reader all enforce the same 10 MiB attachment constant. Workspaces have independent
 queues; drafts in the same workspace share its limit. Completed images retain their workspace
-identity. Moving or restoring images into another workspace queues their original pasted bytes
+identity. Moving or restoring images into another workspace queues their prepared image bytes
 for that destination and cancels any old transfer. The browser retains failed images for explicit
 retry and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
@@ -327,47 +332,34 @@ only for project-content search. It does not change ordinary file-read or edit l
 not authorize uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace
 connections.
 
-The UI exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
+The Files surface exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
 explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
-Workspace attachments and screenshot artifacts currently have no automatic age-based purge.
-Provider session transcripts can retain attachment paths after a browser disconnect or thread
-change, and artifact capture does not record a durable owning thread. Safe reclamation requires
-ownership and reference tracking across those lifetimes; deleting files merely because they are
-old or absent from the current browser snapshot can break resumed sessions and historical turns.
+Image previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
+resolve image paths without capture events or source-path fingerprints. The helper verifies
+that the requested root belongs to the thread, resolves relative paths from that root and accepts
+absolute or home-relative image paths elsewhere on the Linux workspace machine. Symlinks resolve
+to an exact file; the helper checks its opened path, device and inode, rejects non-files, and
+validates PNG/JPEG/WebP signatures and extensions. No remote URLs or general file reads are accepted.
+Each image is limited to 20 MiB and each stdio chunk to 512 KiB. A revision based on file identity,
+size, and modification/change timestamps must remain constant across chunks; a changed file fails
+with a generic retryable error. No file content or path is included in image errors.
 
-Image previews use the upstream thumbnail grid and gallery navigation, with upstream's
-`ZoomableImage` component copied from commit `8d8189e67`. The adapted gallery excludes external
-asset URLs, videos, saving, export, and desktop actions. It uses upstream’s portal-based gallery
-and bounded helper stdio image transport.
+The helper does not create screenshot artifact copies or coordinate per-turn image capture. New
+previews use current source files, so changing, moving, or deleting a file affects future reads.
+There is no per-turn image count or storage quota. Existing artifact IDs and submitted attachment
+IDs remain readable through the legacy bounded chunk RPC; their workspace copies are not purged.
+The artifact directory is no longer created for new workspaces. Draft attachment bytes stay in
+browser memory; submitted copies remain under the workspace attachment directory.
 
-Capture is driven by provider tool events. A Codex `imageView` completion immediately copies a
-validated image inside the active project, including an unchanged file. Codex MCP, dynamic-tool,
-and generation results and Claude tool-result image blocks preserve their returned image bytes.
-Claude image-read activity can also capture a contained file when it has no returned image bytes.
-No filesystem watcher runs and no end-of-turn scan collects unrelated files. A path-only event is
-best effort: the original may change between the provider read and capture.
-
-The turn shares a ten-image budget and content deduplication across activities. Each tool activity
-gets its own opaque artifact references immediately; repeated content reuses the saved copy. Source-path fingerprints belong to the current
-activity rather than the deduplicated copy. A single tool-returned image may be associated with
-its validated source path even when the tool resized or re-encoded it.
-Capture failures and limit omissions become activity notices. Signature-validated PNG, JPEG and
-WebP are limited to 20 MiB. Capture is disabled on completion, interruption, failed start or shutdown.
-Stored activity contains metadata and opaque source-path fingerprints, not image bytes.
-
-Submitted messages resolve generated attachment IDs through the same 512 KiB chunk RPC, with a
-fixed attachment source selector. IDs are validated UUIDs; the helper selects only its own attachment
-or artifact directory and checks file type, size, no-follow opens, and image signature. There is no
-caller-supplied path. Submitted previews survive reload while the workspace copy exists; draft
-images remain memory-only. Thumbnails load automatically when their surface mounts and object
-URLs are revoked on unmount. No bytes persist in the gateway or browser storage.
-
-Activity images appear beside their tool row. Assistant Markdown images resolve against captured
-artifacts from that turn and render inline; image links open the same zoomable gallery. The latest
-matching capture is preferred when a path has multiple versions in one turn. Unknown references
-and external images remain inert. Older aggregate Visual artifacts activities remain readable.
+The UI retains main's thumbnail, Markdown, zoom/pan, and gallery presentation with Coder transport.
+Environment image links open a gallery directly; inline images load near the viewport. The shared
+memory-only image resource store permits three concurrent reads and reserves at most 100 MiB.
+Selected gallery images take priority over other previews; deferred previews can still be opened.
+The gateway persists no image bytes and opens no additional route or workspace connection.
+External web images, video, and download/export remain excluded. Outside-project access is limited
+to validated image previews; the text Files surface and search retain project containment.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be

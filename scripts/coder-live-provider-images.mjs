@@ -12,7 +12,19 @@ const requireGateway = createRequire(
 const { WebSocket } = requireGateway("ws");
 
 // Requires authenticated real providers. Missing tool use is a failure, never a simulated pass.
-export async function testLiveProviderImages(url, workspaceId) {
+export async function testLiveProviderImages(
+  url,
+  workspaceId,
+  {
+    instances = ["codex", "claudeAgent"],
+    models = {},
+    prompt = "Inspect the attached image, then use your image-viewing tool (Read or view_image) to inspect fixture.png in this project. Describe the image briefly and embed it using ![Inspected image](fixture.png). Do not modify any files or run shell commands.",
+    expectedImageBytes = png,
+    imagePaths = ["fixture.png"],
+    expectImageView = true,
+  } = {},
+) {
+  const results = [];
   const endpoint = `${url}/api/workspaces/${encodeURIComponent(workspaceId)}`;
   const connected = await fetch(`${endpoint}/connection`, {
     method: "POST",
@@ -70,18 +82,21 @@ export async function testLiveProviderImages(url, workspaceId) {
         createWorkspaceRootIfMissing: false,
         createdAt: new Date().toISOString(),
       });
-    for (const instanceId of ["codex", "claudeAgent"]) {
+    for (const instanceId of instances) {
       const threadId = randomUUID();
-      const modelSelection = { instanceId, model: DEFAULT_MODEL_BY_PROVIDER[instanceId] };
+      const modelSelection = {
+        instanceId,
+        model: models[instanceId] ?? DEFAULT_MODEL_BY_PROVIDER[instanceId],
+      };
       assert.ok(modelSelection.model, "A supported model is required");
-      // The container cannot run Codex filesystem sandboxing; the prompt only reads our fixture.
+      // The container cannot run Codex filesystem sandboxing; the default prompt only reads the fixture.
       const runtimeMode = instanceId === "codex" ? "full-access" : "approval-required";
       const interactionMode = "default";
       await dispatch({
         type: "thread.create",
         threadId,
         projectId,
-        title: `${instanceId} image capture`,
+        title: `${instanceId} image preview`,
         modelSelection,
         runtimeMode,
         interactionMode,
@@ -100,7 +115,7 @@ export async function testLiveProviderImages(url, workspaceId) {
         message: {
           messageId: randomUUID(),
           role: "user",
-          text: "Inspect the attached image, then use your image-viewing tool (Read or view_image) to inspect fixture.png in this project. Describe the image briefly and embed it using ![Inspected image](fixture.png). Do not modify any files or run shell commands.",
+          text: prompt,
         },
         createdAt: new Date().toISOString(),
       });
@@ -119,42 +134,75 @@ export async function testLiveProviderImages(url, workspaceId) {
         `${instanceId} image turn did not complete`,
       );
       activeThread = undefined;
-      const images = thread.activities.flatMap((activity) => activity.payload?.artifacts ?? []);
-      if (images.length === 0) {
-        console.log(
-          JSON.stringify({
-            instanceId,
-            threadId,
-            sessionStatus: thread.session?.status,
-            activities: thread.activities.map((a) => ({
-              kind: a.kind,
-              summary: a.summary,
-              itemType: a.payload?.itemType,
-              warning: a.payload?.imageCaptureWarning,
-            })),
-            replies: thread.messages.filter((m) => m.role === "assistant").map((m) => m.text),
-          }),
-        );
-      }
-      assert.ok(images.length > 0, `${instanceId} did not produce a captured image activity`);
-      for (const image of images) {
-        const chunk = await rpc("workspace.readScreenshotArtifact", {
-          artifactId: image.id,
-          offset: 0,
-          limit: 512 * 1024,
-        });
-        assert.equal(chunk.totalBytes, image.sizeBytes);
-        assert.ok(Buffer.from(chunk.dataBase64, "base64").length > 0);
-      }
-      const restored = (await snapshot()).thread;
-      assert.deepEqual(
-        restored.activities.flatMap((activity) => activity.payload?.artifacts ?? []),
-        images,
+      assert.equal(
+        thread.activities.some((activity) => activity.payload?.artifacts?.length),
+        false,
+        "New provider turns must not create captured artifacts",
       );
+      const imageViews = thread.activities.filter(
+        (activity) => activity.payload?.itemType === "image_view",
+      );
+      assert.equal(
+        imageViews.length > 0,
+        expectImageView,
+        "Unexpected provider image-view activity",
+      );
+      const replies = thread.messages.filter((m) => m.role === "assistant").map((m) => m.text);
+      const images = [];
+      for (const relativePath of imagePaths) {
+        assert.ok(
+          replies.some((text) => text.includes(relativePath)),
+          "The provider must reference the image path",
+        );
+        const chunks = [];
+        let offset = 0;
+        let first;
+        do {
+          const chunk = await rpc("projects.readImage", {
+            threadId,
+            cwd: "/srv/t3-image-check",
+            filePath: relativePath,
+            offset,
+            limit: 512 * 1024,
+            ...(first ? { revision: first.revision } : {}),
+          });
+          first ??= chunk;
+          assert.equal(chunk.totalBytes, first.totalBytes);
+          assert.equal(chunk.offset, offset);
+          assert.equal(chunk.mimeType, first.mimeType);
+          assert.equal(chunk.revision, first.revision);
+          const bytes = Buffer.from(chunk.dataBase64, "base64");
+          assert.ok(bytes.length > 0 && bytes.length <= 512 * 1024);
+          chunks.push(bytes);
+          offset += bytes.length;
+          assert.equal(chunk.nextOffset, offset === first.totalBytes ? null : offset);
+        } while (offset < first.totalBytes);
+        const bytes = Buffer.concat(chunks);
+        if (expectedImageBytes)
+          assert.deepEqual(bytes, expectedImageBytes, "Preview bytes must match the project file");
+        images.push({ relativePath, mimeType: first.mimeType, sizeBytes: bytes.length });
+      }
+      // Real RPC ownership and containment failures must not expose image bytes.
+      for (const input of [
+        { threadId: randomUUID(), cwd: "/srv/t3-image-check", filePath: "fixture.png" },
+        { threadId, cwd: "/srv", filePath: "t3-image-check/fixture.png" },
+        { threadId, cwd: "/srv/t3-image-check", filePath: "https://example.com/outside.png" },
+      ])
+        await assert.rejects(rpc("projects.readImage", { ...input, offset: 0, limit: 512 }));
+      results.push({
+        instanceId,
+        model: modelSelection.model,
+        threadId,
+        projectId,
+        images,
+        imageViewPaths: imageViews.map((activity) => activity.payload?.detail).filter(Boolean),
+        replies: thread.messages.filter((m) => m.role === "assistant").map((m) => m.text),
+      });
       console.log(
-        `PASS: ${instanceId} real image-view tool, originating activity, and captured image read.`,
+        `PASS: ${instanceId} real provider image links and on-demand project image reads.`,
       );
     }
+    return results;
   } finally {
     if (activeThread)
       await dispatch({

@@ -1,3 +1,5 @@
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
+import { compressImageToByteLimit } from "../lib/imageCompression";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   coderWorkspaceIdForEnvironment,
@@ -47,7 +49,16 @@ async function run(
 ) {
   let lastStep = -1;
   try {
-    const path = await uploadCoderClipboardImage(image.workspaceId, image.file, {
+    const prepared = await compressImageToByteLimit(image.file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
+    controller.signal.throwIfAborted();
+    if (!prepared.ok)
+      throw new Error(
+        prepared.reason === "unreadable"
+          ? "This file could not be read as an image."
+          : "This image is too large to attach, even after resizing to the 10 MiB limit.",
+      );
+    updateImage(image.id, (current) => ({ ...current, file: prepared.file }));
+    const path = await uploadCoderClipboardImage(image.workspaceId, prepared.file, {
       signal: controller.signal,
       onProgress: (value) => {
         const progress = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -90,8 +101,8 @@ function pump() {
   if (pumping) return;
   pumping = true;
   try {
-    // A project move or stash restore can change the destination. Re-key the job
-    // so the old transfer is cancelled and late results cannot overwrite the new one.
+    // Keep the draft image identity (including inline references) across moves.
+    // Cancel the old destination's job before starting its replacement.
     const state = useComposerDraftStore.getState();
     for (const [key, draft] of Object.entries(state.draftsByThreadKey)) {
       const environmentId =
@@ -102,7 +113,7 @@ function pump() {
       for (const image of draft.pastedImages ?? []) {
         if (image.workspaceId !== workspaceId) {
           updateImage(image.id, () => ({
-            id: crypto.randomUUID(),
+            id: image.id,
             file: image.file,
             workspaceId,
             status: "queued",
@@ -111,10 +122,10 @@ function pump() {
       }
     }
     const images = imagesInDrafts();
-    const ids = new Set(images.map((image) => image.id));
+    const imagesById = new Map(images.map((image) => [image.id, image]));
     const activeByWorkspace = new Map<string, number>();
     for (const [id, { controller, workspaceId }] of active) {
-      if (!ids.has(id)) controller.abort();
+      if (imagesById.get(id)?.workspaceId !== workspaceId) controller.abort();
       activeByWorkspace.set(workspaceId, (activeByWorkspace.get(workspaceId) ?? 0) + 1);
     }
     for (const image of images) {

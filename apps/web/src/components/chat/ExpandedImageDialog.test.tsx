@@ -9,11 +9,31 @@ vi.mock("../../contextMenuFallback", () => ({ isContextMenuOpen: () => menu.open
 let root: Root;
 let host: HTMLDivElement;
 const retry = vi.fn();
-function Fixture({ failed = false }: { failed?: boolean }) {
+function Fixture({
+  failed = false,
+  evicted = false,
+  loading = false,
+}: {
+  failed?: boolean;
+  evicted?: boolean;
+  loading?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button onClick={() => setOpen(true)}>Open gallery</button>
+      <span data-image-preview tabIndex={-1}>
+        {evicted ? (
+          loading ? (
+            <span>Loading image</span>
+          ) : (
+            <span role="button" tabIndex={0}>
+              Open image
+            </span>
+          )
+        ) : (
+          <button onClick={() => setOpen(true)}>Open gallery</button>
+        )}
+      </span>
       {open && (
         <ExpandedImageDialog
           onClose={() => setOpen(false)}
@@ -65,7 +85,7 @@ it("wraps navigation, consumes arrows, and respects handled keys and context men
   try {
     expect((await key("ArrowLeft")).defaultPrevented).toBe(true);
     expect(alt()).toBe("Second");
-    expect(listener.mock.calls[0]?.[0].cancelBubble).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
     await key("ArrowRight");
     expect(alt()).toBe("First");
     await key("ArrowRight", true);
@@ -81,6 +101,7 @@ it("wraps navigation, consumes arrows, and respects handled keys and context men
 });
 it("marks the composer floating layer and restores opener focus after closing", async () => {
   const opener = await open();
+  expect(document.activeElement).toBe(document.querySelector('[aria-label="Close image preview"]'));
   expect(
     document.querySelector('[role="dialog"]')?.getAttribute("data-chat-composer-floating-layer"),
   ).toBe("true");
@@ -103,3 +124,18 @@ it("closes with Escape and exposes transport retry for unavailable images", asyn
   await key("Escape");
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
+
+it.each([true, false])(
+  "restores focus when eviction replaces the opener (loading: %s)",
+  async (loading) => {
+    const opener = await open();
+    await act(async () => root.render(<Fixture evicted loading={loading} />));
+    expect(opener.isConnected).toBe(false);
+    await key("Escape");
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(
+        host.querySelector(loading ? "[data-image-preview]" : '[role="button"]'),
+      ),
+    );
+  },
+);

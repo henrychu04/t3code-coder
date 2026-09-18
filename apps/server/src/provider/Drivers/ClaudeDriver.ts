@@ -26,7 +26,6 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGeneration.ts";
 import { ServerConfig } from "../../config.ts";
-import { ScreenshotArtifacts } from "../../workspace/ScreenshotArtifacts.ts";
 import { ProviderDriverError } from "../Errors.ts";
 import { makeClaudeAdapter } from "../Layers/ClaudeAdapter.ts";
 import {
@@ -54,8 +53,7 @@ export type ClaudeDriverEnv =
   | Crypto.Crypto
   | FileSystem.FileSystem
   | Path.Path
-  | ServerConfig
-  | ScreenshotArtifacts;
+  | ServerConfig;
 
 const withInstanceIdentity =
   (input: {
@@ -87,7 +85,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const { cwd } = yield* ServerConfig;
-      const screenshotArtifacts = yield* ScreenshotArtifacts;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       const fallbackContinuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
@@ -107,8 +104,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const adapterOptions = {
         instanceId,
         environment: processEnv,
-        captureScreenshotFile: screenshotArtifacts.captureFile,
-        captureScreenshotBase64: screenshotArtifacts.captureBase64,
       };
       const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
       const textGeneration = yield* makeClaudeTextGeneration(effectiveConfig, processEnv);

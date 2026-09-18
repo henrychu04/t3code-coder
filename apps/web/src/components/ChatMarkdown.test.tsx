@@ -55,7 +55,7 @@ describe("orderedListGutterStyle", () => {
 });
 
 describe("ChatMarkdown", () => {
-  it("keeps uncaptured image links out of Files and external images inert", () => {
+  it("opens project image links without captures and keeps external images inert", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown
         cwd="/project"
@@ -63,8 +63,8 @@ describe("ChatMarkdown", () => {
         text="[shot](/project/result.png) ![embedded](/project/result.png) [file-uri](file:///project/result.png) ![external](https://example.com/image.png)"
       />,
     );
-    expect(markup.match(/title="Image preview unavailable"/g)).toHaveLength(3);
-    expect(markup).not.toContain("<button");
+    expect(markup.match(/title="Preview image"/g)).toHaveLength(2);
+    expect(markup).not.toContain('src="https://example.com/image.png"');
     expect(markup).not.toContain("<img");
   });
 

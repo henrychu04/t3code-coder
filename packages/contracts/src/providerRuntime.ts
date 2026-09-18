@@ -14,10 +14,7 @@ import {
   TurnId,
 } from "./baseSchemas.ts";
 import { ProviderInstanceId, ProviderDriverKind } from "./providerInstance.ts";
-import {
-  MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
-  ScreenshotArtifactReference,
-} from "./screenshotArtifact.ts";
+import { ScreenshotArtifactReference } from "./screenshotArtifact.ts";
 import { ProviderApprovalOption } from "./orchestration.ts";
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;
@@ -448,11 +445,7 @@ export const ItemLifecyclePayload = Schema.Struct({
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
   data: Schema.optional(Schema.Unknown),
   imageCaptureWarning: Schema.optional(TrimmedNonEmptyStringSchema),
-  artifacts: Schema.optional(
-    Schema.Array(ScreenshotArtifactReference).check(
-      Schema.isMaxLength(MAX_SCREENSHOT_ARTIFACTS_PER_TURN),
-    ),
-  ),
+  artifacts: Schema.optional(Schema.Array(ScreenshotArtifactReference)),
   /**
    * Owning agent when this item ran inside a subagent (resolved from the
    * SDK's parent_tool_use_id). Clients re-home attributed items out of the

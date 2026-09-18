@@ -1,3 +1,4 @@
+import { ComposerImagePicker } from "./ComposerImagePicker";
 import { imageContextReference } from "../../lib/composerInlineContext";
 import type { AssistantCitation } from "@t3tools/contracts";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -1053,6 +1054,7 @@ export interface ChatComposerHandle {
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
+  addDroppedFiles: (files: File[]) => void;
   openModelPicker: () => void;
   toggleModelPicker: () => void;
   openControl: (command: KeybindingCommand) => void;
@@ -1595,11 +1597,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     restoreAfterTimelineReachedEnd,
   } = useComposerFocusState();
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
+  const [imageAttachmentError, setImageAttachmentError] = useState<string | null>(null);
   const {
     upload: uploadClipboardImages,
     remove: removeClipboardImage,
     retry: retryClipboardImage,
-  } = useClipboardImageUpload(environmentId, composerDraftTarget, setComposerSubmissionError);
+  } = useClipboardImageUpload(environmentId, composerDraftTarget, setImageAttachmentError);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
     null,
   );
@@ -2083,6 +2086,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   useEffect(() => {
     setComposerHighlightedItemId(null);
     setComposerSubmissionError(null);
+    setImageAttachmentError(null);
     setProviderInputSubmissionError(null);
     setComposerCursor(collapseExpandedComposerCursor(promptRef.current, promptRef.current.length));
     setComposerTrigger(detectComposerTrigger(promptRef.current, promptRef.current.length));
@@ -2832,7 +2836,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (imageUploadBlockReason) return;
       const images = entry.pastedImages ?? EMPTY_PASTED_IMAGES;
       if (images.length > 0 && (isComposerApprovalState || pendingUserInputs.length > 0)) {
-        setComposerSubmissionError("Restore images after resolving the current composer prompt.");
+        setImageAttachmentError("Restore images after resolving the current composer prompt.");
         return;
       }
       if (
@@ -2842,8 +2846,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           images.length >
         PROVIDER_SEND_TURN_MAX_ATTACHMENTS
       ) {
-        setComposerSubmissionError(
-          `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} pasted images per message.`,
+        setImageAttachmentError(
+          `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
         );
         return;
       }
@@ -3060,14 +3064,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     [expandMobileComposer, insertComposerText, isComposerCollapsedMobile],
   );
 
-  const onComposerPaste = (event: ReactClipboardEvent<HTMLElement>) => {
-    const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
-      file.type.startsWith("image/"),
-    );
+  const addComposerImages = (imageFiles: ReadonlyArray<File>) => {
     if (imageFiles.length === 0) return;
-    event.preventDefault();
-    if (isComposerApprovalState || pendingUserInputs.length > 0 || projectSelectionRequired) {
-      setComposerSubmissionError("Paste images after resolving the current composer prompt.");
+    if (
+      isComposerApprovalState ||
+      pendingUserInputs.length > 0 ||
+      projectSelectionRequired ||
+      isConnecting
+    ) {
+      setImageAttachmentError(
+        "Attach images after connecting and resolving the current composer prompt.",
+      );
       return;
     }
     const existingIds = new Set(composerPastedImages.map((image) => image.id));
@@ -3082,6 +3089,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         added.map((image) => imageContextReference(image.id)).join(" ") + " ",
         "cursor",
       );
+  };
+
+  const onComposerPaste = (event: ReactClipboardEvent<HTMLElement>) => {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+    if (imageFiles.length === 0) return;
+    event.preventDefault();
+    addComposerImages(imageFiles);
   };
 
   const handleInterruptPrimaryAction = useCallback(() => {
@@ -3145,6 +3161,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     projectSelectionRequired ||
     environmentUnavailable !== null ||
     composerSubmissionError !== null ||
+    imageAttachmentError !== null ||
     providerInputSubmissionError !== null ||
     imageUploadBlockReason !== null;
   const isComposerResting = shouldUseRestingComposerLayout({
@@ -3504,6 +3521,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           { ensureLeadingBoundary: true, citationCommentAnchor: sourceAnchor },
         ),
 
+      addDroppedFiles: addComposerImages,
       openModelPicker,
       toggleModelPicker: () => {
         if (isComposerModelPickerOpen) {
@@ -3618,6 +3636,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
     }),
     [
+      addComposerImages,
       activeThread,
       composerDraftTarget,
       composerCursor,
@@ -4106,7 +4125,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
             </div>
 
             <ComposerPromptLengthValidation
-              message={providerInputSubmissionError ?? composerSubmissionError}
+              message={
+                providerInputSubmissionError ?? imageAttachmentError ?? composerSubmissionError
+              }
             />
 
             {/* Bottom toolbar */}
@@ -4131,6 +4152,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     isComposerResting && "hidden",
                   )}
                 >
+                  <ComposerImagePicker
+                    disabled={
+                      isConnecting || projectSelectionRequired || pendingUserInputs.length > 0
+                    }
+                    onFiles={addComposerImages}
+                  />
                   {composerControlsInStrip ? null : composerControls}
                 </div>
 

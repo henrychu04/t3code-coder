@@ -1,4 +1,4 @@
-// Adapted from upstream 8d8189e67 ChatMarkdownImage. Only captured Blob URLs are rendered.
+// Adapted from upstream 8d8189e67 ChatMarkdownImage. Coder supplies validated, memory-only Blob URLs.
 import {
   useCallback,
   useState,
@@ -10,6 +10,8 @@ import {
 import type { EnvironmentId, ScreenshotArtifactReference } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useTurnImageGallery } from "./ArtifactNavigation";
+import { useImagePreviewVisibility } from "./useImagePreviewVisibility";
 import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { ExpandedImageDialog, type ExpandedImagePreview } from "./ExpandedImageDialog";
 import { markdownImageGallery, markdownImageItems } from "./markdownImageGallery";
@@ -18,7 +20,7 @@ const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME =
   "h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]";
 const CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME = "inline-block!";
 const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME =
-  "aspect-video w-full overflow-hidden bg-muted/60 max-w-[min(100%,30rem)] rounded-lg border border-border/40";
+  "aspect-video w-[30rem] overflow-hidden bg-muted/60 max-w-[min(100%,30rem)] rounded-lg border border-border/40";
 function ChatMarkdownMediaUnavailableLabel({ alt, retry }: { alt: string; retry: () => void }) {
   return (
     <span className="inline-flex items-center gap-1.5">
@@ -71,10 +73,11 @@ function expandableMarkdownImageProps(
     },
   };
 }
-function ChatMarkdownImage(props: {
+export function ChatMarkdownImage(props: {
   /** Null while the URL is being resolved; the last decoded image stays up. */
   readonly src: string | null;
   readonly sourceFailed?: boolean | undefined;
+  readonly onDecoded?: ((image: HTMLImageElement) => void) | undefined;
   readonly alt: string;
   readonly copyMarkdown: string | undefined;
   readonly standalone: boolean;
@@ -85,7 +88,8 @@ function ChatMarkdownImage(props: {
     | Omit<ComponentProps<"img">, "src" | "alt" | "className" | "style">
     | undefined;
   readonly retry: () => void;
-  readonly artifact: ScreenshotArtifactReference;
+  readonly artifact?: ScreenshotArtifactReference | undefined;
+  readonly projectImage?: import("../../lib/readProjectImageBlob").ProjectImageTarget | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
 }) {
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
@@ -98,18 +102,23 @@ function ChatMarkdownImage(props: {
   const markLoadedIfComplete = useCallback(
     (image: HTMLImageElement | null) => {
       if (!image) return;
-      if (image.complete && image.naturalWidth > 0) setLoadedSrc(image.currentSrc || image.src);
+      if (image.complete && image.naturalWidth > 0) {
+        setLoadedSrc(image.currentSrc || image.src);
+        props.onDecoded?.(image);
+      }
       markdownImageItems.set(image, {
         src,
         name: props.alt.trim() || "image",
         retry: props.retry,
         artifact: props.artifact,
+        projectImage: props.projectImage,
       });
     },
-    [props.retry, props.alt, props.artifact, src],
+    [props.retry, props.alt, props.artifact, props.projectImage, props.onDecoded, src],
   );
   const imageEvents = (loadingSrc: string) => ({
-    onLoad: () => {
+    onLoad: (event: { currentTarget: HTMLImageElement }) => {
+      props.onDecoded?.(event.currentTarget);
       setLoadedSrc(loadingSrc);
       setFailedSrc(null);
     },
@@ -213,28 +222,62 @@ export function CapturedMarkdownImage({
   imageProps?: Omit<ComponentProps<"img">, "src" | "srcSet" | "alt" | "style"> | undefined;
   copyMarkdown?: string | undefined;
 }) {
-  const images = useScreenshotArtifacts(environmentId, [artifact], true);
+  const { previewRef, visible } = useImagePreviewVisibility();
+  const turnGallery = useTurnImageGallery();
+  const images = useScreenshotArtifacts(environmentId, [artifact], visible);
   const image = images[artifact.id];
   const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
-  const style = authoredImageSizeStyle(width, height);
+  const { id: anchorId, ...authoredImageProps } = imageProps ?? {};
+  const style =
+    authoredImageSizeStyle(width, height) ??
+    authoredImageSizeStyle(artifact.dimensions?.width, artifact.dimensions?.height);
   const retry = () => {
-    if (image && image.status !== "loading") image.retry();
+    if (image && "retry" in image) image.retry();
   };
   return (
-    <>
-      <ChatMarkdownImage
-        src={image?.status === "loaded" ? image.url : null}
-        sourceFailed={image?.status === "error"}
-        alt={alt}
-        copyMarkdown={copyMarkdown}
-        imageProps={imageProps}
-        className={imageProps?.className}
-        standalone={standalone}
-        style={style}
-        retry={retry}
-        artifact={artifact}
-        onImageExpand={setPreview}
-      />
+    <span
+      id={anchorId}
+      ref={previewRef}
+      data-image-preview
+      tabIndex={-1}
+      className="inline-block max-w-full"
+    >
+      {image?.status === "deferred" || !visible ? (
+        <span
+          title={imageProps?.title}
+          data-markdown-copy={copyMarkdown}
+          {...expandableMarkdownImageProps(
+            (preview) => setPreview(turnGallery.previewFor(artifact.id) ?? preview),
+            alt,
+          )}
+          ref={(element) => {
+            if (element)
+              markdownImageItems.set(element, { src: null, name: alt || artifact.name, artifact });
+          }}
+          className={cn(
+            "inline-flex cursor-zoom-in items-center justify-center rounded-lg border border-border/40 bg-muted/40 p-4 text-xs text-muted-foreground",
+            standalone && "aspect-video w-[30rem] max-w-full",
+            imageProps?.className,
+          )}
+          style={style}
+        >
+          Open image{alt ? ` · ${alt}` : ""}
+        </span>
+      ) : (
+        <ChatMarkdownImage
+          src={image?.status === "loaded" ? image.url : null}
+          sourceFailed={image?.status === "error"}
+          alt={alt}
+          copyMarkdown={copyMarkdown}
+          imageProps={authoredImageProps}
+          className={imageProps?.className}
+          standalone={standalone}
+          style={style}
+          retry={retry}
+          artifact={artifact}
+          onImageExpand={(preview) => setPreview(turnGallery.previewFor(artifact.id) ?? preview)}
+        />
+      )}
       {preview ? (
         <CapturedImageDialog
           environmentId={environmentId}
@@ -242,7 +285,7 @@ export function CapturedMarkdownImage({
           onClose={() => setPreview(null)}
         />
       ) : null}
-    </>
+    </span>
   );
 }
 
@@ -251,26 +294,46 @@ export function CapturedImageDialog({
   environmentId,
   preview,
   onClose,
+  source = "artifact",
 }: {
   environmentId: EnvironmentId;
   preview: ExpandedImagePreview;
   onClose: () => void;
+  source?: "artifact" | "attachment";
 }) {
-  const artifacts = preview.images.flatMap((item) => (item.artifact ? [item.artifact] : []));
-  const resources = useScreenshotArtifacts(environmentId, artifacts, true);
+  const turnGallery = useTurnImageGallery();
+  const initialArtifact = preview.images[preview.index]?.artifact;
+  const galleryImages =
+    (source === "artifact" && initialArtifact
+      ? turnGallery.previewFor(initialArtifact.id)?.images
+      : undefined) ?? preview.images;
+  const [selectedId, setSelectedId] = useState(initialArtifact?.id);
+  const index = Math.max(
+    0,
+    galleryImages.findIndex((image) => image.artifact?.id === selectedId),
+  );
+  const item = galleryImages[index];
+  // Keep selection stable as turn activities change; select the first remaining
+  // image if the selected artifact itself disappears.
+  if (item?.artifact && item.artifact.id !== selectedId) setSelectedId(item.artifact.id);
+  const artifacts = item?.artifact ? [item.artifact] : [];
+  const resources = useScreenshotArtifacts(environmentId, artifacts, true, source, true);
   return (
     <ExpandedImageDialog
       onClose={onClose}
+      onIndexChange={(nextIndex) => setSelectedId(galleryImages[nextIndex]?.artifact?.id)}
       preview={{
         ...preview,
-        images: preview.images.map((item) => {
+        index,
+        images: galleryImages.map((item) => {
           const resource = item.artifact ? resources[item.artifact.id] : undefined;
-          return resource
+          return item.artifact
             ? {
                 ...item,
-                src: resource.status === "loaded" ? resource.url : null,
-                loading: resource.status === "loading",
-                retry: resource.status === "loading" ? undefined : resource.retry,
+                src: resource?.status === "loaded" ? resource.url : null,
+                loading:
+                  !resource || resource.status === "loading" || resource.status === "deferred",
+                retry: resource && "retry" in resource ? resource.retry : undefined,
               }
             : item;
         }),

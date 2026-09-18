@@ -52,6 +52,7 @@ import {
   type ProjectFileOperation,
   ProjectListEntriesError,
   ProjectReadFileError,
+  ProjectImageReadError,
   ProjectSearchEntriesError,
   ProjectTextSearchError,
   ProjectWriteFileError,
@@ -100,6 +101,7 @@ import * as VcsProvisioningService from "./vcs/VcsProvisioningService.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
+import { readProjectImage } from "./workspace/ProjectImages.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 
 /** Refresh linked badges after a host action without turning a successful action into an error. */
@@ -1154,6 +1156,14 @@ export const layer = CoderWsRpcGroup.toLayer(
                 }),
             ),
           );
+        }),
+      [WS_METHODS.projectsReadImage]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned) return yield* new ProjectImageReadError({ message: "Image is unavailable." });
+          return yield* readProjectImage(input);
         }),
       [WS_METHODS.projectsWriteFile]: (input) =>
         Effect.gen(function* () {

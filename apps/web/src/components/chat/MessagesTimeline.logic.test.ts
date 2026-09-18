@@ -1,3 +1,4 @@
+import { workEntryViewedImagePath } from "./MessagesTimeline.logic";
 import { resolveWorkGroupScrollIndex, shouldFollowWorkGroupAppend } from "./MessagesTimeline.logic";
 import { describe, expect, it } from "vite-plus/test";
 import { MessageId, TurnId } from "@t3tools/contracts";
@@ -2121,5 +2122,43 @@ describe("expanded tool group scrolling", () => {
     expect(
       resolveWorkGroupScrollIndex(entries, { entryId: "removed", offset: 120 }),
     ).toBeUndefined();
+  });
+});
+
+describe("image-view path parity", () => {
+  const entry = { id: "read", label: "Read", createdAt: "2026-01-01", tone: "tool" as const };
+  it("prefers explicit image metadata even when tool detail is descriptive", () => {
+    expect(
+      workEntryViewedImagePath({
+        ...entry,
+        itemType: "dynamic_tool_call",
+        detail: "Generated screenshot",
+        viewedImagePath: " /tmp/output.png ",
+      }),
+    ).toBe("/tmp/output.png");
+  });
+  it("recognizes image paths in additional read activities", () => {
+    expect(
+      workEntryViewedImagePath({ ...entry, requestKind: "file-read", detail: "/tmp/read.webp" }),
+    ).toBe("/tmp/read.webp");
+    expect(
+      workEntryViewedImagePath({
+        ...entry,
+        itemType: "dynamic_tool_call",
+        toolTitle: "Read File",
+        detail: "image.jpg",
+      }),
+    ).toBe("image.jpg");
+    expect(
+      workEntryViewedImagePath({ ...entry, itemType: "command_execution", detail: "image.jpg" }),
+    ).toBeNull();
+  });
+  it("rejects multiline metadata and retains unsupported images for explanatory feedback", () => {
+    expect(
+      workEntryViewedImagePath({ ...entry, viewedImagePath: "first\n/tmp/image.png" }),
+    ).toBeNull();
+    expect(workEntryViewedImagePath({ ...entry, viewedImagePath: "/tmp/logo.svg" })).toBe(
+      "/tmp/logo.svg",
+    );
   });
 });

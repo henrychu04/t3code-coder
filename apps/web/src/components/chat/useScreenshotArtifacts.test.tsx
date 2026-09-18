@@ -148,3 +148,74 @@ it("isolates identical IDs across workspaces and sources", async () => {
   expect(read).toHaveBeenCalledTimes(2);
   expect(createUrl).toHaveBeenCalledTimes(2);
 });
+
+it("loads previews near the viewport and releases their bytes when they scroll away", async () => {
+  const { useImagePreviewVisibility } = await import("./useImagePreviewVisibility");
+  let intersect!: IntersectionObserverCallback;
+  const disconnect = vi.fn();
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = callback;
+      }
+      observe() {}
+      disconnect = disconnect;
+    },
+  );
+  function Preview() {
+    const { previewRef, visible } = useImagePreviewVisibility();
+    images = useScreenshotArtifacts(EnvironmentId.make("env"), artifacts, visible);
+    return <span ref={previewRef} />;
+  }
+  read.mockResolvedValue(chunk(0, "YWJj", null));
+  await act(async () => root.render(<Preview />));
+  expect(read).not.toHaveBeenCalled();
+  const enter = (isIntersecting: boolean) =>
+    act(async () => {
+      intersect([{ isIntersecting } as IntersectionObserverEntry], {} as IntersectionObserver);
+    });
+  await enter(true);
+  expect(read).toHaveBeenCalledOnce();
+  expect(images[artifact.id]?.status).toBe("loaded");
+  await enter(false);
+  expect(revokeUrl).toHaveBeenCalledWith("blob:artifact");
+  await enter(true);
+  expect(read).toHaveBeenCalledTimes(2);
+  await act(async () => root.render(null));
+  expect(disconnect).toHaveBeenCalledOnce();
+});
+
+it("reads only the selected gallery image and releases it when navigating", async () => {
+  const { CapturedImageDialog } = await import("./CapturedMarkdownImage");
+  const second = { ...artifact, id: ScreenshotArtifactId.make("second"), name: "Second" };
+  read.mockImplementation(async ({ input }) => ({
+    ...chunk(0, "YWJj", null),
+    value: { ...chunk(0, "YWJj", null).value, artifactId: input.artifactId },
+  }));
+  await act(async () =>
+    root.render(
+      <CapturedImageDialog
+        environmentId={EnvironmentId.make("env")}
+        onClose={() => {}}
+        preview={{
+          index: 0,
+          images: [artifact, second].map((artifact) => ({
+            src: null,
+            name: artifact.name,
+            artifact,
+          })),
+        }}
+      />,
+    ),
+  );
+  expect(read).toHaveBeenCalledOnce();
+  expect(read.mock.calls[0]![0].input.artifactId).toBe(artifact.id);
+  await act(async () =>
+    document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+  );
+  expect(read).toHaveBeenCalledTimes(2);
+  expect(read.mock.calls[1]![0].input.artifactId).toBe(second.id);
+  expect(revokeUrl).toHaveBeenCalledOnce();
+  expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("Second");
+});

@@ -1,9 +1,10 @@
-import { ArtifactNavigationContext } from "./ArtifactNavigation";
+import { ArtifactNavigationContext, useTurnImageGallery } from "./ArtifactNavigation";
 import { type EnvironmentId, type ScreenshotArtifactReference } from "@t3tools/contracts";
 import { memo, useState, useContext, useEffect, useRef } from "react";
 import { ScreenshotArtifactPreview } from "./ScreenshotArtifactPreview";
 import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
-import { ExpandedImageDialog } from "./ExpandedImageDialog";
+import { CapturedImageDialog } from "./CapturedMarkdownImage";
+import { useImagePreviewVisibility } from "./useImagePreviewVisibility";
 
 export type ImagePreviewReference = Omit<ScreenshotArtifactReference, "sizeBytes"> & {
   sizeBytes?: number;
@@ -22,12 +23,14 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow({
   onClose?: () => void;
 }) {
   const navigation = useContext(ArtifactNavigationContext);
+  const turnGallery = useTurnImageGallery();
+  const { previewRef, visible } = useImagePreviewVisibility();
   const rowRef = useRef<HTMLSpanElement>(null);
   const [selectedId, setSelectedId] = useState<string | null>(
     previewOnly ? (artifacts[0]?.id ?? null) : null,
   );
   const [failedUrls, setFailedUrls] = useState<ReadonlySet<string>>(new Set());
-  const images = useScreenshotArtifacts(environmentId, artifacts, true, source);
+  const images = useScreenshotArtifacts(environmentId, artifacts, visible && !previewOnly, source);
   useEffect(() => {
     const request = navigation?.request;
     if (
@@ -43,8 +46,18 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow({
   if (artifacts.length === 0) return null;
   return (
     <span ref={rowRef} className="block">
+      {source === "artifact" && turnGallery.artifacts[0]?.id === artifacts[0]?.id ? (
+        <button
+          type="button"
+          className="mb-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setSelectedId(artifacts[0]?.id ?? null)}
+        >
+          Images in this turn · {turnGallery.artifacts.length}
+        </button>
+      ) : null}
       {/* Upstream MessagesTimeline user-image grid, using Coder's bounded chunk loader. */}
       <span
+        ref={previewRef}
         hidden={previewOnly}
         className={previewOnly ? "hidden" : "mb-2 grid max-w-[420px] grid-cols-2 gap-2"}
       >
@@ -53,7 +66,7 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow({
           const failed =
             image?.status === "error" || (image?.status === "loaded" && failedUrls.has(image.url));
           const retry = () => {
-            if (image && image.status !== "loading") image.retry();
+            if (image && "retry" in image) image.retry();
           };
           return (
             <span key={artifact.id} className="relative">
@@ -84,24 +97,20 @@ export const ScreenshotArtifactsRow = memo(function ScreenshotArtifactsRow({
         })}
       </span>
       {selectedIndex >= 0 ? (
-        <ExpandedImageDialog
+        <CapturedImageDialog
+          environmentId={environmentId}
+          source={source}
           key={selectedId}
           onClose={() => {
             setSelectedId(null);
             onClose?.();
           }}
-          preview={{
-            index: selectedIndex,
-            images: artifacts.map((artifact) => {
-              const image = images[artifact.id];
-              return {
-                name: artifact.name,
-                loading: !image || image.status === "loading",
-                retry: image && image.status !== "loading" ? image.retry : undefined,
-                src: image?.status === "loaded" ? image.url : null,
-              };
-            }),
-          }}
+          preview={
+            (source === "artifact" ? turnGallery.previewFor(selectedId!) : null) ?? {
+              index: selectedIndex,
+              images: artifacts.map((artifact) => ({ name: artifact.name, src: null, artifact })),
+            }
+          }
         />
       ) : null}
     </span>

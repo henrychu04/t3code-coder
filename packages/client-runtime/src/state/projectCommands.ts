@@ -90,6 +90,11 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workspaceListDirectories,
       staleTimeMs: 5_000,
     }),
+    readImage: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:projects:read-image",
+      tag: WS_METHODS.projectsReadImage,
+      concurrency: { mode: "parallel" },
+    }),
     readScreenshotArtifact: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:workspace:read-screenshot-artifact",
       tag: WS_METHODS.workspaceReadScreenshotArtifact,

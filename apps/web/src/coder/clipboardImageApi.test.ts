@@ -88,3 +88,10 @@ it("rejects invalid gateway replies and unsupported files", async () => {
   ).rejects.toThrow("PNG, JPEG, or WebP");
   expect(FakeXHR.instances).toHaveLength(1);
 });
+
+it("rejects prepared uploads above main's 10 MiB cap before sending bytes", async () => {
+  const image = png();
+  Object.defineProperty(image, "size", { value: 10 * 1024 * 1024 + 1 });
+  await expect(uploadCoderClipboardImage("workspace", image)).rejects.toThrow("10 MiB");
+  expect(FakeXHR.instances).toHaveLength(0);
+});

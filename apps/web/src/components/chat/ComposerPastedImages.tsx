@@ -1,3 +1,4 @@
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { useComposerImageThumbnail } from "../../hooks/useComposerImageThumbnail";
 import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -17,7 +18,9 @@ function uploadLabel(image: ComposerPastedImage): string | null {
     case "queued":
       return "Queued";
     case "uploading":
-      return `${Math.floor(image.progress * 100)}%`;
+      return image.file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+        ? "Resizing…"
+        : `${Math.floor(image.progress * 100)}%`;
     case "failed":
       return "Failed";
     case "uploaded":
@@ -44,7 +47,7 @@ export function ComposerPastedImages({
   const visible = compact ? images.slice(0, visibleCount) : images;
   if (images.length === 0) return null;
   return (
-    <div aria-label="Pasted images" className={cn("px-3 sm:px-4", compact ? "py-1.5" : "py-3")}>
+    <div aria-label="Attached images" className={cn("px-3 sm:px-4", compact ? "py-1.5" : "py-3")}>
       <div className="flex max-w-full flex-wrap items-center gap-2">
         {visible.map((image) => (
           <div
@@ -149,11 +152,15 @@ function PastedImageGallery({
   useEffect(() => {
     const items = images.map((image) => ({
       name: image.file.name,
-      src: URL.createObjectURL(image.file),
+      src:
+        image.file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
+          ? null
+          : URL.createObjectURL(image.file),
+      loading: image.file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES && image.status !== "failed",
     }));
     setPreview({ images: items, index });
     return () => {
-      for (const item of items) URL.revokeObjectURL(item.src);
+      for (const item of items) if (item.src) URL.revokeObjectURL(item.src);
     };
   }, [images, index]);
   return preview ? <ExpandedImageDialog preview={preview} onClose={onClose} /> : null;
