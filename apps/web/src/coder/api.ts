@@ -1,3 +1,4 @@
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { reportErrorDiagnostic } from "@t3tools/client-runtime/errors";
 import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 
@@ -244,8 +245,8 @@ export async function uploadCoderClipboardImage(
   if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
     throw new Error("Clipboard image must be PNG, JPEG, or WebP.");
   }
-  if (file.size > 20 * 1024 * 1024) {
-    throw new Error("Clipboard image exceeds the 20 MiB limit.");
+  if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+    throw new Error("Image exceeds the 10 MiB limit.");
   }
   return new Promise<string>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

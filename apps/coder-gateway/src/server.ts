@@ -2250,7 +2250,7 @@ export function makeLocalCoderGateway(
                 response,
                 413,
                 "text/plain; charset=utf-8",
-                "Clipboard image exceeds 20 MiB.",
+                "Image exceeds 10 MiB.",
               );
               return;
             }

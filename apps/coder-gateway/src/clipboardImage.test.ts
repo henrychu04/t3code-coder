@@ -3,7 +3,11 @@ import { strictEqual, throws } from "node:assert";
 import * as NodeFS from "node:fs/promises";
 import { describe, it } from "node:test";
 
-import { validateClipboardImage, withStagedClipboardImage } from "./clipboardImage.ts";
+import {
+  MAX_CLIPBOARD_IMAGE_BYTES,
+  validateClipboardImage,
+  withStagedClipboardImage,
+} from "./clipboardImage.ts";
 
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
@@ -30,4 +34,15 @@ describe("clipboard image staging", () => {
       () => undefined,
     );
   });
+});
+
+it("accepts exactly 10 MiB and rejects a prepared upload one byte over", () => {
+  strictEqual(MAX_CLIPBOARD_IMAGE_BYTES, 10 * 1024 * 1024);
+  const exact = Buffer.alloc(MAX_CLIPBOARD_IMAGE_BYTES);
+  png.copy(exact);
+  strictEqual(validateClipboardImage("image/png", exact), "png");
+  throws(
+    () => validateClipboardImage("image/png", Buffer.concat([exact, Buffer.from([0])])),
+    /10 MiB/,
+  );
 });

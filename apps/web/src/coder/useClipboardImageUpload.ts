@@ -1,3 +1,4 @@
+import { MAX_COMPRESSIBLE_SOURCE_BYTES } from "../lib/imageCompression";
 import { collectDraftImageReferences } from "../lib/composerInlineContext";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
@@ -41,8 +42,8 @@ export function useClipboardImageUpload(
         onError("Image must be PNG, JPEG, or WebP.");
         return;
       }
-      if (file.size > 20 * 1024 * 1024) {
-        onError("Image exceeds the 20 MiB limit.");
+      if (file.size > MAX_COMPRESSIBLE_SOURCE_BYTES) {
+        onError("Image exceeds the 50 MiB source limit.");
         return;
       }
     }

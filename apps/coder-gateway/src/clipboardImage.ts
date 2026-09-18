@@ -1,3 +1,4 @@
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { detectImageMimeType } from "@t3tools/shared/imageSignature";
 // @effect-diagnostics nodeBuiltinImport:off
 import { randomUUID } from "node:crypto";
@@ -7,7 +8,7 @@ import * as NodePath from "node:path";
 
 import type { CoderClipboardImageExtension } from "@t3tools/coder-cli/scp";
 
-export const MAX_CLIPBOARD_IMAGE_BYTES = 20 * 1024 * 1024;
+export const MAX_CLIPBOARD_IMAGE_BYTES = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
 
 export class ClipboardImageValidationError extends Error {}
 
@@ -16,19 +17,19 @@ export function validateClipboardImage(
   bytes: Buffer,
 ): CoderClipboardImageExtension {
   if (bytes.byteLength === 0) {
-    throw new ClipboardImageValidationError("Clipboard image is empty.");
+    throw new ClipboardImageValidationError("Image is empty.");
   }
   if (bytes.byteLength > MAX_CLIPBOARD_IMAGE_BYTES) {
-    throw new ClipboardImageValidationError("Clipboard image exceeds the 20 MiB limit.");
+    throw new ClipboardImageValidationError("Image exceeds the 10 MiB limit.");
   }
   const detected = detectImageMimeType(bytes);
   if (detected === contentType) {
     return detected === "image/png" ? "png" : detected === "image/jpeg" ? "jpg" : "webp";
   }
   if (!["image/png", "image/jpeg", "image/webp"].includes(contentType)) {
-    throw new ClipboardImageValidationError("Clipboard image must be PNG, JPEG, or WebP.");
+    throw new ClipboardImageValidationError("Image must be PNG, JPEG, or WebP.");
   }
-  throw new ClipboardImageValidationError("Clipboard image content does not match its media type.");
+  throw new ClipboardImageValidationError("Image content does not match its media type.");
 }
 
 export async function withStagedClipboardImage<T>(

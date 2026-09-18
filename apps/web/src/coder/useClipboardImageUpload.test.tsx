@@ -216,14 +216,14 @@ it("enforces the attachment limit including queued and failed images", async () 
 
 it("rejects unsupported and oversized images before enqueueing", async () => {
   const oversized = png();
-  Object.defineProperty(oversized, "size", { value: 20 * 1024 * 1024 + 1 });
+  Object.defineProperty(oversized, "size", { value: 50 * 1024 * 1024 + 1 });
   await act(async () => {
     current.upload([new File(["gif"], "paste.gif", { type: "image/gif" })]);
     current.upload([oversized]);
   });
   expect(transfers).toHaveLength(0);
   expect(images()).toHaveLength(0);
-  expect(onError).toHaveBeenLastCalledWith("Image exceeds the 20 MiB limit.");
+  expect(onError).toHaveBeenLastCalledWith("Image exceeds the 50 MiB source limit.");
 });
 
 it.each(["uploading", "uploaded", "failed"] as const)(
@@ -319,4 +319,79 @@ it("accepts picked or dropped images with missing MIME metadata and rejects othe
   await act(async () => current.upload([new File(["text"], "notes.txt")]));
   expect(onError).toHaveBeenLastCalledWith("Image must be PNG, JPEG, or WebP.");
   expect(transfers).toHaveLength(1);
+});
+
+function largeImage() {
+  const file = png();
+  Object.defineProperty(file, "size", { value: 11 * 1024 * 1024 });
+  return file;
+}
+function stubResizeCanvas() {
+  vi.stubGlobal(
+    "OffscreenCanvas",
+    class {
+      getContext() {
+        return { drawImage() {}, fillRect() {} };
+      }
+      async convertToBlob({ type }: { type: string }) {
+        return new Blob(["resized"], { type });
+      }
+    },
+  );
+}
+it("uploads the resized bytes and replaces the draft preview while retaining its identity", async () => {
+  const close = vi.fn();
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(async () => ({ width: 4000, height: 3000, close })),
+  );
+  stubResizeCanvas();
+  await act(async () => current.upload([largeImage()]));
+  expect(transfers).toHaveLength(1);
+  const image = images()[0]!;
+  expect(image.file.type).toBe("image/webp");
+  expect(image.file.name).toBe("paste.webp");
+  expect(image.file.size).toBeLessThan(10 * 1024 * 1024);
+  expect(vi.mocked(uploadCoderClipboardImage).mock.calls[0]?.[1]).toBe(image.file);
+  expect(close).toHaveBeenCalledOnce();
+  await act(async () => transfers[0]!.resolve("/workspace/resized.webp"));
+  expect(images()[0]).toMatchObject({ id: image.id, file: image.file, status: "uploaded" });
+});
+it("cancels during preparation without uploading or resurrecting the removed image", async () => {
+  let finish!: (bitmap: unknown) => void;
+  vi.stubGlobal(
+    "createImageBitmap",
+    vi.fn(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    ),
+  );
+  stubResizeCanvas();
+  await act(async () => current.upload([largeImage()]));
+  expect(transfers).toHaveLength(0);
+  await act(async () => current.remove(images()[0]!.id));
+  const close = vi.fn();
+  await act(async () => finish({ width: 4000, height: 3000, close }));
+  expect(images()).toHaveLength(0);
+  expect(transfers).toHaveLength(0);
+  expect(close).toHaveBeenCalledOnce();
+});
+it("retains an unreadable image as failed and allows retrying preparation", async () => {
+  const decode = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("decode failed"))
+    .mockResolvedValue({ width: 4000, height: 3000, close: vi.fn() });
+  vi.stubGlobal("createImageBitmap", decode);
+  stubResizeCanvas();
+  await act(async () => current.upload([largeImage()]));
+  expect(images()[0]).toMatchObject({
+    status: "failed",
+    error: "This file could not be read as an image.",
+  });
+  expect(transfers).toHaveLength(0);
+  await act(async () => current.retry(images()[0]!.id));
+  expect(transfers).toHaveLength(1);
+  expect(images()[0]?.file.type).toBe("image/webp");
 });

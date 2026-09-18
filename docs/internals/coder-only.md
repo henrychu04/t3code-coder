@@ -270,13 +270,18 @@ no network listener; Codex, Claude, and user-initiated terminal commands remain 
 
 General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts
-signature-validated PNG, JPEG, or WebP content up to 20 MiB, stages it in an OS temporary directory,
+signature-validated PNG, JPEG, or WebP content up to 10 MiB, stages it in an OS temporary directory,
 and copies it through helper-scoped SCP to a generated path beneath
 `$HOME/.t3-coder/attachments`. It then deletes the local staging file and returns the generated path
 to the draft's in-memory attachment state. The browser queues at most three concurrent image
-transfers per workspace, matching upstream's per-environment limit. Workspaces have independent
+transfers per workspace, matching upstream's per-environment limit. Source images up to 50 MiB
+are prepared with main's byte-limit compression algorithm before transfer: images at or below
+10 MiB pass through unchanged, and larger images are resized and re-encoded to fit. Preparation
+shares the queue's concurrency bound, remains cancellable at the transfer boundary, and updates
+the draft to use the prepared bytes. The browser upload API, gateway, and workspace provider-input
+reader all enforce the same 10 MiB attachment constant. Workspaces have independent
 queues; drafts in the same workspace share its limit. Completed images retain their workspace
-identity. Moving or restoring images into another workspace queues their original image bytes
+identity. Moving or restoring images into another workspace queues their prepared image bytes
 for that destination and cancels any old transfer. The browser retains failed images for explicit
 retry and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.

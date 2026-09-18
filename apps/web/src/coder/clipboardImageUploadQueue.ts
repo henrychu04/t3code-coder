@@ -1,3 +1,5 @@
+import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
+import { compressImageToByteLimit } from "../lib/imageCompression";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import {
   coderWorkspaceIdForEnvironment,
@@ -47,7 +49,16 @@ async function run(
 ) {
   let lastStep = -1;
   try {
-    const path = await uploadCoderClipboardImage(image.workspaceId, image.file, {
+    const prepared = await compressImageToByteLimit(image.file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
+    controller.signal.throwIfAborted();
+    if (!prepared.ok)
+      throw new Error(
+        prepared.reason === "unreadable"
+          ? "This file could not be read as an image."
+          : "This image is too large to attach, even after resizing to the 10 MiB limit.",
+      );
+    updateImage(image.id, (current) => ({ ...current, file: prepared.file }));
+    const path = await uploadCoderClipboardImage(image.workspaceId, prepared.file, {
       signal: controller.signal,
       onProgress: (value) => {
         const progress = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));

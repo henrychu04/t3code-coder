@@ -6,8 +6,12 @@ general file-transfer path.
 
 ## Attaching images to a message
 
-Paste into the composer, drag images onto the conversation, or select **Attach images** to choose files. PNG, JPEG, and WebP up to 20 MiB are accepted, and the
-content is validated before upload — an image that merely claims to be a PNG is not enough.
+Paste into the composer, drag images onto the conversation, or select **Attach images** to choose
+files. PNG, JPEG, and WebP source files up to 50 MiB are accepted. Like main, images up to 10 MiB
+are sent unchanged; larger images are automatically resized to fit 10 MiB before upload. Resizing
+uses WebP where supported, with JPEG as a fallback, and updates the thumbnail to the prepared image.
+The tile shows **Resizing…** while preparation runs. Unreadable images or images that cannot fit
+stay in the draft with a retry/remove action. The gateway independently validates size and signature.
 
 Attached images appear as thumbnails above the chat input. You can continue editing and adding more
 images while transfers run. At most eight images can be attached to a message, including queued and
@@ -66,6 +70,7 @@ Older conversations can still display their previously saved artifacts. Those le
 in `$HOME/.t3-coder/artifacts`, outside worktrees; deleting a worktree does not delete them.
 
 The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
-Coder-specific differences are bounded helper stdio transport, PNG/JPEG/WebP validation with a
-20 MiB limit, and no external web images, videos, save, export, or download actions.
+Attachment sizing follows main. Coder-specific differences are bounded helper stdio transport,
+PNG/JPEG/WebP-only support, a 20 MiB bound for current-file previews, and no external web images,
+videos, save, export, or download actions.
 Unsupported image formats show an explanation instead of a retry button.

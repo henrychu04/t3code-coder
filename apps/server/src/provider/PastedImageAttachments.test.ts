@@ -37,6 +37,23 @@ it.layer(NodeServices.layer)("resolvePastedImageAttachment", (it) => {
     }),
   );
 
+  it.effect("rejects attachments above main's 10 MiB provider-input limit", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-image-" });
+      const file = NodePath.join(attachmentsDir, IMAGE_ID);
+      yield* fileSystem.writeFile(file, PNG_BYTES);
+      yield* Effect.promise(() => NodeFS.truncate(file, 10 * 1024 * 1024 + 1));
+      const failure = yield* Effect.flip(
+        resolvePastedImageAttachment({
+          attachmentsDir,
+          attachment: { type: "image", id: IMAGE_ID },
+        }),
+      );
+      assert.instanceOf(failure, PastedImageAttachmentError);
+    }),
+  );
+
   it.effect("rejects symlinks and signature mismatches", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

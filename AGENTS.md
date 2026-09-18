@@ -101,8 +101,10 @@ claim: shared provider protocols may still report subscription metadata.
     - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
       reads, or non-Coder workspace connections.
   - **Images: composer attachments and on-demand environment previews.** Accept PNG, JPEG, and WebP
-    images only, validate their signatures rather than trusting metadata, and reject images larger
-    than 20 MiB.
+    images only and validate their signatures rather than trusting metadata. Composer source files
+    may be up to 50 MiB; use main's compression algorithm to prepare images at or below 10 MiB.
+    The browser upload API, gateway body/signature validation, and provider-input reader must share
+    main's 10 MiB attachment limit. Current-file previews retain their separate 20 MiB read bound.
     - Images pasted, selected, or dropped into the composer: generate filenames internally and copy
       only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
       Submitted image references may read these validated workspace copies by opaque generated ID
