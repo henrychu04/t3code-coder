@@ -80,15 +80,25 @@ gateway keeps it attached and reconnects the loopback WebSocket. If the helper o
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
 Shell and thread subscriptions always emit a `synchronized` item between their initial
 snapshot/replay and live events. The browser does not negotiate this guarantee: it keeps restored
-data in `synchronizing` state until the item arrives and requests a clean connection retry if it is
-missing for 15 seconds. These guarantees define helper protocol version 2; older helpers are not
-accepted or adapted.
+data in `synchronizing` state until the item arrives, except for upstream's warm resume behavior:
+a recently viewed live thread renders its retained snapshot immediately and only shows synchronization
+progress if replay changes its contents. Every subscription still waits for the completion marker
+internally and requests a clean connection retry if it is missing for 15 seconds. These guarantees
+define helper protocol version 2; older helpers are not accepted or adapted.
 
 Live shell and thread subscriptions retain at most 1,000 events and 8 MiB of serialized live data
 per subscription, including batches awaiting an RPC acknowledgement. Overflow detaches that live
 source even if the browser is stalled during snapshot loading or acknowledgement; reconnect uses
 the existing snapshot/replay and synchronization marker. Unused browser thread subscriptions are
-released immediately; settled snapshots remain in the bounded memory-only cache.
+released immediately. Following upstream's resume-snapshot design (`ea6af5924`), recent thread
+snapshots, including running messages and their applied event cursors, survive for five idle minutes
+without retaining RPC or environment scopes. The additional idle snapshot pool is limited to 24
+threads and 64 MiB of conservatively estimated data per browser atom registry; least recently used
+snapshots are removed when either limit is reached. Sizing uses string lengths without serializing
+or encoding message bodies, and stops after 8,192 values or 64 levels of nesting. Snapshots exceeding
+those limits are dropped. This can evict large or complex threads earlier than exact byte accounting,
+but avoids scanning large message bodies when navigating away. Settled snapshots also remain in the
+existing bounded memory-only cache.
 
 The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
@@ -367,6 +377,30 @@ produced by the workspace Claude CLI using bounded Git summaries and patches; re
 templates are read from the committed base tree. The gateway never runs Git or `glab`, never
 connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other
 hosted providers remain unavailable.
+
+Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
+of emoji text. Choices persist on workspace-owned project records and travel through the existing
+project metadata command/event stream over helper stdio. SQLite migration 052 adds the nullable
+`project_icon_json` projection column; resetting a choice stores null. The browser renders bundled
+vectors, emoji, or upstream's name-based monograms. No image-path lookup, transfer, or external fetch
+is introduced.
+
+## Fixed settings metadata
+
+Settings parity uses two bounded metadata reads in the Linux helper. `projects.getConfig` accepts
+only a project ID, resolves an active project through the projection query, and reads the fixed
+`t3.json` file at its real root (at most 64 KiB). It returns only decoded script fields and checkout
+mode, or a missing/invalid/unavailable status. It accepts no caller path, returns no raw file, and
+never logs parser input or file contents. Importing an action remains an explicit settings write.
+
+Workspace themes come only from `<stateDir>/themes/*.json`. The helper examines at most 32 candidate
+files, at most 32 KiB each and 192 KiB total accepted source bytes. Reads reject symlinks, non-regular
+files, invalid UTF-8, NUL bytes, and oversized files, and bind the opened file to the expected
+directory. A symlinked theme directory is rejected. Reserved theme IDs and invalid or colorless
+files are skipped. The watcher is scoped to the helper lifecycle; a sequenced, bounded publication
+stream prevents stale changes from overwriting a reconnect snapshot. Only decoded theme metadata
+travels over the existing server-config stdio stream. It introduces no listener, general file API,
+local file transfer, credential handling, or telemetry.
 
 ## Distribution
 

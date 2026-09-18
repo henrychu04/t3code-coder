@@ -4,14 +4,19 @@ import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useEnvironments } from "../../state/environments";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "./scopedSettings";
-import { resolveSettingsScope, type SettingsScopeSearch } from "./settingsScope";
+import {
+  resolveLegacyProjectSettingsSearch,
+  resolveSettingsScope,
+  type SettingsScopeSearch,
+} from "./settingsScope";
 
 function useResolvedSettingsScope(search: SettingsScopeSearch) {
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
   const primaryEnvironmentId = useActiveEnvironmentId();
   return useMemo(() => {
-    const scope = resolveSettingsScope(search, groups, availableEnvironments);
+    const resolvedSearch = resolveLegacyProjectSettingsSearch(search, groups);
+    const scope = resolveSettingsScope(resolvedSearch, groups, availableEnvironments);
     const selected = selectScopedSettingsEnvironments(
       scope,
       availableEnvironments,
@@ -26,7 +31,7 @@ function useResolvedSettingsScope(search: SettingsScopeSearch) {
       ) ??
       targets[0] ??
       null;
-    return { scope, groups, ...selected, targets, target };
+    return { scope, groups, ...selected, targets, target, search: resolvedSearch };
   }, [availableEnvironments, groups, primaryEnvironmentId, search]);
 }
 
@@ -48,10 +53,7 @@ export function SettingsScopeProvider({
   children: ReactNode;
 }) {
   const resolved = useResolvedSettingsScope(search);
-  const value = useMemo(
-    () => ({ ...resolved, search, selectScope: onChange }),
-    [onChange, resolved, search],
-  );
+  const value = useMemo(() => ({ ...resolved, selectScope: onChange }), [onChange, resolved]);
   return <SettingsScopeContext value={value}>{children}</SettingsScopeContext>;
 }
 

@@ -476,7 +476,10 @@ function RemoteDirectoryBrowser({
   readonly environmentId: EnvironmentId;
   readonly onSelect: (path: string) => Promise<void>;
 }) {
-  const [requestedPath, setRequestedPath] = useState<string | null>(null);
+  const environment = useEnvironment(environmentId);
+  const [requestedPath, setRequestedPath] = useState<string | null>(
+    () => environment?.serverConfig?.settings.addProjectBaseDirectory.trim() || null,
+  );
   const [submitting, setSubmitting] = useState(false);
   const query = useEnvironmentQuery(
     projectEnvironment.listDirectories({
@@ -501,6 +504,9 @@ function RemoteDirectoryBrowser({
             onClick={() => result?.parentPath && setRequestedPath(result.parentPath)}
           >
             <ChevronLeftIcon className="size-4" /> Up
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => setRequestedPath(null)}>
+            Home
           </Button>
           <p className="min-w-0 flex-1 truncate font-mono text-xs" title={currentPath ?? undefined}>
             {currentPath ?? "Workspace home"}

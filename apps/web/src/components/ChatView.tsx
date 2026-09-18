@@ -1,3 +1,5 @@
+import { projectScriptIdFromCommand } from "../projectScripts";
+import { resolveProjectScripts } from "@t3tools/shared/projectScripts";
 import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 import { waitForRevertedMessage } from "../lib/waitForRevertedMessage";
@@ -3004,6 +3006,63 @@ export default function ChatView(props: ChatViewProps) {
       useRightPanelStore.getState().close(activeThreadRef);
     }
   }, [activeThreadRef]);
+  const runningScriptShortcut = useRef(false);
+  const runProjectAction = useCallback(
+    async (scriptId: string) => {
+      if (
+        runningScriptShortcut.current ||
+        !isServerThread ||
+        !activeThreadRef ||
+        !activeThreadId ||
+        !activeProject
+      )
+        return;
+      const script = resolveProjectScripts(settings, activeProject).find(
+        (entry) => entry.id === scriptId,
+      );
+      if (!script) return;
+      runningScriptShortcut.current = true;
+      try {
+        const terminalId = nextTerminalId(allocatableActiveTerminalIds);
+        useRightPanelStore.getState().openTerminal(activeThreadRef, terminalId);
+        const opened = await openTerminal({
+          environmentId,
+          input: {
+            threadId: activeThreadId,
+            terminalId,
+            cwd: gitCwd ?? activeProject.workspaceRoot,
+            ...(activeThreadWorktreePath ? { worktreePath: activeThreadWorktreePath } : {}),
+            env: terminalRuntimeEnv({
+              projectRoot: activeProject.workspaceRoot,
+              worktreePath: activeThreadWorktreePath,
+            }),
+          },
+        });
+        if (opened._tag !== "Success") return;
+        await writeTerminal({
+          environmentId,
+          input: { threadId: activeThreadId, terminalId, data: script.command + "\n" },
+        });
+        setTerminalFocusRequestId((value) => value + 1);
+      } finally {
+        runningScriptShortcut.current = false;
+      }
+    },
+    [
+      isServerThread,
+      activeThreadRef,
+      activeThreadId,
+      activeProject,
+      settings,
+      allocatableActiveTerminalIds,
+      environmentId,
+      gitCwd,
+      activeThreadWorktreePath,
+      openTerminal,
+      writeTerminal,
+    ],
+  );
+
   const addTerminalSurface = useCallback(() => {
     if (!activeThreadRef || !activeThreadId || !activeProject) return;
     const cwd = gitCwd ?? activeProject.workspaceRoot;
@@ -4633,6 +4692,14 @@ export default function ChatView(props: ChatViewProps) {
       });
       if (!command) return;
 
+      const scriptId = projectScriptIdFromCommand(command);
+      if (scriptId !== null) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) void runProjectAction(scriptId);
+        return;
+      }
+
       if (command === "thread.stop") {
         if (!canInterruptRunningThread) return;
         event.preventDefault();
@@ -4820,6 +4887,7 @@ export default function ChatView(props: ChatViewProps) {
     activeThreadSettled,
     addTerminalSurface,
     canInterruptRunningThread,
+    runProjectAction,
     onInterrupt,
     terminalUiState.terminalOpen,
     terminalUiState.activeTerminalId,

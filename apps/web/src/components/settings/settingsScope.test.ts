@@ -5,7 +5,11 @@ import type {
   SidebarProjectGroupMember,
   SidebarProjectSnapshot,
 } from "../../sidebarProjectGrouping";
-import { resolveSettingsScope, validateSettingsScopeSearch } from "./settingsScope";
+import {
+  resolveLegacyProjectSettingsSearch,
+  resolveSettingsScope,
+  validateSettingsScopeSearch,
+} from "./settingsScope";
 
 const laptopId = EnvironmentId.make("laptop");
 const serverId = EnvironmentId.make("server");
@@ -201,5 +205,60 @@ describe("settings scope resolution", () => {
       members: [],
       environmentIds: [],
     });
+  });
+});
+
+describe("legacy project settings links", () => {
+  it("selects only the linked checkout within a group spanning workspaces", () => {
+    const search = resolveLegacyProjectSettingsSearch(
+      { project: JSON.stringify([second.environmentId, second.id]) },
+      groups,
+    );
+    expect(search).toEqual({
+      project: "t3code",
+      machine: laptopId,
+      checkout: second.physicalProjectKey,
+    });
+    expect(resolveSettingsScope(search, groups, environments)).toMatchObject({
+      kind: "checkout",
+      checkout: second,
+      members: [second],
+      environmentIds: [laptopId],
+    });
+  });
+
+  it("keeps unavailable links closed until their workspace snapshot arrives", () => {
+    const original = { project: JSON.stringify([third.environmentId, third.id]) };
+    const pending = resolveLegacyProjectSettingsSearch(original, []);
+    expect(pending).toEqual(original);
+    expect(resolveSettingsScope(pending, [], environments)).toMatchObject({
+      kind: "unavailable",
+      members: [],
+      environmentIds: [],
+    });
+    const resolved = resolveLegacyProjectSettingsSearch(pending, groups);
+    expect(resolveSettingsScope(resolved, groups, environments)).toMatchObject({
+      kind: "checkout",
+      members: [third],
+      environmentIds: [serverId],
+    });
+  });
+
+  it("does not replace an explicit conflicting workspace with a writable target", () => {
+    const search = resolveLegacyProjectSettingsSearch(
+      { project: JSON.stringify([first.environmentId, first.id]), machine: serverId },
+      groups,
+    );
+    expect(resolveSettingsScope(search, groups, environments)).toMatchObject({
+      kind: "unavailable",
+      members: [],
+      environmentIds: [],
+    });
+  });
+
+  it("leaves current logical project links and malformed legacy links unchanged", () => {
+    for (const search of [{ project: "t3code" }, { project: '["missing"]' }]) {
+      expect(resolveLegacyProjectSettingsSearch(search, groups)).toBe(search);
+    }
   });
 });

@@ -59,11 +59,13 @@ export async function loginToCoderDeployment(deploymentId: string): Promise<void
 
 export async function checkCoderDeploymentAuthentication(
   deploymentId: string,
+  signal?: AbortSignal,
 ): Promise<CoderDeploymentAuthenticationStatus> {
   const response = await fetchCoder(
     `/api/deployments/${encodeURIComponent(deploymentId)}/auth-status`,
     {
       method: "POST",
+      ...(signal ? { signal } : {}),
     },
   );
   return ((await response.json()) as { readonly status: CoderDeploymentAuthenticationStatus })
@@ -72,21 +74,26 @@ export async function checkCoderDeploymentAuthentication(
 
 export async function discoverCoderWorkspaces(
   deploymentId: string,
+  signal?: AbortSignal,
 ): Promise<readonly DiscoveredCoderWorkspace[]> {
   const response = await fetchCoder(
     `/api/deployments/${encodeURIComponent(deploymentId)}/workspaces`,
     {
       method: "POST",
+      ...(signal ? { signal } : {}),
     },
   );
   return ((await response.json()) as { readonly workspaces: readonly DiscoveredCoderWorkspace[] })
     .workspaces;
 }
 
-export async function loadCoderPortForwardStatuses(): Promise<
-  readonly CoderPortForwardRuntimeStatus[]
-> {
-  const response = await fetchCoder("/api/port-forwards", { cache: "no-store" });
+export async function loadCoderPortForwardStatuses(
+  signal?: AbortSignal,
+): Promise<readonly CoderPortForwardRuntimeStatus[]> {
+  const response = await fetchCoder("/api/port-forwards", {
+    cache: "no-store",
+    ...(signal ? { signal } : {}),
+  });
   return (
     (await response.json()) as {
       readonly portForwards: readonly CoderPortForwardRuntimeStatus[];

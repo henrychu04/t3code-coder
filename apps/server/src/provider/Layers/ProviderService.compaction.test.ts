@@ -27,10 +27,14 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterRequestError } from "../Errors.ts";
 import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
 import { ProviderAdapterRegistry } from "../Services/ProviderAdapterRegistry.ts";
-import { ProviderSessionDirectory } from "../Services/ProviderSessionDirectory.ts";
+import {
+  ProviderSessionDirectory,
+  type ProviderRuntimeBinding,
+} from "../Services/ProviderSessionDirectory.ts";
 import { ProviderService } from "../Services/ProviderService.ts";
 import { ProviderServiceLive } from "./ProviderService.ts";
 
@@ -63,6 +67,11 @@ const harness = (
     startFailure?: boolean;
     earlyCompletion?: boolean;
     mrTools?: AgentMergeRequests["Service"];
+    shutdown?: {
+      enabled: boolean;
+      session: ProviderSession;
+      writes: ProviderRuntimeBinding[];
+    };
   } = {},
 ) =>
   Effect.gen(function* () {
@@ -108,7 +117,7 @@ const harness = (
       stopSession: () => Effect.void,
       stopAll: () => Effect.void,
       hasSession: () => Effect.succeed(true),
-      listSessions: () => Effect.succeed([] as ProviderSession[]),
+      listSessions: () => Effect.succeed(options.shutdown ? [options.shutdown.session] : []),
       respondToRequest: () => Effect.void,
       respondToUserInput: () => Effect.void,
       readThread: () => Effect.die("unused"),
@@ -116,6 +125,11 @@ const harness = (
       streamEvents: Stream.fromQueue(events),
     };
     const dependencies = Layer.mergeAll(
+      options.shutdown
+        ? ServerSettingsService.layerTest({
+            continueThreadsAfterServerUpdate: options.shutdown.enabled,
+          })
+        : Layer.empty,
       options.mrTools ? Layer.succeed(AgentMergeRequests, options.mrTools) : Layer.empty,
       Layer.succeed(ProviderAdapterRegistry, {
         getByInstance: () => Effect.succeed(adapter),
@@ -135,10 +149,25 @@ const harness = (
       Layer.succeed(ProviderSessionDirectory, {
         getBinding: () =>
           Effect.succeed(Option.some({ threadId, provider, providerInstanceId: instanceId })),
-        upsert: () => Effect.void,
+        upsert: (binding) =>
+          Effect.sync(() => {
+            options.shutdown?.writes.push(binding);
+          }),
         getProvider: () => Effect.succeed(provider),
         listThreadIds: () => Effect.succeed([threadId]),
-        listBindings: () => Effect.succeed([]),
+        listBindings: () =>
+          Effect.succeed(
+            options.shutdown
+              ? [
+                  {
+                    threadId,
+                    provider,
+                    providerInstanceId: instanceId,
+                    lastSeenAt: baseEvent.createdAt,
+                  },
+                ]
+              : [],
+          ),
       }),
       Layer.succeed(ServerConfig, {
         cwd: "/unused",
@@ -147,6 +176,7 @@ const harness = (
         dbPath: "/unused",
         keybindingsConfigPath: "/unused",
         settingsPath: "/unused",
+        environmentThemesDir: "/unused/themes",
         providerStatusCacheDir: "/unused",
         worktreesDir: "/unused",
         logsDir: "/unused",
@@ -166,6 +196,53 @@ const harness = (
     yield* Effect.yieldNow;
     return { service, events, published, started, sentInputs, starts: () => starts };
   });
+
+describe("ProviderService restart markers", () => {
+  for (const enabled of [true, false]) {
+    for (const running of [true, false]) {
+      it.effect(
+        `shutdown marks only opted-in active turns: enabled=${enabled}, running=${running}`,
+        () =>
+          Effect.gen(function* () {
+            const writes: ProviderRuntimeBinding[] = [];
+            yield* harness({
+              shutdown: {
+                enabled,
+                writes,
+                session: {
+                  provider,
+                  providerInstanceId: instanceId,
+                  threadId,
+                  status: running ? "running" : "ready",
+                  runtimeMode: "approval-required",
+                  ...(running ? { activeTurnId: turnId } : {}),
+                  resumeCursor: { threadId: "provider-thread" },
+                  createdAt: baseEvent.createdAt,
+                  updatedAt: baseEvent.createdAt,
+                },
+              },
+            }).pipe(Effect.scoped);
+            assert.deepEqual(writes[0]?.resumeCursor, { threadId: "provider-thread" });
+            const stopped = writes.at(-1);
+            assert.equal(stopped?.status, "stopped");
+            assert.deepEqual(
+              Object.fromEntries(
+                Object.entries(stopped?.runtimePayload as Record<string, unknown>).filter(
+                  ([key]) => key !== "lastRuntimeEventAt",
+                ),
+              ),
+              {
+                activeTurnId: null,
+                continueAfterServerUpdate: enabled && running ? turnId : null,
+                continueAfterServerUpdatePrepared: null,
+                lastRuntimeEvent: "provider.stopAll",
+              },
+            );
+          }),
+      );
+    }
+  }
+});
 
 describe("ProviderService compaction lifecycle", () => {
   for (const cwd of [import.meta.filename, `${import.meta.filename}/missing-worktree`]) {

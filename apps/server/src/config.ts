@@ -6,6 +6,7 @@ import * as Path from "effect/Path";
 
 export interface ServerDerivedPaths {
   readonly stateDir: string;
+  readonly environmentThemesDir: string;
   readonly dbPath: string;
   readonly keybindingsConfigPath: string;
   readonly settingsPath: string;
@@ -37,6 +38,7 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
   const logsDir = path.join(stateDir, "logs");
   return {
     stateDir,
+    environmentThemesDir: path.join(stateDir, "themes"),
     dbPath: path.join(stateDir, "state.sqlite"),
     keybindingsConfigPath: path.join(stateDir, "keybindings.json"),
     settingsPath: path.join(stateDir, "settings.json"),

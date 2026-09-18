@@ -23,3 +23,5 @@ export * from "./providerUsageLimits.ts";
 export type * from "./coderGateway.ts";
 
 export * from "./worktreeSetup.ts";
+
+export * from "./t3ProjectFile.ts";

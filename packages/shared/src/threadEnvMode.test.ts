@@ -18,3 +18,27 @@ describe("resolveDefaultThreadEnvMode", () => {
     ).toBe("worktree");
   });
 });
+
+it("uses repository defaults between explicit overrides and workspace defaults", () => {
+  expect(
+    resolveDefaultThreadEnvMode({
+      projectSetting: undefined,
+      repositoryDefault: "worktree",
+      globalDefault: "local",
+    }),
+  ).toBe("worktree");
+  expect(
+    resolveDefaultThreadEnvMode({
+      projectSetting: "local",
+      repositoryDefault: "worktree",
+      globalDefault: "worktree",
+    }),
+  ).toBe("local");
+  expect(
+    resolveDefaultThreadEnvMode({
+      projectSetting: undefined,
+      repositoryDefault: undefined,
+      globalDefault: "local",
+    }),
+  ).toBe("local");
+});

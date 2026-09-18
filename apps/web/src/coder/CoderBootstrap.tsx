@@ -44,9 +44,9 @@ interface CoderContextValue {
   readonly saveConfig: (config: CoderProfileConfig) => Promise<CoderProfileConfig>;
   readonly connectWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly disconnectWorkspace: (workspaceId: string) => Promise<void>;
-  readonly refreshWorkspaceRuntime: () => Promise<
-    Readonly<Record<string, CoderWorkspaceRuntimeStatus>>
-  >;
+  readonly refreshWorkspaceRuntime: (
+    signal?: AbortSignal,
+  ) => Promise<Readonly<Record<string, CoderWorkspaceRuntimeStatus>>>;
   readonly startWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
   readonly stopWorkspace: (workspaceId: string) => Promise<void>;
   readonly restartWorkspace: (workspaceId: string) => Promise<ExecutionEnvironmentDescriptor>;
@@ -63,13 +63,14 @@ const CoderContext = createContext<CoderContextValue | null>(null);
 
 export async function readWorkspaceRuntime(
   config: CoderProfileConfig,
+  signal?: AbortSignal,
 ): Promise<Readonly<Record<string, CoderWorkspaceRuntimeStatus>>> {
   const discoveredByDeployment = await Promise.all(
     config.deployments.map(async (deployment) => {
       try {
         return {
           deploymentId: deployment.id,
-          workspaces: await discoverCoderWorkspaces(deployment.id),
+          workspaces: await discoverCoderWorkspaces(deployment.id, signal),
         };
       } catch (cause) {
         const detail = cause instanceof Error ? cause.message : String(cause);
@@ -303,13 +304,17 @@ export function CoderBootstrap({ app }: { readonly app: ReactNode }) {
     };
   }, [applyWorkspaceRuntime, config, connectWorkspace]);
 
-  const refreshWorkspaceRuntime = useCallback(async () => {
-    if (config === null) return {};
-    const requestGeneration = ++runtimeRequestGeneration.current;
-    const runtime = await readWorkspaceRuntime(config);
-    if (requestGeneration === runtimeRequestGeneration.current) applyWorkspaceRuntime(runtime);
-    return runtime;
-  }, [applyWorkspaceRuntime, config]);
+  const refreshWorkspaceRuntime = useCallback(
+    async (signal?: AbortSignal) => {
+      if (config === null) return {};
+      const requestGeneration = ++runtimeRequestGeneration.current;
+      const runtime = await readWorkspaceRuntime(config, signal);
+      if (!signal?.aborted && requestGeneration === runtimeRequestGeneration.current)
+        applyWorkspaceRuntime(runtime);
+      return runtime;
+    },
+    [applyWorkspaceRuntime, config],
+  );
 
   const saveConfig = useCallback(async (nextConfig: CoderProfileConfig) => {
     runtimeRequestGeneration.current += 1;

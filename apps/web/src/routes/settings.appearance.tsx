@@ -1,4 +1,4 @@
-import { BundledThemeSettings } from "../components/settings/BundledThemeSettings";
+import { CustomThemeSettings } from "../components/settings/CustomThemeSettings";
 import { PanelAnimationsPreview } from "../components/settings/PanelAnimationsPreview";
 import {
   MIN_PANEL_ANIMATION_DURATION_MS,
@@ -30,7 +30,6 @@ import {
   SelectItem,
 } from "../components/ui/select";
 import { useClientSettings, useUpdateClientSettings } from "../hooks/useSettings";
-import { useTheme } from "../hooks/useTheme";
 
 const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
   artwork: "Artwork",
@@ -41,7 +40,6 @@ const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, s
 function AppearanceSettingsView() {
   const settings = useClientSettings();
   const updateSettings = useUpdateClientSettings();
-  const { appearanceMode, setAppearanceMode } = useTheme();
 
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
@@ -66,44 +64,8 @@ function AppearanceSettingsView() {
   } as CSSProperties;
   return (
     <SettingsPage>
+      <CustomThemeSettings />
       <SettingsSection title="Appearance">
-        <SettingsRow
-          id="color-mode"
-          title="Color mode"
-          description="Follow the operating system or keep the interface light or dark."
-          resetAction={
-            appearanceMode !== "system" ? (
-              <SettingResetButton label="color mode" onClick={() => setAppearanceMode("system")} />
-            ) : null
-          }
-          control={
-            <Select
-              value={appearanceMode}
-              onValueChange={(value) => {
-                if (value === "system" || value === "light" || value === "dark") {
-                  setAppearanceMode(value);
-                }
-              }}
-            >
-              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Color mode">
-                <SelectValue>
-                  {{ system: "System", light: "Light", dark: "Dark" }[appearanceMode]}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
-                <SelectItem hideIndicator value="system">
-                  System
-                </SelectItem>
-                <SelectItem hideIndicator value="light">
-                  Light
-                </SelectItem>
-                <SelectItem hideIndicator value="dark">
-                  Dark
-                </SelectItem>
-              </SelectPopup>
-            </Select>
-          }
-        />
         <SettingsRow
           id="appearance-contrast"
           title="Contrast"
@@ -326,7 +288,6 @@ function AppearanceSettingsView() {
           }
         />
       </SettingsSection>
-      <BundledThemeSettings />
       <TypographySection />
     </SettingsPage>
   );

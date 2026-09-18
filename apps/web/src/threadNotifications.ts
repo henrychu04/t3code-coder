@@ -5,7 +5,17 @@ import inputUrl from "./assets/notification-input.mp3";
 
 type NotificationMode = ClientSettings["notificationMode"];
 export function hasNotificationSound(mode: NotificationMode) {
-  return mode === "sound";
+  return mode === "sound" || mode === "notifications-and-sound";
+}
+
+export const NOTIFICATION_MODE_LABELS = {
+  off: "Off",
+  notifications: "Notifications only",
+  sound: "Sound only",
+  "notifications-and-sound": "Notifications with sound",
+} satisfies Record<NotificationMode, string>;
+export function hasDesktopNotifications(mode: NotificationMode) {
+  return mode === "notifications" || mode === "notifications-and-sound";
 }
 
 let originalFavicon: HTMLLinkElement | undefined;

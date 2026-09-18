@@ -1,3 +1,4 @@
+import { ServerSettingsService } from "../../serverSettings.ts";
 /**
  * ProviderServiceLive - Cross-provider orchestration layer.
  *
@@ -793,6 +794,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
         runtimePayload: {
           ...(input.modelSelection !== undefined ? { modelSelection: input.modelSelection } : {}),
           activeTurnId: turn.turnId,
+          continueAfterServerUpdate: null,
+          continueAfterServerUpdatePrepared: null,
           lastRuntimeEvent: "provider.sendTurn",
           lastRuntimeEventAt: yield* nowIso,
         },
@@ -1036,6 +1039,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
           status: "stopped",
           runtimePayload: {
             activeTurnId: null,
+            continueAfterServerUpdate: null,
+            continueAfterServerUpdatePrepared: null,
           },
         });
       });
@@ -1171,6 +1176,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
   });
 
   const runStopAll = Effect.fn("runStopAll")(function* () {
+    const restartSettings = yield* Effect.serviceOption(ServerSettingsService);
+    const continueAfterRestart = Option.isSome(restartSettings)
+      ? yield* restartSettings.value.getSettings.pipe(
+          Effect.map((settings) => settings.continueThreadsAfterServerUpdate),
+          Effect.orElseSucceed(() => false),
+        )
+      : false;
     const threadIds = yield* directory.listThreadIds();
     yield* Effect.forEach(threadIds, (id) => agentMrTools?.release(id) ?? Effect.void, {
       discard: true,
@@ -1186,6 +1198,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
         ),
       ),
     ).pipe(Effect.map((sessionsByAdapter) => sessionsByAdapter.flatMap((sessions) => sessions)));
+    const continuationTurns = new Map(
+      activeSessions
+        .filter(
+          (session) => continueAfterRestart && session.status === "running" && session.activeTurnId,
+        )
+        .map((session) => [session.threadId, session.activeTurnId]),
+    );
     yield* Effect.forEach(activeSessions, (session) =>
       Effect.flatMap(nowIso, (lastRuntimeEventAt) =>
         upsertSessionBinding(session, session.threadId, {
@@ -1209,6 +1228,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
           status: "stopped",
           runtimePayload: {
             activeTurnId: null,
+            continueAfterServerUpdate: continuationTurns.get(binding.threadId) ?? null,
+            continueAfterServerUpdatePrepared: null,
             lastRuntimeEvent: "provider.stopAll",
             lastRuntimeEventAt: yield* nowIso,
           },

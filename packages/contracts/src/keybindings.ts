@@ -52,7 +52,7 @@ const MODEL_PICKER_KEYBINDING_COMMANDS = [
 ] as const;
 export type ModelPickerKeybindingCommand = (typeof MODEL_PICKER_KEYBINDING_COMMANDS)[number];
 
-const STATIC_KEYBINDING_COMMANDS = [
+export const STATIC_KEYBINDING_COMMANDS = [
   "sidebar.toggle",
   "terminal.toggle",
   "terminal.split",
@@ -81,7 +81,15 @@ const STATIC_KEYBINDING_COMMANDS = [
   ...THREAD_KEYBINDING_COMMANDS,
 ] as const;
 
-export const KeybindingCommand = Schema.Literals(STATIC_KEYBINDING_COMMANDS);
+export const SCRIPT_RUN_COMMAND_PATTERN = Schema.TemplateLiteral([
+  Schema.Literal("script."),
+  Schema.NonEmptyString.check(Schema.isMaxLength(64), Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/)),
+  Schema.Literal(".run"),
+]);
+export const KeybindingCommand = Schema.Union([
+  Schema.Literals(STATIC_KEYBINDING_COMMANDS),
+  SCRIPT_RUN_COMMAND_PATTERN,
+]);
 export type KeybindingCommand = typeof KeybindingCommand.Type;
 
 export const KeybindingValue = TrimmedString.check(

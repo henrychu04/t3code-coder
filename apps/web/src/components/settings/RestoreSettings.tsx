@@ -23,6 +23,11 @@ import { Button } from "../ui/button";
 import { SettingsRow } from "./SettingsPage";
 
 export const CLIENT_RESET_LABELS = {
+  notificationMode: "System notifications",
+  inAppNotificationsEnabled: "Thread alerts",
+  diffColorScheme: "Diff colors",
+  planModeEnabled: "Plan mode",
+  contextWindowMeterEnabled: "Context window indicator",
   appearanceContrast: "Contrast",
   glassOpacity: "Glass opacity",
   environmentIdentificationMode: "Environment identification",
@@ -53,6 +58,10 @@ export const CLIENT_RESET_LABELS = {
   fontSmoothing: "Font smoothing",
 } satisfies Partial<Record<keyof ClientSettings, string>>;
 export const WORKSPACE_RESET_LABELS = {
+  addProjectBaseDirectory: "Add project starts in",
+  environmentIcon: "Workspace icon",
+  providerHealthRefreshInterval: "Provider health check interval",
+  continueThreadsAfterServerUpdate: "Continue threads after restarts",
   defaultRuntimeMode: "Default permissions",
   responseStreamingMode: "Response streaming",
   defaultThreadEnvMode: "Default checkout mode",
@@ -75,7 +84,13 @@ export function changedSettings<T extends object>(
   );
 }
 
-export function RestoreClientSettings() {
+export function RestoreClientSettings({
+  compact = false,
+  onRestored,
+}: {
+  compact?: boolean;
+  onRestored?: (() => void) | undefined;
+}) {
   const settings = useClientSettings();
   const {
     theme,
@@ -89,15 +104,16 @@ export function RestoreClientSettings() {
   const [error, setError] = useState<string | null>(null);
   const keys = changedSettings(settings, DEFAULT_CLIENT_SETTINGS, CLIENT_RESET_LABELS);
   const themeChanged = theme !== "system" || themeHalves !== null || appearanceMode !== "system";
+  const Wrapper = compact ? CompactRestore : SettingsRow;
   return (
-    <SettingsRow
+    <Wrapper
       id="restore-client-defaults"
       title="Restore browser preferences"
       description="Reset appearance and interface preferences for this browser."
       control={
         <Button
-          size="sm"
-          variant="outline"
+          size={compact ? "xs" : "sm"}
+          variant={compact ? "ghost" : "outline"}
           disabled={!keys.length && !themeChanged}
           onClick={async () => {
             const names = keys.map(
@@ -152,6 +168,7 @@ export function RestoreClientSettings() {
             );
             try {
               await saveClientSettings({ ...live, ...patch });
+              onRestored?.();
             } catch {
               setError("Could not save restored preferences. Try again.");
               return;
@@ -167,7 +184,25 @@ export function RestoreClientSettings() {
           {error}
         </p>
       ) : null}
-    </SettingsRow>
+    </Wrapper>
+  );
+}
+
+function CompactRestore({
+  control,
+  children,
+}: {
+  id?: string;
+  title?: string;
+  description?: string;
+  control?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div id="restore-client-defaults" className="ml-auto flex items-center gap-2">
+      {control}
+      {children}
+    </div>
   );
 }
 

@@ -19,7 +19,9 @@ import { resolveAppModelSelectionState } from "../../modelSelection";
 import type { EnvironmentPresentation } from "../../state/environments";
 import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
-import { SettingResetButton, SettingsSection } from "./SettingsPage";
+import { DraftInput } from "../ui/draft-input";
+import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
+import { SettingResetButton, SettingsRow, SettingsSection } from "./SettingsPage";
 import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderSettingsForm, readProviderConfigString } from "./ProviderSettingsForm";
 import { PROVIDER_CLIENT_DEFINITIONS, type ProviderClientDefinition } from "./providerDriverMeta";
@@ -116,7 +118,7 @@ export function WorkspaceProviderListRow(props: {
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-medium text-foreground">
-              {props.row.definition.label}
+              {props.row.instance.displayName ?? props.row.definition.label}
             </span>
             {versionLabel ? (
               <code className="text-xs text-muted-foreground">{versionLabel}</code>
@@ -174,7 +176,7 @@ export function WorkspaceProviderEditor(props: {
               <Icon className="size-4 text-foreground/80" aria-hidden />
             </span>
             <h3 className="truncate text-sm font-medium tracking-[-0.005em] text-foreground">
-              {props.row.definition.label}
+              {props.row.instance.displayName ?? props.row.definition.label}
             </h3>
             {versionLabel ? (
               <code className="text-xs text-muted-foreground">{versionLabel}</code>
@@ -200,6 +202,33 @@ export function WorkspaceProviderEditor(props: {
           ) : null}
         </div>
       </div>
+
+      <SettingsRow
+        title="Display name"
+        control={
+          <div className="flex items-center gap-2">
+            <ProviderAccentColorPicker
+              layout="inline"
+              displayName={props.row.instance.displayName ?? props.row.definition.label}
+              value={props.row.instance.accentColor}
+              onCommit={(accentColor) => {
+                const { accentColor: _old, ...rest } = props.row.instance;
+                props.onUpdate({ ...rest, ...(accentColor ? { accentColor } : {}) });
+              }}
+            />
+            <DraftInput
+              aria-label="Provider display name"
+              value={props.row.instance.displayName ?? ""}
+              placeholder={props.row.definition.label}
+              onCommit={(value) => {
+                const { displayName: _old, ...rest } = props.row.instance;
+                const displayName = value.trim();
+                props.onUpdate({ ...rest, ...(displayName ? { displayName } : {}) });
+              }}
+            />
+          </div>
+        }
+      />
 
       {hasConfiguration ? (
         <div className="flex h-11 shrink-0 border-b border-border/70 px-1">
@@ -341,7 +370,7 @@ function WorkspaceProviderSettingsForEnvironment(props: {
         }
       : {};
 
-    if (row.explicit) {
+    if (row.explicit || next.displayName || next.accentColor) {
       updateSettings({
         providerInstances: {
           ...settings.providerInstances,

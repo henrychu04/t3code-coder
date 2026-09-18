@@ -1,3 +1,4 @@
+import { getT3ProjectFile } from "./useT3ProjectFile";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import {
   scopedProjectKey,
@@ -162,11 +163,12 @@ export function useNewThreadHandler() {
           candidate.id === projectRef.projectId &&
           candidate.environmentId === projectRef.environmentId,
       );
-      const targetSettings = resolveProjectSettings(
+      const resolvedSettings = resolveProjectSettings(
         serverConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS,
         projectRef.projectId,
         project,
-      ).settings;
+      );
+      const targetSettings = resolvedSettings.settings;
       const resolveModelSelectionOverride = (destinationDraftId: DraftId) =>
         resolveNewThreadModelSelectionOverride({
           projectDefaultSelection: targetSettings.defaultModelSelection,
@@ -177,7 +179,12 @@ export function useNewThreadHandler() {
         });
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
         return resolveDefaultThreadEnvMode({
-          projectSetting: targetSettings.defaultThreadEnvMode,
+          projectSetting: resolvedSettings.overrides.defaultThreadEnvMode,
+          repositoryDefault:
+            resolvedSettings.overrides.defaultThreadEnvMode === undefined
+              ? (await getT3ProjectFile(projectRef.environmentId, projectRef.projectId))
+                  ?.defaultThreadEnvMode
+              : undefined,
           globalDefault: targetSettings.defaultThreadEnvMode,
         });
       };

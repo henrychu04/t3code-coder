@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { SETTINGS_SEARCH_ITEMS } from "./settingsSearch";
+import {
+  SETTINGS_SEARCH_ITEMS,
+  searchSettings,
+  filterAvailableSettingsSearchItems,
+  isSettingsSearchScopeAvailable,
+} from "./settingsSearch";
 
 describe("settings search catalog", () => {
   it("uses unique action ids", () => {
@@ -33,4 +38,86 @@ describe("settings search catalog", () => {
       expect(item.searchTerms.some((term) => term.trim().length > 0)).toBe(true);
     }
   });
+});
+
+it("finds settings by multiple words across titles and keywords", () => {
+  expect(searchSettings("default model").some((item) => item.id === "default-model")).toBe(true);
+  expect(searchSettings("fast forward").some((item) => item.id === "automatic-pull")).toBe(true);
+  expect(searchSettings("custom COLORS").some((item) => item.id === "custom-themes")).toBe(true);
+  expect(searchSettings("  ")).toEqual([]);
+  expect(searchSettings("definitely-no-such-setting")).toEqual([]);
+});
+
+it("ranks exact titles ahead of aliases and normalizes diacritics", () => {
+  const items = [
+    {
+      id: "alias",
+      title: "Other",
+      to: "/settings/preferences" as const,
+      section: "General",
+      searchTerms: ["cafe"],
+    },
+    {
+      id: "prefix",
+      title: "Café colors",
+      to: "/settings/appearance" as const,
+      section: "Appearance",
+      searchTerms: [],
+    },
+    {
+      id: "exact",
+      title: "Café",
+      to: "/settings/appearance" as const,
+      section: "Appearance",
+      searchTerms: [],
+    },
+  ];
+  expect(searchSettings("  CAFE  ", items).map((item) => item.id)).toEqual([
+    "exact",
+    "prefix",
+    "alias",
+  ]);
+});
+it("does not offer settlement settings without a supporting workspace", () => {
+  expect(
+    filterAvailableSettingsSearchItems({ hasThreadAutoSettlement: false }).some(
+      (item) => item.requiresThreadAutoSettlement,
+    ),
+  ).toBe(false);
+  expect(
+    filterAvailableSettingsSearchItems({ hasThreadAutoSettlement: true }).some(
+      (item) => item.requiresThreadAutoSettlement,
+    ),
+  ).toBe(true);
+});
+
+it("filters workspace-only destinations while keeping browser preferences without connections", () => {
+  const available = filterAvailableSettingsSearchItems({
+    hasEnvironment: false,
+    hasThreadAutoSettlement: false,
+  });
+  expect(available.some((item) => item.environmentOnly)).toBe(false);
+  expect(available.some((item) => item.id === "custom-themes")).toBe(true);
+});
+
+it("finds local Coder resource sections without a connected workspace", () => {
+  const items = filterAvailableSettingsSearchItems({
+    hasEnvironment: false,
+    hasThreadAutoSettlement: false,
+  });
+  expect(searchSettings("tcp", items).map((item) => item.id)).toContain("port-forwarding");
+  expect(searchSettings("restart workspace", items).map((item) => item.id)).toContain(
+    "coder-workspaces",
+  );
+});
+
+it("finds workspace default actions without selecting a project", () => {
+  const item = searchSettings("default actions").find(
+    (item) => item.id === "default-project-actions",
+  );
+  expect(item?.to).toBe("/settings/preferences");
+  expect(item?.scope).toBe("environment-defaults");
+  expect(isSettingsSearchScopeAvailable(item!.scope!, "all")).toBe(true);
+  expect(isSettingsSearchScopeAvailable(item!.scope!, "environment")).toBe(true);
+  expect(isSettingsSearchScopeAvailable(item!.scope!, "project")).toBe(false);
 });

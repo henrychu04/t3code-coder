@@ -1,5 +1,7 @@
 import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import { expect, it } from "vite-plus/test";
+import { isRedirect } from "@tanstack/react-router";
+import { Route } from "./routes/projects.$projectKey";
 import { projectSettingsTarget, parseProjectSettingsKey } from "./projectSettingsTarget";
 
 it("scopes project settings routes without delimiter collisions or hash anchors", () => {
@@ -30,4 +32,23 @@ it("rejects malformed project settings routes", () => {
     '["env","project","extra"]',
   ])
     expect(parseProjectSettingsKey(key)).toBeNull();
+});
+
+it("redirects existing project links into the settings layout with an explicit target", () => {
+  const target = projectSettingsTarget({
+    environmentId: EnvironmentId.make("workspace"),
+    id: ProjectId.make("project"),
+  });
+  try {
+    Route.options.beforeLoad!({ params: target.params } as never);
+    expect.fail("Expected the project route to redirect");
+  } catch (error) {
+    expect(isRedirect(error)).toBe(true);
+    if (!isRedirect(error)) throw error;
+    expect(error.options).toMatchObject({
+      to: "/settings/projects",
+      replace: true,
+      search: { project: target.params.projectKey, machine: undefined, checkout: undefined },
+    });
+  }
 });

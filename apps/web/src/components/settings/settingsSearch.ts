@@ -1,4 +1,10 @@
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
+import type { ResolvedSettingsScope } from "./settingsScope";
+import { validateSettingsScopeSearch, type SettingsScopeSearch } from "./settingsScope";
 export type CoderSettingsPath =
+  | "/settings/projects"
+  | "/settings/providers"
   | "/settings/preferences"
   | "/settings/appearance"
   | "/settings/shortcuts"
@@ -7,17 +13,138 @@ export type CoderSettingsPath =
   | "/settings/archived"
   | "/settings/open-source-licenses";
 
+export type SettingsSearchScope =
+  | "environment"
+  | "environment-defaults"
+  | "project-defaults"
+  | "project"
+  | "checkout"
+  | "connections";
 export interface SettingsSearchItem {
+  readonly scope?: SettingsSearchScope;
+  readonly environmentOnly?: boolean;
   readonly id: string;
   readonly title: string;
   readonly to: CoderSettingsPath;
   readonly section: string;
   readonly searchTerms: ReadonlyArray<string>;
   readonly targetId?: string;
+  readonly requiresThreadAutoSettlement?: boolean;
 }
 
 /** Coder-only settings destinations, including individual source-control controls. */
 export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
+  {
+    id: "plan-mode",
+    title: "Plan mode",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["Build Plan shift tab workflow"],
+  },
+  {
+    id: "context-window-indicator",
+    title: "Context window indicator",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["tokens composer meter usage"],
+  },
+  {
+    id: "add-project-starts-in",
+    title: "Add project starts in",
+    scope: "environment-defaults",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["folder directory home"],
+  },
+  {
+    id: "environment-icon",
+    title: "Workspace icon",
+    scope: "environment-defaults",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["machine cloud identity"],
+  },
+  {
+    id: "background-activity",
+    title: "Background activity",
+    scope: "environment-defaults",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["scheduling profile balanced performance battery saver git polling"],
+  },
+  {
+    id: "provider-health-check-interval",
+    title: "Provider health check interval",
+    scope: "environment-defaults",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["poll refresh seconds"],
+  },
+  {
+    id: "continue-threads-after-server-update",
+    title: "Continue threads after restarts",
+    scope: "environment-defaults",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["recovery resume crash helper"],
+  },
+  {
+    id: "thread-notifications",
+    title: "System notifications",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["sound alerts browser permissions"],
+  },
+  {
+    id: "default-project-actions",
+    scope: "environment-defaults",
+    title: "Default actions",
+    to: "/settings/preferences",
+    section: "General",
+    searchTerms: ["workspace default scripts commands inherited actions"],
+  },
+  {
+    id: "custom-themes",
+    title: "Create and edit custom themes",
+    to: "/settings/appearance",
+    section: "Appearance",
+    searchTerms: ["colors palette accent canvas custom theme"],
+  },
+  {
+    id: "projects",
+    scope: "project",
+    targetId: "project-overview",
+    title: "Projects and actions",
+    to: "/settings/projects",
+    section: "Projects",
+    searchTerms: ["name rename scripts commands checkouts remove"],
+  },
+  {
+    id: "providers",
+    scope: "environment",
+    environmentOnly: true,
+    title: "Provider configuration and models",
+    to: "/settings/providers",
+    section: "Providers",
+    searchTerms: ["codex claude api models authentication"],
+  },
+  {
+    id: "default-model",
+    scope: "project-defaults",
+    title: "Default model",
+    to: "/settings/preferences",
+    section: "New threads",
+    searchTerms: ["new thread model inherit"],
+  },
+  {
+    id: "automatic-pull",
+    scope: "project-defaults",
+    title: "Automatically pull",
+    to: "/settings/source-control",
+    section: "Repositories",
+    searchTerms: ["default branch clean checkout fast forward"],
+  },
+
   {
     id: "notifications",
     title: "Thread notifications and sounds",
@@ -42,6 +169,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "restore-workspace-defaults",
+    scope: "environment-defaults",
     title: "Restore workspace preferences",
     to: "/settings/preferences",
     section: "Defaults",
@@ -71,6 +199,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
 
   {
     id: "git-fetch-interval",
+    scope: "environment-defaults",
     title: "Git fetch interval",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -78,6 +207,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "source-control-writing-style",
+    scope: "project-defaults",
     title: "Source control writing style",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -87,6 +217,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "follow-merge-request-templates",
+    scope: "project-defaults",
     title: "Follow merge request templates",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -94,6 +225,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "source-control-writer-model",
+    scope: "project-defaults",
     title: "Source control writer model",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -101,6 +233,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "reset-source-control-defaults",
+    scope: "environment-defaults",
     title: "Reset source control defaults",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -108,6 +241,8 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "gitlab-workspace-status",
+    scope: "environment",
+    environmentOnly: true,
     title: "Workspace GitLab status",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -115,6 +250,8 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "gitlab-write-probe",
+    scope: "environment",
+    environmentOnly: true,
     title: "GitLab write access probe",
     to: "/settings/source-control",
     section: "GitLab source control",
@@ -123,6 +260,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "default-checkout-mode",
+    scope: "project-defaults",
     title: "Default checkout mode",
     to: "/settings/preferences",
     section: "New threads",
@@ -130,6 +268,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "worktrees-from-origin",
+    scope: "project-defaults",
     title: "Start worktrees from origin",
     to: "/settings/preferences",
     section: "New threads",
@@ -164,14 +303,18 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     searchTerms: ["preview count expand sidebar"],
   },
   {
+    requiresThreadAutoSettlement: true,
     id: "auto-settle-inactive-threads",
+    scope: "project-defaults",
     title: "Auto-settle inactive threads",
     to: "/settings/preferences",
     section: "Thread settlement",
     searchTerms: ["sidebar inactivity days no activity automatically"],
   },
   {
+    requiresThreadAutoSettlement: true,
     id: "auto-settle-merged-threads",
+    scope: "project-defaults",
     title: "Auto-settle merged threads",
     to: "/settings/preferences",
     section: "Thread settlement",
@@ -235,10 +378,27 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "coder-connections",
+    scope: "connections",
     title: "Coder connections",
     to: "/settings/general",
     section: "Coder connections",
     searchTerms: ["deployment workspace domain authentication executable path"],
+  },
+  {
+    id: "coder-workspaces",
+    scope: "connections",
+    title: "Workspace connections",
+    to: "/settings/general",
+    section: "Coder connections",
+    searchTerms: ["start stop restart update reconnect workspace diagnostics status"],
+  },
+  {
+    id: "port-forwarding",
+    scope: "connections",
+    title: "Port forwarding",
+    to: "/settings/general",
+    section: "Coder connections",
+    searchTerms: ["ports tcp udp localhost loopback forward local remote restart"],
   },
   {
     id: "color-mode",
@@ -305,6 +465,7 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
   },
   {
     id: "keyboard-shortcuts",
+    scope: "environment-defaults",
     title: "Keyboard shortcuts",
     to: "/settings/shortcuts",
     section: "Keyboard shortcuts",
@@ -318,3 +479,148 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     searchTerms: ["archive restore deleted hidden conversations"],
   },
 ];
+
+export const SETTINGS_SECTION_LABELS: Readonly<Record<CoderSettingsPath, string>> = {
+  "/settings/preferences": "General",
+  "/settings/appearance": "Appearance",
+  "/settings/shortcuts": "Keyboard shortcuts",
+  "/settings/projects": "Projects",
+  "/settings/providers": "Providers",
+  "/settings/general": "Coder connections",
+  "/settings/source-control": "GitLab source control",
+  "/settings/open-source-licenses": "Open source licenses",
+  "/settings/archived": "Archived threads",
+};
+
+function normalizeSearchText(value: string): string {
+  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+export function searchSettings(
+  query: string,
+  items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+): ReadonlyArray<SettingsSearchItem> {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length === 0) return [];
+  const queryTokens = normalizedQuery.split(" ");
+
+  return items
+    .flatMap((item, index) => {
+      const title = normalizeSearchText(item.title);
+      const fields = [
+        title,
+        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
+        ...(item.searchTerms ?? []).map(normalizeSearchText),
+      ];
+      if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
+
+      const exactPhraseField = fields.findIndex((field) => field.includes(normalizedQuery));
+      const rank =
+        title === normalizedQuery
+          ? 5
+          : title.startsWith(normalizedQuery)
+            ? 4
+            : title.includes(normalizedQuery)
+              ? 3
+              : queryTokens.every((token) => title.includes(token))
+                ? 2
+                : exactPhraseField >= 0
+                  ? 1
+                  : 0;
+      return [{ item, index, rank }];
+    })
+    .toSorted((left, right) => right.rank - left.rank || left.index - right.index)
+    .map(({ item }) => item);
+}
+
+export function isSettingsOverviewVisible(search: SettingsScopeSearch): boolean {
+  const target = validateSettingsScopeSearch({ ...search });
+  return Boolean(target.project);
+}
+export function filterAvailableSettingsSearchItems(availability: {
+  hasThreadAutoSettlement: boolean;
+  hasEnvironment?: boolean;
+}): readonly SettingsSearchItem[] {
+  return SETTINGS_SEARCH_ITEMS.filter(
+    (item) =>
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
+      (!item.environmentOnly || availability.hasEnvironment !== false),
+  );
+}
+
+export function getSettingsSearchTargetScope(targetId: string) {
+  const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
+  const item =
+    items.find((candidate) => candidate.id === targetId) ??
+    items.find((candidate) => candidate.targetId === targetId);
+  return item
+    ? {
+        title: item.title,
+        scope: item.scope ?? null,
+        ...(item.requiresThreadAutoSettlement ? { requiresThreadAutoSettlement: true } : {}),
+      }
+    : null;
+}
+
+interface AutoSettlementSearchEnvironment {
+  readonly environmentId: EnvironmentId;
+  readonly connection: { readonly phase: EnvironmentConnectionPhase };
+  readonly serverConfig: {
+    readonly environment: {
+      readonly capabilities: { readonly threadAutoSettlement?: boolean };
+    };
+  } | null;
+}
+
+/** Discovery needs one capable environment; the selected page needs every connected target to support it. */
+export function getThreadAutoSettlementSearchAvailability(
+  environments: readonly AutoSettlementSearchEnvironment[],
+  scope?: Pick<ResolvedSettingsScope, "kind" | "environmentIds">,
+) {
+  const connected = environments.filter(
+    (environment) =>
+      environment.connection.phase === "connected" && environment.serverConfig !== null,
+  );
+  const eligibleEnvironmentIds = connected
+    .filter(
+      (environment) =>
+        environment.serverConfig?.environment.capabilities.threadAutoSettlement === true,
+    )
+    .map((environment) => environment.environmentId);
+  const selected = connected.filter((environment) =>
+    scope?.environmentIds.includes(environment.environmentId),
+  );
+  return {
+    eligibleEnvironmentIds,
+    isTargetAvailable:
+      scope !== undefined &&
+      scope.kind !== "unavailable" &&
+      selected.length > 0 &&
+      selected.every((environment) => eligibleEnvironmentIds.includes(environment.environmentId)),
+  };
+}
+
+export function isSettingsSearchScopeAvailable(
+  requiredScope: SettingsSearchScope | null,
+  scopeKind: ResolvedSettingsScope["kind"],
+): boolean {
+  switch (requiredScope) {
+    case null:
+    case "connections":
+      return true;
+    case "environment":
+    case "checkout":
+      return requiredScope === scopeKind;
+    case "project":
+      return scopeKind === "project" || scopeKind === "checkout";
+    case "environment-defaults":
+      return scopeKind === "environment" || scopeKind === "all";
+    case "project-defaults":
+      return (
+        scopeKind === "environment" ||
+        scopeKind === "all" ||
+        scopeKind === "project" ||
+        scopeKind === "checkout"
+      );
+  }
+}

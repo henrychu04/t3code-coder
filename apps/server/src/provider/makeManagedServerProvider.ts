@@ -1,3 +1,5 @@
+import * as Option from "effect/Option";
+import { ServerSettingsService } from "../serverSettings.ts";
 import { type ServerProvider, ServerSettingsError } from "@t3tools/contracts";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -132,18 +134,34 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     return yield* applySnapshot(nextSettings, { forceRefresh: true });
   });
 
-  const refreshInterval = input.refreshInterval ?? Duration.minutes(5);
-
+  const serverSettings = yield* Effect.serviceOption(ServerSettingsService);
+  const defaultInterval = Duration.fromInputUnsafe(input.refreshInterval ?? Duration.minutes(5));
+  const initialInterval =
+    input.refreshInterval === undefined && Option.isSome(serverSettings)
+      ? yield* serverSettings.value.getSettings.pipe(
+          Effect.map((settings) => settings.providerHealthRefreshInterval),
+          Effect.orElseSucceed(() => defaultInterval),
+        )
+      : defaultInterval;
+  const intervalChanges =
+    input.refreshInterval === undefined && Option.isSome(serverSettings)
+      ? (yield* serverSettings.value.subscribeChanges).pipe(
+          Stream.map((settings) => settings.providerHealthRefreshInterval),
+        )
+      : Stream.never;
   yield* Stream.runForEach(input.streamSettings, (nextSettings) =>
     Effect.asVoid(applySnapshot(nextSettings)),
   ).pipe(Effect.forkScoped);
-
-  yield* Effect.forever(
-    Effect.sleep(refreshInterval).pipe(
-      Effect.andThen(refreshSnapshot().pipe(Effect.asVoid)),
-      Effect.ignoreCause({ log: true }),
+  yield* Stream.concat(Stream.succeed(initialInterval), intervalChanges).pipe(
+    Stream.changesWith((a, b) => Duration.toMillis(a) === Duration.toMillis(b)),
+    Stream.switchMap((interval) =>
+      Duration.toMillis(interval) <= 0 ? Stream.never : Stream.tick(interval).pipe(Stream.drop(1)),
     ),
-  ).pipe(Effect.forkScoped);
+    Stream.runForEach(() =>
+      refreshSnapshot().pipe(Effect.asVoid, Effect.ignoreCause({ log: true })),
+    ),
+    Effect.forkScoped,
+  );
 
   yield* applySnapshot(initialSettings, { forceRefresh: true }).pipe(
     Effect.ignoreCause({ log: true }),
