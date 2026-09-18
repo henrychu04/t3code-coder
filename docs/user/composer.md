@@ -81,7 +81,7 @@ screenshots Codex or Claude produces during a turn.
 ## Terminal context
 
 To give Claude the output of something you just ran, attach it from the terminal as context. The
-composer shows attached terminal output as a chip above your message, so you can review or remove
+composer shows attached terminal output as an inline chip, so you can review, move, or remove
 it before sending.
 
 ## Commands and skills
@@ -161,3 +161,20 @@ has already been chosen.
 Questions and text answers appear together in the work log, at the question's original position.
 Expand the row to read the full question and answer. These rows stay visible outside collapsed
 turn summaries; unanswered questions are marked accordingly.
+
+## Inline context and merge requests
+
+Terminal excerpts, review comments, images, and long pasted text appear as chips inside your
+message. Type around them, move them within the composer, or delete them like a character. Undo
+restores removed context. Select a terminal chip to read its captured output. Image chips show
+size and upload progress; review-comment chips show formatted comments and highlighted source. Existing drafts keep their saved context when opened in the rich-text
+editor. Large pasted text stays inline prompt content; it does not create a file attachment.
+
+Type `#` to browse recent GitLab merge requests in the current project's repository. Add digits
+to match any part of a merge-request number. A complete number is also looked up directly, so
+older merge requests can be found outside the recent list. Add a single word, such as `#login`,
+to search by text.
+
+A merge-request chip shows its number and the state captured when you attached it: open, draft,
+merged, or closed. Hover to inspect the captured title and branches. Select it to open the
+merge request in T3 Coder. The captured details remain part of the message after sending.

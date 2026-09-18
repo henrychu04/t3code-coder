@@ -386,7 +386,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+f",
         ),
       );
-      assert.isFalse(persisted.some((entry) => String(entry.command) === "themeEditor.toggle"));
+      assert.isTrue(persisted.some((entry) => String(entry.command) === "themeEditor.toggle"));
       assert.isFalse(persisted.some((entry) => String(entry.command) === "editor.openFavorite"));
       assert.isTrue(persisted.some((entry) => String(entry.command) === "script.deploy.run"));
       assert.isTrue(

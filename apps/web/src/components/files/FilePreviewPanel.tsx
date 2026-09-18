@@ -1,3 +1,4 @@
+import { FILE_LINK_REVEAL_ATTRIBUTE, FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
 import { Spinner } from "~/components/ui/spinner";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import {
@@ -70,7 +71,7 @@ import { useClientSettings } from "~/hooks/useSettings";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { resolveShortcutCommand } from "~/keybindings";
-import { DIFF_SURFACE_THEME_UNSAFE_CSS, resolveDiffThemeName } from "~/lib/diffRendering";
+import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { isTerminalFocused } from "~/lib/terminalFocus";
 import { cn } from "~/lib/utils";
 import { buildFileReviewComment } from "~/reviewCommentContext";
@@ -136,21 +137,6 @@ type FileSearchCommandRequest = {
   readonly command: "filePicker.toggle" | "projectSearch.toggle";
 };
 
-const FILE_LINK_REVEAL_ATTRIBUTE = "data-file-link-reveal";
-const FILE_LINK_REVEAL_UNSAFE_CSS = `
-  ${DIFF_SURFACE_THEME_UNSAFE_CSS}
-  diffs-container {
-    --diffs-bg: var(--code-background, var(--background)) !important;
-    --diffs-light-bg: var(--code-background, var(--background)) !important;
-    --diffs-dark-bg: var(--code-background, var(--background)) !important;
-    background-color: var(--code-background, var(--background)) !important;
-    color: var(--code-foreground, var(--foreground)) !important;
-  }
-  [${FILE_LINK_REVEAL_ATTRIBUTE}][data-line],
-  [${FILE_LINK_REVEAL_ATTRIBUTE}][data-column-number] {
-    background: color-mix(in srgb, var(--primary) 18%, transparent) !important;
-  }
-`;
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
 
 function parseLineColumn(value: string): { line: number; column: number } | null {

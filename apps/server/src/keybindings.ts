@@ -83,7 +83,7 @@ const LEGACY_FILE_SEARCH_COMMAND = "fileViewer.searchFiles";
  * silently on load instead of surfacing as configuration issues; the file
  * itself is rewritten without them on the next config write.
  */
-const RETIRED_KEYBINDING_COMMANDS = new Set<string>(["themeEditor.toggle", "editor.openFavorite"]);
+const RETIRED_KEYBINDING_COMMANDS = new Set<string>(["editor.openFavorite"]);
 
 function isRetiredKeybindingCommand(command: unknown): boolean {
   return typeof command === "string" && RETIRED_KEYBINDING_COMMANDS.has(command);

@@ -1,4 +1,9 @@
 // @vitest-environment happy-dom
+import { longTextContextReference } from "../lib/composerInlineContext";
+import type { Editor } from "@tiptap/core";
+import { useState } from "react";
+import { formatReviewCommentContext } from "../reviewCommentContext";
+import { buildPullRequestReferenceContext } from "./pullRequest/pullRequestDetail.logic";
 import { act, createRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -69,6 +74,88 @@ afterEach(async () => {
   container?.remove();
 });
 describe("Coder rich-text editor", () => {
+  it("opens a merge-request reference through the Coder action and retains its snapshot", async () => {
+    const metadata = {
+      number: 42,
+      title: "Fix",
+      url: "https://gitlab.com/team/repo/-/merge_requests/42",
+      headBranch: "fix",
+      baseBranch: "main",
+      state: "merged" as const,
+      isDraft: false,
+    };
+    const value = formatReviewCommentContext(buildPullRequestReferenceContext(metadata));
+    const openPullRequest = vi.fn();
+    await render(value, [], true, {
+      fileActions: { openMention: () => {}, canOpenMention: () => false, openPullRequest },
+    });
+    const chip = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Open merge request #42: Fix"]',
+    );
+    expect(chip).not.toBeNull();
+    await act(async () => chip!.click());
+    expect(openPullRequest).toHaveBeenCalledWith(expect.anything(), metadata.url);
+    expect(editorRef.current!.readSnapshot().value).toBe(value);
+  });
+  it("restores removed terminal payloads through upstream undo history", async () => {
+    const original = terminal("undo-terminal");
+    function ControlledEditor() {
+      const [value, setValue] = useState("Inspect \uFFFC");
+      const [contexts, setContexts] = useState([original]);
+      return (
+        <ComposerPromptEditorTiptap
+          value={value}
+          cursor={0}
+          terminalContexts={contexts}
+          skills={[]}
+          disabled={false}
+          placeholder="Prompt"
+          onRemoveTerminalContext={() => {}}
+          onPaste={() => {}}
+          editorRef={editorRef}
+          onChange={(next, _cursor, _expanded, _adjacent, _ids, restored) => {
+            setValue(next);
+            setContexts(restored ?? []);
+          }}
+        />
+      );
+    }
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => root!.render(<ControlledEditor />));
+    await vi.waitFor(() => expect(editorRef.current).not.toBeNull());
+    const element = container.querySelector<HTMLElement & { editor: Editor }>(".tiptap")!;
+    await act(async () => {
+      element.editor.commands.selectAll();
+      element.editor.commands.deleteSelection();
+    });
+    expect(editorRef.current!.readSnapshot().terminalContextIds).toEqual([]);
+    await act(async () => {
+      element.editor.commands.undo();
+    });
+    expect(editorRef.current!.readSnapshot().value).toBe("Inspect \uFFFC");
+    expect(editorRef.current!.readSnapshot().terminalContextIds).toEqual([original.id]);
+    expect(container.textContent).toContain(original.terminalLabel);
+  });
+  it("keeps the caret beside a pasted legacy context instead of jumping past trailing text", async () => {
+    const onChange = vi.fn();
+    await render("before after", [], true, { onChange });
+    const source = longTextContextReference("captured text");
+    await act(async () => editorRef.current!.focusAt(7));
+    const element = container.querySelector<HTMLElement>(".tiptap")!;
+    const event = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "clipboardData", {
+      value: { files: [], getData: (type: string) => (type === "text/plain" ? source : "") },
+    });
+    await act(async () => {
+      element.dispatchEvent(event);
+    });
+    const change = onChange.mock.calls.at(-1)!;
+    expect(change[0]).toBe(`before ${source}after`);
+    expect(change[1]).toBe(8);
+    expect(change[2]).toBe(7 + source.length);
+  });
   it("opens a file mention through its workspace action without changing the draft", async () => {
     const openMention = vi.fn();
     await render("Inspect [index.ts](src/index.ts) please", [], true, {

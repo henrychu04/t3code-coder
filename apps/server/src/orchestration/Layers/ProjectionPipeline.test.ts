@@ -2492,4 +2492,69 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       assert.isNull(detail.session);
     }),
   );
+  it.effect("persists image display names through message projection and snapshot reads", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const snapshots = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const projectId = ProjectId.make("image-metadata-project");
+      const threadId = ThreadId.make("image-metadata-thread");
+      const modelSelection = { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5-codex" };
+      const attachments = [
+        {
+          type: "image" as const,
+          id: "00000000-0000-4000-8000-000000000001.png",
+          name: "diagram.png",
+        },
+      ];
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("image-metadata-project-create"),
+        projectId,
+        title: "Images",
+        workspaceRoot: "/tmp/image-metadata",
+        defaultModelSelection: modelSelection,
+        createdAt,
+      });
+      yield* engine.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("image-metadata-thread-create"),
+        threadId,
+        projectId,
+        title: "Images",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdAt,
+      });
+      yield* engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("image-metadata-turn"),
+        threadId,
+        message: {
+          messageId: MessageId.make("image-metadata-message"),
+          role: "user",
+          text: "Describe this",
+        },
+        attachments,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        createdAt,
+      });
+      const rows = yield* sql<{
+        attachments: string;
+      }>`SELECT attachments_json AS attachments FROM projection_thread_messages WHERE message_id = 'image-metadata-message'`;
+      assert.deepStrictEqual(JSON.parse(rows[0]!.attachments), attachments);
+      const detail = Option.getOrThrow(yield* snapshots.getThreadDetailById(threadId));
+      assert.deepStrictEqual(detail.messages[0]!.attachments, attachments);
+      const snapshot = yield* snapshots.getSnapshot();
+      assert.deepStrictEqual(
+        snapshot.threads.find((thread) => thread.id === threadId)!.messages[0]!.attachments,
+        attachments,
+      );
+    }),
+  );
 });

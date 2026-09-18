@@ -1282,7 +1282,7 @@ const make = Effect.gen(function* () {
     }
     yield* ensureThreadWorktree(thread);
 
-    // The Coder projection omits attachments; the turn intent owns them.
+    // The turn intent supplies attachments for legacy messages without projected metadata.
     const isCompactCommand = isCompactCommandMessage({
       ...message,
       attachments: event.payload.attachments,

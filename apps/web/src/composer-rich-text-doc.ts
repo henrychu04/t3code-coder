@@ -1,12 +1,9 @@
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { TaskItem } from "@tiptap/extension-task-item";
 
-import { splitPromptIntoComposerSegments } from "~/composer-editor-mentions";
+import { splitPromptIntoComposerSegments } from "~/composer-context-segments";
 import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/composer-rich-text";
-import {
-  INLINE_TERMINAL_CONTEXT_PLACEHOLDER,
-  type TerminalContextDraft,
-} from "~/lib/terminalContext";
+import { collectInlineContextIds } from "~/lib/composerContextReferences";
 
 /**
  * Pure document model for the rich text (Tiptap) composer.
@@ -124,11 +121,10 @@ function atomJsonForSegment(
   return {
     type: "composer-context-reference",
     attrs: {
-      kind: segment.type === "terminal-context" ? "terminal" : segment.context.kind,
-      contextId: segment.type === "terminal-context" ? (segment.context?.id ?? "") : "",
-      label: "",
-      source:
-        segment.type === "terminal-context" ? INLINE_TERMINAL_CONTEXT_PLACEHOLDER : segment.source,
+      kind: segment.kind,
+      contextId: segment.contextId,
+      label: segment.label,
+      source: segment.source,
     },
   };
 }
@@ -170,7 +166,7 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
 export function buildTiptapContent(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,
-  options?: { styling?: boolean; terminalContexts?: ReadonlyArray<TerminalContextDraft> },
+  options?: { styling?: boolean },
 ): Record<string, unknown>[] {
   const styling = options?.styling ?? true;
   // Hide token source from the markdown parser, then restore the atoms with
@@ -180,7 +176,7 @@ export function buildTiptapContent(
     sentinel = String.fromCodePoint(codePoint);
   }
   const atoms: InlineJson[] = [];
-  const text = splitPromptIntoComposerSegments(value, options?.terminalContexts)
+  const text = splitPromptIntoComposerSegments(value)
     .map((segment) => {
       if (segment.type === "text") return segment.text;
       atoms.push(atomJsonForSegment(segment, skillLabelFor));
@@ -263,7 +259,7 @@ export function buildTiptapContent(
 export function buildDocJson(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,
-  options?: { styling?: boolean; terminalContexts?: ReadonlyArray<TerminalContextDraft> },
+  options?: { styling?: boolean },
 ) {
   return { type: "doc", content: buildTiptapContent(value, skillLabelFor, options) };
 }
@@ -556,21 +552,11 @@ export function serializeEditorDoc(doc: ProseMirrorNode): RichDocMap {
     pmBlockStart += block.nodeSize;
   });
 
-  const contextIds: string[] = [];
-  doc.descendants((node) => {
-    if (
-      node.type.name === "composer-context-reference" &&
-      node.attrs.kind === "terminal" &&
-      node.attrs.contextId
-    ) {
-      contextIds.push(node.attrs.contextId as string);
-    }
-  });
   return {
     value: acc.value,
     runs: acc.runs,
     docLength: acc.flat,
-    contextIds,
+    contextIds: Array.from(new Set(collectInlineContextIds(acc.value))),
   };
 }
 

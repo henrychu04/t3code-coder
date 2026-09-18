@@ -3,7 +3,7 @@ import * as Result from "effect/Result";
 import type { KeybindingCommand } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 
-export type SearchOverlayMode = "command";
+export type SearchOverlayMode = "command" | "files" | "content";
 
 export interface CommandPaletteOpenIntent {
   readonly kind: "add-project" | "new-thread-in" | "change-theme";
@@ -18,26 +18,26 @@ export interface CommandPaletteUiState {
 export type CommandPaletteUiAction =
   | { readonly _tag: "SetOpen"; readonly open: boolean }
   | { readonly _tag: "ToggleMode"; readonly mode: SearchOverlayMode }
+  | { readonly _tag: "OpenCommand" }
   | { readonly _tag: "OpenAddProject" }
   | { readonly _tag: "OpenNewThreadIn" }
   | { readonly _tag: "OpenChangeTheme" }
   | { readonly _tag: "ClearOpenIntent" };
 
-// The Coder fork opens project file and content search in the right-panel
-// viewer, so this overlay owns only command discovery.
+// One overlay owns command, file and content search; shortcuts switch modes without stacking.
 export function reduceCommandPaletteUiState(
   state: CommandPaletteUiState,
   action: CommandPaletteUiAction,
 ): CommandPaletteUiState {
   switch (action._tag) {
     case "SetOpen":
-      return action.open
-        ? { open: true, mode: "command", openIntent: state.openIntent }
-        : { ...state, open: false, openIntent: null };
+      return action.open ? { ...state, open: true } : { ...state, open: false, openIntent: null };
     case "ToggleMode":
       return state.open && state.mode === action.mode
         ? { ...state, open: false, openIntent: null }
         : { open: true, mode: action.mode, openIntent: null };
+    case "OpenCommand":
+      return { open: true, mode: "command", openIntent: null };
     case "OpenAddProject":
       return { open: true, mode: "command", openIntent: { kind: "add-project" } };
     case "OpenNewThreadIn":

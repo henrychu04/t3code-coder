@@ -1,3 +1,6 @@
+import { ProjectFilePicker } from "./files/ProjectFilePicker";
+import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
+import type { SearchOverlayMode } from "./CommandPalette.logic";
 import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { readPullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
 import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
@@ -48,7 +51,6 @@ import {
 
 import { onOpenCommandPalette, type CommandPaletteOpenDetail } from "../commandPaletteBus";
 import { ComposerHandleContext } from "../composerHandleContext";
-import { openFileViewerCommand } from "../fileViewerCommandBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { useClientSettings } from "../hooks/useSettings";
 import { resolveShortcutCommand } from "../keybindings";
@@ -117,7 +119,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
         } else if (detail.open === "add-project") {
           dispatch({ _tag: "OpenAddProject" });
         } else {
-          dispatch({ _tag: "SetOpen", open: true });
+          dispatch({ _tag: "OpenCommand" });
         }
       }),
     [],
@@ -160,14 +162,22 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
         dispatch({ _tag: "OpenChangeTheme" });
         return;
       }
-      if (command !== "commandPalette.toggle") return;
+      const mode =
+        command === "commandPalette.toggle"
+          ? "command"
+          : command === "filePicker.toggle"
+            ? "files"
+            : command === "projectSearch.toggle"
+              ? "content"
+              : null;
+      if (!mode) return;
       event.preventDefault();
       event.stopPropagation();
       setOpenDetail({});
-      dispatch({ _tag: "ToggleMode", mode: "command" });
+      if (!event.repeat) dispatch({ _tag: "ToggleMode", mode });
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [keybindings, appearanceMode, setAppearanceMode, theme, themeHalves, resolvedTheme]);
 
   const addProjectOpen = state.open && state.openIntent?.kind === "add-project";
@@ -179,8 +189,18 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
         {children}
         {state.open && !addProjectOpen ? (
           <CommandDialogPopup
-            aria-label="Command palette"
-            className="overflow-hidden p-0"
+            aria-label={
+              state.mode === "files"
+                ? "File picker"
+                : state.mode === "content"
+                  ? "Search project contents"
+                  : "Command palette"
+            }
+            className={
+              state.mode === "content"
+                ? "flex h-[min(44rem,80vh)] flex-col overflow-hidden p-0"
+                : "overflow-hidden p-0"
+            }
             data-command-palette="true"
             finalFocus={() => {
               composerHandleRef.current?.focusAtEnd();
@@ -188,13 +208,20 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
             }}
             onBackdropPointerDown={() => setOpen(false)}
           >
-            <CoderCommandPaletteDialog
-              clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
-              openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
-              openDetail={openDetail}
-              openIntent={state.openIntent}
-              setOpen={setOpen}
-            />
+            {state.mode === "files" ? (
+              <ProjectFilePicker setOpen={setOpen} />
+            ) : state.mode === "content" ? (
+              <ProjectContentSearchDialog onOpenChange={setOpen} />
+            ) : (
+              <CoderCommandPaletteDialog
+                setMode={(mode) => dispatch({ _tag: "ToggleMode", mode })}
+                clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
+                openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
+                openDetail={openDetail}
+                openIntent={state.openIntent}
+                setOpen={setOpen}
+              />
+            )}
           </CommandDialogPopup>
         ) : null}
       </CommandDialog>
@@ -204,6 +231,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
 }
 
 function CoderCommandPaletteDialog(props: {
+  readonly setMode: (mode: SearchOverlayMode) => void;
   readonly openDetail: CommandPaletteOpenDetail;
   readonly clearOpenIntent: () => void;
   readonly openAddProject: () => void;
@@ -520,7 +548,8 @@ function CoderCommandPaletteDialog(props: {
       icon: <FileIcon className="size-4 text-icon-muted" />,
       disabled: !projectSearchAvailable,
       shortcutCommand: "filePicker.toggle",
-      run: async () => openFileViewerCommand("filePicker.toggle"),
+      keepOpen: true,
+      run: async () => props.setMode("files"),
     },
     {
       kind: "action",
@@ -531,7 +560,8 @@ function CoderCommandPaletteDialog(props: {
       icon: <SearchIcon className="size-4 text-icon-muted" />,
       disabled: !projectSearchAvailable,
       shortcutCommand: "projectSearch.toggle",
-      run: async () => openFileViewerCommand("projectSearch.toggle"),
+      keepOpen: true,
+      run: async () => props.setMode("content"),
     },
     {
       kind: "action",
@@ -851,6 +881,7 @@ function CoderCommandPaletteDialog(props: {
       value={query}
     >
       <CommandPaletteResults
+        isActionsOnly={query.trimStart().startsWith(">")}
         groups={filteredGroups}
         highlightedItemValue={highlightedItemValue}
         keybindings={keybindings}

@@ -74,6 +74,14 @@ conflict with each other or with a default.
 
 `mod+k` opens the command palette (when the terminal does not have focus). It searches commands
 and your threads' messages, so it doubles as a way to find that thing Claude said earlier.
+Start a search with `>` to show only actions.
+
+`mod+p` switches the same overlay to project files, and `mod+shift+f` switches it to project
+content. Repeating the current mode's shortcut closes it. Use the arrow keys and Enter to open
+a result in Coder's Files surface. Content search supports case-sensitive, whole-word, and
+regular-expression matching, with highlighted snippets and additional result pages. Choose
+**Search with file mask and preview…** for the expanded search view. File access requires an
+existing thread with an owned project; draft threads cannot read project files.
 
 The authoritative command list is always the one in **Settings → Keyboard shortcuts** for the
 build you are running — use that rather than any copied table.

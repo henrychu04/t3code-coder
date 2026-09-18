@@ -1,3 +1,4 @@
+import { PastedImageAttachment } from "@t3tools/contracts";
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import {
   ApprovalRequestId,
@@ -102,6 +103,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
+    attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(PastedImageAttachment))),
     isStreaming: Schema.Number,
   }),
 );
@@ -689,6 +691,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1249,6 +1252,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         turn_id AS "turnId",
         role,
         text,
+        attachments_json AS "attachments",
         is_streaming AS "isStreaming",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
@@ -1279,6 +1283,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1652,6 +1657,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           turn_id AS "turnId",
           role,
           text,
+          attachments_json AS "attachments",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1940,6 +1946,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   id: row.messageId,
                   role: row.role,
                   text: row.text,
+                  ...(row.attachments === null ? {} : { attachments: row.attachments }),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
                   createdAt: row.createdAt,
@@ -3028,6 +3035,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         id: row.messageId,
         role: row.role,
         text: row.text,
+        ...(row.attachments === null ? {} : { attachments: row.attachments }),
         turnId: row.turnId,
         streaming: row.isStreaming === 1,
         createdAt: row.createdAt,
@@ -3537,6 +3545,7 @@ pending_approval_requests AS (
             id: row.messageId,
             role: row.role,
             text: row.text,
+            ...(row.attachments === null ? {} : { attachments: row.attachments }),
             turnId: row.turnId,
             streaming: row.isStreaming === 1,
             createdAt: row.createdAt,

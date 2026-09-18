@@ -1,3 +1,10 @@
+import { PullRequestChip } from "../contextChipParts";
+import {
+  CHAT_INLINE_CHIP_CLASS_NAME,
+  CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
+  PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES,
+} from "../composerInlineChip";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import { WorktreeSetupCard } from "./WorktreeSetupCard";
@@ -2938,12 +2945,17 @@ function AssistantChangedFilesSectionInner({
 
 const UserMessageTerminalContextInlineLabel = memo(
   function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
-    const tooltipText =
-      props.context.body.length > 0
-        ? `${props.context.header}\n${props.context.body}`
-        : props.context.header;
-
-    return <TerminalContextInlineChip label={props.context.header} tooltipText={tooltipText} />;
+    const range = /^(.*?)\s+line(?:s)?\s+(\d+)(?:-(\d+))?$/i.exec(props.context.header);
+    return (
+      <TerminalContextInlineChip
+        label={props.context.header}
+        terminalLabel={range?.[1] ?? props.context.header}
+        {...(range ? { lineStart: Number(range[2]), lineEnd: Number(range[3] ?? range[2]) } : {})}
+        text={props.context.body}
+        detailsMode="popover"
+        surface="transcript"
+      />
+    );
   },
 );
 
@@ -3207,6 +3219,20 @@ const UserMessageBody = memo(function UserMessageBody(props: {
 
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const ctx = use(TimelineRowCtx);
+  const openPullRequest = useOpenPrLink(ctx.threadRef ?? undefined);
+  if (comment.pullRequest) {
+    const metadata = comment.pullRequest;
+    return (
+      <PullRequestChip
+        metadata={metadata}
+        label={`#${metadata.number}`}
+        kindLabel="merge request"
+        className={`${CHAT_INLINE_CHIP_CLASS_NAME} ${PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES[metadata.isDraft ? "draft" : metadata.state]}`}
+        labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+        onOpen={openPullRequest}
+      />
+    );
+  }
   const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),

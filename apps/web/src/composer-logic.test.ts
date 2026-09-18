@@ -566,3 +566,54 @@ describe("parseStandaloneComposerSlashCommand", () => {
     expect(parseStandaloneComposerSlashCommand("/plan explain this")).toBeNull();
   });
 });
+
+describe("GitLab merge-request triggers", () => {
+  it("detects a pull request number at a token boundary", () => {
+    const text = "Compare this with #8737";
+
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "pull-request",
+      query: "8737",
+      rangeStart: "Compare this with ".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("opens pull request completion from a bare hash", () => {
+    const text = "Compare with #";
+
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "pull-request",
+      query: "",
+      rangeStart: "Compare with ".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("detects a one-word pull request search", () => {
+    const text = "Compare with #composer";
+
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "pull-request",
+      query: "composer",
+      rangeStart: "Compare with ".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("supports hyphenated pull request search terms", () => {
+    const text = "Find #inline-context";
+
+    expect(detectComposerTrigger(text, text.length)).toEqual({
+      kind: "pull-request",
+      query: "inline-context",
+      rangeStart: "Find ".length,
+      rangeEnd: text.length,
+    });
+  });
+
+  it("does not keep pull request completion active for headings or embedded hashes", () => {
+    expect(detectComposerTrigger("# Heading", "# Heading".length)).toBeNull();
+    expect(detectComposerTrigger("issue#123", "issue#123".length)).toBeNull();
+  });
+});

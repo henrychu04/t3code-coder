@@ -1,3 +1,4 @@
+import type { PullRequestContextMetadata } from "@t3tools/contracts";
 import {
   visibleThreadPullRequests,
   threadPullRequestKeysEqual,
@@ -1044,4 +1045,12 @@ export function pullRequestPanelContext(
     legacy.number === surface.number
     ? "thread"
     : "page";
+}
+
+/** Snapshot the selected GitLab request using upstream's review-context representation. */
+export function buildPullRequestReferenceContext(
+  input: PullRequestContextMetadata,
+): ReviewCommentContext {
+  const comment = pullRequestContextComment(input, []);
+  return { ...comment, id: `pr-reference:${input.url}`, pullRequest: input };
 }

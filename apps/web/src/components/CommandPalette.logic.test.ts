@@ -21,6 +21,20 @@ const filterCommandPaletteGroups = (input: {
 describe("reduceCommandPaletteUiState", () => {
   const closed = { open: false, mode: "command", openIntent: null } as const;
 
+  it("switches search modes without stacking and toggles the current mode closed", () => {
+    const files = reduceCommandPaletteUiState(closed, { _tag: "ToggleMode", mode: "files" });
+    const content = reduceCommandPaletteUiState(files, { _tag: "ToggleMode", mode: "content" });
+    expect(content).toEqual({ open: true, mode: "content", openIntent: null });
+    expect(reduceCommandPaletteUiState(content, { _tag: "ToggleMode", mode: "content" }).open).toBe(
+      false,
+    );
+    expect(reduceCommandPaletteUiState(content, { _tag: "OpenCommand" })).toEqual({
+      open: true,
+      mode: "command",
+      openIntent: null,
+    });
+  });
+
   it("routes add-project and new-thread intents independently", () => {
     expect(reduceCommandPaletteUiState(closed, { _tag: "OpenAddProject" })).toEqual({
       open: true,
