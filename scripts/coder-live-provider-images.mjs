@@ -12,7 +12,17 @@ const requireGateway = createRequire(
 const { WebSocket } = requireGateway("ws");
 
 // Requires authenticated real providers. Missing tool use is a failure, never a simulated pass.
-export async function testLiveProviderImages(url, workspaceId) {
+export async function testLiveProviderImages(
+  url,
+  workspaceId,
+  {
+    instances = ["codex", "claudeAgent"],
+    models = {},
+    prompt = "Inspect the attached image, then use your image-viewing tool (Read or view_image) to inspect fixture.png in this project. Describe the image briefly and embed it using ![Inspected image](fixture.png). Do not modify any files or run shell commands.",
+    expectedImageBytes = png,
+  } = {},
+) {
+  const results = [];
   const endpoint = `${url}/api/workspaces/${encodeURIComponent(workspaceId)}`;
   const connected = await fetch(`${endpoint}/connection`, {
     method: "POST",
@@ -70,11 +80,14 @@ export async function testLiveProviderImages(url, workspaceId) {
         createWorkspaceRootIfMissing: false,
         createdAt: new Date().toISOString(),
       });
-    for (const instanceId of ["codex", "claudeAgent"]) {
+    for (const instanceId of instances) {
       const threadId = randomUUID();
-      const modelSelection = { instanceId, model: DEFAULT_MODEL_BY_PROVIDER[instanceId] };
+      const modelSelection = {
+        instanceId,
+        model: models[instanceId] ?? DEFAULT_MODEL_BY_PROVIDER[instanceId],
+      };
       assert.ok(modelSelection.model, "A supported model is required");
-      // The container cannot run Codex filesystem sandboxing; the prompt only reads our fixture.
+      // The container cannot run Codex filesystem sandboxing; the default prompt only reads the fixture.
       const runtimeMode = instanceId === "codex" ? "full-access" : "approval-required";
       const interactionMode = "default";
       await dispatch({
@@ -100,7 +113,7 @@ export async function testLiveProviderImages(url, workspaceId) {
         message: {
           messageId: randomUUID(),
           role: "user",
-          text: "Inspect the attached image, then use your image-viewing tool (Read or view_image) to inspect fixture.png in this project. Describe the image briefly and embed it using ![Inspected image](fixture.png). Do not modify any files or run shell commands.",
+          text: prompt,
         },
         createdAt: new Date().toISOString(),
       });
@@ -138,23 +151,50 @@ export async function testLiveProviderImages(url, workspaceId) {
       }
       assert.ok(images.length > 0, `${instanceId} did not produce a captured image activity`);
       for (const image of images) {
-        const chunk = await rpc("workspace.readScreenshotArtifact", {
-          artifactId: image.id,
-          offset: 0,
-          limit: 512 * 1024,
-        });
-        assert.equal(chunk.totalBytes, image.sizeBytes);
-        assert.ok(Buffer.from(chunk.dataBase64, "base64").length > 0);
+        const chunks = [];
+        let offset = 0;
+        do {
+          const chunk = await rpc("workspace.readScreenshotArtifact", {
+            artifactId: image.id,
+            offset,
+            limit: 512 * 1024,
+          });
+          assert.equal(chunk.totalBytes, image.sizeBytes);
+          assert.equal(chunk.offset, offset);
+          assert.equal(chunk.mimeType, image.mimeType);
+          const bytes = Buffer.from(chunk.dataBase64, "base64");
+          assert.ok(bytes.length > 0 && bytes.length <= 512 * 1024);
+          chunks.push(bytes);
+          offset += bytes.length;
+          assert.equal(chunk.nextOffset, offset === image.sizeBytes ? null : offset);
+        } while (offset < image.sizeBytes);
+        const bytes = Buffer.concat(chunks);
+        assert.equal(bytes.length, image.sizeBytes);
+        if (expectedImageBytes)
+          assert.deepEqual(
+            bytes,
+            expectedImageBytes,
+            "Captured bytes must match the unchanged project fixture",
+          );
       }
       const restored = (await snapshot()).thread;
       assert.deepEqual(
         restored.activities.flatMap((activity) => activity.payload?.artifacts ?? []),
         images,
       );
+      results.push({
+        instanceId,
+        model: modelSelection.model,
+        threadId,
+        projectId,
+        images,
+        replies: thread.messages.filter((m) => m.role === "assistant").map((m) => m.text),
+      });
       console.log(
-        `PASS: ${instanceId} real image-view tool, originating activity, and captured image read.`,
+        `PASS: ${instanceId} real image tool, originating activity, and captured image read.`,
       );
     }
+    return results;
   } finally {
     if (activeThread)
       await dispatch({
