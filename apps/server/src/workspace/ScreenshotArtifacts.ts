@@ -8,7 +8,6 @@ import * as NodePath from "node:path";
 
 import {
   MAX_SCREENSHOT_ARTIFACT_BYTES,
-  MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
   ScreenshotArtifactId,
   ScreenshotArtifactReadError,
@@ -135,12 +134,7 @@ export const make = Effect.gen(function* () {
     }
 
     const digest = createHash("sha256").update(input.bytes).digest("hex");
-    if (
-      input.capturedDigests &&
-      (input.capturedDigests.size >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN ||
-        input.capturedDigests.has(digest))
-    )
-      return undefined;
+    if (input.capturedDigests?.has(digest)) return undefined;
 
     const id = ScreenshotArtifactId.make(randomUUID());
     const extension = extensionByMimeType[detectedMimeType];

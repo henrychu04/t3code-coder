@@ -3,7 +3,6 @@ import * as Schema from "effect/Schema";
 import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
-export const MAX_SCREENSHOT_ARTIFACTS_PER_TURN = 10;
 export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 512 * 1024;
 
 export const ScreenshotArtifactId = TrimmedNonEmptyString.check(Schema.isMaxLength(64)).pipe(

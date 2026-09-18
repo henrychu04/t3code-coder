@@ -1,5 +1,4 @@
 import {
-  MAX_SCREENSHOT_ARTIFACTS_PER_TURN,
   MAX_SCREENSHOT_ARTIFACT_BYTES,
   type ProviderRuntimeEvent,
   type ScreenshotArtifactReference,
@@ -34,7 +33,7 @@ export interface ScreenshotImageInput {
 
 type ArtifactPayload = Extract<ProviderRuntimeEvent, { type: "item.completed" }>["payload"];
 
-/** One provider turn owns capture, limits, deduplication, and activity references. */
+/** One provider turn owns capture, deduplication, and activity references. */
 export const makeTurnScreenshotCapture = Effect.fn("makeTurnScreenshotCapture")(function* (
   cwd: string | undefined,
   options?: ScreenshotCaptureOptions,
@@ -62,10 +61,7 @@ export const makeTurnScreenshotCapture = Effect.fn("makeTurnScreenshotCapture")(
             if (!artifacts.some((artifact) => artifact.id === reference.id))
               artifacts.push(reference);
           } else {
-            imageCaptureWarning =
-              capturedDigests.size >= MAX_SCREENSHOT_ARTIFACTS_PER_TURN
-                ? "Image limit reached. Additional images were not preserved."
-                : "Image could not be preserved.";
+            imageCaptureWarning = "Image could not be preserved.";
           }
         };
         if (closed) return { artifacts, imageCaptureWarning: "Image capture has ended." };
@@ -81,8 +77,7 @@ export const makeTurnScreenshotCapture = Effect.fn("makeTurnScreenshotCapture")(
           const existing = capturedArtifacts.get(digest);
           accept(
             existing ??
-              (capturedDigests.size < MAX_SCREENSHOT_ARTIFACTS_PER_TURN &&
-              options?.captureScreenshotBase64
+              (options?.captureScreenshotBase64
                 ? remember(yield* options.captureScreenshotBase64({ ...image, capturedDigests }))
                 : undefined),
           );

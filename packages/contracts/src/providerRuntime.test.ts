@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 
 import {
   classifyTaskAgentKind,
+  ItemLifecyclePayload,
   ProviderRuntimeEvent,
   type ProviderRuntimeEventType,
 } from "./providerRuntime.ts";
@@ -254,4 +255,21 @@ describe("classifyTaskAgentKind", () => {
     // Nested agent: outlives its parent, stays in the roster.
     expect(classifyTaskAgentKind({ taskType: "local_agent", agentId: "owner" })).toBe("agent");
   });
+});
+
+it("accepts more than ten captured images in one tool event while validating each image", () => {
+  const decode = Schema.decodeUnknownSync(ItemLifecyclePayload);
+  const artifacts = Array.from({ length: 25 }, (_, index) => ({
+    id: `image-${index}`,
+    name: `image-${index}.png`,
+    mimeType: "image/png",
+    sizeBytes: 178,
+  }));
+  expect(decode({ itemType: "image_view", artifacts }).artifacts).toHaveLength(25);
+  expect(() =>
+    decode({
+      itemType: "image_view",
+      artifacts: [...artifacts, { ...artifacts[0], sizeBytes: 20 * 1024 * 1024 + 1 }],
+    }),
+  ).toThrow();
 });

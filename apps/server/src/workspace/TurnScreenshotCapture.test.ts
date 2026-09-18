@@ -42,18 +42,18 @@ it.effect("captures existing files immediately rather than waiting for turn comp
     expect(save).toHaveBeenCalledTimes(1);
   }),
 );
-it.effect("shares the cap across events and reports omissions while allowing duplicates", () =>
+it.effect("preserves more than ten unique images across events while reusing duplicates", () =>
   Effect.gen(function* () {
     const capture = yield* makeTurnScreenshotCapture("/project", {
       captureScreenshotBase64: ({ dataBase64 }) => Effect.succeed(captured(dataBase64)),
     });
     const results = yield* Effect.forEach(
-      Array.from({ length: 12 }, (_, i) => Buffer.from(String(i)).toString("base64")),
+      Array.from({ length: 25 }, (_, i) => Buffer.from(String(i)).toString("base64")),
       (dataBase64) => capture.captureImages([{ dataBase64, mimeType: "image/png" }]),
       { concurrency: "unbounded" },
     );
-    expect(results.flatMap((result) => result.artifacts)).toHaveLength(10);
-    expect(results.filter((result) => result.imageCaptureWarning)).toHaveLength(2);
+    expect(results.flatMap((result) => result.artifacts)).toHaveLength(25);
+    expect(results.filter((result) => result.imageCaptureWarning)).toHaveLength(0);
     expect(
       (yield* capture.captureImages([{ dataBase64: "MA==", mimeType: "image/png" }])).artifacts,
     ).toHaveLength(1);
@@ -107,4 +107,21 @@ it.effect(
       expect(linked.artifacts[0]!.sourcePathKeys).toEqual(["current-path"]);
       expect(first.artifacts[0]!.sourcePathKeys).toEqual(["old-path"]);
     }),
+);
+
+it.effect("preserves more than ten images returned by one tool", () =>
+  Effect.gen(function* () {
+    const capture = yield* makeTurnScreenshotCapture("/project", {
+      captureScreenshotBase64: ({ dataBase64 }) => Effect.succeed(captured(dataBase64)),
+    });
+    const images = Array.from({ length: 25 }, (_, i) => ({
+      dataBase64: Buffer.from(String(i)).toString("base64"),
+      mimeType: "image/png",
+    }));
+    const result = yield* capture.captureImages(images);
+    expect(result.artifacts).toHaveLength(25);
+    expect(result.imageCaptureWarning).toBeUndefined();
+    const again = yield* capture.captureImages(images);
+    expect(again).toEqual(result);
+  }),
 );

@@ -187,7 +187,7 @@ it.layer(NodeServices.layer)("ScreenshotArtifacts", (it) => {
     }),
   );
 
-  it.effect("deduplicates tool and viewed images before writing and enforces the turn limit", () =>
+  it.effect("deduplicates images and preserves tool and file captures beyond ten images", () =>
     Effect.gen(function* () {
       const root = yield* Effect.acquireRelease(
         Effect.promise(() =>
@@ -222,7 +222,7 @@ it.layer(NodeServices.layer)("ScreenshotArtifacts", (it) => {
         expect(yield* Effect.promise(() => NodeFS.readdir(artifactDir))).toEqual([
           `${first!.reference.id}.png`,
         ]);
-        for (let index = 1; index < 10; index++) {
+        for (let index = 1; index < 25; index++) {
           const captured = yield* artifacts.captureBase64({
             ...input,
             dataBase64: Buffer.concat([ONE_PIXEL_PNG, Buffer.from([index])]).toString("base64"),
@@ -230,13 +230,20 @@ it.layer(NodeServices.layer)("ScreenshotArtifacts", (it) => {
           expect(captured).toBeDefined();
           capturedDigests.add(captured!.digest);
         }
-        expect(
-          yield* artifacts.captureBase64({
-            ...input,
-            dataBase64: Buffer.concat([ONE_PIXEL_PNG, Buffer.from([10])]).toString("base64"),
-          }),
-        ).toBeUndefined();
-        expect(yield* Effect.promise(() => NodeFS.readdir(artifactDir))).toHaveLength(10);
+        yield* Effect.promise(() =>
+          NodeFS.writeFile(filePath, Buffer.concat([ONE_PIXEL_PNG, Buffer.from([25])])),
+        );
+        const fileCapture = yield* artifacts.captureFile({ cwd, filePath, capturedDigests });
+        expect(fileCapture).toBeDefined();
+        const chunk = yield* artifacts.readChunk({
+          artifactId: fileCapture!.reference.id,
+          offset: 0,
+          limit: 512,
+        });
+        expect(Buffer.from(chunk.dataBase64, "base64")).toEqual(
+          Buffer.concat([ONE_PIXEL_PNG, Buffer.from([25])]),
+        );
+        expect(yield* Effect.promise(() => NodeFS.readdir(artifactDir))).toHaveLength(26);
         // A new turn owns its own set and can capture the same image again.
         expect(
           yield* artifacts.captureBase64({ ...input, capturedDigests: new Set() }),

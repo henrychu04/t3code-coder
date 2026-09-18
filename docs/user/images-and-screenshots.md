@@ -59,9 +59,15 @@ later changed or deleted. For tools reporting only a path, capture happens immed
 event, so a concurrent file change can still affect which version is saved. Merely writing an image
 file does not add it to the conversation.
 
-At most ten unique PNG, JPEG, or WebP images of up to 20 MiB are preserved per turn. Repeated views
-reuse the same copy. The activity shows a notice when an image could not be preserved or the limit
-was reached. This is not a guarantee that every image visible to a provider is captured.
+PNG, JPEG, and WebP images of up to 20 MiB each are preserved without a per-turn image count
+limit or total storage quota. Repeated views of identical image bytes in a turn reuse the same copy.
+The activity shows a notice if an image could not be preserved, such as a failed storage write or
+an unsupported image. This is not a guarantee that every image visible to a provider is captured.
+
+Preserved images live in `$HOME/.t3-coder/artifacts` in the Coder workspace, separately from project
+worktrees. Removing a worktree alone does not delete them. Storage cleanup is user-controlled;
+removing preserved copies makes their historical previews unavailable. T3 does not automatically
+purge images based on age, count, or total storage use.
 
 Images stay in the Coder workspace. There are no save, export, or download actions, and external
 images are not loaded. Unrecognized image references show an unavailable explanation. Older

@@ -107,12 +107,14 @@ claim: shared provider protocols may still report subscription metadata.
       `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
       Submitted image references may read these validated workspace copies by opaque generated ID
       through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
-    - Image artifacts: capture at most 10 unique images per provider turn when the provider reports
+    - Image artifacts: capture images when the provider reports
       viewing a file inside the active project (including unchanged files), or returns image bytes
       from a tool. Capture at the tool event, not by observing unrelated filesystem writes. Copy to
       generated paths beneath `$HOME/.t3-coder/artifacts` and attach opaque IDs and metadata to the
-      originating activity. Reuse preserved copies for duplicate content and report capture failures
-      or limits. Path-only events cannot guarantee the exact bytes the provider saw.
+      originating activity. Reuse preserved copies for duplicate content and report capture failures.
+      Do not impose a per-turn image count limit, total artifact storage quota, or automatic
+      retention purge; workspace storage cleanup is user-controlled. Keep the per-image size limit
+      and bounded browser loading. Path-only events cannot guarantee the exact bytes the provider saw.
     - Submitted thumbnails, activity previews, and captured images embedded in assistant Markdown
       may load automatically through bounded chunks over the existing helper stdio RPC. Image links
       may open the shared gallery. Markdown resolves only against captured images from that turn.

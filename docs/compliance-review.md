@@ -84,8 +84,9 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
 - arbitrary uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer, and
   background file synchronization; pasted images and turn-scoped visual artifact display are the
   only user-facing transfer exceptions. Both accept signature-validated PNG, JPEG, and WebP images
-  up to 20 MiB. Artifact capture is limited to 10 images per turn, and artifact reads accept only
-  generated opaque IDs in bounded chunks after explicit UI expansion;
+  up to 20 MiB each. Artifact capture has no per-turn count limit or total storage quota; workspace
+  cleanup is user-controlled. Artifact reads accept only generated opaque IDs in bounded chunks,
+  with bounded browser memory and viewport-based loading;
 - Hosted source-control providers other than GitLab. Repository-scoped fetch, pull, commit, push,
   clone, repository publishing, and merge-request operations are available only in the workspace
   helper through Git and the workspace-installed `glab` CLI; the local gateway performs none of

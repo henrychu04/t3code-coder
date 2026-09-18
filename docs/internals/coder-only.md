@@ -321,7 +321,12 @@ The UI exposes no upload, download, export, drag-and-drop, absolute path, or loc
 explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
-Workspace attachments and screenshot artifacts currently have no automatic age-based purge.
+Screenshot artifacts have no per-turn count limit or total storage quota. The 20 MiB per-image
+limit, signature validation, project containment, bounded chunk reads, and bounded browser memory
+still apply. Preserved artifacts live beneath `$HOME/.t3-coder/artifacts`, outside project worktrees;
+deleting a worktree alone does not reclaim those copies. Workspace storage cleanup is user-controlled.
+
+Workspace attachments and screenshot artifacts have no automatic age-based purge.
 Provider session transcripts can retain attachment paths after a browser disconnect or thread
 change, and artifact capture does not record a durable owning thread. Safe reclamation requires
 ownership and reference tracking across those lifetimes; deleting files merely because they are
