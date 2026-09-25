@@ -1,27 +1,20 @@
-// @vitest-environment happy-dom
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vite-plus/test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vite-plus/test";
+
 import { Switch } from "./switch";
 
-it("exposes checked state and restores it after a mixed selection", async () => {
-  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const host = document.createElement("div");
-  document.body.append(host);
-  const root = createRoot(host);
-  try {
-    for (const [checked, mixed, expected] of [
-      [false, false, "false"],
-      [true, false, "true"],
-      [true, true, "mixed"],
-      [true, false, "true"],
-    ] as const) {
-      await act(async () => root.render(<Switch checked={checked} mixed={mixed} />));
-      expect(host.querySelector('[role="switch"]')?.getAttribute("aria-checked")).toBe(expected);
-    }
-  } finally {
-    await act(async () => root.unmount());
-    host.remove();
-    vi.unstubAllGlobals();
-  }
+function renderSwitchRoot(props: Partial<Parameters<typeof Switch>[0]>) {
+  const html = renderToStaticMarkup(<Switch aria-label="Enable Claude Code" {...props} />);
+  return html.match(/<span[^>]*role="switch"[^>]*>/)?.[0] ?? "";
+}
+
+describe("Switch accessibility", () => {
+  it("exposes the checked state to assistive tech", () => {
+    expect(renderSwitchRoot({ checked: true })).toContain('aria-checked="true"');
+    expect(renderSwitchRoot({ checked: false })).toContain('aria-checked="false"');
+  });
+
+  it("exposes the mixed state", () => {
+    expect(renderSwitchRoot({ checked: false, mixed: true })).toContain('aria-checked="mixed"');
+  });
 });

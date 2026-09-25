@@ -119,6 +119,22 @@ export type ServerProviderAvailability = typeof ServerProviderAvailability.Type;
 export const ServerProviderContinuation = Schema.Struct({ groupKey: TrimmedNonEmptyString });
 export type ServerProviderContinuation = typeof ServerProviderContinuation.Type;
 
+export const ServerProviderCompatibilityStatus = Schema.Literals([
+  "unknown",
+  "supported",
+  "graceful",
+  "unsupported",
+  "broken",
+]);
+export const ServerProviderCompatibilityAdvisory = Schema.Struct({
+  status: ServerProviderCompatibilityStatus,
+  latestVersionStatus: Schema.optionalKey(ServerProviderCompatibilityStatus),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+  recommendedVersion: Schema.NullOr(TrimmedNonEmptyString),
+  recommendedRange: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ServerProviderCompatibilityAdvisory = typeof ServerProviderCompatibilityAdvisory.Type;
+
 export const ServerProvider = Schema.Struct({
   usageLimits: Schema.optional(ServerProviderUsageLimits),
   instanceId: ProviderInstanceId,
@@ -147,6 +163,7 @@ export const ServerProvider = Schema.Struct({
   ),
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 export const ServerProviders = ForwardCompatibleArray(ServerProvider);

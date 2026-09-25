@@ -61,6 +61,7 @@ export default defineConfig({
       "apps/server/src/provider/Layers/CodexIntegrationPolicy.test.ts",
       "apps/server/src/provider/Layers/CodexProvider.test.ts",
       "apps/server/src/provider/ModelManifest.test.ts",
+      "apps/server/src/provider/providerCompatibility.test.ts",
       "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts",
       "apps/server/src/provider/Layers/ProviderInstanceRegistryHydration.test.ts",
       "apps/server/src/provider/Layers/codexLaunchArgs.test.ts",

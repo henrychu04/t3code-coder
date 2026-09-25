@@ -124,3 +124,13 @@ defaults. Bindings use `script.{id}.run`, so matching action IDs in different pr
 project's own command. Legacy action IDs that cannot be represented as a shortcut remain editable.
 
 New action shortcuts default to `!terminalFocus` so they do not intercept terminal input.
+
+`thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
+bottom of the sidebar, such as unpin, settle, snooze, or archive. Consecutive
+actions of the same kind undo together. The notice remains available for five
+seconds after the latest action. The default shortcut skips text fields and
+terminals so native undo keeps working there; the `editableFocus` context key is
+true while a text field, the composer, or another editor has the keyboard.
+
+`navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
+through the pages you have visited, like a browser's back and forward buttons.

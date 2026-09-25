@@ -470,9 +470,8 @@ function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
             render={
               <Button
                 type="button"
-                variant="ghost"
+                variant={expanded ? "secondary" : "ghost-muted"}
                 size="icon-xs"
-                className="chat-markdown-chrome-action"
                 aria-pressed={expanded}
                 aria-label={expandLabel}
                 onClick={() => setExpanded((value) => !value)}
@@ -509,29 +508,33 @@ function MarkdownDetails({
   const content = childNodes.filter((_, index) => index !== summaryIndex);
 
   return (
-    <Collapsible
-      defaultOpen={open}
-      onOpenChange={setIsOpen}
-      className="chat-markdown-details my-2 border-y border-border/60"
-      data-markdown-details=""
-      data-markdown-details-open={isOpen ? "true" : "false"}
-    >
-      <CollapsibleTrigger
-        className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium text-foreground data-panel-open:[&_svg]:rotate-90"
-        data-markdown-details-summary=""
+    <div className="my-2 border-y border-border/60">
+      <Collapsible
+        defaultOpen={open}
+        onOpenChange={setIsOpen}
+        data-markdown-details=""
+        data-markdown-details-open={isOpen ? "true" : "false"}
       >
-        <ChevronRightIcon
-          className="size-4 shrink-0 text-muted-foreground transition-transform"
-          aria-hidden
-        />
-        <span>{summary}</span>
-      </CollapsibleTrigger>
-      <CollapsiblePanel>
-        <div className="pb-3 ps-6 text-foreground/80" data-markdown-details-content="">
-          {content}
-        </div>
-      </CollapsiblePanel>
-    </Collapsible>
+        <CollapsibleTrigger
+          className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium text-foreground data-panel-open:[&_svg]:rotate-90"
+          data-markdown-details-summary=""
+        >
+          <ChevronRightIcon
+            className="size-4 shrink-0 text-muted-foreground transition-transform"
+            aria-hidden
+          />
+          <span>{summary}</span>
+        </CollapsibleTrigger>
+        <CollapsiblePanel>
+          <div
+            className="pb-3 ps-6 text-foreground/[calc(80%+var(--appearance-contrast-boost)/5)]"
+            data-markdown-details-content=""
+          >
+            {content}
+          </div>
+        </CollapsiblePanel>
+      </Collapsible>
+    </div>
   );
 }
 
@@ -565,9 +568,8 @@ function MarkdownCodeBlock({
               render={
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant={wrapped ? "secondary" : "ghost-muted"}
                   size="icon-xs"
-                  className="chat-markdown-chrome-action"
                   aria-pressed={wrapped}
                   aria-label={wrapLabel}
                   onClick={() => setWrapped((value) => !value)}
@@ -1247,7 +1249,7 @@ function ChatMarkdown(props: ChatMarkdownProps) {
   return (
     <div
       className={cn(
-        "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
+        "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/[calc(80%+var(--appearance-contrast-boost)/5)] [overflow-wrap:anywhere] [word-break:break-word]",
         className,
       )}
       data-streaming={state.isStreaming ? "" : undefined}

@@ -2,7 +2,6 @@ import { DEFAULT_RUNTIME_MODE as CONTRACT_DEFAULT_RUNTIME_MODE } from "@t3tools/
 import type {
   OrchestrationCheckpointFile,
   OrchestrationCheckpointSummary,
-  OrchestrationLatestTurn,
   OrchestrationMessage,
   OrchestrationProposedPlan,
   OrchestrationSession,
@@ -40,10 +39,6 @@ export type TurnDiffSummary = OrchestrationCheckpointSummary;
 export type Project = EnvironmentProject;
 export type Thread = EnvironmentThread;
 export type ThreadShell = EnvironmentThreadShell;
-
-export interface ThreadTurnState {
-  latestTurn: OrchestrationLatestTurn | null;
-}
 
 export type SidebarThreadSummary = EnvironmentThreadShell;
 export type ThreadSession = OrchestrationSession;

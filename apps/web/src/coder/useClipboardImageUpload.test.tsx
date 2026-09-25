@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, PROVIDER_SEND_TURN_MAX_ATTACHMENTS, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -208,10 +208,14 @@ it("limits progress updates to upstream's five-percent steps", async () => {
 });
 
 it("enforces the attachment limit including queued and failed images", async () => {
-  await act(async () => current.upload(Array.from({ length: 8 }, png)));
+  await act(async () =>
+    current.upload(Array.from({ length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS }, png)),
+  );
   await act(async () => current.upload([png()]));
-  expect(images()).toHaveLength(8);
-  expect(onError).toHaveBeenLastCalledWith("You can attach up to 8 images per message.");
+  expect(images()).toHaveLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS);
+  expect(onError).toHaveBeenLastCalledWith(
+    `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} images per message.`,
+  );
 });
 
 it("rejects unsupported and oversized images before enqueueing", async () => {

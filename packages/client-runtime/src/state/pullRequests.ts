@@ -135,6 +135,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
   );
+  const preview = writableQueryFamily(
+    createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:preview",
+      tag: WS_METHODS.pullRequestsPreview,
+      staleTimeMs: 60_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    }),
+  );
   const activity = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:activity",
@@ -174,6 +182,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
     detail,
+    preview,
     activity,
     diff: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:diff",
@@ -232,12 +241,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     runAction: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:run-action",
       tag: WS_METHODS.pullRequestsRunAction,
+      onSuccess: (target, registry) => Effect.sync(() => registry.refresh(preview(target))),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
     update: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:update",
       tag: WS_METHODS.pullRequestsUpdate,
+      onSuccess: (target, registry) => Effect.sync(() => registry.refresh(preview(target))),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
@@ -355,6 +366,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     invalidate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:invalidate",
       tag: WS_METHODS.pullRequestsInvalidate,
+      onSuccess: ({ environmentId, input }, registry) =>
+        Effect.sync(() => {
+          if (input.reference !== undefined) {
+            registry.refresh(preview({ environmentId, input: input.reference }));
+          }
+        }),
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),

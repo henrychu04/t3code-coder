@@ -303,6 +303,14 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     searchTerms: ["remote tracking branch local base"],
   },
   {
+    id: "worktree-submodules",
+    scope: "project-defaults",
+    title: "Submodules",
+    to: "/settings/preferences",
+    section: "New threads",
+    searchTerms: ["git submodule init recursive top-level none worktree t3.json"],
+  },
+  {
     id: "project-grouping",
     title: "Group projects",
     to: "/settings/preferences",

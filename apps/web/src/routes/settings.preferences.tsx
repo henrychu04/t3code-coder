@@ -8,7 +8,8 @@ import { NotificationSettings } from "../components/settings/NotificationSetting
 import { DraftInput } from "../components/ui/draft-input";
 import { ProjectActionsSettings } from "../components/settings/ProjectActionsSettings";
 import { useSettingsScope } from "../components/settings/SettingsScopeContext";
-import { useT3ProjectFile } from "../hooks/useT3ProjectFile";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { WORKTREE_SUBMODULES_LABELS } from "../components/BranchToolbar.logic";
 import { ProjectDefaultModelSetting } from "../components/settings/ProjectDefaultSettings";
 import { ScopedSwitch } from "../components/settings/ScopedSwitch";
 import {
@@ -120,14 +121,16 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const providers = props.environment.serverConfig?.providers ?? [];
-  const { target, targets } = useSettingsScope();
-  const repository = useT3ProjectFile(targets.length === 1 ? target : null);
-  const repositoryDefault = repository.file?.defaultThreadEnvMode;
+  const { target, scope } = useSettingsScope();
+  const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
   const mixedCheckoutMode = useScopedSettingsMixed(["defaultThreadEnvMode"]);
-  const checkoutMode =
-    target?.sources.defaultThreadEnvMode === "project"
-      ? settings.defaultThreadEnvMode
-      : (repositoryDefault ?? settings.defaultThreadEnvMode);
+  const mixedSubmodules = useScopedSettingsMixed(["worktreeSubmodules"]);
+  // File-backed keys show their effective value: the target already carries the
+  // checkout's t3.json, and a null file here only fills the built-in default.
+  const effective = target
+    ? resolveProjectSettings(target.settings, null, null, null).settings
+    : null;
+  const checkoutMode = effective?.defaultThreadEnvMode ?? "local";
 
   return (
     <>
@@ -220,19 +223,15 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
           settingKeys={["defaultThreadEnvMode"]}
           title="Default checkout mode"
           description={
-            repositoryDefault
-              ? `Repository default: ${repositoryDefault === "worktree" ? "Worktree" : "Local"} (t3.json)`
-              : "Work in the project checkout or create a dedicated Git worktree."
+            isProjectScope
+              ? "Where new threads in this project start."
+              : "Work in the project checkout or create a dedicated Git worktree. Projects and their t3.json can override it."
           }
           resetAction={
-            settings.defaultThreadEnvMode !== DEFAULT_SERVER_SETTINGS.defaultThreadEnvMode ? (
+            !isProjectScope && settings.defaultThreadEnvMode !== null ? (
               <SettingResetButton
                 label="default checkout mode"
-                onClick={() =>
-                  updateSettings({
-                    defaultThreadEnvMode: DEFAULT_SERVER_SETTINGS.defaultThreadEnvMode,
-                  })
-                }
+                onClick={() => updateSettings({ defaultThreadEnvMode: null })}
               />
             ) : null
           }
@@ -263,6 +262,49 @@ function WorkspaceGeneralSettings(props: { readonly environment: EnvironmentPres
                 <SelectItem hideIndicator value="worktree">
                   New worktree
                 </SelectItem>
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          id="worktree-submodules"
+          settingKeys={["worktreeSubmodules"]}
+          title="Submodules"
+          description={
+            isProjectScope
+              ? "How new worktrees in this project populate git submodules."
+              : "How new worktrees populate git submodules. Projects and their t3.json can override it."
+          }
+          resetAction={
+            !isProjectScope && settings.worktreeSubmodules !== null ? (
+              <SettingResetButton
+                label="worktree submodules"
+                onClick={() => updateSettings({ worktreeSubmodules: null })}
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={mixedSubmodules ? null : (effective?.worktreeSubmodules ?? "recursive")}
+              onValueChange={(value) => {
+                if (value === "recursive" || value === "top-level" || value === "none") {
+                  updateSettings({ worktreeSubmodules: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Worktree submodules">
+                <SelectValue>
+                  {mixedSubmodules
+                    ? "Mixed"
+                    : WORKTREE_SUBMODULES_LABELS[effective?.worktreeSubmodules ?? "recursive"]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {(["recursive", "top-level", "none"] as const).map((option) => (
+                  <SelectItem hideIndicator key={option} value={option}>
+                    {WORKTREE_SUBMODULES_LABELS[option]}
+                  </SelectItem>
+                ))}
               </SelectPopup>
             </Select>
           }

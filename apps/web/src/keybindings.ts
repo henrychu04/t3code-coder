@@ -32,6 +32,9 @@ export interface ShortcutModifierStateLike {
 export interface ShortcutMatchContext {
   terminalFocus: boolean;
   terminalOpen: boolean;
+  /** A text field, textarea, select or rich-text editor owns the keyboard.
+      Optional: only chords that collide with native editing consult it. */
+  editableFocus?: boolean;
   [key: string]: boolean;
 }
 
@@ -132,6 +135,7 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
   return {
     terminalFocus: false,
     terminalOpen: false,
+    editableFocus: false,
     ...options?.context,
   };
 }

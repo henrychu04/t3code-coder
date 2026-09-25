@@ -14,7 +14,7 @@ import {
   PullRequestConflictGlyph,
   PullRequestDiffStat,
   PullRequestMetaLine,
-  PullRequestApprovalGlyph,
+  PullRequestReviewDecisionGlyph,
   PullRequestStateGlyph,
 } from "./pullRequestPresentation";
 
@@ -110,7 +110,7 @@ function PullRequestRowImpl({
           {/* Only a verdict somebody has actually given: "review required" is the absence of
               one, and saying so on every unreviewed row would say nothing. */}
           {entry.reviewDecision === "approved" ? (
-            <PullRequestApprovalGlyph />
+            <PullRequestReviewDecisionGlyph decision="approved" />
           ) : entry.reviewDecision === "changes-requested" ? (
             <span className="min-w-0 truncate text-amber-600/90 dark:text-amber-400/80">
               Changes requested
@@ -182,7 +182,7 @@ function PullRequestRowImpl({
           <PullRequestActorLabel
             actor={entry.author}
             className="min-w-4 max-w-40"
-            labelClassName="sr-only @xs/pr-row-meta:not-sr-only @xs/pr-row-meta:truncate"
+            variant="avatar"
           />
           {entry.labels.length > 0 ? <PullRequestRowLabels labels={entry.labels} /> : null}
         </PullRequestMetaLine>

@@ -28,7 +28,6 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../logicalProject";
-import { resolveDefaultThreadEnvMode } from "@t3tools/shared/threadEnvMode";
 import { readThreadShell, useProjects, useServerConfigs, useThread } from "../state/entities";
 import {
   resolveNewDraftStartFromOrigin,
@@ -178,15 +177,17 @@ export function useNewThreadHandler() {
           destinationDraftId,
         });
       const resolveDefaultEnvMode = async (): Promise<DraftThreadEnvMode> => {
-        return resolveDefaultThreadEnvMode({
-          projectSetting: resolvedSettings.overrides.defaultThreadEnvMode,
-          repositoryDefault:
-            resolvedSettings.overrides.defaultThreadEnvMode === undefined
-              ? (await getT3ProjectFile(projectRef.environmentId, projectRef.projectId))
-                  ?.defaultThreadEnvMode
-              : undefined,
-          globalDefault: targetSettings.defaultThreadEnvMode,
-        });
+        // Null defers to the checkout's t3.json, then "local".
+        const projectFile =
+          targetSettings.defaultThreadEnvMode === null
+            ? await getT3ProjectFile(projectRef.environmentId, projectRef.projectId)
+            : null;
+        return resolveProjectSettings(
+          serverConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS,
+          projectRef.projectId,
+          project,
+          projectFile,
+        ).settings.defaultThreadEnvMode;
       };
       const logicalProjectKey = project
         ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)

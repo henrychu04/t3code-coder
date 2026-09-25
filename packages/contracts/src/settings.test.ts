@@ -50,7 +50,7 @@ describe("Codex settings", () => {
   it("uses Codex for title and branch generation by default", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
       instanceId: "codex",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       options: [{ id: "reasoningEffort", value: "low" }],
     });
   });

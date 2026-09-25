@@ -207,9 +207,30 @@ export const make = Effect.gen(function* () {
     };
     const groups = Map.groupBy(lookupCandidates, lookupKey);
 
-    const pullRequestFor = Effect.fn("ThreadSettlementReactor.pullRequestFor")(function* (
-      thread: (typeof candidates)[number],
+    const wouldSettle = Effect.fn("ThreadSettlementReactor.wouldSettle")(function* (
+      group: ReadonlyArray<(typeof candidates)[number]>,
+      pullRequest: SettlementPullRequest,
     ) {
+      const currentSettings = yield* settingsService.getSettings;
+      const decisionNow = DateTime.formatIso(yield* DateTime.now);
+      return group.some((thread) => {
+        const { settings } = resolveProjectSettings(currentSettings, thread.projectId);
+        return (
+          resolveAutoSettlementAt({
+            thread,
+            pullRequest,
+            now: decisionNow,
+            autoSettleAfterDays: settings.sidebarAutoSettleAfterDays,
+            autoSettleOnMerge: settings.sidebarAutoSettleOnMerge,
+          }) !== null
+        );
+      });
+    });
+
+    const pullRequestFor = Effect.fn("ThreadSettlementReactor.pullRequestFor")(function* (
+      group: ReadonlyArray<(typeof candidates)[number]>,
+    ) {
+      const thread = group[0]!;
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
       if (reference != null) {
         if (!projects.has(reference.projectId)) {
@@ -230,19 +251,26 @@ export const make = Effect.gen(function* () {
                 repository: reference.repository,
                 number: reference.number,
               });
-        // A terminal old MR must not settle a thread whose branch now has an open MR.
-        const cwd = lookupCwdByThreadId.get(thread.id);
-        const project = projects.get(thread.projectId);
-        if (detail.state !== "open" && cwd !== undefined && thread.branch !== null && project) {
-          const current = yield* git.branchPullRequest({ cwd, branch: thread.branch });
-          if (current?.state === "open" && pullRequestMatchesProject(current, project))
-            return current;
-        }
-        return {
+        const terminal = {
           state: detail.state,
           closedAt: detail.closedAt,
           mergedAt: detail.mergedAt,
         } satisfies SettlementPullRequest;
+        // A terminal old MR must not settle a thread whose branch now has an open MR.
+        const cwd = lookupCwdByThreadId.get(thread.id);
+        const project = projects.get(thread.projectId);
+        if (detail.state !== "open" && cwd !== undefined && thread.branch !== null && project) {
+          // Only pay for the uncached lookup when this sweep would otherwise
+          // settle: a terminal link that settles nothing (resumed thread,
+          // settle-on-merge off) would re-query GitLab every minute. A group
+          // that becomes eligible after this check waits for the next sweep
+          // rather than settling on the unverified link.
+          if (!(yield* wouldSettle(group, terminal))) return undefined;
+          const current = yield* git.branchPullRequest({ cwd, branch: thread.branch });
+          if (current?.state === "open" && pullRequestMatchesProject(current, project))
+            return current;
+        }
+        return terminal;
       }
       if (thread.branch === null) return null;
       const cwd = lookupCwdByThreadId.get(thread.id);
@@ -254,7 +282,8 @@ export const make = Effect.gen(function* () {
       groups.values(),
       (group) =>
         Effect.gen(function* () {
-          const pullRequest = yield* pullRequestFor(group[0]!);
+          const pullRequest = yield* pullRequestFor(group);
+          if (pullRequest === undefined) return;
           yield* Effect.forEach(group, (thread) => settleThread(thread, pullRequest), {
             discard: true,
           });

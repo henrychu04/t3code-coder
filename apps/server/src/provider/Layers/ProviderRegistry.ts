@@ -36,6 +36,8 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as Semaphore from "effect/Semaphore";
 
+import * as ModelManifest from "../ModelManifest.ts";
+import { applyProviderCompatibility } from "../providerCompatibility.ts";
 import { ServerConfig } from "../../config.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
@@ -286,8 +288,13 @@ export const ProviderRegistryLive = Layer.effect(
         ),
       ),
     );
+    // Bundled policies only: T3 Coder never refreshes the manifest over HTTP.
+    const classifyCompatibility = (provider: ServerProvider) =>
+applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility);
     const workspaceRefreshesRef = yield* Ref.make(new Map<ProviderInstance, Set<string>>());
-    const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(cachedProviders);
+    const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(
+      cachedProviders.map(classifyCompatibility),
+    );
     // Live-source registry — the dynamic counterpart to the boot-time
     // `bootSources`. Keyed by `instanceId`; the stored `ProviderInstance`
     // reference is used for identity equality so "no-op" reconciles
@@ -352,7 +359,9 @@ export const ProviderRegistryLive = Layer.effect(
             );
           }
 
-          const providers = orderProviderSnapshots([...mergedProviders.values()]);
+          const providers = orderProviderSnapshots(
+            [...mergedProviders.values()].map(classifyCompatibility),
+          );
           const providersToPersist = providers.filter((provider) =>
             updatedKeys.has(snapshotInstanceKey(provider)),
           );

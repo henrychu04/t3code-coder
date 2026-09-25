@@ -12,6 +12,7 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
 import { projectSettingsCommandPatch } from "./projectSettingsCommand.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { PullRequestSyncReactor } from "./orchestration/PullRequestSyncReactor.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
@@ -769,6 +770,35 @@ export const layer = CoderWsRpcGroup.toLayer(
         Effect.ignoreCause({ log: true }),
       );
 
+    // Project setting > environment setting; null when neither is set so
+    // the driver reads the freshly created checkout's own t3.json (the
+    // branch being checked out may declare something the project root does
+    // not). Settings that fail to load fall through the same way.
+    const resolveBootstrapWorktreeSubmodules = Effect.fnUntraced(function* (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: ProjectId | null;
+    }) {
+      const current = yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null));
+      if (!current) return null;
+      // A worktree can also be prepared for an existing thread, whose
+      // project is only known through its shell.
+      const resolvedProjectId =
+        input.projectId ??
+        (yield* projections.getThreadShellById(input.threadId).pipe(
+          Effect.map((thread) => Option.getOrNull(thread)?.projectId ?? null),
+          Effect.orElseSucceed(() => null),
+        ));
+      const project =
+        resolvedProjectId === null
+          ? null
+          : yield* projections.getProjectShellById(resolvedProjectId).pipe(
+              Effect.map(Option.getOrNull),
+              Effect.orElseSucceed(() => null),
+            );
+      return resolveProjectSettings(current, resolvedProjectId, project).settings
+        .worktreeSubmodules;
+    });
+
     const dispatchBootstrap = (
       command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
     ) =>
@@ -874,6 +904,10 @@ export const layer = CoderWsRpcGroup.toLayer(
           }
           if (prepareWorktree && worktreeBase) {
             yield* track(worktreeSetupTracker.stageStatus(threadId, "checkout", "running"));
+            const submodules = yield* resolveBootstrapWorktreeSubmodules({
+              threadId,
+              projectId: bootstrap.createThread?.projectId ?? null,
+            });
             const worktree = yield* git.createWorktree(
               {
                 cwd: prepareWorktree.projectCwd,
@@ -883,6 +917,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                 path: null,
               },
               {
+                submodules,
                 progress: {
                   onWorktreeClaimed: (path) =>
                     Effect.sync(() => {
@@ -901,6 +936,13 @@ export const layer = CoderWsRpcGroup.toLayer(
                           worktreeSetupTracker.stageStatus(threadId, "submodules", "running"),
                         ),
                       ),
+                  onSubmodulesDisabled: ({ source }) =>
+                    worktreeSetupTracker.stageStatus(
+                      threadId,
+                      "submodules",
+                      "skipped",
+                      `disabled in ${source}`,
+                    ),
                   onSubmoduleLine: (line) =>
                     worktreeSetupTracker.stage(threadId, "submodules", { detail: line }),
                   onSubmodulesFinished: ({ ok, detail }) =>
@@ -1432,6 +1474,7 @@ export const layer = CoderWsRpcGroup.toLayer(
           }),
         ),
       [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
+      [WS_METHODS.pullRequestsPreview]: (input) => pullRequests.preview(input),
       [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
       [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
       [WS_METHODS.pullRequestsFilesViewed]: (input) => pullRequests.filesViewed(input),

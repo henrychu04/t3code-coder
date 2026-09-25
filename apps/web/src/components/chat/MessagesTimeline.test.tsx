@@ -951,7 +951,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Copy link"');
+    expect(markup).toContain('aria-label="Copy message"');
     expect(markup).toContain('data-user-message-collapsed="true"');
     expect(markup).toContain('data-user-message-footer="true"');
   });
@@ -1301,6 +1301,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("Running pnpm");
     expect(markup).not.toContain("tool call failed");
   });
+
 
   it("renders initial thinking as the shared live activity row", () => {
     const turnId = TurnId.make("turn-live");

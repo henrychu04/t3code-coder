@@ -22,14 +22,17 @@ vi.mock("../components/settings/useScopedSettings", () => ({
 vi.mock("../components/settings/SettingsScopeContext", () => ({
   useSettingsScope: () => ({
     scope: { kind: state.scopeKind },
-    target: { environmentId: "one", sources: { defaultThreadEnvMode: "environment" } },
+    target: {
+      environmentId: "one",
+      settings: { ...DEFAULT_SERVER_SETTINGS, defaultThreadEnvMode: "local" },
+      sources: { defaultThreadEnvMode: "environment" },
+    },
     targets: [
       { environmentId: "one", settings: { defaultThreadEnvMode: "local" } },
       { environmentId: "two", settings: { defaultThreadEnvMode: "worktree" } },
     ],
   }),
 }));
-vi.mock("../hooks/useT3ProjectFile", () => ({ useT3ProjectFile: () => ({ file: null }) }));
 vi.mock("../components/settings/ScopedSettingsTarget", () => ({
   ScopedSettingsTarget: ({ children }: { children: (environment: object) => ReactNode }) =>
     children({ environmentId: "one", serverConfig: { providers: [] } }),

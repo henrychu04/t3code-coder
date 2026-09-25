@@ -76,7 +76,6 @@ export function TextGenerationModelSettings(props: {
               instanceEntries={instanceEntries}
               modelOptionsByInstance={modelOptionsByInstance}
               triggerAriaLabel="Thread title model"
-              triggerVariant="outline"
               triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
               onInstanceModelChange={(instanceId, model) => {
                 props.onChange(
@@ -99,7 +98,6 @@ export function TextGenerationModelSettings(props: {
               modelOptions={selection.options}
               allowPromptInjectedEffort={false}
               planModeEnabled={props.settings.planModeEnabled}
-              triggerVariant="outline"
               triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
               onModelOptionsChange={(nextOptions) => {
                 props.onChange(

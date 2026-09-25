@@ -13,6 +13,7 @@ import { assert } from "vite-plus/test";
 import {
   PastedImageAttachmentError,
   resolvePastedImageAttachment,
+  resolvePastedImageAttachments,
 } from "./PastedImageAttachments.ts";
 
 const decodeAttachmentId = Schema.decodeSync(PastedImageAttachmentId);
@@ -51,6 +52,33 @@ it.layer(NodeServices.layer)("resolvePastedImageAttachment", (it) => {
         }),
       );
       assert.instanceOf(failure, PastedImageAttachmentError);
+    }),
+  );
+
+  it.effect("bounds one message's images to the 80 MiB total", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const attachmentsDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-image-" });
+      // Eight 10 MiB images fill the budget exactly; a ninth byte exceeds it.
+      const ids = Array.from({ length: 9 }, (_, index) =>
+        decodeAttachmentId(`550e8400-e29b-41d4-a716-44665544000${index}.png`),
+      );
+      for (const [index, id] of ids.entries()) {
+        const file = NodePath.join(attachmentsDir, id);
+        yield* fileSystem.writeFile(file, PNG_BYTES);
+        yield* Effect.promise(() => NodeFS.truncate(file, index < 8 ? 10 * 1024 * 1024 : 9));
+      }
+      const attachments = ids.map((id) => ({ type: "image" as const, id }));
+      const withinBudget = yield* resolvePastedImageAttachments({
+        attachmentsDir,
+        attachments: attachments.slice(0, 8),
+      });
+      assert.equal(withinBudget.length, 8);
+      const failure = yield* Effect.flip(
+        resolvePastedImageAttachments({ attachmentsDir, attachments }),
+      );
+      assert.instanceOf(failure, PastedImageAttachmentError);
+      assert.include(failure.message, "80 MiB");
     }),
   );
 

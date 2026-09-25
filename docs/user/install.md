@@ -74,6 +74,10 @@ claude auth login
 Reconnect to the workspace after authentication so T3 Coder can read the updated provider status.
 A workspace can use only Codex, only Claude Code, or both.
 
+T3 Coder warns when a workspace provider version has known compatibility problems with this
+release. **Settings → Providers** shows the recommended version or range; update the CLI in the
+workspace the same way you installed it. An unlisted version is unverified.
+
 ## Next steps
 
 - [Codex and Claude Code](./providers.md)

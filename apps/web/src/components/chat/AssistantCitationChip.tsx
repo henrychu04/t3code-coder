@@ -148,7 +148,7 @@ export function AssistantCitationChip({
               }}
               aria-label="Edit citation comment"
               className="w-72 max-w-[calc(100vw-1rem)]"
-              viewportClassName="p-3"
+              padding="compact"
               onPointerDown={(event) => event.stopPropagation()}
             >
               <AssistantCitationCommentEditor

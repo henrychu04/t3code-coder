@@ -1,15 +1,30 @@
 import { type ServerProvider } from "@t3tools/contracts";
 import { memo } from "react";
 import { InfoIcon, XIcon } from "lucide-react";
-import { cn } from "~/lib/utils";
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Button } from "../ui/button";
 import { formatProviderDriverKindLabel } from "../../providerModels";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
+/** Unsupported and broken versions fail mid-turn, so they warn even when ready. */
+function getIncompatibleVersion(status: ServerProvider) {
+  const compatibility = status.compatibilityAdvisory;
+  return compatibility?.status === "unsupported" || compatibility?.status === "broken"
+    ? compatibility
+    : null;
+}
+
 export function getProviderStatusBannerKey(status: ServerProvider | null): string | null {
-  return !status || status.status === "ready" || status.status === "disabled"
-    ? null
-    : [status.instanceId, status.status, status.auth.status, status.message ?? ""].join("\u0000");
+  if (!status || status.status === "disabled") return null;
+  if (status.status === "ready") {
+    const incompatible = getIncompatibleVersion(status);
+    return incompatible
+      ? [status.instanceId, incompatible.status, status.version ?? ""].join("\u0000")
+      : null;
+  }
+  return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
+    "\u0000",
+  );
 }
 
 export function shouldShowProviderStatusBanner(
@@ -20,6 +35,20 @@ export function shouldShowProviderStatusBanner(
   return bannerKey !== null && bannerKey !== dismissedBannerKey;
 }
 
+/** Keep the environment's error intact in both the banner and model picker. */
+export function getProviderStatusMessage(status: ServerProvider): string {
+  if (status.message) return status.message;
+  const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
+  if (status.auth.status === "unauthenticated") {
+    return "Check the provider API credentials in the workspace and retry the provider check.";
+  }
+  return status.status === "ready"
+    ? "No models are available for this provider."
+    : status.status === "error"
+      ? `${providerName} provider is unavailable.`
+      : `${providerName} provider has limited availability.`;
+}
+
 export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss,
   status,
@@ -27,57 +56,50 @@ export const ProviderStatusBanner = memo(function ProviderStatusBanner({
   onDismiss: () => void;
   status: ServerProvider | null;
 }) {
-  if (!status || status.status === "ready" || status.status === "disabled") {
+  if (!status || getProviderStatusBannerKey(status) === null) {
     return null;
   }
 
   const providerName = status.displayName?.trim() || formatProviderDriverKindLabel(status.driver);
   const isUnauthenticated = status.status === "error" && status.auth.status === "unauthenticated";
+  const incompatible = status.status === "ready" ? getIncompatibleVersion(status) : null;
   const title = isUnauthenticated
     ? `${providerName} is unauthenticated`
-    : `${providerName} provider status`;
-  const message =
-    status.message ??
-    (isUnauthenticated
-      ? "Check the provider API credentials in the workspace and retry the provider check."
-      : status.status === "error"
-        ? `${providerName} provider is unavailable.`
-        : `${providerName} provider has limited availability.`);
+    : incompatible
+      ? `${providerName} ${status.version ?? ""} is ${incompatible.status === "broken" ? "known to be broken" : "unsupported"}`
+      : `${providerName} provider status`;
+  const message = incompatible?.message ?? getProviderStatusMessage(status);
+  const isWarning = status.status === "warning" || incompatible !== null;
 
   return (
     <div className="pointer-events-auto mx-auto w-fit max-w-[calc(100%-2rem)] pt-3">
-      <div
-        className={cn(
-          "alert-glass relative inline-flex max-w-full items-center gap-3 rounded-xl border py-3 ps-3.5 pe-10 text-card-foreground text-sm",
-          status.status === "warning"
-            ? "border-warning/32 [&_svg]:text-warning"
-            : "border-destructive/32 text-destructive-foreground [&_svg]:text-destructive",
-        )}
-        data-variant={status.status === "warning" ? "warning" : "error"}
-        role="alert"
+      <Alert
+        variant={isWarning ? "warning" : "error"}
+        role={incompatible && incompatible.status !== "broken" ? "status" : "alert"}
+        surface="glass"
+        controlAlignment="first-line"
       >
-        <InfoIcon className="size-4 shrink-0" aria-hidden />
-        <div className="flex min-w-0 flex-col gap-1">
-          <div className="font-medium wrap-anywhere">{title}</div>
+        <InfoIcon />
+        <AlertTitle>{title}</AlertTitle>
+        <AlertDescription>
           <Tooltip>
-            <TooltipTrigger
-              render={<div className="line-clamp-3 wrap-anywhere text-muted-foreground">{message}</div>}
-            />
-            <TooltipPopup side="top" className="max-w-96 whitespace-pre-wrap wrap-anywhere">
+            <TooltipTrigger render={<div className="line-clamp-3" />}>{message}</TooltipTrigger>
+            <TooltipPopup side="top" className="whitespace-pre-wrap">
               {message}
             </TooltipPopup>
           </Tooltip>
-        </div>
-        <Button
-          aria-label={`Dismiss ${providerName} provider ${status.status}`}
-          className="absolute top-2 right-2 size-6 text-muted-foreground hover:text-foreground"
-          onClick={onDismiss}
-          size="icon-xs"
-          variant="ghost"
-        >
-          <XIcon aria-hidden className="size-3.5" />
-        </Button>
-      </div>
+        </AlertDescription>
+        <AlertAction>
+          <Button
+            aria-label={`Dismiss ${providerName} provider ${status.status}`}
+            onClick={onDismiss}
+            size="icon-xs"
+            variant="ghost-muted"
+          >
+            <XIcon />
+          </Button>
+        </AlertAction>
+      </Alert>
     </div>
   );
 });

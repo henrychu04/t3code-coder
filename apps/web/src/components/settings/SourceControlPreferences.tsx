@@ -199,7 +199,6 @@ export function SourceControlPreferences({
                 lockedProvider={null}
                 instanceEntries={instanceEntries}
                 modelOptionsByInstance={modelOptionsByInstance}
-                triggerVariant="outline"
                 triggerAriaLabel="Source control writer model"
                 onInstanceModelChange={(instanceId, model) =>
                   updateSettings({

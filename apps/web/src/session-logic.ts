@@ -115,7 +115,7 @@ const derivedWorkLogEntryByActivity = new WeakMap<
 
 export interface PendingApproval {
   requestId: ApprovalRequestId;
-  requestKind: "command" | "file-read" | "file-change";
+  requestKind: "command" | "file-read" | "file-change" | "permission";
   options?: ReadonlyArray<ProviderApprovalOption>;
   createdAt: string;
   detail?: string;
@@ -363,7 +363,8 @@ export function derivePendingApprovals(
     (approval): approval is PendingApproval =>
       approval.requestKind === "command" ||
       approval.requestKind === "file-read" ||
-      approval.requestKind === "file-change",
+      approval.requestKind === "file-change" ||
+      approval.requestKind === "permission",
   );
 }
 
@@ -1549,7 +1550,8 @@ function extractWorkLogRequestKind(
   if (
     payload?.requestKind === "command" ||
     payload?.requestKind === "file-read" ||
-    payload?.requestKind === "file-change"
+    payload?.requestKind === "file-change" ||
+    payload?.requestKind === "permission"
   ) {
     return payload.requestKind;
   }

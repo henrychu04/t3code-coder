@@ -28,7 +28,6 @@ import {
   shouldOpenProactiveTurnDiff,
   shouldRetargetThreadPullRequestPanel,
   resolveProactiveTurnDiffAction,
-  MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
   MAX_HIDDEN_MOUNTED_TERMINAL_THREADS,
   branchMismatchKey,
   buildExpiredTerminalContextToastCopy,
@@ -48,7 +47,6 @@ import {
   shouldRefocusComposerOnWindowFocus,
   isBranchMismatchDismissedForSession,
   reconcileMountedTerminalThreadIds,
-  reconcileRetainedMountedThreadIds,
   recallCheckoutIsRepo,
   rememberCheckoutIsRepo,
   resolveBackgroundDraftWorkspaceOptions,
@@ -764,50 +762,6 @@ describe("reconcileMountedTerminalThreadIds", () => {
         activeThreadTerminalOpen: false,
       }),
     ).toEqual(ids.slice(-MAX_HIDDEN_MOUNTED_TERMINAL_THREADS));
-  });
-});
-
-describe("reconcileRetainedMountedThreadIds", () => {
-  it("retains hidden open threads and adds the active open thread", () => {
-    expect(
-      reconcileRetainedMountedThreadIds({
-        currentThreadIds: [ThreadId.make("thread-hidden")],
-        openThreadIds: [ThreadId.make("thread-hidden")],
-        activeThreadId: ThreadId.make("thread-active"),
-        activeThreadOpen: true,
-        maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
-      }),
-    ).toEqual([ThreadId.make("thread-hidden"), ThreadId.make("thread-active")]);
-  });
-
-  it("can retain the active thread as hidden when it is inactive", () => {
-    expect(
-      reconcileRetainedMountedThreadIds({
-        currentThreadIds: [ThreadId.make("thread-active")],
-        openThreadIds: [ThreadId.make("thread-active")],
-        activeThreadId: ThreadId.make("thread-active"),
-        activeThreadOpen: false,
-        maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
-        retainInactiveActiveThread: true,
-      }),
-    ).toEqual([ThreadId.make("thread-active")]);
-  });
-
-  it("evicts the oldest hidden threads beyond the configured cap", () => {
-    const currentThreadIds = Array.from(
-      { length: MAX_HIDDEN_MOUNTED_PREVIEW_THREADS + 2 },
-      (_, index) => ThreadId.make(`thread-${index + 1}`),
-    );
-
-    expect(
-      reconcileRetainedMountedThreadIds({
-        currentThreadIds,
-        openThreadIds: currentThreadIds,
-        activeThreadId: null,
-        activeThreadOpen: false,
-        maxHiddenThreadCount: MAX_HIDDEN_MOUNTED_PREVIEW_THREADS,
-      }),
-    ).toEqual(currentThreadIds.slice(-MAX_HIDDEN_MOUNTED_PREVIEW_THREADS));
   });
 });
 

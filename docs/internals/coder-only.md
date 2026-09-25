@@ -287,10 +287,10 @@ retry and aborts a transfer when its draft attachment is removed. HTTP response 
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
 workspace copy remains pending until SCP and finalization complete. Paths are added to message text
-at send time; the UI replaces generated attachment references with durable workspace-backed previews. The browser may additionally submit at most eight opaque generated
+at send time; the UI replaces generated attachment references with durable workspace-backed previews. The browser may additionally submit at most 100 opaque generated
 image ids—never a caller-supplied path. The helper resolves each id only beneath the attachment
-directory, rejects symlinks, size violations, and signature/extension mismatches, and sends the
-validated bytes to Codex as native image input. The same validated images may be passed by fixed
+directory, rejects symlinks, size violations, and signature/extension mismatches, bounds one
+message's images to 80 MiB in total, and sends the validated bytes to Codex as native image input. The same validated images may be passed by fixed
 path to the workspace Codex process that generates the initial branch name and thread title.
 
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
@@ -397,8 +397,10 @@ is introduced.
 
 Settings parity uses two bounded metadata reads in the Linux helper. `projects.getConfig` accepts
 only a project ID, resolves an active project through the projection query, and reads the fixed
-`t3.json` file at its real root (at most 64 KiB). It returns only decoded script fields and checkout
-mode, or a missing/invalid/unavailable status. It accepts no caller path, returns no raw file, and
+`t3.json` file at its real root (at most 64 KiB). It returns only decoded script fields, checkout
+mode, and worktree submodule mode, or a missing/invalid/unavailable status. The browser uses the
+same read to show `t3.json` as a settings tier; new worktrees read the checkout's own `t3.json`
+through the same bounded, symlink-checked reader. It accepts no caller path, returns no raw file, and
 never logs parser input or file contents. Importing an action remains an explicit settings write.
 
 Workspace themes come only from `<stateDir>/themes/*.json`. The helper examines at most 32 candidate

@@ -26,7 +26,9 @@ export function ResponseSettings({
 }: {
   settings: ServerSettings;
   overrides?: ProjectSettingsOverrides;
-  onChange: (patch: ProjectSettingsOverrides) => void;
+  onChange: (
+    patch: Pick<ProjectSettingsOverrides, "defaultRuntimeMode" | "responseStreamingMode">,
+  ) => void;
   onReset?: (key: ProjectScopedServerSettingKey) => void;
 }) {
   const mixedPermissions = useOptionalScopedSettingsMixed(["defaultRuntimeMode"]);

@@ -70,7 +70,7 @@ import {
   discoverCodexMcpServerNames,
   type CodexMcpServerNameResolver,
 } from "./CodexIntegrationPolicy.ts";
-import { resolvePastedImageAttachment } from "../PastedImageAttachments.ts";
+import { resolvePastedImageAttachments } from "../PastedImageAttachments.ts";
 const isCodexAppServerProcessExitedError = Schema.is(CodexErrors.CodexAppServerProcessExitedError);
 const isCodexAppServerTransportError = Schema.is(CodexErrors.CodexAppServerTransportError);
 const isCodexSessionRuntimeThreadIdMissingError = Schema.is(
@@ -342,6 +342,8 @@ function toRequestTypeFromMethod(method: string): CanonicalRequestType {
       return "file_change_approval";
     case "mcpServer/elicitation/request":
       return "mcp_elicitation_approval";
+    case "item/permissions/requestApproval":
+      return "permission_approval";
     case "applyPatchApproval":
       return "apply_patch_approval";
     case "execCommandApproval":
@@ -367,6 +369,8 @@ function toRequestTypeFromKind(kind: ProviderRequestKind | undefined): Canonical
       return "file_change_approval";
     case "mcp-elicitation":
       return "mcp_elicitation_approval";
+    case "permission":
+      return "permission_approval";
     default:
       return "unknown";
   }
@@ -865,6 +869,20 @@ function mapToRuntimeEvents(
           // These params carry no path of their own, only the root the agent
           // wants to write under.
           return nonEmptyDetail(payload?.reason) ?? nonEmptyDetail(payload?.grantRoot);
+        }
+        case "item/permissions/requestApproval": {
+          const payload = readPayload(
+            EffectCodexSchema.ServerRequest__PermissionsRequestApprovalParams,
+            event.payload,
+          );
+          const requestedPaths = [
+            ...(payload?.permissions.fileSystem?.read ?? []),
+            ...(payload?.permissions.fileSystem?.write ?? []),
+          ];
+          return (
+            nonEmptyDetail(payload?.reason) ??
+            (requestedPaths.length > 0 ? `Access: ${requestedPaths.join(", ")}` : undefined)
+          );
         }
         case "applyPatchApproval": {
           const payload = readPayload(
@@ -1901,36 +1919,31 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
 
   const sendTurn: CodexAdapterShape["sendTurn"] = Effect.fn("sendTurn")(function* (input) {
     const session = yield* requireSession(input.threadId);
-    const codexAttachments = yield* Effect.forEach(
-      input.attachments ?? [],
-      (attachment) => {
-        if (!options?.attachmentsDir) {
-          return Effect.fail(
-            new ProviderAdapterRequestError({
-              provider: PROVIDER,
-              method: "turn/start",
-              detail: "Pasted image storage is unavailable.",
-            }),
-          );
-        }
-        return resolvePastedImageAttachment({
-          attachmentsDir: options.attachmentsDir,
-          attachment,
-        }).pipe(
-          Effect.map((resolved) => ({ type: "localImage" as const, path: resolved.path })),
-          Effect.mapError(
-            (cause) =>
-              new ProviderAdapterRequestError({
-                provider: PROVIDER,
-                method: "turn/start",
-                detail: cause.message,
-                cause,
-              }),
-          ),
-        );
-      },
-      { concurrency: 1 },
-    );
+    const attachments = input.attachments ?? [];
+    if (attachments.length > 0 && !options?.attachmentsDir) {
+      return yield* new ProviderAdapterRequestError({
+        provider: PROVIDER,
+        method: "turn/start",
+        detail: "Pasted image storage is unavailable.",
+      });
+    }
+    const codexAttachments =
+      attachments.length === 0 || !options?.attachmentsDir
+        ? []
+        : (yield* resolvePastedImageAttachments({
+            attachmentsDir: options.attachmentsDir,
+            attachments,
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderAdapterRequestError({
+                  provider: PROVIDER,
+                  method: "turn/start",
+                  detail: cause.message,
+                  cause,
+                }),
+            ),
+          )).map((resolved) => ({ type: "localImage" as const, path: resolved.path }));
     const reasoningEffort =
       input.modelSelection?.instanceId === boundInstanceId
         ? getModelSelectionStringOptionValue(input.modelSelection, "reasoningEffort")

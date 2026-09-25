@@ -4,9 +4,12 @@ import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, type PastedImageAttachment } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES,
+  type PastedImageAttachment,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-
 
 type PastedImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
@@ -14,6 +17,7 @@ export interface ResolvedPastedImageAttachment {
   readonly path: string;
   readonly mimeType: PastedImageMimeType;
   readonly dataUrl: string;
+  readonly sizeBytes: number;
 }
 
 export class PastedImageAttachmentError extends Error {
@@ -69,6 +73,7 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
             path,
             mimeType,
             dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+            sizeBytes: bytes.byteLength,
           } satisfies ResolvedPastedImageAttachment;
         } finally {
           await handle.close();
@@ -80,6 +85,36 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
         }),
     });
 
+    return resolved;
+  },
+);
+
+/**
+ * Resolve one message's images in order, bounding their combined size so a turn
+ * with many attachments cannot exceed the shared per-message image budget.
+ */
+export const resolvePastedImageAttachments = Effect.fn("resolvePastedImageAttachments")(
+  function* (input: {
+    readonly attachmentsDir: string;
+    readonly attachments: ReadonlyArray<PastedImageAttachment>;
+  }) {
+    const resolved: ResolvedPastedImageAttachment[] = [];
+    let totalBytes = 0;
+    for (const attachment of input.attachments) {
+      const image = yield* resolvePastedImageAttachment({
+        attachmentsDir: input.attachmentsDir,
+        attachment,
+      });
+      totalBytes += image.sizeBytes;
+      if (totalBytes > PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES) {
+        return yield* Effect.fail(
+          new PastedImageAttachmentError(
+            "Images can total up to 80 MiB per message. Use smaller images or send fewer at once.",
+          ),
+        );
+      }
+      resolved.push(image);
+    }
     return resolved;
   },
 );

@@ -5,7 +5,7 @@ import { toggleThemeEditorForTheme } from "./settings/themeEditorStore";
 import { readPullRequestListPreferences } from "./pullRequest/pullRequestListPreferences";
 import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 import { FolderIcon } from "lucide-react";
-import { sortThreads } from "~/lib/threadSort";
+import { getThreadSortTimestamp, sortThreads } from "~/lib/threadSort";
 import { buildRootGroups } from "./CommandPalette.logic";
 import { useTheme } from "../hooks/useTheme";
 import { useCustomThemes } from "../hooks/useCustomThemes";
@@ -432,6 +432,7 @@ function CoderCommandPaletteDialog(props: {
           thread.id,
         ],
         title: thread.title,
+        searchRecency: getThreadSortTimestamp(thread, "updated_at"),
         titleLeadingContent: <ThreadRowLeadingStatus thread={thread} />,
         titleTrailingContent: <ThreadRowTrailingStatus thread={thread} />,
         description: (

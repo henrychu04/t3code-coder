@@ -59,7 +59,6 @@ import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
-  InputGroupText,
 } from "~/components/ui/input-group";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Kbd, KbdGroup } from "~/components/ui/kbd";
@@ -537,10 +536,10 @@ function SearchDialogHeader(props: {
         </div>
         <InputGroup className="h-7 w-full sm:ms-auto sm:w-64" variant="ghost">
           <InputGroupAddon>
-            <InputGroupText className="shrink-0 overflow-visible! whitespace-nowrap">
+            <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-muted-foreground">
               <Filter className="mx-0! size-3.5 shrink-0" />
               <span className="whitespace-nowrap text-[11px]">File mask:</span>
-            </InputGroupText>
+            </span>
           </InputGroupAddon>
           <InputGroupInput
             aria-label="File mask"

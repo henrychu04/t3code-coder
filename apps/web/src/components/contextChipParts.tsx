@@ -101,10 +101,12 @@ export function ContextChipPopover(props: {
       <PopoverPopup
         side="top"
         className={cn("w-[min(36rem,calc(100vw-2rem))]", props.popupClassName)}
-        viewportClassName={cn("overflow-x-auto p-2", props.viewportClassName)}
+        padding="compact"
       >
-        <PopoverTitle className="sr-only">{props.accessibleLabel}</PopoverTitle>
-        {props.children}
+        <div className={cn("overflow-x-auto", props.viewportClassName)}>
+          <PopoverTitle className="sr-only">{props.accessibleLabel}</PopoverTitle>
+          {props.children}
+        </div>
       </PopoverPopup>
     </Popover>
   );

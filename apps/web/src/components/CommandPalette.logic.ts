@@ -63,6 +63,7 @@ export interface CommandPaletteItem {
   readonly description?: ReactNode;
   readonly threadContentMatch?: CommandPaletteThreadContentMatch;
   readonly timestamp?: string;
+  readonly searchRecency?: number;
   readonly icon: ReactNode;
   readonly disabled?: boolean;
   readonly titleLeadingContent?: ReactNode;
@@ -130,6 +131,10 @@ function rankCommandPaletteItemMatch(
   for (const [index, field] of terms.entries()) {
     const fieldRank = rankSearchFieldMatch(field, normalizedQuery, queryTokens);
     if (fieldRank !== Number.NEGATIVE_INFINITY) {
+      if (index === 0 && item.searchRecency !== undefined) {
+        // All non-exact thread title matches share a tier so recency breaks the tie.
+        return 1_000 + Number(fieldRank === 3);
+      }
       return 1_000 - index * 100 + fieldRank;
     }
   }
@@ -206,6 +211,7 @@ export function filterCommandPaletteGroups(input: {
         (left, right) =>
           Number(left.item.secondary ?? false) - Number(right.item.secondary ?? false) ||
           right.rank - left.rank ||
+          (right.item.searchRecency ?? 0) - (left.item.searchRecency ?? 0) ||
           left.index - right.index,
       )
       .map((entry) => entry.item);

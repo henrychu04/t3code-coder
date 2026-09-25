@@ -345,7 +345,7 @@ function PullRequestBaseFreshnessWarning({
         align="start"
         side="bottom"
         className="max-w-80"
-        viewportClassName="py-2.5 [--viewport-inline-padding:--spacing(3)]"
+        padding="compact"
       >
         <p className="text-xs text-foreground">{summary}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">Changes can be cleanly merged.</p>
@@ -1779,7 +1779,7 @@ export function PullRequestDetailPanel({
                         detail.author?.login ?? "",
                       )}
                       className="shrink-0 rounded-full"
-                      labelClassName="sr-only"
+                      variant="avatar"
                     />
                     <span className="shrink-0">{formatRelativeTimeLabel(detail.updatedAt)}</span>
                   </span>

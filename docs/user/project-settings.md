@@ -49,6 +49,17 @@ The merge-request panel uses your current selection, then the project default, t
 method selected in that workspace. If GitLab disallows a method, the panel selects an allowed
 one. Choosing a default does not merge a request or bypass GitLab permissions.
 
+Settings a repository can also declare in `t3.json`, such as the checkout mode for new threads,
+resolve in one order: a project override, then the workspace setting, then `t3.json`, then the
+built-in default. Leave a setting on **Inherit** to let the next tier decide.
+
+New worktrees initialize git submodules recursively from submodules already available in the
+workspace. If that step is slow because the repository declares many nested submodules, set
+**Submodules** in **Settings → Preferences** (with the project selected to override it there) to
+**Top level only** to stop at the ones the repository declares itself, or **Skip** to leave them
+for a setup script. It resolves in the same order: a `"worktreeSubmodules"` value in the `t3.json`
+of the branch being checked out applies when the project and workspace are both on **Inherit**.
+
 Choose **Monogram** in the icon picker to set one or two letters or numbers and a color.
 
 When no image is found, web and desktop show a two-character monogram with a color
