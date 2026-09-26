@@ -1099,7 +1099,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       listRef,
       timestampFormat,
       routeThreadKey,
-      threadRef: parseScopedThreadKey(routeThreadKey),
+      // Keep Markdown callbacks memoized during unrelated activity updates.
+      threadRef: citationThreadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -1116,7 +1117,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedReasoningMessageIds: paintedExpandedReasoningMessageIds,
       workGroupViewState,
       agentPanelModel: agentPanelModel ?? EMPTY_AGENT_PANEL_MODEL,
-      expandedSpawnEntryIds: expandedSpawnEntryIds,
+      expandedSpawnEntryIds: paintedExpandedSpawnEntryIds,
       onOpenAgents,
       onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
@@ -1130,6 +1131,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       listRef,
       timestampFormat,
       routeThreadKey,
+      citationThreadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -1146,7 +1148,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       paintedExpandedReasoningMessageIds,
       workGroupViewState,
       agentPanelModel,
-      expandedSpawnEntryIds,
+      paintedExpandedSpawnEntryIds,
       onOpenAgents,
       onCancelWorktreeSetup,
       onWorktreeSetupWorkLocally,
@@ -1657,6 +1659,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                     row.kind === "work" ||
                     row.kind === "work-live" ||
                     row.kind === "work-toggle" ||
+                    row.kind === "activity-group" ||
                     row.kind === "thinking"
                   ? "pb-2"
                   : "pb-4",
@@ -1680,6 +1683,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         ) : null}
         {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
         {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
+        {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
         {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
         {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
         {row.kind === "message" && row.message.role === "user" ? (
@@ -1746,7 +1750,12 @@ function QueuedMessageTimelineRow({
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
         {text.length > 0 ? (
-          <div className="whitespace-pre-wrap break-words text-sm">{text}</div>
+          <UserMessageBody
+            text={text}
+            terminalContexts={[]}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
         ) : null}
         {attachmentCount > 0 || contextCount > 0 ? (
           <div className={cn("text-secondary-label text-xs", text.length > 0 && "mt-1.5")}>
@@ -1782,9 +1791,8 @@ function QueuedMessageTimelineRow({
                 render={
                   <Button
                     type="button"
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
-                    className="size-6"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => ctx.onSteerQueuedMessage(queuedMessage.id)}
                     aria-label="Send now"
@@ -1805,9 +1813,8 @@ function QueuedMessageTimelineRow({
                 render={
                   <Button
                     type="button"
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
-                    className="size-6"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => ctx.onRemoveQueuedMessage(queuedMessage.id)}
                     aria-label="Cancel and return to the composer"
@@ -2174,10 +2181,10 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
           />
         }
       >
-        <Spinner className="size-3 shrink-0" />
+        <Spinner size="xs" className="shrink-0" />
         <span className="truncate">{scriptName}</span>
       </PopoverTrigger>
-      <PopoverPopup side="bottom" align="end" className="w-[32rem] max-w-[calc(100vw-2rem)] p-3">
+      <PopoverPopup side="bottom" align="end" width="lg" padding="compact">
         <WorktreeSetupCard
           snapshot={snapshot}
           embedded
@@ -3052,11 +3059,11 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             <Button
               type="button"
               size="xs"
-              variant="ghost"
+              variant="ghost-muted"
               aria-expanded={expanded}
               data-scroll-anchor-ignore
               onClick={() => setExpanded((value) => !value)}
-              className="-ml-1 h-6 rounded-md px-1.5 text-secondary-label text-xs hover:bg-muted/55 hover:text-message-foreground"
+              className="-ml-1"
             >
               {expanded ? "Show less" : "Show full message"}
             </Button>
@@ -3436,7 +3443,7 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   if (tone === "thinking") {
     return {
       iconName: "brain",
-      className: "text-foreground",
+      className: "text-icon-muted",
     };
   }
   if (tone === "info") {
