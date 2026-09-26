@@ -125,7 +125,9 @@ change. Migration 048 adds the branch MR projection independently of explicit li
 multiple explicit MR links, preserving migration 050 for pending-input repair. Link commands validate
 the URL and its host against workspace GitLab metadata at the helper RPC boundary. The helper
 refreshes link snapshots and serves linked-thread lookups over the existing stdio connection.
-Recent MR summaries are cached beneath the workspace provider-status cache directory. Settled-thread
+Recent MR summaries are cached beneath the workspace provider-status cache directory. Background summary reads
+that arrive together share one aliased `glab api graphql` request per checkout and fall back to
+individual REST reads. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
 Agent MR commands use a generated workspace-local CLI, invoked with the helper's pinned Node
@@ -370,8 +372,8 @@ Source-control UI restores upstream's Git action control and merge-request detai
 GitLab-only provider registry. Repository status, fetch, pull, commit, push, repository publishing,
 merge-request creation, and MR checkout all travel over the existing helper stdio RPC and execute
 inside the Linux workspace. The helper uses repository-scoped Git commands and the
-workspace-installed `glab` CLI to read MR summary, activity, discussions, checks, reviewers, and
-diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
+workspace-installed `glab` CLI to read MR summary, hover preview, activity, discussions, checks,
+reviewers, and diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
 state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
 default sends an incomplete merge-request creation request to the impossible project ID `0`; a
 normal GitLab validation or not-found response with a GitLab-specific response fingerprint proves

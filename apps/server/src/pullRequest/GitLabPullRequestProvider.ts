@@ -165,6 +165,21 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
+    // A hover card needs only the merge request itself, not merge settings or write access.
+    getChangeRequestPreview: (input) =>
+      cli.getMergeRequestDetail(input).pipe(
+        Effect.map((mergeRequest) => ({
+          number: mergeRequest.number,
+          title: mergeRequest.title,
+          url: mergeRequest.url,
+          author: mergeRequest.author,
+          state: mergeRequest.state,
+          isDraft: mergeRequest.isDraft,
+          createdAt: mergeRequest.createdAt,
+        })),
+        Effect.mapError(fail("getChangeRequestPreview")),
+      ),
+
     getChangeRequestSummary: (input) =>
       cli.getMergeRequestSummary(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
 

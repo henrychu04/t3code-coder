@@ -97,6 +97,7 @@ import {
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
 } from "../lib/openPullRequestLink";
+import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { readLocalApi } from "../localApi";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -980,7 +981,11 @@ const MARKDOWN_COMPONENTS: Components = {
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ProjectImageLink cwd={cwd} threadRef={threadRef} filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}>
+        <ProjectImageLink
+          cwd={cwd}
+          threadRef={threadRef}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
+        >
           {children}
         </ProjectImageLink>
       );
@@ -1020,43 +1025,55 @@ const MARKDOWN_COMPONENTS: Components = {
         url: targetHref,
       };
       return (
-        <button
-          type="button"
-          className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
-          data-markdown-copy={pullRequestCopy}
-          onContextMenu={(event) =>
-            void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
-          }
-          onClick={() => {
-            useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
-              environmentId: project.environmentId,
+        <PullRequestLinkPreview
+          target={{
+            environmentId: project.environmentId,
+            input: {
               projectId: project.id,
               repository: linkedPullRequest.repository,
               number: mergeRequest.number,
-              url: targetHref,
-            });
-            if (
-              resolvedPanelRef.environmentId === PULL_REQUESTS_PANEL_REF.environmentId &&
-              resolvedPanelRef.threadId === PULL_REQUESTS_PANEL_REF.threadId
-            ) {
-              void navigate({
-                to: "/pull-requests",
-                search: (previous) => ({
-                  ...previous,
-                  involvement: previous.involvement ?? "all",
-                  state: previous.state ?? "all",
+            },
+          }}
+          link={
+            <button
+              type="button"
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
+              onContextMenu={(event) =>
+                void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
+              }
+              onClick={() => {
+                useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
+                  environmentId: project.environmentId,
+                  projectId: project.id,
                   repository: linkedPullRequest.repository,
                   number: mergeRequest.number,
-                  selectedProjectId: project.id,
-                  selectedEnvironmentId: project.environmentId,
-                }),
-                replace: true,
-              });
-            }
-          }}
-        >
-          {children}
-        </button>
+                  url: targetHref,
+                });
+                if (
+                  resolvedPanelRef.environmentId === PULL_REQUESTS_PANEL_REF.environmentId &&
+                  resolvedPanelRef.threadId === PULL_REQUESTS_PANEL_REF.threadId
+                ) {
+                  void navigate({
+                    to: "/pull-requests",
+                    search: (previous) => ({
+                      ...previous,
+                      involvement: previous.involvement ?? "all",
+                      state: previous.state ?? "all",
+                      repository: linkedPullRequest.repository,
+                      number: mergeRequest.number,
+                      selectedProjectId: project.id,
+                      selectedEnvironmentId: project.environmentId,
+                    }),
+                    replace: true,
+                  });
+                }
+              }}
+            >
+              {children}
+            </button>
+          }
+        />
       );
     }
     if (mergeRequest && project) {
@@ -1165,7 +1182,11 @@ const MARKDOWN_COMPONENTS: Components = {
         : null;
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ProjectImageLink cwd={cwd} threadRef={threadRef} filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}>
+        <ProjectImageLink
+          cwd={cwd}
+          threadRef={threadRef}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
+        >
           {children}
         </ProjectImageLink>
       );
