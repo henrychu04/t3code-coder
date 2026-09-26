@@ -8,11 +8,29 @@ import { useClipboardImageUpload } from "./useClipboardImageUpload";
 import { uploadCoderClipboardImage } from "./api";
 import { coderWorkspaceIdForEnvironment } from "./environmentStore";
 import { useComposerDraftStore } from "../composerDraftStore";
+import { environmentCatalog } from "../connection/catalog";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { AsyncResult } from "effect/unstable/reactivity";
 import {
   pastedImageSendBlockReason,
   appendPastedImagesToPrompt,
 } from "../lib/composerPastedImages";
 vi.mock("./api", () => ({ uploadCoderClipboardImage: vi.fn() }));
+vi.mock("../connection/catalog", async () => {
+  const { AsyncResult, Atom } = await import("effect/unstable/reactivity");
+  const atoms = new Map<string, ReturnType<typeof makeState>>();
+  const makeState = () =>
+    Atom.make(AsyncResult.success({ phase: "connected" as string })).pipe(Atom.keepAlive);
+  return {
+    environmentCatalog: {
+      stateAtom: (id: string) => {
+        let atom = atoms.get(id);
+        if (!atom) atoms.set(id, (atom = makeState()));
+        return atom;
+      },
+    },
+  };
+});
 vi.mock("./environmentStore", () => ({
   coderWorkspaceIdForEnvironment: vi.fn(),
   subscribeCoderWorkspaceEnvironments: vi.fn(),
@@ -398,4 +416,32 @@ it("retains an unreadable image as failed and allows retrying preparation", asyn
   await act(async () => current.retry(images()[0]!.id));
   expect(transfers).toHaveLength(1);
   expect(images()[0]?.file.type).toBe("image/webp");
+});
+
+const setConnectionPhase = (phase: string) =>
+  appAtomRegistry.set(
+    environmentCatalog.stateAtom(environmentId) as never,
+    AsyncResult.success({ phase }) as never,
+  );
+
+it("retries failed uploads after the workspace reconnects", async () => {
+  await act(async () => current.upload([png()]));
+  await act(async () => transfers[0]!.reject(new Error("workspace disconnected")));
+  expect(images()[0]!.status).toBe("failed");
+  await act(async () => setConnectionPhase("disconnected"));
+  expect(images()[0]!.status).toBe("failed");
+  await act(async () => setConnectionPhase("connected"));
+  expect(images()[0]!.status).toBe("uploading");
+  expect(transfers).toHaveLength(2);
+});
+
+it("requeues an upload that fails after a reconnect during the transfer", async () => {
+  await act(async () => current.upload([png()]));
+  await act(async () => {
+    setConnectionPhase("disconnected");
+    setConnectionPhase("connected");
+  });
+  await act(async () => transfers[0]!.reject(new Error("socket closed")));
+  expect(images()[0]!.status).toBe("uploading");
+  expect(transfers).toHaveLength(2);
 });

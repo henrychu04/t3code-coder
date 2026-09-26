@@ -1,6 +1,11 @@
 import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 import { compressImageToByteLimit } from "../lib/imageCompression";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId } from "@t3tools/contracts";
+import * as Option from "effect/Option";
+import { AsyncResult } from "effect/unstable/reactivity";
+import { environmentCatalog } from "../connection/catalog";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import {
   coderWorkspaceIdForEnvironment,
   subscribeCoderWorkspaceEnvironments,
@@ -13,6 +18,42 @@ import { uploadCoderClipboardImage } from "./api";
 const active = new Map<string, { controller: AbortController; workspaceId: string }>();
 const MAX_UPLOADS_PER_WORKSPACE = 3;
 let pumping = false;
+
+// Failed uploads retry once their workspace reconnects, like upstream's queue.
+// A reconnect bumps the workspace epoch; an upload that started before it and
+// then fails is requeued, since its failure most likely came from the drop.
+const reconnectEpochByWorkspace = new Map<string, number>();
+const watchedEnvironments = new Set<EnvironmentId>();
+
+function isEnvironmentConnected(environmentId: EnvironmentId): boolean {
+  return Option.exists(
+    AsyncResult.value(appAtomRegistry.get(environmentCatalog.stateAtom(environmentId))),
+    (state) => state.phase === "connected",
+  );
+}
+
+function watchEnvironmentReconnects(environmentId: EnvironmentId) {
+  if (watchedEnvironments.has(environmentId)) return;
+  watchedEnvironments.add(environmentId);
+  let wasConnected = isEnvironmentConnected(environmentId);
+  appAtomRegistry.subscribe(environmentCatalog.stateAtom(environmentId), () => {
+    const connected = isEnvironmentConnected(environmentId);
+    const reconnected = connected && !wasConnected;
+    wasConnected = connected;
+    if (!reconnected) return;
+    const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
+    if (!workspaceId) return;
+    reconnectEpochByWorkspace.set(
+      workspaceId,
+      (reconnectEpochByWorkspace.get(workspaceId) ?? 0) + 1,
+    );
+    for (const image of imagesInDrafts()) {
+      if (image.workspaceId === workspaceId && image.status === "failed") {
+        retryClipboardImage(image.id);
+      }
+    }
+  });
+}
 
 function imagesInDrafts() {
   return Object.values(useComposerDraftStore.getState().draftsByThreadKey).flatMap(
@@ -48,6 +89,7 @@ async function run(
   controller: AbortController,
 ) {
   let lastStep = -1;
+  const startedEpoch = reconnectEpochByWorkspace.get(image.workspaceId) ?? 0;
   try {
     const prepared = await compressImageToByteLimit(image.file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
     controller.signal.throwIfAborted();
@@ -82,7 +124,17 @@ async function run(
       }));
     }
   } catch (cause) {
-    if (!controller.signal.aborted) {
+    if (
+      !controller.signal.aborted &&
+      (reconnectEpochByWorkspace.get(image.workspaceId) ?? 0) !== startedEpoch
+    ) {
+      updateImage(image.id, (current) => ({
+        id: current.id,
+        file: current.file,
+        workspaceId: image.workspaceId,
+        status: "queued",
+      }));
+    } else if (!controller.signal.aborted) {
       updateImage(image.id, (current) => ({
         id: current.id,
         file: current.file,
@@ -109,7 +161,8 @@ function pump() {
         state.draftThreadsByThreadKey[key]?.environmentId ??
         parseScopedThreadKey(key)?.environmentId;
       const workspaceId = environmentId ? coderWorkspaceIdForEnvironment(environmentId) : null;
-      if (!workspaceId) continue;
+      if (!workspaceId || !environmentId) continue;
+      if ((draft.pastedImages?.length ?? 0) > 0) watchEnvironmentReconnects(environmentId);
       for (const image of draft.pastedImages ?? []) {
         if (image.workspaceId !== workspaceId) {
           updateImage(image.id, () => ({

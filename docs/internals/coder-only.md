@@ -283,7 +283,7 @@ reader all enforce the same 10 MiB attachment constant. Workspaces have independ
 queues; drafts in the same workspace share its limit. Completed images retain their workspace
 identity. Moving or restoring images into another workspace queues their prepared image bytes
 for that destination and cancels any old transfer. The browser retains failed images for explicit
-retry and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
+retry, requeues them when their workspace reconnects, and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
 workspace copy remains pending until SCP and finalization complete. Paths are added to message text
