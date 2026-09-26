@@ -18,6 +18,7 @@ import type {
   PullRequestState,
 } from "@t3tools/contracts";
 import { TrimmedNonEmptyString } from "@t3tools/contracts";
+import type { ProviderChangeRequestSummary } from "./PullRequestProvider.ts";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
@@ -1021,4 +1022,147 @@ export function decodeRepositoryBlobsJson(
     blobs.set(path, oid);
   }
   return Result.succeed(blobs);
+}
+
+/** A project path the batched GraphQL read can address: a GitLab full path, no URL or selector. */
+const GRAPHQL_PROJECT_PATH = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/;
+
+const MERGE_REQUEST_SUMMARY_FIELDS =
+  "iid title webUrl state draft sourceBranch targetBranch updatedAt closedAt mergedAt conflicts " +
+  "author { username name avatarUrl } diffStatsSummary { additions deletions fileCount } " +
+  "headPipeline { status }";
+
+/**
+ * One aliased GraphQL document reading every requested merge request's summary fields, or null
+ * when none of them can be addressed. Paths are validated and every value is a JSON string
+ * literal, which GraphQL string syntax accepts unchanged.
+ */
+export function buildMergeRequestSummariesGraphQlQuery(
+  requests: ReadonlyArray<{ readonly repository: string; readonly number: number }>,
+): string | null {
+  if (requests.length === 0) return null;
+  const fields = requests.map((request, index) =>
+    GRAPHQL_PROJECT_PATH.test(request.repository) &&
+    Number.isSafeInteger(request.number) &&
+    request.number > 0
+      ? `m${index}: project(fullPath: ${JSON.stringify(request.repository)}) { mergeRequest(iid: ${JSON.stringify(String(request.number))}) { ${MERGE_REQUEST_SUMMARY_FIELDS} } }`
+      : null,
+  );
+  if (fields.some((field) => field === null)) return null;
+  return `query { ${fields.join(" ")} }`;
+}
+
+const RawGraphQlUserSchema = Schema.Struct({
+  username: Schema.String,
+  name: Schema.optional(Schema.NullOr(Schema.String)),
+  avatarUrl: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const RawGraphQlMergeRequestSummarySchema = Schema.Struct({
+  iid: Schema.String,
+  title: Schema.String,
+  webUrl: Schema.String,
+  state: Schema.optional(Schema.NullOr(Schema.String)),
+  draft: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  sourceBranch: Schema.String,
+  targetBranch: Schema.String,
+  updatedAt: Schema.String,
+  closedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
+  conflicts: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  author: Schema.optional(Schema.NullOr(RawGraphQlUserSchema)),
+  diffStatsSummary: Schema.optional(
+    Schema.NullOr(
+      Schema.Struct({
+        additions: Schema.Int,
+        deletions: Schema.Int,
+        fileCount: Schema.Int,
+      }),
+    ),
+  ),
+  headPipeline: Schema.optional(
+    Schema.NullOr(Schema.Struct({ status: Schema.optional(Schema.NullOr(Schema.String)) })),
+  ),
+});
+
+const decodeGraphQlEnvelope = decodeJsonResult(
+  Schema.Struct({
+    data: Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
+  }),
+);
+const decodeGraphQlProjectEntry = Schema.decodeUnknownExit(
+  Schema.NullOr(
+    Schema.Struct({
+      mergeRequest: Schema.NullOr(RawGraphQlMergeRequestSummarySchema),
+    }),
+  ),
+);
+
+function toGraphQlChecksState(
+  status: string | null | undefined,
+): "passing" | "failing" | "pending" | null {
+  if (status == null) return null;
+  switch (toPipelineStatus(status)) {
+    case "success":
+    case "skipped":
+    case "neutral":
+      return "passing";
+    case "failure":
+    case "cancelled":
+      return "failing";
+    default:
+      return "pending";
+  }
+}
+
+/**
+ * The summaries a batched read answered, keyed by request index. An alias that is missing,
+ * null, or malformed is left out so the caller reads that merge request on its own.
+ */
+export function decodeMergeRequestSummariesJson(
+  raw: string,
+  count: number,
+): Result.Result<ReadonlyMap<number, ProviderChangeRequestSummary>, DecodeFailure> {
+  const envelope = decodeGraphQlEnvelope(raw);
+  if (!Result.isSuccess(envelope)) return Result.fail(envelope.failure);
+  const data = envelope.success.data ?? {};
+  const summaries = new Map<number, ProviderChangeRequestSummary>();
+  for (let index = 0; index < count; index += 1) {
+    const entry = decodeGraphQlProjectEntry(data[`m${index}`]);
+    if (!Exit.isSuccess(entry)) continue;
+    const mergeRequest = entry.value?.mergeRequest;
+    const number = Number.parseInt(mergeRequest?.iid ?? "", 10);
+    if (!mergeRequest || !Number.isSafeInteger(number)) continue;
+    const mergedAt = trimmed(mergeRequest.mergedAt);
+    const state = mergedAt !== null ? "merged" : mergeRequest.state?.trim().toLowerCase();
+    const checksState = toGraphQlChecksState(mergeRequest.headPipeline?.status);
+    const stats = mergeRequest.diffStatsSummary;
+    summaries.set(index, {
+      number,
+      title: mergeRequest.title,
+      url: mergeRequest.webUrl,
+      headBranch: mergeRequest.sourceBranch,
+      baseBranch: mergeRequest.targetBranch,
+      state: state === "merged" ? "merged" : state === "closed" ? "closed" : "open",
+      isDraft: mergeRequest.draft === true,
+      closedAt: trimmed(mergeRequest.closedAt),
+      mergedAt,
+      updatedAt: mergeRequest.updatedAt,
+      author: toActor(
+        mergeRequest.author
+          ? {
+              username: mergeRequest.author.username,
+              name: mergeRequest.author.name ?? null,
+              avatar_url: mergeRequest.author.avatarUrl ?? null,
+            }
+          : null,
+      ),
+      ...(stats
+        ? { additions: stats.additions, deletions: stats.deletions, changedFiles: stats.fileCount }
+        : {}),
+      ...(checksState === null ? {} : { checksState }),
+      ...(mergeRequest.conflicts === true ? { mergeability: "conflicting" as const } : {}),
+    });
+  }
+  return Result.succeed(summaries);
 }

@@ -2,6 +2,7 @@ import * as Result from "effect/Result";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  buildMergeRequestSummariesGraphQlQuery,
   decodeAwardEmojiJson,
   decodeRepositoryBlobsJson,
   decodeCommitsJson,
@@ -783,5 +784,21 @@ describe("decodeRepositoryBlobsJson", () => {
   it("fails on output that is not the query's shape", () => {
     expect(Result.isSuccess(decodeRepositoryBlobsJson("not json"))).toBe(false);
     expect(Result.isSuccess(decodeRepositoryBlobsJson(JSON.stringify({ errors: [] })))).toBe(false);
+  });
+});
+
+describe("buildMergeRequestSummariesGraphQlQuery", () => {
+  it("aliases each merge request and refuses paths GraphQL should not see", () => {
+    const query = buildMergeRequestSummariesGraphQlQuery([
+      { repository: "group/sub/web", number: 7 },
+      { repository: "acme/api", number: 12 },
+    ]);
+    expect(query).toContain('m0: project(fullPath: "group/sub/web") { mergeRequest(iid: "7")');
+    expect(query).toContain('m1: project(fullPath: "acme/api") { mergeRequest(iid: "12")');
+    expect(
+      buildMergeRequestSummariesGraphQlQuery([{ repository: 'acme/web") { x', number: 7 }]),
+    ).toBeNull();
+    expect(buildMergeRequestSummariesGraphQlQuery([{ repository: "web", number: 7 }])).toBeNull();
+    expect(buildMergeRequestSummariesGraphQlQuery([])).toBeNull();
   });
 });

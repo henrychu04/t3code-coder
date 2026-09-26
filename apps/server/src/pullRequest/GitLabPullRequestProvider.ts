@@ -165,6 +165,9 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
+    getChangeRequestSummary: (input) =>
+      cli.getMergeRequestSummary(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
+
     getChangeRequest: (input) =>
       Effect.all(
         [
@@ -221,28 +224,26 @@ export const make = Effect.gen(function* () {
         { concurrency: 4 },
       ).pipe(
         Effect.mapError(fail("getChangeRequestActivity")),
-        Effect.map(
-          ([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
-            reactions: awards.reactions,
-            comments: notes.comments.map((comment) => ({
+        Effect.map(([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
+          reactions: awards.reactions,
+          comments: notes.comments.map((comment) => ({
+            ...comment,
+            reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
+          })),
+          // GitLab reports no count of its own, so the walk's own total is the host's: the
+          // notes endpoint carries every comment on the merge request, including the ones
+          // written under a discussion, and it is read until GitLab runs out.
+          commentCount: notes.comments.length,
+          commentsTruncated: notes.truncated || discussions.truncated,
+          reviewThreads: discussions.threads.map((thread) => ({
+            ...thread,
+            comments: thread.comments.map((comment) => ({
               ...comment,
               reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
             })),
-            // GitLab reports no count of its own, so the walk's own total is the host's: the
-            // notes endpoint carries every comment on the merge request, including the ones
-            // written under a discussion, and it is read until GitLab runs out.
-            commentCount: notes.comments.length,
-            commentsTruncated: notes.truncated || discussions.truncated,
-            reviewThreads: discussions.threads.map((thread) => ({
-              ...thread,
-              comments: thread.comments.map((comment) => ({
-                ...comment,
-                reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
-              })),
-            })),
-            commits,
-          }),
-        ),
+          })),
+          commits,
+        })),
       ),
 
     // The same read the detail takes it from, on its own: `user.can_merge` lives on the merge

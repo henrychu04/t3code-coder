@@ -304,7 +304,7 @@ export const make = Effect.gen(function* () {
             )
           : Effect.void,
       // As wide as one batched summary read, so the sweep's reads on a host arrive together and
-      // GitHub answers them in one request rather than one `gh pr view` apiece.
+      // GitLab answers them in one GraphQL request rather than one `glab` read apiece.
       { concurrency: 25, discard: true },
     );
   });

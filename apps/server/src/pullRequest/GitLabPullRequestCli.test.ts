@@ -1,6 +1,8 @@
 import { afterEach, assert, expect, it, vi } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import { TestClock } from "effect/testing";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as GitLabCli from "../sourceControl/GitLabCli.ts";
@@ -101,6 +103,14 @@ function callAt(index: number) {
   assert.isDefined(call);
   return call[0];
 }
+
+/** Runs a summary read past its batching window on the test clock. */
+const afterBatchWindow = <A, E, R>(read: Effect.Effect<A, E, R>) =>
+  Effect.gen(function* () {
+    const fiber = yield* Effect.forkChild(read);
+    yield* TestClock.adjust("20 millis");
+    return yield* Fiber.join(fiber);
+  });
 
 afterEach(() => {
   mockedExecute.mockReset();
@@ -1576,6 +1586,111 @@ layer("GitLabPullRequestCli.layer", (it) => {
       assert.strictEqual(revisions.get("src/149.ts"), "oid-src/149.ts");
       // The diff refs, then two batches: a hundred paths and the fifty left over.
       assert.strictEqual(mockedExecute.mock.calls.length, 3);
+    }),
+  );
+
+  it.effect("reads merge request summaries asked for together in one GraphQL request", () =>
+    Effect.gen(function* () {
+      const summary = (iid: number, extra: Record<string, unknown> = {}) => ({
+        mergeRequest: {
+          iid: String(iid),
+          title: `Merge request ${iid}`,
+          webUrl: `https://gitlab.com/acme/web/-/merge_requests/${iid}`,
+          state: "opened",
+          draft: false,
+          sourceBranch: "feat/page",
+          targetBranch: "main",
+          updatedAt: "2026-07-02T00:00:00Z",
+          author: { username: "bilal", name: "Bilal", avatarUrl: null },
+          diffStatsSummary: { additions: 3, deletions: 1, fileCount: 2 },
+          headPipeline: { status: "SUCCESS" },
+          ...extra,
+        },
+      });
+      mockedExecute.mockImplementation(() =>
+        Effect.succeed(
+          output(
+            JSON.stringify({
+              data: {
+                m0: summary(7),
+                m1: summary(8, { state: "merged", mergedAt: "2026-07-03T00:00:00Z" }),
+              },
+            }),
+          ),
+        ),
+      );
+      const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+
+      const [first, second] = yield* afterBatchWindow(
+        Effect.all(
+          [
+            cli.getMergeRequestSummary({ cwd: "/w", repository: "acme/web", number: 7 }),
+            cli.getMergeRequestSummary({ cwd: "/w", repository: "acme/web", number: 8 }),
+          ],
+          { concurrency: "unbounded" },
+        ),
+      );
+
+      assert.strictEqual(mockedExecute.mock.calls.length, 1);
+      assert.deepStrictEqual(argsOfCall(0).slice(0, 2), ["api", "graphql"]);
+      const body = JSON.parse(callAt(0).stdin ?? "{}") as { query: string };
+      expect(body.query).toContain('m0: project(fullPath: "acme/web")');
+      expect(body.query).toContain('mergeRequest(iid: "8")');
+      assert.strictEqual(first.state, "open");
+      assert.strictEqual(first.checksState, "passing");
+      assert.strictEqual(first.additions, 3);
+      assert.strictEqual(second.state, "merged");
+    }),
+  );
+
+  it.effect("reads a merge request the batch could not answer on its own", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        Effect.succeed(
+          output(
+            input.args[1] === "graphql"
+              ? JSON.stringify({ data: { m0: null } })
+              : mergeRequestJson({ state: "closed", closed_at: "2026-07-03T00:00:00Z" }),
+          ),
+        ),
+      );
+      const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+
+      const summary = yield* afterBatchWindow(
+        cli.getMergeRequestSummary({ cwd: "/w", repository: "acme/web", number: 7 }),
+      );
+
+      assert.strictEqual(summary.state, "closed");
+      assert.strictEqual(mockedExecute.mock.calls.length, 2);
+      assert.strictEqual(
+        argsOfCall(1)[1],
+        "projects/acme%2Fweb/merge_requests/7?include_diverged_commits_count=true",
+      );
+    }),
+  );
+
+  it.effect("falls back to individual reads when the batched request fails", () =>
+    Effect.gen(function* () {
+      mockedExecute.mockImplementation((input) =>
+        input.args[1] === "graphql"
+          ? Effect.fail(
+              new GitLabCli.GitLabCliUnavailableError({
+                operation: "execute",
+                command: "glab",
+                cwd: "/w",
+                cause: new Error("boom"),
+              }),
+            )
+          : Effect.succeed(output(mergeRequestJson({}))),
+      );
+      const cli = yield* GitLabPullRequestCli.GitLabPullRequestCli;
+
+      const summary = yield* afterBatchWindow(
+        cli.getMergeRequestSummary({ cwd: "/w", repository: "acme/web", number: 7 }),
+      );
+
+      assert.strictEqual(summary.number, 7);
+      assert.strictEqual(summary.state, "open");
     }),
   );
 });
