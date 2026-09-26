@@ -1,4 +1,4 @@
-import { PastedImageAttachment } from "@t3tools/contracts";
+import { OrchestrationMessageContext, PastedImageAttachment } from "@t3tools/contracts";
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import {
   ApprovalRequestId,
@@ -104,6 +104,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(PastedImageAttachment))),
+    context: Schema.NullOr(Schema.fromJsonString(OrchestrationMessageContext)),
     isStreaming: Schema.Number,
   }),
 );
@@ -697,6 +698,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          context_json AS "context",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1258,6 +1260,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         role,
         text,
         attachments_json AS "attachments",
+        context_json AS "context",
         is_streaming AS "isStreaming",
         created_at AS "createdAt",
         updated_at AS "updatedAt",
@@ -1289,6 +1292,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          context_json AS "context",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1663,6 +1667,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          context_json AS "context",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -1952,6 +1957,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                   role: row.role,
                   text: row.text,
                   ...(row.attachments === null ? {} : { attachments: row.attachments }),
+                  ...(row.context === null ? {} : { context: row.context }),
                   turnId: row.turnId,
                   streaming: row.isStreaming === 1,
                   createdAt: row.createdAt,
@@ -2643,47 +2649,45 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                       )
                     : Result.failVoid,
                 ),
-                threads: threadRows.map(
-                  (row): OrchestrationThreadShell => ({
-                    id: row.threadId,
-                    projectId: row.projectId,
-                    title: row.title,
-                    modelSelection: row.modelSelection,
-                    runtimeMode: row.runtimeMode,
-                    interactionMode: row.interactionMode,
-                    branch: row.branch,
-                    worktreePath: row.worktreePath,
-                    branchPullRequest: row.branchPullRequest,
-                    ...mapThreadPullRequests(
-                      pullRequestsByThread.get(row.threadId) ?? [],
-                      row.projectId,
-                      repositoryIdentities.get(row.projectId),
-                    ),
-                    latestTurn: latestTurnByThread.get(row.threadId) ?? null,
-                    createdAt: row.createdAt,
-                    updatedAt: row.updatedAt,
-                    archivedAt: row.archivedAt,
-                    settledOverride: row.settledOverride,
-                    settledAt: row.settledAt,
-                    unsettledAt: row.unsettledAt,
-                    snoozedUntil: row.snoozedUntil,
-                    snoozedAt: row.snoozedAt,
-                    pinnedAt: row.pinnedAt,
-                    pinOrderKey: row.pinOrderKey ?? null,
-                    activeOrderKey: row.activeOrderKey ?? null,
-                    titleRegeneration: mapTitleRegeneration(row),
-                    titleState: row.titleState,
-                    session: sessionByThread.get(row.threadId) ?? null,
-                    latestUserMessageAt: row.latestUserMessageAt,
-                    hasPendingApprovals: row.pendingApprovalCount > 0,
-                    hasPendingUserInput: row.pendingUserInputCount > 0,
-                    hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
-                    backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
-                      row.threadId,
-                    ),
-                    planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
-                  }),
-                ),
+                threads: threadRows.map((row): OrchestrationThreadShell => ({
+                  id: row.threadId,
+                  projectId: row.projectId,
+                  title: row.title,
+                  modelSelection: row.modelSelection,
+                  runtimeMode: row.runtimeMode,
+                  interactionMode: row.interactionMode,
+                  branch: row.branch,
+                  worktreePath: row.worktreePath,
+                  branchPullRequest: row.branchPullRequest,
+                  ...mapThreadPullRequests(
+                    pullRequestsByThread.get(row.threadId) ?? [],
+                    row.projectId,
+                    repositoryIdentities.get(row.projectId),
+                  ),
+                  latestTurn: latestTurnByThread.get(row.threadId) ?? null,
+                  createdAt: row.createdAt,
+                  updatedAt: row.updatedAt,
+                  archivedAt: row.archivedAt,
+                  settledOverride: row.settledOverride,
+                  settledAt: row.settledAt,
+                  unsettledAt: row.unsettledAt,
+                  snoozedUntil: row.snoozedUntil,
+                  snoozedAt: row.snoozedAt,
+                  pinnedAt: row.pinnedAt,
+                  pinOrderKey: row.pinOrderKey ?? null,
+                  activeOrderKey: row.activeOrderKey ?? null,
+                  titleRegeneration: mapTitleRegeneration(row),
+                  titleState: row.titleState,
+                  session: sessionByThread.get(row.threadId) ?? null,
+                  latestUserMessageAt: row.latestUserMessageAt,
+                  hasPendingApprovals: row.pendingApprovalCount > 0,
+                  hasPendingUserInput: row.pendingUserInputCount > 0,
+                  hasActionableProposedPlan: row.hasActionableProposedPlan > 0,
+                  backgroundLiveness: threadBackgroundLiveness.getThreadBackgroundLiveness(
+                    row.threadId,
+                  ),
+                  planProgress: threadPlanProgress.getThreadPlanProgress(row.threadId),
+                })),
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -2727,12 +2731,10 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           "ProjectionSnapshotQuery.getCounts:decodeRow",
         ),
       ),
-      Effect.map(
-        (row): ProjectionSnapshotCounts => ({
-          projectCount: row.projectCount,
-          threadCount: row.threadCount,
-        }),
-      ),
+      Effect.map((row): ProjectionSnapshotCounts => ({
+        projectCount: row.projectCount,
+        threadCount: row.threadCount,
+      })),
     );
 
   const searchThreads: ProjectionSnapshotQueryShape["searchThreads"] = Effect.fn(
@@ -2877,17 +2879,15 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         projectId: threadRow.value.projectId,
         workspaceRoot: threadRow.value.workspaceRoot,
         worktreePath: threadRow.value.worktreePath,
-        checkpoints: checkpointRows.map(
-          (row): OrchestrationCheckpointSummary => ({
-            turnId: row.turnId,
-            checkpointTurnCount: row.checkpointTurnCount,
-            checkpointRef: row.checkpointRef,
-            status: row.status,
-            files: row.files,
-            assistantMessageId: row.assistantMessageId,
-            completedAt: row.completedAt,
-          }),
-        ),
+        checkpoints: checkpointRows.map((row): OrchestrationCheckpointSummary => ({
+          turnId: row.turnId,
+          checkpointTurnCount: row.checkpointTurnCount,
+          checkpointRef: row.checkpointRef,
+          status: row.status,
+          files: row.files,
+          assistantMessageId: row.assistantMessageId,
+          completedAt: row.completedAt,
+        })),
       });
     });
 
@@ -3041,6 +3041,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         role: row.role,
         text: row.text,
         ...(row.attachments === null ? {} : { attachments: row.attachments }),
+        ...(row.context === null ? {} : { context: row.context }),
         turnId: row.turnId,
         streaming: row.isStreaming === 1,
         createdAt: row.createdAt,
@@ -3551,6 +3552,7 @@ pending_approval_requests AS (
             role: row.role,
             text: row.text,
             ...(row.attachments === null ? {} : { attachments: row.attachments }),
+            ...(row.context === null ? {} : { context: row.context }),
             turnId: row.turnId,
             streaming: row.isStreaming === 1,
             createdAt: row.createdAt,

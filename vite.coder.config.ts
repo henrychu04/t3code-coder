@@ -9,6 +9,9 @@ export default defineConfig({
     include: [
       "apps/server/src/storageCleanup.test.ts",
       "apps/server/src/persistence/Migrations/055_ProjectionMessageAttachments.test.ts",
+      "apps/server/src/persistence/Migrations/056_ProjectionThreadMessageContext.test.ts",
+      "apps/server/src/persistence/Layers/ProjectionThreadMessages.test.ts",
+      "apps/server/src/orchestration/messageContext.test.ts",
       "apps/server/src/project/ProjectCloneTracker.test.ts",
       "apps/server/src/textGeneration/ThreadTitleContext.test.ts",
       "apps/server/src/orchestration/decider.userMessageAppend.test.ts",

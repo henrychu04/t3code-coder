@@ -1,4 +1,6 @@
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { projectComposerContextForProvider } from "@t3tools/shared/composerContextReferences";
 import { withWorkspaceLease } from "../../workspace/workspaceLease.ts";
 import {
   CommandId,
@@ -395,6 +397,9 @@ const make = Effect.gen(function* () {
             messageId,
             role: "user",
             text: turnStart.value.message.text,
+            ...(turnStart.value.message.context !== undefined
+              ? { context: turnStart.value.message.context }
+              : {}),
           },
         })
         .pipe(
@@ -1322,7 +1327,7 @@ const make = Effect.gen(function* () {
           projects: project ? [project] : [],
         }) ?? process.cwd();
       const generationInput = {
-        messageText: message.text,
+        messageText: assistantCitationsToPlainText(message.text),
         createdAt: event.payload.createdAt,
         ...(event.payload.attachments !== undefined
           ? { attachments: event.payload.attachments }
@@ -1530,7 +1535,10 @@ const make = Effect.gen(function* () {
 
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: message.text,
+      messageText: projectComposerContextForProvider({
+        text: message.text,
+        records: message.context?.records ?? [],
+      }),
       ...(event.payload.attachments !== undefined
         ? { attachments: event.payload.attachments }
         : {}),

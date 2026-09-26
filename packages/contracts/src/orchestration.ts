@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Struct from "effect/Struct";
+import { OrchestrationMessageContext } from "./composerContext.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
@@ -336,6 +337,7 @@ export const OrchestrationMessage = Schema.Struct({
       Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
     ),
   ),
+  context: Schema.optional(OrchestrationMessageContext),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -1073,6 +1075,7 @@ export const ThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
+    context: Schema.optional(OrchestrationMessageContext),
   }),
   modelSelection: Schema.optional(ModelSelection),
   attachments: Schema.optional(
@@ -1098,6 +1101,7 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
+    context: Schema.optional(OrchestrationMessageContext),
   }),
   modelSelection: Schema.optional(ModelSelection),
   attachments: Schema.optional(
@@ -1302,6 +1306,7 @@ const ThreadMessageUserAppendCommand = Schema.Struct({
     messageId: MessageId,
     text: Schema.String,
     attachments: Schema.Array(PastedImageAttachment),
+    context: Schema.optional(OrchestrationMessageContext),
   }),
   createdAt: IsoDateTime,
 });
@@ -1647,6 +1652,7 @@ export const ThreadMessageSentPayload = Schema.Struct({
       Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
     ),
   ),
+  context: Schema.optional(OrchestrationMessageContext),
   // Events persisted before the field existed carry no key at all.
   turnId: Schema.NullOr(TurnId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   streaming: Schema.Boolean,

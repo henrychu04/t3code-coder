@@ -36,7 +36,7 @@ import { it as effectIt } from "@effect/vitest";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
-import { TextGenerationError } from "@t3tools/contracts";
+import { ComposerContextId, TextGenerationError } from "@t3tools/contracts";
 import {
   ProviderAdapterRequestError,
   ProviderWorkspaceMissingError,
@@ -753,6 +753,50 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+  });
+
+  it("projects inline context before sending the provider turn", async () => {
+    const harness = await createHarness();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-context"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-with-context"),
+          role: "user",
+          text: "Inspect [build](t3-context://v1/terminal/terminal-1)",
+          context: {
+            version: 1,
+            records: [
+              {
+                version: 1,
+                kind: "terminal",
+                contextId: ComposerContextId.make("terminal-1"),
+                label: "build",
+                terminalId: "terminal-1",
+                terminalLabel: "Build",
+                lineStart: 7,
+                lineEnd: 7,
+                text: "compiled successfully",
+              },
+            ],
+          },
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining("[Terminal: build; ref=terminal-1]"),
+    });
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining('<context kind="terminal" id="terminal-1">'),
+    });
   });
 
   it("sends an attached /compact as a normal first turn even though projections omit attachments", async () => {

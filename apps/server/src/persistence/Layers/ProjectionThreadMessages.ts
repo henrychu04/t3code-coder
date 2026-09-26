@@ -1,4 +1,4 @@
-import { PastedImageAttachment } from "@t3tools/contracts";
+import { OrchestrationMessageContext, PastedImageAttachment } from "@t3tools/contracts";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as SqlSchema from "effect/unstable/sql/SqlSchema";
 import * as Effect from "effect/Effect";
@@ -22,6 +22,7 @@ const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
     isStreaming: Schema.Number,
     attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(PastedImageAttachment))),
+    context: Schema.NullOr(Schema.fromJsonString(OrchestrationMessageContext)),
   }),
 );
 const ProjectionThreadMessageExistsDbRowSchema = Schema.Struct({ exists: Schema.Number });
@@ -36,6 +37,7 @@ function toProjectionThreadMessage(
     role: row.role,
     text: row.text,
     ...(row.attachments === null ? {} : { attachments: row.attachments }),
+    ...(row.context === null ? {} : { context: row.context }),
     isStreaming: row.isStreaming === 1,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -56,6 +58,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           attachments_json,
+          context_json,
           is_streaming,
           created_at,
           updated_at
@@ -67,6 +70,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           ${row.role},
           ${row.text},
           ${row.attachments === undefined ? null : JSON.stringify(row.attachments)},
+          ${row.context === undefined ? null : JSON.stringify(row.context)},
           ${row.isStreaming ? 1 : 0},
           ${row.createdAt},
           ${row.updatedAt}
@@ -78,6 +82,8 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role = excluded.role,
           text = excluded.text,
           attachments_json = excluded.attachments_json,
+          -- Streaming updates carry no context; keep the one sent with the message.
+          context_json = COALESCE(excluded.context_json, projection_thread_messages.context_json),
           is_streaming = excluded.is_streaming,
           created_at = excluded.created_at,
           updated_at = excluded.updated_at
@@ -97,6 +103,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          context_json AS "context",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -135,6 +142,7 @@ const makeProjectionThreadMessageRepository = Effect.gen(function* () {
           role,
           text,
           attachments_json AS "attachments",
+          context_json AS "context",
           is_streaming AS "isStreaming",
           created_at AS "createdAt",
           updated_at AS "updatedAt"
