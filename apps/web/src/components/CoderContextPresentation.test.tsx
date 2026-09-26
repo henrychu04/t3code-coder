@@ -3,7 +3,7 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { TerminalContextInlineChip } from "./chat/TerminalContextInlineChip";
-import { CoderComposerContextChip, ComposerImagesContext } from "./ComposerContextNode";
+import { CoderComposerContextChip, ComposerImagesContext } from "./CoderComposerContextChip";
 import { imageContextReference } from "../lib/composerInlineContext";
 vi.mock("../hooks/useComposerImageThumbnail", () => ({
   useComposerImageThumbnail: () => undefined,

@@ -1026,6 +1026,7 @@ const MARKDOWN_COMPONENTS: Components = {
       };
       return (
         <PullRequestLinkPreview
+          originalUrl={targetHref}
           target={{
             environmentId: project.environmentId,
             input: {

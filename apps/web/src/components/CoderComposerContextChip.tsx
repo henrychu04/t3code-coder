@@ -3,22 +3,11 @@ import { ImageChipButton, UnresolvedChip, ContextChipPopover } from "./contextCh
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import ChatMarkdown from "./ChatMarkdown";
 import { lazy, Suspense } from "react";
-import { CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES } from "./composerInlineChip";
+import { ContextChip, ContextChipLabel } from "./ContextChip";
 const SourcePreview = lazy(() => import("./files/ReadOnlySourcePreview"));
 import { useComposerImageThumbnail } from "../hooks/useComposerImageThumbnail";
 // Inline context follows upstream's chip behavior while retaining Coder's prompt and image transport.
-import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext";
-import {
-  $applyNodeReplacement,
-  $createTextNode,
-  $getNodeByKey,
-  DecoratorNode,
-  HISTORY_PUSH_TAG,
-  type NodeKey,
-  type SerializedLexicalNode,
-  type Spread,
-} from "lexical";
-import { createContext, use, useEffect, useState, type ReactElement } from "react";
+import { createContext, use, useEffect, useState } from "react";
 import { MessageCircleIcon, FileTextIcon } from "lucide-react";
 import {
   collectInlineComposerContexts,
@@ -26,45 +15,12 @@ import {
 } from "../lib/composerInlineContext";
 import { EMPTY_PASTED_IMAGES, type ComposerPastedImage } from "../lib/composerPastedImages";
 import { formatReviewCommentContext } from "../reviewCommentContext";
-import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
-} from "./composerInlineChip";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogFooter } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
 
 export const ComposerImagesContext =
   createContext<ReadonlyArray<ComposerPastedImage>>(EMPTY_PASTED_IMAGES);
-
-type SerializedContextNode = Spread<
-  { source: string; type: "composer-context"; version: 1 },
-  SerializedLexicalNode
->;
-
-function ContextChip({ source, nodeKey }: { source: string; nodeKey: NodeKey }) {
-  const [editor] = useLexicalComposerContext();
-  return (
-    <CoderComposerContextChip
-      source={source}
-      disabled={!editor.isEditable()}
-      onSave={(next) => {
-        editor.update(
-          () => {
-            const node = $getNodeByKey(nodeKey);
-            if (node instanceof ComposerContextNode && node.isAttached()) {
-              if (collectInlineComposerContexts(next).length > 0)
-                node.getWritable().__source = next;
-              else node.replace($createTextNode(next));
-            }
-          },
-          { tag: HISTORY_PUSH_TAG },
-        );
-      }}
-    />
-  );
-}
 
 export function CoderComposerContextChip({
   source,
@@ -132,8 +88,6 @@ export function CoderComposerContextChip({
                           ? "queued"
                           : null
                   }
-                  className={COMPOSER_INLINE_CHIP_CLASS_NAME}
-                  labelClassName={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}
                   onClick={() => setOpen(true)}
                 />
               }
@@ -148,23 +102,16 @@ export function CoderComposerContextChip({
           </Tooltip>
         ) : (
           <UnresolvedChip
-            tooltipClassName="max-w-80 leading-tight"
             label="Image unavailable"
-            className={COMPOSER_INLINE_CHIP_CLASS_NAME}
-            labelClassName={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}
             tooltip="This image is no longer available. Remove it or attach it again."
           />
         )
       ) : context.kind === "review-comment" ? (
         <ContextChipPopover
+          kind="review-comment"
+          icon={<MessageCircleIcon />}
+          label={label}
           accessibleLabel={`Review comment, ${label}`}
-          chip={
-            <>
-              <MessageCircleIcon className="size-3.5" />
-              <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
-            </>
-          }
-          triggerClassName={`${COMPOSER_INLINE_CHIP_CLASS_NAME} ${CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES["review-comment"]}`}
         >
           <div className="space-y-2 overflow-hidden rounded-lg border border-border/70 bg-background/70 p-3">
             <div className="space-y-1">
@@ -197,18 +144,18 @@ export function CoderComposerContextChip({
           </div>
         </ContextChipPopover>
       ) : (
-        <button
-          type="button"
-          className={`${COMPOSER_INLINE_CHIP_CLASS_NAME} ${CONTEXT_INLINE_CHIP_TONE_CLASS_NAMES.file}`}
+        <ContextChip
+          kind="file"
+          render={<button type="button" />}
           aria-label={`Long text: ${label}`}
           onClick={() => {
             setComment(context.text);
             setOpen(true);
           }}
         >
-          <FileTextIcon className="size-[1.17em] shrink-0" />
-          <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
-        </button>
+          <FileTextIcon />
+          <ContextChipLabel>{label}</ContextChipLabel>
+        </ContextChip>
       )}
 
       {open && context.kind === "image" && image && url ? (
@@ -251,49 +198,4 @@ export function CoderComposerContextChip({
       ) : null}
     </>
   );
-}
-
-export class ComposerContextNode extends DecoratorNode<ReactElement> {
-  __source: string;
-  static override getType() {
-    return "composer-context";
-  }
-  static override clone(node: ComposerContextNode) {
-    return new ComposerContextNode(node.__source, node.__key);
-  }
-  static override importJSON(node: SerializedContextNode) {
-    return $createComposerContextNode(node.source);
-  }
-  constructor(source: string, key?: NodeKey) {
-    super(key);
-    this.__source = source;
-  }
-  override exportJSON(): SerializedContextNode {
-    return {
-      ...super.exportJSON(),
-      source: this.getLatest().__source,
-      type: "composer-context",
-      version: 1,
-    };
-  }
-  override createDOM() {
-    const element = document.createElement("span");
-    element.className = COMPOSER_INLINE_CHIP_DECORATOR_CLASS_NAME;
-    return element;
-  }
-  override updateDOM(): false {
-    return false;
-  }
-  override getTextContent() {
-    return this.getLatest().__source;
-  }
-  override isInline(): true {
-    return true;
-  }
-  override decorate() {
-    return <ContextChip source={this.__source} nodeKey={this.__key} />;
-  }
-}
-export function $createComposerContextNode(source: string) {
-  return $applyNodeReplacement(new ComposerContextNode(source));
 }

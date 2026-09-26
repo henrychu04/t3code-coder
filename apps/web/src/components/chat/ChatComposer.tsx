@@ -1695,6 +1695,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const resolve = (path: string) =>
       routeKind === "server" && gitCwd ? resolveComposerFileTarget(path, gitCwd) : null;
     return {
+      environmentId,
       openPullRequest,
       canOpenMention: (path: string) => Boolean(resolve(path)?.relativePath),
       openMention: (path: string) => {
@@ -1704,7 +1705,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
       },
     };
-  }, [routeKind, gitCwd, routeThreadRef, openPullRequest]);
+  }, [environmentId, routeKind, gitCwd, routeThreadRef, openPullRequest]);
   const composerFormRef = useRef<HTMLFormElement>(null);
   const composerSurfaceRef = useRef<HTMLDivElement>(null);
   const providerInputRejectedRef = useRef(false);

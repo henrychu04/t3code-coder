@@ -1,9 +1,4 @@
-import { PullRequestChip } from "../contextChipParts";
-import {
-  CHAT_INLINE_CHIP_CLASS_NAME,
-  CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
-  PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES,
-} from "../composerInlineChip";
+import { PULL_REQUEST_CHIP_KINDS, PullRequestChip } from "../contextChipParts";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
@@ -2172,8 +2167,9 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
       <PopoverTrigger
         render={
           <Button
-            variant="chip"
-            className="ml-auto inline-flex h-5 min-w-0 shrink-0 items-center gap-1 rounded-full border border-border/70 px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            variant="ghost-muted"
+            size="micro"
+            className="ml-auto min-w-0 shrink-0"
             aria-label={`${scriptName} is still running. Show setup progress.`}
           />
         }
@@ -2962,7 +2958,6 @@ const UserMessageTerminalContextInlineLabel = memo(
         {...(range ? { lineStart: Number(range[2]), lineEnd: Number(range[3] ?? range[2]) } : {})}
         text={props.context.body}
         detailsMode="popover"
-        surface="transcript"
       />
     );
   },
@@ -3257,10 +3252,14 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
     return (
       <PullRequestChip
         metadata={metadata}
-        label={`#${metadata.number}`}
+        environmentId={ctx.threadRef?.environmentId ?? null}
+        label={`!${metadata.number}`}
         kindLabel="merge request"
-        className={`${CHAT_INLINE_CHIP_CLASS_NAME} ${PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES[metadata.isDraft ? "draft" : metadata.state]}`}
-        labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
+        kind={
+          PULL_REQUEST_CHIP_KINDS[
+            metadata.state === "open" && metadata.isDraft ? "draft" : metadata.state
+          ]
+        }
         onOpen={openPullRequest}
       />
     );

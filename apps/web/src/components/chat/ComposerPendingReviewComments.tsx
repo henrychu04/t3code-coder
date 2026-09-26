@@ -1,11 +1,6 @@
 import { MessageCircle, X } from "lucide-react";
 
-import {
-  COMPOSER_INLINE_CHIP_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_ICON_CLASS_NAME,
-  COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME,
-} from "../composerInlineChip";
+import { ContextChip, ContextChipAction, ContextChipLabel } from "../ContextChip";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { cn } from "~/lib/utils";
@@ -28,22 +23,25 @@ export function ComposerPendingReviewComments({
       {comments.map((comment) => {
         const label = `${comment.filePath} ${comment.rangeLabel}`;
         const chip = (
-          <span key={comment.id} className={cn(COMPOSER_INLINE_CHIP_CLASS_NAME, "pr-1")}>
-            <MessageCircle className={cn(COMPOSER_INLINE_CHIP_ICON_CLASS_NAME, "size-3.5")} />
-            <span className={COMPOSER_INLINE_CHIP_LABEL_CLASS_NAME}>{label}</span>
-            <button
-              type="button"
+          <ContextChip
+            key={comment.id}
+            kind="review-comment"
+            tabIndex={comment.text.length === 0 ? undefined : 0}
+            className="pr-[0.25em]"
+          >
+            <MessageCircle />
+            <ContextChipLabel>{label}</ContextChipLabel>
+            <ContextChipAction
               aria-label={`Remove comment on ${label}`}
-              className={COMPOSER_INLINE_CHIP_DISMISS_BUTTON_CLASS_NAME}
               onClick={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 onRemove(comment.id);
               }}
             >
-              <X className="size-3" aria-hidden />
-            </button>
-          </span>
+              <X aria-hidden />
+            </ContextChipAction>
+          </ContextChip>
         );
         if (comment.text.length === 0) return chip;
         return (

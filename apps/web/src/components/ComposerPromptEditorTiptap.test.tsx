@@ -90,7 +90,7 @@ describe("Coder rich-text editor", () => {
       fileActions: { openMention: () => {}, canOpenMention: () => false, openPullRequest },
     });
     const chip = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Open merge request #42: Fix"]',
+      '[aria-label="Open merge request !42: Fix"]',
     );
     expect(chip).not.toBeNull();
     await act(async () => chip!.click());

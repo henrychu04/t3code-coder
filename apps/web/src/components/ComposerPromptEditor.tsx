@@ -1,5 +1,5 @@
 import { useImperativeHandle, useMemo, useRef } from "react";
-import type { ServerProviderSkill } from "@t3tools/contracts";
+import type { EnvironmentId, ServerProviderSkill } from "@t3tools/contracts";
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import { EMPTY_PASTED_IMAGES, type ComposerPastedImage } from "~/lib/composerPastedImages";
 import type { AssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
@@ -10,7 +10,7 @@ import {
 } from "~/lib/coderComposerContext";
 import { longTextContextReference } from "~/lib/composerInlineContext";
 import { collapseExpandedComposerCursor } from "~/composer-logic";
-import { ComposerImagesContext } from "./ComposerContextNode";
+import { ComposerImagesContext } from "./CoderComposerContextChip";
 import { ComposerContextActionsContext } from "./composerContextPresentation";
 import {
   ComposerPromptEditorTiptap,
@@ -47,6 +47,7 @@ export interface ComposerPromptEditorProps {
    */
   richTextEnabled?: boolean;
   fileActions?: {
+    environmentId?: EnvironmentId | null;
     openPullRequest?: (event: React.MouseEvent<HTMLElement>, url: string) => void;
     openMention: (path: string) => void;
     canOpenMention: (path: string) => boolean;
@@ -169,6 +170,7 @@ export function ComposerPromptEditor(props: ComposerPromptEditorProps) {
     <ComposerImagesContext value={props.images ?? EMPTY_PASTED_IMAGES}>
       <ComposerContextActionsContext
         value={{
+          environmentId: props.fileActions?.environmentId ?? null,
           openPullRequest: props.fileActions?.openPullRequest ?? (() => {}),
           openMention: props.fileActions?.openMention ?? (() => {}),
           canOpenMention: props.fileActions?.canOpenMention ?? (() => false),
