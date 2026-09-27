@@ -4,7 +4,8 @@ import { FolderPlusIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
-import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
 import { useClientSettings } from "~/hooks/useSettings";
 import { selectProjectGroupingSettings } from "~/logicalProject";
 import {
@@ -26,13 +27,16 @@ import {
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { InlineButton } from "../ui/button";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 interface DraftHeroHeadlineProps {
+  readonly draftId: DraftId | null;
   readonly activeProjectRef: ScopedProjectRef | null;
   readonly activeProjectTitle: string | null;
 }
 
 export function DraftHeroHeadline({
+  draftId,
   activeProjectRef,
   activeProjectTitle,
 }: DraftHeroHeadlineProps) {
@@ -41,7 +45,12 @@ export function DraftHeroHeadline({
   const { environments } = useEnvironments();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
-  const handleNewThread = useNewThreadHandler();
+  const setLogicalProjectDraftThreadId = useComposerDraftStore(
+    (store) => store.setLogicalProjectDraftThreadId,
+  );
+  const getComposerDraft = useComposerDraftStore((store) => store.getComposerDraft);
+  const applyStickyState = useComposerDraftStore((store) => store.applyStickyState);
+  const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
 
   const environmentLabelById = useMemo(
@@ -129,12 +138,33 @@ export function DraftHeroHeadline({
               return;
             }
             const project = entry.targetProject;
-            // Changing the repo of a draft moves the typed content along:
-            // the user started writing in the wrong project, not a new task.
-            void handleNewThread(scopeProjectRef(project.environmentId, project.id), {
-              replace: true,
-              carryComposerContent: true,
-            });
+            if (!draftId) {
+              return;
+            }
+            // Project selection changes the target of the open draft in
+            // place. The prompt stays in the same composer session, so the
+            // sidebar only gets a draft row if the user later navigates away.
+            const currentDraft = getComposerDraft(draftId);
+            setLogicalProjectDraftThreadId(
+              entry.group.projectKey,
+              scopeProjectRef(project.environmentId, project.id),
+              draftId,
+            );
+            if (!hasExplicitComposerModelSelection(currentDraft)) {
+              applyStickyState(draftId);
+              const environmentSettings = environments.find(
+                (environment) => environment.environmentId === project.environmentId,
+              )?.serverConfig?.settings;
+              const defaultModelSelection = environmentSettings
+                ? resolveProjectSettings(environmentSettings, project.id, project).settings
+                    .defaultModelSelection
+                : project.defaultModelSelection;
+              if (defaultModelSelection) {
+                setModelSelection(draftId, defaultModelSelection, {
+                  replaceOptions: true,
+                });
+              }
+            }
           }}
         >
           {projectPickerEntries.map(({ group }) => {

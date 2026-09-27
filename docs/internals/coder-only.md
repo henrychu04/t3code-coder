@@ -276,17 +276,19 @@ signature-validated PNG, JPEG, or WebP content up to 10 MiB, stages it in an OS 
 and copies it through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as upstream's
 pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and returns
 the workspace path plus the pending attachment's id, media type, and byte size to the draft's
-in-memory attachment state. The browser queues at most three concurrent image
-transfers per workspace, matching upstream's per-environment limit. Source images up to 50 MiB
-are prepared with main's byte-limit compression algorithm before transfer: images at or below
-10 MiB pass through unchanged, and larger images are resized and re-encoded to fit. Preparation
-shares the queue's concurrency bound, remains cancellable at the transfer boundary, and updates
-the draft to use the prepared bytes. The browser upload API, gateway, and workspace provider-input
-reader all enforce the same 10 MiB attachment constant. Workspaces have independent
-queues; drafts in the same workspace share its limit. Completed images retain their workspace
-identity. Moving or restoring images into another workspace queues their prepared image bytes
-for that destination and cancels any old transfer. The browser retains failed images for explicit
-retry, requeues them when their workspace reconnects, and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
+in-memory attachment state. The browser uses upstream's attachment upload queue with the Coder
+gateway as its transport: at most three concurrent transfers per workspace, matching upstream's
+per-environment limit. Source images up to 50 MiB are prepared with main's byte-limit compression
+algorithm inside the queue slot: images at or below 10 MiB pass through unchanged, and larger images
+are resized and re-encoded to fit. The draft keeps the source bytes in memory, so a retry prepares
+them again. The browser upload API, gateway, and workspace provider-input reader all enforce the
+same 10 MiB attachment constant. Composer files other than PNG, JPEG, and WebP images are rejected
+before queueing, and pending uploads are never deleted from the browser; the helper's pending
+sweep removes unsent ones. Completed images retain their workspace identity. Moving or restoring
+images into another workspace queues them for that destination and cancels any old transfer. The
+browser retains failed images for explicit retry, requeues them when their workspace reconnects,
+and aborts a transfer when its draft attachment is removed. Persisted drafts and stashed prompts
+never store image bytes or image upload ids; a stashed prompt records only the names of images it dropped. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
 workspace copy remains pending until SCP and finalization complete. A sent message carries
@@ -304,6 +306,15 @@ thread title. Images Coder stored before adopting upstream's attachment ids (`<u
 decode as `legacy-<uuid>-<ext>` attachments that resolve to their original files; they are never
 claimable. The timeline previews a message's image attachments by id through the bounded chunk
 read; rewinding stages fresh copies of them in the draft.
+
+The composer uses upstream's structured context records. Mentions, terminal contexts, review
+comments, and images travel as `t3-context://v1/<kind>/<id>` links in the message text plus
+`message.context` records, which the helper persists with the message and renders for the provider
+through upstream's projection. Coder omits upstream's preview annotations, element captures,
+SnapShot frames, video attachments, and non-image file attachments. Rewinding and restoring queued
+messages read images back through the bounded chunk read. The composer's provider refresh action
+uses upstream's `server.refreshProviders` RPC over the existing stdio stream, without upstream's
+remote model-manifest or usage-limit refreshes.
 
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
 filesystem API. The browser supplies the active project root plus a project-relative path to the

@@ -1345,6 +1345,14 @@ export const layer = CoderWsRpcGroup.toLayer(
           ),
         ),
       [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
+      // Upstream's refresh without its remote model-manifest and usage-limit refreshes.
+      [WS_METHODS.serverRefreshProviders]: (input) =>
+        (input.cwd !== undefined && input.instanceId !== undefined
+          ? providers.refreshWorkspaceSnapshot({ instanceId: input.instanceId, cwd: input.cwd })
+          : input.instanceId !== undefined
+            ? providers.refreshInstance(input.instanceId)
+            : providers.refresh()
+        ).pipe(Effect.map((providers) => ({ providers }))),
       [WS_METHODS.providerListSlashCommands]: (input) =>
         listProviderWorkspaceSlashCommands(input, providers, providerInstances),
       [WS_METHODS.serverDiscoverSourceControl]: () => sourceControlDiscovery.discover,

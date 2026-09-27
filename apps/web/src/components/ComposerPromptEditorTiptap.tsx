@@ -37,15 +37,16 @@ import {
   collapseExpandedComposerCursor,
   expandCollapsedComposerCursor,
   isCollapsedCursorAdjacentToInlineToken,
-} from "~/composer-context-logic";
+} from "~/composer-logic";
 import {
   collectComposerPromptInlineTokens,
   selectionTouchesMentionBoundary,
-} from "~/composer-context-segments";
+} from "~/composer-editor-mentions";
 import {
   buildDocJson,
   buildTiptapContent,
   collapsedToFlat,
+  ComposerCodeExtension,
   ComposerTaskItemExtension,
   flatToCollapsed,
   flatToMarkdown,
@@ -131,7 +132,7 @@ export interface ComposerPromptEditorProps {
   ) => void;
   onVisibleSelectionChange?: () => void;
   onCommandKeyDown?: (
-    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab",
+    key: "ArrowDown" | "ArrowUp" | "Enter" | "Tab" | "Escape",
     event: KeyboardEvent,
     isTaskItem?: boolean,
   ) => boolean;
@@ -220,7 +221,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
   const chip = (
     <ContextChip
       kind="mention"
-      render={<button type="button" disabled={!actions.canOpenMention(path)} />}
+      render={<button type="button" />}
       onClick={() => actions.openMention(path)}
       aria-label={`Preview ${path}`}
       contentEditable={false}
@@ -238,12 +239,7 @@ function ComposerMentionNodeView({ node }: NodeViewProps) {
     <NodeViewWrapper as="span" className={CHIP_NODE_SELECTION_CLASS_NAME}>
       <Tooltip>
         <TooltipTrigger render={chip} />
-        <TooltipPopup
-          side="top"
-          className="max-w-120 whitespace-normal leading-tight wrap-anywhere"
-        >
-          {path}
-        </TooltipPopup>
+        <TooltipPopup side="top">{path}</TooltipPopup>
       </Tooltip>
     </NodeViewWrapper>
   );
@@ -295,7 +291,7 @@ function ComposerSkillNodeView({ node }: NodeViewProps) {
               skillDescription ??
               "No description is available for this skill."}
           </p>
-          {skill?.path && actions.canOpenMention(skill.path) ? (
+          {skill?.path ? (
             <Button variant="outline" size="sm" onClick={() => actions.openMention(skill.path)}>
               View instructions
             </Button>
@@ -719,6 +715,19 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     );
   }, []);
 
+  const editorAttributes = useMemo(
+    () => ({
+      class: cn(
+        "composer-tiptap -m-1 block max-h-52 min-h-19.5 overflow-y-auto p-1 whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
+        className,
+      ),
+      "data-testid": "composer-editor",
+      "data-composer-rich-text": richText ? "true" : "false",
+      "aria-placeholder": placeholder,
+    }),
+    [className, placeholder, richText],
+  );
+
   const editor = useEditor(
     {
       extensions: [
@@ -735,8 +744,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
           dropcursor: false,
           gapcursor: false,
           trailingNode: false,
+          code: false,
           // Plain mode has no marks: typed markers stay literal characters.
-          ...(richText ? {} : { bold: false, italic: false, strike: false, code: false }),
+          ...(richText ? {} : { bold: false, italic: false, strike: false }),
         }),
         ComposerMentionExtension,
         ComposerSkillExtension,
@@ -745,6 +755,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         ComposerMarkersExtension,
         ...(richText
           ? [
+              ComposerCodeExtension,
               TaskList,
               ComposerTaskItemExtension.extend({
                 addInputRules() {
@@ -781,15 +792,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
       ),
       editable: !disabled,
       editorProps: {
-        attributes: {
-          class: cn(
-            "composer-tiptap block max-h-50 min-h-17.5 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word bg-transparent leading-relaxed text-foreground focus:outline-none",
-            className,
-          ),
-          "data-testid": "composer-editor",
-          "data-composer-rich-text": richText ? "true" : "false",
-          "aria-placeholder": placeholder,
-        },
+        attributes: editorAttributes,
         handleKeyDown: (view, event) => {
           if (
             isMacPlatform(navigator.platform) &&
@@ -898,7 +901,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
                 ? ("ArrowDown" as const)
                 : event.key === "ArrowUp"
                   ? ("ArrowUp" as const)
-                  : null;
+                  : event.key === "Escape"
+                    ? ("Escape" as const)
+                    : null;
           if (!key) return false;
           const handled = handler(key, event);
           if (handled) {
@@ -988,6 +993,17 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
   useEffect(() => {
     editorHolder.current = editor;
   }, [editor]);
+
+  // Tiptap forwards option changes to the view from a passive effect, so a
+  // class change here would reach the ProseMirror element one tick after
+  // React commits. The chat composer measures its resting and expanded
+  // geometry in layout effects that run first, and it clamps the prompt
+  // through `className`, so the attributes are pushed to the view here for
+  // those measurements to see the layout they are about to reserve for.
+  useLayoutEffect(() => {
+    if (!editor?.isInitialized) return;
+    editor.view.setProps({ attributes: editorAttributes });
+  }, [editor, editorAttributes]);
 
   const readSnapshot = useCallback(() => {
     const snapshot = snapshotRef.current;
@@ -1226,7 +1242,7 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
         <ComposerCitationCommentContext value={citationCommentActions}>
           <div
             className={cn(
-              "relative [font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]",
+              "relative flow-root [font-family:var(--font-composer,var(--font-sans))] [font-size:var(--font-size-prompt,0.875rem)] [@media(max-width:39.999rem)_and_(pointer:coarse)]:[font-size:max(var(--font-size-prompt,1rem),16px)]",
               containerClassName,
             )}
           >

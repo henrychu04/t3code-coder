@@ -27,6 +27,29 @@ export interface ExpandedImagePreview {
   }[];
   index: number;
 }
+/** Upstream's preview builder for images already in memory; Coder has no video previews. */
+export function buildExpandedImagePreview(
+  images: ReadonlyArray<{
+    readonly id: string;
+    readonly type: string;
+    readonly name: string;
+    readonly previewUrl?: string | undefined;
+  }>,
+  selectedImageId: string,
+): ExpandedImagePreview | null {
+  const previewableImages = images.flatMap((image) =>
+    image.type === "image" && image.previewUrl
+      ? [{ id: image.id, src: image.previewUrl, name: image.name }]
+      : [],
+  );
+  const selectedIndex = previewableImages.findIndex((image) => image.id === selectedImageId);
+  if (selectedIndex < 0) return null;
+  return {
+    images: previewableImages.map((image) => ({ src: image.src, name: image.name })),
+    index: selectedIndex,
+  };
+}
+
 export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   preview,
   onClose,

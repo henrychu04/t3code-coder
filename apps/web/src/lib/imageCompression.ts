@@ -1,24 +1,78 @@
-// Ported from main f328db30d imageCompression; memory-only attachment sizing.
+/**
+ * Downscale + re-encode for image attachments that are too big for where
+ * they're headed. Two consumers share the same pipeline:
+ *
+ * - The prompt stash persists images as base64 in localStorage (~5MB origin
+ *   quota), so `compressImageForStash` targets a per-image character budget.
+ * - The composer accepts pasted/dropped images larger than the provider's
+ *   `PROVIDER_SEND_TURN_MAX_IMAGE_BYTES` wire cap and shrinks them to fit
+ *   via `compressImageToByteLimit` instead of rejecting the paste.
+ *
+ * Supported images already within budget pass through untouched. Coder does not decode
+ * HEIC/HEIF photos; only PNG, JPEG, and WebP sources are accepted.
+ */
 
+/**
+ * Longest edge kept when an image has to be re-encoded. Sized so a typical
+ * retina screenshot (3024px wide) stays legible rather than being halved.
+ */
 const MAX_DIMENSION = 2048;
+/** Base64 budget for a single stashed image (~975KB of binary). */
+export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
 /**
  * Ceiling on the *source* file handed to the re-encoder. File size is a
  * proxy for pixel count, and decoding hundreds of megapixels into an
  * ImageBitmap can OOM the tab — beyond this we refuse rather than risk it.
  */
 export const MAX_COMPRESSIBLE_SOURCE_BYTES = 50 * 1024 * 1024;
-
+/**
+ * Quality ladder tried in order until the encoded image fits the budget.
+ * The floor stays high enough to avoid visible blocking on UI screenshots;
+ * if even that overflows we drop resolution instead of quality.
+ */
 const QUALITY_STEPS = [0.92, 0.85, 0.78, 0.68] as const;
 /** Extra downscale passes applied when even the lowest quality overflows. */
 const FALLBACK_SCALE_STEPS = [0.75, 0.55] as const;
+const HEIC_IMAGE_MIME_TYPE = /^image\/hei(?:c|f)$/i;
+const HEIC_IMAGE_EXTENSION = /\.(?:heic|heif)$/i;
 
 type ImageSize = { width: number; height: number };
-type ImageCompressionFailureReason = "too-large" | "unreadable";
 
-type CompressImageFileResult =
+export interface CompressedStashImage {
+  imageSize?: ImageSize;
+  dataUrl: string;
+  mimeType: string;
+  sizeBytes: number;
+  /** True when the payload was re-encoded rather than stored verbatim. */
+  recompressed: boolean;
+}
+
+/**
+ * Why an image could not be compressed. Callers report these differently:
+ * "too large" is a budget outcome, "unreadable" is a decode failure.
+ */
+export type ImageCompressionFailureReason = "too-large" | "unreadable";
+
+export type CompressStashImageResult =
+  | { ok: true; image: CompressedStashImage }
+  | { ok: false; reason: ImageCompressionFailureReason };
+
+export type CompressImageFileResult =
   | { ok: true; file: File; recompressed: boolean; imageSize?: ImageSize }
   | { ok: false; reason: ImageCompressionFailureReason };
 
+/** Finder and some browsers omit the MIME type when dragging HEIC photos. */
+export function isHeicImageFile(file: Pick<File, "name" | "type">): boolean {
+  if (HEIC_IMAGE_MIME_TYPE.test(file.type)) {
+    return true;
+  }
+  return (
+    (file.type === "" || file.type.toLowerCase() === "application/octet-stream") &&
+    HEIC_IMAGE_EXTENSION.test(file.name)
+  );
+}
+
+/** Chunked so a large image can't blow the argument limit of `fromCharCode`. */
 const BASE64_CHUNK_SIZE = 0x8000;
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -39,8 +93,16 @@ async function blobToDataUrl(blob: File | Blob, mimeTypeOverride?: string): Prom
   return `data:${mimeType};base64,${bytesToBase64(new Uint8Array(buffer))}`;
 }
 
+/** Approximate decoded byte count for a base64 data URL. */
+function dataUrlByteLength(dataUrl: string): number {
+  const commaIndex = dataUrl.indexOf(",");
+  const payload = commaIndex === -1 ? dataUrl : dataUrl.slice(commaIndex + 1);
+  const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((payload.length * 3) / 4) - padding);
+}
+
 /** Base64 payload of a data URL decoded back into a `File`. */
-function dataUrlToFile(dataUrl: string, name: string, mimeType: string): File {
+export function dataUrlToFile(dataUrl: string, name: string, mimeType: string): File {
   const payload = dataUrl.slice(dataUrl.indexOf(",") + 1);
   const binary = atob(payload);
   const bytes = new Uint8Array(binary.length);
@@ -112,6 +174,47 @@ async function encodeCanvas(
   const dataUrlLength = `data:${mimeType};base64,`.length + 4 * Math.ceil(blob.size / 3);
   if (dataUrlLength > budgetChars) return { dataUrl: null, mimeType };
   return { dataUrl: await blobToDataUrl(blob, mimeType), mimeType };
+}
+
+const composerThumbnails = new WeakMap<File, Promise<string | null>>();
+
+/** Cache a centered square crop for the composer's object-cover image tiles. */
+export function createComposerImageThumbnail(file: File): Promise<string | null> {
+  const cached = composerThumbnails.get(file);
+  if (cached) return cached;
+  const thumbnail = (async () => {
+    if (!canRecompress()) return null;
+    let bitmap: ImageBitmap | undefined;
+    try {
+      bitmap = await createImageBitmap(file);
+      const side = Math.min(bitmap.width, bitmap.height);
+      if (side <= 0) return null;
+      const dimension = Math.min(256, side);
+      const surface = createCanvas(dimension, dimension);
+      if (!surface) return null;
+      surface.context.drawImage(
+        bitmap,
+        (bitmap.width - side) / 2,
+        (bitmap.height - side) / 2,
+        side,
+        side,
+        0,
+        0,
+        dimension,
+        dimension,
+      );
+      return (
+        (await encodeCanvas(surface.canvas, 1, "image/png", Number.POSITIVE_INFINITY))?.dataUrl ??
+        null
+      );
+    } catch {
+      return null;
+    } finally {
+      bitmap?.close();
+    }
+  })();
+  composerThumbnails.set(file, thumbnail);
+  return thumbnail;
 }
 
 /**
@@ -220,6 +323,51 @@ async function reencodeWithinBudget(
 }
 
 /**
+ * Produces the payload to persist for a stashed image.
+ *
+ * Small images are stored verbatim (preserving PNG transparency and exact
+ * pixels). Anything over budget is downscaled and re-encoded; if it still
+ * doesn't fit after the fallback passes, reports a failure so the caller
+ * can record it as dropped.
+ */
+export async function compressImageForStash(
+  file: File,
+  budgetChars: number = MAX_STASH_IMAGE_DATA_URL_CHARS,
+): Promise<CompressStashImageResult> {
+  let originalDataUrl: string;
+  try {
+    originalDataUrl = await blobToDataUrl(file);
+  } catch {
+    return { ok: false, reason: "unreadable" };
+  }
+  if (originalDataUrl.length <= budgetChars) {
+    return {
+      ok: true,
+      image: {
+        dataUrl: originalDataUrl,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        recompressed: false,
+      },
+    };
+  }
+  const reencoded = await reencodeWithinBudget(file, budgetChars);
+  if (!reencoded.ok) {
+    return reencoded;
+  }
+  return {
+    ok: true,
+    image: {
+      dataUrl: reencoded.dataUrl,
+      mimeType: reencoded.mimeType,
+      sizeBytes: dataUrlByteLength(reencoded.dataUrl),
+      recompressed: true,
+      imageSize: reencoded.imageSize,
+    },
+  };
+}
+
+/**
  * Shrinks `file` until its binary size fits `maxBytes`, returning a new
  * `File` (WebP or JPEG). Files already within the limit pass through
  * untouched, preserving their exact bytes and format. Sources above
@@ -257,4 +405,18 @@ export async function compressImageToByteLimit(
     recompressed: true,
     imageSize: reencoded.imageSize,
   };
+}
+
+/**
+ * Prepares a composer image within the attachment size limit. Coder accepts PNG, JPEG, and
+ * WebP sources only, so HEIC/HEIF photos are not decoded; upstream converts them to JPEG.
+ */
+export async function prepareImageForAttachment(
+  file: File,
+  maxBytes: number,
+): Promise<CompressImageFileResult> {
+  if (isHeicImageFile(file)) {
+    return { ok: false, reason: "unreadable" };
+  }
+  return compressImageToByteLimit(file, maxBytes);
 }

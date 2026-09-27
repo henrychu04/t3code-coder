@@ -5,7 +5,8 @@ import {
   ProjectId,
   type MessageId,
   type ModelSelection,
-  type ProviderDriverKind,
+  ProviderDriverKind,
+  type ProviderInstanceId,
   type ProviderInteractionMode,
   type ServerProvider,
   type ScopedProjectRef,
@@ -15,6 +16,12 @@ import {
   type TurnId,
 } from "@t3tools/contracts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
+import { stripInlineContextReferences } from "~/lib/composerContextReferences";
+import {
+  NO_PROVIDER_MODEL_SELECTION,
+  resolveSelectableProviderInstanceEntry,
+  type ProviderInstanceEntry,
+} from "../providerInstances";
 import {
   appendCodexArtifactTemplateUsePrompt,
   codexArtifactTemplateUsePrompt,
@@ -22,12 +29,13 @@ import {
 } from "@t3tools/client-runtime/codex-artifact-templates";
 import {
   type ChatMessage,
+  isImageAttachment,
   type SessionPhase,
   type Thread,
   type ThreadShell,
   type TurnDiffSummary,
 } from "../types";
-import { type DraftThreadState } from "../composerDraftStore";
+import { type ComposerImageAttachment, type DraftThreadState } from "../composerDraftStore";
 import * as Schema from "effect/Schema";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentThreadDetails } from "../state/threads";
@@ -534,31 +542,34 @@ export function resolveBackgroundDraftWorkspaceOptions(input: {
 
 export function deriveComposerSendState(options: {
   prompt: string;
+  imageCount: number;
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   /**
-   * Optional supplemental context count. Review comments contribute to
-   * sendable content like text-bearing terminal contexts do.
+   * Optional element-pick attachment count. Element contexts contribute to
+   * "sendable content" exactly like images and (text-bearing) terminal
+   * contexts do: a prompt of just element chips is still a valid send.
    */
-  supplementalContextCount?: number;
+  elementContextCount?: number;
 }): {
   trimmedPrompt: string;
   sendableTerminalContexts: TerminalContextDraft[];
   expiredTerminalContextCount: number;
   hasSendableContent: boolean;
 } {
-  const trimmedPrompt = stripInlineTerminalContextPlaceholders(options.prompt).trim();
+  const trimmedPrompt = stripInlineContextReferences(options.prompt).trim();
   const sendableTerminalContexts = filterTerminalContextsWithText(options.terminalContexts);
   const expiredTerminalContextCount =
     options.terminalContexts.length - sendableTerminalContexts.length;
-  const supplementalContextCount = options.supplementalContextCount ?? 0;
+  const elementContextCount = options.elementContextCount ?? 0;
   return {
     trimmedPrompt,
     sendableTerminalContexts,
     expiredTerminalContextCount,
     hasSendableContent:
       trimmedPrompt.length > 0 ||
+      options.imageCount > 0 ||
       sendableTerminalContexts.length > 0 ||
-      supplementalContextCount > 0,
+      elementContextCount > 0,
   };
 }
 
@@ -973,4 +984,128 @@ export function shouldShowPlanFollowUpPrompt(input: {
     input.hasActionableProposedPlan &&
     !input.hasComposerAttachments
   );
+}
+
+/** Use the same enabled instance for the composer, provider status, and chat actions. */
+export function resolveComposerProviderSelection(input: {
+  entries: ReadonlyArray<ProviderInstanceEntry>;
+  candidateInstanceIds: ReadonlyArray<ProviderInstanceId | null | undefined>;
+  lockedProvider: ProviderDriverKind | null;
+  lockedInstanceId: ProviderInstanceId | null | undefined;
+}) {
+  const requestedInstanceId = input.candidateInstanceIds.find(
+    (candidate) => candidate != null && candidate !== NO_PROVIDER_MODEL_SELECTION.instanceId,
+  );
+  const requestedDriverKind =
+    input.lockedProvider ??
+    input.entries.find((entry) => entry.instanceId === requestedInstanceId)?.driverKind ??
+    input.entries[0]?.driverKind ??
+    ProviderDriverKind.make("unconfigured");
+  const lockedContinuationGroupKey = input.lockedProvider
+    ? (input.entries.find((entry) => entry.instanceId === input.lockedInstanceId)
+        ?.continuationGroupKey ?? null)
+    : null;
+  // Missing metadata must not move Antigravity history into another Google profile.
+  const requiresExactInstance =
+    input.lockedProvider === "antigravity" &&
+    input.lockedInstanceId != null &&
+    lockedContinuationGroupKey === null;
+  const compatibleEntries = input.entries.filter(
+    (entry) =>
+      (!input.lockedProvider || entry.driverKind === input.lockedProvider) &&
+      (!lockedContinuationGroupKey || entry.continuationGroupKey === lockedContinuationGroupKey) &&
+      (!requiresExactInstance || entry.instanceId === input.lockedInstanceId),
+  );
+  const selectedProviderEntry =
+    input.candidateInstanceIds
+      .map((candidate) =>
+        compatibleEntries.find(
+          (entry) => entry.instanceId === candidate && entry.enabled && entry.isAvailable,
+        ),
+      )
+      .find((entry) => entry !== undefined) ??
+    resolveSelectableProviderInstanceEntry(
+      compatibleEntries.filter((entry) => entry.driverKind === requestedDriverKind),
+      undefined,
+    ) ??
+    resolveSelectableProviderInstanceEntry(compatibleEntries, undefined);
+  const unavailableProviderInstanceId = selectedProviderEntry
+    ? undefined
+    : input.lockedProvider
+      ? (input.lockedInstanceId ?? requestedInstanceId)
+      : requestedInstanceId;
+  return {
+    selectedProviderEntry,
+    requestedDriverKind,
+    lockedContinuationGroupKey,
+    unavailableProviderInstanceId,
+  };
+}
+
+/** Keep restored drafts and every plan control on the selected instance's supported mode. */
+export function resolveComposerInteractionMode(input: {
+  planModeEnabled: boolean;
+  provider: Pick<ServerProvider, "showInteractionModeToggle"> | null | undefined;
+  interactionMode: ProviderInteractionMode;
+}): { enabled: boolean; interactionMode: ProviderInteractionMode } {
+  const enabled =
+    input.planModeEnabled &&
+    input.provider != null &&
+    input.provider.showInteractionModeToggle !== false;
+  return {
+    enabled,
+    interactionMode: enabled ? input.interactionMode : "default",
+  };
+}
+
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Could not read image data."));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read image."));
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
+export function revokeBlobPreviewUrl(previewUrl: string | undefined): void {
+  if (!previewUrl || typeof URL === "undefined" || !previewUrl.startsWith("blob:")) {
+    return;
+  }
+  URL.revokeObjectURL(previewUrl);
+}
+
+export function revokeUserMessagePreviewUrls(message: ChatMessage): void {
+  if (message.role !== "user" || !message.attachments) {
+    return;
+  }
+  for (const attachment of message.attachments) {
+    if (!isImageAttachment(attachment)) {
+      continue;
+    }
+    revokeBlobPreviewUrl(attachment.previewUrl);
+  }
+}
+
+export function cloneComposerImageForRetry(
+  image: ComposerImageAttachment,
+): ComposerImageAttachment {
+  if (typeof URL === "undefined" || !image.previewUrl.startsWith("blob:")) {
+    return image;
+  }
+  try {
+    return {
+      ...image,
+      previewUrl: URL.createObjectURL(image.file),
+    };
+  } catch {
+    return image;
+  }
 }

@@ -1,3 +1,5 @@
+import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+import { toKindScopedComposerContextId } from "./composerContextReferences";
 import { type ThreadId } from "@t3tools/contracts";
 
 export interface TerminalContextSelection {
@@ -38,6 +40,36 @@ export const INLINE_TERMINAL_CONTEXT_PLACEHOLDER = "\uFFFC";
 
 const TRAILING_TERMINAL_CONTEXT_BLOCK_PATTERN =
   /\n*<terminal_context>\n([\s\S]*?)\n<\/terminal_context>\s*$/;
+
+export interface TerminalContextReferenceSource {
+  id: string;
+  terminalLabel: string;
+  lineStart: number;
+  lineEnd: number;
+}
+
+/** The canonical inline link that stands for this context in the prompt. */
+export function formatTerminalContextReference(context: TerminalContextReferenceSource): string {
+  return formatComposerContextReference({
+    kind: "terminal",
+    contextId: toKindScopedComposerContextId("terminal", context.id),
+    label: formatTerminalContextLabel(context),
+  });
+}
+
+/** Binds legacy U+FFFC placeholders to contexts in array order; leftover placeholders vanish. */
+export function migrateLegacyTerminalContextPlaceholders(
+  prompt: string,
+  contexts: ReadonlyArray<TerminalContextReferenceSource>,
+): string {
+  if (!prompt.includes(INLINE_TERMINAL_CONTEXT_PLACEHOLDER)) return prompt;
+  let index = 0;
+  return prompt.replaceAll(INLINE_TERMINAL_CONTEXT_PLACEHOLDER, () => {
+    const context = contexts[index];
+    index += 1;
+    return context ? formatTerminalContextReference(context) : "";
+  });
+}
 
 export function normalizeTerminalContextText(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/^\n+|\n+$/g, "");

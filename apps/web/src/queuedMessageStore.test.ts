@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
   isQueuedMessageDue,
-  partitionQueuedMessagesForRestore,
   latestCompletedToolActivityId,
   useQueuedMessageStore,
   type QueuedComposerMessage,
@@ -12,6 +11,7 @@ function makeMessage(prompt: string): Omit<QueuedComposerMessage, "id"> {
   return {
     prompt,
     images: [],
+    files: [],
     terminalContexts: [],
     reviewComments: [],
     submissionIntent: "foreground",
@@ -138,27 +138,5 @@ describe("queued message dispatch timing", () => {
     expect(isQueuedMessageDue({ message, phase: "connecting", latestToolActivityId: "a4" })).toBe(
       false,
     );
-  });
-});
-
-describe("queue restoration attachment boundary", () => {
-  it("keeps an overflowing message and everything after it intact and ordered", () => {
-    const image = {
-      id: "image-1",
-      workspaceId: "workspace",
-      file: new File(["image"], "image.png"),
-      status: "queued" as const,
-    };
-    const first = { ...makeMessage("first"), id: "first", images: [image] };
-    const second = { ...makeMessage("image reference"), id: "second", images: [image, image] };
-    const third = { ...makeMessage("after image"), id: "third" };
-    const result = partitionQueuedMessagesForRestore([first, second, third], 2);
-    expect(result.restored).toEqual([first]);
-    expect(result.held).toEqual([second, third]);
-    expect(result.held[0]).toBe(second);
-  });
-  it("can restore text at the attachment cap but never detach an image from its prompt", () => {
-    const text = { ...makeMessage("text"), id: "text" };
-    expect(partitionQueuedMessagesForRestore([text], 0)).toEqual({ restored: [text], held: [] });
   });
 });

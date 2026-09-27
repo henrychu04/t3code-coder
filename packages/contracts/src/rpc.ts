@@ -8,7 +8,8 @@ import {
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import { NonNegativeInt } from "./baseSchemas.ts";
+import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 
 import {
@@ -93,6 +94,7 @@ import {
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
   ServerProviderSlashCommands,
+  ServerProviderUpdatedPayload,
   ServerProviderSlashCommandsInput,
 } from "./server.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
@@ -185,6 +187,7 @@ export const WS_METHODS = {
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   providerListSlashCommands: "provider.listSlashCommands",
+  serverRefreshProviders: "server.refreshProviders",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -348,6 +351,16 @@ const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadSc
 const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashCommands, {
   payload: ServerProviderSlashCommandsInput,
   success: ServerProviderSlashCommands,
+});
+
+const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
+  payload: Schema.Struct({
+    /** When supplied, only refresh this provider instance. Omitted refreshes every instance. */
+    instanceId: Schema.optional(ProviderInstanceId),
+    /** With `instanceId`, discover that instance's skills and commands for this workspace. */
+    cwd: Schema.optional(TrimmedNonEmptyString),
+  }),
+  success: ServerProviderUpdatedPayload,
 });
 
 const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -795,6 +808,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
+  WsServerRefreshProvidersRpc,
   WsServerDiscoverSourceControlRpc,
   WsSourceControlProbeWriteAccessRpc,
   WsSourceControlLookupRepositoryRpc,

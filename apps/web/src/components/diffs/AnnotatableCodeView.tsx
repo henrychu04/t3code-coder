@@ -1,4 +1,3 @@
-import { collectInlineComposerContexts } from "../../lib/composerInlineContext";
 import type {
   AnnotationSide,
   CodeViewDiffItem,
@@ -121,20 +120,8 @@ export function AnnotatableCodeView({
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
-  const legacyReviewComments = useComposerDraftStore(
+  const reviewComments = useComposerDraftStore(
     (store) => store.getComposerDraft(composerDraftTarget)?.reviewComments ?? EMPTY_REVIEW_COMMENTS,
-  );
-  const prompt = useComposerDraftStore(
-    (store) => store.getComposerDraft(composerDraftTarget)?.prompt ?? "",
-  );
-  const reviewComments = useMemo(
-    () => [
-      ...legacyReviewComments,
-      ...collectInlineComposerContexts(prompt).flatMap((entry) =>
-        entry.context.kind === "review-comment" ? [entry.context.comment] : [],
-      ),
-    ],
-    [legacyReviewComments, prompt],
   );
   const [selectedLines, setSelectedLines] = useState<{
     id: string;

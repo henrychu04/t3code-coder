@@ -168,6 +168,11 @@ export const ServerProvider = Schema.Struct({
 export type ServerProvider = typeof ServerProvider.Type;
 export const ServerProviders = ForwardCompatibleArray(ServerProvider);
 export type ServerProviders = typeof ServerProviders.Type;
+
+export const ServerProviderUpdatedPayload = Schema.Struct({
+  providers: ServerProviders,
+});
+export type ServerProviderUpdatedPayload = typeof ServerProviderUpdatedPayload.Type;
 const isProviderAvailable = (snapshot: ServerProvider): boolean =>
   snapshot.availability !== "unavailable";
 

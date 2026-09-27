@@ -2,7 +2,7 @@ import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { Code } from "@tiptap/extension-code";
 import { TaskItem } from "@tiptap/extension-task-item";
 
-import { splitPromptIntoComposerSegments } from "~/composer-context-segments";
+import { splitPromptIntoComposerSegments } from "~/composer-editor-mentions";
 import { parseInlineMarkdown, RICH_TEXT_DELIMITERS, type RichTextMark } from "~/composer-rich-text";
 import { collectInlineContextIds } from "~/lib/composerContextReferences";
 

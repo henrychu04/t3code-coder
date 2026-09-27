@@ -73,7 +73,7 @@ function segmentSource(
   segment: ReturnType<typeof splitPromptIntoComposerSegments>[number],
 ): string {
   if (segment.type === "text") return segment.text;
-  return segment.type === "terminal-context" ? "\uFFFC" : segment.source;
+  return segment.source;
 }
 
 /** True when splitting at the caret would cut an inline chip in two. */
