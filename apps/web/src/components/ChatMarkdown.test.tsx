@@ -188,11 +188,13 @@ describe("ChatMarkdown", () => {
       />,
     );
 
+    // Upstream's file chips label a file by basename and line; the copy keeps the source form.
     expect(markup.match(/<button/g)).toHaveLength(2);
-    expect(markup).toContain("release notes");
-    expect(markup).toContain("src/index.ts:42");
+    expect(markup).toContain("Release notes.md · L7");
+    expect(markup).toContain("index.ts · L42");
+    expect(markup).toContain('data-markdown-copy="`src/index.ts:42`"');
     expect(markup).toContain("pnpm run test");
-    expect(markup).not.toContain("href=");
+    expect(markup).not.toContain("<a ");
   });
 
   it("renders Codex file citations through the contained Files surface", () => {
