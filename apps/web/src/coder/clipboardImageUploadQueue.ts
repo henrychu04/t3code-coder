@@ -100,7 +100,7 @@ async function run(
           : "This image is too large to attach, even after resizing to the 10 MiB limit.",
       );
     updateImage(image.id, (current) => ({ ...current, file: prepared.file }));
-    const path = await uploadCoderClipboardImage(image.workspaceId, prepared.file, {
+    const staged = await uploadCoderClipboardImage(image.workspaceId, prepared.file, {
       signal: controller.signal,
       onProgress: (value) => {
         const progress = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -120,7 +120,8 @@ async function run(
         file: current.file,
         status: "uploaded",
         workspaceId: image.workspaceId,
-        path,
+        path: staged.path,
+        attachment: staged.attachment,
       }));
     }
   } catch (cause) {

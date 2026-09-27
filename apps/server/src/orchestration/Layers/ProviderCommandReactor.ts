@@ -7,7 +7,7 @@ import {
   EventId,
   type ModelSelection,
   type OrchestrationEvent,
-  type PastedImageAttachment,
+  type ChatAttachment,
   ProviderDriverKind,
   type ProjectId,
   type OrchestrationSession,
@@ -397,6 +397,7 @@ const make = Effect.gen(function* () {
             messageId,
             role: "user",
             text: turnStart.value.message.text,
+            attachments: turnStart.value.message.attachments ?? [],
             ...(turnStart.value.message.context !== undefined
               ? { context: turnStart.value.message.context }
               : {}),
@@ -871,7 +872,7 @@ const make = Effect.gen(function* () {
   const buildSendTurnRequestForThread = Effect.fnUntraced(function* (input: {
     readonly threadId: ThreadId;
     readonly messageText: string;
-    readonly attachments?: ReadonlyArray<PastedImageAttachment>;
+    readonly attachments?: ReadonlyArray<ChatAttachment>;
     readonly modelSelection?: ModelSelection;
     readonly interactionMode?: "default" | "plan";
     readonly createdAt: string;
@@ -937,7 +938,7 @@ const make = Effect.gen(function* () {
     readonly worktreePath: string | null;
     readonly messageText: string;
     readonly createdAt: string;
-    readonly attachments?: ReadonlyArray<PastedImageAttachment>;
+    readonly attachments?: ReadonlyArray<ChatAttachment>;
   }) {
     if (!input.branch || !input.worktreePath) {
       return;
@@ -1017,7 +1018,7 @@ const make = Effect.gen(function* () {
       readonly messageText: string;
       readonly createdAt: string;
       readonly titleSeed?: string;
-      readonly attachments?: ReadonlyArray<PastedImageAttachment>;
+      readonly attachments?: ReadonlyArray<ChatAttachment>;
       readonly expectedTitle: string;
       readonly expectedVersion: CommandId | null;
     }) {
@@ -1310,11 +1311,7 @@ const make = Effect.gen(function* () {
     }
     yield* ensureThreadWorktree(thread);
 
-    // The turn intent supplies attachments for legacy messages without projected metadata.
-    const isCompactCommand = isCompactCommandMessage({
-      ...message,
-      attachments: event.payload.attachments,
-    });
+    const isCompactCommand = isCompactCommandMessage(message);
     if (
       Option.isSome(startMessage) &&
       !startMessage.value.hasOtherUserMessages &&
@@ -1329,9 +1326,7 @@ const make = Effect.gen(function* () {
       const generationInput = {
         messageText: assistantCitationsToPlainText(message.text),
         createdAt: event.payload.createdAt,
-        ...(event.payload.attachments !== undefined
-          ? { attachments: event.payload.attachments }
-          : {}),
+        ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
         ...(event.payload.titleSeed !== undefined ? { titleSeed: event.payload.titleSeed } : {}),
       };
 
@@ -1539,9 +1534,7 @@ const make = Effect.gen(function* () {
         text: message.text,
         records: message.context?.records ?? [],
       }),
-      ...(event.payload.attachments !== undefined
-        ? { attachments: event.payload.attachments }
-        : {}),
+      ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }
         : {}),

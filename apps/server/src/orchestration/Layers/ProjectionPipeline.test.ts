@@ -2412,6 +2412,7 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
           messageId: MessageId.make("message-retry-1"),
           role: "user",
           text: "first attempt",
+          attachments: [],
         },
         runtimeMode: "full-access",
         interactionMode: "default",
@@ -2504,8 +2505,10 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       const attachments = [
         {
           type: "image" as const,
-          id: "00000000-0000-4000-8000-000000000001.png",
+          id: "thread-images-00000000-0000-4000-8000-000000000001-png",
           name: "diagram.png",
+          mimeType: "image/png",
+          sizeBytes: 12,
         },
       ];
       yield* engine.dispatch({
@@ -2538,8 +2541,8 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
           messageId: MessageId.make("image-metadata-message"),
           role: "user",
           text: "Describe this",
+          attachments,
         },
-        attachments,
         runtimeMode: "full-access",
         interactionMode: "default",
         createdAt,

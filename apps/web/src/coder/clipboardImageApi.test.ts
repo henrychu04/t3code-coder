@@ -1,11 +1,20 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { uploadCoderClipboardImage } from "./api";
 
+const STAGED = {
+  path: "/workspace/pending-11111111-1111-4111-8111-111111111111-png.png",
+  attachment: {
+    id: "pending-11111111-1111-4111-8111-111111111111-png",
+    mimeType: "image/png",
+    sizeBytes: 5,
+  },
+};
+
 class FakeXHR extends EventTarget {
   static instances: FakeXHR[] = [];
   upload = new EventTarget();
   status = 200;
-  responseText = JSON.stringify({ path: "/workspace/image.png" });
+  responseText = JSON.stringify(STAGED);
   timeout = 0;
   open = vi.fn();
   setRequestHeader = vi.fn();
@@ -55,7 +64,7 @@ it("posts original bytes to the loopback workspace route and reports only measur
   await Promise.resolve();
   expect(finished).toBe(false);
   xhr.finish();
-  await expect(result).resolves.toBe("/workspace/image.png");
+  await expect(result).resolves.toEqual(STAGED);
 });
 
 it("aborts the HTTP request and releases the abort listener", async () => {

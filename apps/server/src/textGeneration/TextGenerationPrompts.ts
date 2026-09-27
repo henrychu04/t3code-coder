@@ -6,7 +6,7 @@
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { limitTitleMessage } from "./ThreadTitleContext.ts";
-import type { PastedImageAttachment } from "@t3tools/contracts";
+import type { ChatAttachment } from "@t3tools/contracts";
 
 import { limitSection } from "./TextGenerationUtils.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
@@ -144,7 +144,7 @@ export function buildBranchNamePrompt(input: BranchNamePromptInput) {
 // ---------------------------------------------------------------------------
 
 export interface ThreadTitlePromptInput {
-  attachments?: ReadonlyArray<PastedImageAttachment> | undefined;
+  attachments?: ReadonlyArray<ChatAttachment> | undefined;
   policy?: TextGenerationPolicy | undefined;
   linkedContext?: string | undefined;
   message: string;

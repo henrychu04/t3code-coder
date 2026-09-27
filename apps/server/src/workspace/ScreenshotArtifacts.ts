@@ -15,11 +15,14 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { resolveAttachmentPathById } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const ARTIFACT_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+/** Chat attachment ids, as in contracts; the attachment store resolves them to one file. */
+const ATTACHMENT_ID_PATTERN = /^[a-z0-9_-]{1,128}$/i;
 
 const extensionByMimeType: Record<ScreenshotArtifactMimeType, string> = {
   "image/png": "png",
@@ -75,7 +78,8 @@ export const make = Effect.gen(function* () {
   const readChunk: ScreenshotArtifacts["Service"]["readChunk"] = Effect.fn(
     "ScreenshotArtifacts.readChunk",
   )(function* (input) {
-    if (!ARTIFACT_ID_PATTERN.test(input.artifactId)) {
+    const isAttachment = input.source === "attachment";
+    if (!(isAttachment ? ATTACHMENT_ID_PATTERN : ARTIFACT_ID_PATTERN).test(input.artifactId)) {
       return yield* new ScreenshotArtifactReadError({
         artifactId: input.artifactId,
         message: "Screenshot artifact was not found.",
@@ -84,13 +88,29 @@ export const make = Effect.gen(function* () {
 
     const candidate = yield* Effect.tryPromise({
       try: async () => {
-        for (const [mimeType, extension] of Object.entries(extensionByMimeType) as Array<
-          [ScreenshotArtifactMimeType, string]
-        >) {
-          const filePath = NodePath.join(
-            input.source === "attachment" ? config.attachmentsDir : config.screenshotArtifactsDir,
-            `${input.artifactId}.${extension}`,
-          );
+        const attachmentPath = isAttachment
+          ? resolveAttachmentPathById({
+              attachmentsDir: config.attachmentsDir,
+              attachmentId: input.artifactId,
+            })
+          : null;
+        const candidates: ReadonlyArray<{
+          readonly filePath: string;
+          readonly mimeType: ScreenshotArtifactMimeType | undefined;
+        }> = isAttachment
+          ? attachmentPath === null
+            ? []
+            : [{ filePath: attachmentPath, mimeType: undefined }]
+          : (
+              Object.entries(extensionByMimeType) as Array<[ScreenshotArtifactMimeType, string]>
+            ).map(([mimeType, extension]) => ({
+              filePath: NodePath.join(
+                config.screenshotArtifactsDir,
+                `${input.artifactId}.${extension}`,
+              ),
+              mimeType,
+            }));
+        for (const { filePath, mimeType } of candidates) {
           try {
             const handle = await NodeFS.open(
               filePath,
@@ -102,7 +122,13 @@ export const make = Effect.gen(function* () {
                 return undefined;
               }
               const detectedMimeType = await detectStoredScreenshotMimeType(handle, stat.size);
-              if (detectedMimeType !== mimeType || input.offset >= stat.size) return undefined;
+              if (
+                detectedMimeType === undefined ||
+                (mimeType !== undefined && detectedMimeType !== mimeType) ||
+                input.offset >= stat.size
+              ) {
+                return undefined;
+              }
               const bytesToRead = Math.min(
                 input.limit,
                 MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
@@ -111,7 +137,7 @@ export const make = Effect.gen(function* () {
               const buffer = Buffer.allocUnsafe(bytesToRead);
               const { bytesRead } = await handle.read(buffer, 0, bytesToRead, input.offset);
               return {
-                mimeType,
+                mimeType: detectedMimeType,
                 totalBytes: stat.size,
                 bytes: buffer.subarray(0, bytesRead),
               };

@@ -10,6 +10,12 @@ import type { CoderClipboardImageExtension } from "@t3tools/coder-cli/scp";
 
 export const MAX_CLIPBOARD_IMAGE_BYTES = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
 
+export const CLIPBOARD_IMAGE_MIME_TYPES = {
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+} as const satisfies Record<CoderClipboardImageExtension, string>;
+
 export class ClipboardImageValidationError extends Error {}
 
 export function validateClipboardImage(

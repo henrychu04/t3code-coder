@@ -15,6 +15,11 @@ const uploaded: ComposerPastedImage = {
   status: "uploaded",
   workspaceId: "workspace",
   path: "/uploaded.png",
+  attachment: {
+    id: "pending-11111111-1111-4111-8111-111111111111-png",
+    mimeType: "image/png",
+    sizeBytes: 5,
+  },
 };
 const remove = vi.fn();
 const retry = vi.fn();

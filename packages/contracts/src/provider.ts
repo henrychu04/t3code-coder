@@ -10,9 +10,9 @@ import {
 } from "./baseSchemas.ts";
 import {
   ModelSelection,
-  PastedImageAttachment,
+  ChatAttachment,
+  getProviderAttachmentLimitError,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderApprovalDecision,
   ProviderApprovalPolicy,
   ProviderInteractionMode,
@@ -71,8 +71,8 @@ export const ProviderSendTurnInput = Schema.Struct({
     TrimmedNonEmptyString.check(Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_INPUT_CHARS)),
   ),
   attachments: Schema.optional(
-    Schema.Array(PastedImageAttachment).check(
-      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
+    Schema.Array(ChatAttachment).check(
+      Schema.makeFilter((attachments) => getProviderAttachmentLimitError(attachments) ?? true),
     ),
   ),
   modelSelection: Schema.optional(ModelSelection),

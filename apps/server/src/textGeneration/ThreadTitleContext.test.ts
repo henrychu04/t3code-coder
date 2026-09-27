@@ -2,19 +2,17 @@ import { describe, expect, it } from "vite-plus/test";
 import { formatThreadTitleContext, limitTitleMessage } from "./ThreadTitleContext.ts";
 
 describe("thread title context", () => {
-  it("uses attachment display names and preserves legacy unnamed attachments", () => {
-    const id = "00000000-0000-4000-8000-000000000001.png";
+  it("uses attachment display names", () => {
+    const image = (id: string, name: string) =>
+      ({ type: "image", id, name, mimeType: "image/png", sizeBytes: 1 }) as const;
     const result = formatThreadTitleContext([
       {
         role: "user",
         text: "Inspect",
-        attachments: [
-          { type: "image", id, name: "checkout-error.png" },
-          { type: "image", id },
-        ],
+        attachments: [image("thread-1-a", "checkout-error.png"), image("thread-1-b", "image.png")],
       },
     ]);
-    expect(result.message).toContain(`[Attachments: checkout-error.png, ${id}]`);
+    expect(result.message).toContain("[Attachments: checkout-error.png, image.png]");
   });
 
   it("keeps a user's scope change despite long assistant output", () => {

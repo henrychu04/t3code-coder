@@ -69,6 +69,7 @@ it("resolves inline images only from this draft's uploaded copies, without appen
     status: "uploaded" as const,
     workspaceId: "workspace",
     path: `/home/user/.t3-coder/attachments/${imageId}.png`,
+    attachment: { id: imageId, mimeType: "image/png" as const, sizeBytes: 3 },
     file: new File(["png"], "Screenshot.png", { type: "image/png" }),
   };
   const source = `Before ${imageContextReference(imageId)} after`;

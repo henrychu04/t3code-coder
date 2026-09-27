@@ -1,4 +1,4 @@
-import { OrchestrationMessageContext, PastedImageAttachment } from "@t3tools/contracts";
+import { OrchestrationMessageContext, ChatAttachment } from "@t3tools/contracts";
 import { projectActivityPayload } from "../ActivityPayloadProjection.ts";
 import {
   ApprovalRequestId,
@@ -103,7 +103,7 @@ const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
 );
 const ProjectionThreadMessageDbRowSchema = ProjectionThreadMessage.mapFields(
   Struct.assign({
-    attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(PastedImageAttachment))),
+    attachments: Schema.NullOr(Schema.fromJsonString(Schema.Array(ChatAttachment))),
     context: Schema.NullOr(Schema.fromJsonString(OrchestrationMessageContext)),
     isStreaming: Schema.Number,
   }),

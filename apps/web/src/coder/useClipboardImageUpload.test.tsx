@@ -68,7 +68,20 @@ beforeEach(async () => {
           () => reject(new DOMException("Cancelled", "AbortError")),
           { once: true },
         );
-        transfers.push({ resolve, reject, signal, report: options!.onProgress! });
+        transfers.push({
+          resolve: (path) =>
+            resolve({
+              path,
+              attachment: {
+                id: "pending-11111111-1111-4111-8111-111111111111-png",
+                mimeType: "image/png",
+                sizeBytes: 5,
+              },
+            }),
+          reject,
+          signal,
+          report: options!.onProgress!,
+        });
       }),
   );
   root = createRoot(document.createElement("div"));

@@ -18,7 +18,7 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 import { waitForRevertedMessage } from "../lib/waitForRevertedMessage";
 import { readScreenshotBlob } from "../lib/readScreenshotBlob";
-import { submittedImageAttachments } from "../lib/submittedImageAttachments";
+import { messageImageReferences } from "../lib/submittedImageAttachments";
 import { recallableComposerPrompt } from "./chat/composerPromptHistory";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
 import type { ComposerPastedImage } from "../lib/composerPastedImages";
@@ -58,6 +58,7 @@ import {
   ProviderDriverKind,
   RuntimeMode,
   TerminalOpenInput,
+  type ChatImageAttachment,
 } from "@t3tools/contracts";
 import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import {
@@ -5233,7 +5234,7 @@ export default function ChatView(props: ChatViewProps) {
         const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
         if (!workspaceId) throw new Error("The Coder workspace is not connected.");
         const store = useComposerDraftStore.getState();
-        const images = submittedImageAttachments(message.text).images;
+        const images = messageImageReferences(message.attachments);
         const currentImages = store.getComposerDraft(composerDraftTarget)?.pastedImages ?? [];
         if (currentImages.some((image) => image.status !== "uploaded"))
           throw new Error("Wait for image uploads to finish before rewinding.");
@@ -5257,12 +5258,12 @@ export default function ChatView(props: ChatViewProps) {
               : image.mimeType === "image/webp"
                 ? "webp"
                 : "jpg";
+          // Sent attachments belong to their thread; the draft stages a fresh copy to claim.
           restoredImages.push({
             id: crypto.randomUUID(),
-            file: new File([blob], `${image.id}.${extension}`, { type: image.mimeType }),
+            file: new File([blob], image.name || `image.${extension}`, { type: image.mimeType }),
             workspaceId,
-            status: "uploaded",
-            path: `~/.t3-coder/attachments/${image.id}.${extension}`,
+            status: "queued",
           });
         }
         await waitForRevertedMessage(routeThreadRef, messageId, turnCount, async () => {
@@ -5354,7 +5355,7 @@ export default function ChatView(props: ChatViewProps) {
               environmentId,
               input: {
                 threadId,
-                message: { messageId, role: "user", text: "/compact" },
+                message: { messageId, role: "user", text: "/compact", attachments: [] },
                 modelSelection: context.selectedModelSelection,
                 runtimeMode,
                 interactionMode: interactionMode,
@@ -5808,8 +5809,8 @@ export default function ChatView(props: ChatViewProps) {
                     messageId: newMessageId(),
                     role: "user",
                     text: target.text,
+                    attachments: pastedImageAttachments,
                   },
-                  attachments: pastedImageAttachments,
                   modelSelection: target.selection,
                   titleSeed: title,
                   runtimeMode: ctxRuntimeMode,
@@ -6134,9 +6135,9 @@ export default function ChatView(props: ChatViewProps) {
             messageId: messageIdForSend,
             role: "user",
             text: outgoingMessageText,
+            attachments: pastedImageAttachments,
           },
           modelSelection: ctxSelectedModelSelection,
-          ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
           titleSeed: title,
           runtimeMode: ctxRuntimeMode,
           interactionMode,
@@ -6603,7 +6604,7 @@ export default function ChatView(props: ChatViewProps) {
     }: {
       text: string;
       interactionMode: "default" | "plan";
-      pastedImageAttachments: ReadonlyArray<{ readonly type: "image"; readonly id: string }>;
+      pastedImageAttachments: ReadonlyArray<ChatImageAttachment>;
     }) => {
       if (
         !activeThread ||
@@ -6692,9 +6693,9 @@ export default function ChatView(props: ChatViewProps) {
               messageId: messageIdForSend,
               role: "user",
               text: outgoingMessageText,
+              attachments: pastedImageAttachments,
             },
             modelSelection: ctxSelectedModelSelection,
-            ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
             titleSeed: activeThread.title,
             runtimeMode: ctxRuntimeMode,
             interactionMode: nextInteractionMode,
@@ -6828,6 +6829,7 @@ export default function ChatView(props: ChatViewProps) {
             messageId: newMessageId(),
             role: "user",
             text: outgoingImplementationPrompt,
+            attachments: [],
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,

@@ -93,7 +93,10 @@ import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
-import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import {
+  cleanupFailedUploadedAttachments,
+  normalizeDispatchCommand,
+} from "./orchestration/Normalizer.ts";
 import { isOrchestrationCommandRejection } from "./orchestration/Errors.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
@@ -893,7 +896,10 @@ export const layer = CoderWsRpcGroup.toLayer(
               message: {
                 messageId: command.message.messageId,
                 text: command.message.text,
-                attachments: command.attachments ?? [],
+                attachments: command.message.attachments,
+                ...(command.message.context !== undefined
+                  ? { context: command.message.context }
+                  : {}),
               },
               createdAt: command.createdAt,
             });
@@ -1643,9 +1649,9 @@ export const layer = CoderWsRpcGroup.toLayer(
             );
           }),
         ),
-      [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
-        ProjectCloneTracker.rejectCommandsDuringClone(projectClones, command).pipe(
-          Effect.andThen(normalizeDispatchCommand(command)),
+      [ORCHESTRATION_WS_METHODS.dispatchCommand]: (clientCommand) =>
+        ProjectCloneTracker.rejectCommandsDuringClone(projectClones, clientCommand).pipe(
+          Effect.andThen(normalizeDispatchCommand(clientCommand)),
           Effect.tap((command) =>
             command.type !== "thread.pull-request.link"
               ? Effect.void
@@ -1674,7 +1680,9 @@ export const layer = CoderWsRpcGroup.toLayer(
               const receipts = isProjectSettingsCommand
                 ? yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE command_id = ${command.commandId} AND status = 'accepted' LIMIT 1`
                 : [];
-              const result = yield* dispatch(command);
+              const result = yield* dispatch(command).pipe(
+                Effect.tapError(() => cleanupFailedUploadedAttachments(clientCommand, command)),
+              );
               yield* ProjectCloneTracker.discardCloneForDeletedProject(projectClones, command);
               if (isProjectSettingsCommand && receipts.length === 0) {
                 const current = yield* settings.getSettings;

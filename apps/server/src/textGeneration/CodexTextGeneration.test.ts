@@ -241,7 +241,15 @@ it.layer(NodeServices.layer)("CodexTextGeneration", (it) => {
           yield* textGeneration.generateBranchName({
             cwd: process.cwd(),
             message: "Fix this visual issue.",
-            attachments: [{ type: "image", id: attachmentId }],
+            attachments: [
+              {
+                type: "image",
+                id: "legacy-550e8400-e29b-41d4-a716-446655440000-png",
+                name: "image.png",
+                mimeType: "image/png",
+                sizeBytes: 9,
+              },
+            ],
             modelSelection: DEFAULT_SELECTION,
           });
           const args = (yield* fileSystem.readFileString(argsPath)).split("\n");

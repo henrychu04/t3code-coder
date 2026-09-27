@@ -25,9 +25,7 @@ const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 2 * 60_000;
 const DEFAULT_SCP_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
-const REQUIRED_CODER_PROXY_FLAGS = [
-  "--no-version-warning",
-] as const;
+const REQUIRED_CODER_PROXY_FLAGS = ["--no-version-warning"] as const;
 const IMAGE_PATH_SENTINEL = "T3_CODER_IMAGE_PATH=";
 
 export type CoderClipboardImageExtension = "jpg" | "png" | "webp";
@@ -372,8 +370,9 @@ export function uploadCoderClipboardImageWithScp(input: {
   readonly scpExecutable?: string;
 }): Effect.Effect<string, CoderProcessError> {
   return Effect.gen(function* () {
-    const imageId = randomUUID();
-    const filename = `${imageId}.${input.extension}`;
+    // Upstream's pending-upload id, `pending-<uuid>-<ext>`, stored as `<id>.<ext>`. The workspace
+    // helper claims it into the thread when the message is sent.
+    const filename = `pending-${randomUUID()}-${input.extension}.${input.extension}`;
     const remotePath = `.t3-coder/attachments/${filename}.tmp`;
     const finalRemotePath = `.t3-coder/attachments/${filename}`;
     const upload = Effect.gen(function* () {

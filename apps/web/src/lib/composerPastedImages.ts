@@ -1,6 +1,8 @@
 import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import { collectDraftImageReferences, expandLongTextContexts } from "./composerInlineContext";
 import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import type { ChatImageAttachment } from "@t3tools/contracts";
+import type { StagedCoderImage } from "../coder/api";
 
 /** Image bytes and upload state belong to the browser's in-memory draft. */
 export type ComposerPastedImage = {
@@ -11,7 +13,11 @@ export type ComposerPastedImage = {
   | { readonly status: "queued" }
   | { readonly status: "uploading"; readonly progress: number }
   | { readonly status: "failed"; readonly error: string }
-  | { readonly status: "uploaded"; readonly path: string }
+  | {
+      readonly status: "uploaded";
+      readonly path: string;
+      readonly attachment: StagedCoderImage["attachment"];
+    }
 );
 
 export const EMPTY_PASTED_IMAGES: ReadonlyArray<ComposerPastedImage> = Object.freeze([]);
@@ -61,12 +67,15 @@ export function appendPastedImagesToPrompt(
   return [prompt, links.join(" ")].filter((part) => part.length > 0).join("\n\n");
 }
 
-/** Preserve display names without accepting them as upload or workspace paths. */
+/**
+ * Staged images referenced by the prompt, as the attachments the helper claims on send. Display
+ * names are sanitized; workspace reads always use the opaque staged id.
+ */
 export function pastedImageAttachmentsForIds(
   ids: readonly string[],
   images: ReadonlyArray<ComposerPastedImage>,
-) {
-  return ids.map((id) => {
+): ChatImageAttachment[] {
+  return ids.flatMap((id) => {
     const image = images.find(
       (candidate) =>
         candidate.status === "uploaded" &&
@@ -74,12 +83,14 @@ export function pastedImageAttachmentsForIds(
           id,
         ),
     );
-    const name = image?.file.name
-      .split(/[\\/]/)
-      .at(-1)
-      ?.replace(/[\x00-\x1f\x7f]/g, "")
-      .trim()
-      .slice(0, 255);
-    return { type: "image" as const, id, ...(name ? { name } : {}) };
+    if (image?.status !== "uploaded") return [];
+    const name =
+      image.file.name
+        .split(/[\\/]/)
+        .at(-1)
+        ?.replace(/[\x00-\x1f\x7f]/g, "")
+        .trim()
+        .slice(0, 255) || image.attachment.id;
+    return [{ type: "image" as const, ...image.attachment, name }];
   });
 }

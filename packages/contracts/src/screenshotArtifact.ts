@@ -5,7 +5,8 @@ import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 512 * 1024;
 
-export const ScreenshotArtifactId = TrimmedNonEmptyString.check(Schema.isMaxLength(64)).pipe(
+// Attachment reads share this id; upstream's thread-scoped attachment ids run up to 128 characters.
+export const ScreenshotArtifactId = TrimmedNonEmptyString.check(Schema.isMaxLength(128)).pipe(
   Schema.brand("ScreenshotArtifactId"),
 );
 export type ScreenshotArtifactId = typeof ScreenshotArtifactId.Type;

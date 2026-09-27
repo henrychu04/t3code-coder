@@ -1429,7 +1429,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
               messageId: command.message.messageId,
               role: "user",
               text: command.message.text,
-              ...(command.attachments === undefined ? {} : { attachments: command.attachments }),
+              attachments: command.message.attachments,
               ...(command.message.context !== undefined
                 ? { context: command.message.context }
                 : {}),
@@ -1454,7 +1454,6 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           ...(command.modelSelection !== undefined
             ? { modelSelection: command.modelSelection }
             : {}),
-          ...(command.attachments !== undefined ? { attachments: command.attachments } : {}),
           ...(command.titleSeed !== undefined ? { titleSeed: command.titleSeed } : {}),
           runtimeMode: targetThread.runtimeMode,
           interactionMode: targetThread.interactionMode,
@@ -1658,6 +1657,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
                 messageId: MessageId.make(`async-answer:${command.requestId}`),
                 role: "user",
                 text: replies.join("\n\n"),
+                attachments: [],
               },
             },
           ],

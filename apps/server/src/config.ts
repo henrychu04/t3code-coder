@@ -1,8 +1,11 @@
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+
+import { sweepStalePendingAttachments } from "./attachmentStore.ts";
 
 export interface ServerDerivedPaths {
   readonly stateDir: string;
@@ -65,6 +68,12 @@ export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerived
     ].map((directory) => fileSystem.makeDirectory(directory, { recursive: true })),
     { concurrency: "unbounded" },
   );
+
+  // Staged composer images that were never sent expire after a day, as upstream's do.
+  sweepStalePendingAttachments({
+    attachmentsDir: paths.attachmentsDir,
+    nowMs: yield* Clock.currentTimeMillis,
+  });
 });
 
 /** @public Service construction is part of the canonical Effect module API. */

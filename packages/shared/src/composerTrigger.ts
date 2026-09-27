@@ -42,8 +42,10 @@ export function serializeComposerFileLink(path: string): string {
 
 const MARKDOWN_LINK_DESTINATION_REGEX = /\]\(([^)\s]+)\)/gu;
 const REMOTE_LINK_DESTINATION_REGEX = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/iu;
+// Staged uploads are `pending-<uuid>-<ext>.<ext>`; earlier Coder builds wrote `<uuid>.<ext>`.
+// The id is the file name without its extension.
 const PASTED_IMAGE_ATTACHMENT_PATH_REGEX =
-  /\/\.t3-coder\/attachments\/([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp))$/iu;
+  /\/\.t3-coder\/attachments\/((?:pending-)?[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(?:-(?:jpg|png|webp))?)\.(?:jpg|png|webp)$/iu;
 
 /** Extracts opaque generated image ids from composer links without accepting a remote path. */
 export function extractComposerPastedImageAttachmentIds(text: string): ReadonlyArray<string> {

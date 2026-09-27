@@ -12,7 +12,12 @@ const image = {
   id: "image-one",
   status: "uploaded" as const,
   workspaceId: "workspace",
-  path: "/home/user/.t3-coder/attachments/11111111-1111-4111-8111-111111111111.png",
+  path: "/home/user/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-png.png",
+  attachment: {
+    id: "pending-11111111-1111-4111-8111-111111111111-png",
+    mimeType: "image/png" as const,
+    sizeBytes: 5,
+  },
   file: new File(["image"], "Screenshot.png", { type: "image/png" }),
 };
 afterEach(() => {
@@ -33,7 +38,7 @@ it("keeps images separate from edits and adds valid references only for sending"
   const outgoing = appendPastedImagesToPrompt(draft.prompt, draft.pastedImages!);
   expect(outgoing).toContain("More typing after upload\n\n");
   expect(extractComposerPastedImageAttachmentIds(outgoing)).toEqual([
-    "11111111-1111-4111-8111-111111111111.png",
+    "pending-11111111-1111-4111-8111-111111111111-png",
   ]);
   store.setPastedImages(ref, []);
   expect(appendPastedImagesToPrompt(draft.prompt, [])).toBe(draft.prompt);
@@ -72,12 +77,12 @@ it("keeps preview bytes in memory when an image-only draft is stashed and restor
   expect(usePromptStashStore.getState().entries).toEqual([]);
 });
 
-it("preserves image display names while references still use generated ids", () => {
-  const id = "11111111-1111-4111-8111-111111111111.png";
+it("builds staged image attachments with sanitized display names", () => {
+  const id = "pending-11111111-1111-4111-8111-111111111111-png";
   expect(pastedImageAttachmentsForIds([id], [image])).toEqual([
-    { type: "image", id, name: "Screenshot.png" },
+    { type: "image", id, name: "Screenshot.png", mimeType: "image/png", sizeBytes: 5 },
   ]);
-  expect(pastedImageAttachmentsForIds([id], [])).toEqual([{ type: "image", id }]);
+  expect(pastedImageAttachmentsForIds([id], [])).toEqual([]);
   expect(
     pastedImageAttachmentsForIds(
       [id],

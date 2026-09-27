@@ -47,11 +47,11 @@ describe("serializeComposerFileLink", () => {
 });
 
 describe("extractComposerPastedImageAttachmentIds", () => {
-  it("extracts and deduplicates generated attachment ids", () => {
-    const id = "550e8400-e29b-41d4-a716-446655440000.png";
+  it("extracts and deduplicates staged attachment ids", () => {
+    const id = "pending-550e8400-e29b-41d4-a716-446655440000-png";
     expect(
       extractComposerPastedImageAttachmentIds(
-        `[${id}](/home/dev/.t3-coder/attachments/${id}) [again](/home/dev/.t3-coder/attachments/${id})`,
+        `[image](/home/dev/.t3-coder/attachments/${id}.png) [again](/home/dev/.t3-coder/attachments/${id}.png)`,
       ),
     ).toEqual([id]);
   });
@@ -65,8 +65,8 @@ describe("extractComposerPastedImageAttachmentIds", () => {
   });
 
   it("rejects remote links that contain a workspace attachment-shaped path", () => {
-    const id = "550e8400-e29b-41d4-a716-446655440000.png";
-    const attachmentPath = `/home/dev/.t3-coder/attachments/${id}`;
+    const id = "pending-550e8400-e29b-41d4-a716-446655440000-png";
+    const attachmentPath = `/home/dev/.t3-coder/attachments/${id}.png`;
     expect(
       extractComposerPastedImageAttachmentIds(
         `[https](https://example.test${attachmentPath}) [host](//example.test${attachmentPath}) [file](file://${attachmentPath})`,

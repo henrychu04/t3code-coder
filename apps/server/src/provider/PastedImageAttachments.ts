@@ -5,11 +5,14 @@ import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import {
+  getProviderAttachmentLimitError,
+  isProviderSendTurnSupportedImageMimeType,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-  PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES,
-  type PastedImageAttachment,
+  type ChatAttachment,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+
+import { resolveAttachmentPath } from "../attachmentStore.ts";
 
 type PastedImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
@@ -27,31 +30,26 @@ export class PastedImageAttachmentError extends Error {
   }
 }
 
-const expectedMimeTypeByExtension: Readonly<Record<string, PastedImageMimeType>> = {
-  jpg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
-
 export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachment")(
-  function* (input: {
-    readonly attachmentsDir: string;
-    readonly attachment: PastedImageAttachment;
-  }) {
-    const id = input.attachment.id;
-    if (NodePath.basename(id) !== id) {
-      return yield* Effect.fail(
-        new PastedImageAttachmentError("Pasted image attachment id is invalid."),
-      );
-    }
-    const extension = NodePath.extname(id).slice(1).toLowerCase();
-    const expectedMimeType = expectedMimeTypeByExtension[extension];
-    if (!expectedMimeType) {
+  function* (input: { readonly attachmentsDir: string; readonly attachment: ChatAttachment }) {
+    const expectedMimeType = input.attachment.mimeType.toLowerCase();
+    if (
+      input.attachment.type !== "image" ||
+      !isProviderSendTurnSupportedImageMimeType(expectedMimeType)
+    ) {
       return yield* Effect.fail(
         new PastedImageAttachmentError("Pasted image attachment type is unsupported."),
       );
     }
-    const path = NodePath.join(input.attachmentsDir, id);
+    const path = resolveAttachmentPath({
+      attachmentsDir: input.attachmentsDir,
+      attachment: input.attachment,
+    });
+    if (!path || NodePath.dirname(path) !== NodePath.resolve(input.attachmentsDir)) {
+      return yield* Effect.fail(
+        new PastedImageAttachmentError("Pasted image attachment id is invalid."),
+      );
+    }
 
     const resolved = yield* Effect.tryPromise({
       try: async () => {
@@ -67,7 +65,7 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
           const bytes = await handle.readFile();
           const mimeType = detectImageMimeType(bytes);
           if (mimeType !== expectedMimeType) {
-            throw new Error("Pasted image attachment content does not match its filename.");
+            throw new Error("Pasted image attachment content does not match its declared type.");
           }
           return {
             path,
@@ -96,24 +94,21 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
 export const resolvePastedImageAttachments = Effect.fn("resolvePastedImageAttachments")(
   function* (input: {
     readonly attachmentsDir: string;
-    readonly attachments: ReadonlyArray<PastedImageAttachment>;
+    readonly attachments: ReadonlyArray<ChatAttachment>;
   }) {
-    const resolved: ResolvedPastedImageAttachment[] = [];
-    let totalBytes = 0;
+    const resolved: Array<ResolvedPastedImageAttachment & { readonly type: "image" }> = [];
     for (const attachment of input.attachments) {
-      const image = yield* resolvePastedImageAttachment({
-        attachmentsDir: input.attachmentsDir,
-        attachment,
-      });
-      totalBytes += image.sizeBytes;
-      if (totalBytes > PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES) {
-        return yield* Effect.fail(
-          new PastedImageAttachmentError(
-            "Images can total up to 80 MiB per message. Use smaller images or send fewer at once.",
-          ),
-        );
-      }
+      const image = {
+        type: "image" as const,
+        ...(yield* resolvePastedImageAttachment({
+          attachmentsDir: input.attachmentsDir,
+          attachment,
+        })),
+      };
       resolved.push(image);
+      // Legacy attachments carry no size, so bound the bytes actually read.
+      const limitError = getProviderAttachmentLimitError(resolved);
+      if (limitError) return yield* Effect.fail(new PastedImageAttachmentError(limitError));
     }
     return resolved;
   },

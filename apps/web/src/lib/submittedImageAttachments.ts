@@ -1,27 +1,38 @@
-import { ScreenshotArtifactId } from "@t3tools/contracts";
+import { ScreenshotArtifactId, type ChatAttachment } from "@t3tools/contracts";
 import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
 import type { ImagePreviewReference } from "../components/chat/ScreenshotArtifactsRow";
 
-/** Recognize only internally generated attachment references, never arbitrary paths. */
-export function submittedImageAttachments(text: string) {
-  const images: ImagePreviewReference[] = [];
-  const seen = new Set<string>();
+/**
+ * Removes links to internally generated attachment files from sent prompts; the images render
+ * from the message's attachments. Other links, including arbitrary paths, stay as written.
+ */
+export function stripSubmittedImageLinks(text: string): string {
+  let stripped = false;
   const visibleText = text.replace(/\[[^\]\n]*\]\([^\s)]+\)/g, (link) => {
-    const id = extractComposerPastedImageAttachmentIds(link)[0];
-    if (!id) return link;
-    if (!seen.has(id)) {
-      seen.add(id);
-      images.push({
-        id: ScreenshotArtifactId.make(id.replace(/\.[^.]+$/, "")),
-        name: `Image ${images.length + 1}`,
-        mimeType: id.endsWith(".png")
-          ? "image/png"
-          : id.endsWith(".webp")
-            ? "image/webp"
-            : "image/jpeg",
-      });
-    }
+    if (!extractComposerPastedImageAttachmentIds(link)[0]) return link;
+    stripped = true;
     return "";
   });
-  return { text: images.length ? visibleText.trim() : text, images };
+  return stripped ? visibleText.trim() : text;
+}
+
+/** The message's image attachments, read by id through the helper's bounded chunk RPC. */
+export function messageImageReferences(
+  attachments: ReadonlyArray<ChatAttachment> | undefined,
+): ImagePreviewReference[] {
+  return (attachments ?? []).flatMap((attachment) =>
+    attachment.type === "image" &&
+    (attachment.mimeType === "image/png" ||
+      attachment.mimeType === "image/jpeg" ||
+      attachment.mimeType === "image/webp")
+      ? [
+          {
+            id: ScreenshotArtifactId.make(attachment.id),
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            ...(attachment.sizeBytes > 0 ? { sizeBytes: attachment.sizeBytes } : {}),
+          },
+        ]
+      : [],
+  );
 }

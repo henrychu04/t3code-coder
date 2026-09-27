@@ -237,18 +237,28 @@ export async function updateCoderWorkspace(workspaceId: string): Promise<void> {
   });
 }
 
+/** A composer image staged in the workspace, ready to be claimed when the message is sent. */
+export interface StagedCoderImage {
+  readonly path: string;
+  readonly attachment: {
+    readonly id: string;
+    readonly mimeType: "image/png" | "image/jpeg" | "image/webp";
+    readonly sizeBytes: number;
+  };
+}
+
 export async function uploadCoderClipboardImage(
   workspaceId: string,
   file: File,
   options?: { signal?: AbortSignal; onProgress?: (progress: number) => void },
-): Promise<string> {
+): Promise<StagedCoderImage> {
   if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
     throw new Error("Clipboard image must be PNG, JPEG, or WebP.");
   }
   if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
     throw new Error("Image exceeds the 10 MiB limit.");
   }
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<StagedCoderImage>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abort = () => {
       xhr.abort();
@@ -273,11 +283,20 @@ export async function uploadCoderClipboardImage(
         return;
       }
       try {
-        const path: unknown = JSON.parse(xhr.responseText).path;
-        if (typeof path !== "string" || !path.startsWith("/")) {
+        const body: unknown = JSON.parse(xhr.responseText);
+        const staged = body as Partial<StagedCoderImage> | null;
+        const attachment = staged?.attachment;
+        if (
+          typeof staged?.path !== "string" ||
+          !staged.path.startsWith("/") ||
+          typeof attachment?.id !== "string" ||
+          !/^pending-[0-9a-f-]{36}-(?:jpg|png|webp)$/.test(attachment.id) ||
+          !["image/png", "image/jpeg", "image/webp"].includes(attachment.mimeType ?? "") ||
+          typeof attachment.sizeBytes !== "number"
+        ) {
           throw new Error("Clipboard image upload returned an invalid workspace path.");
         }
-        resolve(path);
+        resolve({ path: staged.path, attachment });
       } catch {
         reject(new Error("Clipboard image upload returned an invalid workspace path."));
       }

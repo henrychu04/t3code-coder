@@ -44,7 +44,10 @@ import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { ProjectImageLink } from "./ProjectImageLink";
 import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import { ScreenshotArtifactsRow } from "./ScreenshotArtifactsRow";
-import { submittedImageAttachments } from "../../lib/submittedImageAttachments";
+import {
+  messageImageReferences,
+  stripSubmittedImageLinks,
+} from "../../lib/submittedImageAttachments";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
@@ -1834,8 +1837,9 @@ function QueuedMessageTimelineRow({
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const pastedImages = submittedImageAttachments(row.message.text);
-  const displayedUserMessage = deriveDisplayedUserMessageState(pastedImages.text);
+  const displayedUserMessage = deriveDisplayedUserMessageState(
+    stripSubmittedImageLinks(row.message.text),
+  );
   const terminalContexts = displayedUserMessage.contexts;
   const revertTurnCount = row.revertTurnCount;
 
@@ -1846,7 +1850,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         <ScreenshotArtifactsRow
           key={ctx.activeThreadEnvironmentId}
           environmentId={ctx.activeThreadEnvironmentId}
-          artifacts={pastedImages.images}
+          artifacts={messageImageReferences(row.message.attachments)}
           source="attachment"
         />
         <CollapsibleUserMessageBody

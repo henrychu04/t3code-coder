@@ -95,6 +95,7 @@ it.layer(NodeServices.layer)("message context plumbing", (it) => {
             role: "user",
             text: "Use [$pinchtab](t3-context://v1/skill/ctx_1)",
             context,
+            attachments: [],
           },
           runtimeMode: "full-access",
           interactionMode: "default",

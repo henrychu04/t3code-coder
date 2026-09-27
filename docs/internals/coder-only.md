@@ -273,9 +273,10 @@ no network listener; Codex, Claude, and user-initiated terminal commands remain 
 General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts
 signature-validated PNG, JPEG, or WebP content up to 10 MiB, stages it in an OS temporary directory,
-and copies it through helper-scoped SCP to a generated path beneath
-`$HOME/.t3-coder/attachments`. It then deletes the local staging file and returns the generated path
-to the draft's in-memory attachment state. The browser queues at most three concurrent image
+and copies it through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as upstream's
+pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and returns
+the workspace path plus the pending attachment's id, media type, and byte size to the draft's
+in-memory attachment state. The browser queues at most three concurrent image
 transfers per workspace, matching upstream's per-environment limit. Source images up to 50 MiB
 are prepared with main's byte-limit compression algorithm before transfer: images at or below
 10 MiB pass through unchanged, and larger images are resized and re-encoded to fit. Preparation
@@ -288,12 +289,21 @@ for that destination and cancels any old transfer. The browser retains failed im
 retry, requeues them when their workspace reconnects, and aborts a transfer when its draft attachment is removed. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
-workspace copy remains pending until SCP and finalization complete. Paths are added to message text
-at send time; the UI replaces generated attachment references with durable workspace-backed previews. The browser may additionally submit at most 100 opaque generated
-image ids—never a caller-supplied path. The helper resolves each id only beneath the attachment
-directory, rejects symlinks, size violations, and signature/extension mismatches, bounds one
-message's images to 80 MiB in total, and sends the validated bytes to Codex as native image input. The same validated images may be passed by fixed
-path to the workspace Codex process that generates the initial branch name and thread title.
+workspace copy remains pending until SCP and finalization complete. A sent message carries
+upstream's image attachments—at most 100, never a caller-supplied path or inline data URL, and
+never a file attachment. As upstream does, the helper claims each pending upload into a
+thread-scoped copy when it accepts the message; Coder reads the staged file once through a
+no-follow handle, requires its exact declared size and a PNG, JPEG, or WebP signature matching the
+declared type, and writes those bytes exclusively to the claimed path. A failed dispatch removes
+its claimed copies; unsent pending uploads expire after a day. Provider input resolves attachments
+only beneath the attachment directory, rejects symlinks, size violations, and signature
+mismatches, bounds one message's images to 80 MiB in total, and sends the validated bytes to Codex
+as native image input and to Claude as image content blocks. The same validated images may be
+passed by fixed path to the workspace Codex process that generates the initial branch name and
+thread title. Images Coder stored before adopting upstream's attachment ids (`<uuid>.<ext>`)
+decode as `legacy-<uuid>-<ext>` attachments that resolve to their original files; they are never
+claimable. The timeline previews a message's image attachments by id through the bounded chunk
+read; rewinding stages fresh copies of them in the draft.
 
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
 filesystem API. The browser supplies the active project root plus a project-relative path to the
