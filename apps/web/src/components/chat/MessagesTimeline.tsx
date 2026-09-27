@@ -1,4 +1,11 @@
-import { PULL_REQUEST_CHIP_KINDS, PullRequestChip } from "../contextChipParts";
+import {
+  ContextChipPopover as UserMessageContextPopover,
+  ContextChipShell,
+  ImageChipButton,
+  PULL_REQUEST_CHIP_KINDS,
+  PullRequestChip,
+  UnresolvedChip,
+} from "../contextChipParts";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
@@ -57,7 +64,40 @@ import {
   type ScreenshotArtifactReference,
   type ServerProviderSkill,
   type TurnId,
+  COMPOSER_CONTEXT_KINDS,
+  type ComposerContextId,
+  type KnownComposerContextRecord,
 } from "@t3tools/contracts";
+import {
+  collectComposerContextReferences,
+  formatComposerContextReference,
+  replaceComposerContextReferences,
+} from "@t3tools/shared/composerContextReferences";
+import {
+  COMPOSER_CONTEXT_CLIPBOARD_MIME,
+  encodeComposerContextClipboardHtml,
+  encodeComposerContextFragment,
+} from "@t3tools/shared/composerContextClipboard";
+import {
+  asKnownContextRecord,
+  isPullRequestSummaryContext,
+  pullRequestContextDisplayState,
+  pullRequestContextKindLabel,
+  resolveUserMessageContext,
+  reviewCommentContextLabel,
+  selectedMessageContextFragment,
+} from "~/lib/composerContextRecords";
+import { formatAttachmentSize } from "~/lib/attachmentDisplay";
+import { isImageAttachment } from "../../types";
+import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
+import { chatMarkdownClipboardPayload } from "../../markdown-clipboard";
+import { ContextChip, ContextChipLabel, type ContextChipKind } from "../ContextChip";
+import { createContextPresentationRegistry } from "../contextPresentationRegistry";
+import type { ChatMarkdownContextReference } from "../ChatMarkdown";
+import { PierreEntryIcon } from "./PierreEntryIcon";
+import { inferEntryKindFromPath } from "../../pierre-icons";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { commandProgramName } from "@t3tools/client-runtime/work-log/commandLabel";
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
@@ -184,25 +224,14 @@ import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
-
-import {
-  buildInlineTerminalContextText,
-  formatInlineTerminalContextLabel,
-  textContainsInlineTerminalContextLabels,
-} from "./userMessageTerminalContexts";
-import { SkillInlineText } from "./SkillInlineText";
+import { SkillChipIcon, SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
   formatReviewCommentFence,
-  parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -1753,12 +1782,7 @@ function QueuedMessageTimelineRow({
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
         {text.length > 0 ? (
-          <UserMessageBody
-            text={text}
-            terminalContexts={[]}
-            skills={ctx.skills}
-            markdownCwd={ctx.markdownCwd}
-          />
+          <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
         ) : null}
         {attachmentCount > 0 || contextCount > 0 ? (
           <div className={cn("text-secondary-label text-xs", text.length > 0 && "mt-1.5")}>
@@ -1835,30 +1859,161 @@ function QueuedMessageTimelineRow({
   );
 }
 
+// Screen readers skim a transcript by heading, so every message announces its
+// author as one. The thread title in ChatHeader is an <h2>; headings written
+// inside a message are exposed below this level. Visually hidden and excluded
+// from selection so sighted users and copied text are unaffected.
+function MessageAuthorHeading({ children }: { children: string }) {
+  return <h3 className="sr-only select-none">{children}</h3>;
+}
+
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const displayedUserMessage = deriveDisplayedUserMessageState(
-    stripSubmittedImageLinks(row.message.text),
+  const parentNavigation = use(ArtifactNavigationContext);
+  const [imageRequest, setImageRequest] = useState<ReturnType<
+    typeof createArtifactNavigationRequest
+  > | null>(null);
+  // Coder messages sent before context records carried links to their pasted image files.
+  const resolvedContext = useMemo(
+    () =>
+      resolveUserMessageContext(
+        row.message.context
+          ? row.message
+          : { text: stripSubmittedImageLinks(row.message.text), context: undefined },
+      ),
+    [row.message],
   );
-  const terminalContexts = displayedUserMessage.contexts;
+  const imageReferences = useMemo(
+    () => messageImageReferences(row.message.attachments),
+    [row.message.attachments],
+  );
+  const unknownAttachments = (row.message.attachments ?? []).filter(
+    (attachment) => !isImageAttachment(attachment),
+  );
+  const hasImageChips = collectComposerContextReferences(resolvedContext.text).some(
+    (occurrence) => occurrence.kind === "image",
+  );
+  const chipImages = useScreenshotArtifacts(
+    ctx.activeThreadEnvironmentId,
+    imageReferences,
+    hasImageChips,
+    "attachment",
+  );
+  const imageNavigation = useMemo(
+    () => (parentNavigation ? { ...parentNavigation, request: imageRequest } : null),
+    [parentNavigation, imageRequest],
+  );
   const revertTurnCount = row.revertTurnCount;
+  const contextClipboardFragment =
+    resolvedContext.records.length === 0
+      ? null
+      : encodeComposerContextFragment({
+          version: 1,
+          source: {
+            environmentId: ctx.activeThreadEnvironmentId,
+            ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
+            messageId: row.message.id,
+          },
+          records: resolvedContext.records,
+        });
+  // Chips inside the selection copy as their links (data-markdown-copy); the structured
+  // fragment rides beside so a paste into a draft brings the payloads along. Only records
+  // for chips that are actually inside the selection travel, so copying prose next to an
+  // image never starts importing that image somewhere else.
+  const onBodyCopyCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (resolvedContext.records.length === 0 || !event.clipboardData) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    const copiedMarkdown: string[] = [];
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      const container = document.createElement("div");
+      container.appendChild(selection.getRangeAt(index).cloneContents());
+      for (const element of container.querySelectorAll("[data-markdown-copy]")) {
+        copiedMarkdown.push(element.getAttribute("data-markdown-copy") ?? "");
+      }
+    }
+    const fragment = selectedMessageContextFragment({
+      markdown: copiedMarkdown.join("\n"),
+      records: resolvedContext.records,
+      environmentId: ctx.activeThreadEnvironmentId,
+      ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
+      messageId: row.message.id,
+    });
+    if (!fragment) return;
+    // Claim the copy: without preventDefault the browser default overwrites the
+    // custom MIME type. The default content must then be written back explicitly.
+    const payload = chatMarkdownClipboardPayload(selection);
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", payload?.text ?? selection.toString());
+    if (payload) {
+      event.clipboardData.setData(
+        "text/html",
+        encodeComposerContextClipboardHtml(payload.text, fragment, payload.html),
+      );
+    }
+    event.clipboardData.setData(COMPOSER_CONTEXT_CLIPBOARD_MIME, fragment);
+  };
+  const renderContextReference = useCallback(
+    (reference: ChatMarkdownContextReference) => {
+      const record = asKnownContextRecord(resolvedContext.recordsById.get(reference.contextId));
+      const image =
+        record?.kind === "image"
+          ? (imageReferences.find((candidate) => candidate.id === record.attachmentId) ?? null)
+          : null;
+      const loaded = image ? chipImages[image.id] : undefined;
+      return (
+        <UserMessageContextReferenceChip
+          reference={reference}
+          record={record}
+          image={
+            image
+              ? {
+                  id: image.id,
+                  previewUrl: loaded?.status === "loaded" ? loaded.url : undefined,
+                }
+              : null
+          }
+          onExpandImage={(imageId) => setImageRequest(createArtifactNavigationRequest(imageId))}
+        />
+      );
+    },
+    [resolvedContext.recordsById, imageReferences, chipImages],
+  );
 
   return (
     <div className="group flex flex-col items-end gap-1">
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-        <h3 className="sr-only select-none">You</h3>
-        <ScreenshotArtifactsRow
-          key={ctx.activeThreadEnvironmentId}
-          environmentId={ctx.activeThreadEnvironmentId}
-          artifacts={messageImageReferences(row.message.attachments)}
-          source="attachment"
-        />
-        <CollapsibleUserMessageBody
-          text={displayedUserMessage.visibleText}
-          terminalContexts={terminalContexts}
-          skills={ctx.skills}
-          markdownCwd={ctx.markdownCwd}
-        />
+        <MessageAuthorHeading>You</MessageAuthorHeading>
+        <ArtifactNavigationContext value={imageNavigation}>
+          <ScreenshotArtifactsRow
+            key={ctx.activeThreadEnvironmentId}
+            environmentId={ctx.activeThreadEnvironmentId}
+            artifacts={imageReferences}
+            source="attachment"
+          />
+        </ArtifactNavigationContext>
+        {unknownAttachments.length > 0 ? (
+          <div className="mb-2 flex flex-col gap-1">
+            {unknownAttachments.map((attachment) => (
+              <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                <PierreEntryIcon
+                  pathValue={attachment.name}
+                  kind="file"
+                  theme={ctx.resolvedTheme}
+                />
+                <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div onCopyCapture={onBodyCopyCapture}>
+          <CollapsibleUserMessageBody
+            text={resolvedContext.text}
+            renderContextReference={renderContextReference}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        </div>
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -1874,8 +2029,24 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+            {resolvedContext.text && (
+              <MessageCopyButton
+                // Structured paste needs the canonical links to retain their positions.
+                text={
+                  contextClipboardFragment
+                    ? resolvedContext.text
+                    : replaceComposerContextReferences(
+                        resolvedContext.text,
+                        (reference) => reference.label,
+                      )
+                }
+                {...(contextClipboardFragment
+                  ? {
+                      extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+                    }
+                  : {})}
+                variant="ghost"
+              />
             )}
           </div>
         </div>
@@ -2959,21 +3130,6 @@ function AssistantChangedFilesSectionInner({
 // Leaf components
 // ---------------------------------------------------------------------------
 
-const UserMessageTerminalContextInlineLabel = memo(
-  function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
-    const range = /^(.*?)\s+line(?:s)?\s+(\d+)(?:-(\d+))?$/i.exec(props.context.header);
-    return (
-      <TerminalContextInlineChip
-        label={props.context.header}
-        terminalLabel={range?.[1] ?? props.context.header}
-        {...(range ? { lineStart: Number(range[2]), lineEnd: Number(range[3] ?? range[2]) } : {})}
-        text={props.context.body}
-        detailsMode="popover"
-      />
-    );
-  },
-);
-
 /** Collapsed thought previews read as one line of plain text, not rendered markdown. */
 function remarkThoughtPreview(fallback: string) {
   return (tree: Root) => {
@@ -2997,6 +3153,266 @@ function remarkThoughtPreview(fallback: string) {
   };
 }
 
+function UserMessageMentionChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "mention" }>;
+  copyMarkdown: string;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <ContextChip
+            kind="mention"
+            render={<button type="button" />}
+            aria-label={`Preview ${props.record.path}`}
+            data-markdown-copy={props.copyMarkdown}
+            onClick={() => {
+              if (ctx.threadRef)
+                useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
+            }}
+          >
+            <PierreEntryIcon
+              pathValue={props.record.path}
+              kind={inferEntryKindFromPath(props.record.path)}
+              theme={ctx.resolvedTheme}
+            />
+            <ContextChipLabel>{props.record.label}</ContextChipLabel>
+          </ContextChip>
+        }
+      />
+      <TooltipPopup>{props.record.path}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function UserMessageContextChip(props: {
+  icon: ReactNode;
+  label: string;
+  kindLabel?: string;
+  copyMarkdown: string;
+  tooltip?: string;
+  kind: ContextChipKind;
+}) {
+  return (
+    <ContextChipShell
+      kind={props.kind}
+      icon={props.icon}
+      label={props.label}
+      aria-label={props.kindLabel ? `${props.kindLabel}, ${props.label}` : undefined}
+      data-markdown-copy={props.copyMarkdown}
+      tooltip={props.tooltip}
+    />
+  );
+}
+
+function UserMessagePullRequestContextChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "review-comment" }>;
+  copyMarkdown: string;
+  kind: ContextChipKind;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const openPullRequest = useOpenPrLink(ctx.threadRef ?? undefined);
+  const metadata = props.record.pullRequest;
+  if (metadata === undefined) return null;
+  return (
+    <PullRequestChip
+      metadata={metadata}
+      environmentId={ctx.activeThreadEnvironmentId}
+      label={reviewCommentContextLabel(props.record)}
+      kindLabel={pullRequestContextKindLabel(props.record)}
+      kind={props.kind}
+      copyMarkdown={props.copyMarkdown}
+      onOpen={openPullRequest}
+    />
+  );
+}
+
+/** A submitted image, previewed by id through the helper's bounded chunk read. */
+interface UserMessageImageChipSource {
+  id: string;
+  previewUrl: string | undefined;
+}
+
+interface UserMessageContextRenderContext {
+  reference: ChatMarkdownContextReference;
+  image: UserMessageImageChipSource | null;
+  copyMarkdown: string;
+  onExpandImage: (imageId: string) => void;
+}
+
+function UnavailableUserMessageContextChip(props: UserMessageContextRenderContext) {
+  return (
+    <UnresolvedChip
+      label={props.reference.label}
+      copyMarkdown={props.copyMarkdown}
+      tooltip="This context is no longer available."
+    />
+  );
+}
+
+// Coder sends only image attachments and never produces browser element or preview
+// annotation context, so those kinds and file records render as unavailable chips.
+const userMessageContextPresentationRegistry = createContextPresentationRegistry<
+  KnownComposerContextRecord,
+  UserMessageContextRenderContext,
+  ReactNode
+>({
+  requiredKinds: COMPOSER_CONTEXT_KINDS,
+  handlers: [
+    {
+      kind: "mention",
+      canRender: (record) => record.kind === "mention",
+      render: (record, context) =>
+        record.kind === "mention" ? (
+          <UserMessageMentionChip record={record} copyMarkdown={context.copyMarkdown} />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "skill",
+      canRender: (record) => record.kind === "skill",
+      render: (record, context) =>
+        record.kind === "skill" ? (
+          <UserMessageContextChip
+            icon={<SkillChipIcon />}
+            label={record.label || record.name}
+            kindLabel="Skill"
+            tooltip={`$${record.name}`}
+            copyMarkdown={context.copyMarkdown}
+            kind="skill"
+          />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "image",
+      canRender: (record, context) => record.kind === "image" && context.image !== null,
+      render: (record, context) => {
+        if (record.kind !== "image" || context.image === null) {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        const image = context.image;
+        return (
+          <ImageChipButton
+            name={record.name}
+            previewUrl={image.previewUrl}
+            size={formatAttachmentSize(record.sizeBytes)}
+            data-markdown-copy={context.copyMarkdown}
+            onClick={() => context.onExpandImage(image.id)}
+          />
+        );
+      },
+    },
+    {
+      kind: "file",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+    {
+      kind: "terminal",
+      canRender: (record) => record.kind === "terminal",
+      render: (record, context, definition) =>
+        record.kind === "terminal" ? (
+          <span data-markdown-copy={context.copyMarkdown}>
+            <TerminalContextInlineChip
+              label={record.label}
+              terminalLabel={record.terminalLabel}
+              lineStart={record.lineStart}
+              lineEnd={record.lineEnd}
+              text={record.text}
+              detailsMode={definition.capabilities.details}
+            />
+          </span>
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "element",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+    {
+      kind: "review-comment",
+      canRender: (record) => record.kind === "review-comment",
+      render: (record, context) => {
+        if (record.kind !== "review-comment") {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        const isPullRequest = isPullRequestSummaryContext(record);
+        const label = reviewCommentContextLabel(record);
+        const kindLabel = isPullRequest ? pullRequestContextKindLabel(record) : "Review comment";
+        const pullRequestState = pullRequestContextDisplayState(record) ?? "unknown";
+        if (isPullRequest && record.pullRequest !== undefined) {
+          return (
+            <UserMessagePullRequestContextChip
+              record={record}
+              copyMarkdown={context.copyMarkdown}
+              kind={PULL_REQUEST_CHIP_KINDS[pullRequestState]}
+            />
+          );
+        }
+        return (
+          <UserMessageContextPopover
+            copyMarkdown={context.copyMarkdown}
+            accessibleLabel={`${kindLabel}, ${label}${record.pullRequest ? `, ${record.pullRequest.title}` : ""}`}
+            kind={isPullRequest ? PULL_REQUEST_CHIP_KINDS[pullRequestState] : "review-comment"}
+            icon={isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
+            label={label}
+          >
+            <UserMessageReviewCommentCard
+              comment={{
+                id: record.contextId,
+                sectionId: record.sectionId,
+                sectionTitle: record.sectionTitle,
+                filePath: record.filePath,
+                startIndex: record.startIndex,
+                endIndex: record.endIndex,
+                rangeLabel: record.rangeLabel,
+                text: record.text,
+                diff: record.diff,
+                ...(record.fenceLanguage !== undefined
+                  ? { fenceLanguage: record.fenceLanguage }
+                  : {}),
+                ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+              }}
+            />
+          </UserMessageContextPopover>
+        );
+      },
+    },
+    {
+      kind: "preview-annotation",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+  ],
+  fallback: (_kind, _record, context) => <UnavailableUserMessageContextChip {...context} />,
+});
+
+/** One inline context chip in a sent message, dispatched by the shared presentation registry. */
+function UserMessageContextReferenceChip(props: {
+  reference: ChatMarkdownContextReference;
+  record: KnownComposerContextRecord | undefined;
+  image: UserMessageImageChipSource | null;
+  onExpandImage: (imageId: string) => void;
+}) {
+  const copyMarkdown = formatComposerContextReference({
+    kind: props.reference.kind,
+    contextId: props.reference.contextId as ComposerContextId,
+    label: props.reference.label,
+  });
+  return userMessageContextPresentationRegistry.render(props.reference.kind, props.record, {
+    reference: props.reference,
+    image: props.image,
+    copyMarkdown,
+    onExpandImage: props.onExpandImage,
+  });
+}
+
 const MAX_COLLAPSED_USER_MESSAGE_LINES = 8;
 const MAX_COLLAPSED_USER_MESSAGE_LENGTH = 600;
 const COLLAPSED_USER_MESSAGE_FADE_HEIGHT_REM = 1.75;
@@ -3015,13 +3431,13 @@ function shouldCollapseUserMessage(text: string): boolean {
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
+  renderContextReference: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
   footer?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasVisibleBody = props.text.trim().length > 0 || props.terminalContexts.length > 0;
+  const hasVisibleBody = props.text.trim().length > 0;
   const canCollapse = hasVisibleBody && shouldCollapseUserMessage(props.text);
   const isCollapsed = canCollapse && !expanded;
 
@@ -3045,7 +3461,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
         >
           <UserMessageBody
             text={props.text}
-            terminalContexts={props.terminalContexts}
+            renderContextReference={props.renderContextReference}
             skills={props.skills}
             markdownCwd={props.markdownCwd}
           />
@@ -3083,167 +3499,16 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
+  renderContextReference?: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
-  const renderInlineMarkdownSegment = (text: string, key: string) => {
-    const leadingWhitespace = /^\s+/.exec(text)?.[0] ?? "";
-    const textWithoutLeadingWhitespace = text.slice(leadingWhitespace.length);
-    const trailingWhitespace = /\s+$/.exec(textWithoutLeadingWhitespace)?.[0] ?? "";
-    const content = textWithoutLeadingWhitespace.slice(
-      0,
-      textWithoutLeadingWhitespace.length - trailingWhitespace.length,
-    );
-
-    return (
-      <Fragment key={key}>
-        {leadingWhitespace ? <span aria-hidden="true">{leadingWhitespace}</span> : null}
-        {content ? (
-          <ChatMarkdown
-            headingLevelOffset={3}
-            text={content}
-            cwd={props.markdownCwd}
-            threadRef={ctx.threadRef ?? undefined}
-            skills={props.skills}
-            className="text-message-foreground"
-            lineBreaks
-            parseRawHtml={false}
-          />
-        ) : null}
-        {trailingWhitespace ? <span aria-hidden="true">{trailingWhitespace}</span> : null}
-      </Fragment>
-    );
-  };
-
-  const reviewCommentSegments = parseReviewCommentMessageSegments(props.text);
-  if (reviewCommentSegments.some((segment) => segment.kind === "review-comment")) {
-    return (
-      <div className="space-y-3 text-message-foreground text-sm leading-relaxed">
-        {reviewCommentSegments.map((segment) =>
-          segment.kind === "text" ? (
-            segment.text.trim().length > 0 ? (
-              <div key={segment.id} className="wrap-break-word">
-                <ChatMarkdown
-                  headingLevelOffset={3}
-                  text={segment.text.trim()}
-                  cwd={props.markdownCwd}
-                  threadRef={ctx.threadRef ?? undefined}
-                  skills={props.skills}
-                  className="text-message-foreground"
-                  lineBreaks
-                  parseRawHtml={false}
-                />
-              </div>
-            ) : null
-          ) : (
-            <UserMessageReviewCommentCard key={segment.comment.id} comment={segment.comment} />
-          ),
-        )}
-      </div>
-    );
-  }
-
-  if (props.terminalContexts.length > 0) {
-    const hasEmbeddedInlineLabels = textContainsInlineTerminalContextLabels(
-      props.text,
-      props.terminalContexts,
-    );
-    const inlinePrefix = buildInlineTerminalContextText(props.terminalContexts);
-    const inlineNodes: ReactNode[] = [];
-
-    if (hasEmbeddedInlineLabels) {
-      let cursor = 0;
-
-      for (const context of props.terminalContexts) {
-        const label = formatInlineTerminalContextLabel(context.header);
-        const matchIndex = props.text.indexOf(label, cursor);
-        if (matchIndex === -1) {
-          inlineNodes.length = 0;
-          break;
-        }
-        if (matchIndex > cursor) {
-          inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor, matchIndex),
-              `user-terminal-context-inline-before:${context.header}:${cursor}`,
-            ),
-          );
-        }
-        inlineNodes.push(
-          <UserMessageTerminalContextInlineLabel
-            key={`user-terminal-context-inline:${context.header}`}
-            context={context}
-          />,
-        );
-        cursor = matchIndex + label.length;
-      }
-
-      if (inlineNodes.length > 0) {
-        if (cursor < props.text.length) {
-          inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor),
-              `user-message-terminal-context-inline-rest:${cursor}`,
-            ),
-          );
-        }
-
-        return (
-          <div className="whitespace-pre-wrap wrap-break-word text-message-foreground text-sm leading-relaxed">
-            {inlineNodes}
-          </div>
-        );
-      }
-    }
-
-    for (const context of props.terminalContexts) {
-      inlineNodes.push(
-        <UserMessageTerminalContextInlineLabel
-          key={`user-terminal-context-inline:${context.header}`}
-          context={context}
-        />,
-      );
-      inlineNodes.push(
-        <span key={`user-terminal-context-inline-space:${context.header}`} aria-hidden="true">
-          {" "}
-        </span>,
-      );
-    }
-
-    if (props.text.length > 0) {
-      inlineNodes.push(
-        <ChatMarkdown
-          headingLevelOffset={3}
-          key="user-message-terminal-context-inline-text"
-          text={props.text}
-          cwd={props.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          skills={props.skills}
-          className="text-message-foreground"
-          lineBreaks
-          parseRawHtml={false}
-        />,
-      );
-    } else if (inlinePrefix.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="whitespace-pre-wrap wrap-break-word text-message-foreground text-sm leading-relaxed">
-        {inlineNodes}
-      </div>
-    );
-  }
-
   if (props.text.length === 0) {
     return null;
   }
-
   return (
     <ChatMarkdown
-      headingLevelOffset={3}
       text={props.text}
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
@@ -3251,30 +3516,14 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       className="text-message-foreground"
       lineBreaks
       parseRawHtml={false}
+      renderContextReference={props.renderContextReference}
+      headingLevelOffset={MESSAGE_HEADING_LEVEL}
     />
   );
 });
 
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const ctx = use(TimelineRowCtx);
-  const openPullRequest = useOpenPrLink(ctx.threadRef ?? undefined);
-  if (comment.pullRequest) {
-    const metadata = comment.pullRequest;
-    return (
-      <PullRequestChip
-        metadata={metadata}
-        environmentId={ctx.threadRef?.environmentId ?? null}
-        label={`!${metadata.number}`}
-        kindLabel="merge request"
-        kind={
-          PULL_REQUEST_CHIP_KINDS[
-            metadata.state === "open" && metadata.isDraft ? "draft" : metadata.state
-          ]
-        }
-        onOpen={openPullRequest}
-      />
-    );
-  }
   const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),
@@ -3298,7 +3547,6 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
       )}
       {fenceLanguage !== "diff" && comment.diff.trim().length > 0 && (
         <ChatMarkdown
-          headingLevelOffset={3}
           text={formatReviewCommentFence(fenceLanguage, comment.diff)}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
@@ -3306,19 +3554,22 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
           className="text-message-foreground"
         />
       )}
-      {renderablePatch?.kind === "files" &&
-        renderablePatch.files.map((fileDiff) => (
-          <FileDiff
-            key={resolveFileDiffPath(fileDiff)}
-            fileDiff={fileDiff}
-            options={{
-              collapsed: false,
-              diffStyle: "unified",
-              theme: resolveDiffThemeName(ctx.resolvedTheme),
-              preferredHighlighter: PREFERRED_HIGHLIGHTER,
-            }}
-          />
-        ))}
+      {renderablePatch?.kind === "files" && (
+        <DiffWorkerPoolProvider>
+          {renderablePatch.files.map((fileDiff) => (
+            <FileDiff
+              key={resolveFileDiffPath(fileDiff)}
+              fileDiff={fileDiff}
+              options={{
+                collapsed: false,
+                diffStyle: "unified",
+                theme: resolveDiffThemeName(ctx.resolvedTheme),
+                preferredHighlighter: PREFERRED_HIGHLIGHTER,
+              }}
+            />
+          ))}
+        </DiffWorkerPoolProvider>
+      )}
       {renderablePatch?.kind === "raw" && (
         <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 text-xs">
           {renderablePatch.text}

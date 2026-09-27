@@ -314,7 +314,9 @@ through upstream's projection. Coder omits upstream's preview annotations, eleme
 SnapShot frames, video attachments, and non-image file attachments. Rewinding and restoring queued
 messages read images back through the bounded chunk read. The composer's provider refresh action
 uses upstream's `server.refreshProviders` RPC over the existing stdio stream, without upstream's
-remote model-manifest or usage-limit refreshes.
+remote model-manifest or usage-limit refreshes. The timeline renders sent context as upstream's inline chips; messages sent
+before context records are upgraded in memory by upstream's legacy converter, and their links to
+pasted image files are hidden because the images render from the message's attachments.
 
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
 filesystem API. The browser supplies the active project root plus a project-relative path to the

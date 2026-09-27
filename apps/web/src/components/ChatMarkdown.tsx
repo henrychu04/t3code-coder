@@ -5,6 +5,7 @@ import { toHtml } from "hast-util-to-html";
 import { rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
 import { ProjectImageLink, isImageFilePath } from "./chat/ProjectImageLink";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
+import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { defaultUrlTransform } from "react-markdown";
 import { GitHubIcon } from "./Icons";
@@ -115,6 +116,12 @@ import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsi
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 
+export interface ChatMarkdownContextReference {
+  kind: string;
+  contextId: string;
+  label: string;
+}
+
 interface ChatMarkdownProps {
   readonly text: string;
   /** Used only to resolve contained project-relative Files links. */
@@ -132,6 +139,10 @@ interface ChatMarkdownProps {
   readonly lineBreaks?: boolean;
   readonly parseRawHtml?: boolean;
   readonly extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+  /** Renders a `t3-context://` link as a chip; without it the link shows its label as text. */
+  readonly renderContextReference?:
+    | ((reference: ChatMarkdownContextReference) => ReactNode)
+    | undefined;
   /** Append a prompt that invokes a newly created artifact-template skill. */
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
 }
@@ -229,8 +240,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation", "file"],
-    src: [...(defaultSchema.protocols?.src ?? []), "file"],
+    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation", "file", "t3-context"],
+    src: [...(defaultSchema.protocols?.src ?? []), "file", "t3-context"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -376,6 +387,15 @@ function extractPreCodeMeta(node: unknown): string | undefined {
   const codeNode = children?.find((child) => child.type === "element" && child.tagName === "code");
   const meta = codeNode?.properties?.dataCodeMeta ?? codeNode?.data?.meta;
   return typeof meta === "string" && meta.trim() ? meta.trim() : undefined;
+}
+
+function hastPlainTextDeep(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  if ("type" in node && node.type === "text" && "value" in node && typeof node.value === "string") {
+    return node.value;
+  }
+  if (!("children" in node) || !Array.isArray(node.children)) return "";
+  return node.children.map(hastPlainTextDeep).join("");
 }
 
 function nodeToPlainText(node: ReactNode): string {
@@ -688,6 +708,7 @@ function useChatMarkdownState({
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
   onUseArtifactTemplate,
+  renderContextReference,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
@@ -766,6 +787,7 @@ function useChatMarkdownState({
     onTaskListChange,
     onUseArtifactTemplate,
     projects,
+    renderContextReference,
     skills,
     text,
     threadRef,
@@ -938,7 +960,7 @@ const MARKDOWN_COMPONENTS: Components = {
       />
     );
   },
-  a({ node: _node, href, children, title: _title, ...props }) {
+  a({ node, href, children, title: _title, ...props }) {
     const {
       cwd,
       threadRef,
@@ -947,9 +969,19 @@ const MARKDOWN_COMPONENTS: Components = {
       projects,
       navigate,
       handleMergeRequestContextMenu,
+      renderContextReference,
     } = useMarkdownState();
     const citation = href ? parseAssistantCitationHref(href) : null;
     if (citation) return <AssistantCitationChip citation={citation} />;
+    const contextReference = href ? parseComposerContextHref(href) : null;
+    if (contextReference) {
+      const label = hastPlainTextDeep(node) || contextReference.contextId;
+      return renderContextReference ? (
+        renderContextReference({ ...contextReference, label })
+      ) : (
+        <span>{label}</span>
+      );
+    }
     const pullRequestAutolink = String(
       (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
     );
@@ -1148,7 +1180,16 @@ const MARKDOWN_COMPONENTS: Components = {
     srcSet: _srcSet,
     ...imageProps
   }) {
-    const { cwd, threadRef } = useMarkdownState();
+    const { cwd, threadRef, renderContextReference } = useMarkdownState();
+    const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
+    if (contextReference) {
+      const label = alt || contextReference.contextId;
+      return renderContextReference ? (
+        renderContextReference({ ...contextReference, label })
+      ) : (
+        <span>{label}</span>
+      );
+    }
     const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
     if (fileLink)
       return (
@@ -1280,7 +1321,7 @@ function ChatMarkdown(props: ChatMarkdownProps) {
       <MarkdownStateContext value={state}>
         <ReactMarkdown
           urlTransform={(href) =>
-            parseAssistantCitationHref(href)
+            parseAssistantCitationHref(href) || parseComposerContextHref(href)
               ? href
               : (rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href))
           }

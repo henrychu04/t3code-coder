@@ -138,6 +138,10 @@ vi.mock("@pierre/diffs/react", () => {
   return { FileDiff: MockFileDiff };
 });
 
+vi.mock("../DiffWorkerPoolProvider", () => ({
+  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => children,
+}));
+
 function matchMedia() {
   return {
     matches: false,
@@ -911,12 +915,12 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Terminal 1 lines 1-5");
     expect(markup).toContain("lucide-terminal");
-    expect(markup).toContain("yoo what&#x27;s</p>");
-    expect(markup).toContain('<span aria-hidden="true"> </span>');
+    expect(markup).toContain("yoo what&#x27;s");
+    expect(markup).not.toContain("terminal_context");
     expect(markup).toContain("Show full message");
   }, 20_000);
 
-  it("keeps unsupported element-pick context inert", () => {
+  it("renders legacy element-pick context as an unavailable chip", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -937,10 +941,11 @@ describe("MessagesTimeline", () => {
       />,
     );
 
+    // Coder has no browser preview, so the upgraded record never exposes its captured HTML.
     expect(markup).toContain("SubmitButton");
-    expect(markup).toContain("&lt;element_context&gt;");
-    expect(markup).toContain("&lt;button class=&quot;submit&quot;&gt;Save&lt;/button&gt;");
+    expect(markup).not.toContain("&lt;element_context");
     expect(markup).not.toContain("<element_context");
+    expect(markup).not.toContain("class=&quot;submit&quot;");
   });
 
   it("keeps the copy button for collapsed long user messages", () => {
@@ -1507,9 +1512,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("contextWindow.test.ts");
-    expect(markup).toContain("Wadduo");
-    expect(markup).toContain('data-testid="file-diff"');
+    expect(markup).toContain("contextWindow.test.ts +47 to +58");
+    expect(markup).toContain("lucide-message-circle");
     expect(markup).not.toContain(">Review comment<");
     expect(markup).not.toContain("&lt;review_comment");
     expect(markup).not.toContain("&lt;/review_comment&gt;");
@@ -1546,10 +1550,182 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("plan.md");
-    expect(markup).toContain("Clarify this.");
-    expect(markup).toContain("# Plan");
+    expect(markup).toContain("plan.md L1 to L2");
+    expect(markup).not.toContain("review_comment");
     expect(markup).not.toContain('data-testid="file-diff"');
+  });
+
+  it("renders structured context records as chips without reparsing text", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-structured",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            message: {
+              id: MessageId.make("message-structured"),
+              role: "user",
+              text: "Compare [Terminal 1 line 4](t3-context://v1/terminal/ctx-t) with [gone](t3-context://v1/future/ctx-x).",
+              context: {
+                version: 1,
+                records: [
+                  {
+                    version: 1,
+                    contextId: "ctx-t" as never,
+                    kind: "terminal",
+                    label: "Terminal 1 line 4",
+                    terminalId: "default",
+                    terminalLabel: "Terminal 1",
+                    lineStart: 4,
+                    lineEnd: 4,
+                    text: "boom",
+                  },
+                ],
+              },
+              turnId: null,
+              createdAt: "2026-03-17T19:12:28.000Z",
+              updatedAt: "2026-03-17T19:12:28.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-terminal");
+    expect(markup).toContain("Terminal 1 line 4");
+    expect(markup).toContain('data-context-unresolved="true"');
+    expect(markup).toContain(">gone<");
+    expect(markup).not.toContain('href="t3-context://');
+  });
+
+  it("renders unknown attachment types as inert rows instead of crashing", () => {
+    const entry = {
+      ...buildUserTimelineEntry("Play the recording."),
+      message: {
+        ...buildUserTimelineEntry("Play the recording.").message,
+        attachments: [
+          {
+            // A newer server can introduce attachment types this build does
+            // not know. They ride the open contract member.
+            type: "recording",
+            id: "attachment-voice-memo",
+            name: "voice-memo.ogg",
+            mimeType: "audio/ogg",
+            sizeBytes: 42,
+          },
+        ],
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[entry]} />,
+    );
+
+    expect(markup).toContain("voice-memo.ogg");
+    expect(markup).not.toContain('aria-label="Download voice-memo.ogg"');
+    expect(markup).not.toContain('alt="voice-memo.ogg"');
+    expect(markup).not.toContain("<a href=");
+  });
+
+  it("renders image context records as chips bound to the message's image attachments", () => {
+    const attachmentId = "thread-1-00000000-0000-4000-8000-000000000001-png";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-image-record",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            message: {
+              id: MessageId.make("message-image-record"),
+              role: "user",
+              text: "See [screen.png](t3-context://v1/image/ctx-image) and [lost.png](t3-context://v1/image/ctx-lost).",
+              attachments: [
+                {
+                  type: "image",
+                  id: attachmentId,
+                  name: "screen.png",
+                  mimeType: "image/png",
+                  sizeBytes: 2048,
+                },
+              ],
+              context: {
+                version: 1,
+                records: [
+                  {
+                    version: 1,
+                    contextId: "ctx-image" as never,
+                    kind: "image",
+                    label: "screen.png",
+                    attachmentId,
+                    name: "screen.png",
+                    mimeType: "image/png",
+                    sizeBytes: 2048,
+                  },
+                  {
+                    version: 1,
+                    contextId: "ctx-lost" as never,
+                    kind: "image",
+                    label: "lost.png",
+                    attachmentId: "thread-1-00000000-0000-4000-8000-000000000002-png",
+                    name: "lost.png",
+                    mimeType: "image/png",
+                    sizeBytes: 10,
+                  },
+                ],
+              },
+              turnId: null,
+              createdAt: "2026-03-17T19:12:28.000Z",
+              updatedAt: "2026-03-17T19:12:28.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Image attachment, screen.png");
+    expect(markup).toContain('aria-label="Preview screen.png"');
+    expect(markup).toContain('data-context-unresolved="true"');
+    expect(markup).toContain(">lost.png<");
+    expect(markup).not.toContain('href="t3-context://');
+  });
+
+  it("hides links to pasted image files in messages sent before context records", () => {
+    const attachmentId = "legacy-00000000-0000-4000-8000-000000000003-png";
+    const entry = buildUserTimelineEntry(
+      "Look at this [image.png](/home/coder/.t3-coder/attachments/00000000-0000-4000-8000-000000000003.png)",
+    );
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            ...entry,
+            message: {
+              ...entry.message,
+              attachments: [
+                {
+                  type: "image",
+                  id: attachmentId,
+                  name: "image.png",
+                  mimeType: "image/png",
+                  sizeBytes: 2048,
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Look at this");
+    expect(markup).toContain('aria-label="Preview image.png"');
+    expect(markup).not.toContain(".t3-coder/attachments");
   });
 
   it("renders a muted failure marker for failed tool lifecycle entries", () => {

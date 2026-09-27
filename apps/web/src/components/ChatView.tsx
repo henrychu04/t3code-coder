@@ -268,12 +268,11 @@ import {
   type DraftId,
 } from "../composerDraftStore";
 import {
-  appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
-import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
+import { type ReviewCommentContext } from "../reviewCommentContext";
 import {
   isQueuedMessageDue,
   latestCompletedToolActivityId,
