@@ -16,13 +16,17 @@ import {
   omitSupersededLifecycleMarkers,
   summarizeToolGroup,
   normalizeCompactToolLabel,
-} from "./MessagesTimeline.logic";
+  resolveWorkEntryToolPresentation,
+  workEntryViewedImagePath,
+} from "@t3tools/client-runtime/work-log/presentation";
+import { T3Wordmark } from "../T3Wordmark";
 const MESSAGE_HEADING_LEVEL = 3;
-import { workEntryViewedImagePath } from "./MessagesTimeline.logic";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import {
-  getQuestionAnswerHistory,
   getQuestionAnswerPreview,
+  getQuestionAnswerText,
+  hasQuestionAnswer,
+  type QuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
@@ -30,7 +34,6 @@ import {
   resolveTimelineMinimapPreview,
   type TimelineMinimapItem,
 } from "./timelineMinimapItems";
-import { GitPullRequestIcon } from "lucide-react";
 import {
   ArtifactNavigationContext,
   ArtifactTurnContext,
@@ -56,7 +59,7 @@ import {
   stripSubmittedImageLinks,
 } from "../../lib/submittedImageAttachments";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
-import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
+import { liveWorkEntryLabel, workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
   type EnvironmentId,
   type MessageId,
@@ -99,7 +102,7 @@ import { inferEntryKindFromPath } from "../../pierre-icons";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { commandProgramName } from "@t3tools/client-runtime/work-log/commandLabel";
+import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import type {
@@ -122,10 +125,10 @@ const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
-  Fragment,
   memo,
   use,
   useCallback,
+  useId,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -739,6 +742,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaries,
+        // Codex and Claude, the only Coder providers, both support conversation rollback.
+        supportsConversationRollback: true,
         liveAgentTaskIds,
         worktreeSetup,
         queuedMessages,
@@ -1658,6 +1663,7 @@ type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["grouped
 type TimelineRow = MessagesTimelineRow;
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+  // Legacy screenshot artifacts resolve their turn gallery from the row's turn.
   const artifactTurnId =
     row.kind === "message" && row.message.role === "assistant"
       ? (row.message.turnId ?? null)
@@ -1668,7 +1674,6 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
           : row.kind === "proposed-plan"
             ? row.proposedPlan.turnId
             : null;
-
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isExpandedToolGroupHeader =
     (row.kind === "work-toggle" && row.expanded) || (row.kind === "work-live" && row.expanded);
@@ -1688,11 +1693,13 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                 : (row.kind === "message" &&
                       row.message.role === "assistant" &&
                       !row.showAssistantMeta) ||
+                    (row.kind === "message" && row.message.role === "reasoning") ||
                     row.kind === "work" ||
                     row.kind === "work-live" ||
                     row.kind === "work-toggle" ||
                     row.kind === "activity-group" ||
-                    row.kind === "thinking"
+                    row.kind === "thinking" ||
+                    row.kind === "worktree-setup"
                   ? "pb-2"
                   : "pb-4",
           (row.kind === "message" && row.message.role === "assistant") ||
@@ -1702,36 +1709,39 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         )}
         data-timeline-row-id={row.id}
         data-timeline-row-kind={row.kind}
-        data-message-id={row.kind === "message" ? row.message.id : undefined}
+        data-message-id={
+          row.kind === "message" || row.kind === "assistant-meta" ? row.message.id : undefined
+        }
         data-message-role={row.kind === "message" ? row.message.role : undefined}
       >
         {row.kind === "work" ? (
           <WorkGroupSection
-            groupedEntries={row.groupedEntries}
             anchorKey={row.id}
+            groupedEntries={row.groupedEntries}
             isExpandedToolGroup={row.isExpandedToolGroup}
             displayLabel={row.displayLabel}
           />
         ) : null}
-        {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
         {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
         {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
         {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
         {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+        {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
         {row.kind === "message" && row.message.role === "user" ? (
           <UserTimelineRow row={row} />
         ) : null}
         {row.kind === "message" && row.message.role === "assistant" ? (
           <AssistantTimelineRow row={row} />
         ) : null}
-        {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
-        {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
-        {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
-        {row.kind === "queued-message" ? <QueuedMessageTimelineRow row={row} /> : null}
         {row.kind === "message" && row.message.role === "reasoning" ? (
           <ReasoningTimelineRow row={row} />
         ) : null}
+        {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
+        {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+        {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
         {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
+        {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
+        {row.kind === "queued-message" ? <QueuedMessageTimelineRow row={row} /> : null}
       </div>
     </ArtifactTurnContext>
   );
@@ -1863,6 +1873,27 @@ function QueuedMessageTimelineRow({
 // author as one. The thread title in ChatHeader is an <h2>; headings written
 // inside a message are exposed below this level. Visually hidden and excluded
 // from selection so sighted users and copied text are unaffected.
+function ContextCompactionTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "context-compaction" }>;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={row.label}
+      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Minimize2Icon aria-hidden="true" className="size-3" />
+        {row.label}
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
+
 function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;
 }
@@ -2468,18 +2499,16 @@ function ActivityGroupTimelineRow({
 }
 
 function ThinkingTimelineRow() {
-  const { isCompacting } = use(TimelineRowActivityCtx);
+  const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
+  // Reserve the activity row during setup so the handoff keeps the same height.
   return (
     <div className="min-h-7">
-      {isCompacting ? null : <LiveActivityRow label="Thinking" iconName="brain" />}
+      {isPreparingWorktree || isCompacting ? null : (
+        <LiveActivityRow label="Thinking" iconName="brain" active shimmer />
+      )}
     </div>
   );
 }
-
-/**
- * Thinking inside a tool group has its own disclosure, preserved across recycling.
- * A group whose row already reads "Thought" (no visible tool) skips the header.
- */
 function ReasoningTraceBlock({
   anchorKey,
   messages,
@@ -2877,32 +2906,33 @@ function LiveActivityRow({
   label,
   iconName,
   failed = false,
-  active = true,
+  active = false,
+  shimmer = false,
 }: {
-  label: string;
+  label: ReactNode;
   iconName?: WorkEntryIconName;
   failed?: boolean;
   active?: boolean;
+  shimmer?: boolean;
 }) {
+  const animated = active && !failed;
+  const showShimmer = animated && shimmer;
   return (
-    <div className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
+    <div
+      ref={animated ? observeVisibleAnimation : undefined}
+      className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
+    >
       <LiveActivityContent
         label={label}
         iconName={iconName}
         failed={failed}
         announceFailure={failed}
+        active={animated && !shimmer}
       />
-      {active ? (
-        <div
-          aria-hidden
-          className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
-        >
-          <div className="live-activity-focus-counter">
-            <div className="live-activity-focus-aligned">
-              <LiveActivityContent label={label} iconName={iconName} failed={failed} highlighted />
-            </div>
-          </div>
-        </div>
+      {showShimmer ? (
+        <ActivityShimmerOverlay>
+          <LiveActivityContent label={label} iconName={iconName} highlighted />
+        </ActivityShimmerOverlay>
       ) : null}
     </div>
   );
@@ -2913,41 +2943,48 @@ function LiveActivityContent({
   iconName,
   failed = false,
   announceFailure = false,
+  active = false,
   highlighted = false,
 }: {
-  label: string;
+  label: ReactNode;
   iconName: WorkEntryIconName | undefined;
   failed?: boolean;
   announceFailure?: boolean;
+  active?: boolean;
   highlighted?: boolean;
 }) {
-  const resolvedIconName = failed ? "x" : iconName;
+  const showTrailingFailureMark =
+    failed && iconName !== undefined && !toolIconAcceptsTint(iconName);
 
   return (
-    <div
+    <span
       className={cn(
         "flex min-h-6 min-w-0 items-center gap-1.5 py-0.5",
-        resolvedIconName ? "px-0.5" : "px-1",
+        iconName ? "px-0.5" : "px-1",
         highlighted ? "text-foreground" : "text-secondary-label",
       )}
     >
-      {resolvedIconName ? (
+      {iconName ? (
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center",
-            highlighted ? "text-foreground" : "text-icon-muted",
+            failed ? failedToolIconClassName : highlighted ? "text-foreground" : "text-icon-muted",
           )}
           role={announceFailure ? "img" : undefined}
           aria-label={announceFailure ? "Tool call failed" : undefined}
         >
-          <WorkEntryIconSvg
-            name={resolvedIconName}
-            className={cn("block size-4 shrink-0 stroke-[1.8]", !highlighted && "opacity-70")}
+          <ToolActivityIconView
+            fallbackName={iconName}
+            className="block size-4 shrink-0 stroke-[1.8]"
+            muted={!highlighted}
           />
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-    </div>
+      <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
+      {showTrailingFailureMark ? (
+        <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+      ) : null}
+    </span>
   );
 }
 
@@ -2973,18 +3010,30 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      {row.active ? (
-        <LiveActivityRow label={label} iconName={workEntryIconName(row.entry)} failed={failed} />
-      ) : (
-        <div className="min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
-          <LiveActivityContent
-            label={label}
-            iconName={workEntryIconName(row.entry)}
-            failed={failed}
-            announceFailure={failed}
-          />
-        </div>
-      )}
+      <LiveActivityRow
+        label={
+          row.entry.questionAnswer ? (
+            <span className="flex min-w-0 gap-1.5">
+              <span className="shrink-0">{label}</span>
+              <span
+                className={cn(
+                  "truncate",
+                  !row.expanded && hasQuestionAnswer(row.entry.questionAnswer)
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {getQuestionAnswerPreview(row.entry.questionAnswer)}
+              </span>
+            </span>
+          ) : (
+            label
+          )
+        }
+        iconName={workEntryIconName(row.entry)}
+        failed={failed}
+        active={row.active}
+      />
     </button>
   );
 }
@@ -2993,12 +3042,21 @@ function toolGroupSummaryIconName(
   kind: Extract<TimelineRow, { kind: "work-toggle" }>["summaryKind"],
 ): WorkEntryIconName {
   switch (kind) {
+    case "pull-request":
+    case "link-pr":
+    case "unlink-pr":
+    case "list-prs":
+      return "pull-request";
     case "read":
       return "eye";
     case "edit":
       return "square-pen";
     case "command":
       return "terminal";
+    case "browser":
+      return "browser";
+    case "device":
+      return "device";
     case "search":
       return "globe";
     case "code-search":
@@ -3032,9 +3090,10 @@ function WorkGroupToggleTimelineRow({
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
       <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-        <WorkEntryIconSvg
-          name={toolGroupSummaryIconName(row.summaryKind)}
-          className="size-4 shrink-0 stroke-[1.8] opacity-70"
+        <ToolActivityIconView
+          fallbackName={row.summaryToolIcon ?? toolGroupSummaryIconName(row.summaryKind)}
+          className="size-4 shrink-0 stroke-[1.8]"
+          muted
         />
       </span>
       <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
@@ -3621,15 +3680,7 @@ function formatWorkingTimer(startIso: string, endIso: string): string | null {
     return `${elapsedSeconds}s`;
   }
 
-  const hours = Math.floor(elapsedSeconds / 3600);
-  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-  const seconds = elapsedSeconds % 60;
-
-  if (hours > 0) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  }
-
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return formatDuration(elapsedSeconds * 1_000);
 }
 
 function formatWorkingTimerNow(startIso: string): string {
@@ -3639,8 +3690,11 @@ function formatWorkingTimerNow(startIso: string): string {
 type WorkEntryIconName =
   | "bot"
   | "brain"
+  | "browser"
   | "check"
   | "circle-alert"
+  | "computer"
+  | "device"
   | "eye"
   | "globe"
   | "hammer"
@@ -3648,16 +3702,72 @@ type WorkEntryIconName =
   | "search"
   | "square-pen"
   | "terminal"
+  | "pull-request"
+  | "t3-code"
   | "wrench"
   | "x"
   | "zap";
 
-function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
+function BrowserAppIcon({ className }: { className: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M8.5 19H7.2C4.4 19 3 17.5 3 14.6V7.4C3 4.5 4.5 3 7.4 3h8.2C18.5 3 20 4.5 20 7.4v2.4" />
+      <circle cx="7.4" cy="7.2" r="0.75" fill="currentColor" stroke="none" />
+      <path d="M11.2 7.2h4.3" />
+      <path d="m12.4 11.4 7.5 2.6-3.4 1.6-1.5 3.6z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function ComputerUseAppIcon({ className }: { className: string }) {
+  const gradientId = `${useId().replaceAll(":", "")}-computer-use-app-gradient`;
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient id={gradientId} x1="2" y1="2" x2="22" y2="22">
+          <stop offset="0" stopColor="#00dff0" />
+          <stop offset="0.42" stopColor="#3b9cff" />
+          <stop offset="0.72" stopColor="#b044f5" />
+          <stop offset="1" stopColor="#ff78b6" />
+        </linearGradient>
+      </defs>
+      <rect x="1" y="1" width="22" height="22" rx="5" fill={`url(#${gradientId})`} />
+      <path
+        d="m7.2 6.2 10.5 4.1-4.2 2.1-2 4.7z"
+        fill="white"
+        stroke="#315cff"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
+    case "pull-request":
+      return <PullRequestGlyph.pullRequest className={className} aria-hidden />;
     case "bot":
       return <BotIcon className={className} aria-hidden />;
     case "brain":
       return <BrainIcon className={className} aria-hidden />;
+    case "browser":
+      return <BrowserAppIcon className={className} />;
+    case "computer":
+      return <ComputerUseAppIcon className={className} />;
+    case "device":
+      return <SmartphoneIcon className={className} aria-hidden />;
+    case "t3-code":
+      return <T3Wordmark className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
@@ -3683,6 +3793,28 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
     case "zap":
       return <ZapIcon className={className} aria-hidden />;
   }
+}
+
+const failedToolIconClassName = "text-tool-error-icon/40";
+
+/** The gradient computer-use mark cannot take a currentColor tint, so failed rows
+ *  using it get a trailing x instead. */
+function toolIconAcceptsTint(iconName: WorkEntryIconName): boolean {
+  return iconName !== "computer";
+}
+
+/** Upstream's tool icon view without provider favicons, logos, or native app icons. */
+function ToolActivityIconView(props: {
+  fallbackName: WorkEntryIconName;
+  className: string;
+  muted: boolean;
+}) {
+  return (
+    <WorkEntryIcon
+      name={props.fallbackName}
+      className={cn(props.className, props.muted && "opacity-70 light:brightness-[.6]")}
+    />
+  );
 }
 
 function workToneIcon(tone: TimelineWorkEntry["tone"]): {
@@ -3713,21 +3845,6 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   };
 }
 
-function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
-  workspaceRoot: string | undefined,
-) {
-  if (workEntry.command) return workEntry.command;
-  if (workEntry.detail) return workEntry.detail;
-  if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
-  const [firstPath] = workEntry.changedFiles ?? [];
-  if (!firstPath) return null;
-  const displayPath = formatWorkspaceRelativePath(firstPath, workspaceRoot);
-  return workEntry.changedFiles!.length === 1
-    ? displayPath
-    : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
-}
-
 function workEntryRawCommand(
   workEntry: Pick<TimelineWorkEntry, "command" | "rawCommand">,
 ): string | null {
@@ -3738,31 +3855,11 @@ function workEntryRawCommand(
   return rawCommand === workEntry.command.trim() ? null : rawCommand;
 }
 
-function liveWorkEntryLabel(
-  workEntry: TimelineWorkEntry,
-  workspaceRoot: string | undefined,
-  active: boolean,
-): string {
-  const command = workEntry.command?.trim();
-  if (command) {
-    const program = commandProgramName(command);
-    const verb = active
-      ? "Running"
-      : workEntry.toolLifecycleStatus === "declined"
-        ? "Declined"
-        : "Ran";
-    if (program) return `${verb} ${program}`;
-    return `${verb} command`;
-  }
-
-  return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
-}
-
 export function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
   visibleLabel: string,
-  viewedImagePath: string | null = null,
+  viewedImagePath: string | null,
 ): string | null {
   const blocks: string[] = [];
   const seen = new Set<string>([visibleLabel.trim()]);
@@ -3772,29 +3869,40 @@ export function buildToolCallExpandedBody(
     seen.add(text);
     blocks.push(text);
   };
+  if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
+    addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
+  }
   const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
-  addBlock(raw ?? command);
-  if (workEntry.detail?.trim() !== viewedImagePath?.trim()) addBlock(workEntry.detail);
+  // A wrapped raw command (for example `env -C … cmd`) stays expandable even when the
+  // normalized command is the visible label.
+  if (command === visibleLabel.trim() && raw === null) {
+    seen.add(command);
+  } else {
+    addBlock(raw ?? command);
+  }
+  const detail = workEntry.detail?.trim();
+  if (detail !== viewedImagePath?.trim()) {
+    addBlock(detail);
+  }
   const viewedImagePaths = new Set(
     viewedImagePath
       ? [viewedImagePath.trim(), formatWorkspaceRelativePath(viewedImagePath, workspaceRoot)]
       : [],
   );
-  const changedFiles = [
-    ...new Set(
-      (workEntry.changedFiles ?? []).flatMap((filePath) => {
-        const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
-        return viewedImagePaths.has(filePath) || viewedImagePaths.has(formattedPath)
-          ? []
-          : [formattedPath];
-      }),
-    ),
-  ];
+  const changedFiles = (workEntry.changedFiles ?? []).flatMap((filePath) => {
+    const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
+    return viewedImagePaths.has(filePath) ||
+      viewedImagePaths.has(formattedPath) ||
+      filePath.trim() === detail ||
+      formattedPath === detail
+      ? []
+      : [formattedPath];
+  });
   if (changedFiles.length > 0) {
-    addBlock(changedFiles.join("\n"));
+    addBlock([...new Set(changedFiles)].join("\n"));
   }
-  return blocks.length > 0 ? blocks.join("\n\n") : (raw ?? command ?? null);
+  return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 
 const toolCallExpandedBodyClassName =
@@ -3808,10 +3916,14 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
+  if (toolPresentation) return toolPresentation.icon;
   const action = toolGroupAction(workEntry);
   if (action !== "other") return toolGroupSummaryIconName(action);
 
   switch (workEntry.itemType) {
+    case "mcp_tool_call":
+      return "wrench";
     case "dynamic_tool_call":
       return "hammer";
     case "collab_agent_tool_call":
@@ -3824,21 +3936,6 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   }
 
   return workToneIcon(workEntry.tone).iconName;
-}
-
-function capitalizePhrase(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return value;
-  }
-  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-}
-
-function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
-  if (!workEntry.toolTitle) {
-    return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
-  }
-  return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
@@ -4013,7 +4110,7 @@ function AgentSpawnMemberRow({
           <span
             className={cn(
               "min-w-0 truncate",
-              agent.status === "failed" ? "text-tool-error-icon/40" : "text-foreground/80",
+              agent.status === "failed" ? failedToolIconClassName : "text-foreground/80",
             )}
           >
             {agent.title}
@@ -4099,8 +4196,8 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       workEntry={workEntry}
       workspaceRoot={workspaceRoot}
       isExpandedToolGroupEntry={isExpandedToolGroupEntry}
+      displayLabel={displayLabel}
       onToggleEntry={props.onToggleEntry}
-      displayLabel={props.displayLabel}
     />
   );
 });
@@ -4113,10 +4210,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry, displayLabel } = props;
-  const timeline = use(TimelineRowCtx);
-  const imagePath = workEntryViewedImagePath(workEntry);
-  const viewedImage = imagePath ? resolveMarkdownFileLinkMeta(imagePath, workspaceRoot) : null;
-  const { timestampFormat } = timeline;
+  const { threadRef, timestampFormat } = use(TimelineRowCtx);
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
@@ -4132,34 +4226,44 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     }
     setExpanded(next);
   };
-
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
-  const displayText = workEntry.questionAnswer
-    ? `${workEntry.label}: ${getQuestionAnswerPreview(workEntry.questionAnswer)}`
-    : workEntryDisplayLabel(
-        workEntry,
-        props.displayLabel ??
-          workEntryPreview(workEntry, workspaceRoot) ??
-          toolWorkEntryHeading(workEntry),
-      );
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
   const entryIconName =
     showWarningIndicator || showDestructiveRowStyle ? "circle-alert" : workEntryIconName(workEntry);
-  const expandedBody = workEntry.questionAnswer
-    ? getQuestionAnswerHistory(workEntry.questionAnswer)
-    : buildToolCallExpandedBody(
+  const previewText = displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot);
+  const answerPreview = workEntry.questionAnswer
+    ? getQuestionAnswerPreview(workEntry.questionAnswer)
+    : null;
+  const viewedImagePath = workEntryViewedImagePath(workEntry);
+  // Viewed images read through the helper's bounded project image RPC.
+  const viewedImage =
+    viewedImagePath && threadRef
+      ? resolveMarkdownFileLinkMeta(viewedImagePath, workspaceRoot)
+      : null;
+  const canExpand =
+    Boolean(workEntry.questionAnswer) ||
+    (showFailedIndicator && previewText.trim().length > 0) ||
+    (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
+    Boolean(
+      workEntryRawCommand(workEntry) ||
+      workEntry.command?.trim() ||
+      workEntry.detail?.trim() ||
+      workEntry.changedFiles?.length ||
+      viewedImage,
+    );
+  const expandedBody = expanded
+    ? buildToolCallExpandedBody(
         workEntry,
         workspaceRoot,
-        displayText,
-        viewedImage ? (imagePath ?? null) : null,
-      );
-  const canExpand = expandedBody !== null || Boolean(viewedImage);
-  // Ordinary tool failures stay muted; only runtime errors and warnings get
-  // color. The red treatment is reserved for severe failures.
+        previewText,
+        viewedImage ? viewedImagePath : null,
+      )
+    : null;
+  // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
     "flex size-6 shrink-0 items-center justify-center",
     showWarningIndicator
@@ -4167,7 +4271,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : showDestructiveRowStyle
         ? "text-destructive"
         : showFailedIndicator
-          ? "text-tool-error-icon/40"
+          ? failedToolIconClassName
           : workEntry.tone === "tool"
             ? "text-icon-muted"
             : iconConfig.className,
@@ -4179,10 +4283,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : workLogEntryIsToolLike(workEntry)
         ? "text-secondary-label"
         : "text-foreground/80";
-  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
+  const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
   const accessibleDisplayText = showFailedIndicator
-    ? `${displayText}, tool call failed`
-    : displayText;
+    ? `${accessiblePreview}, tool call failed`
+    : accessiblePreview;
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -4212,14 +4316,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     >
       <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
         <span
-          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+          className={iconWrapperClass}
           role={showFailedIndicator ? "img" : undefined}
           aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-          aria-hidden={!showEntryIcon}
         >
-          <WorkEntryIconSvg
-            name={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8] opacity-70"
+          <ToolActivityIconView
+            fallbackName={entryIconName}
+            className="block size-4 shrink-0 stroke-[1.8]"
+            muted
           />
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -4227,21 +4331,35 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span
                 className={cn(
-                  "min-w-0 flex-1",
-                  expanded || workEntry.command?.trim() === displayText.trim()
-                    ? "whitespace-pre-wrap break-words select-text"
-                    : "truncate",
+                  answerPreview ? "shrink-0" : "min-w-0 flex-1",
+                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
                   headingClass,
                 )}
                 onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
-                onPointerDown={expanded ? (event) => event.stopPropagation() : undefined}
+                onPointerDown={expanded ? stopRowToggle : undefined}
               >
-                {displayText}
+                {previewText}
               </span>
+              {answerPreview ? (
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    !expanded &&
+                      workEntry.questionAnswer &&
+                      hasQuestionAnswer(workEntry.questionAnswer)
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {answerPreview}
+                </span>
+              ) : null}
             </p>
           </div>
-          {showFailedIndicator && !showDestructiveRowStyle ? (
-            <XIcon aria-hidden className={cn("size-3 shrink-0", "text-tool-error-icon/40")} />
+          {showFailedIndicator &&
+          !showDestructiveRowStyle &&
+          !toolIconAcceptsTint(entryIconName) ? (
+            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
@@ -4260,7 +4378,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </span>
         </div>
       </div>
-      {expanded && viewedImage && timeline?.threadRef ? (
+      {expanded && viewedImage && threadRef ? (
         <div
           className="mt-1 ms-7 cursor-default"
           onClick={stopRowToggle}
@@ -4269,7 +4387,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           <ProjectImageLink
             inline
             cwd={workspaceRoot}
-            threadRef={timeline.threadRef}
+            threadRef={threadRef}
             filePath={viewedImage.workspaceRelativePath ?? viewedImage.filePath}
             maxHeightRem={16}
             alt={viewedImage.basename}
@@ -4278,7 +4396,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </ProjectImageLink>
         </div>
       ) : null}
-      {expanded && canExpand && expandedBody ? (
+      {expanded && workEntry.questionAnswer ? (
+        <QuestionAnswerHistory answer={workEntry.questionAnswer} />
+      ) : null}
+      {expanded && canExpand && expandedBody && !workEntry.questionAnswer ? (
         <div
           className="mt-1 ms-7 cursor-default rounded-md bg-muted/40 px-3 py-2"
           onClick={stopRowToggle}
@@ -4290,6 +4411,30 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     </div>
   );
 });
+
+/** Upstream's answer history; Coder questions carry text answers only. */
+function QuestionAnswerHistory({ answer }: { answer: QuestionAnswer }) {
+  return (
+    <div className="ms-7 mt-2 space-y-2" onClick={stopRowToggle}>
+      {[...new Set([...Object.keys(answer.questionTextById), ...Object.keys(answer.answers)])].map(
+        (questionId) => (
+          <div key={questionId} className="space-y-1">
+            {answer.questionTextById[questionId] ? (
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {answer.questionTextById[questionId]}
+              </p>
+            ) : null}
+            {getQuestionAnswerText(answer.answers[questionId]) ? (
+              <p className="ms-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                {getQuestionAnswerText(answer.answers[questionId])}
+              </p>
+            ) : null}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
 
 function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
   return (

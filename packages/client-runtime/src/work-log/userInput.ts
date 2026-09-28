@@ -164,6 +164,10 @@ export function getQuestionAnswerText(value: unknown): string {
   return nested ? getQuestionAnswerText(nested.answers) : "";
 }
 
+export function hasQuestionAnswer(answer: QuestionAnswer): boolean {
+  return Object.values(answer.answers).some(getQuestionAnswerText);
+}
+
 export function getQuestionAnswerPreview(answer: QuestionAnswer): string {
   const answers = Object.values(answer.answers).map(getQuestionAnswerText).filter(Boolean);
   return (
@@ -171,13 +175,4 @@ export function getQuestionAnswerPreview(answer: QuestionAnswer): string {
   )
     .replace(/\s+/g, " ")
     .trim();
-}
-
-export function getQuestionAnswerHistory(answer: QuestionAnswer): string {
-  return Object.entries(answer.questionTextById)
-    .map(
-      ([id, question]) =>
-        `${question}\n${getQuestionAnswerText(answer.answers[id]) || "Not answered"}`,
-    )
-    .join("\n\n");
 }

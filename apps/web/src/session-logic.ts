@@ -1,41 +1,57 @@
-const isWorktreeSetupActivity = (kind: string) =>
-  kind === "worktree-setup" || kind === "setup-script.requested" || kind === "setup-script.started";
+import {
+  requestKindFromRequestType,
+  type PendingApproval,
+} from "@t3tools/client-runtime/pending-requests";
 import {
   foldUserInputActivities,
   isQuestionAnswer,
   type QuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
-import {
-  derivePendingRequests,
-  requestKindFromRequestType,
-} from "@t3tools/client-runtime/pending-requests";
-import { shallow } from "zustand/vanilla/shallow";
 import * as Option from "effect/Option";
 import * as Arr from "effect/Array";
+import { shallow } from "zustand/vanilla/shallow";
 import { isBackgroundTaskActivity } from "@t3tools/client-runtime/state/subagentRuntime";
 import {
-  ApprovalRequestId,
+  commandDetailRepeatsCommand,
+  extractCommandOutputText,
+  extractWorkLogToolLifecycleStatus,
+  isWorktreeSetupActivity,
+  workEntryIndicatesToolFailure,
+  workEntryIndicatesToolSuccess,
+  workLogEntryIsToolLike,
+  type WorkLogToolLifecycleStatus,
+} from "@t3tools/client-runtime/work-log/presentation";
+import {
   isToolLifecycleItemType,
+  ProviderDriverKind,
   type OrchestrationLatestTurn,
   type OrchestrationThreadActivity,
   type OrchestrationProposedPlanId,
-  ProviderDriverKind,
-  type ProviderApprovalOption,
   type ScreenshotArtifactReference,
   type ToolLifecycleItemType,
-  type UserInputQuestion,
   type ThreadId,
   type TurnId,
 } from "@t3tools/contracts";
 
-import type {
-  ChatMessage,
-  ProposedPlan,
-  SessionPhase,
-  Thread,
-  ThreadSession,
-  TurnDiffSummary,
+import {
+  type ChatMessage,
+  type ProposedPlan,
+  type SessionPhase,
+  type Thread,
+  type ThreadSession,
+  type TurnDiffSummary,
 } from "./types";
+
+export type { PendingApproval, PendingUserInput } from "@t3tools/client-runtime/pending-requests";
+
+export { formatDuration } from "@t3tools/shared/orchestrationTiming";
+
+export {
+  workEntryDisplayIndicatesToolFailure,
+  workEntryIndicatesToolSuccess,
+  workLogEntryIsToolLike,
+  type WorkLogToolLifecycleStatus,
+} from "@t3tools/client-runtime/work-log/presentation";
 
 export type ProviderPickerKind = ProviderDriverKind;
 
@@ -49,13 +65,6 @@ export const PROVIDER_OPTIONS: Array<{
   { value: ProviderDriverKind.make("codex"), label: "Codex", available: true },
   { value: ProviderDriverKind.make("claudeAgent"), label: "Claude", available: true },
 ];
-
-export type WorkLogToolLifecycleStatus =
-  | "inProgress"
-  | "completed"
-  | "failed"
-  | "declined"
-  | "stopped";
 
 export interface WorkLogEntry {
   questionAnswer?: QuestionAnswer;
@@ -72,9 +81,10 @@ export interface WorkLogEntry {
   changedFiles?: ReadonlyArray<string>;
   tone: "thinking" | "tool" | "info" | "error";
   toolTitle?: string;
-  toolData?: unknown;
+  /** Legacy screenshot artifacts saved by older Coder versions. */
   artifacts?: ReadonlyArray<ScreenshotArtifactReference>;
   imageCaptureWarning?: string;
+  toolData?: unknown;
   itemType?: ToolLifecycleItemType;
   requestKind?: PendingApproval["requestKind"];
   /** From runtime item / task payload `status` when present (e.g. tool.updated). */
@@ -112,21 +122,6 @@ const derivedWorkLogEntryByActivity = new WeakMap<
   OrchestrationThreadActivity,
   DerivedWorkLogEntry
 >();
-
-export interface PendingApproval {
-  requestId: ApprovalRequestId;
-  requestKind: "command" | "file-read" | "file-change" | "permission";
-  options?: ReadonlyArray<ProviderApprovalOption>;
-  createdAt: string;
-  detail?: string;
-}
-
-export interface PendingUserInput {
-  dismissible: boolean;
-  requestId: ApprovalRequestId;
-  createdAt: string;
-  questions: ReadonlyArray<UserInputQuestion>;
-}
 
 export interface ActivePlanState {
   createdAt: string;
@@ -169,101 +164,11 @@ export type TimelineEntry =
       entry: WorkLogEntry;
     };
 
-export function workLogEntryIsToolLike(entry: WorkLogEntry): boolean {
-  if (entry.tone === "tool" || entry.tone === "thinking" || entry.tone === "error") {
-    return true;
-  }
-  if (entry.command !== undefined && entry.command.trim().length > 0) {
-    return true;
-  }
-  if (entry.requestKind !== undefined) {
-    return true;
-  }
-  return entry.itemType !== undefined && isToolLifecycleItemType(entry.itemType);
-}
-
-/** Heuristic: providers often emit successful lifecycle status while error text lives in `detail` / `command`. */
-function toolDetailTextLooksLikeFailure(text: string): boolean {
-  const t = text.toLowerCase();
-  if (t.includes("file not found")) {
-    return true;
-  }
-  if (t.includes("no files found")) {
-    return true;
-  }
-  if (
-    t.includes("enoent") ||
-    t.includes("no such file or directory") ||
-    t.includes("no such file")
-  ) {
-    return true;
-  }
-  if (t.includes("cannot find path") && t.includes("because it does not exist")) {
-    return true;
-  }
-  if (t.includes("commandnotfoundexception")) {
-    return true;
-  }
-  if (t.includes("is not recognized as the name of a cmdlet")) {
-    return true;
-  }
-  if (t.includes("is not recognized") && t.includes("the term '")) {
-    return true;
-  }
-  if (t.includes("a parameter cannot be found that matches parameter name")) {
-    return true;
-  }
-  if (t.includes("command not found")) {
-    return true;
-  }
-  if (/<exited with exit code\s+[1-9]\d*\s*>/i.test(text)) {
-    return true;
-  }
-  if (/exit(?:ed)? with exit code\s+[1-9]\d*/i.test(text)) {
-    return true;
-  }
-  if (/exit code\s*[:\s]\s*[1-9]\d*\b/i.test(text)) {
-    return true;
-  }
-  return false;
-}
-
-function workEntryIndicatesToolFailureFromOutput(
-  entry: WorkLogEntry,
-  includeCommand: boolean,
-): boolean {
-  if (entry.tone === "error") {
-    return true;
-  }
-  const ls = entry.toolLifecycleStatus;
-  if (ls === "failed" || ls === "declined") {
-    return true;
-  }
-  if (!workLogEntryIsToolLike(entry)) {
-    return false;
-  }
-  const parts: string[] = [];
-  if (entry.detail) {
-    parts.push(entry.detail);
-  }
-  if (includeCommand && entry.command) {
-    parts.push(entry.command);
-  }
-  const blob = parts.join("\n");
-  if (blob.length === 0) {
-    return false;
-  }
-  return toolDetailTextLooksLikeFailure(blob);
-}
-
-/** True when a tool failed, including providers that put error output in `command`. */
-export function workEntryIndicatesToolFailure(entry: WorkLogEntry): boolean {
-  return workEntryIndicatesToolFailureFromOutput(entry, true);
-}
-
-/** True when the rendered result indicates failure. The command itself is user intent, not output. */
-export function workEntryDisplayIndicatesToolFailure(entry: WorkLogEntry): boolean {
-  return workEntryIndicatesToolFailureFromOutput(entry, false);
+export interface TimelineEntriesProjection {
+  readonly messages: ReadonlyArray<ChatMessage>;
+  readonly proposedPlans: ReadonlyArray<ProposedPlan>;
+  readonly workEntries: ReadonlyArray<WorkLogEntry>;
+  readonly entries: TimelineEntry[];
 }
 
 /** Severe failures keep the red treatment ordinary tool failures lost: runtime
@@ -275,30 +180,6 @@ export function workEntrySignalsSevereFailure(entry: WorkLogEntry): boolean {
     entry.sourceActivityKind === "runtime.error" ||
     entry.sourceActivityKind?.endsWith(".failed") === true
   );
-}
-
-/** Tool/command row completed without failure (blue check affordance). */
-export function workEntryIndicatesToolSuccess(entry: WorkLogEntry): boolean {
-  if (!workLogEntryIsToolLike(entry)) {
-    return false;
-  }
-  if (workEntryIndicatesToolFailure(entry)) {
-    return false;
-  }
-  if (entry.tone === "thinking") {
-    return false;
-  }
-  const ls = entry.toolLifecycleStatus;
-  if (ls === "failed" || ls === "declined") {
-    return false;
-  }
-  if (ls === "inProgress") {
-    return false;
-  }
-  if (ls === "stopped") {
-    return false;
-  }
-  return true;
 }
 
 /** Tool-like row with neither clear success nor failure (empty, incomplete, in progress, etc.). */
@@ -320,8 +201,6 @@ export function workEntryIndicatesToolNeutralStatus(entry: WorkLogEntry): boolea
   }
   return true;
 }
-
-export { formatDuration } from "@t3tools/shared/orchestrationTiming";
 
 type LatestTurnTiming = Pick<OrchestrationLatestTurn, "turnId" | "startedAt" | "completedAt">;
 type SessionActivityState = Pick<NonNullable<Thread["session"]>, "status" | "activeTurnId">;
@@ -354,24 +233,6 @@ export function deriveActiveWorkStartedAt(
     return latestTurn?.startedAt ?? sendStartedAt;
   }
   return sendStartedAt;
-}
-
-export function derivePendingApprovals(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-): PendingApproval[] {
-  return derivePendingRequests(activities).approvals.filter(
-    (approval): approval is PendingApproval =>
-      approval.requestKind === "command" ||
-      approval.requestKind === "file-read" ||
-      approval.requestKind === "file-change" ||
-      approval.requestKind === "permission",
-  );
-}
-
-export function derivePendingUserInputs(
-  activities: ReadonlyArray<OrchestrationThreadActivity>,
-): PendingUserInput[] {
-  return derivePendingRequests(activities).userInputs;
 }
 
 function planStateFromActivity(activity: OrchestrationThreadActivity): ActivePlanState | null {
@@ -542,7 +403,7 @@ export function hasActionableProposedPlan(
  * Quiet-timeline guarantee: the work log carries the parent's narrative plus
  * at most one row per agent. Everything an agent does internally lives in the
  * Agents surface:
- * - timelineBypass rows (synthesized child agents and workflow members) never render here;
+ * - timelineBypass rows (Codex children, workflow members) never render here;
  * - tool rows attributed to an owning agent (payload.agentId) are re-homed;
  * - task.progress ticks collapse into one row per taskId;
  * - task.updated is fold input only (status patches are not narrative).
@@ -580,7 +441,7 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
   // (review finding: hiding on agentId alone removed nested agents and
   // their anchors). Bypassed agent lifecycle rows also pass — collapse
   // folds every such row into its batch's single CTA row, which is how
-  // Synthesized children (whose rows are ALL bypassed) get an anchor at the
+  // Codex children (whose rows are ALL bypassed) get an anchor at the
   // spawn point.
   if (isTaskRow) {
     const ownedByAgent = typeof payload.agentId === "string" && payload.agentId.trim().length > 0;
@@ -689,26 +550,24 @@ function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): bool
   return typeof payload?.detail === "string" && payload.detail.startsWith("ExitPlanMode:");
 }
 
-function extractWorkLogToolLifecycleStatus(
+function extractScreenshotArtifacts(
   payload: Record<string, unknown> | null,
-): WorkLogToolLifecycleStatus | undefined {
-  if (!payload) {
-    return undefined;
-  }
-  const s = payload.status;
-  if (s === "pending" || s === "running" || s === "waiting") return "inProgress";
-  if (s === "cancelled" || s === "interrupted") return "stopped";
-  if (s === "idle" && payload.taskType === "subagent_batch") return "stopped";
-  if (
-    s === "inProgress" ||
-    s === "completed" ||
-    s === "failed" ||
-    s === "declined" ||
-    s === "stopped"
-  ) {
-    return s;
-  }
-  return undefined;
+): ReadonlyArray<ScreenshotArtifactReference> {
+  if (!Array.isArray(payload?.artifacts)) return [];
+  return payload.artifacts.filter((value): value is ScreenshotArtifactReference => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    const artifact = value as Record<string, unknown>;
+    return (
+      typeof artifact.id === "string" &&
+      typeof artifact.name === "string" &&
+      (artifact.mimeType === "image/png" ||
+        artifact.mimeType === "image/jpeg" ||
+        artifact.mimeType === "image/webp") &&
+      typeof artifact.sizeBytes === "number" &&
+      Number.isInteger(artifact.sizeBytes) &&
+      artifact.sizeBytes > 0
+    );
+  });
 }
 
 function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
@@ -722,9 +581,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       : null;
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
+  const title = extractToolTitle(payload);
   const artifacts = extractScreenshotArtifacts(payload);
   const imageCaptureWarning = asTrimmedString(payload?.imageCaptureWarning);
-  const title = extractToolTitle(payload);
   const isTaskActivity =
     activity.kind === "task.started" ||
     activity.kind === "task.progress" ||
@@ -763,17 +622,25 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
           : activity.tone,
     sourceActivityKind: activity.kind,
   };
-  if (activity.kind === "user-input.answer-submitted" && isQuestionAnswer(payload))
+  if (activity.kind === "user-input.answer-submitted" && isQuestionAnswer(payload)) {
     entry.questionAnswer = payload;
+  }
   const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   const viewedImagePath = asTrimmedString(asRecord(payload?.data)?.imagePath);
-  if (viewedImagePath) entry.viewedImagePath = viewedImagePath;
   if (detail) {
     entry.detail = detail;
   } else if (activity.kind === "runtime.error" || activity.kind === "runtime.warning") {
     const message = asTrimmedString(payload?.message);
-    if (message && message.trim() !== activity.summary.trim()) entry.detail = message;
+    if (
+      message &&
+      normalizePreviewForComparison(message) !== normalizePreviewForComparison(activity.summary)
+    ) {
+      entry.detail = message;
+    }
+  }
+  if (viewedImagePath) {
+    entry.viewedImagePath = viewedImagePath;
   }
   if (commandPreview.command) {
     entry.command = commandPreview.command;
@@ -784,12 +651,21 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (changedFiles.length > 0) {
     entry.changedFiles = changedFiles;
   }
-  if (imageCaptureWarning) entry.imageCaptureWarning = imageCaptureWarning;
+  if (title) {
+    entry.toolTitle = title;
+  }
+  if (imageCaptureWarning) {
+    entry.imageCaptureWarning = imageCaptureWarning;
+  }
   if (artifacts.length > 0) {
     entry.artifacts = artifacts;
   }
-  if (title) {
-    entry.toolTitle = title;
+  if (itemType === "mcp_tool_call") {
+    const data = asRecord(payload?.data);
+    const toolData = typeof data?.toolName === "string" ? (data.item ?? data) : data?.item;
+    if (toolData !== undefined) {
+      entry.toolData = toolData;
+    }
   }
   if (itemType) {
     entry.itemType = itemType;
@@ -852,7 +728,7 @@ function agentSpawnGroupKey(entry: DerivedWorkLogEntry): string {
   // task. Unrelated turn-less spawns (separate fleets whose rows lost their
   // turn) must not collapse into one immortal "direct:no-turn" CTA
   // accumulating every agent the thread ever ran (review finding). Adapters
-  // stamp spawn turns when a provider exposes them, so
+  // stamp spawn turns (Codex spawnTurnId; Claude rows ride real turns), so
   // this path is defensive.
   return entry.turnId ? `direct:${entry.turnId}` : `direct:task:${taskId}`;
 }
@@ -1006,13 +882,14 @@ function mergeDerivedWorkLogEntries(
   const command = next.command ?? previous.command;
   const rawCommand = next.rawCommand ?? previous.rawCommand;
   const toolTitle = next.toolTitle ?? previous.toolTitle;
+  const artifacts = next.artifacts ?? previous.artifacts;
+  const imageCaptureWarning = next.imageCaptureWarning ?? previous.imageCaptureWarning;
   const itemType = next.itemType ?? previous.itemType;
   const requestKind = next.requestKind ?? previous.requestKind;
   const collapseKey = next[workLogCollapseKey] ?? previous[workLogCollapseKey];
   const toolCallId = next.toolCallId ?? previous.toolCallId;
   const toolLifecycleStatus = next.toolLifecycleStatus ?? previous.toolLifecycleStatus;
   const toolData = next.toolData ?? previous.toolData;
-  const artifacts = next.artifacts ?? previous.artifacts;
   return {
     ...previous,
     ...next,
@@ -1022,16 +899,14 @@ function mergeDerivedWorkLogEntries(
     ...(rawCommand ? { rawCommand } : {}),
     ...(changedFiles.length > 0 ? { changedFiles } : {}),
     ...(toolTitle ? { toolTitle } : {}),
+    ...(artifacts !== undefined ? { artifacts } : {}),
+    ...(imageCaptureWarning ? { imageCaptureWarning } : {}),
     ...(itemType ? { itemType } : {}),
     ...(requestKind ? { requestKind } : {}),
     ...(collapseKey ? { [workLogCollapseKey]: collapseKey } : {}),
     ...(toolCallId ? { toolCallId } : {}),
     ...(toolLifecycleStatus !== undefined ? { toolLifecycleStatus } : {}),
     ...(toolData !== undefined ? { toolData } : {}),
-    ...(artifacts !== undefined ? { artifacts } : {}),
-    ...((next.imageCaptureWarning ?? previous.imageCaptureWarning)
-      ? { imageCaptureWarning: next.imageCaptureWarning ?? previous.imageCaptureWarning }
-      : {}),
   };
 }
 
@@ -1365,68 +1240,9 @@ function summarizeToolRawOutput(payload: Record<string, unknown> | null): string
   return null;
 }
 
-function extractAcpTextContent(value: unknown): string | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-
-  const chunks: string[] = [];
-  for (const entryValue of value) {
-    const entry = asRecord(entryValue);
-    if (entry?.type !== "content") {
-      continue;
-    }
-    const content = asRecord(entry.content);
-    if (content?.type !== "text") {
-      continue;
-    }
-    const text = asTrimmedString(content.text);
-    if (text) {
-      chunks.push(text);
-    }
-  }
-
-  return chunks.length > 0 ? chunks.join("\n") : null;
-}
-
 function extractToolOutput(payload: Record<string, unknown> | null): string | null {
-  const data = asRecord(payload?.data);
-  const item = asRecord(data?.item);
-  const itemResult = asRecord(item?.result);
-  const rawOutput = asRecord(data?.rawOutput);
-
-  const outputStreams: string[] = [];
-  const stdout = asTrimmedString(rawOutput?.stdout);
-  const stderr = asTrimmedString(rawOutput?.stderr);
-  if (stdout) {
-    outputStreams.push(stdout);
-  }
-  if (stderr) {
-    outputStreams.push(stderr);
-  }
-
-  const candidates: unknown[] = [
-    item?.aggregatedOutput,
-    itemResult?.content,
-    data?.rawOutput,
-    rawOutput?.content,
-    outputStreams.length > 0 ? outputStreams.join("\n") : null,
-    rawOutput?.output,
-    extractAcpTextContent(data?.content),
-  ];
-
-  for (const candidate of candidates) {
-    const text = asTrimmedString(candidate);
-    if (!text) {
-      continue;
-    }
-    const output = stripTrailingExitCode(text).output;
-    if (output) {
-      return output;
-    }
-  }
-
-  return null;
+  const output = extractCommandOutputText(payload?.data);
+  return output ? stripTrailingExitCode(output).output : null;
 }
 
 function isCommandToolDetail(payload: Record<string, unknown> | null, heading: string): boolean {
@@ -1454,32 +1270,28 @@ function extractToolDetail(
     ? extractToolCommand(payload)
     : { command: null, rawCommand: null };
   const command = commandPreview.command;
-  const normalizedCommand = normalizePreviewForComparison(command);
-  const normalizedRawCommand = normalizePreviewForComparison(commandPreview.rawCommand);
 
-  if (
-    detail &&
-    normalizedHeading !== normalizedDetail &&
-    (!commandTool ||
-      (normalizedCommand !== normalizedDetail && normalizedRawCommand !== normalizedDetail))
-  ) {
+  if (commandTool && command) {
+    const output = extractToolOutput(payload);
+    if (output) return output;
+  }
+
+  const data = asRecord(payload?.data);
+  const repeatsCommand =
+    detail !== null &&
+    commandDetailRepeatsCommand({
+      detail,
+      command,
+      rawCommand: commandPreview.rawCommand,
+      toolName: data?.toolName,
+      data,
+    });
+
+  if (detail && normalizedHeading !== normalizedDetail && (!commandTool || !repeatsCommand)) {
     return detail;
   }
 
   if (commandTool) {
-    if (!command) {
-      return null;
-    }
-
-    const output = extractToolOutput(payload);
-    const normalizedOutput = normalizePreviewForComparison(output);
-    if (
-      output &&
-      normalizedOutput !== normalizedHeading &&
-      normalizedOutput !== normalizedCommand
-    ) {
-      return output;
-    }
     return null;
   }
 
@@ -1524,26 +1336,6 @@ function extractWorkLogItemType(
   return undefined;
 }
 
-function extractScreenshotArtifacts(
-  payload: Record<string, unknown> | null,
-): ReadonlyArray<ScreenshotArtifactReference> {
-  if (!Array.isArray(payload?.artifacts)) return [];
-  return payload.artifacts.filter((value): value is ScreenshotArtifactReference => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-    const artifact = value as Record<string, unknown>;
-    return (
-      typeof artifact.id === "string" &&
-      typeof artifact.name === "string" &&
-      (artifact.mimeType === "image/png" ||
-        artifact.mimeType === "image/jpeg" ||
-        artifact.mimeType === "image/webp") &&
-      typeof artifact.sizeBytes === "number" &&
-      Number.isInteger(artifact.sizeBytes) &&
-      artifact.sizeBytes > 0
-    );
-  });
-}
-
 function extractWorkLogRequestKind(
   payload: Record<string, unknown> | null,
 ): WorkLogEntry["requestKind"] | undefined {
@@ -1555,8 +1347,7 @@ function extractWorkLogRequestKind(
   ) {
     return payload.requestKind;
   }
-  const kind = requestKindFromRequestType(payload?.requestType);
-  return kind === "mcp-elicitation" ? undefined : (kind ?? undefined);
+  return requestKindFromRequestType(payload?.requestType) ?? undefined;
 }
 
 function pushChangedFile(target: string[], seen: Set<string>, value: unknown) {
@@ -1664,13 +1455,6 @@ function compareActivityLifecycleRank(kind: string): number {
   return 1;
 }
 
-export interface TimelineEntriesProjection {
-  readonly messages: ReadonlyArray<ChatMessage>;
-  readonly proposedPlans: ReadonlyArray<ProposedPlan>;
-  readonly workEntries: ReadonlyArray<WorkLogEntry>;
-  readonly entries: TimelineEntry[];
-}
-
 function timelineEntryFromMessage(message: ChatMessage): TimelineEntry {
   return {
     id: message.id,
@@ -1771,10 +1555,9 @@ function mergeTimelineEntrySuffix(
   return merged;
 }
 
-function streamsText(role: string): boolean {
-  return role === "assistant" || role === "reasoning";
-}
+const streamsText = (role: ChatMessage["role"]) => role === "assistant" || role === "reasoning";
 
+/** Text and update time do not change a streaming message's timeline structure. */
 export function isStreamingMessageTextUpdate(previous: ChatMessage, next: ChatMessage): boolean {
   if (
     !streamsText(previous.role) ||
@@ -1827,9 +1610,7 @@ export function deriveTimelineEntriesWithState(
   }
   const foldedAnswerMessageIds = new Set(
     workEntries.flatMap((entry) =>
-      entry.questionAnswer && Object.keys(entry.questionAnswer.answers).length > 0
-        ? [`async-answer:${entry.questionAnswer.requestId}`]
-        : [],
+      entry.questionAnswer ? [`async-answer:${entry.questionAnswer.requestId}`] : [],
     ),
   );
   const showMessage = (message: ChatMessage) =>

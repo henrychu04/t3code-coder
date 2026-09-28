@@ -316,7 +316,10 @@ messages read images back through the bounded chunk read. The composer's provide
 uses upstream's `server.refreshProviders` RPC over the existing stdio stream, without upstream's
 remote model-manifest or usage-limit refreshes. The timeline renders sent context as upstream's inline chips; messages sent
 before context records are upgraded in memory by upstream's legacy converter, and their links to
-pasted image files are hidden because the images render from the message's attachments.
+pasted image files are hidden because the images render from the message's attachments. Work-log
+presentation uses upstream's client-runtime module without provider tool sources, favicons,
+logos, or native app icons: tool rows use built-in icons, and viewed images load through the
+bounded project image read.
 
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
 filesystem API. The browser supplies the active project root plus a project-relative path to the
