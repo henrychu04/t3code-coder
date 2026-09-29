@@ -237,7 +237,7 @@ export function deriveLegacyProjectOverrides(
     {};
   const pullRequestMergeMethodOverrides: Record<
     ProjectId,
-    ServerSettings["pullRequestMergeMethod"]
+    NonNullable<ServerSettings["pullRequestMergeMethod"]>
   > = {};
   for (const [id, entry] of Object.entries(settings.projectSettingsOverrides)) {
     const projectId = id as ProjectId;
@@ -245,7 +245,7 @@ export function deriveLegacyProjectOverrides(
       projectAutoPullOverrides[projectId] = entry.defaultAutoPull;
     if (entry.defaultProjectScripts !== undefined)
       projectScriptOverrides[projectId] = entry.defaultProjectScripts;
-    if (entry.pullRequestMergeMethod !== undefined)
+    if (entry.pullRequestMergeMethod !== undefined && entry.pullRequestMergeMethod !== null)
       pullRequestMergeMethodOverrides[projectId] = entry.pullRequestMergeMethod;
   }
   return { projectAutoPullOverrides, projectScriptOverrides, pullRequestMergeMethodOverrides };

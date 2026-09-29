@@ -139,6 +139,8 @@ import {
   PullRequestLinkedThreadsResult,
   PullRequestReviewerCandidateList,
   PullRequestReviewerRequestInput,
+  PullRequestLabelCandidateList,
+  PullRequestLabelChangeInput,
   PullRequestSubmitReviewInput,
   PullRequestThreadCommentsInput,
   PullRequestThreadCommentsResult,
@@ -230,6 +232,8 @@ export const WS_METHODS = {
   pullRequestsSubscribeRefreshes: "pullRequests.subscribeRefreshes",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
+  pullRequestsLabelCandidates: "pullRequests.labelCandidates",
+  pullRequestsSetLabels: "pullRequests.setLabels",
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
   reviewReadDiffFileChunk: "review.readDiffFileChunk",
@@ -638,6 +642,19 @@ const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsReques
   error: PullRequestRpcError,
 });
 
+/** Read when the label menu opens, for the same reason the reviewer candidates are. */
+const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCandidates, {
+  payload: PullRequestRef,
+  success: PullRequestLabelCandidateList,
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
+  payload: PullRequestLabelChangeInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+
 const WsReviewGetDiffPreviewRpc = Rpc.make(WS_METHODS.reviewGetDiffPreview, {
   payload: ReviewDiffPreviewInput,
   success: ReviewDiffPreviewResult,
@@ -857,6 +874,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsPullRequestsSubscribeRefreshesRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
+  WsPullRequestsLabelCandidatesRpc,
+  WsPullRequestsSetLabelsRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewOpenDiffFileContentsRpc,
   WsReviewReadDiffFileChunkRpc,

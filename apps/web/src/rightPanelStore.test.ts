@@ -1,106 +1,24 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { type EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import {
+  pullRequestSurface,
+  pullRequestSurfaceId,
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
+  selectSelectedRightPanelSurface,
   selectThreadRightPanelState,
-  pullRequestSurface,
-  updatePullRequestTabStatus,
   useRightPanelStore,
 } from "./rightPanelStore";
 
-const threadRef = scopeThreadRef(
-  EnvironmentId.make("test-environment"),
-  ThreadId.make("test-thread"),
-);
+const refA = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-A"));
+const refB = scopeThreadRef("env-1" as EnvironmentId, ThreadId.make("thread-B"));
 
-describe("rightPanelStore files", () => {
-  beforeEach(() =>
-    useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} }),
-  );
-
-  it("replaces the standalone explorer with file tabs and reuses an open file", () => {
-    const store = useRightPanelStore.getState();
-    store.open(threadRef, "files");
-    store.openFile(threadRef, "src/index.ts", 12);
-    store.openFile(threadRef, "README.md");
-    store.openFile(threadRef, "src/index.ts", 20);
-
-    const state = Object.values(useRightPanelStore.getState().byThreadKey)[0]!;
-    expect(state.surfaces.map((surface) => surface.id)).toEqual([
-      "file:src/index.ts",
-      "file:README.md",
-    ]);
-    expect(state.activeSurfaceId).toBe("file:src/index.ts");
-    expect(state.surfaces[0]).toMatchObject({
-      relativePath: "src/index.ts",
-      revealLine: 20,
-      revealRequestId: 2,
-    });
-  });
-
-  it("opens arbitrary GitLab merge requests as independent surfaces", () => {
-    const store = useRightPanelStore.getState();
-    store.openPullRequest(threadRef, {
-      projectId: "project-1",
-      repository: "group/project",
-      number: 41,
-    });
-    store.openPullRequest(threadRef, {
-      projectId: "project-1",
-      repository: "group/project",
-      number: 42,
-    });
-
-    const state = Object.values(useRightPanelStore.getState().byThreadKey)[0]!;
-    expect(state.surfaces.map((surface) => surface.id)).toEqual([
-      "pull-request:project-1:group%2Fproject:41",
-      "pull-request:project-1:group%2Fproject:42",
-    ]);
-    expect(state.activeSurfaceId).toBe("pull-request:project-1:group%2Fproject:42");
-  });
-
-  it("keeps the same merge request from two Coder workspaces in separate tabs", () => {
-    const store = useRightPanelStore.getState();
-    store.openPullRequest(threadRef, {
-      environmentId: "workspace-a",
-      projectId: "project-1",
-      repository: "group/project",
-      number: 42,
-    });
-    store.openPullRequest(threadRef, {
-      environmentId: "workspace-b",
-      projectId: "project-1",
-      repository: "group/project",
-      number: 42,
-    });
-
-    const state = Object.values(useRightPanelStore.getState().byThreadKey)[0]!;
-    expect(state.surfaces.map((surface) => surface.id)).toEqual([
-      "pull-request:workspace-a:project-1:group%2Fproject:42",
-      "pull-request:workspace-b:project-1:group%2Fproject:42",
-    ]);
-  });
-
-  it("keys a tab status by the concrete merge-request surface id", () => {
-    const surface = pullRequestSurface({
-      environmentId: "workspace-a",
-      projectId: "project-1",
-      repository: "group/project",
-      number: 42,
-    });
-    const status = { state: "merged" as const, isDraft: false };
-    const statuses = updatePullRequestTabStatus({}, surface.id, status);
-
-    expect(statuses).toEqual({ [surface.id]: status });
-    expect(updatePullRequestTabStatus(statuses, surface.id, status)).toBe(statuses);
-  });
+beforeEach(() => {
+  useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
 });
 
-const refA = threadRef;
-const refB = scopeThreadRef(threadRef.environmentId, ThreadId.make("thread-B"));
 describe("rightPanelStore", () => {
   const completedDiff = { id: "diff", kind: "diff" } as const;
   const linkedPullRequest = pullRequestSurface({
@@ -109,21 +27,26 @@ describe("rightPanelStore", () => {
     number: 42,
   });
 
-  it.each(["diff-first", "pull-request-first"])(
-    "prioritizes the linked pull request over browser and diff with %s delivery",
-    (order) => {
+  it.each([
+    { order: "diff-first", surface: linkedPullRequest },
+    { order: "pull-request-first", surface: linkedPullRequest },
+    { order: "diff-first", surface: { id: "pull-requests", kind: "pull-requests" } as const },
+    {
+      order: "pull-request-first",
+      surface: { id: "pull-requests", kind: "pull-requests" } as const,
+    },
+  ])(
+    "prioritizes $surface.kind over an open terminal and diff with $order delivery",
+    ({ order, surface }) => {
       const store = useRightPanelStore.getState();
-      store.open(refA, "files");
+      store.openTerminal(refA, "existing-terminal");
       const revision = store.getUserActionRevision(refA);
-      const requests =
-        order === "diff-first"
-          ? [completedDiff, linkedPullRequest]
-          : [linkedPullRequest, completedDiff];
+      const requests = order === "diff-first" ? [completedDiff, surface] : [surface, completedDiff];
       for (const surface of requests) store.openProactive(refA, surface, revision);
 
       expect(
         selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
-      ).toEqual(linkedPullRequest);
+      ).toEqual(surface);
 
       store.open(refA, "diff");
       expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
@@ -137,7 +60,6 @@ describe("rightPanelStore", () => {
       choose: () =>
         useRightPanelStore.getState().openPullRequest(refA, { ...linkedPullRequest, number: 41 }),
     },
-
     {
       choice: "terminal",
       choose: () => useRightPanelStore.getState().openTerminal(refA, "term-1"),
@@ -166,6 +88,9 @@ describe("rightPanelStore", () => {
 
     expect(store.openProactive(refA, completedDiff, revision)).toBe(false);
     expect(store.openProactive(refA, linkedPullRequest, revision)).toBe(false);
+    expect(
+      store.openProactive(refA, { id: "pull-requests", kind: "pull-requests" }, revision),
+    ).toBe(false);
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toBe(
       chosen,
     );
@@ -194,5 +119,473 @@ describe("rightPanelStore", () => {
     expect(
       selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, otherEnvironment),
     ).toBe("file");
+  });
+
+  it("does not treat resource reconciliation as a manual choice", () => {
+    const store = useRightPanelStore.getState();
+    store.openFile(refA, "src/app.ts");
+    const revision = store.getUserActionRevision(refA);
+    store.reconcileFileSurfaces(refA, false);
+
+    expect(store.openProactive(refA, completedDiff, revision)).toBe(true);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
+  });
+
+  it("open sets the active panel for a thread", () => {
+    useRightPanelStore.getState().open(refA, "files");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("files");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refB)).toBeNull();
+  });
+
+  it("opening a different kind keeps both surfaces and activates the new one", () => {
+    useRightPanelStore.getState().open(refA, "agents");
+    useRightPanelStore.getState().open(refA, "files");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("files");
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toHaveLength(2);
+  });
+
+  it("reopening an inactive singleton activates its existing surface", () => {
+    useRightPanelStore.getState().open(refA, "diff");
+    useRightPanelStore.getState().open(refA, "agents");
+    useRightPanelStore.getState().open(refA, "diff");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "diff",
+      surfaces: [
+        { id: "diff", kind: "diff" },
+        { id: "agents", kind: "agents" },
+      ],
+    });
+  });
+
+  it("keeps files as a singleton surface", () => {
+    useRightPanelStore.getState().open(refA, "files");
+    useRightPanelStore.getState().open(refA, "files");
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "files",
+      surfaces: [{ id: "files", kind: "files" }],
+    });
+  });
+
+  it("replaces the standalone explorer with peer file surfaces", () => {
+    useRightPanelStore.getState().open(refA, "files");
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+    useRightPanelStore.getState().openFile(refA, "README.md");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "file:README.md",
+      surfaces: [
+        {
+          id: "file:src/index.ts",
+          kind: "file",
+          relativePath: "src/index.ts",
+          revealLine: null,
+          revealRequestId: 2,
+        },
+        {
+          id: "file:README.md",
+          kind: "file",
+          relativePath: "README.md",
+          revealLine: null,
+          revealRequestId: 1,
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ["generated\\", "generated"],
+    ["notes/meeting ", "notes/meeting"],
+    [" notes/meeting", "notes/meeting"],
+  ])("keeps %j and %j in separate file tabs", (firstPath, secondPath) => {
+    useRightPanelStore.getState().openFile(refA, firstPath);
+    useRightPanelStore.getState().openFile(refA, secondPath);
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toMatchObject([
+      { id: `file:${firstPath}`, relativePath: firstPath },
+      { id: `file:${secondPath}`, relativePath: secondPath },
+    ]);
+  });
+
+  it.each([
+    ["docs/", "docs"],
+    ["docs///", "docs"],
+    ["/", "/"],
+    ["C:/", "C:/"],
+  ])("reuses the folder tab for %j and %j", (linkPath, treePath) => {
+    useRightPanelStore.getState().openFile(refA, linkPath);
+    useRightPanelStore.getState().openFile(refA, treePath);
+
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces,
+    ).toMatchObject([{ id: `file:${treePath}`, relativePath: treePath, revealRequestId: 2 }]);
+  });
+
+  it("updates line reveal requests when reopening a file surface", () => {
+    useRightPanelStore.getState().openFile(refA, "src/index.ts", 42);
+    useRightPanelStore.getState().openFile(refA, "src/index.ts", 87);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "file:src/index.ts",
+      surfaces: [
+        {
+          id: "file:src/index.ts",
+          kind: "file",
+          relativePath: "src/index.ts",
+          revealLine: 87,
+          revealRequestId: 2,
+        },
+      ],
+    });
+
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "file:src/index.ts",
+      surfaces: [
+        {
+          id: "file:src/index.ts",
+          kind: "file",
+          relativePath: "src/index.ts",
+          revealLine: null,
+          revealRequestId: 3,
+        },
+      ],
+    });
+  });
+
+  it("removes persisted file surfaces when their workspace no longer exists", () => {
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+    useRightPanelStore.getState().open(refA, "agents");
+    useRightPanelStore.getState().openFile(refA, "README.md");
+
+    useRightPanelStore.getState().reconcileFileSurfaces(refA, false);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "agents",
+      surfaces: [{ id: "agents", kind: "agents" }],
+    });
+
+    useRightPanelStore.getState().openFile(refB, "conductor.json");
+    useRightPanelStore.getState().reconcileFileSurfaces(refB, false);
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refB)).toEqual({
+      isOpen: false,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
+  });
+
+  it("close hides the panel without clearing its selected surface", () => {
+    useRightPanelStore.getState().open(refA, "agents");
+    useRightPanelStore.getState().close(refA);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+    expect(
+      selectSelectedRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toEqual({ id: "agents", kind: "agents" });
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: "agents",
+      surfaces: [{ id: "agents", kind: "agents" }],
+    });
+  });
+
+  it("toggles empty panel visibility without creating a surface", () => {
+    useRightPanelStore.getState().toggleVisibility(refA);
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
+
+    useRightPanelStore.getState().toggleVisibility(refA);
+    expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+  });
+
+  it("toggle hides the panel without discarding the active surface", () => {
+    useRightPanelStore.getState().toggle(refA, "diff");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("diff");
+    useRightPanelStore.getState().toggle(refA, "diff");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: "diff",
+      surfaces: [{ id: "diff", kind: "diff" }],
+    });
+  });
+
+  it("toggle to a different kind switches active", () => {
+    useRightPanelStore.getState().toggle(refA, "files");
+    useRightPanelStore.getState().toggle(refA, "agents");
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBe("agents");
+  });
+
+  it("removeThread clears persisted state", () => {
+    useRightPanelStore.getState().open(refA, "agents");
+    useRightPanelStore.getState().removeThread(refA);
+    expect(selectActiveRightPanel(useRightPanelStore.getState().byThreadKey, refA)).toBeNull();
+  });
+
+  it("close on never-opened thread is a no-op", () => {
+    useRightPanelStore.getState().close(refA);
+    expect(useRightPanelStore.getState().byThreadKey).toEqual({});
+  });
+
+  it("tracks one surface per pull request", () => {
+    const first = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4909 };
+    const second = { projectId: "project-a", repository: "pingdotgg/t3code", number: 4910 };
+    useRightPanelStore.getState().openPullRequest(refA, first);
+    useRightPanelStore.getState().openPullRequest(refA, second);
+    const url = "https://gitlab.example.com/pingdotgg/t3code/-/merge_requests/4909";
+    useRightPanelStore.getState().openPullRequest(refA, { ...first, url });
+    useRightPanelStore.getState().openPullRequest(refA, first);
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      pullRequestSurfaceId(first),
+      pullRequestSurfaceId(second),
+    ]);
+    expect(state.activeSurfaceId).toBe(pullRequestSurfaceId(first));
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA),
+    ).toMatchObject({ url });
+    expect(state.surfaces[1]).not.toHaveProperty("url");
+  });
+
+  it("keeps matching repository and number on different hosts as separate tabs", () => {
+    const first = { projectId: "project-a", repository: "acme/api", number: 7, host: "github.com" };
+    const second = { ...first, host: "github.example.com" };
+    useRightPanelStore.getState().openPullRequest(refA, first);
+    useRightPanelStore.getState().openPullRequest(refA, second);
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toEqual([pullRequestSurface(first), pullRequestSurface(second)]);
+    expect(pullRequestSurfaceId({ ...first, host: "GITHUB.COM" })).toBe(
+      pullRequestSurfaceId(first),
+    );
+  });
+
+  it("keeps one pull request read from two servers as two tabs", () => {
+    const local = {
+      environmentId: "local",
+      projectId: "project-a",
+      repository: "pingdotgg/t3code",
+      number: 4909,
+    };
+    const remote = { ...local, environmentId: "remote" };
+
+    useRightPanelStore.getState().openPullRequest(refA, local);
+    useRightPanelStore.getState().openPullRequest(refA, remote);
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      pullRequestSurfaceId(local),
+      pullRequestSurfaceId(remote),
+    ]);
+  });
+
+  it("keeps the page's panel tabs reachable when the set of connected servers changes", () => {
+    // The pull-requests page keys its one shared panel by a fixed sentinel environment, not by
+    // whichever capable server happens to sort first (see PULL_REQUESTS_PANEL_ENVIRONMENT_ID in
+    // _chat.pull-requests.tsx) — a server disconnecting must not move every open tab to a store
+    // key nobody wrote them under.
+    const panelId = ThreadId.make("pull-requests-panel");
+    const stableRef = scopeThreadRef("pull-requests-panel" as EnvironmentId, panelId);
+    const fromServerA = {
+      environmentId: "server-a",
+      projectId: "project-a",
+      repository: "pingdotgg/t3code",
+      number: 1,
+    };
+    const fromServerB = {
+      environmentId: "server-b",
+      projectId: "project-b",
+      repository: "pingdotgg/t3code",
+      number: 2,
+    };
+
+    // Both servers connected: tabs from each open under the one stable ref.
+    useRightPanelStore.getState().openPullRequest(stableRef, fromServerA);
+    useRightPanelStore.getState().openPullRequest(stableRef, fromServerB);
+
+    // Server A disconnects. The stable ref does not depend on which servers remain connected, so
+    // the same lookup still finds both tabs.
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, stableRef);
+    expect(state.surfaces.map((surface) => surface.id)).toEqual([
+      pullRequestSurfaceId(fromServerA),
+      pullRequestSurfaceId(fromServerB),
+    ]);
+
+    // The bug this guards against: a ref keyed by the first capable environment instead of a
+    // fixed sentinel changes identity when that environment drops out, and a lookup under the new
+    // key finds nothing even though the tabs are still sitting under the old one.
+    const refWhileBothConnected = scopeThreadRef("server-a" as EnvironmentId, panelId);
+    const refAfterServerADisconnects = scopeThreadRef("server-b" as EnvironmentId, panelId);
+    expect(refWhileBothConnected).not.toEqual(refAfterServerADisconnects);
+    expect(
+      selectThreadRightPanelState(
+        useRightPanelStore.getState().byThreadKey,
+        refAfterServerADisconnects,
+      ).surfaces,
+    ).toEqual([]);
+  });
+
+  it("tracks one surface per terminal session", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().openTerminal(refA, "term-2");
+
+    const state = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(state.surfaces).toEqual([
+      {
+        id: "terminal:term-1",
+        kind: "terminal",
+        resourceId: "term-1",
+        terminalIds: ["term-1"],
+        activeTerminalId: "term-1",
+      },
+      {
+        id: "terminal:term-2",
+        kind: "terminal",
+        resourceId: "term-2",
+        terminalIds: ["term-2"],
+        activeTerminalId: "term-2",
+      },
+    ]);
+    expect(state.activeSurfaceId).toBe("terminal:term-2");
+  });
+
+  it("tracks split panes and the active pane within a terminal surface", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", "term-2");
+
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "terminal:term-1",
+      kind: "terminal",
+      resourceId: "term-1",
+      terminalIds: ["term-1", "term-2"],
+      activeTerminalId: "term-2",
+    });
+
+    useRightPanelStore.getState().activateTerminal(refA, "terminal:term-1", "term-1");
+    useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "terminal:term-1",
+      kind: "terminal",
+      resourceId: "term-1",
+      terminalIds: ["term-2"],
+      activeTerminalId: "term-2",
+    });
+  });
+
+  it("tracks vertical layout for a terminal surface", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().splitTerminal(refA, "terminal:term-1", "term-2", "vertical");
+
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "terminal:term-1",
+      kind: "terminal",
+      resourceId: "term-1",
+      terminalIds: ["term-1", "term-2"],
+      activeTerminalId: "term-2",
+      splitDirection: "vertical",
+    });
+  });
+
+  it("closing the final terminal pane removes its surface and closes the panel", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().closeTerminal(refA, "terminal:term-1", "term-1");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
+  });
+
+  it("closing the active surface activates a neighboring surface", () => {
+    useRightPanelStore.getState().openTerminal(refA, "tab-a");
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().closeSurface(refA, "terminal:term-1");
+
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)?.id).toBe(
+      "terminal:tab-a",
+    );
+  });
+
+  it("closing the final surface closes the panel", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+    useRightPanelStore.getState().closeSurface(refA, "terminal:term-1");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
+  });
+
+  it("closing other surfaces keeps the selected surface active", () => {
+    useRightPanelStore.getState().openTerminal(refA, "tab-a");
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+
+    useRightPanelStore.getState().closeOtherSurfaces(refA, "file:src/index.ts");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "file:src/index.ts",
+      surfaces: [
+        {
+          id: "file:src/index.ts",
+          kind: "file",
+          relativePath: "src/index.ts",
+          revealLine: null,
+          revealRequestId: 1,
+        },
+      ],
+    });
+  });
+
+  it("closing surfaces to the right activates the selected surface when active was removed", () => {
+    useRightPanelStore.getState().openTerminal(refA, "tab-a");
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+    useRightPanelStore.getState().openTerminal(refA, "term-1");
+
+    useRightPanelStore.getState().closeSurfacesToRight(refA, "terminal:tab-a");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "terminal:tab-a",
+      surfaces: [
+        {
+          id: "terminal:tab-a",
+          kind: "terminal",
+          resourceId: "tab-a",
+          terminalIds: ["tab-a"],
+          activeTerminalId: "tab-a",
+        },
+      ],
+    });
+  });
+
+  it("closing all surfaces closes the panel", () => {
+    useRightPanelStore.getState().openTerminal(refA, "tab-a");
+    useRightPanelStore.getState().openFile(refA, "src/index.ts");
+
+    useRightPanelStore.getState().closeAllSurfaces(refA);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: false,
+      activeSurfaceId: null,
+      surfaces: [],
+    });
   });
 });

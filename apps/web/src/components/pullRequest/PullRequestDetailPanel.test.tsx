@@ -25,11 +25,10 @@ const { newThread, prepareThread, refresh, Wrapper, Trigger } = vi.hoisted(() =>
   ),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
-vi.mock("~/state/server", () => ({ primaryServerKeybindingsAtom: {} }));
 vi.mock("~/state/entities", () => ({ useProjects: () => [], useServerConfigs: () => new Map() }));
 vi.mock("~/state/environments", () => ({
   useEnvironments: () => ({ environments: [] }),
-  usePrimaryEnvironmentId: () => EnvironmentId.make("env-1"),
+  useEnvironmentKeybindings: () => [],
 }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>
@@ -242,7 +241,7 @@ async function click(label: string) {
 const actions = [
   "Resolve conflicts",
   "Ask a question",
-  "Explain this PR",
+  "Explain this MR",
   "Fix findings in this thread",
   "Fix check",
   "Add to agent",

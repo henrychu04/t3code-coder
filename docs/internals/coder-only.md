@@ -414,6 +414,18 @@ templates are read from the committed base tree. The gateway never runs Git or `
 connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other
 hosted providers remain unavailable.
 
+The merge-request page, panel, stack menu, and right-panel tabs are upstream's, with these seams.
+Diffs load through the `pullRequests.diff` stdio RPC rather than upstream's environment HTTP
+loader, and upstream's GitHub account routing between environments is omitted. The label RPCs
+exist but GitLab, like upstream's GitLab provider, does not advertise label editing, and native
+stack actions are never advertised. List and detail snapshots that upstream keeps in browser
+storage, the right-panel tabs, and the last merge method chosen stay in memory for the page
+session; a project's default merge method is a workspace setting whose `null` means "last
+selected". Links the panels open go to the system browser through the validated HTTP(S)
+`shell.openExternal`, because Coder has no in-app preview. The panels use GitLab wording and `!`
+references, render uploads as inert attachment rows, and resolve `/uploads/` links against the
+repository host.
+
 Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
 of emoji text. Choices persist on workspace-owned project records and travel through the existing
 project metadata command/event stream over helper stdio. SQLite migration 052 adds the nullable

@@ -29,6 +29,7 @@ import type {
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
   PullRequestReviewerKind,
+  PullRequestLabelCandidateList,
   PullRequestState,
   PullRequestPreview,
   PullRequestUpdateMethod,
@@ -74,6 +75,7 @@ export interface ProviderChangeRequest {
   readonly url: string;
   readonly author: PullRequestActor | null;
   readonly headBranch: string;
+  readonly headRepositoryNameWithOwner?: string | null;
   readonly baseBranch: string;
   readonly state: PullRequestState;
   readonly isDraft: boolean;
@@ -220,6 +222,10 @@ export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
   readonly behindBy?: number;
   /** Absent from a host that does not report whether it is armed to merge this on its own. */
   readonly autoMergeEnabled?: boolean;
+  /** The strategy stored with an armed auto-merge, where the host reports it. */
+  readonly autoMergeMethod?: PullRequestMergeMethod;
+  /** Workflow runs on this head commit that still need a maintainer's approval. */
+  readonly workflowApprovalsRequired?: number;
 }
 
 /** The conversation-shaped half of a detail, loaded after the core can already render. */
@@ -306,6 +312,7 @@ export interface PullRequestProviderApi {
   /** The signed-in account, which is what involvement filtering compares against. */
   readonly getViewer: (input: {
     readonly cwd: string;
+    readonly host?: string;
   }) => Effect.Effect<string, PullRequestProviderError>;
 
   readonly listChangeRequests: (
@@ -429,7 +436,11 @@ export interface PullRequestProviderApi {
    * is no request at all.
    */
   readonly getViewerPermissions: (
-    input: ProviderRepositoryRef & { readonly number: number },
+    input: ProviderRepositoryRef & {
+      readonly number: number;
+      /** Skip branch comparison when checking permission for an unrelated operation. */
+      readonly includeUpdateBranch?: boolean;
+    },
   ) => Effect.Effect<PullRequestViewerPermissions, PullRequestProviderError>;
 
   /**
@@ -498,6 +509,8 @@ export interface PullRequestProviderApi {
     input: ProviderRepositoryRef & {
       readonly number: number;
       readonly action: PullRequestAction;
+      readonly stackNumber?: number;
+      readonly expectedStackHeads?: ReadonlyArray<PullRequestStackHead>;
       /** Meaningful for `merge` and `enable-auto-merge`; absent takes the host's own default. */
       readonly mergeMethod?: PullRequestMergeMethod;
       /** Only meaningful for `update-branch`; absent takes the host's own default. */
@@ -581,6 +594,23 @@ export interface PullRequestProviderApi {
         readonly kind: PullRequestReviewerKind;
       }>;
       readonly requested: boolean;
+    },
+  ) => Effect.Effect<void, PullRequestProviderError>;
+
+  /**
+   * The repository's labels, with the ones already on the change request marked. Present with
+   * `setLabels` only where `capabilities.labels` is true; the service refuses both without it.
+   */
+  readonly listLabelCandidates?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<PullRequestLabelCandidateList, PullRequestProviderError>;
+
+  /** Puts labels on the change request, or takes them off. One call for both directions. */
+  readonly setLabels?: (
+    input: ProviderRepositoryRef & {
+      readonly number: number;
+      readonly labels: ReadonlyArray<string>;
+      readonly applied: boolean;
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 

@@ -105,7 +105,7 @@ export function PullRequestListEmptyState({
         <EmptyHeader>
           <EmptyTitle>No projects in this workspace</EmptyTitle>
           <EmptyDescription>
-            Add a project, and the pull requests from its repository appear here.
+            Add a project, and the merge requests from its repository appear here.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
@@ -162,17 +162,17 @@ export function PullRequestListEmptyState({
     <Empty>
       <BranchMark joined={false} />
       <EmptyHeader>
-        <EmptyTitle>{filtered ? "Nothing under these filters" : "No pull requests"}</EmptyTitle>
+        <EmptyTitle>{filtered ? "Nothing under these filters" : "No merge requests"}</EmptyTitle>
         <EmptyDescription>
           {filtered
             ? "Widen the state, involvement or project filter to see more."
-            : "Pull requests from every project in this workspace appear here."}
+            : "Merge requests from every project in this workspace appear here."}
         </EmptyDescription>
       </EmptyHeader>
       <div className="flex flex-wrap justify-center gap-2">
         {canLoadMore ? (
           <Button size="sm" variant="outline" disabled={loadingMore} onClick={onLoadMore}>
-            {loadingMore ? "Loading..." : "Load more pull requests"}
+            {loadingMore ? "Loading..." : "Load more merge requests"}
           </Button>
         ) : null}
         <Button size="sm" variant="outline" disabled={refreshing} onClick={onRefresh}>

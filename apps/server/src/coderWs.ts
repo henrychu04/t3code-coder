@@ -1519,6 +1519,8 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
         pullRequests.reviewerCandidates(input),
       [WS_METHODS.pullRequestsRequestReviewers]: (input) => pullRequests.requestReviewers(input),
+      [WS_METHODS.pullRequestsLabelCandidates]: (input) => pullRequests.labelCandidates(input),
+      [WS_METHODS.pullRequestsSetLabels]: (input) => pullRequests.setLabels(input),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
       [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
       [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),

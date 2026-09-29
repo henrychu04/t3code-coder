@@ -165,7 +165,11 @@ describe("Claude auto-compaction settings", () => {
 
 describe("workspace merge method settings", () => {
   it("defaults legacy settings and accepts resettable project overrides", () => {
-    expect(decodeServerSettings({}).pullRequestMergeMethod).toBe("merge");
+    // `null` reuses the method last chosen, as upstream does.
+    expect(decodeServerSettings({}).pullRequestMergeMethod).toBeNull();
+    expect(decodeServerSettingsPatch({ pullRequestMergeMethod: null }).pullRequestMergeMethod).toBe(
+      null,
+    );
     expect(decodeServerSettings({}).pullRequestMergeMethodOverrides).toEqual({});
     expect(
       decodeServerSettingsPatch({ pullRequestMergeMethodOverrides: { project: null } })

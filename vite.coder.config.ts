@@ -47,6 +47,8 @@ export default defineConfig({
       "apps/server/src/provider/Drivers/ClaudeHome.test.ts",
       "apps/server/src/provider/Layers/ProviderSessionReaper.test.ts",
       "apps/server/src/pullRequest/PullRequestService.coder.test.ts",
+      "apps/server/src/pullRequest/PullRequestService.test.ts",
+      "apps/server/src/pullRequest/pullRequestChecks.test.ts",
       "apps/server/src/pullRequest/GitLabPullRequestCli.test.ts",
       "apps/server/src/pullRequest/GitLabPullRequestProvider.test.ts",
       "apps/server/src/pullRequest/gitLabMergeRequestJson.test.ts",

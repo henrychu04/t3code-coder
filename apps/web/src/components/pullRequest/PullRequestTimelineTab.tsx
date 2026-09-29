@@ -4,6 +4,7 @@ import type {
   PullRequestComment,
   PullRequestDetailView,
   PullRequestRef,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ChevronDownIcon,
@@ -53,6 +54,8 @@ import { PullRequestGlyph } from "./pullRequestIcons";
 interface ReactionSurface {
   readonly canReact: boolean;
   readonly environmentId: EnvironmentId;
+  /** Thread the timeline is shown beside, so body links can open in its in-app browser. */
+  readonly threadRef: ScopedThreadRef | null;
   readonly reference: PullRequestRef;
   readonly onRefresh: () => void;
 }
@@ -60,24 +63,24 @@ interface ReactionSurface {
 function TimelineBody({
   body,
   markdown,
-  hostUrl,
   cwd,
   environmentId,
+  threadRef,
 }: {
   body: string;
   markdown: boolean;
-  hostUrl: string | null;
   cwd: string;
   environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef | null;
 }) {
   return (
     <div className="mt-3">
       {markdown ? (
         <PullRequestMarkdown
           text={body}
-          hostUrl={hostUrl}
           cwd={cwd}
           environmentId={environmentId}
+          threadRef={threadRef}
         />
       ) : (
         <p className="whitespace-pre-wrap text-xs text-muted-foreground">{body}</p>
@@ -256,9 +259,9 @@ function ConversationCard({
         <div className="px-2 pb-2 pt-3">
           <PullRequestMarkdownEditor
             value={editable.body}
-            hostUrl={event.url}
             cwd={cwd}
             environmentId={reactions.environmentId}
+            threadRef={reactions.threadRef}
             label="Edit comment"
             saving={saving}
             onSave={(body) => void save(body)}
@@ -270,9 +273,9 @@ function ConversationCard({
           <TimelineBody
             body={event.body}
             markdown={event.markdown}
-            hostUrl={event.url}
             cwd={cwd}
             environmentId={reactions.environmentId}
+            threadRef={reactions.threadRef}
           />
         </div>
       ) : null}
@@ -410,16 +413,16 @@ function LifecycleEvent({ event }: { event: PullRequestTimelineEvent }) {
     event.kind === "opened"
       ? {
           icon: <PullRequestGlyph.pullRequest className="size-3.5" />,
-          label: "Pull request opened",
+          label: "Merge request opened",
         }
       : event.kind === "merged"
         ? {
             icon: <PullRequestGlyph.merged className="size-3.5" />,
-            label: "Pull request merged",
+            label: "Merge request merged",
           }
         : {
             icon: <PullRequestGlyph.closed className="size-3.5" />,
-            label: "Pull request closed",
+            label: "Merge request closed",
           };
 
   return (
@@ -507,17 +510,6 @@ function ReviewVerdictEvent({
               ) : null}
             </PullRequestMetaLine>
           </div>
-          {/* An approval usually carries no words. When it does they are the review, so they stay
-              visible rather than being folded away with the ordinary conversation. */}
-          {event.body ? (
-            <TimelineBody
-              body={event.body}
-              markdown={event.markdown}
-              hostUrl={event.url}
-              cwd={cwd}
-              environmentId={reactions.environmentId}
-            />
-          ) : null}
         </div>
         {reactions.canReact || event.reactions.length > 0 ? (
           <PullRequestReactionBar
@@ -540,7 +532,7 @@ function ReviewVerdictEvent({
           markdown={event.markdown}
           cwd={cwd}
           environmentId={reactions.environmentId}
-          hostUrl={event.url}
+          threadRef={reactions.threadRef}
         />
       ) : null}
     </div>
@@ -550,6 +542,7 @@ function ReviewVerdictEvent({
 export function PullRequestTimelineTab({
   detail,
   environmentId,
+  threadRef = null,
   reference,
   order,
   onOpenCommit,
@@ -557,6 +550,7 @@ export function PullRequestTimelineTab({
 }: {
   detail: PullRequestDetailView;
   environmentId: EnvironmentId;
+  threadRef?: ScopedThreadRef | null;
   reference: PullRequestRef;
   order: "newest" | "oldest";
   onOpenCommit: (oid: string) => void;
@@ -567,6 +561,7 @@ export function PullRequestTimelineTab({
   const reactions: ReactionSurface = {
     canReact: detail.capabilities.reactions === true,
     environmentId,
+    threadRef,
     reference,
     onRefresh,
   };

@@ -532,7 +532,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   sourceControlWritingStyle: Schema.optionalKey(SourceControlWritingStyleSettings),
-  pullRequestMergeMethod: Schema.optionalKey(PullRequestMergeMethod),
+  pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   sidebarAutoSettleOnMerge: Schema.optionalKey(Schema.Boolean),
   sidebarAutoSettleAfterDays: Schema.optionalKey(Schema.NullOr(SidebarAutoSettleAfterDays)),
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
@@ -555,6 +555,7 @@ const NULLABLE_PROJECT_SETTINGS_OVERRIDES: ReadonlySet<ProjectScopedServerSettin
 >([
   "defaultModelSelection",
   "sourceControlWriterModelSelection",
+  "pullRequestMergeMethod",
   "sidebarAutoSettleAfterDays",
 ]);
 
@@ -597,8 +598,13 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  pullRequestMergeMethod: PullRequestMergeMethod.pipe(
-    Schema.withDecodingDefault(Effect.succeed("merge")),
+  /**
+   * The merge method pull requests start with; `null` reuses the method
+   * last chosen on this device. Server-side so a project can override it
+   * like any other project setting.
+   */
+  pullRequestMergeMethod: Schema.NullOr(PullRequestMergeMethod).pipe(
+    Schema.withDecodingDefault(Effect.succeed(null)),
   ),
   pullRequestMergeMethodOverrides: Schema.Record(ProjectId, PullRequestMergeMethod).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
@@ -822,7 +828,7 @@ export const ServerSettingsPatch = Schema.Struct({
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(ProjectSettingsOverrides)),
   ),
-  pullRequestMergeMethod: Schema.optionalKey(PullRequestMergeMethod),
+  pullRequestMergeMethod: Schema.optionalKey(Schema.NullOr(PullRequestMergeMethod)),
   pullRequestMergeMethodOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(PullRequestMergeMethod)),
   ),

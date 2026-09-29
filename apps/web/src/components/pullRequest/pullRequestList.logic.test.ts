@@ -749,7 +749,20 @@ describe("default merge-readiness ranking", () => {
     ).toEqual([4, 3, 5, 2, 6, 1]);
   });
 
-  it("uses measured size before recency inside one readiness tier", () => {
+  it("uses recency when readiness and diff size tie", () => {
+    const older = entry({ number: 1, checksState: "passing" });
+    const newer = entry({
+      number: 2,
+      checksState: "passing",
+      updatedAt: "2026-08-01T00:00:00Z",
+    });
+
+    expect(rankPullRequestsByMergeReadiness([older, newer]).map((row) => row.number)).toEqual([
+      2, 1,
+    ]);
+  });
+
+  it("ranks smaller measured diffs first within a readiness tier as counts arrive", () => {
     const larger = entry({
       number: 1,
       checksState: "passing",
@@ -803,7 +816,7 @@ describe("default merge-readiness ranking", () => {
     );
   });
 
-  it("keeps authored work first and applies the selected sort inside each group", () => {
+  it("keeps authored work first and ranks each group by readiness", () => {
     const authoredWaiting = entry({ number: 1, checksState: "pending" });
     const authoredReady = entry({
       number: 2,
@@ -834,7 +847,7 @@ describe("default merge-readiness ranking", () => {
     ["oldest", [1, 2]],
     ["largest", [1, 2]],
     ["smallest", [2, 1]],
-  ] as const)("preserves groups while applying the %s sort", (sort, order) => {
+  ] as const)("keeps authored first while applying the %s sort inside groups", (sort, order) => {
     const olderLarger = entry({
       number: 1,
       additions: 20,

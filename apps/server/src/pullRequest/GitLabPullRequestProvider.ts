@@ -281,6 +281,15 @@ export const make = Effect.gen(function* () {
     getDiffFileContents: (input) =>
       cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
 
+    // What each marked file is at the head, which is what tells a mark that still stands from one
+    // the branch has moved past. GitLab's own local-storage marks are keyed on the blob id too,
+    // so this stales at the same moment its web UI would.
+    getFileRevisions: (input) =>
+      cli.getFileRevisions(input).pipe(
+        Effect.mapError(fail("getFileRevisions")),
+        Effect.map((revisions) => ({ revisions })),
+      ),
+
     // Users only: GitLab requests a review of a person, and the groups that can stand in for one
     // appear in approval rules rather than in a merge request's reviewers.
     listReviewerCandidates: (input) =>

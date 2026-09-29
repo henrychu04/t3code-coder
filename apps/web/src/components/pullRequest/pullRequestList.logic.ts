@@ -311,11 +311,11 @@ export function parsePullRequestQuery(raw: string): {
   };
 }
 
-/** Free-text filter over the fields a row actually shows, plus `#123` / `123`. */
+/** Free-text filter over the fields a row actually shows, plus `!123` / `#123` / `123`. */
 export function matchesPullRequestQuery(entry: PullRequestListEntry, query: string): boolean {
   const normalizedQuery = query.trim().toLowerCase();
   if (normalizedQuery.length === 0) return true;
-  return `#${entry.number} ${entry.title} ${entry.repository} ${entry.headBranch} ${entry.author?.login ?? ""}`
+  return `!${entry.number} #${entry.number} ${entry.title} ${entry.repository} ${entry.headBranch} ${entry.author?.login ?? ""}`
     .toLowerCase()
     .includes(normalizedQuery);
 }
@@ -1007,7 +1007,14 @@ export function rankPullRequestMatches<Entry extends PullRequestListEntry>(
   });
 }
 
-/** Order a review queue by merge readiness, then measured size and recency. */
+/**
+ * The default review queue: work that is green and approved, then green work still waiting on a
+ * verdict, then everything else still open. Drafts stay in that third tier because their author
+ * has not made them mergeable yet. Finished work follows open work when all states are visible. A
+ * known conflict is never ready, whatever its checks, review or state say, so it stays at the
+ * bottom. Within each tier, smaller measured diffs come first, then unknown sizes. Recency
+ * breaks ties between equally sized diffs.
+ */
 export function rankPullRequestsByMergeReadiness<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
   hasMeasuredSize: (entry: Entry) => boolean = (entry) => entry.additions + entry.deletions > 0,

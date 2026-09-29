@@ -1,5 +1,25 @@
 import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
-import type { PullRequestState } from "@t3tools/contracts";
+import {
+  pullRequestHostOf,
+  type EnvironmentId,
+  type ProjectId,
+  type PullRequestState,
+  type SourceControlProviderKind,
+} from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import {
+  threadPullRequestKeysEqual,
+  visibleThreadPullRequests,
+} from "@t3tools/shared/threadPullRequests";
+import { useMemo } from "react";
+import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
+import {
+  newestPullRequestSummary,
+  pullRequestEnvironment,
+  useSharedPullRequestSummary,
+} from "~/state/pullRequests";
+import { useEnvironmentQuery } from "~/state/query";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
 import {
   Bot,
   ChevronLeft,
@@ -72,7 +92,10 @@ interface RightPanelTabsProps {
   readonly browserAvailable?: boolean;
   readonly previewSessions?: Readonly<Record<string, unknown>>;
   readonly desktopByTabId?: Readonly<Record<string, unknown>>;
-  readonly pullRequestStatuses?: Readonly<Record<string, PullRequestTabStatus>>;
+  /** Environment used for pull-request tabs that do not name their own. */
+  readonly environmentId?: EnvironmentId | null;
+  /** List rows already loaded by the pull-request page, shown while a tab's own read arrives. */
+  readonly pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
   readonly liveAgentCount: number;
   readonly children: ReactNode;
 }
@@ -112,6 +135,8 @@ export interface PullRequestTabStatus {
   state: PullRequestState;
   isDraft: boolean;
 }
+
+export type PullRequestTabStatusSeed = Pick<PullRequestTabStatus, "state" | "isDraft">;
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
 
@@ -415,11 +440,13 @@ function surfaceLabel(
 function SurfaceIcon({
   surface,
   theme,
-  pullRequestStatuses,
+  environmentId,
+  pullRequestStatusSeeds,
 }: {
   readonly surface: RightPanelSurface;
   readonly theme: "light" | "dark";
-  readonly pullRequestStatuses: Readonly<Record<string, PullRequestTabStatus>> | undefined;
+  readonly environmentId: EnvironmentId | null;
+  readonly pullRequestStatusSeeds: Readonly<Record<string, PullRequestTabStatusSeed>> | undefined;
 }) {
   if (surface.kind === "diff") return <FileDiff className="size-3.5" />;
   if (surface.kind === "files") return <Files className="size-3.5" />;
@@ -434,23 +461,116 @@ function SurfaceIcon({
     );
   }
   if (surface.kind === "pull-request") {
-    const status = pullRequestStatuses?.[surface.id] ?? null;
-    const toneClassName =
-      status?.state === "merged"
-        ? "text-violet-600 dark:text-violet-300/90"
-        : status?.state === "closed"
-          ? "text-red-600 dark:text-red-300/90"
-          : status?.isDraft
-            ? "text-zinc-500 dark:text-zinc-400/80"
-            : status?.state === "open"
-              ? "text-emerald-600 dark:text-emerald-300/90"
-              : "text-muted-foreground";
-    return <PullRequestGlyph.pullRequest className={cn("size-3.5", toneClassName)} />;
+    return (
+      <PullRequestSurfaceIcon
+        surface={surface}
+        environmentId={environmentId}
+        seed={pullRequestStatusSeeds?.[surface.id]}
+      />
+    );
   }
   if (surface.kind === "pull-requests")
     return <PullRequestGlyph.pullRequest className="size-3.5" />;
   if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
+}
+
+export function resolvePullRequestTabLink(
+  threads: readonly Pick<EnvironmentThreadShell, "environmentId" | "pullRequests">[],
+  environmentId: EnvironmentId | null,
+  host: string | null,
+  reference: { repository: string; number: number },
+) {
+  if (environmentId === null || host === null) return undefined;
+  let newest: EnvironmentThreadShell["pullRequests"][number] | undefined;
+  for (const thread of threads) {
+    if (thread.environmentId !== environmentId) continue;
+    for (const link of visibleThreadPullRequests(thread.pullRequests)) {
+      if (
+        !threadPullRequestKeysEqual(link, {
+          host,
+          repository: reference.repository,
+          number: reference.number,
+        })
+      )
+        continue;
+      if (
+        newest === undefined ||
+        (link.snapshot?.syncedAt ?? "") > (newest.snapshot?.syncedAt ?? "")
+      )
+        newest = link;
+    }
+  }
+  return newest;
+}
+
+function PullRequestSurfaceIcon({
+  surface,
+  environmentId,
+  seed,
+}: {
+  surface: Extract<RightPanelSurface, { kind: "pull-request" }>;
+  environmentId: EnvironmentId | null;
+  seed: PullRequestTabStatusSeed | undefined;
+}) {
+  const resolvedEnvironmentId =
+    (surface.environmentId as EnvironmentId | undefined) ?? environmentId;
+  const projects = useProjects();
+  const threads = useThreadShells();
+  const project = projects.find(
+    (entry) => entry.environmentId === resolvedEnvironmentId && entry.id === surface.projectId,
+  );
+  const identity = project?.repositoryIdentity;
+  const host =
+    surface.host ??
+    (identity?.provider
+      ? pullRequestHostOf(identity, identity.provider as SourceControlProviderKind)
+      : null);
+  const configs = useServerConfigs();
+  const capabilities =
+    resolvedEnvironmentId === null
+      ? undefined
+      : configs.get(resolvedEnvironmentId)?.environment.capabilities;
+  const linkedSnapshot =
+    capabilities?.threadPullRequests === true
+      ? (resolvePullRequestTabLink(threads, resolvedEnvironmentId, host, surface)?.snapshot ?? null)
+      : null;
+  const detail = useEnvironmentQuery(
+    resolvedEnvironmentId === null || capabilities?.pullRequests !== true || linkedSnapshot !== null
+      ? null
+      : pullRequestEnvironment.detail({
+          environmentId: resolvedEnvironmentId,
+          input: {
+            projectId: surface.projectId as ProjectId,
+            ...(capabilities?.threadPullRequests === true && surface.host !== undefined
+              ? { host: surface.host }
+              : {}),
+            repository: surface.repository,
+            number: surface.number,
+          },
+        }),
+  ).data;
+  const reference = useMemo(
+    () => ({
+      projectId: surface.projectId as ProjectId,
+      repository: surface.repository,
+      number: surface.number,
+    }),
+    [surface.projectId, surface.repository, surface.number],
+  );
+  const sharedSummary = useSharedPullRequestSummary(resolvedEnvironmentId, reference, null);
+  // The compact tab intentionally shows lifecycle and draft state only. Conflict warnings have
+  // their own presentation on surfaces that have mergeability, while this tab stays stable as
+  // detail data arrives.
+  const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
+  if (status === null) {
+    return <PullRequestGlyph.pullRequest className="size-3.5 shrink-0 text-muted-foreground" />;
+  }
+  const presentation = resolvePullRequestState({
+    state: status.state,
+    isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
+  });
+  return <presentation.Icon className={cn("size-3.5 shrink-0", presentation.toneClassName)} />;
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
@@ -751,7 +871,8 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
                   <SurfaceIcon
                     surface={surface}
                     theme={resolvedTheme}
-                    pullRequestStatuses={props.pullRequestStatuses}
+                    environmentId={props.environmentId ?? null}
+                    pullRequestStatusSeeds={props.pullRequestStatusSeeds}
                   />
                   {pending ? (
                     <span

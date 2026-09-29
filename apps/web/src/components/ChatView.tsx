@@ -193,16 +193,14 @@ import {
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
-  isPullRequestSurface,
   type RightPanelSurface,
-  updatePullRequestTabStatus,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
+import { RightPanelTabs } from "./RightPanelTabs";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
-import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
+import { pullRequestPanelContext } from "./pullRequest/pullRequestDetail.logic";
 import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
@@ -1906,17 +1904,6 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
-  const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
-    Readonly<Record<string, PullRequestTabStatus>>
-  >({});
-  const handlePullRequestTabStatusChange = useCallback(
-    (surfaceId: string, status: PullRequestTabStatus) => {
-      setPullRequestTabStatuses((current) =>
-        updatePullRequestTabStatus<PullRequestTabStatus>(current, surfaceId, status),
-      );
-    },
-    [],
-  );
   const fileViewerCommandRequestIdRef = useRef(0);
   const lastShiftAtRef = useRef<number | null>(null);
   const [fileViewerCommandRequest, setFileViewerCommandRequest] =
@@ -5056,6 +5043,16 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
 
+      if (command === "rightPanel.close") {
+        // Nothing open: leave the event alone so the shortcut keeps its
+        // native meaning (close the browser tab).
+        if (!activeRightPanelSurface) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) closeRightPanelSurface(activeRightPanelSurface);
+        return;
+      }
+
       if (command === "terminal.split") {
         event.preventDefault();
         event.stopPropagation();
@@ -7293,7 +7290,7 @@ export default function ChatView(props: ChatViewProps) {
         title="Merge requests unavailable"
         error="Update this Coder workspace's T3 server to browse GitLab merge requests."
       />
-    ) : isPullRequestSurface(activeRightPanelSurface) ? (
+    ) : activeRightPanelSurface?.kind === "pull-request" ? (
       <PullRequestDetailPanel
         key={`${activeRightPanelSurface.repository}#${activeRightPanelSurface.number}`}
         environmentId={
@@ -7309,26 +7306,25 @@ export default function ChatView(props: ChatViewProps) {
           repository: activeRightPanelSurface.repository,
           number: activeRightPanelSurface.number,
         }}
-        context={
-          isThreadOwnPullRequest(
-            {
-              projectId: linkedThreadPullRequest?.projectId ?? activeProject?.id ?? null,
-              repository: threadRepository,
-              number: activeThreadPr?.number ?? null,
-            },
-            {
-              projectId: activeRightPanelSurface.projectId,
-              repository: activeRightPanelSurface.repository,
-              number: activeRightPanelSurface.number,
-            },
-          )
-            ? "thread"
-            : "page"
+        threadRef={activeThreadRef}
+        onSelectPullRequest={(reference) =>
+          useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+            projectId: reference.projectId,
+            repository: reference.repository,
+            number: reference.number,
+            ...(reference.host ? { host: reference.host } : {}),
+          })
         }
+        context={pullRequestPanelContext(
+          {
+            projectId: activeThreadMetadata?.projectId ?? null,
+            pullRequests: activeThreadMetadata?.pullRequests,
+            linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
+            branchPullRequest: activeThreadMetadata?.branchPullRequest,
+          },
+          activeRightPanelSurface,
+        )}
         composerDraftTarget={composerDraftTarget}
-        onStateChange={(status) =>
-          handlePullRequestTabStatusChange(activeRightPanelSurface.id, status)
-        }
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       filesAvailable &&
@@ -7953,7 +7949,7 @@ export default function ChatView(props: ChatViewProps) {
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
           pullRequestAvailable={pullRequestAvailable}
-          pullRequestStatuses={pullRequestTabStatuses}
+          environmentId={activeThreadRef?.environmentId ?? null}
           agentsAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -8000,7 +7996,7 @@ export default function ChatView(props: ChatViewProps) {
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}
             pullRequestAvailable={pullRequestAvailable}
-            pullRequestStatuses={pullRequestTabStatuses}
+            environmentId={activeThreadRef?.environmentId ?? null}
             agentsAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >

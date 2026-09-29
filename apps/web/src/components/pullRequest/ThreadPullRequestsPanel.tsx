@@ -148,7 +148,7 @@ function LinkRow({
                   </TooltipTrigger>
                   <TooltipPopup>
                     {stack.kind === "native"
-                      ? `${stack.size} linked merge requests.`
+                      ? `GitHub stack of ${stack.size}: merging a layer lands the ones below it.`
                       : `${stack.size} merge requests chained by base branch.`}
                   </TooltipPopup>
                 </Tooltip>
@@ -193,7 +193,7 @@ function LinkRow({
               <Button
                 variant="ghost"
                 size="icon-micro"
-                aria-label={`Actions for #${link.number}`}
+                aria-label={`Actions for !${link.number}`}
                 className="relative"
               >
                 <MoreHorizontalIcon className="size-3.5" />
@@ -269,7 +269,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   if (links.length === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <LinkIcon aria-hidden className="size-6 text-muted-foreground/60" />
+        <PullRequestGlyph.link aria-hidden className="size-6 text-muted-foreground/60" />
         <p className="text-sm font-medium">No linked merge requests</p>
         <p className="max-w-60 text-xs text-muted-foreground">
           Merge requests the agent opens from this thread land here. Link one yourself from a URL or

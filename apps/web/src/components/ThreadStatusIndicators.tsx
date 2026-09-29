@@ -6,7 +6,7 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pullRequests";
+import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
 import type {
   ThreadPullRequestLink,
   EnvironmentId,

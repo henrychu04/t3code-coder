@@ -101,15 +101,19 @@ export function SourceControlPreferences({
           id="default-merge-method"
           settingKeys={["pullRequestMergeMethod"]}
           title="Default merge method"
-          description="Preferred method for GitLab merge requests. GitLab's allowed methods still apply."
+          description="Merge requests start with this method. Last selected reuses your most recent choice in this browser session. GitLab's allowed methods still apply."
           control={
             <SettingsSelect
               ariaLabel="Default merge method"
-              value={settings.pullRequestMergeMethod}
+              value={settings.pullRequestMergeMethod ?? "last"}
               onChange={(value) =>
-                updateSettings({ pullRequestMergeMethod: value as PullRequestMergeMethod })
+                updateSettings({
+                  pullRequestMergeMethod:
+                    value === "last" ? null : (value as PullRequestMergeMethod),
+                })
               }
             >
+              <option value="last">Last selected</option>
               <option value="merge">Merge</option>
               <option value="squash">Squash</option>
               <option value="rebase">Rebase</option>

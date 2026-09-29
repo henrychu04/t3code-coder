@@ -63,7 +63,7 @@ export function PullRequestListGhost({
   return (
     <div
       role="status"
-      aria-label={caption ?? "Loading pull requests"}
+      aria-label={caption ?? "Loading merge requests"}
       className="motion-safe:animate-skeleton space-y-0.5"
     >
       {caption ? (
@@ -144,7 +144,7 @@ export function PullRequestDetailGhost({
   return (
     <div
       role="status"
-      aria-label="Loading pull request"
+      aria-label="Loading merge request"
       className={cn(
         "flex h-full min-h-0 flex-col overflow-hidden bg-background",
         !seed && "motion-safe:animate-skeleton",
@@ -159,7 +159,7 @@ export function PullRequestDetailGhost({
                 variant="ghost-muted"
                 className="-ml-1.5"
                 onClick={onBack}
-                aria-label="Back to this thread's pull requests"
+                aria-label="Back to this thread's merge requests"
               >
                 <ArrowLeftIcon aria-hidden className="size-3.5" />
               </Button>
@@ -170,30 +170,35 @@ export function PullRequestDetailGhost({
                 <InlineButton
                   onClick={() => void readLocalApi()?.shell.openExternal(seed.url)}
                   className={statePresentation?.toneClassName}
-                  aria-label={`Open pull request #${seed.number} on host`}
+                  aria-label={`Open merge request !${seed.number} on host`}
                 >
-                  #{seed.number}
+                  !{seed.number}
                   <ExternalLinkIcon aria-hidden className="size-2.5" />
                 </InlineButton>
               </>
             ) : (
               <>
                 <GhostBar className="w-24" />
-                <span className="shrink-0 text-xs text-muted-foreground">#{number ?? "…"}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">!{number ?? "…"}</span>
               </>
             )}
           </div>
         </div>
         <div className="mr-4 flex h-7 shrink-0 items-center justify-end gap-1">
           {actions ?? <GhostBar className="h-6 w-16 rounded-md" />}
-          <Button size="icon-xs" variant="ghost" disabled aria-label="Pull request actions loading">
+          <Button
+            size="icon-xs"
+            variant="ghost"
+            disabled
+            aria-label="Merge request actions loading"
+          >
             <EllipsisIcon aria-hidden className="size-4" />
           </Button>
           {onClose ? (
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label="Collapse pull request panel"
+              aria-label="Collapse merge request panel"
               onClick={onClose}
             >
               <PanelRightIcon aria-hidden className="size-3.5" />
@@ -232,7 +237,7 @@ export function PullRequestDetailGhost({
                   <PullRequestCopyableCode
                     key={checkout}
                     value={checkout}
-                    target="pull request checkout command"
+                    target="merge request checkout command"
                     copyLabel="Copy checkout command"
                     copiedLabel="Checkout command copied"
                     className="ml-auto font-mono"
@@ -264,7 +269,7 @@ export function PullRequestDetailGhost({
                       key={seed.headBranch}
                       value={seed.headBranch}
                       target="branch name"
-                      copyLabel="Copy pull request branch"
+                      copyLabel="Copy merge request branch"
                       copiedLabel="Branch name copied"
                       className="min-w-0 font-mono"
                     />
@@ -298,7 +303,7 @@ export function PullRequestDetailGhost({
 
         <nav
           className="col-span-2 flex min-w-0 flex-wrap items-center gap-2 border-t border-border/60 px-4 py-2"
-          aria-label="Pull request tabs"
+          aria-label="Merge request tabs"
           inert
         >
           <ToggleGroup
@@ -446,7 +451,7 @@ export function PullRequestConversationGhost({ rows = 3 }: { rows?: number }) {
   return (
     <div
       role="status"
-      aria-label="Loading pull request conversation"
+      aria-label="Loading merge request conversation"
       className="motion-safe:animate-skeleton space-y-4 py-2"
     >
       {Array.from({ length: rows }, (_, index) => (

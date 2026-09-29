@@ -4,6 +4,7 @@ import type {
   PullRequestDetailView,
   PullRequestRef,
   PullRequestReviewThread,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
@@ -18,7 +19,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
@@ -36,6 +37,7 @@ import {
   pullRequestReviewOutcomeRingClassName,
   pullRequestReviewOutcomeStaleLabel,
 } from "./pullRequestPresentation";
+import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
@@ -133,8 +135,8 @@ function reviewStateLabel(state: string): string {
 /** What every remark in the conversation needs to be rewritten where it sits. */
 interface CommentEditing {
   readonly cwd: string;
-  readonly hostUrl: string;
   readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef | null;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
   readonly saving: boolean;
@@ -160,9 +162,9 @@ function CommentBody({
       <PullRequestMarkdownEditor
         className={className}
         value={comment.body}
-        hostUrl={editing.hostUrl}
         cwd={editing.cwd}
         environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
         label="Edit comment"
         saving={editing.saving}
         onSave={(body) => editing.onSave(comment, body)}
@@ -176,9 +178,9 @@ function CommentBody({
         key={comment.id}
         className="min-w-0 flex-1"
         text={comment.body}
-        hostUrl={editing.hostUrl}
         cwd={editing.cwd}
         environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
       />
       {editing.canEdit(comment) ? (
         <PullRequestEditButton aria-label="Edit comment" onClick={() => editing.onEdit(comment)} />
@@ -454,6 +456,7 @@ const COMMENT_PAGE = 10;
 
 export function PullRequestSummaryTab({
   environmentId,
+  threadRef,
   reference,
   detail,
   activityPending,
@@ -467,6 +470,7 @@ export function PullRequestSummaryTab({
   onRefreshChecks = onRefresh,
 }: {
   environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
   activityPending: boolean;
@@ -563,8 +567,12 @@ export function PullRequestSummaryTab({
       })),
   ];
 
+  const openLink = useOpenLink(threadRef);
   const openCheck = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    void openLink(url).catch((error: unknown) => {
+      console.error(error);
+      toastManager.add({ type: "error", title: "Unable to open check details" });
+    });
   };
 
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
@@ -601,8 +609,8 @@ export function PullRequestSummaryTab({
 
   const commentEditing: CommentEditing = {
     cwd: detail.workspaceRoot,
-    hostUrl: detail.url,
     environmentId,
+    threadRef,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
     saving: commentSaving,
@@ -785,17 +793,30 @@ export function PullRequestSummaryTab({
               ) : null}
             </span>
           </MetaRow>
-          {detail.labels.length > 0 ? (
+          {/* The row is shown empty only where a label could be put on it from here; on a host
+              with none to offer, an empty row is a row about nothing. */}
+          {detail.labels.length > 0 || detail.capabilities.labels === true ? (
             <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
-                {detail.labels.map((label) => (
-                  <PullRequestLabelChip
-                    key={label.name}
-                    label={label}
-                    size="default"
-                    className="max-w-48"
+                {detail.labels.length === 0 ? (
+                  <span className="text-muted-foreground">None</span>
+                ) : (
+                  detail.labels.map((label) => (
+                    <PullRequestLabelChip
+                      key={label.name}
+                      label={label}
+                      size="default"
+                      className="max-w-48"
+                    />
+                  ))
+                )}
+                {detail.capabilities.labels === true ? (
+                  <PullRequestLabelPicker
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.viewerPermissions.labels !== false}
                   />
-                ))}
+                ) : null}
               </span>
             </MetaRow>
           ) : null}
@@ -809,11 +830,11 @@ export function PullRequestSummaryTab({
               // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
-              hostUrl={detail.url}
               cwd={detail.workspaceRoot}
               environmentId={environmentId}
-              label="Pull request description"
-              placeholder="Describe this pull request"
+              threadRef={threadRef}
+              label="Merge request description"
+              placeholder="Describe this merge request"
               saving={bodySaving}
               onSave={(body) => void saveBody(body)}
               onCancel={() => setBodyScope(null)}
@@ -823,9 +844,9 @@ export function PullRequestSummaryTab({
               <PullRequestMarkdown
                 className="min-w-0 flex-1"
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
-                hostUrl={detail.url}
                 cwd={detail.workspaceRoot}
                 environmentId={environmentId}
+                threadRef={threadRef}
               />
               {canEditPullRequestChangeRequest(detail) ? (
                 <PullRequestEditButton
@@ -871,7 +892,7 @@ export function PullRequestSummaryTab({
                   <PullRequestCheckStatusIcon status={check.status} />
                   <span className="min-w-0 flex-1 wrap-anywhere">{check.name}</span>
                   <span className="shrink-0 text-muted-foreground">
-                    {pullRequestCheckStatusLabel(check.status)}
+                    {pullRequestCheckStatusLabel(check)}
                   </span>
                 </button>
                 {/* Only where there is something to fix. A passing check has no failure to

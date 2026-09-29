@@ -67,7 +67,7 @@ export function PullRequestFilterOptionIcon<Value extends string>({
   option: PullRequestFilterOption<Value>;
 }) {
   return option.project ? (
-    <ProjectFavicon project={option.project} fallbackIcon={FolderGit2Icon} className="size-3.5" />
+    <ProjectFavicon project={option.project} className="size-3.5" />
   ) : (
     <option.Icon aria-hidden className="size-3.5" />
   );
@@ -113,8 +113,8 @@ export function PullRequestSearchInput({
         type="search"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder="Search pull requests, or label:bug"
-        aria-label="Search pull requests"
+        placeholder="Search merge requests, or label:bug"
+        aria-label="Search merge requests"
       />
     </InputGroup>
   );
@@ -436,12 +436,9 @@ export function PullRequestFiltersMenu({
   serverOptions: ReadonlyArray<PullRequestFilterOption<string>>;
   onServer: (server: EnvironmentId | undefined) => void;
   /** The projects of every connected environment, each carrying the one its favicon is read from. */
-  projects: ReadonlyArray<{
-    readonly id: ProjectId;
-    readonly environmentId: EnvironmentId;
-    readonly title: string;
-    readonly workspaceRoot: string;
-  }>;
+  projects: ReadonlyArray<
+    ProjectFaviconProject & { readonly id: ProjectId; readonly environmentId: EnvironmentId }
+  >;
   projectId: ProjectId | undefined;
   /**
    * The server the selected project belongs to. A project id is only unique within its own
@@ -508,7 +505,7 @@ export function PullRequestFiltersMenu({
         <ListFilterIcon className="size-4" />
         <span>Filters</span>
         {filterCount > 0 ? (
-          <span className="rounded-full bg-primary/10 px-1.5 text-xs text-primary tabular-nums">
+          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
             {filterCount}
           </span>
         ) : null}

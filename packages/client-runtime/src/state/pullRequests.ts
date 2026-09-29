@@ -2,8 +2,9 @@ import {
   WS_METHODS,
   type EnvironmentId,
   type PullRequestActor,
-  type PullRequestRef,
   type PullRequestDetail,
+  type PullRequestRef,
+  type PullRequestSummary,
   type VcsStatusResult,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -17,6 +18,8 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+
+const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 
 /** Keep confirmed edits on the same cached reference regardless of input property order. */
 function writableQueryFamily<A, E>(
@@ -73,16 +76,17 @@ function createPullRequestRefreshAtomFamily<R, E>(
   });
 }
 
-/** Refresh a linked MR while its thread is visible so merges update the sidebar. */
-export function createLinkedPullRequestDetailAtomFamily<R, E>(
+/** Refresh only the live fields a linked thread renders. */
+export function createLinkedPullRequestSummaryAtomFamily<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
   refreshes = createPullRequestRefreshAtomFamily(runtime),
 ) {
   return createEnvironmentRpcQueryAtomFamily(runtime, {
-    label: "environment-data:pull-requests:linked-detail",
-    tag: WS_METHODS.pullRequestsDetail,
-    staleTimeMs: 15_000,
-    refreshIntervalMs: 30_000,
+    label: "environment-data:pull-requests:linked-summary",
+    tag: WS_METHODS.pullRequestsSummary,
+    staleTimeMs: 60_000,
+    refreshIntervalMs: 60_000,
+    idleTtlMs: LINKED_PULL_REQUEST_IDLE_TTL_MS,
     refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
   });
 }
@@ -96,13 +100,13 @@ export function createPullRequestStackAtomFamily<R, E>(
     label: "environment-data:pull-requests:stack",
     tag: WS_METHODS.pullRequestsStack,
     staleTimeMs: 60_000,
-    idleTtlMs: 5 * 60_000,
+    idleTtlMs: LINKED_PULL_REQUEST_IDLE_TTL_MS,
     refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
   });
 }
 
 export function pullRequestDetailToVcsStatus(
-  detail: PullRequestDetail,
+  detail: PullRequestDetail | PullRequestSummary,
 ): NonNullable<VcsStatusResult["pr"]> {
   return {
     number: detail.number,
@@ -116,7 +120,11 @@ export function pullRequestDetailToVcsStatus(
   };
 }
 
-/** GitLab merge-request reads and mutations scoped to one Coder environment. */
+/**
+ * Reopening a PR within a minute reuses detail and activity. Explicit refreshes and
+ * turn notifications still revalidate. Mutations run serially per environment: actions on the same
+ * pull request are order-sensitive. Confirmed label and reviewer edits update cached state.
+ */
 export function createPullRequestEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
 ) {
@@ -126,7 +134,14 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     mode: "serial",
     key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
   } as const;
-
+  const activity = writableQueryFamily(
+    createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:activity",
+      tag: WS_METHODS.pullRequestsActivity,
+      staleTimeMs: 60_000,
+      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+    }),
+  );
   const detail = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:detail",
@@ -143,12 +158,11 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
     }),
   );
-  const activity = writableQueryFamily(
+  const labelCandidates = writableQueryFamily(
     createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:activity",
-      tag: WS_METHODS.pullRequestsActivity,
-      staleTimeMs: 15_000,
-      refreshTrigger: ({ environmentId }) => refreshes({ environmentId, input: {} }),
+      label: "environment-data:pull-requests:label-candidates",
+      tag: WS_METHODS.pullRequestsLabelCandidates,
+      staleTimeMs: 60_000,
     }),
   );
   const reviewerCandidates = writableQueryFamily(
@@ -158,7 +172,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       staleTimeMs: 60_000,
     }),
   );
-
   return {
     refreshes,
     linkedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
@@ -175,6 +188,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       refreshTrigger: ({ environmentId, input }) =>
         input.cursors === undefined ? refreshes({ environmentId, input: {} }) : undefined,
     }),
+    /**
+     * The line counts for rows the listing has already handed over. Its own query because the
+     * listing is quicker without them — measured over twelve repositories, ~4.0s against ~7.1s —
+     * so the rows arrive first and their stats a moment later. Kept longer than the listing:
+     * a change request's size only moves when somebody pushes to it.
+     */
     listStats: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:pull-requests:list-stats",
       tag: WS_METHODS.pullRequestsListStats,
@@ -184,11 +203,6 @@ export function createPullRequestEnvironmentAtoms<R, E>(
     detail,
     preview,
     activity,
-    diff: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:pull-requests:diff",
-      tag: WS_METHODS.pullRequestsDiff,
-      staleTimeMs: 60_000,
-    }),
     threadComments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:thread-comments",
       tag: WS_METHODS.pullRequestsThreadComments,
@@ -198,6 +212,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
         key: ({ environmentId, input }) =>
           JSON.stringify([environmentId, input.threadId, input.cursor]),
       },
+    }),
+    // Coder loads the diff over the helper's stdio RPC; there is no environment HTTP endpoint.
+    diff: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:pull-requests:diff",
+      tag: WS_METHODS.pullRequestsDiff,
+      staleTimeMs: 60_000,
     }),
     diffFileContents: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:diff-file-contents",
@@ -263,6 +283,15 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pullRequestsUpdateComment,
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
+      onSuccess: ({ environmentId, input: { projectId, host, repository, number } }, registry) =>
+        Effect.sync(() =>
+          registry.refresh(
+            activity({
+              environmentId,
+              input: { projectId, ...(host === undefined ? {} : { host }), repository, number },
+            }),
+          ),
+        ),
     }),
     submitReview: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:submit-review",
@@ -276,6 +305,12 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
+    /**
+     * Its own query rather than part of the detail: the people who may be asked are only wanted
+     * once somebody opens the reviewer menu, so this atom is read then and not before. Kept fresh
+     * for a minute, because who has access to a repository changes far more slowly than the
+     * change request it is being read for.
+     */
     reviewerCandidates,
     requestReviewers: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:request-reviewers",
@@ -351,6 +386,43 @@ export function createPullRequestEnvironmentAtoms<R, E>(
           );
         }),
     }),
+    /** Read when the label menu opens, and kept for a minute, like the reviewer candidates. */
+    labelCandidates,
+    setLabels: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:pull-requests:set-labels",
+      tag: WS_METHODS.pullRequestsSetLabels,
+      scheduler: commandScheduler,
+      concurrency: serialPerEnvironment,
+      onSuccess: (target, registry) =>
+        Effect.sync(() => {
+          const { labels, applied } = target.input;
+          const candidatesAtom = labelCandidates(target);
+          const candidates = Option.getOrNull(AsyncResult.value(registry.get(candidatesAtom)));
+          const names = new Set(labels);
+          updateCached(registry, candidatesAtom, (value) => ({
+            ...value,
+            candidates: value.candidates.map((candidate) =>
+              names.has(candidate.name) ? { ...candidate, isApplied: applied } : candidate,
+            ),
+          }));
+          updateCached(registry, detail(target), (value) => ({
+            ...value,
+            labels: applied
+              ? [
+                  ...value.labels,
+                  ...labels
+                    .filter((name) => !value.labels.some((label) => label.name === name))
+                    .map((name) => ({
+                      name,
+                      color:
+                        candidates?.candidates.find((candidate) => candidate.name === name)
+                          ?.color ?? null,
+                    })),
+                ]
+              : value.labels.filter((label) => !names.has(label.name)),
+          }));
+        }),
+    }),
     setThreadResolution: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:set-thread-resolution",
       tag: WS_METHODS.pullRequestsSetThreadResolution,
@@ -363,6 +435,11 @@ export function createPullRequestEnvironmentAtoms<R, E>(
       scheduler: commandScheduler,
       concurrency: serialPerEnvironment,
     }),
+    /**
+     * Explicit refresh: forget the server's cached answers, then re-run the reads. A separate
+     * request rather than a flag on a read, so only a person's refresh spends host requests
+     * while every silent re-read shares the cache.
+     */
     invalidate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:pull-requests:invalidate",
       tag: WS_METHODS.pullRequestsInvalidate,

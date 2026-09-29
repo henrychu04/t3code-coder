@@ -30,7 +30,8 @@ export type DiffFoldOverride = "expanded" | "folded" | null;
  * A diff arrives a slice at a time, so the reader's own choices are kept as the difference from
  * what the toolbar last said rather than as the set of folded files: a file that has not loaded
  * yet cannot be in a set, and would otherwise land expanded moments after the reader folded
- * everything. The caller supplies the saved default until the toolbar overrides it.
+ * everything. The caller supplies the saved default until the toolbar overrides it; individual
+ * files can still be toggled independently.
  */
 export function isFileDiffCollapsed(
   fileKey: string,

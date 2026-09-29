@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ServerProviderUsageLimits } from "./providerUsageLimits.ts";
 
-import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { EnvironmentMachineKind, ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
   ForwardCompatibleArray,
   IsoDateTime,
@@ -268,6 +268,18 @@ export const ServerConfig = Schema.Struct({
   reasoningMessages: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
+
+/**
+ * The machine an environment should be drawn as: the user's pick, else a generic server. Coder
+ * workspaces do not report detected hardware, so upstream's detected kind is never available.
+ */
+export function resolveEnvironmentMachineKind(
+  config: {
+    readonly settings?: Pick<ServerSettings, "environmentIcon">;
+  } | null,
+): EnvironmentMachineKind {
+  return config?.settings?.environmentIcon ?? "server";
+}
 
 const ServerUpsertKeybindingReplaceTarget = Schema.Struct({
   key: KeybindingValue,

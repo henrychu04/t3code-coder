@@ -6,7 +6,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "..
 import { PullRequestGlyph } from "./pullRequestIcons";
 
 export function PullRequestsUnavailableState({
-  title = "Could not load pull requests",
+  title = "Could not load merge requests",
   error,
   onRetry,
   refreshing = false,
