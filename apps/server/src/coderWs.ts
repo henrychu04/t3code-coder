@@ -12,6 +12,7 @@ import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
 import { projectSettingsCommandPatch } from "./projectSettingsCommand.ts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { PullRequestSyncReactor } from "./orchestration/PullRequestSyncReactor.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
 import { isCoderPullRequestLink } from "./coderPullRequestLink.ts";
@@ -92,7 +93,10 @@ import {
   projectActivityEvent,
   projectThreadDetailSnapshot,
 } from "./orchestration/ActivityPayloadProjection.ts";
-import { normalizeDispatchCommand } from "./orchestration/Normalizer.ts";
+import {
+  cleanupFailedUploadedAttachments,
+  normalizeDispatchCommand,
+} from "./orchestration/Normalizer.ts";
 import { isOrchestrationCommandRejection } from "./orchestration/Errors.ts";
 import { readWorkflowScript } from "./orchestration/workflowScriptQuery.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
@@ -769,6 +773,35 @@ export const layer = CoderWsRpcGroup.toLayer(
         Effect.ignoreCause({ log: true }),
       );
 
+    // Project setting > environment setting; null when neither is set so
+    // the driver reads the freshly created checkout's own t3.json (the
+    // branch being checked out may declare something the project root does
+    // not). Settings that fail to load fall through the same way.
+    const resolveBootstrapWorktreeSubmodules = Effect.fnUntraced(function* (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: ProjectId | null;
+    }) {
+      const current = yield* settings.getSettings.pipe(Effect.orElseSucceed(() => null));
+      if (!current) return null;
+      // A worktree can also be prepared for an existing thread, whose
+      // project is only known through its shell.
+      const resolvedProjectId =
+        input.projectId ??
+        (yield* projections.getThreadShellById(input.threadId).pipe(
+          Effect.map((thread) => Option.getOrNull(thread)?.projectId ?? null),
+          Effect.orElseSucceed(() => null),
+        ));
+      const project =
+        resolvedProjectId === null
+          ? null
+          : yield* projections.getProjectShellById(resolvedProjectId).pipe(
+              Effect.map(Option.getOrNull),
+              Effect.orElseSucceed(() => null),
+            );
+      return resolveProjectSettings(current, resolvedProjectId, project).settings
+        .worktreeSubmodules;
+    });
+
     const dispatchBootstrap = (
       command: Extract<OrchestrationCommand, { type: "thread.turn.start" }>,
     ) =>
@@ -863,7 +896,10 @@ export const layer = CoderWsRpcGroup.toLayer(
               message: {
                 messageId: command.message.messageId,
                 text: command.message.text,
-                attachments: command.attachments ?? [],
+                attachments: command.message.attachments,
+                ...(command.message.context !== undefined
+                  ? { context: command.message.context }
+                  : {}),
               },
               createdAt: command.createdAt,
             });
@@ -874,6 +910,10 @@ export const layer = CoderWsRpcGroup.toLayer(
           }
           if (prepareWorktree && worktreeBase) {
             yield* track(worktreeSetupTracker.stageStatus(threadId, "checkout", "running"));
+            const submodules = yield* resolveBootstrapWorktreeSubmodules({
+              threadId,
+              projectId: bootstrap.createThread?.projectId ?? null,
+            });
             const worktree = yield* git.createWorktree(
               {
                 cwd: prepareWorktree.projectCwd,
@@ -883,6 +923,7 @@ export const layer = CoderWsRpcGroup.toLayer(
                 path: null,
               },
               {
+                submodules,
                 progress: {
                   onWorktreeClaimed: (path) =>
                     Effect.sync(() => {
@@ -901,6 +942,13 @@ export const layer = CoderWsRpcGroup.toLayer(
                           worktreeSetupTracker.stageStatus(threadId, "submodules", "running"),
                         ),
                       ),
+                  onSubmodulesDisabled: ({ source }) =>
+                    worktreeSetupTracker.stageStatus(
+                      threadId,
+                      "submodules",
+                      "skipped",
+                      `disabled in ${source}`,
+                    ),
                   onSubmoduleLine: (line) =>
                     worktreeSetupTracker.stage(threadId, "submodules", { detail: line }),
                   onSubmodulesFinished: ({ ok, detail }) =>
@@ -1297,6 +1345,14 @@ export const layer = CoderWsRpcGroup.toLayer(
           ),
         ),
       [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
+      // Upstream's refresh without its remote model-manifest and usage-limit refreshes.
+      [WS_METHODS.serverRefreshProviders]: (input) =>
+        (input.cwd !== undefined && input.instanceId !== undefined
+          ? providers.refreshWorkspaceSnapshot({ instanceId: input.instanceId, cwd: input.cwd })
+          : input.instanceId !== undefined
+            ? providers.refreshInstance(input.instanceId)
+            : providers.refresh()
+        ).pipe(Effect.map((providers) => ({ providers }))),
       [WS_METHODS.providerListSlashCommands]: (input) =>
         listProviderWorkspaceSlashCommands(input, providers, providerInstances),
       [WS_METHODS.serverDiscoverSourceControl]: () => sourceControlDiscovery.discover,
@@ -1432,6 +1488,7 @@ export const layer = CoderWsRpcGroup.toLayer(
           }),
         ),
       [WS_METHODS.pullRequestsDetail]: (input) => pullRequests.detail(input),
+      [WS_METHODS.pullRequestsPreview]: (input) => pullRequests.preview(input),
       [WS_METHODS.pullRequestsActivity]: (input) => pullRequests.activity(input),
       [WS_METHODS.pullRequestsThreadComments]: (input) => pullRequests.threadComments(input),
       [WS_METHODS.pullRequestsFilesViewed]: (input) => pullRequests.filesViewed(input),
@@ -1462,6 +1519,8 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.pullRequestsReviewerCandidates]: (input) =>
         pullRequests.reviewerCandidates(input),
       [WS_METHODS.pullRequestsRequestReviewers]: (input) => pullRequests.requestReviewers(input),
+      [WS_METHODS.pullRequestsLabelCandidates]: (input) => pullRequests.labelCandidates(input),
+      [WS_METHODS.pullRequestsSetLabels]: (input) => pullRequests.setLabels(input),
       [WS_METHODS.reviewGetDiffPreview]: (input) => review.getDiffPreview(input),
       [WS_METHODS.reviewOpenDiffFileContents]: (input) => review.openDiffFileContents(input),
       [WS_METHODS.reviewReadDiffFileChunk]: (input) => review.readDiffFileChunk(input),
@@ -1600,9 +1659,9 @@ export const layer = CoderWsRpcGroup.toLayer(
             );
           }),
         ),
-      [ORCHESTRATION_WS_METHODS.dispatchCommand]: (command) =>
-        ProjectCloneTracker.rejectCommandsDuringClone(projectClones, command).pipe(
-          Effect.andThen(normalizeDispatchCommand(command)),
+      [ORCHESTRATION_WS_METHODS.dispatchCommand]: (clientCommand) =>
+        ProjectCloneTracker.rejectCommandsDuringClone(projectClones, clientCommand).pipe(
+          Effect.andThen(normalizeDispatchCommand(clientCommand)),
           Effect.tap((command) =>
             command.type !== "thread.pull-request.link"
               ? Effect.void
@@ -1631,7 +1690,9 @@ export const layer = CoderWsRpcGroup.toLayer(
               const receipts = isProjectSettingsCommand
                 ? yield* sql`SELECT command_id FROM orchestration_command_receipts WHERE command_id = ${command.commandId} AND status = 'accepted' LIMIT 1`
                 : [];
-              const result = yield* dispatch(command);
+              const result = yield* dispatch(command).pipe(
+                Effect.tapError(() => cleanupFailedUploadedAttachments(clientCommand, command)),
+              );
               yield* ProjectCloneTracker.discardCloneForDeletedProject(projectClones, command);
               if (isProjectSettingsCommand && receipts.length === 0) {
                 const current = yield* settings.getSettings;

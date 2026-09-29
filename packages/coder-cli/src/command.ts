@@ -10,6 +10,7 @@ import {
 export interface CoderInvocation {
   readonly executable: string;
   readonly args: readonly string[];
+  readonly env?: Readonly<Record<string, string>>;
 }
 
 const CODER_GLOBAL_ARGS = ["--no-version-warning"] as const;

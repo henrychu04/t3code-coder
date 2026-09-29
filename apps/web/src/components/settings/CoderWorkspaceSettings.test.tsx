@@ -38,7 +38,7 @@ vi.mock("./useSettingsPolling", () => ({
   useSettingsPolling: () => ({ error: state.pollError, pending: false, refresh: state.refresh }),
 }));
 vi.mock("../CoderWorkspaceDiagnostics", () => ({ CoderWorkspaceDiagnostics: () => null }));
-vi.mock("./SettingsPage", () => ({
+vi.mock("./settingsLayout", () => ({
   SettingsRow: ({
     title,
     status,

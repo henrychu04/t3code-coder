@@ -1,6 +1,6 @@
 {
   "name": "@t3tools/web",
-  "version": "0.0.33",
+  "version": "0.0.42",
   "private": true,
   "type": "module",
   "scripts": {
@@ -19,7 +19,6 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@effect/atom-react": "catalog:",
     "@legendapp/list": "catalog:",
-    "@lexical/react": "^0.41.0",
     "@pierre/diffs": "catalog:",
     "@pierre/trees": "1.0.0-beta.4",
     "@t3tools/client-runtime": "workspace:*",
@@ -28,6 +27,7 @@
     "@tanstack/react-pacer": "^0.19.4",
     "@tanstack/react-router": "^1.160.2",
     "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-code": "^3.31.3",
     "@tiptap/extension-task-item": "^3.31.3",
     "@tiptap/extension-task-list": "^3.31.3",
     "@tiptap/pm": "^3.31.3",
@@ -38,7 +38,6 @@
     "effect": "catalog:",
     "hast-util-to-html": "^9.0.5",
     "hast-util-to-jsx-runtime": "^2.3.6",
-    "lexical": "^0.41.0",
     "lucide-react": "^0.564.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",

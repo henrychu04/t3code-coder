@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 import { CommandId, ProjectId, ThreadId } from "./baseSchemas.ts";
 
 import {
-  PastedImageAttachment,
+  ChatAttachment,
   DEFAULT_PROVIDER_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
   ModelSelection,
@@ -239,6 +239,7 @@ it.effect("decodes thread.turn.start defaults for provider and runtime mode", ()
         messageId: "msg-1",
         role: "user",
         text: "hello",
+        attachments: [],
       },
       createdAt: "2026-01-01T00:00:00.000Z",
     });
@@ -258,6 +259,7 @@ it.effect("preserves explicit provider and runtime mode in thread.turn.start", (
         messageId: "msg-2",
         role: "user",
         text: "hello",
+        attachments: [],
       },
       modelSelection: {
         provider: "codex",
@@ -282,6 +284,7 @@ it.effect("accepts bootstrap metadata in thread.turn.start", () =>
         messageId: "msg-bootstrap",
         role: "user",
         text: "hello",
+        attachments: [],
       },
       bootstrap: {
         createThread: {
@@ -555,6 +558,37 @@ it.effect("decodes thread pull request links with snapshot and stack", () =>
   }),
 );
 
+// A stored event that fails to decode stops the event store read, and with it
+// server startup, so rows written before `turnId` existed must still load.
+it.effect("decodes a legacy message-sent event persisted without turnId", () =>
+  Effect.gen(function* () {
+    const event = yield* decodeOrchestrationEvent({
+      sequence: 539,
+      eventId: "event-message-legacy-1",
+      aggregateKind: "thread",
+      aggregateId: "thread-1",
+      type: "thread.message-sent",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-message-legacy-1",
+      causationEventId: null,
+      correlationId: "cmd-message-legacy-1",
+      metadata: {},
+      payload: {
+        threadId: "thread-1",
+        messageId: "message-1",
+        role: "user",
+        text: "written before turn ids were recorded",
+        streaming: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.strictEqual(event.type, "thread.message-sent");
+    if (event.type !== "thread.message-sent") return;
+    assert.strictEqual(event.payload.turnId, null);
+  }),
+);
+
 it.effect("decodes thread archived and unarchived events", () =>
   Effect.gen(function* () {
     const archived = yield* decodeOrchestrationEvent({
@@ -651,6 +685,7 @@ it.effect("accepts provider-scoped model options in thread.turn.start", () =>
         messageId: "msg-options",
         role: "user",
         text: "hello",
+        attachments: [],
       },
       modelSelection: {
         provider: "codex",
@@ -756,21 +791,24 @@ it.effect("accepts a title seed in thread.turn.start", () =>
         messageId: "msg-title-seed",
         role: "user",
         text: "hello",
+        attachments: [
+          {
+            type: "image",
+            id: "550e8400-e29b-41d4-a716-446655440000.webp",
+          },
+        ],
       },
-      attachments: [
-        {
-          type: "image",
-          id: "550e8400-e29b-41d4-a716-446655440000.webp",
-        },
-      ],
       titleSeed: "Investigate reconnect failures",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     assert.strictEqual(parsed.titleSeed, "Investigate reconnect failures");
-    assert.deepStrictEqual(parsed.attachments, [
+    assert.deepStrictEqual(parsed.message.attachments, [
       {
         type: "image",
-        id: "550e8400-e29b-41d4-a716-446655440000.webp",
+        id: "legacy-550e8400-e29b-41d4-a716-446655440000-webp",
+        name: "image.webp",
+        mimeType: "image/webp",
+        sizeBytes: 0,
       },
     ]);
   }),
@@ -992,6 +1030,7 @@ it.effect("accepts a source proposed plan reference in thread.turn.start", () =>
         messageId: "msg-source-plan",
         role: "user",
         text: "implement this",
+        attachments: [],
       },
       sourceProposedPlan: {
         threadId: "thread-1",
@@ -1236,15 +1275,55 @@ it.effect("project favicon overrides accept only supported image files", () =>
 
 const decodeClientOrchestrationCommand = Schema.decodeUnknownEffect(ClientOrchestrationCommand);
 
-it("keeps attachment display metadata separate from its validated storage id", () => {
-  const decode = Schema.decodeUnknownSync(PastedImageAttachment);
+it("decodes Coder's earlier pasted images as legacy image attachments", () => {
+  const decode = Schema.decodeUnknownSync(ChatAttachment);
   const id = "11111111-1111-4111-8111-111111111111.png";
-  assert.deepEqual(decode({ type: "image", id }), { type: "image", id });
-  assert.deepEqual(decode({ type: "image", id, name: "checkout.png" }), {
+  assert.deepEqual(decode({ type: "image", id }), {
     type: "image",
-    id,
-    name: "checkout.png",
+    id: "legacy-11111111-1111-4111-8111-111111111111-png",
+    name: "image.png",
+    mimeType: "image/png",
+    sizeBytes: 0,
   });
+  assert.deepEqual(decode({ type: "image", id, name: "checkout.png" }).name, "checkout.png");
   assert.throws(() => decode({ type: "image", id: "../checkout.png", name: "checkout.png" }));
   assert.throws(() => decode({ type: "image", id, name: "x".repeat(256) }));
+  const current = {
+    type: "image",
+    id: "pending-11111111-1111-4111-8111-111111111111-png",
+    name: "checkout.png",
+    mimeType: "image/png",
+    sizeBytes: 12,
+  };
+  assert.deepEqual(decode(current), current);
+});
+
+it("accepts only staged image attachments from clients", () => {
+  const decode = Schema.decodeUnknownSync(ClientOrchestrationCommand);
+  const command = (attachment: unknown) => ({
+    type: "thread.turn.start",
+    commandId: "cmd-client-attachment",
+    threadId: "thread-1",
+    message: { messageId: "msg-1", role: "user", text: "look", attachments: [attachment] },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+  const image = {
+    type: "image",
+    id: "pending-11111111-1111-4111-8111-111111111111-png",
+    name: "checkout.png",
+    mimeType: "image/png",
+    sizeBytes: 12,
+  };
+  assert.doesNotThrow(() => decode(command(image)));
+  assert.throws(() =>
+    decode(command({ ...image, type: "file", id: "pending-file", mimeType: "text/plain" })),
+  );
+  // Inline bytes are never part of the Coder wire; decoding drops them.
+  const withBytes = decode(command({ ...image, dataUrl: "data:image/png;base64,AAAA" }));
+  assert.notProperty(
+    withBytes.type === "thread.turn.start" ? withBytes.message.attachments[0] : {},
+    "dataUrl",
+  );
 });

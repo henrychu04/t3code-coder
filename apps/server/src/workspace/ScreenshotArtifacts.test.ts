@@ -51,6 +51,37 @@ it.layer(NodeServices.layer)("Legacy images", (it) => {
                 .pipe(Effect.result))._tag,
             ).toBe("Failure");
           }
+          const attachmentsDir = path.join(root, "attachments");
+          for (const [artifactId, file] of [
+            [
+              "thread-1-550e8400-e29b-41d4-a716-446655440001-png",
+              "thread-1-550e8400-e29b-41d4-a716-446655440001-png.png",
+            ],
+            [
+              "legacy-550e8400-e29b-41d4-a716-446655440002-png",
+              "550e8400-e29b-41d4-a716-446655440002.png",
+            ],
+          ] as const) {
+            yield* Effect.promise(() => fs.writeFile(path.join(attachmentsDir, file), png));
+            const chunk = yield* images.readChunk({
+              artifactId: ScreenshotArtifactId.make(artifactId),
+              source: "attachment",
+              offset: 0,
+              limit: 512,
+            });
+            expect(chunk.mimeType).toBe("image/png");
+            expect(Buffer.from(chunk.dataBase64, "base64")).toEqual(png);
+          }
+          expect(
+            (yield* images
+              .readChunk({
+                artifactId: ScreenshotArtifactId.make("../outside"),
+                source: "attachment",
+                offset: 0,
+                limit: 512,
+              })
+              .pipe(Effect.result))._tag,
+          ).toBe("Failure");
           expect(
             (yield* images
               .readChunk({

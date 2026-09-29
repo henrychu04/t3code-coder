@@ -7,7 +7,6 @@ import {
   ProviderSession,
   ProviderSessionStartInput,
 } from "./provider.ts";
-import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "./orchestration.ts";
 
 const decodeProviderSessionStartInput = Schema.decodeUnknownSync(ProviderSessionStartInput);
 const decodeProviderSendTurnInput = Schema.decodeUnknownSync(ProviderSendTurnInput);
@@ -116,44 +115,67 @@ describe("ProviderSessionStartInput", () => {
 });
 
 describe("ProviderSendTurnInput", () => {
-  it("accepts bounded opaque pasted-image ids", () => {
-    const parsed = decodeProviderSendTurnInput({
-      threadId: "thread-1",
-      input: "Inspect this image",
-      attachments: [
-        {
-          type: "image",
-          id: "550e8400-e29b-41d4-a716-446655440000.png",
-        },
-      ],
-    });
-
-    expect(parsed.attachments).toEqual([
-      {
-        type: "image",
-        id: "550e8400-e29b-41d4-a716-446655440000.png",
-      },
-    ]);
-  });
-
-  it("rejects path-shaped ids and too many pasted images", () => {
-    const attachment = {
+  it("accepts 100 attachments and rejects 101", () => {
+    const attachments = Array.from({ length: 100 }, (_, index) => ({
       type: "image",
-      id: "550e8400-e29b-41d4-a716-446655440000.png",
-    } as const;
+      id: `image-${index}`,
+      name: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 1,
+    }));
+    expect(
+      decodeProviderSendTurnInput({ threadId: "thread-1", attachments }).attachments,
+    ).toHaveLength(100);
     expect(() =>
       decodeProviderSendTurnInput({
         threadId: "thread-1",
-        attachments: [{ ...attachment, id: `../${attachment.id}` }],
+        attachments: [...attachments, attachments[0]],
       }),
     ).toThrow();
+  });
+
+  it.each(["image", "file"])(
+    "caps total image bytes for %s attachments without charging videos",
+    (type) => {
+      const image = {
+        type,
+        id: "image",
+        name: "image.png",
+        mimeType: "image/png",
+        sizeBytes: 10 * 1024 * 1024,
+      };
+      const video = {
+        type: "file",
+        id: "video",
+        name: "video.mp4",
+        mimeType: "video/mp4",
+        sizeBytes: 50 * 1024 * 1024,
+      };
+      expect(
+        decodeProviderSendTurnInput({
+          threadId: "thread-1",
+          attachments: [...Array.from({ length: 8 }, () => image), video],
+        }).attachments,
+      ).toHaveLength(9);
+      expect(() =>
+        decodeProviderSendTurnInput({
+          threadId: "thread-1",
+          attachments: [...Array.from({ length: 8 }, () => image), { ...image, sizeBytes: 1 }],
+        }),
+      ).toThrow(/80 MiB/);
+    },
+  );
+
+  it("decodes Coder's earlier pasted-image ids and rejects path-shaped ones", () => {
+    const parsed = decodeProviderSendTurnInput({
+      threadId: "thread-1",
+      attachments: [{ type: "image", id: "550e8400-e29b-41d4-a716-446655440000.png" }],
+    });
+    expect(parsed.attachments?.[0]?.id).toBe("legacy-550e8400-e29b-41d4-a716-446655440000-png");
     expect(() =>
       decodeProviderSendTurnInput({
         threadId: "thread-1",
-        attachments: Array.from(
-          { length: PROVIDER_SEND_TURN_MAX_ATTACHMENTS + 1 },
-          () => attachment,
-        ),
+        attachments: [{ type: "image", id: "../550e8400-e29b-41d4-a716-446655440000.png" }],
       }),
     ).toThrow();
   });

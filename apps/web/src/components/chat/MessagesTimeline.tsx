@@ -1,9 +1,11 @@
-import { PullRequestChip } from "../contextChipParts";
 import {
-  CHAT_INLINE_CHIP_CLASS_NAME,
-  CHAT_INLINE_CHIP_LABEL_CLASS_NAME,
-  PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES,
-} from "../composerInlineChip";
+  ContextChipPopover as UserMessageContextPopover,
+  ContextChipShell,
+  ImageChipButton,
+  PULL_REQUEST_CHIP_KINDS,
+  PullRequestChip,
+  UnresolvedChip,
+} from "../contextChipParts";
 import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
@@ -13,14 +15,17 @@ import { Minimize2Icon } from "lucide-react";
 import {
   omitSupersededLifecycleMarkers,
   summarizeToolGroup,
-  normalizeCompactToolLabel,
-} from "./MessagesTimeline.logic";
+  resolveWorkEntryToolPresentation,
+  workEntryViewedImagePath,
+} from "@t3tools/client-runtime/work-log/presentation";
+import { T3Wordmark } from "../T3Wordmark";
 const MESSAGE_HEADING_LEVEL = 3;
-import { workEntryViewedImagePath } from "./MessagesTimeline.logic";
 import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import {
-  getQuestionAnswerHistory,
   getQuestionAnswerPreview,
+  getQuestionAnswerText,
+  hasQuestionAnswer,
+  type QuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
 import {
@@ -28,7 +33,6 @@ import {
   resolveTimelineMinimapPreview,
   type TimelineMinimapItem,
 } from "./timelineMinimapItems";
-import { GitPullRequestIcon } from "lucide-react";
 import {
   ArtifactNavigationContext,
   ArtifactTurnContext,
@@ -49,9 +53,12 @@ import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { ProjectImageLink } from "./ProjectImageLink";
 import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import { ScreenshotArtifactsRow } from "./ScreenshotArtifactsRow";
-import { submittedImageAttachments } from "../../lib/submittedImageAttachments";
+import {
+  messageImageReferences,
+  stripSubmittedImageLinks,
+} from "../../lib/submittedImageAttachments";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
-import { workEntryDisplayLabel } from "./MessagesTimeline.logic";
+import { liveWorkEntryLabel, workEntryDisplayLabel } from "./MessagesTimeline.logic";
 import {
   type EnvironmentId,
   type MessageId,
@@ -59,9 +66,42 @@ import {
   type ScreenshotArtifactReference,
   type ServerProviderSkill,
   type TurnId,
+  COMPOSER_CONTEXT_KINDS,
+  type ComposerContextId,
+  type KnownComposerContextRecord,
 } from "@t3tools/contracts";
+import {
+  collectComposerContextReferences,
+  formatComposerContextReference,
+  replaceComposerContextReferences,
+} from "@t3tools/shared/composerContextReferences";
+import {
+  COMPOSER_CONTEXT_CLIPBOARD_MIME,
+  encodeComposerContextClipboardHtml,
+  encodeComposerContextFragment,
+} from "@t3tools/shared/composerContextClipboard";
+import {
+  asKnownContextRecord,
+  isPullRequestSummaryContext,
+  pullRequestContextDisplayState,
+  pullRequestContextKindLabel,
+  resolveUserMessageContext,
+  reviewCommentContextLabel,
+  selectedMessageContextFragment,
+} from "~/lib/composerContextRecords";
+import { formatAttachmentSize } from "~/lib/attachmentDisplay";
+import { isImageAttachment } from "../../types";
+import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
+import { chatMarkdownClipboardPayload } from "../../markdown-clipboard";
+import { ContextChip, ContextChipLabel, type ContextChipKind } from "../ContextChip";
+import { createContextPresentationRegistry } from "../contextPresentationRegistry";
+import type { ChatMarkdownContextReference } from "../ChatMarkdown";
+import { PierreEntryIcon } from "./PierreEntryIcon";
+import { inferEntryKindFromPath } from "../../pierre-icons";
+import { useRightPanelStore } from "../../rightPanelStore";
+import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { commandProgramName } from "@t3tools/client-runtime/work-log/commandLabel";
+
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import type {
@@ -84,10 +124,10 @@ const NOOP_USE_ARTIFACT_TEMPLATE = () => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import {
   createContext,
-  Fragment,
   memo,
   use,
   useCallback,
+  useId,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -116,6 +156,9 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import ChatMarkdown from "../ChatMarkdown";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import type { Root, RootContent } from "mdast";
 import {
   BotIcon,
   BrainIcon,
@@ -141,10 +184,10 @@ import { Button } from "../ui/button";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
-import { useAtomValue } from "@effect/atom-react";
+
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThread } from "../../state/entities";
-import { serverEnvironment } from "../../state/server";
+
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   readTimelinePosition,
@@ -183,25 +226,14 @@ import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import {
-  deriveDisplayedUserMessageState,
-  type ParsedTerminalContextEntry,
-} from "~/lib/terminalContext";
 import { cn } from "~/lib/utils";
 import { type TimestampFormat } from "@t3tools/contracts/settings";
 import { formatChatTimestampTooltip, formatDayAwareTimestamp } from "../../timestampFormat";
-
-import {
-  buildInlineTerminalContextText,
-  formatInlineTerminalContextLabel,
-  textContainsInlineTerminalContextLabels,
-} from "./userMessageTerminalContexts";
-import { SkillInlineText } from "./SkillInlineText";
+import { SkillChipIcon, SkillInlineText } from "./SkillInlineText";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import {
   buildReviewCommentRenderablePatch,
   formatReviewCommentFence,
-  parseReviewCommentMessageSegments,
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
@@ -709,6 +741,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
         isWorking,
         activeTurnStartedAt,
         turnDiffSummaries,
+        // Codex and Claude, the only Coder providers, both support conversation rollback.
+        supportsConversationRollback: true,
         liveAgentTaskIds,
         worktreeSetup,
         queuedMessages,
@@ -1101,7 +1135,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       listRef,
       timestampFormat,
       routeThreadKey,
-      threadRef: parseScopedThreadKey(routeThreadKey),
+      // Keep Markdown callbacks memoized during unrelated activity updates.
+      threadRef: citationThreadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -1118,7 +1153,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       expandedReasoningMessageIds: paintedExpandedReasoningMessageIds,
       workGroupViewState,
       agentPanelModel: agentPanelModel ?? EMPTY_AGENT_PANEL_MODEL,
-      expandedSpawnEntryIds: expandedSpawnEntryIds,
+      expandedSpawnEntryIds: paintedExpandedSpawnEntryIds,
       onOpenAgents,
       onCancelWorktreeSetup: onCancelWorktreeSetup ?? null,
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
@@ -1132,6 +1167,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       listRef,
       timestampFormat,
       routeThreadKey,
+      citationThreadRef,
       markdownCwd,
       resolvedTheme,
       workspaceRoot,
@@ -1148,7 +1184,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       paintedExpandedReasoningMessageIds,
       workGroupViewState,
       agentPanelModel,
-      expandedSpawnEntryIds,
+      paintedExpandedSpawnEntryIds,
       onOpenAgents,
       onCancelWorktreeSetup,
       onWorktreeSetupWorkLocally,
@@ -1626,6 +1662,7 @@ type TimelineWorkEntry = Extract<MessagesTimelineRow, { kind: "work" }>["grouped
 type TimelineRow = MessagesTimelineRow;
 
 const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: TimelineRow }) {
+  // Legacy screenshot artifacts resolve their turn gallery from the row's turn.
   const artifactTurnId =
     row.kind === "message" && row.message.role === "assistant"
       ? (row.message.turnId ?? null)
@@ -1636,7 +1673,6 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
           : row.kind === "proposed-plan"
             ? row.proposedPlan.turnId
             : null;
-
   const isExpandedToolGroup = row.kind === "work" && row.isExpandedToolGroup;
   const isExpandedToolGroupHeader =
     (row.kind === "work-toggle" && row.expanded) || (row.kind === "work-live" && row.expanded);
@@ -1656,10 +1692,13 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
                 : (row.kind === "message" &&
                       row.message.role === "assistant" &&
                       !row.showAssistantMeta) ||
+                    (row.kind === "message" && row.message.role === "reasoning") ||
                     row.kind === "work" ||
                     row.kind === "work-live" ||
                     row.kind === "work-toggle" ||
-                    row.kind === "thinking"
+                    row.kind === "activity-group" ||
+                    row.kind === "thinking" ||
+                    row.kind === "worktree-setup"
                   ? "pb-2"
                   : "pb-4",
           (row.kind === "message" && row.message.role === "assistant") ||
@@ -1669,35 +1708,39 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
         )}
         data-timeline-row-id={row.id}
         data-timeline-row-kind={row.kind}
-        data-message-id={row.kind === "message" ? row.message.id : undefined}
+        data-message-id={
+          row.kind === "message" || row.kind === "assistant-meta" ? row.message.id : undefined
+        }
         data-message-role={row.kind === "message" ? row.message.role : undefined}
       >
         {row.kind === "work" ? (
           <WorkGroupSection
-            groupedEntries={row.groupedEntries}
             anchorKey={row.id}
+            groupedEntries={row.groupedEntries}
             isExpandedToolGroup={row.isExpandedToolGroup}
             displayLabel={row.displayLabel}
           />
         ) : null}
-        {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
         {row.kind === "work-live" ? <LiveWorkEntryTimelineRow row={row} /> : null}
+        {row.kind === "activity-group" ? <ActivityGroupTimelineRow row={row} /> : null}
         {row.kind === "work-toggle" ? <WorkGroupToggleTimelineRow row={row} /> : null}
         {row.kind === "turn-fold" ? <TurnFoldTimelineRow row={row} /> : null}
+        {row.kind === "context-compaction" ? <ContextCompactionTimelineRow row={row} /> : null}
         {row.kind === "message" && row.message.role === "user" ? (
           <UserTimelineRow row={row} />
         ) : null}
         {row.kind === "message" && row.message.role === "assistant" ? (
           <AssistantTimelineRow row={row} />
         ) : null}
-        {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
-        {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
-        {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
-        {row.kind === "queued-message" ? <QueuedMessageTimelineRow row={row} /> : null}
         {row.kind === "message" && row.message.role === "reasoning" ? (
           <ReasoningTimelineRow row={row} />
         ) : null}
+        {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
+        {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
+        {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
         {row.kind === "thinking" ? <ThinkingTimelineRow /> : null}
+        {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
+        {row.kind === "queued-message" ? <QueuedMessageTimelineRow row={row} /> : null}
       </div>
     </ArtifactTurnContext>
   );
@@ -1748,7 +1791,7 @@ function QueuedMessageTimelineRow({
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
         {text.length > 0 ? (
-          <div className="whitespace-pre-wrap break-words text-sm">{text}</div>
+          <UserMessageBody text={text} skills={ctx.skills} markdownCwd={ctx.markdownCwd} />
         ) : null}
         {attachmentCount > 0 || contextCount > 0 ? (
           <div className={cn("text-secondary-label text-xs", text.length > 0 && "mt-1.5")}>
@@ -1784,9 +1827,8 @@ function QueuedMessageTimelineRow({
                 render={
                   <Button
                     type="button"
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
-                    className="size-6"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => ctx.onSteerQueuedMessage(queuedMessage.id)}
                     aria-label="Send now"
@@ -1807,9 +1849,8 @@ function QueuedMessageTimelineRow({
                 render={
                   <Button
                     type="button"
-                    size="icon-micro"
+                    size="icon-xs"
                     variant="ghost-muted"
-                    className="size-6"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => ctx.onRemoveQueuedMessage(queuedMessage.id)}
                     aria-label="Cancel and return to the composer"
@@ -1827,29 +1868,182 @@ function QueuedMessageTimelineRow({
   );
 }
 
+// Screen readers skim a transcript by heading, so every message announces its
+// author as one. The thread title in ChatHeader is an <h2>; headings written
+// inside a message are exposed below this level. Visually hidden and excluded
+// from selection so sighted users and copied text are unaffected.
+function ContextCompactionTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "context-compaction" }>;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-label={row.label}
+      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
+    >
+      <span className="h-px flex-1 bg-border/70" />
+      <span className="flex shrink-0 items-center gap-1.5">
+        <Minimize2Icon aria-hidden="true" className="size-3" />
+        {row.label}
+      </span>
+      <span className="h-px flex-1 bg-border/70" />
+    </div>
+  );
+}
+
+function MessageAuthorHeading({ children }: { children: string }) {
+  return <h3 className="sr-only select-none">{children}</h3>;
+}
+
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {
   const ctx = use(TimelineRowCtx);
-  const pastedImages = submittedImageAttachments(row.message.text);
-  const displayedUserMessage = deriveDisplayedUserMessageState(pastedImages.text);
-  const terminalContexts = displayedUserMessage.contexts;
+  const parentNavigation = use(ArtifactNavigationContext);
+  const [imageRequest, setImageRequest] = useState<ReturnType<
+    typeof createArtifactNavigationRequest
+  > | null>(null);
+  // Coder messages sent before context records carried links to their pasted image files.
+  const resolvedContext = useMemo(
+    () =>
+      resolveUserMessageContext(
+        row.message.context
+          ? row.message
+          : { text: stripSubmittedImageLinks(row.message.text), context: undefined },
+      ),
+    [row.message],
+  );
+  const imageReferences = useMemo(
+    () => messageImageReferences(row.message.attachments),
+    [row.message.attachments],
+  );
+  const unknownAttachments = (row.message.attachments ?? []).filter(
+    (attachment) => !isImageAttachment(attachment),
+  );
+  const hasImageChips = collectComposerContextReferences(resolvedContext.text).some(
+    (occurrence) => occurrence.kind === "image",
+  );
+  const chipImages = useScreenshotArtifacts(
+    ctx.activeThreadEnvironmentId,
+    imageReferences,
+    hasImageChips,
+    "attachment",
+  );
+  const imageNavigation = useMemo(
+    () => (parentNavigation ? { ...parentNavigation, request: imageRequest } : null),
+    [parentNavigation, imageRequest],
+  );
   const revertTurnCount = row.revertTurnCount;
+  const contextClipboardFragment =
+    resolvedContext.records.length === 0
+      ? null
+      : encodeComposerContextFragment({
+          version: 1,
+          source: {
+            environmentId: ctx.activeThreadEnvironmentId,
+            ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
+            messageId: row.message.id,
+          },
+          records: resolvedContext.records,
+        });
+  // Chips inside the selection copy as their links (data-markdown-copy); the structured
+  // fragment rides beside so a paste into a draft brings the payloads along. Only records
+  // for chips that are actually inside the selection travel, so copying prose next to an
+  // image never starts importing that image somewhere else.
+  const onBodyCopyCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (resolvedContext.records.length === 0 || !event.clipboardData) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+    const copiedMarkdown: string[] = [];
+    for (let index = 0; index < selection.rangeCount; index += 1) {
+      const container = document.createElement("div");
+      container.appendChild(selection.getRangeAt(index).cloneContents());
+      for (const element of container.querySelectorAll("[data-markdown-copy]")) {
+        copiedMarkdown.push(element.getAttribute("data-markdown-copy") ?? "");
+      }
+    }
+    const fragment = selectedMessageContextFragment({
+      markdown: copiedMarkdown.join("\n"),
+      records: resolvedContext.records,
+      environmentId: ctx.activeThreadEnvironmentId,
+      ...(ctx.threadRef ? { threadId: ctx.threadRef.threadId } : {}),
+      messageId: row.message.id,
+    });
+    if (!fragment) return;
+    // Claim the copy: without preventDefault the browser default overwrites the
+    // custom MIME type. The default content must then be written back explicitly.
+    const payload = chatMarkdownClipboardPayload(selection);
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", payload?.text ?? selection.toString());
+    if (payload) {
+      event.clipboardData.setData(
+        "text/html",
+        encodeComposerContextClipboardHtml(payload.text, fragment, payload.html),
+      );
+    }
+    event.clipboardData.setData(COMPOSER_CONTEXT_CLIPBOARD_MIME, fragment);
+  };
+  const renderContextReference = useCallback(
+    (reference: ChatMarkdownContextReference) => {
+      const record = asKnownContextRecord(resolvedContext.recordsById.get(reference.contextId));
+      const image =
+        record?.kind === "image"
+          ? (imageReferences.find((candidate) => candidate.id === record.attachmentId) ?? null)
+          : null;
+      const loaded = image ? chipImages[image.id] : undefined;
+      return (
+        <UserMessageContextReferenceChip
+          reference={reference}
+          record={record}
+          image={
+            image
+              ? {
+                  id: image.id,
+                  previewUrl: loaded?.status === "loaded" ? loaded.url : undefined,
+                }
+              : null
+          }
+          onExpandImage={(imageId) => setImageRequest(createArtifactNavigationRequest(imageId))}
+        />
+      );
+    },
+    [resolvedContext.recordsById, imageReferences, chipImages],
+  );
 
   return (
     <div className="group flex flex-col items-end gap-1">
       <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">
-        <h3 className="sr-only select-none">You</h3>
-        <ScreenshotArtifactsRow
-          key={ctx.activeThreadEnvironmentId}
-          environmentId={ctx.activeThreadEnvironmentId}
-          artifacts={pastedImages.images}
-          source="attachment"
-        />
-        <CollapsibleUserMessageBody
-          text={displayedUserMessage.visibleText}
-          terminalContexts={terminalContexts}
-          skills={ctx.skills}
-          markdownCwd={ctx.markdownCwd}
-        />
+        <MessageAuthorHeading>You</MessageAuthorHeading>
+        <ArtifactNavigationContext value={imageNavigation}>
+          <ScreenshotArtifactsRow
+            key={ctx.activeThreadEnvironmentId}
+            environmentId={ctx.activeThreadEnvironmentId}
+            artifacts={imageReferences}
+            source="attachment"
+          />
+        </ArtifactNavigationContext>
+        {unknownAttachments.length > 0 ? (
+          <div className="mb-2 flex flex-col gap-1">
+            {unknownAttachments.map((attachment) => (
+              <div key={attachment.id} className="flex min-w-0 items-center gap-2 py-1 text-sm">
+                <PierreEntryIcon
+                  pathValue={attachment.name}
+                  kind="file"
+                  theme={ctx.resolvedTheme}
+                />
+                <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <div onCopyCapture={onBodyCopyCapture}>
+          <CollapsibleUserMessageBody
+            text={resolvedContext.text}
+            renderContextReference={renderContextReference}
+            skills={ctx.skills}
+            markdownCwd={ctx.markdownCwd}
+          />
+        </div>
       </div>
       <div className="flex w-full max-w-[80%] items-center justify-end pe-1 text-xs tabular-nums opacity-0 transition-opacity duration-200 pointer-coarse:opacity-100 focus-within:opacity-100 group-hover:opacity-100">
         <div className="flex shrink-0 items-center gap-2">
@@ -1865,8 +2059,24 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             {typeof revertTurnCount === "number" && (
               <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />
             )}
-            {displayedUserMessage.copyText && (
-              <MessageCopyButton text={displayedUserMessage.copyText} variant="ghost" />
+            {resolvedContext.text && (
+              <MessageCopyButton
+                // Structured paste needs the canonical links to retain their positions.
+                text={
+                  contextClipboardFragment
+                    ? resolvedContext.text
+                    : replaceComposerContextReferences(
+                        resolvedContext.text,
+                        (reference) => reference.label,
+                      )
+                }
+                {...(contextClipboardFragment
+                  ? {
+                      extraFlavors: { [COMPOSER_CONTEXT_CLIPBOARD_MIME]: contextClipboardFragment },
+                    }
+                  : {})}
+                variant="ghost"
+              />
             )}
           </div>
         </div>
@@ -2169,16 +2379,17 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
       <PopoverTrigger
         render={
           <Button
-            variant="chip"
-            className="ml-auto inline-flex h-5 min-w-0 shrink-0 items-center gap-1 rounded-full border border-border/70 px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            variant="ghost-muted"
+            size="micro"
+            className="ml-auto min-w-0 shrink-0"
             aria-label={`${scriptName} is still running. Show setup progress.`}
           />
         }
       >
-        <Spinner className="size-3 shrink-0" />
+        <Spinner size="xs" className="shrink-0" />
         <span className="truncate">{scriptName}</span>
       </PopoverTrigger>
-      <PopoverPopup side="bottom" align="end" className="w-[32rem] max-w-[calc(100vw-2rem)] p-3">
+      <PopoverPopup side="bottom" align="end" width="lg" padding="compact">
         <WorktreeSetupCard
           snapshot={snapshot}
           embedded
@@ -2218,7 +2429,7 @@ function ActivityGroupTimelineRow({
     (entry) => entry,
   );
   const liveWork = trailingWork.findLast(workEntryIsActiveTurnActivity) ?? trailingWork.at(-1);
-  const thinking = row.active && liveWork === undefined;
+
   const iconWork = row.active ? liveWork : work.at(-1);
   const failed = iconWork !== undefined && workEntryDisplayIndicatesToolFailure(iconWork);
   const label = row.active
@@ -2287,18 +2498,16 @@ function ActivityGroupTimelineRow({
 }
 
 function ThinkingTimelineRow() {
-  const { isCompacting } = use(TimelineRowActivityCtx);
+  const { isCompacting, isPreparingWorktree } = use(TimelineRowActivityCtx);
+  // Reserve the activity row during setup so the handoff keeps the same height.
   return (
     <div className="min-h-7">
-      {isCompacting ? null : <LiveActivityRow label="Thinking" iconName="brain" />}
+      {isPreparingWorktree || isCompacting ? null : (
+        <LiveActivityRow label="Thinking" iconName="brain" active shimmer />
+      )}
     </div>
   );
 }
-
-/**
- * Thinking inside a tool group has its own disclosure, preserved across recycling.
- * A group whose row already reads "Thought" (no visible tool) skips the header.
- */
 function ReasoningTraceBlock({
   anchorKey,
   messages,
@@ -2328,7 +2537,13 @@ function ReasoningTraceBlock({
   }
   const label = streaming ? "Thinking" : "Thought";
   const collapsedPreview = messages.find((message) => message.text.trim().length > 0)?.text.trim();
-  const headerText = expanded ? label : (collapsedPreview ?? label);
+  const headerText = expanded ? (
+    label
+  ) : (
+    <ReactMarkdown remarkPlugins={[remarkGfm, [remarkThoughtPreview, label]]}>
+      {collapsedPreview ?? label}
+    </ReactMarkdown>
+  );
   return (
     <div className="flex flex-col">
       {showHeader ? (
@@ -2690,32 +2905,33 @@ function LiveActivityRow({
   label,
   iconName,
   failed = false,
-  active = true,
+  active = false,
+  shimmer = false,
 }: {
-  label: string;
+  label: ReactNode;
   iconName?: WorkEntryIconName;
   failed?: boolean;
   active?: boolean;
+  shimmer?: boolean;
 }) {
+  const animated = active && !failed;
+  const showShimmer = animated && shimmer;
   return (
-    <div className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
+    <div
+      ref={animated ? observeVisibleAnimation : undefined}
+      className="relative min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed"
+    >
       <LiveActivityContent
         label={label}
         iconName={iconName}
         failed={failed}
         announceFailure={failed}
+        active={animated && !shimmer}
       />
-      {active ? (
-        <div
-          aria-hidden
-          className="live-activity-focus pointer-events-none absolute inset-y-0 select-none"
-        >
-          <div className="live-activity-focus-counter">
-            <div className="live-activity-focus-aligned">
-              <LiveActivityContent label={label} iconName={iconName} failed={failed} highlighted />
-            </div>
-          </div>
-        </div>
+      {showShimmer ? (
+        <ActivityShimmerOverlay>
+          <LiveActivityContent label={label} iconName={iconName} highlighted />
+        </ActivityShimmerOverlay>
       ) : null}
     </div>
   );
@@ -2726,41 +2942,48 @@ function LiveActivityContent({
   iconName,
   failed = false,
   announceFailure = false,
+  active = false,
   highlighted = false,
 }: {
-  label: string;
+  label: ReactNode;
   iconName: WorkEntryIconName | undefined;
   failed?: boolean;
   announceFailure?: boolean;
+  active?: boolean;
   highlighted?: boolean;
 }) {
-  const resolvedIconName = failed ? "x" : iconName;
+  const showTrailingFailureMark =
+    failed && iconName !== undefined && !toolIconAcceptsTint(iconName);
 
   return (
-    <div
+    <span
       className={cn(
         "flex min-h-6 min-w-0 items-center gap-1.5 py-0.5",
-        resolvedIconName ? "px-0.5" : "px-1",
+        iconName ? "px-0.5" : "px-1",
         highlighted ? "text-foreground" : "text-secondary-label",
       )}
     >
-      {resolvedIconName ? (
+      {iconName ? (
         <span
           className={cn(
             "flex size-6 shrink-0 items-center justify-center",
-            highlighted ? "text-foreground" : "text-icon-muted",
+            failed ? failedToolIconClassName : highlighted ? "text-foreground" : "text-icon-muted",
           )}
           role={announceFailure ? "img" : undefined}
           aria-label={announceFailure ? "Tool call failed" : undefined}
         >
-          <WorkEntryIconSvg
-            name={resolvedIconName}
-            className={cn("block size-4 shrink-0 stroke-[1.8]", !highlighted && "opacity-70")}
+          <ToolActivityIconView
+            fallbackName={iconName}
+            className="block size-4 shrink-0 stroke-[1.8]"
+            muted={!highlighted}
           />
         </span>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-    </div>
+      <span className={cn("min-w-0 flex-1 truncate", active && "live-tool-shine")}>{label}</span>
+      {showTrailingFailureMark ? (
+        <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
+      ) : null}
+    </span>
   );
 }
 
@@ -2786,18 +3009,30 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       aria-expanded={row.expanded}
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
-      {row.active ? (
-        <LiveActivityRow label={label} iconName={workEntryIconName(row.entry)} failed={failed} />
-      ) : (
-        <div className="min-h-6 w-fit max-w-full min-w-0 overflow-hidden rounded-md text-sm leading-relaxed">
-          <LiveActivityContent
-            label={label}
-            iconName={workEntryIconName(row.entry)}
-            failed={failed}
-            announceFailure={failed}
-          />
-        </div>
-      )}
+      <LiveActivityRow
+        label={
+          row.entry.questionAnswer ? (
+            <span className="flex min-w-0 gap-1.5">
+              <span className="shrink-0">{label}</span>
+              <span
+                className={cn(
+                  "truncate",
+                  !row.expanded && hasQuestionAnswer(row.entry.questionAnswer)
+                    ? "text-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {getQuestionAnswerPreview(row.entry.questionAnswer)}
+              </span>
+            </span>
+          ) : (
+            label
+          )
+        }
+        iconName={workEntryIconName(row.entry)}
+        failed={failed}
+        active={row.active}
+      />
     </button>
   );
 }
@@ -2806,12 +3041,21 @@ function toolGroupSummaryIconName(
   kind: Extract<TimelineRow, { kind: "work-toggle" }>["summaryKind"],
 ): WorkEntryIconName {
   switch (kind) {
+    case "pull-request":
+    case "link-pr":
+    case "unlink-pr":
+    case "list-prs":
+      return "pull-request";
     case "read":
       return "eye";
     case "edit":
       return "square-pen";
     case "command":
       return "terminal";
+    case "browser":
+      return "browser";
+    case "device":
+      return "device";
     case "search":
       return "globe";
     case "code-search":
@@ -2845,9 +3089,10 @@ function WorkGroupToggleTimelineRow({
       onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}
     >
       <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-        <WorkEntryIconSvg
-          name={toolGroupSummaryIconName(row.summaryKind)}
-          className="size-4 shrink-0 stroke-[1.8] opacity-70"
+        <ToolActivityIconView
+          fallbackName={row.summaryToolIcon ?? toolGroupSummaryIconName(row.summaryKind)}
+          className="size-4 shrink-0 stroke-[1.8]"
+          muted
         />
       </span>
       <span className="min-w-0 flex-1 truncate text-secondary-label">{row.summary}</span>
@@ -2889,7 +3134,6 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
 function AssistantChangedFilesSectionInner({
   turnSummary,
   checkpointFiles,
-  routeThreadKey,
   resolvedTheme,
   onOpenTurnDiff,
 }: {
@@ -2908,9 +3152,7 @@ function AssistantChangedFilesSectionInner({
       ? { environmentId: thread.environmentId, projectId: thread.projectId }
       : null,
   );
-  const serverConfig = useAtomValue(
-    serverEnvironment.configValueAtom(ctx.activeThreadEnvironmentId),
-  );
+
   const onFileContextMenu = useFileContextMenuHandler(ctx.activeThreadEnvironmentId);
 
   return (
@@ -2943,21 +3185,288 @@ function AssistantChangedFilesSectionInner({
 // Leaf components
 // ---------------------------------------------------------------------------
 
-const UserMessageTerminalContextInlineLabel = memo(
-  function UserMessageTerminalContextInlineLabel(props: { context: ParsedTerminalContextEntry }) {
-    const range = /^(.*?)\s+line(?:s)?\s+(\d+)(?:-(\d+))?$/i.exec(props.context.header);
-    return (
-      <TerminalContextInlineChip
-        label={props.context.header}
-        terminalLabel={range?.[1] ?? props.context.header}
-        {...(range ? { lineStart: Number(range[2]), lineEnd: Number(range[3] ?? range[2]) } : {})}
-        text={props.context.body}
-        detailsMode="popover"
-        surface="transcript"
+/** Collapsed thought previews read as one line of plain text, not rendered markdown. */
+function remarkThoughtPreview(fallback: string) {
+  return (tree: Root) => {
+    const plainText = (node: Root | RootContent): string => {
+      if (node.type === "html" || node.type === "definition") return "";
+      if ("alt" in node) return node.alt ?? "";
+      if ("value" in node) return node.value;
+      if ("children" in node) {
+        const separator = ["root", "blockquote", "list", "listItem", "table", "tableRow"].includes(
+          node.type,
+        )
+          ? " "
+          : "";
+        return node.children.map(plainText).join(separator);
+      }
+      return node.type === "break" ? " " : "";
+    };
+    tree.children = [
+      { type: "text", value: plainText(tree).replace(/\s+/g, " ").trim() || fallback },
+    ];
+  };
+}
+
+function UserMessageMentionChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "mention" }>;
+  copyMarkdown: string;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <ContextChip
+            kind="mention"
+            render={<button type="button" />}
+            aria-label={`Preview ${props.record.path}`}
+            data-markdown-copy={props.copyMarkdown}
+            onClick={() => {
+              if (ctx.threadRef)
+                useRightPanelStore.getState().openFile(ctx.threadRef, props.record.path);
+            }}
+          >
+            <PierreEntryIcon
+              pathValue={props.record.path}
+              kind={inferEntryKindFromPath(props.record.path)}
+              theme={ctx.resolvedTheme}
+            />
+            <ContextChipLabel>{props.record.label}</ContextChipLabel>
+          </ContextChip>
+        }
       />
-    );
-  },
-);
+      <TooltipPopup>{props.record.path}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function UserMessageContextChip(props: {
+  icon: ReactNode;
+  label: string;
+  kindLabel?: string;
+  copyMarkdown: string;
+  tooltip?: string;
+  kind: ContextChipKind;
+}) {
+  return (
+    <ContextChipShell
+      kind={props.kind}
+      icon={props.icon}
+      label={props.label}
+      aria-label={props.kindLabel ? `${props.kindLabel}, ${props.label}` : undefined}
+      data-markdown-copy={props.copyMarkdown}
+      tooltip={props.tooltip}
+    />
+  );
+}
+
+function UserMessagePullRequestContextChip(props: {
+  record: Extract<KnownComposerContextRecord, { kind: "review-comment" }>;
+  copyMarkdown: string;
+  kind: ContextChipKind;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const openPullRequest = useOpenPrLink(ctx.threadRef ?? undefined);
+  const metadata = props.record.pullRequest;
+  if (metadata === undefined) return null;
+  return (
+    <PullRequestChip
+      metadata={metadata}
+      environmentId={ctx.activeThreadEnvironmentId}
+      label={reviewCommentContextLabel(props.record)}
+      kindLabel={pullRequestContextKindLabel(props.record)}
+      kind={props.kind}
+      copyMarkdown={props.copyMarkdown}
+      onOpen={openPullRequest}
+    />
+  );
+}
+
+/** A submitted image, previewed by id through the helper's bounded chunk read. */
+interface UserMessageImageChipSource {
+  id: string;
+  previewUrl: string | undefined;
+}
+
+interface UserMessageContextRenderContext {
+  reference: ChatMarkdownContextReference;
+  image: UserMessageImageChipSource | null;
+  copyMarkdown: string;
+  onExpandImage: (imageId: string) => void;
+}
+
+function UnavailableUserMessageContextChip(props: UserMessageContextRenderContext) {
+  return (
+    <UnresolvedChip
+      label={props.reference.label}
+      copyMarkdown={props.copyMarkdown}
+      tooltip="This context is no longer available."
+    />
+  );
+}
+
+// Coder sends only image attachments and never produces browser element or preview
+// annotation context, so those kinds and file records render as unavailable chips.
+const userMessageContextPresentationRegistry = createContextPresentationRegistry<
+  KnownComposerContextRecord,
+  UserMessageContextRenderContext,
+  ReactNode
+>({
+  requiredKinds: COMPOSER_CONTEXT_KINDS,
+  handlers: [
+    {
+      kind: "mention",
+      canRender: (record) => record.kind === "mention",
+      render: (record, context) =>
+        record.kind === "mention" ? (
+          <UserMessageMentionChip record={record} copyMarkdown={context.copyMarkdown} />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "skill",
+      canRender: (record) => record.kind === "skill",
+      render: (record, context) =>
+        record.kind === "skill" ? (
+          <UserMessageContextChip
+            icon={<SkillChipIcon />}
+            label={record.label || record.name}
+            kindLabel="Skill"
+            tooltip={`$${record.name}`}
+            copyMarkdown={context.copyMarkdown}
+            kind="skill"
+          />
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "image",
+      canRender: (record, context) => record.kind === "image" && context.image !== null,
+      render: (record, context) => {
+        if (record.kind !== "image" || context.image === null) {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        const image = context.image;
+        return (
+          <ImageChipButton
+            name={record.name}
+            previewUrl={image.previewUrl}
+            size={formatAttachmentSize(record.sizeBytes)}
+            data-markdown-copy={context.copyMarkdown}
+            onClick={() => context.onExpandImage(image.id)}
+          />
+        );
+      },
+    },
+    {
+      kind: "file",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+    {
+      kind: "terminal",
+      canRender: (record) => record.kind === "terminal",
+      render: (record, context, definition) =>
+        record.kind === "terminal" ? (
+          <span data-markdown-copy={context.copyMarkdown}>
+            <TerminalContextInlineChip
+              label={record.label}
+              terminalLabel={record.terminalLabel}
+              lineStart={record.lineStart}
+              lineEnd={record.lineEnd}
+              text={record.text}
+              detailsMode={definition.capabilities.details}
+            />
+          </span>
+        ) : (
+          <UnavailableUserMessageContextChip {...context} />
+        ),
+    },
+    {
+      kind: "element",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+    {
+      kind: "review-comment",
+      canRender: (record) => record.kind === "review-comment",
+      render: (record, context) => {
+        if (record.kind !== "review-comment") {
+          return <UnavailableUserMessageContextChip {...context} />;
+        }
+        const isPullRequest = isPullRequestSummaryContext(record);
+        const label = reviewCommentContextLabel(record);
+        const kindLabel = isPullRequest ? pullRequestContextKindLabel(record) : "Review comment";
+        const pullRequestState = pullRequestContextDisplayState(record) ?? "unknown";
+        if (isPullRequest && record.pullRequest !== undefined) {
+          return (
+            <UserMessagePullRequestContextChip
+              record={record}
+              copyMarkdown={context.copyMarkdown}
+              kind={PULL_REQUEST_CHIP_KINDS[pullRequestState]}
+            />
+          );
+        }
+        return (
+          <UserMessageContextPopover
+            copyMarkdown={context.copyMarkdown}
+            accessibleLabel={`${kindLabel}, ${label}${record.pullRequest ? `, ${record.pullRequest.title}` : ""}`}
+            kind={isPullRequest ? PULL_REQUEST_CHIP_KINDS[pullRequestState] : "review-comment"}
+            icon={isPullRequest ? <PullRequestGlyph.pullRequest /> : <MessageCircleIcon />}
+            label={label}
+          >
+            <UserMessageReviewCommentCard
+              comment={{
+                id: record.contextId,
+                sectionId: record.sectionId,
+                sectionTitle: record.sectionTitle,
+                filePath: record.filePath,
+                startIndex: record.startIndex,
+                endIndex: record.endIndex,
+                rangeLabel: record.rangeLabel,
+                text: record.text,
+                diff: record.diff,
+                ...(record.fenceLanguage !== undefined
+                  ? { fenceLanguage: record.fenceLanguage }
+                  : {}),
+                ...(record.pullRequest !== undefined ? { pullRequest: record.pullRequest } : {}),
+              }}
+            />
+          </UserMessageContextPopover>
+        );
+      },
+    },
+    {
+      kind: "preview-annotation",
+      canRender: () => false,
+      render: (_record, context) => <UnavailableUserMessageContextChip {...context} />,
+    },
+  ],
+  fallback: (_kind, _record, context) => <UnavailableUserMessageContextChip {...context} />,
+});
+
+/** One inline context chip in a sent message, dispatched by the shared presentation registry. */
+function UserMessageContextReferenceChip(props: {
+  reference: ChatMarkdownContextReference;
+  record: KnownComposerContextRecord | undefined;
+  image: UserMessageImageChipSource | null;
+  onExpandImage: (imageId: string) => void;
+}) {
+  const copyMarkdown = formatComposerContextReference({
+    kind: props.reference.kind,
+    contextId: props.reference.contextId as ComposerContextId,
+    label: props.reference.label,
+  });
+  return userMessageContextPresentationRegistry.render(props.reference.kind, props.record, {
+    reference: props.reference,
+    image: props.image,
+    copyMarkdown,
+    onExpandImage: props.onExpandImage,
+  });
+}
 
 const MAX_COLLAPSED_USER_MESSAGE_LINES = 8;
 const MAX_COLLAPSED_USER_MESSAGE_LENGTH = 600;
@@ -2977,13 +3486,13 @@ function shouldCollapseUserMessage(text: string): boolean {
 
 const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
+  renderContextReference: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
   footer?: ReactNode;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const hasVisibleBody = props.text.trim().length > 0 || props.terminalContexts.length > 0;
+  const hasVisibleBody = props.text.trim().length > 0;
   const canCollapse = hasVisibleBody && shouldCollapseUserMessage(props.text);
   const isCollapsed = canCollapse && !expanded;
 
@@ -3007,7 +3516,7 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
         >
           <UserMessageBody
             text={props.text}
-            terminalContexts={props.terminalContexts}
+            renderContextReference={props.renderContextReference}
             skills={props.skills}
             markdownCwd={props.markdownCwd}
           />
@@ -3025,11 +3534,11 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
             <Button
               type="button"
               size="xs"
-              variant="ghost"
+              variant="ghost-muted"
               aria-expanded={expanded}
               data-scroll-anchor-ignore
               onClick={() => setExpanded((value) => !value)}
-              className="-ml-1 h-6 rounded-md px-1.5 text-secondary-label text-xs hover:bg-muted/55 hover:text-message-foreground"
+              className="-ml-1"
             >
               {expanded ? "Show less" : "Show full message"}
             </Button>
@@ -3045,167 +3554,16 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
-  terminalContexts: ParsedTerminalContextEntry[];
+  renderContextReference?: (reference: ChatMarkdownContextReference) => ReactNode;
   skills: ReadonlyArray<Pick<ServerProviderSkill, "name" | "displayName">>;
   markdownCwd: string | undefined;
 }) {
   const ctx = use(TimelineRowCtx);
-  const renderInlineMarkdownSegment = (text: string, key: string) => {
-    const leadingWhitespace = /^\s+/.exec(text)?.[0] ?? "";
-    const textWithoutLeadingWhitespace = text.slice(leadingWhitespace.length);
-    const trailingWhitespace = /\s+$/.exec(textWithoutLeadingWhitespace)?.[0] ?? "";
-    const content = textWithoutLeadingWhitespace.slice(
-      0,
-      textWithoutLeadingWhitespace.length - trailingWhitespace.length,
-    );
-
-    return (
-      <Fragment key={key}>
-        {leadingWhitespace ? <span aria-hidden="true">{leadingWhitespace}</span> : null}
-        {content ? (
-          <ChatMarkdown
-            headingLevelOffset={3}
-            text={content}
-            cwd={props.markdownCwd}
-            threadRef={ctx.threadRef ?? undefined}
-            skills={props.skills}
-            className="text-message-foreground"
-            lineBreaks
-            parseRawHtml={false}
-          />
-        ) : null}
-        {trailingWhitespace ? <span aria-hidden="true">{trailingWhitespace}</span> : null}
-      </Fragment>
-    );
-  };
-
-  const reviewCommentSegments = parseReviewCommentMessageSegments(props.text);
-  if (reviewCommentSegments.some((segment) => segment.kind === "review-comment")) {
-    return (
-      <div className="space-y-3 text-message-foreground text-sm leading-relaxed">
-        {reviewCommentSegments.map((segment) =>
-          segment.kind === "text" ? (
-            segment.text.trim().length > 0 ? (
-              <div key={segment.id} className="wrap-break-word">
-                <ChatMarkdown
-                  headingLevelOffset={3}
-                  text={segment.text.trim()}
-                  cwd={props.markdownCwd}
-                  threadRef={ctx.threadRef ?? undefined}
-                  skills={props.skills}
-                  className="text-message-foreground"
-                  lineBreaks
-                  parseRawHtml={false}
-                />
-              </div>
-            ) : null
-          ) : (
-            <UserMessageReviewCommentCard key={segment.comment.id} comment={segment.comment} />
-          ),
-        )}
-      </div>
-    );
-  }
-
-  if (props.terminalContexts.length > 0) {
-    const hasEmbeddedInlineLabels = textContainsInlineTerminalContextLabels(
-      props.text,
-      props.terminalContexts,
-    );
-    const inlinePrefix = buildInlineTerminalContextText(props.terminalContexts);
-    const inlineNodes: ReactNode[] = [];
-
-    if (hasEmbeddedInlineLabels) {
-      let cursor = 0;
-
-      for (const context of props.terminalContexts) {
-        const label = formatInlineTerminalContextLabel(context.header);
-        const matchIndex = props.text.indexOf(label, cursor);
-        if (matchIndex === -1) {
-          inlineNodes.length = 0;
-          break;
-        }
-        if (matchIndex > cursor) {
-          inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor, matchIndex),
-              `user-terminal-context-inline-before:${context.header}:${cursor}`,
-            ),
-          );
-        }
-        inlineNodes.push(
-          <UserMessageTerminalContextInlineLabel
-            key={`user-terminal-context-inline:${context.header}`}
-            context={context}
-          />,
-        );
-        cursor = matchIndex + label.length;
-      }
-
-      if (inlineNodes.length > 0) {
-        if (cursor < props.text.length) {
-          inlineNodes.push(
-            renderInlineMarkdownSegment(
-              props.text.slice(cursor),
-              `user-message-terminal-context-inline-rest:${cursor}`,
-            ),
-          );
-        }
-
-        return (
-          <div className="whitespace-pre-wrap wrap-break-word text-message-foreground text-sm leading-relaxed">
-            {inlineNodes}
-          </div>
-        );
-      }
-    }
-
-    for (const context of props.terminalContexts) {
-      inlineNodes.push(
-        <UserMessageTerminalContextInlineLabel
-          key={`user-terminal-context-inline:${context.header}`}
-          context={context}
-        />,
-      );
-      inlineNodes.push(
-        <span key={`user-terminal-context-inline-space:${context.header}`} aria-hidden="true">
-          {" "}
-        </span>,
-      );
-    }
-
-    if (props.text.length > 0) {
-      inlineNodes.push(
-        <ChatMarkdown
-          headingLevelOffset={3}
-          key="user-message-terminal-context-inline-text"
-          text={props.text}
-          cwd={props.markdownCwd}
-          threadRef={ctx.threadRef ?? undefined}
-          skills={props.skills}
-          className="text-message-foreground"
-          lineBreaks
-          parseRawHtml={false}
-        />,
-      );
-    } else if (inlinePrefix.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="whitespace-pre-wrap wrap-break-word text-message-foreground text-sm leading-relaxed">
-        {inlineNodes}
-      </div>
-    );
-  }
-
   if (props.text.length === 0) {
     return null;
   }
-
   return (
     <ChatMarkdown
-      headingLevelOffset={3}
       text={props.text}
       cwd={props.markdownCwd}
       threadRef={ctx.threadRef ?? undefined}
@@ -3213,26 +3571,14 @@ const UserMessageBody = memo(function UserMessageBody(props: {
       className="text-message-foreground"
       lineBreaks
       parseRawHtml={false}
+      renderContextReference={props.renderContextReference}
+      headingLevelOffset={MESSAGE_HEADING_LEVEL}
     />
   );
 });
 
 function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentContext }) {
   const ctx = use(TimelineRowCtx);
-  const openPullRequest = useOpenPrLink(ctx.threadRef ?? undefined);
-  if (comment.pullRequest) {
-    const metadata = comment.pullRequest;
-    return (
-      <PullRequestChip
-        metadata={metadata}
-        label={`#${metadata.number}`}
-        kindLabel="merge request"
-        className={`${CHAT_INLINE_CHIP_CLASS_NAME} ${PULL_REQUEST_INLINE_CHIP_TONE_CLASS_NAMES[metadata.isDraft ? "draft" : metadata.state]}`}
-        labelClassName={CHAT_INLINE_CHIP_LABEL_CLASS_NAME}
-        onOpen={openPullRequest}
-      />
-    );
-  }
   const fenceLanguage = comment.fenceLanguage ?? "diff";
   const renderablePatch = getRenderablePatch(
     buildReviewCommentRenderablePatch(comment),
@@ -3256,7 +3602,6 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
       )}
       {fenceLanguage !== "diff" && comment.diff.trim().length > 0 && (
         <ChatMarkdown
-          headingLevelOffset={3}
           text={formatReviewCommentFence(fenceLanguage, comment.diff)}
           cwd={ctx.markdownCwd}
           threadRef={ctx.threadRef ?? undefined}
@@ -3264,19 +3609,22 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
           className="text-message-foreground"
         />
       )}
-      {renderablePatch?.kind === "files" &&
-        renderablePatch.files.map((fileDiff) => (
-          <FileDiff
-            key={resolveFileDiffPath(fileDiff)}
-            fileDiff={fileDiff}
-            options={{
-              collapsed: false,
-              diffStyle: "unified",
-              theme: resolveDiffThemeName(ctx.resolvedTheme),
-              preferredHighlighter: PREFERRED_HIGHLIGHTER,
-            }}
-          />
-        ))}
+      {renderablePatch?.kind === "files" && (
+        <DiffWorkerPoolProvider>
+          {renderablePatch.files.map((fileDiff) => (
+            <FileDiff
+              key={resolveFileDiffPath(fileDiff)}
+              fileDiff={fileDiff}
+              options={{
+                collapsed: false,
+                diffStyle: "unified",
+                theme: resolveDiffThemeName(ctx.resolvedTheme),
+                preferredHighlighter: PREFERRED_HIGHLIGHTER,
+              }}
+            />
+          ))}
+        </DiffWorkerPoolProvider>
+      )}
       {renderablePatch?.kind === "raw" && (
         <pre className="overflow-x-auto rounded-md bg-muted/40 p-2 text-xs">
           {renderablePatch.text}
@@ -3328,15 +3676,7 @@ function formatWorkingTimer(startIso: string, endIso: string): string | null {
     return `${elapsedSeconds}s`;
   }
 
-  const hours = Math.floor(elapsedSeconds / 3600);
-  const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-  const seconds = elapsedSeconds % 60;
-
-  if (hours > 0) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  }
-
-  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  return formatDuration(elapsedSeconds * 1_000);
 }
 
 function formatWorkingTimerNow(startIso: string): string {
@@ -3346,8 +3686,11 @@ function formatWorkingTimerNow(startIso: string): string {
 type WorkEntryIconName =
   | "bot"
   | "brain"
+  | "browser"
   | "check"
   | "circle-alert"
+  | "computer"
+  | "device"
   | "eye"
   | "globe"
   | "hammer"
@@ -3355,16 +3698,72 @@ type WorkEntryIconName =
   | "search"
   | "square-pen"
   | "terminal"
+  | "pull-request"
+  | "t3-code"
   | "wrench"
   | "x"
   | "zap";
 
-function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; className: string }) {
+function BrowserAppIcon({ className }: { className: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M8.5 19H7.2C4.4 19 3 17.5 3 14.6V7.4C3 4.5 4.5 3 7.4 3h8.2C18.5 3 20 4.5 20 7.4v2.4" />
+      <circle cx="7.4" cy="7.2" r="0.75" fill="currentColor" stroke="none" />
+      <path d="M11.2 7.2h4.3" />
+      <path d="m12.4 11.4 7.5 2.6-3.4 1.6-1.5 3.6z" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+function ComputerUseAppIcon({ className }: { className: string }) {
+  const gradientId = `${useId().replaceAll(":", "")}-computer-use-app-gradient`;
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient id={gradientId} x1="2" y1="2" x2="22" y2="22">
+          <stop offset="0" stopColor="#00dff0" />
+          <stop offset="0.42" stopColor="#3b9cff" />
+          <stop offset="0.72" stopColor="#b044f5" />
+          <stop offset="1" stopColor="#ff78b6" />
+        </linearGradient>
+      </defs>
+      <rect x="1" y="1" width="22" height="22" rx="5" fill={`url(#${gradientId})`} />
+      <path
+        d="m7.2 6.2 10.5 4.1-4.2 2.1-2 4.7z"
+        fill="white"
+        stroke="#315cff"
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className: string }) {
   switch (name) {
+    case "pull-request":
+      return <PullRequestGlyph.pullRequest className={className} aria-hidden />;
     case "bot":
       return <BotIcon className={className} aria-hidden />;
     case "brain":
       return <BrainIcon className={className} aria-hidden />;
+    case "browser":
+      return <BrowserAppIcon className={className} />;
+    case "computer":
+      return <ComputerUseAppIcon className={className} />;
+    case "device":
+      return <SmartphoneIcon className={className} aria-hidden />;
+    case "t3-code":
+      return <T3Wordmark className={className} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "circle-alert":
@@ -3392,6 +3791,28 @@ function WorkEntryIconSvg({ name, className }: { name: WorkEntryIconName; classN
   }
 }
 
+const failedToolIconClassName = "text-tool-error-icon/40";
+
+/** The gradient computer-use mark cannot take a currentColor tint, so failed rows
+ *  using it get a trailing x instead. */
+function toolIconAcceptsTint(iconName: WorkEntryIconName): boolean {
+  return iconName !== "computer";
+}
+
+/** Upstream's tool icon view without provider favicons, logos, or native app icons. */
+function ToolActivityIconView(props: {
+  fallbackName: WorkEntryIconName;
+  className: string;
+  muted: boolean;
+}) {
+  return (
+    <WorkEntryIcon
+      name={props.fallbackName}
+      className={cn(props.className, props.muted && "opacity-70 light:brightness-[.6]")}
+    />
+  );
+}
+
 function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   iconName: WorkEntryIconName;
   className: string;
@@ -3405,7 +3826,7 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   if (tone === "thinking") {
     return {
       iconName: "brain",
-      className: "text-foreground",
+      className: "text-icon-muted",
     };
   }
   if (tone === "info") {
@@ -3420,21 +3841,6 @@ function workToneIcon(tone: TimelineWorkEntry["tone"]): {
   };
 }
 
-function workEntryPreview(
-  workEntry: Pick<TimelineWorkEntry, "detail" | "command" | "changedFiles">,
-  workspaceRoot: string | undefined,
-) {
-  if (workEntry.command) return workEntry.command;
-  if (workEntry.detail) return workEntry.detail;
-  if ((workEntry.changedFiles?.length ?? 0) === 0) return null;
-  const [firstPath] = workEntry.changedFiles ?? [];
-  if (!firstPath) return null;
-  const displayPath = formatWorkspaceRelativePath(firstPath, workspaceRoot);
-  return workEntry.changedFiles!.length === 1
-    ? displayPath
-    : `${displayPath} +${workEntry.changedFiles!.length - 1} more`;
-}
-
 function workEntryRawCommand(
   workEntry: Pick<TimelineWorkEntry, "command" | "rawCommand">,
 ): string | null {
@@ -3445,31 +3851,11 @@ function workEntryRawCommand(
   return rawCommand === workEntry.command.trim() ? null : rawCommand;
 }
 
-function liveWorkEntryLabel(
-  workEntry: TimelineWorkEntry,
-  workspaceRoot: string | undefined,
-  active: boolean,
-): string {
-  const command = workEntry.command?.trim();
-  if (command) {
-    const program = commandProgramName(command);
-    const verb = active
-      ? "Running"
-      : workEntry.toolLifecycleStatus === "declined"
-        ? "Declined"
-        : "Ran";
-    if (program) return `${verb} ${program}`;
-    return `${verb} command`;
-  }
-
-  return workEntryPreview(workEntry, workspaceRoot) ?? toolWorkEntryHeading(workEntry);
-}
-
 export function buildToolCallExpandedBody(
   workEntry: TimelineWorkEntry,
   workspaceRoot: string | undefined,
   visibleLabel: string,
-  viewedImagePath: string | null = null,
+  viewedImagePath: string | null,
 ): string | null {
   const blocks: string[] = [];
   const seen = new Set<string>([visibleLabel.trim()]);
@@ -3479,29 +3865,40 @@ export function buildToolCallExpandedBody(
     seen.add(text);
     blocks.push(text);
   };
+  if (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) {
+    addBlock(`MCP call\n${JSON.stringify(workEntry.toolData, null, 2)}`);
+  }
   const command = workEntry.command?.trim();
   const raw = workEntryRawCommand(workEntry);
-  addBlock(raw ?? command);
-  if (workEntry.detail?.trim() !== viewedImagePath?.trim()) addBlock(workEntry.detail);
+  // A wrapped raw command (for example `env -C … cmd`) stays expandable even when the
+  // normalized command is the visible label.
+  if (command === visibleLabel.trim() && raw === null) {
+    seen.add(command);
+  } else {
+    addBlock(raw ?? command);
+  }
+  const detail = workEntry.detail?.trim();
+  if (detail !== viewedImagePath?.trim()) {
+    addBlock(detail);
+  }
   const viewedImagePaths = new Set(
     viewedImagePath
       ? [viewedImagePath.trim(), formatWorkspaceRelativePath(viewedImagePath, workspaceRoot)]
       : [],
   );
-  const changedFiles = [
-    ...new Set(
-      (workEntry.changedFiles ?? []).flatMap((filePath) => {
-        const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
-        return viewedImagePaths.has(filePath) || viewedImagePaths.has(formattedPath)
-          ? []
-          : [formattedPath];
-      }),
-    ),
-  ];
+  const changedFiles = (workEntry.changedFiles ?? []).flatMap((filePath) => {
+    const formattedPath = formatWorkspaceRelativePath(filePath, workspaceRoot);
+    return viewedImagePaths.has(filePath) ||
+      viewedImagePaths.has(formattedPath) ||
+      filePath.trim() === detail ||
+      formattedPath === detail
+      ? []
+      : [formattedPath];
+  });
   if (changedFiles.length > 0) {
-    addBlock(changedFiles.join("\n"));
+    addBlock([...new Set(changedFiles)].join("\n"));
   }
-  return blocks.length > 0 ? blocks.join("\n\n") : (raw ?? command ?? null);
+  return blocks.length > 0 ? blocks.join("\n\n") : null;
 }
 
 const toolCallExpandedBodyClassName =
@@ -3515,10 +3912,14 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   ) {
     return "message-circle";
   }
+  const toolPresentation = resolveWorkEntryToolPresentation(workEntry);
+  if (toolPresentation) return toolPresentation.icon;
   const action = toolGroupAction(workEntry);
   if (action !== "other") return toolGroupSummaryIconName(action);
 
   switch (workEntry.itemType) {
+    case "mcp_tool_call":
+      return "wrench";
     case "dynamic_tool_call":
       return "hammer";
     case "collab_agent_tool_call":
@@ -3531,21 +3932,6 @@ function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   }
 
   return workToneIcon(workEntry.tone).iconName;
-}
-
-function capitalizePhrase(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return value;
-  }
-  return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
-}
-
-function toolWorkEntryHeading(workEntry: TimelineWorkEntry): string {
-  if (!workEntry.toolTitle) {
-    return capitalizePhrase(normalizeCompactToolLabel(workEntry.label));
-  }
-  return capitalizePhrase(normalizeCompactToolLabel(workEntry.toolTitle));
 }
 
 const stopRowToggle = (e: { stopPropagation: () => void }) => e.stopPropagation();
@@ -3720,7 +4106,7 @@ function AgentSpawnMemberRow({
           <span
             className={cn(
               "min-w-0 truncate",
-              agent.status === "failed" ? "text-tool-error-icon/40" : "text-foreground/80",
+              agent.status === "failed" ? failedToolIconClassName : "text-foreground/80",
             )}
           >
             {agent.title}
@@ -3806,8 +4192,8 @@ const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: {
       workEntry={workEntry}
       workspaceRoot={workspaceRoot}
       isExpandedToolGroupEntry={isExpandedToolGroupEntry}
+      displayLabel={displayLabel}
       onToggleEntry={props.onToggleEntry}
-      displayLabel={props.displayLabel}
     />
   );
 });
@@ -3820,10 +4206,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry, displayLabel } = props;
-  const timeline = use(TimelineRowCtx);
-  const imagePath = workEntryViewedImagePath(workEntry);
-  const viewedImage = imagePath ? resolveMarkdownFileLinkMeta(imagePath, workspaceRoot) : null;
-  const { timestampFormat } = timeline;
+  const { threadRef, timestampFormat } = use(TimelineRowCtx);
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
@@ -3839,34 +4222,44 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     }
     setExpanded(next);
   };
-
   const iconConfig = workToneIcon(workEntry.tone);
   const showWarningIndicator = workEntry.sourceActivityKind === "runtime.warning";
   const showFailedIndicator = workEntryDisplayIndicatesToolFailure(workEntry);
-  const displayText = workEntry.questionAnswer
-    ? `${workEntry.label}: ${getQuestionAnswerPreview(workEntry.questionAnswer)}`
-    : workEntryDisplayLabel(
-        workEntry,
-        props.displayLabel ??
-          workEntryPreview(workEntry, workspaceRoot) ??
-          toolWorkEntryHeading(workEntry),
-      );
   const showDestructiveRowStyle =
     showFailedIndicator &&
     (workEntrySignalsSevereFailure(workEntry) || !workLogEntryIsToolLike(workEntry));
   const entryIconName =
     showWarningIndicator || showDestructiveRowStyle ? "circle-alert" : workEntryIconName(workEntry);
-  const expandedBody = workEntry.questionAnswer
-    ? getQuestionAnswerHistory(workEntry.questionAnswer)
-    : buildToolCallExpandedBody(
+  const previewText = displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot);
+  const answerPreview = workEntry.questionAnswer
+    ? getQuestionAnswerPreview(workEntry.questionAnswer)
+    : null;
+  const viewedImagePath = workEntryViewedImagePath(workEntry);
+  // Viewed images read through the helper's bounded project image RPC.
+  const viewedImage =
+    viewedImagePath && threadRef
+      ? resolveMarkdownFileLinkMeta(viewedImagePath, workspaceRoot)
+      : null;
+  const canExpand =
+    Boolean(workEntry.questionAnswer) ||
+    (showFailedIndicator && previewText.trim().length > 0) ||
+    (workEntry.itemType === "mcp_tool_call" && workEntry.toolData !== undefined) ||
+    Boolean(
+      workEntryRawCommand(workEntry) ||
+      workEntry.command?.trim() ||
+      workEntry.detail?.trim() ||
+      workEntry.changedFiles?.length ||
+      viewedImage,
+    );
+  const expandedBody = expanded
+    ? buildToolCallExpandedBody(
         workEntry,
         workspaceRoot,
-        displayText,
-        viewedImage ? (imagePath ?? null) : null,
-      );
-  const canExpand = expandedBody !== null || Boolean(viewedImage);
-  // Ordinary tool failures stay muted; only runtime errors and warnings get
-  // color. The red treatment is reserved for severe failures.
+        previewText,
+        viewedImage ? viewedImagePath : null,
+      )
+    : null;
+  // Reserve destructive row styling for severe failures, not routine tool errors.
   const iconWrapperClass = cn(
     "flex size-6 shrink-0 items-center justify-center",
     showWarningIndicator
@@ -3874,7 +4267,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : showDestructiveRowStyle
         ? "text-destructive"
         : showFailedIndicator
-          ? "text-tool-error-icon/40"
+          ? failedToolIconClassName
           : workEntry.tone === "tool"
             ? "text-icon-muted"
             : iconConfig.className,
@@ -3886,10 +4279,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
       : workLogEntryIsToolLike(workEntry)
         ? "text-secondary-label"
         : "text-foreground/80";
-  const showEntryIcon = !isExpandedToolGroupEntry || showWarningIndicator || showFailedIndicator;
+  const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
   const accessibleDisplayText = showFailedIndicator
-    ? `${displayText}, tool call failed`
-    : displayText;
+    ? `${accessiblePreview}, tool call failed`
+    : accessiblePreview;
   const rowToggleProps = canExpand
     ? {
         role: "button" as const,
@@ -3919,14 +4312,14 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     >
       <div className="flex select-none items-center gap-1.5 transition-[opacity,translate] duration-200">
         <span
-          className={cn(iconWrapperClass, !showEntryIcon && "invisible")}
+          className={iconWrapperClass}
           role={showFailedIndicator ? "img" : undefined}
           aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-          aria-hidden={!showEntryIcon}
         >
-          <WorkEntryIconSvg
-            name={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8] opacity-70"
+          <ToolActivityIconView
+            fallbackName={entryIconName}
+            className="block size-4 shrink-0 stroke-[1.8]"
+            muted
           />
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -3934,21 +4327,35 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span
                 className={cn(
-                  "min-w-0 flex-1",
-                  expanded || workEntry.command?.trim() === displayText.trim()
-                    ? "whitespace-pre-wrap break-words select-text"
-                    : "truncate",
+                  answerPreview ? "shrink-0" : "min-w-0 flex-1",
+                  expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
                   headingClass,
                 )}
                 onClick={expanded ? stopRowToggleWhileSelectingText : undefined}
-                onPointerDown={expanded ? (event) => event.stopPropagation() : undefined}
+                onPointerDown={expanded ? stopRowToggle : undefined}
               >
-                {displayText}
+                {previewText}
               </span>
+              {answerPreview ? (
+                <span
+                  className={cn(
+                    "min-w-0 truncate",
+                    !expanded &&
+                      workEntry.questionAnswer &&
+                      hasQuestionAnswer(workEntry.questionAnswer)
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  {answerPreview}
+                </span>
+              ) : null}
             </p>
           </div>
-          {showFailedIndicator && !showDestructiveRowStyle ? (
-            <XIcon aria-hidden className={cn("size-3 shrink-0", "text-tool-error-icon/40")} />
+          {showFailedIndicator &&
+          !showDestructiveRowStyle &&
+          !toolIconAcceptsTint(entryIconName) ? (
+            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />
           ) : null}
           <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />
           <span
@@ -3967,7 +4374,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </span>
         </div>
       </div>
-      {expanded && viewedImage && timeline?.threadRef ? (
+      {expanded && viewedImage && threadRef ? (
         <div
           className="mt-1 ms-7 cursor-default"
           onClick={stopRowToggle}
@@ -3976,7 +4383,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           <ProjectImageLink
             inline
             cwd={workspaceRoot}
-            threadRef={timeline.threadRef}
+            threadRef={threadRef}
             filePath={viewedImage.workspaceRelativePath ?? viewedImage.filePath}
             maxHeightRem={16}
             alt={viewedImage.basename}
@@ -3985,7 +4392,10 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           </ProjectImageLink>
         </div>
       ) : null}
-      {expanded && canExpand && expandedBody ? (
+      {expanded && workEntry.questionAnswer ? (
+        <QuestionAnswerHistory answer={workEntry.questionAnswer} />
+      ) : null}
+      {expanded && canExpand && expandedBody && !workEntry.questionAnswer ? (
         <div
           className="mt-1 ms-7 cursor-default rounded-md bg-muted/40 px-3 py-2"
           onClick={stopRowToggle}
@@ -3997,6 +4407,30 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     </div>
   );
 });
+
+/** Upstream's answer history; Coder questions carry text answers only. */
+function QuestionAnswerHistory({ answer }: { answer: QuestionAnswer }) {
+  return (
+    <div className="ms-7 mt-2 space-y-2" onClick={stopRowToggle}>
+      {[...new Set([...Object.keys(answer.questionTextById), ...Object.keys(answer.answers)])].map(
+        (questionId) => (
+          <div key={questionId} className="space-y-1">
+            {answer.questionTextById[questionId] ? (
+              <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                {answer.questionTextById[questionId]}
+              </p>
+            ) : null}
+            {getQuestionAnswerText(answer.answers[questionId]) ? (
+              <p className="ms-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                {getQuestionAnswerText(answer.answers[questionId])}
+              </p>
+            ) : null}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
 
 function ActivityShimmerOverlay({ children }: { children: ReactNode }) {
   return (

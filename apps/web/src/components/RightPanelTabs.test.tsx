@@ -100,7 +100,7 @@ describe("RightPanelTabs", () => {
     expect(markup.match(/disabled:opacity-40/g)).toHaveLength(5);
   });
 
-  it("colors a merge-request tab from its reported state", () => {
+  it("colors a merge-request tab from its list seed", () => {
     const surface = pullRequestSurface({
       projectId: "project-1",
       repository: "group/project",
@@ -112,15 +112,8 @@ describe("RightPanelTabs", () => {
         mode="inline"
         surfaces={[surface]}
         activeSurfaceId={surface.id}
-        pullRequestStatuses={{
-          [surface.id]: {
-            projectId: "project-1",
-            repository: "group/project",
-            number: 42,
-            state: "merged",
-            isDraft: false,
-          },
-        }}
+        environmentId={null}
+        pullRequestStatusSeeds={{ [surface.id]: { state: "merged", isDraft: false } }}
       />,
     );
 

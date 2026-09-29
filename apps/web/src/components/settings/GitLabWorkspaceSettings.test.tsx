@@ -20,7 +20,7 @@ vi.mock("../../state/sourceControl", () => ({
   sourceControlEnvironment: { discovery: state.discovery, probeWriteAccess: {} },
 }));
 vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
-vi.mock("./SettingsPage", () => ({
+vi.mock("./settingsLayout", () => ({
   SettingsSection: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SettingsRow: ({ title, children }: { title: React.ReactNode; children: React.ReactNode }) => (
     <div>

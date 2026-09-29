@@ -3,6 +3,7 @@ import { readClaudeRewindHistory } from "../Drivers/ClaudeRewindHistory.ts";
 import * as FileSystem from "effect/FileSystem";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
+import { resolvePastedImageAttachments } from "../PastedImageAttachments.ts";
 /**
  * ClaudeAdapterLive - Scoped live implementation for the Claude Agent provider adapter.
  *
@@ -282,9 +283,10 @@ function toSessionPermissionUpdates(
   toolName: string,
   suggestions: ReadonlyArray<PermissionUpdate> | undefined,
 ): Array<PermissionUpdate> {
-  const sessionScoped = (suggestions ?? []).map(
-    (suggestion): PermissionUpdate => ({ ...suggestion, destination: "session" }),
-  );
+  const sessionScoped = (suggestions ?? []).map((suggestion): PermissionUpdate => ({
+    ...suggestion,
+    destination: "session",
+  }));
   if (sessionScoped.length > 0) {
     return sessionScoped;
   }
@@ -1555,21 +1557,62 @@ function buildUserMessage(input: {
   } as SDKUserMessage;
 }
 
-const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")((
+const buildUserMessageEffect = Effect.fn("buildUserMessageEffect")(function* (
   input: ProviderSendTurnInput,
   dependencies: {
+    readonly attachmentsDir: string;
     readonly boundInstanceId: ProviderInstanceId;
     readonly skillNames: ReadonlySet<string>;
   },
-) => {
+) {
   const text = buildPromptText(input, dependencies.boundInstanceId);
-  const dispatch = planClaudeSkillDispatch(text, dependencies.skillNames);
   const sdkContent: Array<Record<string, unknown>> = [];
+
+  // Claude Code expands a skill only from the LAST text block, and only when
+  // `/name` is its first character. A `$skill` chip anywhere in the prompt is
+  // therefore split into [leading text, "/name trailing text"] so the CLI
+  // runs it natively and the prose around it survives. See ClaudeSkillDispatch.
+  const dispatch = planClaudeSkillDispatch(text, dependencies.skillNames);
   if (dispatch?.leadingText !== undefined) {
     sdkContent.push({ type: "text", text: dispatch.leadingText });
   }
-  sdkContent.push({ type: "text", text: dispatch?.commandText ?? text });
-  return Effect.succeed(buildUserMessage({ sdkContent }));
+
+  // Coder reads images through the same validated workspace reader as Codex.
+  const images = yield* resolvePastedImageAttachments({
+    attachmentsDir: dependencies.attachmentsDir,
+    attachments: (input.attachments ?? []).filter((attachment) => attachment.type === "image"),
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new ProviderAdapterRequestError({
+          provider: PROVIDER,
+          method: "turn/start",
+          detail: cause.message,
+          cause,
+        }),
+    ),
+  );
+  for (const image of images) {
+    sdkContent.push({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: image.mimeType,
+        data: image.dataUrl.slice(image.dataUrl.indexOf(",") + 1),
+      },
+    });
+  }
+
+  // The final text block goes last on purpose. The Claude CLI only reads a
+  // streamed user message as a slash-command invocation when the last content
+  // block is text; image blocks ahead of it ride along as preceding input.
+  if (dispatch) {
+    sdkContent.push({ type: "text", text: dispatch.commandText });
+  } else if (text.length > 0) {
+    sdkContent.push({ type: "text", text });
+  }
+
+  return buildUserMessage({ sdkContent });
 });
 
 /**
@@ -5045,6 +5088,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       Effect.provideService(Path.Path, path),
     );
     const message = yield* buildUserMessageEffect(input, {
+      attachmentsDir: serverConfig.attachmentsDir,
       boundInstanceId,
       skillNames: new Set(
         skills

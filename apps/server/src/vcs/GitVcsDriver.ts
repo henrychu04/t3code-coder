@@ -68,6 +68,7 @@ import {
   type VcsRemoveWorktreeInput,
   type VcsStatusInput,
   type VcsStatusResult,
+  type WorktreeSubmodules,
 } from "@t3tools/contracts";
 import {
   dedupeRemoteBranchesWithLocalMatches,
@@ -76,8 +77,21 @@ import {
 import * as VcsDriver from "./VcsDriver.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import * as ServerConfig from "../config.ts";
+import { readProjectConfig } from "../project/configMetadata.ts";
+import { resolveProjectFileBackedSetting } from "@t3tools/shared/projectSettings";
 
 const WORKTREE_REMOVE_TIMEOUT_MS = Duration.toMillis(Duration.minutes(5));
+
+/** The checkout's own t3.json through the bounded, symlink-checked metadata reader. */
+const readWorktreeProjectFile = (worktreePath: string) =>
+  Effect.sync(() => readProjectConfig(worktreePath)).pipe(
+    Effect.tap((result) =>
+      result.status === "invalid"
+        ? Effect.logWarning("t3.json is invalid; initializing submodules recursively")
+        : Effect.void,
+    ),
+    Effect.map((result) => result.file),
+  );
 
 export interface ExecuteGitInput {
   readonly operation: string;
@@ -139,6 +153,10 @@ export interface CreateWorktreeProgress {
     total: number;
   }) => Effect.Effect<void, never>;
   readonly onSubmodulesStarted?: () => Effect.Effect<void, never>;
+  /** Fires when `.gitmodules` exists but the resolved submodule mode is `"none"`. */
+  readonly onSubmodulesDisabled?: (input: {
+    source: "settings" | "t3.json";
+  }) => Effect.Effect<void, never>;
   readonly onSubmoduleLine?: (line: string) => Effect.Effect<void, never>;
   readonly onSubmodulesFinished?: (input: {
     ok: boolean;
@@ -148,6 +166,12 @@ export interface CreateWorktreeProgress {
 
 export interface CreateWorktreeOptions {
   readonly progress?: CreateWorktreeProgress;
+  /**
+   * The project-over-environment `worktreeSubmodules` setting. Null (or
+   * omitted, for callers without settings access) defers to the checkout's
+   * own t3.json.
+   */
+  readonly submodules?: WorktreeSubmodules | null;
 }
 
 export interface GitRenameBranchInput {
@@ -964,7 +988,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
 
   const checkpoints: VcsDriver.VcsCheckpointOps = {
     captureCheckpoint: Effect.fn("GitVcsDriver.checkpoints.captureCheckpoint")(function* (input) {
-      const operation = "GitVcsDriver.checkpoints.captureCheckpoint";
+      const operation = VcsProcess.CHECKPOINT_CAPTURE_OPERATION;
       const indexConfig = [
         "-c",
         "core.fsmonitor=false",
@@ -2322,7 +2346,21 @@ const makeLocalGitService = Effect.gen(function* () {
     const hasSubmodules = yield* fileSystem
       .exists(path.join(targetPath, ".gitmodules"))
       .pipe(Effect.orElseSucceed(() => false));
-    if (hasSubmodules) {
+    // Repos with hundreds of nested submodules opt out or stop at the top
+    // level; the caller resolves that from settings, or the checkout's t3.json
+    // decides.
+    const submoduleMode = !hasSubmodules
+      ? { value: "none" as const, source: "environment" as const }
+      : resolveProjectFileBackedSetting(
+          "worktreeSubmodules",
+          options?.submodules ?? null,
+          options?.submodules != null ? null : yield* readWorktreeProjectFile(targetPath),
+        );
+    if (hasSubmodules && submoduleMode.value === "none") {
+      yield* options?.progress?.onSubmodulesDisabled?.({
+        source: submoduleMode.source === "t3.json" ? "t3.json" : "settings",
+      }) ?? Effect.void;
+    } else if (hasSubmodules) {
       yield* options?.progress?.onSubmodulesStarted?.() ?? Effect.void;
       // Populate already-cached or local submodules without allowing Git to
       // open a non-loopback connection outside the Coder CLI boundary.
@@ -2337,7 +2375,7 @@ const makeLocalGitService = Effect.gen(function* () {
           "submodule",
           "update",
           "--init",
-          "--recursive",
+          ...(submoduleMode.value === "recursive" ? ["--recursive"] : []),
           "--no-fetch",
         ],
         {
@@ -2359,7 +2397,7 @@ const makeLocalGitService = Effect.gen(function* () {
           detail: submodules ? null : "Some submodules are unavailable in the workspace cache.",
         }) ?? Effect.void
       );
-    } else {
+    } else if (!hasSubmodules) {
       yield* (
         options?.progress?.onSubmodulesFinished?.({ ok: true, detail: "no submodules" }) ??
           Effect.void

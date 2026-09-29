@@ -50,7 +50,7 @@ describe("Codex settings", () => {
   it("uses Codex for title and branch generation by default", () => {
     expect(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection).toEqual({
       instanceId: "codex",
-      model: "gpt-5.6-luna",
+      model: "gpt-6-luna",
       options: [{ id: "reasoningEffort", value: "low" }],
     });
   });
@@ -165,7 +165,11 @@ describe("Claude auto-compaction settings", () => {
 
 describe("workspace merge method settings", () => {
   it("defaults legacy settings and accepts resettable project overrides", () => {
-    expect(decodeServerSettings({}).pullRequestMergeMethod).toBe("merge");
+    // `null` reuses the method last chosen, as upstream does.
+    expect(decodeServerSettings({}).pullRequestMergeMethod).toBeNull();
+    expect(decodeServerSettingsPatch({ pullRequestMergeMethod: null }).pullRequestMergeMethod).toBe(
+      null,
+    );
     expect(decodeServerSettings({}).pullRequestMergeMethodOverrides).toEqual({});
     expect(
       decodeServerSettingsPatch({ pullRequestMergeMethodOverrides: { project: null } })

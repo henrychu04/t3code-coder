@@ -1,6 +1,6 @@
 import { Button } from "../ui/button";
 import { Alert, AlertAction, AlertDescription } from "../ui/alert";
-import { SettingsPage } from "./SettingsPage";
+import { SettingsPageContainer } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { useEnvironments } from "../../state/environments";
 import type { SettingsScopeSearch } from "./settingsScope";
@@ -62,11 +62,11 @@ export function SettingsScopeNotice({
               }))
           : [{ label: "Open all workspaces", search: {} }];
   return (
-    <SettingsPage>
+    <SettingsPageContainer>
       <Alert role="status">
         <AlertDescription>
           <p>{children}</p>
-          <AlertAction className="flex-wrap gap-2">
+          <AlertAction className="flex-wrap">
             {choices.map((choice) => (
               <Button
                 key={JSON.stringify(choice.search)}
@@ -95,6 +95,6 @@ export function SettingsScopeNotice({
           </AlertAction>
         </AlertDescription>
       </Alert>
-    </SettingsPage>
+    </SettingsPageContainer>
   );
 }

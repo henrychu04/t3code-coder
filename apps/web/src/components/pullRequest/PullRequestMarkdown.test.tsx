@@ -51,7 +51,7 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
       <PullRequestMarkdownContext
         value={{
           repositoryUrl: "https://gitlab.example/group/project",
-          panelRef: PULL_REQUESTS_PANEL_REF,
+          threadRef: null,
         }}
       >
         <PullRequestMarkdown

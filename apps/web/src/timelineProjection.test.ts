@@ -41,6 +41,7 @@ describe("timeline projections", () => {
       isWorking: true,
       activeTurnStartedAt: null,
       turnDiffSummaries: [],
+      supportsConversationRollback: true,
     };
     const rows = deriveMessagesTimelineRowsWithState(input);
     const nextInput = { ...input, timelineEntries: next.entries };
@@ -48,8 +49,7 @@ describe("timeline projections", () => {
     expect(updated.rows).toEqual(
       deriveMessagesTimelineRows({
         ...nextInput,
-        turnDiffSummaryByAssistantMessageId: new Map(),
-        revertTurnCountByUserMessageId: new Map(),
+        turnDiffSummaries: [],
       }),
     );
     expect(updated.rows.find((row) => row.kind === "message" && row.message.id === user.id)).toBe(
@@ -64,6 +64,7 @@ describe("timeline projections", () => {
       isWorking: false,
       activeTurnStartedAt: null,
       turnDiffSummaries: [] as TurnDiffSummary[],
+      supportsConversationRollback: true,
     };
     const first = deriveMessagesTimelineRowsWithState(input);
     const summary: TurnDiffSummary = {

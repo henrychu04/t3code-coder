@@ -6,7 +6,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { runMigrations } from "../Migrations.ts";
 import repairCounts from "./050_RepairPendingUserInputCounts.ts";
 
-it.layer(NodeSqliteClient.layerMemory())("050_RepairPendingUserInputCounts", (it) => {
+it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))("050_RepairPendingUserInputCounts", (it) => {
   it.effect(
     "repairs clock-skewed counts while preserving open questions and activity history",
     () =>

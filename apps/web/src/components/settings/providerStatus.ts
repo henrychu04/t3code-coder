@@ -1,4 +1,4 @@
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider, ServerProviderCompatibilityAdvisory } from "@t3tools/contracts";
 
 /**
  * Visual treatment for each server-reported provider status. Centralized so
@@ -80,5 +80,42 @@ export function getProviderSummary(provider: ServerProvider | undefined) {
  */
 export function getProviderVersionLabel(version: string | null | undefined) {
   if (!version) return null;
-  return version.startsWith("v") ? version : `v${version}`;
+  // Only bare semver-like versions get a `v` prefix. Other tags are shown as-is.
+  return /^\d/.test(version) ? `v${version}` : version;
+}
+
+const COMPATIBILITY_TITLES = {
+  graceful: "Limited support",
+  unsupported: "Unsupported version",
+  broken: "Known broken version",
+} as const;
+
+/**
+ * Compatibility guidance from the bundled manifest. T3 Coder does not install
+ * or update workspace providers, so it only names the supported version.
+ */
+export function getProviderCompatibilityPresentation(
+  compatibility: ServerProviderCompatibilityAdvisory | undefined,
+): {
+  readonly title: string;
+  readonly detail: string;
+  readonly emphasis: "normal" | "strong";
+} | null {
+  if (
+    !compatibility ||
+    (compatibility.status !== "graceful" &&
+      compatibility.status !== "unsupported" &&
+      compatibility.status !== "broken")
+  ) {
+    return null;
+  }
+  const recommendation =
+    getProviderVersionLabel(compatibility.recommendedVersion) ?? compatibility.recommendedRange;
+  return {
+    title: COMPATIBILITY_TITLES[compatibility.status],
+    detail:
+      compatibility.message ??
+      (recommendation ? `Use ${recommendation} for full support.` : "Update for full support."),
+    emphasis: compatibility.status === "graceful" ? "normal" : "strong",
+  };
 }

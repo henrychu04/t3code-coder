@@ -2,7 +2,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { EventId, TurnId, type OrchestrationThreadActivity } from "@t3tools/contracts";
 import {
   foldUserInputActivities,
-  getQuestionAnswerHistory,
+  getQuestionAnswerText,
+  hasQuestionAnswer,
   isQuestionAnswer,
 } from "./userInput.ts";
 const activity = (
@@ -40,8 +41,10 @@ describe("question history", () => {
     expect(entries[0]?.id).toBe(request.id);
     const answer = entries[0]?.payload;
     expect(isQuestionAnswer(answer)).toBe(true);
-    if (isQuestionAnswer(answer))
-      expect(getQuestionAnswerHistory(answer)).toBe("Which option?\nOption A");
+    if (isQuestionAnswer(answer)) {
+      expect(answer.questionTextById).toEqual({ choice: "Which option?" });
+      expect(getQuestionAnswerText(answer.answers.choice)).toBe("Option A");
+    }
     expect(entries[1]).toBe(unrelated);
   });
   it("removes the duplicate native question tool but retains failures and other turns", () => {
@@ -60,6 +63,6 @@ describe("question history", () => {
     const answer = foldUserInputActivities([request])[0]?.payload;
     if (!isQuestionAnswer(answer)) throw new Error("Missing question");
     expect(answer.answers).toEqual({});
-    expect(getQuestionAnswerHistory(answer)).toContain("Not answered");
+    expect(hasQuestionAnswer(answer)).toBe(false);
   });
 });

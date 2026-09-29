@@ -210,7 +210,7 @@ function LinkPullRequestDialog({
             this environment has a project for.
           </DialogDescription>
         </DialogHeader>
-        <DialogPanel className="space-y-3">
+        <DialogPanel>
           <Input
             ref={inputRef}
             placeholder="Merge request URL or #42"

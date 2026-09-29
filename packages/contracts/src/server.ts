@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { ServerProviderUsageLimits } from "./providerUsageLimits.ts";
 
-import { ExecutionEnvironmentDescriptor } from "./environment.ts";
+import { EnvironmentMachineKind, ExecutionEnvironmentDescriptor } from "./environment.ts";
 import {
   ForwardCompatibleArray,
   IsoDateTime,
@@ -119,6 +119,22 @@ export type ServerProviderAvailability = typeof ServerProviderAvailability.Type;
 export const ServerProviderContinuation = Schema.Struct({ groupKey: TrimmedNonEmptyString });
 export type ServerProviderContinuation = typeof ServerProviderContinuation.Type;
 
+export const ServerProviderCompatibilityStatus = Schema.Literals([
+  "unknown",
+  "supported",
+  "graceful",
+  "unsupported",
+  "broken",
+]);
+export const ServerProviderCompatibilityAdvisory = Schema.Struct({
+  status: ServerProviderCompatibilityStatus,
+  latestVersionStatus: Schema.optionalKey(ServerProviderCompatibilityStatus),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+  recommendedVersion: Schema.NullOr(TrimmedNonEmptyString),
+  recommendedRange: Schema.NullOr(TrimmedNonEmptyString),
+});
+export type ServerProviderCompatibilityAdvisory = typeof ServerProviderCompatibilityAdvisory.Type;
+
 export const ServerProvider = Schema.Struct({
   usageLimits: Schema.optional(ServerProviderUsageLimits),
   instanceId: ProviderInstanceId,
@@ -132,6 +148,7 @@ export const ServerProvider = Schema.Struct({
   // meter once its activities load. Clients reserve the meter's space on it.
   reportsContextWindow: Schema.optional(Schema.Boolean),
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
+  supportsTextGeneration: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
   version: Schema.NullOr(TrimmedNonEmptyString),
@@ -147,10 +164,16 @@ export const ServerProvider = Schema.Struct({
   ),
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
 });
 export type ServerProvider = typeof ServerProvider.Type;
 export const ServerProviders = ForwardCompatibleArray(ServerProvider);
 export type ServerProviders = typeof ServerProviders.Type;
+
+export const ServerProviderUpdatedPayload = Schema.Struct({
+  providers: ServerProviders,
+});
+export type ServerProviderUpdatedPayload = typeof ServerProviderUpdatedPayload.Type;
 const isProviderAvailable = (snapshot: ServerProvider): boolean =>
   snapshot.availability !== "unavailable";
 
@@ -246,6 +269,18 @@ export const ServerConfig = Schema.Struct({
   reasoningMessages: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
+
+/**
+ * The machine an environment should be drawn as: the user's pick, else a generic server. Coder
+ * workspaces do not report detected hardware, so upstream's detected kind is never available.
+ */
+export function resolveEnvironmentMachineKind(
+  config: {
+    readonly settings?: Pick<ServerSettings, "environmentIcon">;
+  } | null,
+): EnvironmentMachineKind {
+  return config?.settings?.environmentIcon ?? "server";
+}
 
 const ServerUpsertKeybindingReplaceTarget = Schema.Struct({
   key: KeybindingValue,

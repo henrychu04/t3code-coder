@@ -19,6 +19,10 @@ At phone-sized browser widths, existing threads animate between compact and expa
 Terminal context and other draft details return when the compact composer is expanded. Pasted
 image thumbnails appear above the input; their workspace references are added when the message sends.
 
+Attach up to 100 images per message. Each image can be up to 10 MiB, with at most 80 MiB of
+images in one message. Provider and model limits still apply, including images already in the
+conversation.
+
 ## Rich text and multiple models
 
 The composer formats supported Markdown as you type. Turn off **Rich text composer** in

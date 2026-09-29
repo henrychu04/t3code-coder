@@ -1,5 +1,5 @@
 import * as Duration from "effect/Duration";
-import { SettingsRow, SettingsSection } from "./SettingsPage";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import {
   useScopedSettings,
   useScopedSettingsMixed,

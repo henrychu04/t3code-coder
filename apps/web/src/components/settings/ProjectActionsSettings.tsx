@@ -12,7 +12,7 @@ import {
 import { Button } from "../ui/button";
 import { ProjectActionsList } from "./ProjectActionsList";
 import { useProjectScriptSettings } from "./useProjectScriptSettings";
-import { SettingsRow, SettingsSection } from "./SettingsPage";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
 /** Upstream action editing, with workspace defaults and explicit imports from repository metadata. */

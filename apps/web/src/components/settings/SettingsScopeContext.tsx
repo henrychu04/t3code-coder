@@ -1,7 +1,12 @@
+import type { T3ProjectFile } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import * as Option from "effect/Option";
+import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { useActiveEnvironmentId } from "../../state/entities";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
 import { useEnvironments } from "../../state/environments";
+import { projectEnvironment } from "../../state/projects";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "./scopedSettings";
 import {
@@ -10,19 +15,61 @@ import {
   type SettingsScopeSearch,
 } from "./settingsScope";
 
+/**
+ * Each member's decoded t3.json, so file-backed settings show the file as a
+ * layer in the inheritance chain. A member is only present once its read has
+ * settled. The workspace helper reads the fixed file through the bounded
+ * `projects.getConfig` RPC; the browser never reads the raw file.
+ */
+function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
+  const members = scope.kind === "project" || scope.kind === "checkout" ? scope.members : [];
+  return useAtomValue(
+    useMemo(
+      () =>
+        Atom.make((get) => {
+          const files = new Map<string, T3ProjectFile | null>();
+          for (const member of members) {
+            const result = get(
+              projectEnvironment.getConfig({
+                environmentId: member.environmentId,
+                input: { projectId: member.id },
+              }),
+            );
+            if (result.waiting && Option.isNone(AsyncResult.value(result))) continue;
+            const config = Option.getOrNull(AsyncResult.value(result));
+            files.set(member.physicalProjectKey, config?.status === "valid" ? config.file : null);
+          }
+          return files;
+        }),
+      [members],
+    ),
+  );
+}
+
 function useResolvedSettingsScope(search: SettingsScopeSearch) {
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
   const primaryEnvironmentId = useActiveEnvironmentId();
+  const resolvedSearch = useMemo(
+    () => resolveLegacyProjectSettingsSearch(search, groups),
+    [groups, search],
+  );
+  const scope = useMemo(
+    () => resolveSettingsScope(resolvedSearch, groups, availableEnvironments),
+    [availableEnvironments, groups, resolvedSearch],
+  );
+  const projectFiles = useMemberProjectFiles(scope);
   return useMemo(() => {
-    const resolvedSearch = resolveLegacyProjectSettingsSearch(search, groups);
-    const scope = resolveSettingsScope(resolvedSearch, groups, availableEnvironments);
     const selected = selectScopedSettingsEnvironments(
       scope,
       availableEnvironments,
       primaryEnvironmentId,
     );
-    const targets = resolveScopedSettingsTargets(scope, selected.connectedEnvironments);
+    const targets = resolveScopedSettingsTargets(
+      scope,
+      selected.connectedEnvironments,
+      projectFiles,
+    );
     // The representative target supplies display values; project scopes
     // prefer the member on the primary environment, like environments do.
     const target =
@@ -32,7 +79,7 @@ function useResolvedSettingsScope(search: SettingsScopeSearch) {
       targets[0] ??
       null;
     return { scope, groups, ...selected, targets, target, search: resolvedSearch };
-  }, [availableEnvironments, groups, primaryEnvironmentId, search]);
+  }, [availableEnvironments, groups, primaryEnvironmentId, projectFiles, resolvedSearch, scope]);
 }
 
 const SettingsScopeContext = createContext<

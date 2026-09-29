@@ -7,7 +7,7 @@ import {
   unlockNotificationAudio,
 } from "../../threadNotifications";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
-import { SettingsRow } from "./SettingsPage";
+import { SettingsRow } from "./settingsLayout";
 
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 

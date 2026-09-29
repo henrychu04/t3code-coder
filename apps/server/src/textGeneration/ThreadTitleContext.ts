@@ -1,10 +1,10 @@
-import type { PastedImageAttachment } from "@t3tools/contracts";
+import type { ChatAttachment } from "@t3tools/contracts";
 import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
 
 export type ThreadTitleMessage = {
   readonly role: "user" | "assistant" | "system" | "reasoning";
   readonly text: string;
-  readonly attachments?: ReadonlyArray<PastedImageAttachment> | undefined;
+  readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
 };
 
 const MAX_CONTEXT = 8_000;
@@ -40,9 +40,7 @@ export function formatThreadTitleContext(messages: ReadonlyArray<ThreadTitleMess
     const cached = formatted.get(section.index);
     if (cached !== undefined) return cached;
     const text = assistantCitationsToPlainText(section.message.text).trim();
-    const names = section.message.attachments
-      ?.map((attachment) => attachment.name ?? attachment.id)
-      .join(", ");
+    const names = section.message.attachments?.map((attachment) => attachment.name).join(", ");
     const contents = [text, ...(names ? [`[Attachments: ${names}]`] : [])]
       .filter(Boolean)
       .join("\n");

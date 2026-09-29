@@ -165,6 +165,24 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
+    // A hover card needs only the merge request itself, not merge settings or write access.
+    getChangeRequestPreview: (input) =>
+      cli.getMergeRequestDetail(input).pipe(
+        Effect.map((mergeRequest) => ({
+          number: mergeRequest.number,
+          title: mergeRequest.title,
+          url: mergeRequest.url,
+          author: mergeRequest.author,
+          state: mergeRequest.state,
+          isDraft: mergeRequest.isDraft,
+          createdAt: mergeRequest.createdAt,
+        })),
+        Effect.mapError(fail("getChangeRequestPreview")),
+      ),
+
+    getChangeRequestSummary: (input) =>
+      cli.getMergeRequestSummary(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
+
     getChangeRequest: (input) =>
       Effect.all(
         [
@@ -221,28 +239,26 @@ export const make = Effect.gen(function* () {
         { concurrency: 4 },
       ).pipe(
         Effect.mapError(fail("getChangeRequestActivity")),
-        Effect.map(
-          ([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
-            reactions: awards.reactions,
-            comments: notes.comments.map((comment) => ({
+        Effect.map(([notes, commits, discussions, awards]): ProviderChangeRequestActivity => ({
+          reactions: awards.reactions,
+          comments: notes.comments.map((comment) => ({
+            ...comment,
+            reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
+          })),
+          // GitLab reports no count of its own, so the walk's own total is the host's: the
+          // notes endpoint carries every comment on the merge request, including the ones
+          // written under a discussion, and it is read until GitLab runs out.
+          commentCount: notes.comments.length,
+          commentsTruncated: notes.truncated || discussions.truncated,
+          reviewThreads: discussions.threads.map((thread) => ({
+            ...thread,
+            comments: thread.comments.map((comment) => ({
               ...comment,
               reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
             })),
-            // GitLab reports no count of its own, so the walk's own total is the host's: the
-            // notes endpoint carries every comment on the merge request, including the ones
-            // written under a discussion, and it is read until GitLab runs out.
-            commentCount: notes.comments.length,
-            commentsTruncated: notes.truncated || discussions.truncated,
-            reviewThreads: discussions.threads.map((thread) => ({
-              ...thread,
-              comments: thread.comments.map((comment) => ({
-                ...comment,
-                reactions: awards.reactionsByNoteId.get(comment.id) ?? [],
-              })),
-            })),
-            commits,
-          }),
-        ),
+          })),
+          commits,
+        })),
       ),
 
     // The same read the detail takes it from, on its own: `user.can_merge` lives on the merge
@@ -264,6 +280,15 @@ export const make = Effect.gen(function* () {
 
     getDiffFileContents: (input) =>
       cli.getMergeRequestDiffFileContents(input).pipe(Effect.mapError(fail("getDiffFileContents"))),
+
+    // What each marked file is at the head, which is what tells a mark that still stands from one
+    // the branch has moved past. GitLab's own local-storage marks are keyed on the blob id too,
+    // so this stales at the same moment its web UI would.
+    getFileRevisions: (input) =>
+      cli.getFileRevisions(input).pipe(
+        Effect.mapError(fail("getFileRevisions")),
+        Effect.map((revisions) => ({ revisions })),
+      ),
 
     // Users only: GitLab requests a review of a person, and the groups that can stand in for one
     // appear in approval rules rather than in a merge request's reviewers.

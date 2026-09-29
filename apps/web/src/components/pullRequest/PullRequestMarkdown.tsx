@@ -4,31 +4,42 @@ import { createContext, useContext, useMemo } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
 
 import { cn } from "~/lib/utils";
+import { PULL_REQUESTS_PANEL_REF } from "~/rightPanelStore";
 
 import ChatMarkdown from "../ChatMarkdown";
 import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
 export const PullRequestMarkdownContext = createContext<{
   repositoryUrl: string | null;
-  panelRef?: ScopedThreadRef | undefined;
-}>({ repositoryUrl: null });
+  threadRef: ScopedThreadRef | null;
+} | null>(null);
 
-/** MR markdown keeps recognized GitLab navigation internal and external media inert. */
+/**
+ * Upstream's change-request body renderer with Coder's media rule: recognized GitLab navigation
+ * stays internal, and uploads render as inert attachment rows rather than fetched media. Relative
+ * GitLab uploads resolve against the repository's host.
+ */
 export function PullRequestMarkdown({
   text,
-  hostUrl,
   cwd,
   environmentId,
+  threadRef,
+  hostUrl,
   className,
 }: {
   text: string;
-  hostUrl: string | null;
   cwd: string;
   environmentId: EnvironmentId;
+  /** Thread the body is shown beside, so its merge request links open in that thread's panel. */
+  threadRef?: ScopedThreadRef | null;
+  /** Overrides the context's repository as the origin of relative GitLab uploads. */
+  hostUrl?: string | null;
   className?: string;
 }) {
-  const segments = splitPullRequestBody(text, hostUrl);
-  const { repositoryUrl, panelRef } = useContext(PullRequestMarkdownContext);
+  const context = useContext(PullRequestMarkdownContext);
+  const repositoryUrl = context?.repositoryUrl ?? null;
+  const resolvedThreadRef = threadRef ?? context?.threadRef ?? undefined;
+  const segments = splitPullRequestBody(text, hostUrl ?? repositoryUrl);
   const extraRemarkPlugins = useMemo<NonNullable<ReactMarkdownOptions["remarkPlugins"]>>(
     () => (repositoryUrl ? [[remarkPullRequestAutolinks, { repositoryUrl }]] : []),
     [repositoryUrl],
@@ -48,7 +59,8 @@ export function PullRequestMarkdown({
               text={segment.text}
               cwd={cwd}
               environmentId={environmentId}
-              panelRef={panelRef}
+              threadRef={resolvedThreadRef}
+              panelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
               extraRemarkPlugins={extraRemarkPlugins}
             />
           );

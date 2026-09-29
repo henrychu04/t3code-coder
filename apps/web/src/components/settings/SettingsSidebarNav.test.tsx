@@ -3,7 +3,6 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { SettingsSidebarNav } from "./SettingsSidebarNav";
 import { searchSettings, SETTINGS_SEARCH_ITEMS } from "./settingsSearch";
-import { Input } from "../ui/input";
 const mocks = vi.hoisted(() => ({ navigate: vi.fn(), setOpen: vi.fn(), setOpenMobile: vi.fn() }));
 vi.mock("@tanstack/react-router", () => ({
   useNavigate: () => mocks.navigate,
@@ -13,10 +12,7 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("./useAvailableSettingsSearchItems", () => ({
   useAvailableSettingsSearchItems: () => SETTINGS_SEARCH_ITEMS,
 }));
-vi.mock("../sidebar/SidebarChrome", () => ({ SidebarChromeFooter: () => null }));
-vi.mock("../ui/input", () => ({
-  Input: (props: React.ComponentProps<"input">) => <input {...props} />,
-}));
+vi.mock("../sidebar/SidebarChrome", () => ({ SidebarUtilityMenu: () => null }));
 vi.mock("../ui/sidebar", () => ({
   useSidebar: () => ({
     isMobile: false,
@@ -24,6 +20,10 @@ vi.mock("../ui/sidebar", () => ({
     setOpen: mocks.setOpen,
     setOpenMobile: mocks.setOpenMobile,
   }),
+  SidebarInput: ({ nativeInput: _nativeInput, ...props }: React.ComponentProps<"input"> & {
+    nativeInput?: boolean;
+  }) => <input {...props} />,
+  SidebarFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarMenu: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -49,7 +49,7 @@ beforeEach(async () => {
   inputNode = document.createElement("input");
   document.body.append(inputNode);
   await act(async () => {
-    renderer = create(<SettingsSidebarNav pathname="/settings/preferences" />, {
+    renderer = create(<SettingsSidebarNav pathname="/settings/general" />, {
       createNodeMock: (element) => (element.type === "input" ? inputNode : null),
     });
   });
@@ -60,7 +60,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 function input() {
-  return renderer.root.findByType(Input);
+  return renderer.root.findByType("input");
 }
 async function search(value: string) {
   await act(async () => input().props.onChange({ currentTarget: { value } }));

@@ -5,6 +5,7 @@ import { toHtml } from "hast-util-to-html";
 import { rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
 import { ProjectImageLink, isImageFilePath } from "./chat/ProjectImageLink";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
+import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
 import { defaultUrlTransform } from "react-markdown";
 import { GitHubIcon } from "./Icons";
@@ -85,10 +86,15 @@ import { LRUCache } from "../lib/lruCache";
 import { getSyntaxHighlighterPromise } from "../lib/syntaxHighlighting";
 import { cn } from "../lib/utils";
 import {
+  extractMarkdownLinkHrefs,
+  normalizeMarkdownLinkDestination,
   resolveInlineCodeFileLinkMeta,
   resolveMarkdownFileLinkMeta,
   rewriteMarkdownFileUriHref,
+  type MarkdownFileLinkMeta,
 } from "../markdown-links";
+import { ContextChip } from "./ContextChip";
+import { FileTagChipContent } from "./chat/FileTagChip";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
 import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 import {
@@ -97,6 +103,7 @@ import {
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
 } from "../lib/openPullRequestLink";
+import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { readLocalApi } from "../localApi";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -113,6 +120,12 @@ import { Button } from "./ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "./ui/collapsible";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { stackedThreadToast, toastManager } from "./ui/toast";
+
+export interface ChatMarkdownContextReference {
+  kind: string;
+  contextId: string;
+  label: string;
+}
 
 interface ChatMarkdownProps {
   readonly text: string;
@@ -131,6 +144,10 @@ interface ChatMarkdownProps {
   readonly lineBreaks?: boolean;
   readonly parseRawHtml?: boolean;
   readonly extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
+  /** Renders a `t3-context://` link as a chip; without it the link shows its label as text. */
+  readonly renderContextReference?:
+    | ((reference: ChatMarkdownContextReference) => ReactNode)
+    | undefined;
   /** Append a prompt that invokes a newly created artifact-template skill. */
   readonly onUseArtifactTemplate?: ((template: CodexArtifactTemplate) => void) | undefined;
 }
@@ -228,8 +245,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   },
   protocols: {
     ...defaultSchema.protocols,
-    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation", "file"],
-    src: [...(defaultSchema.protocols?.src ?? []), "file"],
+    href: [...(defaultSchema.protocols?.href ?? []), "t3-citation", "file", "t3-context"],
+    src: [...(defaultSchema.protocols?.src ?? []), "file", "t3-context"],
   },
 } satisfies Parameters<typeof rehypeSanitize>[0];
 
@@ -377,6 +394,15 @@ function extractPreCodeMeta(node: unknown): string | undefined {
   return typeof meta === "string" && meta.trim() ? meta.trim() : undefined;
 }
 
+function hastPlainTextDeep(node: unknown): string {
+  if (!node || typeof node !== "object") return "";
+  if ("type" in node && node.type === "text" && "value" in node && typeof node.value === "string") {
+    return node.value;
+  }
+  if (!("children" in node) || !Array.isArray(node.children)) return "";
+  return node.children.map(hastPlainTextDeep).join("");
+}
+
 function nodeToPlainText(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(nodeToPlainText).join("");
@@ -470,9 +496,8 @@ function MarkdownTable({ children, ...props }: ComponentProps<"table">) {
             render={
               <Button
                 type="button"
-                variant="ghost"
+                variant={expanded ? "secondary" : "ghost-muted"}
                 size="icon-xs"
-                className="chat-markdown-chrome-action"
                 aria-pressed={expanded}
                 aria-label={expandLabel}
                 onClick={() => setExpanded((value) => !value)}
@@ -509,29 +534,33 @@ function MarkdownDetails({
   const content = childNodes.filter((_, index) => index !== summaryIndex);
 
   return (
-    <Collapsible
-      defaultOpen={open}
-      onOpenChange={setIsOpen}
-      className="chat-markdown-details my-2 border-y border-border/60"
-      data-markdown-details=""
-      data-markdown-details-open={isOpen ? "true" : "false"}
-    >
-      <CollapsibleTrigger
-        className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium text-foreground data-panel-open:[&_svg]:rotate-90"
-        data-markdown-details-summary=""
+    <div className="my-2 border-y border-border/60">
+      <Collapsible
+        defaultOpen={open}
+        onOpenChange={setIsOpen}
+        data-markdown-details=""
+        data-markdown-details-open={isOpen ? "true" : "false"}
       >
-        <ChevronRightIcon
-          className="size-4 shrink-0 text-muted-foreground transition-transform"
-          aria-hidden
-        />
-        <span>{summary}</span>
-      </CollapsibleTrigger>
-      <CollapsiblePanel>
-        <div className="pb-3 ps-6 text-foreground/80" data-markdown-details-content="">
-          {content}
-        </div>
-      </CollapsiblePanel>
-    </Collapsible>
+        <CollapsibleTrigger
+          className="flex w-full items-center gap-2 py-2 text-left text-sm font-medium text-foreground data-panel-open:[&_svg]:rotate-90"
+          data-markdown-details-summary=""
+        >
+          <ChevronRightIcon
+            className="size-4 shrink-0 text-muted-foreground transition-transform"
+            aria-hidden
+          />
+          <span>{summary}</span>
+        </CollapsibleTrigger>
+        <CollapsiblePanel>
+          <div
+            className="pb-3 ps-6 text-foreground/[calc(80%+var(--appearance-contrast-boost)/5)]"
+            data-markdown-details-content=""
+          >
+            {content}
+          </div>
+        </CollapsiblePanel>
+      </Collapsible>
+    </div>
   );
 }
 
@@ -565,9 +594,8 @@ function MarkdownCodeBlock({
               render={
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant={wrapped ? "secondary" : "ghost-muted"}
                   size="icon-xs"
-                  className="chat-markdown-chrome-action"
                   aria-pressed={wrapped}
                   aria-label={wrapLabel}
                   onClick={() => setWrapped((value) => !value)}
@@ -674,6 +702,137 @@ function InertMarkdownImage({ alt }: { alt: string }) {
   );
 }
 
+const FENCED_CODE_SEGMENT_PATTERN = /(```[\s\S]*?(?:```|$))/;
+const INLINE_CODE_SPAN_PATTERN = /`([^`\n]+)`/g;
+const MARKDOWN_FILE_LINK_CLASS_NAME = "mx-0.5 align-middle";
+
+function extractInlineCodeSpans(text: string): string[] {
+  const spans: string[] = [];
+  const segments = text.split(FENCED_CODE_SEGMENT_PATTERN);
+  for (let index = 0; index < segments.length; index += 2) {
+    for (const match of (segments[index] ?? "").matchAll(INLINE_CODE_SPAN_PATTERN)) {
+      const span = match[1]?.trim();
+      if (span) spans.push(span);
+    }
+  }
+  return spans;
+}
+
+function pathParentSegments(path: string): string[] {
+  const normalized = path.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter((segment) => segment.length > 0);
+  return segments.slice(0, -1);
+}
+
+function buildFileLinkParentSuffixByPath(filePaths: ReadonlyArray<string>): Map<string, string> {
+  const groups = new Map<string, Set<string>>();
+  for (const filePath of filePaths) {
+    const normalizedPath = filePath.replaceAll("\\", "/");
+    const pathSegments = normalizedPath.split("/").filter((segment) => segment.length > 0);
+    const basename = pathSegments[pathSegments.length - 1];
+    if (!basename) continue;
+    const group = groups.get(basename) ?? new Set<string>();
+    group.add(normalizedPath);
+    groups.set(basename, group);
+  }
+
+  const suffixByPath = new Map<string, string>();
+  for (const group of groups.values()) {
+    const uniquePaths = [...group];
+    if (uniquePaths.length < 2) continue;
+
+    const parentSegmentsByPath = new Map(
+      uniquePaths.map((filePath) => [filePath, pathParentSegments(filePath)]),
+    );
+    const minUniqueDepthByPath = new Map<string, number>();
+
+    for (const filePath of uniquePaths) {
+      const segments = parentSegmentsByPath.get(filePath) ?? [];
+      let resolvedDepth = segments.length;
+      for (let depth = 1; depth <= segments.length; depth += 1) {
+        const candidate = segments.slice(-depth).join("/");
+        const collision = uniquePaths.some((otherPath) => {
+          if (otherPath === filePath) return false;
+          const otherSegments = parentSegmentsByPath.get(otherPath) ?? [];
+          return otherSegments.slice(-depth).join("/") === candidate;
+        });
+        if (!collision) {
+          resolvedDepth = depth;
+          break;
+        }
+      }
+      minUniqueDepthByPath.set(filePath, resolvedDepth);
+    }
+
+    for (const filePath of uniquePaths) {
+      const segments = parentSegmentsByPath.get(filePath) ?? [];
+      if (segments.length === 0) continue;
+      const minUniqueDepth = minUniqueDepthByPath.get(filePath) ?? 1;
+      const suffixDepth = Math.min(segments.length, Math.max(minUniqueDepth, 2));
+      suffixByPath.set(filePath, segments.slice(-suffixDepth).join("/"));
+    }
+  }
+
+  return suffixByPath;
+}
+
+function markdownFileLinkLabel(
+  meta: MarkdownFileLinkMeta,
+  parentSuffixByPath: ReadonlyMap<string, string>,
+): string {
+  const labelParts = [meta.basename];
+  const parentSuffix = parentSuffixByPath.get(meta.filePath.replaceAll("\\", "/"));
+  if (parentSuffix) labelParts.push(parentSuffix);
+  if (meta.line) labelParts.push(`L${meta.line}${meta.column ? `:C${meta.column}` : ""}`);
+  return labelParts.join(" · ");
+}
+
+/** Upstream's file chip; project files open in the Files surface, other paths stay inert. */
+function MarkdownFileChip({
+  meta,
+  copyMarkdown,
+}: {
+  meta: MarkdownFileLinkMeta;
+  copyMarkdown: string;
+}) {
+  const { threadRef, resolvedTheme, fileLinkParentSuffixByPath } = useMarkdownState();
+  const label = markdownFileLinkLabel(meta, fileLinkParentSuffixByPath);
+  const workspaceRelativePath = meta.workspaceRelativePath;
+  const content = <FileTagChipContent path={meta.filePath} label={label} theme={resolvedTheme} />;
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          threadRef && workspaceRelativePath ? (
+            <ContextChip
+              kind="mention"
+              render={<button type="button" />}
+              className={MARKDOWN_FILE_LINK_CLASS_NAME}
+              data-markdown-copy={copyMarkdown}
+              onClick={() =>
+                useRightPanelStore.getState().openFile(threadRef, workspaceRelativePath, meta.line)
+              }
+            >
+              {content}
+            </ContextChip>
+          ) : (
+            <ContextChip
+              kind="mention"
+              className={cn(MARKDOWN_FILE_LINK_CLASS_NAME, "select-text")}
+              data-markdown-copy={copyMarkdown}
+            >
+              {content}
+            </ContextChip>
+          )
+        }
+      />
+      <TooltipPopup side="top" variant="code">
+        <div className="overflow-x-auto whitespace-nowrap">{meta.displayPath}</div>
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
 function useChatMarkdownState({
   text,
   cwd,
@@ -685,6 +844,7 @@ function useChatMarkdownState({
   isStreaming = false,
   skills = EMPTY_MARKDOWN_SKILLS,
   onUseArtifactTemplate,
+  renderContextReference,
 }: ChatMarkdownProps) {
   const { resolvedTheme } = useTheme();
   const navigate = useNavigate();
@@ -694,6 +854,18 @@ function useChatMarkdownState({
     reportFailure: false,
   });
   const diffThemeName = resolveDiffThemeName(resolvedTheme);
+  const fileLinkParentSuffixByPath = useMemo(() => {
+    const filePaths: string[] = [];
+    for (const href of extractMarkdownLinkHrefs(text)) {
+      const meta = resolveMarkdownFileLinkMeta(normalizeMarkdownLinkDestination(href), cwd);
+      if (meta) filePaths.push(meta.filePath);
+    }
+    for (const span of extractInlineCodeSpans(text)) {
+      const meta = resolveInlineCodeFileLinkMeta(span, cwd);
+      if (meta) filePaths.push(meta.filePath);
+    }
+    return buildFileLinkParentSuffixByPath(filePaths);
+  }, [cwd, text]);
   const handleCopy = useCallback((event: ReactClipboardEvent<HTMLDivElement>) => {
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !event.clipboardData) return;
@@ -756,6 +928,7 @@ function useChatMarkdownState({
     cwd,
     diffThemeName,
     environmentId,
+    fileLinkParentSuffixByPath,
     handleMergeRequestContextMenu,
     headingLevelOffset,
     isStreaming,
@@ -763,6 +936,8 @@ function useChatMarkdownState({
     onTaskListChange,
     onUseArtifactTemplate,
     projects,
+    renderContextReference,
+    resolvedTheme,
     skills,
     text,
     threadRef,
@@ -935,7 +1110,7 @@ const MARKDOWN_COMPONENTS: Components = {
       />
     );
   },
-  a({ node: _node, href, children, title: _title, ...props }) {
+  a({ node, href, children, title: _title, ...props }) {
     const {
       cwd,
       threadRef,
@@ -944,9 +1119,19 @@ const MARKDOWN_COMPONENTS: Components = {
       projects,
       navigate,
       handleMergeRequestContextMenu,
+      renderContextReference,
     } = useMarkdownState();
     const citation = href ? parseAssistantCitationHref(href) : null;
     if (citation) return <AssistantCitationChip citation={citation} />;
+    const contextReference = href ? parseComposerContextHref(href) : null;
+    if (contextReference) {
+      const label = hastPlainTextDeep(node) || contextReference.contextId;
+      return renderContextReference ? (
+        renderContextReference({ ...contextReference, label })
+      ) : (
+        <span>{label}</span>
+      );
+    }
     const pullRequestAutolink = String(
       (props as Record<string, unknown>)["data-pull-request-autolink"] ?? "",
     );
@@ -978,25 +1163,21 @@ const MARKDOWN_COMPONENTS: Components = {
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ProjectImageLink cwd={cwd} threadRef={threadRef} filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}>
+        <ProjectImageLink
+          cwd={cwd}
+          threadRef={threadRef}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
+        >
           {children}
         </ProjectImageLink>
       );
     }
-    if (threadRef && fileLink?.workspaceRelativePath) {
+    if (fileLink) {
       return (
-        <button
-          type="button"
-          className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
-          data-markdown-copy={pullRequestCopy}
-          onClick={() =>
-            useRightPanelStore
-              .getState()
-              .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
-          }
-        >
-          {children}
-        </button>
+        <MarkdownFileChip
+          meta={fileLink}
+          copyMarkdown={`[${fileLink.basename}](${normalizeMarkdownLinkDestination(href ?? "")})`}
+        />
       );
     }
     const mergeRequest = href ? parseGitLabMergeRequestUrl(href) : null;
@@ -1018,43 +1199,56 @@ const MARKDOWN_COMPONENTS: Components = {
         url: targetHref,
       };
       return (
-        <button
-          type="button"
-          className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
-          data-markdown-copy={pullRequestCopy}
-          onContextMenu={(event) =>
-            void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
-          }
-          onClick={() => {
-            useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
-              environmentId: project.environmentId,
+        <PullRequestLinkPreview
+          originalUrl={targetHref}
+          target={{
+            environmentId: project.environmentId,
+            input: {
               projectId: project.id,
               repository: linkedPullRequest.repository,
               number: mergeRequest.number,
-              url: targetHref,
-            });
-            if (
-              resolvedPanelRef.environmentId === PULL_REQUESTS_PANEL_REF.environmentId &&
-              resolvedPanelRef.threadId === PULL_REQUESTS_PANEL_REF.threadId
-            ) {
-              void navigate({
-                to: "/pull-requests",
-                search: (previous) => ({
-                  ...previous,
-                  involvement: previous.involvement ?? "all",
-                  state: previous.state ?? "all",
+            },
+          }}
+          link={
+            <button
+              type="button"
+              className={cn(autolinkProps.className, "cursor-pointer text-primary underline")}
+              data-markdown-copy={pullRequestCopy}
+              onContextMenu={(event) =>
+                void handleMergeRequestContextMenu(event, targetHref, linkedPullRequest)
+              }
+              onClick={() => {
+                useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
+                  environmentId: project.environmentId,
+                  projectId: project.id,
                   repository: linkedPullRequest.repository,
                   number: mergeRequest.number,
-                  selectedProjectId: project.id,
-                  selectedEnvironmentId: project.environmentId,
-                }),
-                replace: true,
-              });
-            }
-          }}
-        >
-          {children}
-        </button>
+                  url: targetHref,
+                });
+                if (
+                  resolvedPanelRef.environmentId === PULL_REQUESTS_PANEL_REF.environmentId &&
+                  resolvedPanelRef.threadId === PULL_REQUESTS_PANEL_REF.threadId
+                ) {
+                  void navigate({
+                    to: "/pull-requests",
+                    search: (previous) => ({
+                      ...previous,
+                      involvement: previous.involvement ?? "all",
+                      state: previous.state ?? "all",
+                      repository: linkedPullRequest.repository,
+                      number: mergeRequest.number,
+                      selectedProjectId: project.id,
+                      selectedEnvironmentId: project.environmentId,
+                    }),
+                    replace: true,
+                  });
+                }
+              }}
+            >
+              {children}
+            </button>
+          }
+        />
       );
     }
     if (mergeRequest && project) {
@@ -1128,7 +1322,16 @@ const MARKDOWN_COMPONENTS: Components = {
     srcSet: _srcSet,
     ...imageProps
   }) {
-    const { cwd, threadRef } = useMarkdownState();
+    const { cwd, threadRef, renderContextReference } = useMarkdownState();
+    const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
+    if (contextReference) {
+      const label = alt || contextReference.contextId;
+      return renderContextReference ? (
+        renderContextReference({ ...contextReference, label })
+      ) : (
+        <span>{label}</span>
+      );
+    }
     const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
     if (fileLink)
       return (
@@ -1163,26 +1366,17 @@ const MARKDOWN_COMPONENTS: Components = {
         : null;
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
-        <ProjectImageLink cwd={cwd} threadRef={threadRef} filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}>
+        <ProjectImageLink
+          cwd={cwd}
+          threadRef={threadRef}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
+        >
           {children}
         </ProjectImageLink>
       );
     }
-    if (threadRef && fileLink?.workspaceRelativePath) {
-      return (
-        <button
-          type="button"
-          className={cn(codeClassName, "cursor-pointer font-mono")}
-          title={fileLink.displayPath}
-          onClick={() =>
-            useRightPanelStore
-              .getState()
-              .openFile(threadRef, fileLink.workspaceRelativePath!, fileLink.line)
-          }
-        >
-          <code>{children}</code>
-        </button>
-      );
+    if (fileLink) {
+      return <MarkdownFileChip meta={fileLink} copyMarkdown={`\`${codeText}\``} />;
     }
     return (
       <code {...props} className={cn(codeClassName, "font-mono")}>
@@ -1247,7 +1441,7 @@ function ChatMarkdown(props: ChatMarkdownProps) {
   return (
     <div
       className={cn(
-        "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80 [overflow-wrap:anywhere] [word-break:break-word]",
+        "chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/[calc(80%+var(--appearance-contrast-boost)/5)] [overflow-wrap:anywhere] [word-break:break-word]",
         className,
       )}
       data-streaming={state.isStreaming ? "" : undefined}
@@ -1256,7 +1450,7 @@ function ChatMarkdown(props: ChatMarkdownProps) {
       <MarkdownStateContext value={state}>
         <ReactMarkdown
           urlTransform={(href) =>
-            parseAssistantCitationHref(href)
+            parseAssistantCitationHref(href) || parseComposerContextHref(href)
               ? href
               : (rewriteMarkdownFileUriHref(href) ?? defaultUrlTransform(href))
           }

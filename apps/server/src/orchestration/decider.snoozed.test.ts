@@ -268,6 +268,7 @@ it.layer(NodeServices.layer)("snoozed thread decider", (it) => {
             messageId: MessageId.make("message-1"),
             role: "user",
             text: "Continue",
+            attachments: [],
           },
           runtimeMode: "full-access",
           interactionMode: "default",

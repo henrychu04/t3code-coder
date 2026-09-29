@@ -17,6 +17,7 @@ import {
 } from "./command.ts";
 import {
   normalizeCoderWorkspaceProfile,
+  normalizeCoderDeploymentProfile,
   type CoderDeploymentProfile,
   type CoderWorkspaceProfile,
 } from "./profile.ts";
@@ -25,9 +26,7 @@ const MAX_PROCESS_OUTPUT_BYTES = 64 * 1024;
 const DEFAULT_COMMAND_TIMEOUT_MS = 2 * 60_000;
 const DEFAULT_SCP_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_TERMINATION_GRACE_MS = 5_000;
-const REQUIRED_CODER_PROXY_FLAGS = [
-  "--no-version-warning",
-] as const;
+const REQUIRED_CODER_PROXY_FLAGS = ["--no-version-warning"] as const;
 const IMAGE_PATH_SENTINEL = "T3_CODER_IMAGE_PATH=";
 
 export type CoderClipboardImageExtension = "jpg" | "png" | "webp";
@@ -70,6 +69,7 @@ export function runProcess(
               shell: false,
               stdio: ["ignore", "pipe", "pipe"],
               windowsHide: true,
+              ...(invocation.env ? { env: { ...process.env, ...invocation.env } } : {}),
             });
             child.stdout.on("data", (chunk: Buffer) => {
               stdout = appendOutput(stdout, chunk);
@@ -270,15 +270,20 @@ function copyWithCoderScp(input: {
     ...(input.invocationOptions ? { invocationOptions: input.invocationOptions } : {}),
     action: ({ path, host }) =>
       runProcess(
-        buildCoderScpInvocation({
-          platform: input.platform ?? process.platform,
-          sshConfigPath: path,
-          localPath: input.localPath,
-          sshHost: host,
-          remotePath: input.remotePath,
-          ...(input.recursive ? { recursive: true } : {}),
-          ...(input.scpExecutable ? { scpExecutable: input.scpExecutable } : {}),
-        }),
+        {
+          ...buildCoderScpInvocation({
+            platform: input.platform ?? process.platform,
+            sshConfigPath: path,
+            localPath: input.localPath,
+            sshHost: host,
+            remotePath: input.remotePath,
+            ...(input.recursive ? { recursive: true } : {}),
+            ...(input.scpExecutable ? { scpExecutable: input.scpExecutable } : {}),
+          }),
+          // config-ssh omits --url from its ProxyCommand. Override the CLI's saved URL
+          // through the environment inherited by the foreground Coder proxy process.
+          env: { CODER_URL: normalizeCoderDeploymentProfile(input.deployment).url },
+        },
         "Coder SCP transfer",
         DEFAULT_SCP_TIMEOUT_MS,
       ),
@@ -372,8 +377,9 @@ export function uploadCoderClipboardImageWithScp(input: {
   readonly scpExecutable?: string;
 }): Effect.Effect<string, CoderProcessError> {
   return Effect.gen(function* () {
-    const imageId = randomUUID();
-    const filename = `${imageId}.${input.extension}`;
+    // Upstream's pending-upload id, `pending-<uuid>-<ext>`, stored as `<id>.<ext>`. The workspace
+    // helper claims it into the thread when the message is sent.
+    const filename = `pending-${randomUUID()}-${input.extension}.${input.extension}`;
     const remotePath = `.t3-coder/attachments/${filename}.tmp`;
     const finalRemotePath = `.t3-coder/attachments/${filename}`;
     const upload = Effect.gen(function* () {

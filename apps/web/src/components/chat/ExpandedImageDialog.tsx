@@ -27,6 +27,29 @@ export interface ExpandedImagePreview {
   }[];
   index: number;
 }
+/** Upstream's preview builder for images already in memory; Coder has no video previews. */
+export function buildExpandedImagePreview(
+  images: ReadonlyArray<{
+    readonly id: string;
+    readonly type: string;
+    readonly name: string;
+    readonly previewUrl?: string | undefined;
+  }>,
+  selectedImageId: string,
+): ExpandedImagePreview | null {
+  const previewableImages = images.flatMap((image) =>
+    image.type === "image" && image.previewUrl
+      ? [{ id: image.id, src: image.previewUrl, name: image.name }]
+      : [],
+  );
+  const selectedIndex = previewableImages.findIndex((image) => image.id === selectedImageId);
+  if (selectedIndex < 0) return null;
+  return {
+    images: previewableImages.map((image) => ({ src: image.src, name: image.name })),
+    index: selectedIndex,
+  };
+}
+
 export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   preview,
   onClose,
@@ -104,8 +127,6 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
         variant="media"
         showCloseButton={false}
         bottomStickOnMobile={false}
-        backdropClassName="z-[60]"
-        viewportClassName="z-[60] grid-rows-1 place-items-center px-4 py-6"
         className="row-start-1 flex max-h-[92vh] w-[92vw] max-w-[92vw] items-center justify-center overflow-visible [--media-width:92vw] [--media-height:min(86vh,calc(100vh-160px))] sm:[--media-width:calc(92vw-96px)]"
         onKeyDown={onKeyDown}
         initialFocus={closeButtonRef}

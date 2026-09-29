@@ -61,6 +61,7 @@ import {
   uploadCoderClipboardImageWithScp,
 } from "@t3tools/coder-cli/scp";
 import {
+  CLIPBOARD_IMAGE_MIME_TYPES,
   ClipboardImageValidationError,
   MAX_CLIPBOARD_IMAGE_BYTES,
   validateClipboardImage,
@@ -2242,16 +2243,27 @@ export function makeLocalCoderGateway(
                 { signal: uploadAbort.signal },
               ),
             );
-            sendText(response, 200, "application/json; charset=utf-8", JSON.stringify({ path }));
+            const attachmentId = NodePath.posix.basename(path, `.${extension}`);
+            if (!/^pending-[0-9a-f-]{36}-(?:jpg|png|webp)$/.test(attachmentId)) {
+              throw new Error("Clipboard image upload returned an unexpected workspace path.");
+            }
+            sendText(
+              response,
+              200,
+              "application/json; charset=utf-8",
+              JSON.stringify({
+                path,
+                attachment: {
+                  id: attachmentId,
+                  mimeType: CLIPBOARD_IMAGE_MIME_TYPES[extension],
+                  sizeBytes: bytes.byteLength,
+                },
+              }),
+            );
           } catch (cause) {
             if (uploadAbort.signal.aborted) return;
             if (cause instanceof RequestBodyTooLargeError) {
-              sendText(
-                response,
-                413,
-                "text/plain; charset=utf-8",
-                "Image exceeds 10 MiB.",
-              );
+              sendText(response, 413, "text/plain; charset=utf-8", "Image exceeds 10 MiB.");
               return;
             }
             if (cause instanceof ClipboardImageValidationError) {

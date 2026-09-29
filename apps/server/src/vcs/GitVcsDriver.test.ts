@@ -9,7 +9,11 @@ import { assert, it } from "@effect/vitest";
 
 import { CheckpointRef, GitCommandError } from "@t3tools/contracts";
 import * as ServerConfig from "../config.ts";
+import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
+import * as ProcessRunner from "../processRunner.ts";
 import * as GitVcsDriver from "./GitVcsDriver.ts";
+import type * as VcsDriver from "./VcsDriver.ts";
+import * as VcsDriverRegistry from "./VcsDriverRegistry.ts";
 import * as VcsProcess from "./VcsProcess.ts";
 import { runVcsDriverContractSuite } from "./testing/VcsDriverContractHarness.ts";
 
@@ -20,6 +24,10 @@ const GitContractLayer = Layer.mergeAll(GitVcsDriver.vcsLayer, GitVcsDriver.laye
   Layer.provide(ServerConfigLayer),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
+);
+const GitCaptureContractLayer = Layer.merge(
+  GitContractLayer,
+  ProcessRunner.layer.pipe(Layer.provide(NodeServices.layer)),
 );
 
 const runGit = (cwd: string, args: ReadonlyArray<string>) =>

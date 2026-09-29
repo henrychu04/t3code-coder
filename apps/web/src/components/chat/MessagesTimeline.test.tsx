@@ -8,7 +8,7 @@ import {
 } from "@t3tools/contracts";
 import { createRef, type ReactNode, type Ref } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { LegendListRef } from "@legendapp/list/react";
 
 vi.mock("@legendapp/list/react", async () => {
@@ -138,6 +138,10 @@ vi.mock("@pierre/diffs/react", () => {
   return { FileDiff: MockFileDiff };
 });
 
+vi.mock("../DiffWorkerPoolProvider", () => ({
+  DiffWorkerPoolProvider: ({ children }: { children?: ReactNode }) => children,
+}));
+
 function matchMedia() {
   return {
     matches: false,
@@ -150,7 +154,7 @@ let MessagesTimeline: typeof import("./MessagesTimeline").MessagesTimeline;
 let TimelineMinimap: typeof import("./MessagesTimeline").TimelineMinimap;
 let buildToolCallExpandedBody: typeof import("./MessagesTimeline").buildToolCallExpandedBody;
 
-beforeAll(async () => {
+function stubDomGlobals() {
   const classList = {
     add: () => {},
     remove: () => {},
@@ -183,10 +187,17 @@ beforeAll(async () => {
       offsetHeight: 0,
     },
   });
+}
 
+beforeAll(async () => {
+  stubDomGlobals();
   ({ MessagesTimeline, TimelineMinimap, buildToolCallExpandedBody } =
     await import("./MessagesTimeline"));
 }, 30_000);
+
+// The scroll-settling tests clear every global stub; mounted timeline rows
+// still touch `window` through the tooltip's focus handling.
+beforeEach(stubDomGlobals);
 
 const ACTIVE_THREAD_ENVIRONMENT_ID = EnvironmentId.make("environment-local");
 const MESSAGE_CREATED_AT = "2026-03-17T19:12:28.000Z";
@@ -911,12 +922,12 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Terminal 1 lines 1-5");
     expect(markup).toContain("lucide-terminal");
-    expect(markup).toContain("yoo what&#x27;s</p>");
-    expect(markup).toContain('<span aria-hidden="true"> </span>');
+    expect(markup).toContain("yoo what&#x27;s");
+    expect(markup).not.toContain("terminal_context");
     expect(markup).toContain("Show full message");
   }, 20_000);
 
-  it("keeps unsupported element-pick context inert", () => {
+  it("renders legacy element-pick context as an unavailable chip", () => {
     const markup = renderToStaticMarkup(
       <MessagesTimeline
         {...buildProps()}
@@ -937,10 +948,11 @@ describe("MessagesTimeline", () => {
       />,
     );
 
+    // Coder has no browser preview, so the upgraded record never exposes its captured HTML.
     expect(markup).toContain("SubmitButton");
-    expect(markup).toContain("&lt;element_context&gt;");
-    expect(markup).toContain("&lt;button class=&quot;submit&quot;&gt;Save&lt;/button&gt;");
+    expect(markup).not.toContain("&lt;element_context");
     expect(markup).not.toContain("<element_context");
+    expect(markup).not.toContain("class=&quot;submit&quot;");
   });
 
   it("keeps the copy button for collapsed long user messages", () => {
@@ -951,7 +963,7 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain('aria-label="Copy link"');
+    expect(markup).toContain('aria-label="Copy message"');
     expect(markup).toContain('data-user-message-collapsed="true"');
     expect(markup).toContain('data-user-message-footer="true"');
   });
@@ -988,13 +1000,20 @@ describe("MessagesTimeline", () => {
       rawCommand: "env -C /repo pnpm test",
       tone: "tool" as const,
     };
-    expect(buildToolCallExpandedBody(entry, undefined, "pnpm test")).toBe("env -C /repo pnpm test");
+    expect(buildToolCallExpandedBody(entry, undefined, "pnpm test", null)).toBe(
+      "env -C /repo pnpm test",
+    );
     expect(
-      buildToolCallExpandedBody({ ...entry, detail: "pnpm test" }, undefined, "pnpm test"),
+      buildToolCallExpandedBody({ ...entry, detail: "pnpm test" }, undefined, "pnpm test", null),
     ).toBe("env -C /repo pnpm test");
     expect(
-      buildToolCallExpandedBody({ ...entry, rawCommand: "pnpm test" }, undefined, "pnpm test"),
-    ).toBe("pnpm test");
+      buildToolCallExpandedBody(
+        { ...entry, rawCommand: "pnpm test" },
+        undefined,
+        "pnpm test",
+        null,
+      ),
+    ).toBeNull();
   });
 
   it.each([true, false])(
@@ -1207,7 +1226,7 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain('aria-label="Hidden work includes a failure"');
   });
 
-  it("shows the animated one-line label for a live tool group", () => {
+  it("shows the one-line label for a live tool group", () => {
     const turnId = TurnId.make("turn-live");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -1244,7 +1263,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Working for");
     expect(markup).toContain("Running pnpm");
-    expect(markup).toContain("live-activity-focus");
   });
 
   it("scopes a live row failure to the tool named by the row", () => {
@@ -1302,6 +1320,98 @@ describe("MessagesTimeline", () => {
     expect(markup).not.toContain("tool call failed");
   });
 
+  it.each(
+    (
+      [
+        [
+          "**Viewing image first** with *care*, ~~old~~ `code` and [context](https://example.com)",
+          "Viewing image first with care, old code and context",
+          1,
+        ],
+        ["first paragraph\n\nsecond paragraph", "first paragraph second paragraph", 0],
+        ["- first\n- second", "first second", 0],
+        ["first  \nsecond", "first second", 0],
+        ["![image description](image.png)", "image description", 0],
+        ["![](image.png)", "Thought", 0],
+        ["---", "Thought", 0],
+      ] as const
+    ).flatMap(([markdown, expected, strongCount]) =>
+      [false, true].map((streaming) => ({
+        markdown,
+        expected,
+        strongCount,
+        streaming,
+      })),
+    ),
+  )(
+    "shows a plain thought preview for $markdown, streaming=$streaming",
+    async ({ markdown, expected, strongCount, streaming }) => {
+      vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      vi.stubGlobal("requestAnimationFrame", () => 0);
+      vi.stubGlobal("cancelAnimationFrame", () => {});
+      const turnId = TurnId.make("turn-thought");
+      const thought = buildAssistantTimelineEntry(markdown);
+      let renderer: ReactTestRenderer | undefined;
+      try {
+        await act(() => {
+          renderer = create(
+            <MessagesTimeline
+              {...buildProps()}
+              isWorking
+              runningTurnId={turnId}
+              timelineEntries={[
+                {
+                  id: "work-entry",
+                  kind: "work",
+                  createdAt: MESSAGE_CREATED_AT,
+                  entry: {
+                    id: "work",
+                    createdAt: MESSAGE_CREATED_AT,
+                    turnId,
+                    label: "Read image",
+                    tone: "tool",
+                    itemType: "command_execution",
+                    command: "cat image.png",
+                    toolLifecycleStatus: "completed",
+                  },
+                },
+                {
+                  ...thought,
+                  message: { ...thought.message, role: "reasoning", turnId, streaming },
+                },
+              ]}
+            />,
+          );
+        });
+        await act(() => renderer!.root.findByProps({ "aria-expanded": false }).props.onClick());
+        const text = renderer!.root.findByProps({
+          className: "relative min-w-0 flex-1 truncate text-secondary-label",
+        });
+        const preview = text.parent!;
+        expect(
+          text
+            .findAll(() => true)
+            .flatMap((node) => node.children)
+            .filter((child) => typeof child === "string")
+            .join(""),
+        ).toBe(
+          (streaming && expected === "Thought" ? "Thinking" : expected).repeat(streaming ? 2 : 1),
+        );
+        expect(
+          preview.findAll((node) =>
+            ["strong", "em", "del", "code", "a"].includes(String(node.type)),
+          ),
+        ).toHaveLength(0);
+        await act(() => preview.props.onClick());
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(strongCount);
+        await act(() => preview.props.onClick());
+        expect(renderer!.root.findAllByType("strong")).toHaveLength(0);
+      } finally {
+        await act(() => renderer?.unmount());
+      }
+    },
+  );
+
   it("renders initial thinking as the shared live activity row", () => {
     const turnId = TurnId.make("turn-live");
     const markup = renderToStaticMarkup(
@@ -1325,7 +1435,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain('data-timeline-row-id="live-activity-row"');
   });
 
-  it("keeps the completed command in the shared activity row", () => {
+  it("keeps the completed command in the shared activity row with a present-tense label", () => {
     const turnId = TurnId.make("turn-live");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -1362,7 +1472,6 @@ describe("MessagesTimeline", () => {
 
     expect(markup).toContain("Running pnpm");
     expect(markup).toContain("lucide-terminal");
-    expect(markup).toContain("live-activity-focus");
     expect(markup).not.toContain("Ran pnpm");
     expect(markup).not.toContain("Thinking");
     expect(markup).not.toContain('data-timeline-row-kind="thinking"');
@@ -1415,9 +1524,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("contextWindow.test.ts");
-    expect(markup).toContain("Wadduo");
-    expect(markup).toContain('data-testid="file-diff"');
+    expect(markup).toContain("contextWindow.test.ts +47 to +58");
+    expect(markup).toContain("lucide-message-circle");
     expect(markup).not.toContain(">Review comment<");
     expect(markup).not.toContain("&lt;review_comment");
     expect(markup).not.toContain("&lt;/review_comment&gt;");
@@ -1454,10 +1562,344 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain("plan.md");
-    expect(markup).toContain("Clarify this.");
-    expect(markup).toContain("# Plan");
+    expect(markup).toContain("plan.md L1 to L2");
+    expect(markup).not.toContain("review_comment");
     expect(markup).not.toContain('data-testid="file-diff"');
+  });
+
+  it("renders structured context records as chips without reparsing text", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-structured",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            message: {
+              id: MessageId.make("message-structured"),
+              role: "user",
+              text: "Compare [Terminal 1 line 4](t3-context://v1/terminal/ctx-t) with [gone](t3-context://v1/future/ctx-x).",
+              context: {
+                version: 1,
+                records: [
+                  {
+                    version: 1,
+                    contextId: "ctx-t" as never,
+                    kind: "terminal",
+                    label: "Terminal 1 line 4",
+                    terminalId: "default",
+                    terminalLabel: "Terminal 1",
+                    lineStart: 4,
+                    lineEnd: 4,
+                    text: "boom",
+                  },
+                ],
+              },
+              turnId: null,
+              createdAt: "2026-03-17T19:12:28.000Z",
+              updatedAt: "2026-03-17T19:12:28.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("lucide-terminal");
+    expect(markup).toContain("Terminal 1 line 4");
+    expect(markup).toContain('data-context-unresolved="true"');
+    expect(markup).toContain(">gone<");
+    expect(markup).not.toContain('href="t3-context://');
+  });
+
+  it("renders unknown attachment types as inert rows instead of crashing", () => {
+    const entry = {
+      ...buildUserTimelineEntry("Play the recording."),
+      message: {
+        ...buildUserTimelineEntry("Play the recording.").message,
+        attachments: [
+          {
+            // A newer server can introduce attachment types this build does
+            // not know. They ride the open contract member.
+            type: "recording",
+            id: "attachment-voice-memo",
+            name: "voice-memo.ogg",
+            mimeType: "audio/ogg",
+            sizeBytes: 42,
+          },
+        ],
+      },
+    };
+
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={[entry]} />,
+    );
+
+    expect(markup).toContain("voice-memo.ogg");
+    expect(markup).not.toContain('aria-label="Download voice-memo.ogg"');
+    expect(markup).not.toContain('alt="voice-memo.ogg"');
+    expect(markup).not.toContain("<a href=");
+  });
+
+  it("renders image context records as chips bound to the message's image attachments", () => {
+    const attachmentId = "thread-1-00000000-0000-4000-8000-000000000001-png";
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-image-record",
+            kind: "message",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            message: {
+              id: MessageId.make("message-image-record"),
+              role: "user",
+              text: "See [screen.png](t3-context://v1/image/ctx-image) and [lost.png](t3-context://v1/image/ctx-lost).",
+              attachments: [
+                {
+                  type: "image",
+                  id: attachmentId,
+                  name: "screen.png",
+                  mimeType: "image/png",
+                  sizeBytes: 2048,
+                },
+              ],
+              context: {
+                version: 1,
+                records: [
+                  {
+                    version: 1,
+                    contextId: "ctx-image" as never,
+                    kind: "image",
+                    label: "screen.png",
+                    attachmentId,
+                    name: "screen.png",
+                    mimeType: "image/png",
+                    sizeBytes: 2048,
+                  },
+                  {
+                    version: 1,
+                    contextId: "ctx-lost" as never,
+                    kind: "image",
+                    label: "lost.png",
+                    attachmentId: "thread-1-00000000-0000-4000-8000-000000000002-png",
+                    name: "lost.png",
+                    mimeType: "image/png",
+                    sizeBytes: 10,
+                  },
+                ],
+              },
+              turnId: null,
+              createdAt: "2026-03-17T19:12:28.000Z",
+              updatedAt: "2026-03-17T19:12:28.000Z",
+              streaming: false,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Image attachment, screen.png");
+    expect(markup).toContain('aria-label="Preview screen.png"');
+    expect(markup).toContain('data-context-unresolved="true"');
+    expect(markup).toContain(">lost.png<");
+    expect(markup).not.toContain('href="t3-context://');
+  });
+
+  it("hides links to pasted image files in messages sent before context records", () => {
+    const attachmentId = "legacy-00000000-0000-4000-8000-000000000003-png";
+    const entry = buildUserTimelineEntry(
+      "Look at this [image.png](/home/coder/.t3-coder/attachments/00000000-0000-4000-8000-000000000003.png)",
+    );
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            ...entry,
+            message: {
+              ...entry.message,
+              attachments: [
+                {
+                  type: "image",
+                  id: attachmentId,
+                  name: "image.png",
+                  mimeType: "image/png",
+                  sizeBytes: 2048,
+                },
+              ],
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Look at this");
+    expect(markup).toContain('aria-label="Preview image.png"');
+    expect(markup).not.toContain(".t3-coder/attachments");
+  });
+
+  it("keeps failed lifecycle entries discoverable in mixed activity summaries", () => {
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        timelineEntries={[
+          {
+            id: "entry-info",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:27.000Z",
+            entry: {
+              id: "work-info",
+              createdAt: "2026-03-17T19:12:27.000Z",
+              label: "Status updated",
+              tone: "info",
+            },
+          },
+          {
+            id: "entry-1",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:28.000Z",
+            entry: {
+              id: "work-1",
+              createdAt: "2026-03-17T19:12:28.000Z",
+              label: "Glob",
+              tone: "tool",
+              toolLifecycleStatus: "failed",
+              detail: "No files found",
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain('aria-label="Received 1 update and used 1 tool, tool call failed"');
+    // Ordinary tool failures do not use destructive row styling.
+    expect(markup).not.toContain("text-destructive");
+  });
+
+  it("renders elapsed time for a completed turn", () => {
+    const turnId = TurnId.make("turn-with-fold");
+    const assistantEntry = buildAssistantTimelineEntry("Done.");
+    const markup = renderToStaticMarkup(
+      <MessagesTimeline
+        {...buildProps()}
+        latestTurn={{
+          turnId,
+          state: "completed",
+          startedAt: "2026-03-17T19:12:20.000Z",
+          completedAt: "2026-03-17T19:12:28.000Z",
+        }}
+        timelineEntries={[
+          {
+            id: "work-entry-with-fold",
+            kind: "work",
+            createdAt: "2026-03-17T19:12:22.000Z",
+            entry: {
+              id: "work-with-fold",
+              createdAt: "2026-03-17T19:12:22.000Z",
+              turnId,
+              label: "Ran command",
+              tone: "tool",
+              toolLifecycleStatus: "completed",
+            },
+          },
+          {
+            ...assistantEntry,
+            message: { ...assistantEntry.message, turnId },
+          },
+        ]}
+      />,
+    );
+
+    expect(markup).toContain("Worked for 8.0s");
+  });
+
+  it("glides to the end while a turn is running and snaps otherwise", () => {
+    const entries = [buildUserTimelineEntry("Hello")];
+    const working = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} isWorking timelineEntries={entries} />,
+    );
+    expect(working).toContain('data-maintain-scroll-at-end-animated="true"');
+
+    const idle = renderToStaticMarkup(
+      <MessagesTimeline {...buildProps()} timelineEntries={entries} />,
+    );
+    expect(idle).toContain('data-maintain-scroll-at-end-animated="false"');
+  });
+
+  it("snaps to the end while a thread switch settles, even mid-turn", async () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.set(++nextFrame, callback);
+      return nextFrame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: number) => frames.delete(frame));
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const flushFrame = () =>
+      act(() => {
+        const callbacks = [...frames.values()];
+        frames.clear();
+        callbacks.forEach((callback) => callback(0));
+      });
+    // A work entry renders without the DOM globals that message rows need
+    // under react-test-renderer.
+    const entries = [
+      {
+        id: "entry-settle-work",
+        kind: "work" as const,
+        createdAt: MESSAGE_CREATED_AT,
+        entry: {
+          id: "work-settle",
+          createdAt: MESSAGE_CREATED_AT,
+          toolCallId: "call-settle",
+          label: "Run lint",
+          tone: "tool" as const,
+          itemType: "command_execution" as const,
+          command: "pnpm lint",
+          toolLifecycleStatus: "completed" as const,
+        },
+      },
+    ];
+    const animatedAttr = (renderer: ReactTestRenderer) =>
+      renderer.root.findByProps({ "data-testid": "legend-list" }).props[
+        "data-maintain-scroll-at-end-animated"
+      ];
+    let renderer!: ReactTestRenderer;
+    try {
+      act(() => {
+        renderer = create(
+          <MessagesTimeline
+            {...buildProps()}
+            isWorking
+            routeThreadKey="env-1:thread-a"
+            timelineEntries={entries}
+          />,
+        );
+      });
+      expect(animatedAttr(renderer)).toBe(true);
+
+      act(() => {
+        renderer.update(
+          <MessagesTimeline
+            {...buildProps()}
+            isWorking
+            routeThreadKey="env-1:thread-b"
+            timelineEntries={entries}
+          />,
+        );
+      });
+      expect(animatedAttr(renderer)).toBe(false);
+
+      // Two frames later the switch has settled and gliding resumes.
+      flushFrame();
+      flushFrame();
+      expect(animatedAttr(renderer)).toBe(true);
+    } finally {
+      act(() => renderer?.unmount());
+      vi.unstubAllGlobals();
+    }
   });
 
   it("renders a muted failure marker for failed tool lifecycle entries", () => {
@@ -1597,34 +2039,6 @@ it("shows compaction feedback instead of thinking or a working timer", () => {
   expect(markup).toContain("Compacting…");
   expect(markup).not.toContain("Thinking");
   expect(markup).not.toContain("Working for");
-});
-
-it("wraps a command-only tool row when there is no expansion body", () => {
-  const command = "printf " + "long-argument".repeat(30);
-  const markup = renderToStaticMarkup(
-    <MessagesTimeline
-      {...buildProps()}
-      timelineEntries={[
-        {
-          id: "command-entry",
-          kind: "work",
-          createdAt: MESSAGE_CREATED_AT,
-          entry: {
-            id: "command-only",
-            createdAt: MESSAGE_CREATED_AT,
-            tone: "tool",
-            itemType: "command_execution",
-            label: "Run command",
-            command,
-          },
-        },
-      ]}
-    />,
-  );
-  expect(markup).toContain(command);
-  expect(markup).toMatch(
-    /class="[^"]*whitespace-pre-wrap break-words select-text[^"]*"[^>]*>printf /,
-  );
 });
 
 it("expands a subagent batch without navigating away from the conversation", async () => {

@@ -110,6 +110,7 @@ const messageSendCommand: OrchestrationCommand = {
     messageId: MessageId.make("msg-1"),
     role: "user",
     text: "hello",
+    attachments: [],
   },
   interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
   runtimeMode: "approval-required",

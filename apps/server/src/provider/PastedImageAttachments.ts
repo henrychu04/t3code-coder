@@ -4,9 +4,16 @@ import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
 import * as NodePath from "node:path";
 
-import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES, type PastedImageAttachment } from "@t3tools/contracts";
+import {
+  getProviderAttachmentLimitError,
+  isProviderSendTurnSupportedImageMimeType,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  type ChatAttachment,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 
+import { resolveAttachmentPath } from "../attachmentStore.ts";
+import { readAttachmentBytes } from "../readAttachmentBytes.ts";
 
 type PastedImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
@@ -14,6 +21,7 @@ export interface ResolvedPastedImageAttachment {
   readonly path: string;
   readonly mimeType: PastedImageMimeType;
   readonly dataUrl: string;
+  readonly sizeBytes: number;
 }
 
 export class PastedImageAttachmentError extends Error {
@@ -23,31 +31,26 @@ export class PastedImageAttachmentError extends Error {
   }
 }
 
-const expectedMimeTypeByExtension: Readonly<Record<string, PastedImageMimeType>> = {
-  jpg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
-
 export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachment")(
-  function* (input: {
-    readonly attachmentsDir: string;
-    readonly attachment: PastedImageAttachment;
-  }) {
-    const id = input.attachment.id;
-    if (NodePath.basename(id) !== id) {
-      return yield* Effect.fail(
-        new PastedImageAttachmentError("Pasted image attachment id is invalid."),
-      );
-    }
-    const extension = NodePath.extname(id).slice(1).toLowerCase();
-    const expectedMimeType = expectedMimeTypeByExtension[extension];
-    if (!expectedMimeType) {
+  function* (input: { readonly attachmentsDir: string; readonly attachment: ChatAttachment }) {
+    const expectedMimeType = input.attachment.mimeType.toLowerCase();
+    if (
+      input.attachment.type !== "image" ||
+      !isProviderSendTurnSupportedImageMimeType(expectedMimeType)
+    ) {
       return yield* Effect.fail(
         new PastedImageAttachmentError("Pasted image attachment type is unsupported."),
       );
     }
-    const path = NodePath.join(input.attachmentsDir, id);
+    const path = resolveAttachmentPath({
+      attachmentsDir: input.attachmentsDir,
+      attachment: input.attachment,
+    });
+    if (!path || NodePath.dirname(path) !== NodePath.resolve(input.attachmentsDir)) {
+      return yield* Effect.fail(
+        new PastedImageAttachmentError("Pasted image attachment id is invalid."),
+      );
+    }
 
     const resolved = yield* Effect.tryPromise({
       try: async () => {
@@ -60,26 +63,52 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
           if (!stat.isFile() || stat.size === 0 || stat.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
             throw new Error("Pasted image attachment has an invalid size or file type.");
           }
-          const bytes = await handle.readFile();
+          const bytes = await readAttachmentBytes(handle, stat.size);
           const mimeType = detectImageMimeType(bytes);
           if (mimeType !== expectedMimeType) {
-            throw new Error("Pasted image attachment content does not match its filename.");
+            throw new Error("Pasted image attachment content does not match its declared type.");
           }
           return {
             path,
             mimeType,
             dataUrl: `data:${mimeType};base64,${bytes.toString("base64")}`,
+            sizeBytes: bytes.byteLength,
           } satisfies ResolvedPastedImageAttachment;
         } finally {
           await handle.close();
         }
       },
-      catch: (cause) =>
-        new PastedImageAttachmentError("Pasted image attachment could not be read safely.", {
-          cause,
-        }),
+      catch: () =>
+        new PastedImageAttachmentError("Pasted image attachment could not be read safely."),
     });
 
+    return resolved;
+  },
+);
+
+/**
+ * Resolve one message's images in order, bounding their combined size so a turn
+ * with many attachments cannot exceed the shared per-message image budget.
+ */
+export const resolvePastedImageAttachments = Effect.fn("resolvePastedImageAttachments")(
+  function* (input: {
+    readonly attachmentsDir: string;
+    readonly attachments: ReadonlyArray<ChatAttachment>;
+  }) {
+    const resolved: Array<ResolvedPastedImageAttachment & { readonly type: "image" }> = [];
+    for (const attachment of input.attachments) {
+      const image = {
+        type: "image" as const,
+        ...(yield* resolvePastedImageAttachment({
+          attachmentsDir: input.attachmentsDir,
+          attachment,
+        })),
+      };
+      resolved.push(image);
+      // Legacy attachments carry no size, so bound the bytes actually read.
+      const limitError = getProviderAttachmentLimitError(resolved);
+      if (limitError) return yield* Effect.fail(new PastedImageAttachmentError(limitError));
+    }
     return resolved;
   },
 );

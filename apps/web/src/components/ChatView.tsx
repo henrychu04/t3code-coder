@@ -1,4 +1,15 @@
-import { pastedImageAttachmentsForIds } from "~/lib/composerPastedImages";
+import { derivePendingRequests } from "@t3tools/client-runtime/pending-requests";
+import {
+  awaitAttachmentUploads,
+  getUploadedAttachments,
+  startAttachmentUpload,
+} from "../lib/attachmentUploadQueue";
+import { buildMessageContext, terminalContextReference } from "../lib/composerContextRecords";
+import {
+  removeInlineContextReference,
+  stripInlineContextReferences,
+} from "../lib/composerContextReferences";
+import { ExpandedImageDialog, type ExpandedImagePreview } from "./chat/ExpandedImageDialog";
 import { useProjectClone } from "../state/projectClones";
 import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/contracts";
 import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
@@ -8,7 +19,11 @@ import {
   applyProviderInstanceSettings,
   deriveCoderProviderInstanceEntries,
 } from "../providerInstances";
-import { composerDraftHasUserContent } from "../composerDraftStore";
+import {
+  composerDraftHasUserContent,
+  type ComposerFileAttachment,
+  type ComposerImageAttachment,
+} from "../composerDraftStore";
 import { wasBootstrapThreadNotCreated } from "@t3tools/client-runtime/errors";
 import { findRecordedWorktreeSetup } from "@t3tools/client-runtime/worktree-setup";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
@@ -18,10 +33,11 @@ import { visibleThreadPullRequests } from "@t3tools/shared/threadPullRequests";
 import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS } from "@t3tools/contracts";
 import { waitForRevertedMessage } from "../lib/waitForRevertedMessage";
 import { readScreenshotBlob } from "../lib/readScreenshotBlob";
-import { submittedImageAttachments } from "../lib/submittedImageAttachments";
-import { recallableComposerPrompt } from "./chat/composerPromptHistory";
-import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
-import type { ComposerPastedImage } from "../lib/composerPastedImages";
+import { messageImageReferences } from "../lib/submittedImageAttachments";
+import {
+  ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+  recallableComposerPrompt,
+} from "./chat/composerPromptHistory";
 import { parseChangeRequestUrl } from "~/lib/openPullRequestLink";
 import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";
 import { LinkPullRequestDialogHost } from "./pullRequest/LinkPullRequestDialog";
@@ -36,7 +52,6 @@ import { resolveThreadReferenceCopyTarget } from "@t3tools/shared/threadReferenc
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 
-import { shallow } from "zustand/shallow";
 import { projectSettingsTarget } from "../projectSettingsTarget";
 import {
   type ApprovalRequestId,
@@ -57,13 +72,8 @@ import {
   ProviderInteractionMode,
   ProviderDriverKind,
   RuntimeMode,
-  TerminalOpenInput,
+  type ChatImageAttachment,
 } from "@t3tools/contracts";
-import { extractComposerPastedImageAttachmentIds } from "@t3tools/shared/composerTrigger";
-import {
-  appendPastedImagesToPrompt,
-  pastedImageSendBlockReason,
-} from "../lib/composerPastedImages";
 import {
   connectionStatusTitle,
   type EnvironmentConnectionPresentation,
@@ -125,8 +135,6 @@ import {
   parseStandaloneComposerSlashCommand,
 } from "../composer-logic";
 import {
-  derivePendingApprovals,
-  derivePendingUserInputs,
   derivePhase,
   deriveTimelineEntriesWithState,
   type TimelineEntriesProjection,
@@ -147,6 +155,7 @@ import {
 } from "./chat/timelineScrollAnchoring";
 import {
   buildPendingUserInputAnswers,
+  carryDisplacedCustomAnswerIntoPrompt,
   derivePendingUserInputProgress,
   setPendingUserInputCustomAnswer,
   togglePendingUserInputOptionSelection,
@@ -165,7 +174,6 @@ import {
 import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_RUNTIME_MODE,
-  DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
   type ChatMessage,
   type SessionPhase,
@@ -182,16 +190,14 @@ import {
   selectActiveRightPanel,
   selectActiveRightPanelSurface,
   selectThreadRightPanelState,
-  isPullRequestSurface,
   type RightPanelSurface,
-  updatePullRequestTabStatus,
   useRightPanelStore,
 } from "../rightPanelStore";
-import { RightPanelTabs, type PullRequestTabStatus } from "./RightPanelTabs";
+import { RightPanelTabs } from "./RightPanelTabs";
 import { PullRequestDetailPanel } from "./pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "./pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "./pullRequest/PullRequestsUnavailableState";
-import { isThreadOwnPullRequest } from "./pullRequest/pullRequestDetail.logic";
+import { pullRequestPanelContext } from "./pullRequest/pullRequestDetail.logic";
 import { AgentsPanel } from "./AgentsPanel";
 import {
   deriveAgentPanelModel,
@@ -204,6 +210,7 @@ import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../keybindings";
+import { isEditableFocused } from "../lib/editableFocus";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import {
   AlarmClockIcon,
@@ -250,28 +257,25 @@ import {
   type DraftThreadEnvMode,
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
-  restoreFailedBackgroundDraftThread,
   useComposerDraftStore,
   type DraftId,
 } from "../composerDraftStore";
 import {
-  appendTerminalContextsToPrompt,
   formatTerminalContextLabel,
   type TerminalContextDraft,
   type TerminalContextSelection,
 } from "../lib/terminalContext";
-import { appendReviewCommentsToPrompt, type ReviewCommentContext } from "../reviewCommentContext";
+import { type ReviewCommentContext } from "../reviewCommentContext";
 import {
   isQueuedMessageDue,
   latestCompletedToolActivityId,
   type QueuedComposerMessage,
   useQueuedMessages,
   useQueuedMessageStore,
-  partitionQueuedMessagesForRestore,
 } from "../queuedMessageStore";
 import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
-import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
+import { useKnownTerminalSessions } from "../state/terminalSessions";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
 import { terminalEnvironment } from "../state/terminal";
@@ -291,10 +295,11 @@ import {
   useThreadShell,
 } from "../state/entities";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
+import { isTimelineScrollTarget } from "./chat/timelineScrollTarget";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { resolveTimelineIsAtEnd } from "./chat/MessagesTimeline.logic";
-import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { ChatHeader } from "./chat/ChatHeader";
 import { PanelLayoutControls, RightPanelMaximizeControl } from "./chat/PanelLayoutControls";
 import { NoActiveThreadState } from "./NoActiveThreadState";
@@ -326,7 +331,6 @@ import {
 } from "./ThreadStatusIndicators";
 import {
   DRAFT_HERO_TRANSITION_ANIMATION_ID,
-  DRAFT_HERO_TRANSITION_DURATION_MS,
   DRAFT_HERO_TRANSITION_EASING,
   MOBILE_COMPOSER_VIEW_TRANSITION_NAME,
   MOBILE_DRAFT_HEADLINE_VIEW_TRANSITION_NAME,
@@ -378,7 +382,8 @@ import {
   startNewThreadForProject,
   waitForStartedServerThread,
   shouldRefocusComposerOnWindowFocus,
-  toolGroupConsumesUpwardNavigation,
+  cloneComposerImageForRetry,
+  revokeUserMessagePreviewUrls,
 } from "./ChatView.logic";
 import type { ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
@@ -407,7 +412,11 @@ const EMPTY_QUEUED_MESSAGES: QueuedComposerMessage[] = [];
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const EMPTY_PENDING_USER_INPUT_ANSWERS: Record<string, PendingUserInputDraftAnswer> = {};
-function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
+function useDraftHeroLayoutTransition(
+  isDraftHeroState: boolean,
+  animationsActive: boolean,
+  animationDurationMs: number,
+) {
   const transitionGroupRef = useRef<HTMLDivElement | null>(null);
   const composerAnchorRef = useRef<HTMLDivElement | null>(null);
   const previousStateRef = useRef(isDraftHeroState);
@@ -427,9 +436,6 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
     const transitionGroup = transitionGroupRef.current;
     const nextComposerRect = composerAnchorRef.current?.getBoundingClientRect() ?? null;
     const stateChanged = previousStateRef.current !== isDraftHeroState;
-    const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     const mobileComposerTransitionActive =
       typeof document !== "undefined" &&
       document.documentElement.dataset.mobileComposerRouteTransition === "true";
@@ -440,7 +446,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
     const previousComposerRect = previousComposerRectRef.current;
     if (
       stateChanged &&
-      !prefersReducedMotion &&
+      animationsActive &&
       !mobileComposerTransitionActive &&
       transitionGroup &&
       previousComposerRect &&
@@ -456,7 +462,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
             { transform: "translate3d(0, 0, 0)" },
           ],
           {
-            duration: DRAFT_HERO_TRANSITION_DURATION_MS,
+            duration: animationDurationMs,
             easing: DRAFT_HERO_TRANSITION_EASING,
           },
         );
@@ -475,7 +481,7 @@ function useDraftHeroLayoutTransition(isDraftHeroState: boolean) {
 
     previousStateRef.current = isDraftHeroState;
     previousComposerRectRef.current = nextComposerRect;
-  }, [isDraftHeroState]);
+  }, [animationDurationMs, animationsActive, isDraftHeroState]);
 
   return [attachTransitionGroupRef, attachComposerAnchorRef, captureComposerRect] as const;
 }
@@ -588,8 +594,6 @@ function formatOutgoingPrompt(params: {
   const promptEffort = resolvePromptInjectedEffort(caps, params.effort);
   return applyClaudePromptEffortPrefix(params.text, promptEffort);
 }
-const SCRIPT_TERMINAL_COLS = 120;
-const SCRIPT_TERMINAL_ROWS = 30;
 
 function isCompactCommandMessage(message: ChatMessage): boolean {
   return message.role === "user" && message.text.trim().toLowerCase() === "/compact";
@@ -1470,7 +1474,15 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setLogicalProjectDraftThreadId,
   );
   const promptRef = useRef("");
+  const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
+  const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
+  const addComposerDraftImages = useComposerDraftStore((store) => store.addImages);
+  const addComposerDraftFiles = useComposerDraftStore((store) => store.addFiles);
+  const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
+  const onExpandComposerImage = useCallback((preview: ExpandedImagePreview) => {
+    setExpandedImage(preview);
+  }, []);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const branchToolbarRef = useRef<BranchToolbarHandle>(null);
@@ -1680,7 +1692,7 @@ export default function ChatView(props: ChatViewProps) {
   const storeSplitTerminal = useTerminalUiStateStore((s) => s.splitTerminal);
   const storeSplitTerminalVertical = useTerminalUiStateStore((s) => s.splitTerminalVertical);
   const storeNewTerminal = useTerminalUiStateStore((s) => s.newTerminal);
-  const storeSetActiveTerminal = useTerminalUiStateStore((s) => s.setActiveTerminal);
+
   const storeCloseTerminal = useTerminalUiStateStore((s) => s.closeTerminal);
   const serverThreadRefs = useThreadRefs();
   const serverThreadKeys = useMemo(() => serverThreadRefs.map(scopedThreadKey), [serverThreadRefs]);
@@ -1793,10 +1805,7 @@ export default function ChatView(props: ChatViewProps) {
   const isLocalDraftThread = !isServerThread && localDraftThread !== undefined;
   const activeThreadId = activeThread?.id ?? null;
   const activeThreadEnvironmentId = activeThread?.environmentId ?? null;
-  const runningTerminalIds = useThreadRunningTerminalIds({
-    environmentId: activeThread?.environmentId ?? null,
-    threadId: activeThreadId,
-  });
+
   const activeThreadKnownSessionsRaw = useKnownTerminalSessions({
     environmentId: activeThread?.environmentId ?? null,
     threadId: activeThreadId,
@@ -1885,17 +1894,6 @@ export default function ChatView(props: ChatViewProps) {
     panelAnimationDurationMs,
   );
   const changeRequestSnapshotByKey = useAtomValue(threadChangeRequestSnapshotsAtom);
-  const [pullRequestTabStatuses, setPullRequestTabStatuses] = useState<
-    Readonly<Record<string, PullRequestTabStatus>>
-  >({});
-  const handlePullRequestTabStatusChange = useCallback(
-    (surfaceId: string, status: PullRequestTabStatus) => {
-      setPullRequestTabStatuses((current) =>
-        updatePullRequestTabStatus<PullRequestTabStatus>(current, surfaceId, status),
-      );
-    },
-    [],
-  );
   const fileViewerCommandRequestIdRef = useRef(0);
   const lastShiftAtRef = useRef<number | null>(null);
   const [fileViewerCommandRequest, setFileViewerCommandRequest] =
@@ -2259,12 +2257,8 @@ export default function ChatView(props: ChatViewProps) {
       }),
     [agentSessionLive, threadActivities],
   );
-  const pendingApprovals = useMemo(
-    () => derivePendingApprovals(threadActivities),
-    [threadActivities],
-  );
-  const pendingUserInputs = useMemo(
-    () => derivePendingUserInputs(threadActivities),
+  const { approvals: pendingApprovals, userInputs: pendingUserInputs } = useMemo(
+    () => derivePendingRequests(threadActivities),
     [threadActivities],
   );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
@@ -2318,9 +2312,10 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  const composerHasAttachments = useComposerDraftStore(
-    (store) => (store.getComposerDraft(composerDraftTarget)?.pastedImages?.length ?? 0) > 0,
-  );
+  const composerHasAttachments = useComposerDraftStore((store) => {
+    const draft = store.getComposerDraft(composerDraftTarget);
+    return (draft?.images.length ?? 0) + (draft?.files.length ?? 0) > 0;
+  });
   const showPlanFollowUpPrompt = shouldShowPlanFollowUpPrompt({
     pendingUserInputCount: pendingUserInputs.length,
     interactionMode,
@@ -2460,7 +2455,12 @@ export default function ChatView(props: ChatViewProps) {
     attachDraftHeroTransitionGroupRef,
     attachDraftHeroComposerAnchorRef,
     captureDraftHeroComposerRect,
-  ] = useDraftHeroLayoutTransition(isDraftHeroState);
+  ] = useDraftHeroLayoutTransition(
+    isDraftHeroState,
+    panelAnimationsActive,
+    panelAnimationDurationMs,
+  );
+
   const gitCwd = activeProject
     ? terminalCwd({
         projectRoot: activeProject.workspaceRoot,
@@ -3820,6 +3820,8 @@ export default function ChatView(props: ChatViewProps) {
         // Only an upward wheel is a navigation intent; wheeling down while
         // following either does nothing (at the end) or moves toward it.
         const handleWheel = (event: WheelEvent) => {
+          if (event.ctrlKey || !isTimelineScrollTarget(event.target, scrollNode, event.deltaY))
+            return;
           if (event.deltaY > 0) {
             timelineScrollIntentRef.current = "toward-end";
             if (isAtEndRef.current) {
@@ -3828,11 +3830,7 @@ export default function ChatView(props: ChatViewProps) {
           } else if (event.deltaY < 0) {
             timelineScrollIntentRef.current = "away-from-end";
           }
-          if (
-            event.deltaY < 0 &&
-            contentScrollsUp() &&
-            !toolGroupConsumesUpwardNavigation(event.target)
-          ) {
+          if (event.deltaY < 0 && contentScrollsUp()) {
             handleManualNavigation();
           }
         };
@@ -3882,12 +3880,20 @@ export default function ChatView(props: ChatViewProps) {
           ) {
             return;
           }
+          if (!["PageUp", "Home", "ArrowUp", "PageDown", "End", "ArrowDown"].includes(event.key))
+            return;
+          const scrollDirection = ["PageUp", "Home", "ArrowUp"].includes(event.key) ? -1 : 1;
+          if (
+            scrollNode.contains(event.target) &&
+            !isTimelineScrollTarget(event.target, scrollNode, scrollDirection)
+          )
+            return;
           switch (event.key) {
             case "PageUp":
             case "Home":
             case "ArrowUp":
               timelineScrollIntentRef.current = "away-from-end";
-              if (contentScrollsUp() && !toolGroupConsumesUpwardNavigation(event.target)) {
+              if (contentScrollsUp()) {
                 handleManualNavigation();
                 composerRef.current?.collapseForTimelineScrollKey(event.key);
               }
@@ -4596,6 +4602,15 @@ export default function ChatView(props: ChatViewProps) {
     activeThread && activeContextWindow
       ? `${activeThread.id}:${activeContextWindow.updatedAt}`
       : null;
+  const openProviderSetup = useCallback(
+    (instanceId: ProviderInstanceId) => {
+      void navigate({
+        to: "/settings/providers",
+        search: { environmentId, instanceId },
+      });
+    },
+    [environmentId, navigate],
+  );
   const compactDisabled =
     !activeThread ||
     !isServerThread ||
@@ -4832,9 +4847,10 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
   const getShortcutContext = useCallback(
-    () => ({
+    (eventTarget: EventTarget | null = document.activeElement) => ({
       terminalFocus: getTerminalFocusOwner() !== null,
       terminalOpen: Boolean(terminalUiState.terminalOpen),
+      editableFocus: isEditableFocused(eventTarget),
       modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
       isWeb: !false,
       isDesktop: false,
@@ -4870,6 +4886,7 @@ export default function ChatView(props: ChatViewProps) {
       }
       const shortcutContext = {
         terminalFocus: terminalFocusOwner !== null,
+        editableFocus: isEditableFocused(event.target),
         terminalOpen: Boolean(terminalUiState.terminalOpen),
         modelPickerOpen: composerRef.current?.isModelPickerOpen() ?? false,
         projectOpen: filesAvailable,
@@ -5013,6 +5030,16 @@ export default function ChatView(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         toggleRightPanelMaximized();
+        return;
+      }
+
+      if (command === "rightPanel.close") {
+        // Nothing open: leave the event alone so the shortcut keeps its
+        // native meaning (close the browser tab).
+        if (!activeRightPanelSurface) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) closeRightPanelSurface(activeRightPanelSurface);
         return;
       }
 
@@ -5214,16 +5241,25 @@ export default function ChatView(props: ChatViewProps) {
       setIsRevertingCheckpoint(true);
       setThreadError(activeThread.id, null);
       try {
-        const workspaceId = coderWorkspaceIdForEnvironment(environmentId);
-        if (!workspaceId) throw new Error("The Coder workspace is not connected.");
+        if (composerRef.current?.hasPendingAttachments()) {
+          throw new Error("Wait for attachments to finish preparing before rewinding.");
+        }
         const store = useComposerDraftStore.getState();
-        const images = submittedImageAttachments(message.text).images;
-        const currentImages = store.getComposerDraft(composerDraftTarget)?.pastedImages ?? [];
-        if (currentImages.some((image) => image.status !== "uploaded"))
-          throw new Error("Wait for image uploads to finish before rewinding.");
-        if (currentImages.length + images.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS)
-          throw new Error("Make room for this message's images before rewinding.");
-        const restoredImages: ComposerPastedImage[] = [];
+        const images = messageImageReferences(message.attachments);
+        const draftBeforeRewind = store.getComposerDraft(composerDraftTarget);
+        if (
+          (draftBeforeRewind?.images.length ?? 0) +
+            (draftBeforeRewind?.files.length ?? 0) +
+            images.length >
+          PROVIDER_SEND_TURN_MAX_ATTACHMENTS
+        ) {
+          throw new Error(
+            "Make room for this message's attachments in the composer before rewinding.",
+          );
+        }
+        // Coder reads the sent images back through the helper's bounded chunk reads; upstream
+        // fetches them from asset URLs. The draft stages fresh copies to claim on the next send.
+        const restoredImages: ComposerImageAttachment[] = [];
         for (const image of images) {
           const blob = await readScreenshotBlob(
             image,
@@ -5241,12 +5277,17 @@ export default function ChatView(props: ChatViewProps) {
               : image.mimeType === "image/webp"
                 ? "webp"
                 : "jpg";
+          const file = new File([blob], image.name || `image.${extension}`, {
+            type: image.mimeType,
+          });
           restoredImages.push({
+            type: "image",
             id: crypto.randomUUID(),
-            file: new File([blob], `${image.id}.${extension}`, { type: image.mimeType }),
-            workspaceId,
-            status: "uploaded",
-            path: `~/.t3-coder/attachments/${image.id}.${extension}`,
+            name: file.name,
+            mimeType: file.type,
+            sizeBytes: file.size,
+            previewUrl: URL.createObjectURL(file),
+            file,
           });
         }
         await waitForRevertedMessage(routeThreadRef, messageId, turnCount, async () => {
@@ -5263,10 +5304,7 @@ export default function ChatView(props: ChatViewProps) {
             .filter(Boolean)
             .join("\n\n"),
         );
-        store.setPastedImages(composerDraftTarget, [
-          ...(draft?.pastedImages ?? []),
-          ...restoredImages,
-        ]);
+        store.addImages(composerDraftTarget, restoredImages, { allowDuplicates: true });
       } catch (error) {
         setThreadError(
           activeThread.id,
@@ -5338,7 +5376,7 @@ export default function ChatView(props: ChatViewProps) {
               environmentId,
               input: {
                 threadId,
-                message: { messageId, role: "user", text: "/compact" },
+                message: { messageId, role: "user", text: "/compact", attachments: [] },
                 modelSelection: context.selectedModelSelection,
                 runtimeMode,
                 interactionMode: interactionMode,
@@ -5368,37 +5406,63 @@ export default function ChatView(props: ChatViewProps) {
   // send. Prompts join with blank lines; attachments and contexts are added.
   const restoreQueuedMessagesToComposer = (messages: ReadonlyArray<QueuedComposerMessage>) => {
     if (messages.length === 0) return;
-    const store = useComposerDraftStore.getState();
-    const currentImages = store.getComposerDraft(composerDraftTarget)?.pastedImages ?? [];
-    const { restored, held } = partitionQueuedMessagesForRestore(
-      messages,
-      PROVIDER_SEND_TURN_MAX_ATTACHMENTS - currentImages.length,
-    );
-    if (activeThreadKey) {
-      for (const message of held.toReversed()) {
-        useQueuedMessageStore.getState().holdAtFront(activeThreadKey, message);
-      }
-    }
-    const prompts = [promptRef.current, ...restored.map((message) => message.prompt)]
+    const prompts = [promptRef.current, ...messages.map((message) => message.prompt)]
       .map((prompt) => prompt.trim())
       .filter((prompt) => prompt.length > 0);
     const nextPrompt = prompts.join("\n\n");
     promptRef.current = nextPrompt;
     setComposerDraftPrompt(composerDraftTarget, nextPrompt);
-    store.setPastedImages(composerDraftTarget, [
-      ...currentImages,
-      ...restored.flatMap((message) => message.images),
-    ]);
+    // The draft store silently drops attachments over the per-turn cap. Split
+    // the overflow back into the queue so nothing is lost; the user can send
+    // the first batch and the rest follows as a queued message.
+    const attachmentRoom = Math.max(
+      0,
+      PROVIDER_SEND_TURN_MAX_ATTACHMENTS -
+        composerImagesRef.current.length -
+        composerFilesRef.current.length,
+    );
+    const attachments = messages.flatMap((message) => [...message.images, ...message.files]);
+    const restored = attachments.slice(0, attachmentRoom);
+    const overflow = attachments.slice(attachmentRoom);
+    const restoredImages = restored.filter((attachment) => attachment.type === "image");
+    const restoredFiles = restored.filter((attachment) => attachment.type === "file");
+    // The composer syncs these refs from the draft in an effect; a send before
+    // that effect runs must already see the restored content.
+    composerImagesRef.current = [...composerImagesRef.current, ...restoredImages];
+    composerFilesRef.current = [...composerFilesRef.current, ...restoredFiles];
+    if (restoredImages.length > 0) addComposerDraftImages(composerDraftTarget, restoredImages);
+    if (restoredFiles.length > 0) addComposerDraftFiles(composerDraftTarget, restoredFiles);
+    if (overflow.length > 0 && activeThreadKey) {
+      useQueuedMessageStore.getState().enqueue(activeThreadKey, {
+        prompt: "",
+        images: overflow.filter((attachment) => attachment.type === "image"),
+        files: overflow.filter((attachment) => attachment.type === "file"),
+        terminalContexts: [],
+        reviewComments: [],
+        submissionIntent: "foreground",
+        queuedAfterToolActivityId: latestCompletedToolActivityId(threadActivities),
+        // Restoration is not a send. The user decides when the overflow goes.
+        holdUntilUserAction: true,
+        createdAt: new Date().toISOString(),
+      });
+      toastManager.add(
+        stackedThreadToast({
+          type: "info",
+          title: "Some attachments stayed queued",
+          description: `A message holds at most ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} attachments. Use Send now on the queued row when you want the rest to go.`,
+        }),
+      );
+    }
     const restoredTerminalContexts = [
       ...composerTerminalContextsRef.current,
-      ...restored.flatMap((message) => message.terminalContexts),
+      ...messages.flatMap((message) => message.terminalContexts),
     ];
     composerTerminalContextsRef.current = restoredTerminalContexts;
     setComposerDraftTerminalContexts(composerDraftTarget, restoredTerminalContexts);
     const draft = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
     setComposerDraftReviewComments(composerDraftTarget, [
       ...(draft?.reviewComments ?? []),
-      ...restored.flatMap((message) => message.reviewComments),
+      ...messages.flatMap((message) => message.reviewComments),
     ]);
     composerRef.current?.resetCursorState({
       cursor: collapseExpandedComposerCursor(nextPrompt, nextPrompt.length),
@@ -5443,13 +5507,7 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
     const sendCtx = composerRef.current?.getSendContext();
-    if (
-      !sendCtx?.providerAvailable ||
-      pastedImageSendBlockReason(
-        queuedMessage?.images ?? sendCtx.pastedImages,
-        queuedMessage?.prompt ?? promptRef.current,
-      )
-    ) {
+    if (!sendCtx?.providerAvailable) {
       return;
     }
     const multipleModelSelections = queuedMessage ? null : sendCtx.multipleModelSelections;
@@ -5477,8 +5535,12 @@ export default function ChatView(props: ChatViewProps) {
       );
       return;
     }
-    const { terminalContexts: composerTerminalContexts, reviewComments: composerReviewComments } =
-      queuedMessage ?? sendCtx;
+    const {
+      images: composerImages,
+      files: composerFiles,
+      terminalContexts: composerTerminalContexts,
+      reviewComments: composerReviewComments,
+    } = queuedMessage ?? sendCtx;
     const {
       selectedProvider: ctxSelectedProvider,
       selectedModel: ctxSelectedModel,
@@ -5487,9 +5549,7 @@ export default function ChatView(props: ChatViewProps) {
       selectedModelSelection: ctxSelectedModelSelection,
       runtimeMode: ctxRuntimeMode,
     } = sendCtx;
-    const draftPromptForSend = queuedMessage?.prompt ?? promptRef.current;
-    const pastedImagesForSend = queuedMessage?.images ?? sendCtx.pastedImages;
-    const promptForSend = appendPastedImagesToPrompt(draftPromptForSend, pastedImagesForSend);
+    const promptForSend = queuedMessage?.prompt ?? promptRef.current;
     const {
       trimmedPrompt: trimmed,
       sendableTerminalContexts: sendableComposerTerminalContexts,
@@ -5497,17 +5557,18 @@ export default function ChatView(props: ChatViewProps) {
       hasSendableContent,
     } = deriveComposerSendState({
       prompt: promptForSend,
+      imageCount: composerImages.length + composerFiles.length,
       terminalContexts: composerTerminalContexts,
-      supplementalContextCount: composerReviewComments.length,
+      elementContextCount: composerReviewComments.length,
     });
     if (
       showPlanFollowUpPrompt &&
       activeProposedPlan &&
-      pastedImagesForSend.length === 0 &&
-      extractComposerPastedImageAttachmentIds(draftPromptForSend).length === 0
+      composerImages.length === 0 &&
+      composerFiles.length === 0
     ) {
       const followUp = resolvePlanFollowUpSubmission({
-        draftText: trimmed,
+        draftText: promptForSend,
         planMarkdown: activeProposedPlan.planMarkdown,
       });
       const outgoingFollowUpText = formatOutgoingPrompt({
@@ -5520,17 +5581,17 @@ export default function ChatView(props: ChatViewProps) {
       if (composerRef.current?.validateProviderInput(outgoingFollowUpText) === false) {
         return;
       }
-      const pastedImageAttachments = pastedImageAttachmentsForIds(
-        followUp.pastedImageAttachmentIds,
-        pastedImagesForSend,
-      );
+      const followUpContext = buildMessageContext({
+        terminalContexts: sendableComposerTerminalContexts,
+        reviewComments: composerReviewComments,
+      });
       promptRef.current = "";
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
       await onSubmitPlanFollowUp({
         text: followUp.text,
         interactionMode: followUp.interactionMode,
-        pastedImageAttachments,
+        context: followUpContext,
       });
       return;
     }
@@ -5591,8 +5652,9 @@ export default function ChatView(props: ChatViewProps) {
         return;
       }
       useQueuedMessageStore.getState().enqueue(activeThreadKey, {
-        prompt: draftPromptForSend,
-        images: [...pastedImagesForSend],
+        prompt: promptForSend,
+        images: [...composerImages],
+        files: [...composerFiles],
         terminalContexts: [...composerTerminalContexts],
         reviewComments: [...composerReviewComments],
         submissionIntent,
@@ -5603,6 +5665,8 @@ export default function ChatView(props: ChatViewProps) {
       // Attachments move with the message; their uploads stay pending. The
       // refs clear now too, so a Stop before the composer's sync effect runs
       // does not restore the moved attachments twice.
+      composerImagesRef.current = [];
+      composerFilesRef.current = [];
       composerTerminalContextsRef.current = [];
       clearComposerDraftContent(composerDraftTarget);
       composerRef.current?.resetCursorState();
@@ -5624,23 +5688,41 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
+    const composerImagesSnapshot = [...composerImages];
+    const composerFilesSnapshot = [...composerFiles];
+    const composerAttachmentsSnapshot = [...composerImagesSnapshot, ...composerFilesSnapshot];
     const composerTerminalContextsSnapshot = [...sendableComposerTerminalContexts];
     const composerReviewCommentsSnapshot: ReviewCommentContext[] = [...composerReviewComments];
-    const messageTextForSend = appendReviewCommentsToPrompt(
-      appendTerminalContextsToPrompt(promptForSend, composerTerminalContextsSnapshot),
-      composerReviewCommentsSnapshot,
+    // Expired terminal excerpts are not sent; their chips leave the text with them.
+    const messageTextForSend = composerTerminalContexts
+      .filter((context) => !composerTerminalContextsSnapshot.includes(context))
+      .reduce(
+        (text, context) =>
+          removeInlineContextReference(text, terminalContextReference(context).contextId).prompt,
+        promptForSend,
+      )
+      .trim();
+    // Records bind attachments by the id each side knows: the local id for the optimistic
+    // row, the staged upload id on the wire; the server rebinds them to the persisted id.
+    const buildOutgoingMessageContext = (attachmentIds: ReadonlyArray<string>) =>
+      buildMessageContext({
+        terminalContexts: composerTerminalContextsSnapshot,
+        reviewComments: composerReviewCommentsSnapshot,
+        attachments: composerAttachmentsSnapshot.map((attachment, index) => ({
+          attachment,
+          attachmentId: attachmentIds[index] ?? attachment.id,
+        })),
+      });
+    const outgoingMessageContext = buildOutgoingMessageContext(
+      composerAttachmentsSnapshot.map((attachment) => attachment.id),
     );
     const outgoingMessageText = formatOutgoingPrompt({
       provider: ctxSelectedProvider,
       model: ctxSelectedModel,
       models: ctxSelectedProviderModels,
       effort: ctxSelectedPromptEffort,
-      text: messageTextForSend,
+      text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
     });
-    const pastedImageAttachments = pastedImageAttachmentsForIds(
-      extractComposerPastedImageAttachmentIds(outgoingMessageText),
-      pastedImagesForSend,
-    );
     if (composerRef.current?.validateProviderInput(outgoingMessageText) === false) {
       // A queued message that no longer fits is held at the head for the
       // user to edit via Cancel, instead of failing on every boundary.
@@ -5676,7 +5758,7 @@ export default function ChatView(props: ChatViewProps) {
         model: selection.model,
         models: provider.models,
         effort: providerState.promptEffort,
-        text: messageTextForSend,
+        text: messageTextForSend || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
       });
       if (composerRef.current?.validateProviderInput(text) === false) return;
       multipleTargets.push({
@@ -5705,6 +5787,32 @@ export default function ChatView(props: ChatViewProps) {
     const queueDrainGeneration = useQueuedMessageStore.getState().drainGeneration;
     sendInFlightRef.current = true;
     const sendGeneration = ++composerSendGenerationRef.current;
+    // Coder stages every composer image through the gateway before the send, as upstream
+    // uploads attachments first. File attachments never reach here.
+    if (composerAttachmentsSnapshot.length > 0) {
+      for (const attachment of composerAttachmentsSnapshot) {
+        startAttachmentUpload({
+          environmentId,
+          image: attachment,
+          draftTarget: composerDraftTarget,
+        });
+      }
+      await awaitAttachmentUploads(composerAttachmentsSnapshot.map((attachment) => attachment.id));
+      if (getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) === null) {
+        sendInFlightRef.current = false;
+        setThreadError(threadIdForSend, "Retry or remove failed uploads before sending.");
+        if (queuedMessage && activeThreadKey) {
+          useQueuedMessageStore.getState().holdAtFront(activeThreadKey, queuedMessage);
+        }
+        return;
+      }
+    }
+    const turnAttachments = (
+      getUploadedAttachments({ environmentId, images: composerAttachmentsSnapshot }) ?? []
+    ).filter((attachment): attachment is ChatImageAttachment => attachment.type === "image");
+    const turnMessageContext = buildOutgoingMessageContext(
+      turnAttachments.map((attachment) => attachment.id),
+    );
     if (
       shouldDockDraftHeroForSubmission({
         isDraftHeroState,
@@ -5717,13 +5825,19 @@ export default function ChatView(props: ChatViewProps) {
       const dockStarted = new Promise<void>((resolve) => {
         resolveDockStarted = resolve;
       });
-      const dockTransition = runMobileComposerTransition(() => {
-        flushSync(() => {
-          captureDraftHeroComposerRect();
-          setDockedDraftHeroThreadKey(activeThreadKey);
-        });
-        resolveDockStarted?.();
-      });
+      const dockTransition = runMobileComposerTransition(
+        () => {
+          flushSync(() => {
+            captureDraftHeroComposerRect();
+            setDockedDraftHeroThreadKey(activeThreadKey);
+          });
+          resolveDockStarted?.();
+        },
+        {
+          active: panelAnimationsActive,
+          durationMs: panelAnimationDurationMs,
+        },
+      );
       void dockTransition.catch(() => resolveDockStarted?.());
       await dockStarted;
     }
@@ -5743,7 +5857,7 @@ export default function ChatView(props: ChatViewProps) {
       try {
         const title = truncate(
           assistantCitationsToPlainText(trimmed).trim() ||
-            pastedImagesForSend[0]?.file.name ||
+            composerAttachmentsSnapshot[0]?.name ||
             "New thread",
         );
         promptRef.current = "";
@@ -5786,8 +5900,9 @@ export default function ChatView(props: ChatViewProps) {
                     messageId: newMessageId(),
                     role: "user",
                     text: target.text,
+                    attachments: turnAttachments,
+                    ...(turnMessageContext ? { context: turnMessageContext } : {}),
                   },
-                  attachments: pastedImageAttachments,
                   modelSelection: target.selection,
                   titleSeed: title,
                   runtimeMode: ctxRuntimeMode,
@@ -5903,20 +6018,18 @@ export default function ChatView(props: ChatViewProps) {
         const restoreFailedDraft = () => {
           setMultipleModelSelections(failedSelections);
           if (clearedDraft) {
-            setComposerDraftPrompt(composerDraftTarget, draftPromptForSend);
-            useComposerDraftStore
-              .getState()
-              .setPastedImages(composerDraftTarget, [...pastedImagesForSend]);
+            setComposerDraftPrompt(composerDraftTarget, promptForSend);
+            addComposerDraftImages(
+              composerDraftTarget,
+              composerImagesSnapshot.map(cloneComposerImageForRetry),
+            );
             setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
             setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
             if (composerRef.current && currentRouteThreadKeyRef.current === routeThreadKey) {
-              promptRef.current = draftPromptForSend;
+              promptRef.current = promptForSend;
               composerRef.current.resetCursorState({
-                cursor: collapseExpandedComposerCursor(
-                  draftPromptForSend,
-                  draftPromptForSend.length,
-                ),
-                prompt: draftPromptForSend,
+                cursor: collapseExpandedComposerCursor(promptForSend, promptForSend.length),
+                prompt: promptForSend,
                 detectTrigger: true,
               });
             }
@@ -5985,12 +6098,33 @@ export default function ChatView(props: ChatViewProps) {
     } else {
       scrollToEnd();
     }
+    const optimisticAttachments = composerAttachmentsSnapshot.map((attachment) =>
+      attachment.type === "image"
+        ? {
+            type: "image" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            previewUrl: attachment.previewUrl,
+          }
+        : {
+            type: "file" as const,
+            id: attachment.id,
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+            downloadable: false,
+          },
+    );
     setOptimisticUserMessages((existing) => [
       ...existing,
       {
         id: messageIdForSend,
         role: "user",
         text: outgoingMessageText,
+        ...(optimisticAttachments.length > 0 ? { attachments: optimisticAttachments } : {}),
+        ...(outgoingMessageContext !== undefined ? { context: outgoingMessageContext } : {}),
         turnId: null,
         createdAt: messageCreatedAt,
         updatedAt: messageCreatedAt,
@@ -6017,9 +6151,11 @@ export default function ChatView(props: ChatViewProps) {
       composerRef.current?.resetCursorState();
     }
 
-    let titleSeed = assistantCitationsToPlainText(trimmed);
+    let titleSeed = assistantCitationsToPlainText(stripInlineContextReferences(trimmed)).trim();
     if (!titleSeed) {
-      if (composerTerminalContextsSnapshot.length > 0) {
+      if (composerAttachmentsSnapshot[0]) {
+        titleSeed = composerAttachmentsSnapshot[0].name;
+      } else if (composerTerminalContextsSnapshot.length > 0) {
         titleSeed = formatTerminalContextLabel(composerTerminalContextsSnapshot[0]!);
       } else {
         titleSeed = "New thread";
@@ -6112,9 +6248,10 @@ export default function ChatView(props: ChatViewProps) {
             messageId: messageIdForSend,
             role: "user",
             text: outgoingMessageText,
+            attachments: turnAttachments,
+            ...(turnMessageContext ? { context: turnMessageContext } : {}),
           },
           modelSelection: ctxSelectedModelSelection,
-          ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
           titleSeed: title,
           runtimeMode: ctxRuntimeMode,
           interactionMode,
@@ -6187,25 +6324,33 @@ export default function ChatView(props: ChatViewProps) {
       if (
         !queuedMessage &&
         promptRef.current.length === 0 &&
+        composerImagesRef.current.length === 0 &&
+        composerFilesRef.current.length === 0 &&
         composerTerminalContextsRef.current.length === 0 &&
         (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.reviewComments
-          .length ?? 0) === 0 &&
-        (useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.pastedImages
-          ?.length ?? 0) === 0
+          .length ?? 0) === 0
       ) {
         setOptimisticUserMessages((existing) => {
+          const removed = existing.filter((message) => message.id === messageIdForSend);
+          for (const message of removed) {
+            revokeUserMessagePreviewUrls(message);
+          }
           const next = existing.filter((message) => message.id !== messageIdForSend);
           return next.length === existing.length ? existing : next;
         });
-        promptRef.current = draftPromptForSend;
+        promptRef.current = messageTextForSend;
+        const retryComposerImages = composerImagesSnapshot.map(cloneComposerImageForRetry);
+        composerImagesRef.current = retryComposerImages;
+        composerFilesRef.current = composerFilesSnapshot;
         composerTerminalContextsRef.current = composerTerminalContextsSnapshot;
-        setComposerDraftPrompt(composerDraftTarget, draftPromptForSend);
-        useComposerDraftStore.getState().setPastedImages(composerDraftTarget, pastedImagesForSend);
+        setComposerDraftPrompt(composerDraftTarget, messageTextForSend);
+        addComposerDraftImages(composerDraftTarget, retryComposerImages);
+        addComposerDraftFiles(composerDraftTarget, composerFilesSnapshot);
         setComposerDraftTerminalContexts(composerDraftTarget, composerTerminalContextsSnapshot);
         setComposerDraftReviewComments(composerDraftTarget, composerReviewCommentsSnapshot);
         composerRef.current?.resetCursorState({
-          cursor: collapseExpandedComposerCursor(draftPromptForSend, draftPromptForSend.length),
-          prompt: draftPromptForSend,
+          cursor: collapseExpandedComposerCursor(messageTextForSend, messageTextForSend.length),
+          prompt: messageTextForSend,
           detectTrigger: true,
         });
       }
@@ -6461,6 +6606,16 @@ export default function ChatView(props: ChatViewProps) {
       if (!activePendingUserInput) {
         return;
       }
+      // The option replaces the custom answer. Anything typed there is the
+      // user's text, so it goes back to the thread draft instead of vanishing.
+      const displacedAnswer =
+        pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
+      const currentPrompt =
+        useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ?? "";
+      const nextPrompt = carryDisplacedCustomAnswerIntoPrompt(currentPrompt, displacedAnswer);
+      if (nextPrompt !== currentPrompt) {
+        setComposerDraftPrompt(composerDraftTarget, nextPrompt);
+      }
       setPendingUserInputAnswersByRequestId((existing) => {
         const question =
           (activePendingProgress?.activeQuestion?.id === questionId
@@ -6490,7 +6645,10 @@ export default function ChatView(props: ChatViewProps) {
       activePendingProgress?.activeQuestion,
       activePendingRequestKey,
       activePendingUserInput,
+      composerDraftTarget,
       composerRef,
+      pendingUserInputAnswersByRequestId,
+      setComposerDraftPrompt,
     ],
   );
 
@@ -6563,12 +6721,12 @@ export default function ChatView(props: ChatViewProps) {
   const onSubmitPlanFollowUp = useCallback(
     async ({
       text,
+      context,
       interactionMode: nextInteractionMode,
-      pastedImageAttachments,
     }: {
       text: string;
+      context?: ReturnType<typeof buildMessageContext>;
       interactionMode: "default" | "plan";
-      pastedImageAttachments: ReadonlyArray<{ readonly type: "image"; readonly id: string }>;
     }) => {
       if (
         !activeThread ||
@@ -6657,9 +6815,10 @@ export default function ChatView(props: ChatViewProps) {
               messageId: messageIdForSend,
               role: "user",
               text: outgoingMessageText,
+              attachments: [],
+              ...(context ? { context } : {}),
             },
             modelSelection: ctxSelectedModelSelection,
-            ...(pastedImageAttachments.length > 0 ? { attachments: pastedImageAttachments } : {}),
             titleSeed: activeThread.title,
             runtimeMode: ctxRuntimeMode,
             interactionMode: nextInteractionMode,
@@ -6793,6 +6952,7 @@ export default function ChatView(props: ChatViewProps) {
             messageId: newMessageId(),
             role: "user",
             text: outgoingImplementationPrompt,
+            attachments: [],
           },
           modelSelection: ctxSelectedModelSelection,
           titleSeed: nextThreadTitle,
@@ -7120,7 +7280,7 @@ export default function ChatView(props: ChatViewProps) {
         title="Merge requests unavailable"
         error="Update this Coder workspace's T3 server to browse GitLab merge requests."
       />
-    ) : isPullRequestSurface(activeRightPanelSurface) ? (
+    ) : activeRightPanelSurface?.kind === "pull-request" ? (
       <PullRequestDetailPanel
         key={`${activeRightPanelSurface.repository}#${activeRightPanelSurface.number}`}
         environmentId={
@@ -7136,26 +7296,25 @@ export default function ChatView(props: ChatViewProps) {
           repository: activeRightPanelSurface.repository,
           number: activeRightPanelSurface.number,
         }}
-        context={
-          isThreadOwnPullRequest(
-            {
-              projectId: linkedThreadPullRequest?.projectId ?? activeProject?.id ?? null,
-              repository: threadRepository,
-              number: activeThreadPr?.number ?? null,
-            },
-            {
-              projectId: activeRightPanelSurface.projectId,
-              repository: activeRightPanelSurface.repository,
-              number: activeRightPanelSurface.number,
-            },
-          )
-            ? "thread"
-            : "page"
+        threadRef={activeThreadRef}
+        onSelectPullRequest={(reference) =>
+          useRightPanelStore.getState().openPullRequest(activeThreadRef, {
+            projectId: reference.projectId,
+            repository: reference.repository,
+            number: reference.number,
+            ...(reference.host ? { host: reference.host } : {}),
+          })
         }
+        context={pullRequestPanelContext(
+          {
+            projectId: activeThreadMetadata?.projectId ?? null,
+            pullRequests: activeThreadMetadata?.pullRequests,
+            linkedPullRequest: activeThreadMetadata?.linkedPullRequest,
+            branchPullRequest: activeThreadMetadata?.branchPullRequest,
+          },
+          activeRightPanelSurface,
+        )}
         composerDraftTarget={composerDraftTarget}
-        onStateChange={(status) =>
-          handlePullRequestTabStatusChange(activeRightPanelSurface.id, status)
-        }
       />
     ) : (activeRightPanelSurface?.kind === "files" || activeRightPanelSurface?.kind === "file") &&
       filesAvailable &&
@@ -7404,7 +7563,7 @@ export default function ChatView(props: ChatViewProps) {
                       composerRef.current?.restoreAfterTimelineReachedEnd();
                       scrollToEnd(true);
                     }}
-                    className="pointer-events-auto gap-1.5 rounded-full px-3 text-muted-foreground hover:text-foreground"
+                    className="pointer-events-auto"
                     size="xs"
                     variant="glass"
                   >
@@ -7443,6 +7602,7 @@ export default function ChatView(props: ChatViewProps) {
                         }
                       >
                         <DraftHeroHeadline
+                          draftId={draftId}
                           activeProjectRef={activeProjectRef}
                           activeProjectTitle={activeProject?.title ?? null}
                         />
@@ -7516,7 +7676,24 @@ export default function ChatView(props: ChatViewProps) {
                               activeProject?.defaultModelSelection
                             }
                             activeThreadModelSelection={activeThread?.modelSelection}
-                            activeThreadActivities={activeThread?.activities}
+                            // Coder stages composer images over the gateway; file and
+                            // question attachments are unavailable.
+                            attachmentUploadsCapabilityKnown
+                            supportsAttachmentUploads
+                            supportsQuestionAttachments={false}
+                            maxFileAttachmentBytes={null}
+                            isRevertingCheckpoint={isRevertingCheckpoint}
+                            activeContextWindow={activeContextWindow}
+                            compactThreadUnavailable={compactDisabled}
+                            compactDisabled={compactDisabled}
+                            compactDisabledReason={compactDisabledReason}
+                            composerImagesRef={composerImagesRef}
+                            composerFilesRef={composerFilesRef}
+                            onOpenProviderSetup={openProviderSetup}
+                            focusComposer={focusComposer}
+                            setThreadError={setThreadError}
+                            onExpandImage={onExpandComposerImage}
+                            onFileOpen={() => {}}
                             resolvedTheme={resolvedTheme}
                             settings={settings}
                             keybindings={keybindings}
@@ -7762,7 +7939,7 @@ export default function ChatView(props: ChatViewProps) {
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
           pullRequestAvailable={pullRequestAvailable}
-          pullRequestStatuses={pullRequestTabStatuses}
+          environmentId={activeThreadRef?.environmentId ?? null}
           agentsAvailable
           liveAgentCount={agentPanelModel.liveCount}
         >
@@ -7809,7 +7986,7 @@ export default function ChatView(props: ChatViewProps) {
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}
             pullRequestAvailable={pullRequestAvailable}
-            pullRequestStatuses={pullRequestTabStatuses}
+            environmentId={activeThreadRef?.environmentId ?? null}
             agentsAvailable
             liveAgentCount={agentPanelModel.liveCount}
           >
@@ -7817,6 +7994,9 @@ export default function ChatView(props: ChatViewProps) {
           </RightPanelTabs>
         </RightPanelSheet>
       ) : null}
+      {expandedImage && (
+        <ExpandedImageDialog preview={expandedImage} onClose={() => setExpandedImage(null)} />
+      )}
     </div>
   );
 }

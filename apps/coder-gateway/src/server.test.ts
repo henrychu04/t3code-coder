@@ -1472,7 +1472,7 @@ setTimeout(() => process.exit(0), 100);
         strictEqual(input.extension, "png");
         strictEqual((await NodeFS.readFile(input.localPath)).equals(png), true);
         strictEqual(input.workspace.workspace, "henry/project-one");
-        return "/home/henry/.t3-coder/attachments/image.png";
+        return "/home/henry/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-png.png";
       },
     });
     closeGateway = gateway.close;
@@ -1523,7 +1523,12 @@ setTimeout(() => process.exit(0), 100);
     });
     strictEqual(uploaded.statusCode, 200);
     deepStrictEqual(JSON.parse(uploaded.body), {
-      path: "/home/henry/.t3-coder/attachments/image.png",
+      path: "/home/henry/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-png.png",
+      attachment: {
+        id: "pending-11111111-1111-4111-8111-111111111111-png",
+        mimeType: "image/png",
+        sizeBytes: png.byteLength,
+      },
     });
     await NodeFS.access(stagedPath).then(
       () => {

@@ -122,6 +122,36 @@ describe("getChangeRequest base freshness", () => {
       ),
     );
 
+  it.effect("reads a hover preview from the merge request alone", () =>
+    Effect.gen(function* () {
+      const provider = yield* make;
+      assert.isDefined(provider.getChangeRequestPreview);
+      const preview = yield* provider.getChangeRequestPreview({
+        cwd: "/w",
+        repository: "acme/web",
+        host: "gitlab.com",
+        number: 7,
+      });
+
+      expect(preview).toEqual({
+        number: 7,
+        title: "Merge request 7",
+        url: "https://gitlab.com/acme/web/-/merge_requests/7",
+        author: null,
+        state: "open",
+        isDraft: false,
+        createdAt: "2026-07-01T00:00:00Z",
+      });
+    }).pipe(
+      Effect.provide(
+        // No merge settings or write probe: only the merge request read is mocked.
+        Layer.mock(GitLabPullRequestCli.GitLabPullRequestCli)({
+          getMergeRequestDetail: () => Effect.succeed(detail),
+        }),
+      ),
+    ),
+  );
+
   it.effect("reads a counted divergence as a branch that has fallen behind", () =>
     Effect.gen(function* () {
       const changeRequest = yield* readWith({ divergedCommits: 3 });

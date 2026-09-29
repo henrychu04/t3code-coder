@@ -36,7 +36,7 @@ import { it as effectIt } from "@effect/vitest";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { deriveServerPaths, ServerConfig } from "../../config.ts";
-import { TextGenerationError } from "@t3tools/contracts";
+import { ComposerContextId, TextGenerationError } from "@t3tools/contracts";
 import {
   ProviderAdapterRequestError,
   ProviderWorkspaceMissingError,
@@ -693,6 +693,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId(`user-message-${input.id}`),
           role: "user",
           text: input.messageText,
+          attachments: [],
         },
         ...(input.titleSeed !== undefined ? { titleSeed: input.titleSeed } : {}),
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -729,6 +730,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-1"),
           role: "user",
           text: "hello reactor",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -755,6 +757,51 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.runtimeMode).toBe("approval-required");
   });
 
+  it("projects inline context before sending the provider turn", async () => {
+    const harness = await createHarness();
+
+    await Effect.runPromise(
+      harness.engine.dispatch({
+        type: "thread.turn.start",
+        commandId: CommandId.make("cmd-turn-start-with-context"),
+        threadId: ThreadId.make("thread-1"),
+        message: {
+          messageId: asMessageId("user-message-with-context"),
+          role: "user",
+          text: "Inspect [build](t3-context://v1/terminal/terminal-1)",
+          context: {
+            version: 1,
+            records: [
+              {
+                version: 1,
+                kind: "terminal",
+                contextId: ComposerContextId.make("terminal-1"),
+                label: "build",
+                terminalId: "terminal-1",
+                terminalLabel: "Build",
+                lineStart: 7,
+                lineEnd: 7,
+                text: "compiled successfully",
+              },
+            ],
+          },
+          attachments: [],
+        },
+        interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
+        runtimeMode: "approval-required",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      }),
+    );
+
+    await waitFor(() => harness.sendTurn.mock.calls.length === 1);
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining("[Terminal: build; ref=terminal-1]"),
+    });
+    expect(harness.sendTurn.mock.calls[0]?.[0]).toMatchObject({
+      input: expect.stringContaining('<context kind="terminal" id="terminal-1">'),
+    });
+  });
+
   it("sends an attached /compact as a normal first turn even though projections omit attachments", async () => {
     const harness = await createHarness();
     await harness.runEffect(
@@ -769,15 +816,25 @@ describe("ProviderCommandReactor", () => {
       }),
     );
     const attachments = [
-      { type: "image" as const, id: "12345678-1234-4123-8123-123456789abc.png" },
+      {
+        type: "image" as const,
+        id: "thread-1-12345678-1234-4123-8123-123456789abc-png",
+        name: "image.png",
+        mimeType: "image/png",
+        sizeBytes: 12,
+      },
     ];
     await harness.runEffect(
       harness.engine.dispatch({
         type: "thread.turn.start",
         commandId: CommandId.make("cmd-attached-compact"),
         threadId: ThreadId.make("thread-1"),
-        message: { messageId: asMessageId("attached-compact"), role: "user", text: "/compact" },
-        attachments,
+        message: {
+          messageId: asMessageId("attached-compact"),
+          role: "user",
+          text: "/compact",
+          attachments,
+        },
         titleSeed: "/compact",
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -805,6 +862,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("message-before-compact"),
           role: "user",
           text: "Build the feature",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -840,6 +898,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("message-compact"),
           role: "user",
           text: "/compact",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -918,6 +977,7 @@ describe("ProviderCommandReactor", () => {
               messageId: asMessageId(`user-message-${id}`),
               role: "user",
               text,
+              attachments: [],
             },
             interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
             runtimeMode: "approval-required",
@@ -1093,6 +1153,7 @@ describe("ProviderCommandReactor", () => {
             messageId: asMessageId(`user-message-compact-${suffix}`),
             role: "user",
             text: "/compact",
+            attachments: [],
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "approval-required",
@@ -1107,6 +1168,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-compact"),
           role: "user",
           text: "hello",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1143,6 +1205,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-queued-before-stop"),
           role: "user",
           text: "do not restart after stopping",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1259,6 +1322,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-slow-provider"),
           role: "user",
           text: "start slowly",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1303,6 +1367,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-missing-workspace"),
           role: "user",
           text: "continue",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1358,6 +1423,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-provider-failure"),
           role: "user",
           text: "fail once",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1387,6 +1453,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-provider-retry"),
           role: "user",
           text: "retry",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1441,6 +1508,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-title"),
           role: "user",
           text: "Please investigate reconnect failures after restarting the session.",
+          attachments: [],
         },
         titleSeed: seededTitle,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -1584,6 +1652,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-title-regeneration"),
           role: "user",
           text: "Please investigate reconnect regressions after restarting the session.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1690,6 +1759,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-fallback-regeneration"),
           role: "user",
           text: "Investigate the reconnect state.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1734,6 +1804,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-failed-regeneration"),
           role: "user",
           text: "Investigate the reconnect state.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1783,6 +1854,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-completion-failure"),
           role: "user",
           text: "Investigate the reconnect state.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1847,6 +1919,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-regeneration-race"),
           role: "user",
           text: "Investigate the reconnect state.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1917,6 +1990,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-queued-regeneration"),
           role: "user",
           text: "Investigate the reconnect state.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -1972,6 +2046,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-superseded-regeneration"),
           role: "user",
           text: "Investigate the reconnect state.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2030,6 +2105,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-title-preserve"),
           role: "user",
           text: "Please investigate reconnect failures after restarting the session.",
+          attachments: [],
         },
         titleSeed: seededTitle,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -2077,6 +2153,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-title-formatted"),
           role: "user",
           text: "[effort:high]\\n\\nFix reconnect spinner on resume",
+          attachments: [],
         },
         titleSeed: seededTitle,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
@@ -2129,6 +2206,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-branch-model"),
           role: "user",
           text: "Add a safer reconnect backoff.",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2302,6 +2380,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-missing-worktree"),
           role: "user",
           text: "continue",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2311,11 +2390,14 @@ describe("ProviderCommandReactor", () => {
 
     await waitFor(() => harness.startSession.mock.calls.length === 1);
     expect(harness.pruneWorktrees).toHaveBeenCalledWith({ cwd: "/tmp/provider-project" });
-    expect(harness.createWorktree).toHaveBeenCalledWith({
-      cwd: "/tmp/provider-project",
-      refName: "feature/restore",
-      path: worktreePath,
-    });
+    expect(harness.createWorktree).toHaveBeenCalledWith(
+      {
+        cwd: "/tmp/provider-project",
+        refName: "feature/restore",
+        path: worktreePath,
+      },
+      { submodules: null },
+    );
     expect(harness.createWorktree.mock.invocationCallOrder[0]).toBeLessThan(
       harness.startSession.mock.invocationCallOrder[0]!,
     );
@@ -2334,6 +2416,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-fast"),
           role: "user",
           text: "hello fast mode",
+          attachments: [],
         },
         modelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.3-codex", [
           { id: "reasoningEffort", value: "high" },
@@ -2380,6 +2463,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-claude-effort"),
           role: "user",
           text: "hello with effort",
+          attachments: [],
         },
         modelSelection: createModelSelection(
           ProviderInstanceId.make("claudeAgent"),
@@ -2429,6 +2513,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-claude-fast-mode"),
           role: "user",
           text: "hello with fast mode",
+          attachments: [],
         },
         modelSelection: createModelSelection(
           ProviderInstanceId.make("claudeAgent"),
@@ -2483,6 +2568,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-plan"),
           role: "user",
           text: "plan this change",
+          attachments: [],
         },
         interactionMode: "plan",
         runtimeMode: "approval-required",
@@ -2510,6 +2596,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-unsupported-1"),
           role: "user",
           text: "first",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2528,6 +2615,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-unsupported-2"),
           role: "user",
           text: "second",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2563,6 +2651,7 @@ describe("ProviderCommandReactor", () => {
             messageId: asMessageId("user-message-restricted-1"),
             role: "user",
             text: "first",
+            attachments: [],
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "approval-required",
@@ -2579,6 +2668,7 @@ describe("ProviderCommandReactor", () => {
             messageId: asMessageId("user-message-restricted-2"),
             role: "user",
             text: "second",
+            attachments: [],
           },
           modelSelection: {
             instanceId: ProviderInstanceId.make("codex"),
@@ -2633,6 +2723,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-provider-first"),
           role: "user",
           text: "hello claude",
+          attachments: [],
         },
         modelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -2678,6 +2769,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-unchanged-1"),
           role: "user",
           text: "first",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2697,6 +2789,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-unchanged-2"),
           role: "user",
           text: "second",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2722,6 +2815,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-compatible-codex-1"),
           role: "user",
           text: "first",
+          attachments: [],
         },
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex"),
@@ -2744,6 +2838,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-compatible-codex-2"),
           role: "user",
           text: "second",
+          attachments: [],
         },
         modelSelection: {
           instanceId: ProviderInstanceId.make("codex_work"),
@@ -2787,6 +2882,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-workspace-1"),
           role: "user",
           text: "first in project root",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2818,6 +2914,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-workspace-2"),
           role: "user",
           text: "second in worktree",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -2858,6 +2955,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-claude-effort-1"),
           role: "user",
           text: "first claude turn",
+          attachments: [],
         },
         modelSelection: createModelSelection(
           ProviderInstanceId.make("claudeAgent"),
@@ -2882,6 +2980,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-claude-effort-2"),
           role: "user",
           text: "second claude turn",
+          attachments: [],
         },
         modelSelection: createModelSelection(
           ProviderInstanceId.make("claudeAgent"),
@@ -2929,6 +3028,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-runtime-mode-1"),
           role: "user",
           text: "first",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "full-access",
@@ -2964,6 +3064,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-runtime-mode-2"),
           role: "user",
           text: "second",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "full-access",
@@ -3060,6 +3161,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-restart-failure-1"),
           role: "user",
           text: "first",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "full-access",
@@ -3114,6 +3216,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-provider-switch-1"),
           role: "user",
           text: "first",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -3133,6 +3236,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-provider-switch-2"),
           role: "user",
           text: "second",
+          attachments: [],
         },
         modelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -3203,6 +3307,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-stopped-provider-switch"),
           role: "user",
           text: "continue with claude",
+          attachments: [],
         },
         modelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -3517,6 +3622,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-stale"),
           role: "user",
           text: "resume codex",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -3581,6 +3687,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-missing-instance"),
           role: "user",
           text: "resume codex",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -4021,6 +4128,7 @@ describe("ProviderCommandReactor", () => {
             messageId: asMessageId(`user-message-compact-${suffix}`),
             role: "user",
             text: "/compact",
+            attachments: [],
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "approval-required",
@@ -4035,6 +4143,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-compact"),
           role: "user",
           text: "hello",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",
@@ -4170,6 +4279,7 @@ describe("ProviderCommandReactor", () => {
             messageId: asMessageId(`user-message-compact-${suffix}`),
             role: "user",
             text: "/compact",
+            attachments: [],
           },
           interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
           runtimeMode: "approval-required",
@@ -4184,6 +4294,7 @@ describe("ProviderCommandReactor", () => {
           messageId: asMessageId("user-message-before-compact"),
           role: "user",
           text: "hello",
+          attachments: [],
         },
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         runtimeMode: "approval-required",

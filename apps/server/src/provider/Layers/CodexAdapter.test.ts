@@ -377,7 +377,15 @@ adapterLayer("CodexAdapter Coder integration", (it) => {
       yield* adapter.sendTurn({
         threadId,
         input: "Inspect this image",
-        attachments: [{ type: "image", id: attachmentId }],
+        attachments: [
+          {
+            type: "image",
+            id: "legacy-550e8400-e29b-41d4-a716-446655440000-png",
+            name: "image.png",
+            mimeType: "image/png",
+            sizeBytes: 9,
+          },
+        ],
       });
 
       NodeAssert.deepStrictEqual(factory.lastRuntime?.sendTurnImpl.mock.calls.at(-1)?.[0], {

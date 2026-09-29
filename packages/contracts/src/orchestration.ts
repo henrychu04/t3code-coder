@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Struct from "effect/Struct";
+import { OrchestrationMessageContext } from "./composerContext.ts";
 import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity, ThreadEnvMode } from "./environment.ts";
 import {
@@ -91,7 +92,7 @@ const ModelSelectionSource = Schema.Struct({
 export const ModelSelection = ModelSelectionSource.pipe(
   Schema.decodeTo(
     ModelSelectionWire,
-    SchemaTransformation.transformOrFail({
+    SchemaTransformation.transformEffect({
       decode: (raw) => {
         // Resolve the routing key: prefer an explicit `instanceId`; fall
         // back to promoting the legacy `provider` slug (the canonical
@@ -140,6 +141,7 @@ export const ProviderRequestKind = Schema.Literals([
   "file-read",
   "file-change",
   "mcp-elicitation",
+  "permission",
 ]);
 export type ProviderRequestKind = typeof ProviderRequestKind.Type;
 export const ProviderApprovalDecision = Schema.Literals([
@@ -160,24 +162,158 @@ export const ProviderUserInputAnswers = Schema.Record(Schema.String, Schema.Unkn
 export type ProviderUserInputAnswers = typeof ProviderUserInputAnswers.Type;
 
 export const PROVIDER_SEND_TURN_MAX_INPUT_CHARS = 120_000;
-export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 8;
+export const PROVIDER_SEND_TURN_MAX_ATTACHMENTS = 100;
 export const PROVIDER_SEND_TURN_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
-export const PastedImageAttachmentId = TrimmedNonEmptyString.check(
-  Schema.isPattern(
-    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(?:jpg|png|webp)$/i,
-  ),
+const PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES = 80 * 1024 * 1024;
+export const PROVIDER_SEND_TURN_MAX_FILE_BYTES = 50 * 1024 * 1024;
+/** Coder accepts PNG, JPEG, and WebP composer images only; upstream also allows GIF. */
+export const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+const PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET = new Set<string>(
+  PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPES,
 );
-export type PastedImageAttachmentId = typeof PastedImageAttachmentId.Type;
-export const PastedImageAttachment = Schema.Struct({
-  type: Schema.Literal("image"),
-  id: PastedImageAttachmentId,
-  /** Display metadata only; workspace reads always use the opaque generated id. */
-  name: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(255))),
-});
-export type PastedImageAttachment = typeof PastedImageAttachment.Type;
+
+/** Whether a pasted or picked image mime type can be sent on a provider turn. */
+export function isProviderSendTurnSupportedImageMimeType(mimeType: string): boolean {
+  return PROVIDER_SEND_TURN_SUPPORTED_IMAGE_MIME_TYPE_SET.has(mimeType.toLowerCase());
+}
+const CHAT_ATTACHMENT_ID_MAX_CHARS = 128;
 // Correlation id is command id by design in this model.
 export const CorrelationId = CommandId;
 export type CorrelationId = typeof CorrelationId.Type;
+
+const ChatAttachmentId = TrimmedNonEmptyString.check(
+  Schema.isMaxLength(CHAT_ATTACHMENT_ID_MAX_CHARS),
+  Schema.isPattern(/^[a-z0-9_-]+$/i),
+);
+export type ChatAttachmentId = typeof ChatAttachmentId.Type;
+
+export const ChatImageAttachment = Schema.Struct({
+  type: Schema.Literal("image"),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100), Schema.isPattern(/^image\//i)),
+  sizeBytes: NonNegativeInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_IMAGE_BYTES)),
+});
+export type ChatImageAttachment = typeof ChatImageAttachment.Type;
+
+export const PastedTextAttachmentSource = Schema.TaggedStruct("pasted-text", {});
+export type PastedTextAttachmentSource = typeof PastedTextAttachmentSource.Type;
+
+/**
+ * Decoded for compatibility with upstream peers. Coder never accepts file uploads; the server
+ * rejects them on send and clients render them as unavailable.
+ */
+export const ChatFileAttachment = Schema.Struct({
+  type: Schema.Literal("file"),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt.check(
+    Schema.isGreaterThanOrEqualTo(1),
+    Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES),
+  ),
+  source: Schema.optional(PastedTextAttachmentSource),
+});
+export type ChatFileAttachment = typeof ChatFileAttachment.Type;
+
+/**
+ * Catch-all for attachment types this build does not know. Attachments ride on
+ * persisted events and thread streams, so a newer server or client must be able
+ * to introduce a type without making older readers fail to decode the whole
+ * message. Decoders keep the shared base fields; consumers skip these or render
+ * them as unsupported. The known discriminators are excluded so a malformed image
+ * or file attachment fails its own schema instead of sliding through here with
+ * its size and mime constraints unchecked.
+ */
+export const ChatUnknownAttachment = Schema.Struct({
+  type: TrimmedNonEmptyString.check(
+    Schema.isMaxLength(50),
+    Schema.isPattern(/^(?!(?:image|file)$)/),
+  ),
+  id: ChatAttachmentId,
+  name: TrimmedNonEmptyString.check(Schema.isMaxLength(255)),
+  mimeType: TrimmedNonEmptyString.check(Schema.isMaxLength(100)),
+  sizeBytes: NonNegativeInt,
+});
+export type ChatUnknownAttachment = typeof ChatUnknownAttachment.Type;
+
+const LEGACY_PASTED_IMAGE_ID_PATTERN =
+  /^([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png|webp)$/i;
+const LEGACY_PASTED_IMAGE_MIME_TYPES = {
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+} as const;
+/** Thread segment for images Coder stored before adopting upstream's attachment ids. */
+export const LEGACY_PASTED_IMAGE_ATTACHMENT_SEGMENT = "legacy";
+
+/**
+ * Coder images persisted before upstream's attachment model: `<uuid>.<ext>` ids with an
+ * optional name. They decode to `legacy-<uuid>-<ext>` image attachments; the workspace keeps
+ * the original `<uuid>.<ext>` file.
+ */
+const LegacyPastedImageAttachment = Schema.Struct({
+  type: Schema.Literal("image"),
+  id: TrimmedNonEmptyString.check(Schema.isPattern(LEGACY_PASTED_IMAGE_ID_PATTERN)),
+  name: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(255))),
+});
+
+const KnownChatAttachment = Schema.Union([
+  ChatImageAttachment,
+  ChatFileAttachment,
+  ChatUnknownAttachment,
+]);
+
+export const ChatAttachment = Schema.Union([
+  ChatImageAttachment,
+  ChatFileAttachment,
+  ChatUnknownAttachment,
+  LegacyPastedImageAttachment,
+]).pipe(
+  Schema.decodeTo(
+    KnownChatAttachment,
+    SchemaTransformation.transform({
+      decode: (attachment): typeof KnownChatAttachment.Type => {
+        if ("mimeType" in attachment) return attachment;
+        const [, uuid, rawExtension] = LEGACY_PASTED_IMAGE_ID_PATTERN.exec(attachment.id)!;
+        const extension =
+          rawExtension!.toLowerCase() as keyof typeof LEGACY_PASTED_IMAGE_MIME_TYPES;
+        return {
+          type: "image",
+          id: `${LEGACY_PASTED_IMAGE_ATTACHMENT_SEGMENT}-${uuid!.toLowerCase()}-${extension}`,
+          name: attachment.name ?? `image.${extension}`,
+          mimeType: LEGACY_PASTED_IMAGE_MIME_TYPES[extension],
+          sizeBytes: 0,
+        };
+      },
+      encode: (attachment) => attachment,
+    }),
+  ),
+);
+export type ChatAttachment = typeof ChatAttachment.Type;
+
+export function getProviderAttachmentLimitError(
+  attachments: ReadonlyArray<Pick<ChatAttachment, "type" | "mimeType" | "sizeBytes">>,
+): string | undefined {
+  if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
+    return `You can attach up to ${PROVIDER_SEND_TURN_MAX_ATTACHMENTS} files per message or question response.`;
+  }
+  const imageBytes = attachments.reduce(
+    (total, attachment) =>
+      total +
+      (attachment.type === "image" || isProviderSendTurnSupportedImageMimeType(attachment.mimeType)
+        ? attachment.sizeBytes
+        : 0),
+    0,
+  );
+  if (imageBytes > PROVIDER_SEND_TURN_MAX_TOTAL_IMAGE_BYTES) {
+    return "Images can total up to 80 MiB per message or question response. Use smaller images or send fewer at once.";
+  }
+}
 
 export const ProjectScriptIcon = Schema.Literals([
   "play",
@@ -329,11 +465,8 @@ export const OrchestrationMessage = Schema.Struct({
   id: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
-  attachments: Schema.optional(
-    Schema.Array(PastedImageAttachment).check(
-      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
-    ),
-  ),
+  attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  context: Schema.optional(OrchestrationMessageContext),
   turnId: Schema.NullOr(TurnId),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
@@ -1071,13 +1204,10 @@ export const ThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
+    attachments: Schema.Array(ChatAttachment),
+    context: Schema.optional(OrchestrationMessageContext),
   }),
   modelSelection: Schema.optional(ModelSelection),
-  attachments: Schema.optional(
-    Schema.Array(PastedImageAttachment).check(
-      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
-    ),
-  ),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
@@ -1096,13 +1226,14 @@ const ClientThreadTurnStartCommand = Schema.Struct({
     messageId: MessageId,
     role: Schema.Literal("user"),
     text: Schema.String,
+    // Coder clients send only images already staged in the workspace by the gateway; upstream
+    // also accepts inline data-URL uploads and file attachments.
+    attachments: Schema.Array(ChatImageAttachment).check(
+      Schema.makeFilter((attachments) => getProviderAttachmentLimitError(attachments) ?? true),
+    ),
+    context: Schema.optional(OrchestrationMessageContext),
   }),
   modelSelection: Schema.optional(ModelSelection),
-  attachments: Schema.optional(
-    Schema.Array(PastedImageAttachment).check(
-      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
-    ),
-  ),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
@@ -1299,7 +1430,8 @@ const ThreadMessageUserAppendCommand = Schema.Struct({
   message: Schema.Struct({
     messageId: MessageId,
     text: Schema.String,
-    attachments: Schema.Array(PastedImageAttachment),
+    attachments: Schema.Array(ChatAttachment),
+    context: Schema.optional(OrchestrationMessageContext),
   }),
   createdAt: IsoDateTime,
 });
@@ -1640,12 +1772,10 @@ export const ThreadMessageSentPayload = Schema.Struct({
   messageId: MessageId,
   role: OrchestrationMessageRole,
   text: Schema.String,
-  attachments: Schema.optional(
-    Schema.Array(PastedImageAttachment).check(
-      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
-    ),
-  ),
-  turnId: Schema.NullOr(TurnId),
+  attachments: Schema.optional(Schema.Array(ChatAttachment)),
+  context: Schema.optional(OrchestrationMessageContext),
+  // Events persisted before the field existed carry no key at all.
+  turnId: Schema.NullOr(TurnId).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -1655,11 +1785,6 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   threadId: ThreadId,
   messageId: MessageId,
   modelSelection: Schema.optional(ModelSelection),
-  attachments: Schema.optional(
-    Schema.Array(PastedImageAttachment).check(
-      Schema.isMaxLength(PROVIDER_SEND_TURN_MAX_ATTACHMENTS),
-    ),
-  ),
   titleSeed: Schema.optional(TrimmedNonEmptyString),
   runtimeMode: RuntimeMode.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_RUNTIME_MODE))),
   interactionMode: ProviderInteractionMode.pipe(
@@ -1965,26 +2090,6 @@ export const ProviderSessionRuntimeStatus = Schema.Literals([
   "error",
 ]);
 export type ProviderSessionRuntimeStatus = typeof ProviderSessionRuntimeStatus.Type;
-
-const ProjectionThreadTurnStatus = Schema.Literals([
-  "running",
-  "completed",
-  "interrupted",
-  "error",
-]);
-export type ProjectionThreadTurnStatus = typeof ProjectionThreadTurnStatus.Type;
-
-const ProjectionCheckpointRow = Schema.Struct({
-  threadId: ThreadId,
-  turnId: TurnId,
-  checkpointTurnCount: NonNegativeInt,
-  checkpointRef: CheckpointRef,
-  status: OrchestrationCheckpointStatus,
-  files: Schema.Array(OrchestrationCheckpointFile),
-  assistantMessageId: Schema.NullOr(MessageId),
-  completedAt: IsoDateTime,
-});
-export type ProjectionCheckpointRow = typeof ProjectionCheckpointRow.Type;
 
 export const ProjectionPendingApprovalStatus = Schema.Literals(["pending", "resolved"]);
 export type ProjectionPendingApprovalStatus = typeof ProjectionPendingApprovalStatus.Type;

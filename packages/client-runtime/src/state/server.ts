@@ -220,6 +220,15 @@ export function createServerEnvironmentAtoms<R, E>(
     configValueAtom,
     settingsValueAtom,
     providersValueAtom,
+    refreshProviders: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:refresh-providers",
+      tag: WS_METHODS.serverRefreshProviders,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.instanceId ?? null, input.cwd ?? null]),
+      },
+    }),
     slashCommands: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:provider:slash-commands",
       tag: WS_METHODS.providerListSlashCommands,

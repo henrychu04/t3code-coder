@@ -14,7 +14,7 @@ import { formatCoderAutostop } from "../CoderWorkspaceLatency";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
-import { SettingsSection } from "./SettingsPage";
+import { SettingsSection } from "./settingsLayout";
 import { SettingsResource, SettingsResourceEmpty, SettingsResourceError } from "./SettingsResource";
 import { useSettingsOperation } from "./useSettingsOperation";
 import { useSettingsPolling } from "./useSettingsPolling";

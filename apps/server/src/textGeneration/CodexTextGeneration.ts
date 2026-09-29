@@ -20,7 +20,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import { expandHomePath } from "../pathExpansion.ts";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
-import { resolvePastedImageAttachment } from "../provider/PastedImageAttachments.ts";
+import { resolvePastedImageAttachments } from "../provider/PastedImageAttachments.ts";
 import {
   discoverCodexMcpServerNames,
   type CodexMcpServerNameResolver,
@@ -302,22 +302,20 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         detail: "Pasted image attachments are unavailable in this workspace.",
       });
     }
-    return yield* Effect.forEach(
-      input.attachments,
-      (attachment) =>
-        resolvePastedImageAttachment({ attachmentsDir, attachment }).pipe(
-          Effect.map((resolved) => resolved.path),
-          Effect.mapError(
-            (cause) =>
-              new TextGenerationError({
-                operation,
-                detail: cause.message,
-                cause,
-              }),
-          ),
-        ),
-      { concurrency: 1 },
+    const resolved = yield* resolvePastedImageAttachments({
+      attachmentsDir,
+      attachments: input.attachments,
+    }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({
+            operation,
+            detail: cause.message,
+            cause,
+          }),
+      ),
     );
+    return resolved.map((image) => image.path);
   });
 
   const generateBranchName: TextGeneration.TextGeneration["Service"]["generateBranchName"] =

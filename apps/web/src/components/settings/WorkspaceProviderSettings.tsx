@@ -21,13 +21,14 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
 import { DraftInput } from "../ui/draft-input";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./SettingsPage";
+import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderSettingsForm, readProviderConfigString } from "./ProviderSettingsForm";
 import { PROVIDER_CLIENT_DEFINITIONS, type ProviderClientDefinition } from "./providerDriverMeta";
 import { providerSettingsTabClassName } from "./providerSettingsTabs";
 import {
   getProviderSummary,
+  getProviderCompatibilityPresentation,
   getProviderVersionLabel,
   PROVIDER_STATUS_STYLES,
   type ProviderStatusKey,
@@ -77,6 +78,9 @@ function providerPresentation(row: WorkspaceProviderRow) {
     statusKey,
     summary,
     versionLabel: getProviderVersionLabel(row.liveProvider?.version),
+    compatibility: enabled
+      ? getProviderCompatibilityPresentation(row.liveProvider?.compatibilityAdvisory)
+      : null,
   };
 }
 
@@ -86,12 +90,18 @@ export function WorkspaceProviderListRow(props: {
   readonly onSelect: () => void;
   readonly onEnabledChange: (enabled: boolean) => void;
 }) {
-  const { enabled, statusKey, summary, versionLabel } = providerPresentation(props.row);
+  const { enabled, statusKey, summary, versionLabel, compatibility } = providerPresentation(
+    props.row,
+  );
   const Icon = props.row.definition.icon;
-  const needsAttention = statusKey === "warning" || statusKey === "error";
+  const needsAttention =
+    statusKey === "warning" || statusKey === "error" || compatibility?.emphasis === "strong";
   const statusDot = needsAttention ? (
     <span
-      className={cn("size-1.5 shrink-0 rounded-full", PROVIDER_STATUS_STYLES[statusKey].dot)}
+      className={cn(
+        "size-1.5 shrink-0 rounded-full",
+        PROVIDER_STATUS_STYLES[statusKey === "ready" && needsAttention ? "warning" : statusKey].dot,
+      )}
       aria-hidden
     />
   ) : null;
@@ -127,7 +137,9 @@ export function WorkspaceProviderListRow(props: {
           <span className="mt-0.5 flex items-start gap-1.5 text-[13px] leading-[1.45] text-muted-foreground/80">
             {statusDot ? <span className="flex h-[1.45em] items-center">{statusDot}</span> : null}
             <span className="line-clamp-2 [overflow-wrap:anywhere]">
-              {summary.headline}
+              {compatibility?.emphasis === "strong" && statusKey === "ready"
+                ? compatibility.title
+                : summary.headline}
               {needsAttention && summary.detail ? ` · ${summary.detail}` : null}
             </span>
           </span>
@@ -158,7 +170,7 @@ export function WorkspaceProviderEditor(props: {
   const [activeTab, setActiveTab] = useState<"configuration" | "models">(
     hasConfiguration ? "configuration" : "models",
   );
-  const { statusKey, summary, versionLabel } = providerPresentation(props.row);
+  const { statusKey, summary, versionLabel, compatibility } = providerPresentation(props.row);
   const Icon = props.row.definition.icon;
   const needsAttention = statusKey === "warning" || statusKey === "error";
   const models = props.row.liveProvider?.models.filter((model) => !model.isCustom) ?? [];
@@ -198,6 +210,16 @@ export function WorkspaceProviderEditor(props: {
           {summary.detail && needsAttention ? (
             <p className="text-[13px] leading-[1.45] text-muted-foreground/80 [overflow-wrap:anywhere]">
               {summary.detail}
+            </p>
+          ) : null}
+          {compatibility ? (
+            <p
+              className={cn(
+                "text-[13px] leading-[1.45] [overflow-wrap:anywhere]",
+                compatibility.emphasis === "strong" ? "text-warning" : "text-muted-foreground/80",
+              )}
+            >
+              {compatibility.title} · {compatibility.detail}
             </p>
           ) : null}
         </div>
@@ -491,7 +513,7 @@ function WorkspaceProviderSettingsForEnvironment(props: {
 
 export function WorkspaceProviderSettings() {
   return (
-    <SettingsSection title="Providers" unframed>
+    <SettingsSection title="Providers" variant="plain">
       <WorkspaceSettingsTarget ariaLabel="Provider settings workspace">
         {(environment) => (
           <WorkspaceProviderSettingsForEnvironment

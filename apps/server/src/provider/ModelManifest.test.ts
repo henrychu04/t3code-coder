@@ -10,18 +10,18 @@ describe("bundled model manifest", () => {
   it("matches upstream's current Codex classification", () => {
     assert.deepStrictEqual(
       [
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6-sol-codex",
         "gpt-5.6-luna",
-        "gpt-5.6-terra",
-        "gpt-5.6-sol",
-        "gpt-5.6-sol-codex",
         "gpt-5.4",
         "gpt-5.4-codex",
       ].map((model) => [model, isLegacyModel(BUNDLED_MODEL_MANIFEST, CODEX, model)]),
       [
-        ["gpt-5.6-luna", false],
-        ["gpt-5.6-terra", false],
-        ["gpt-5.6-sol", false],
-        ["gpt-5.6-sol-codex", false],
+        ["gpt-6-luna", false],
+        ["gpt-6-sol", false],
+        ["gpt-6-sol-codex", false],
+        ["gpt-5.6-luna", true],
         ["gpt-5.4", true],
         ["gpt-5.4-codex", true],
       ],
@@ -31,16 +31,18 @@ describe("bundled model manifest", () => {
   it("matches upstream's current Claude classification", () => {
     assert.deepStrictEqual(
       [
+        "claude-fable-5-1",
         "claude-fable-5",
-        "claude-fable-5-codex",
+        "claude-opus-5-5",
         "claude-opus-5",
         "claude-sonnet-5",
         "claude-opus-4-8",
       ].map((model) => [model, isLegacyModel(BUNDLED_MODEL_MANIFEST, CLAUDE, model)]),
       [
+        ["claude-fable-5-1", false],
         ["claude-fable-5", true],
-        ["claude-fable-5-codex", true],
-        ["claude-opus-5", false],
+        ["claude-opus-5-5", false],
+        ["claude-opus-5", true],
         ["claude-sonnet-5", false],
         ["claude-opus-4-8", true],
       ],
@@ -59,8 +61,8 @@ describe("bundled model manifest", () => {
     assert.deepStrictEqual(
       classifyModels(
         [
-          model({ slug: "gpt-5.6-sol" }),
-          model({ slug: "gpt-5.6-luna", isLegacy: true }),
+          model({ slug: "gpt-6-sol" }),
+          model({ slug: "gpt-6-luna", isLegacy: true }),
           model({ slug: "gpt-5.4" }),
           model({ slug: "my-own-model", isCustom: true }),
         ],
@@ -68,8 +70,8 @@ describe("bundled model manifest", () => {
         CODEX,
       ).map((entry) => [entry.slug, entry.isLegacy ?? false]),
       [
-        ["gpt-5.6-sol", false],
-        ["gpt-5.6-luna", false],
+        ["gpt-6-sol", false],
+        ["gpt-6-luna", false],
         ["gpt-5.4", true],
         ["my-own-model", false],
       ],

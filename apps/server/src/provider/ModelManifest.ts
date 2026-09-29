@@ -11,10 +11,18 @@ import { codexModelFamily } from "@t3tools/shared/model";
 import * as Schema from "effect/Schema";
 
 import bundledManifestJson from "./model-manifest.json" with { type: "json" };
+import { ProviderCompatibilityPolicy } from "./providerCompatibility.ts";
 import type { ServerProviderDraft } from "./providerSnapshot.ts";
 
 const ModelManifestSchema = Schema.Struct({
   version: Schema.Literal(1),
+  /**
+   * ISO date of the last edit. A release bundles its manifest, and a disk
+   * cache of an older edit must not outrank it. Optional so older remote
+   * files still decode; they count as older than any dated bundle.
+   */
+  updatedAt: Schema.optional(Schema.String),
+  compatibility: Schema.optional(Schema.Array(ProviderCompatibilityPolicy)),
   currentModels: Schema.Record(Schema.String, Schema.Array(Schema.String)),
 });
 export type ModelManifestData = typeof ModelManifestSchema.Type;

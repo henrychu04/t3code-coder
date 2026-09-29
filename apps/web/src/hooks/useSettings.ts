@@ -34,6 +34,7 @@ import {
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
 import { serverEnvironment } from "~/state/server";
+import { useEnvironments } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
 
@@ -415,4 +416,19 @@ export function __setClientSettingsForTests(settings: ClientSettings): void {
   clientSettingsSnapshot = settings;
   clientSettingsHydrated = true;
   clientSettingsHydrationPromise = null;
+}
+
+export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
+  "This setting is saved in a workspace. Connect a Coder workspace to change it.";
+
+/**
+ * Whether server-scoped settings have somewhere to live. Coder has no primary local server:
+ * settings belong to a connected workspace.
+ */
+export function usePrimarySettingsAvailable(): boolean {
+  const { environments } = useEnvironments();
+  return environments.some(
+    (environment) =>
+      environment.connection.phase === "connected" && environment.serverConfig !== null,
+  );
 }

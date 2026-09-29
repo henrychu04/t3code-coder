@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import type { ComposerSubmissionIntent } from "./composer-logic";
-import type { ComposerPastedImage } from "./lib/composerPastedImages";
+import type { ComposerFileAttachment, ComposerImageAttachment } from "./composerDraftStore";
 import type { TerminalContextDraft } from "./lib/terminalContext";
 import { randomUUID } from "./lib/utils";
 import type { ReviewCommentContext } from "./reviewCommentContext";
@@ -14,7 +14,8 @@ import type { ReviewCommentContext } from "./reviewCommentContext";
 export interface QueuedComposerMessage {
   id: string;
   prompt: string;
-  images: ComposerPastedImage[];
+  images: ComposerImageAttachment[];
+  files: ComposerFileAttachment[];
   terminalContexts: TerminalContextDraft[];
   reviewComments: ReviewCommentContext[];
   submissionIntent: ComposerSubmissionIntent;
@@ -30,25 +31,6 @@ export interface QueuedComposerMessage {
    */
   holdUntilUserAction?: boolean;
   createdAt: string;
-}
-
-/** Restore whole messages so image references always travel with their bytes. */
-export function partitionQueuedMessagesForRestore(
-  messages: ReadonlyArray<QueuedComposerMessage>,
-  availableImageSlots: number,
-): { restored: QueuedComposerMessage[]; held: QueuedComposerMessage[] } {
-  const restored: QueuedComposerMessage[] = [];
-  const held: QueuedComposerMessage[] = [];
-  let remaining = Math.max(0, availableImageSlots);
-  for (const message of messages) {
-    if (held.length > 0 || message.images.length > remaining) {
-      held.push(message);
-    } else {
-      restored.push(message);
-      remaining -= message.images.length;
-    }
-  }
-  return { restored, held };
 }
 
 interface QueuedMessageStoreState {

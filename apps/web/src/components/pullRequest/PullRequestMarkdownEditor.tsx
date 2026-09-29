@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 
 import { cn } from "~/lib/utils";
 
@@ -18,9 +18,9 @@ import { PullRequestMarkdown } from "./PullRequestMarkdown";
  */
 export function PullRequestMarkdownEditor({
   value,
-  hostUrl,
   cwd,
   environmentId,
+  threadRef = null,
   placeholder,
   label,
   saving,
@@ -30,9 +30,10 @@ export function PullRequestMarkdownEditor({
   onCancel,
 }: {
   readonly value: string;
-  readonly hostUrl: string | null;
   readonly cwd: string;
   readonly environmentId: EnvironmentId;
+  /** Thread the editor sits beside, so links in its preview follow the link target setting. */
+  readonly threadRef?: ScopedThreadRef | null;
   readonly placeholder?: string | undefined;
   readonly label: string;
   readonly saving: boolean;
@@ -97,9 +98,9 @@ export function PullRequestMarkdownEditor({
           ) : (
             <PullRequestMarkdown
               text={draft}
-              hostUrl={hostUrl}
               cwd={cwd}
               environmentId={environmentId}
+              threadRef={threadRef}
             />
           )}
         </div>

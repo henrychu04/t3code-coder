@@ -8,7 +8,8 @@ import {
 import * as Schema from "effect/Schema";
 import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
-import { NonNegativeInt } from "./baseSchemas.ts";
+import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { ProviderInstanceId } from "./providerInstance.ts";
 import { KeybindingsConfigError } from "./keybindings.ts";
 
 import {
@@ -93,6 +94,7 @@ import {
   ServerUpsertKeybindingInput,
   ServerUpsertKeybindingResult,
   ServerProviderSlashCommands,
+  ServerProviderUpdatedPayload,
   ServerProviderSlashCommandsInput,
 } from "./server.ts";
 import { ServerSettings, ServerSettingsError, ServerSettingsPatch } from "./settings.ts";
@@ -119,6 +121,7 @@ import {
   PullRequestCommentInput,
   PullRequestCommentUpdateInput,
   PullRequestDetail,
+  PullRequestPreview,
   PullRequestDiffFileContentsInput,
   PullRequestDiffFileContentsResult,
   PullRequestDiffInput,
@@ -136,6 +139,8 @@ import {
   PullRequestLinkedThreadsResult,
   PullRequestReviewerCandidateList,
   PullRequestReviewerRequestInput,
+  PullRequestLabelCandidateList,
+  PullRequestLabelChangeInput,
   PullRequestSubmitReviewInput,
   PullRequestThreadCommentsInput,
   PullRequestThreadCommentsResult,
@@ -184,6 +189,7 @@ export const WS_METHODS = {
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   providerListSlashCommands: "provider.listSlashCommands",
+  serverRefreshProviders: "server.refreshProviders",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -207,6 +213,7 @@ export const WS_METHODS = {
   pullRequestsStack: "pullRequests.stack",
   pullRequestsLinkedThreads: "pullRequests.linkedThreads",
   pullRequestsDetail: "pullRequests.detail",
+  pullRequestsPreview: "pullRequests.preview",
   pullRequestsActivity: "pullRequests.activity",
   pullRequestsThreadComments: "pullRequests.threadComments",
   pullRequestsDiff: "pullRequests.diff",
@@ -225,6 +232,8 @@ export const WS_METHODS = {
   pullRequestsSubscribeRefreshes: "pullRequests.subscribeRefreshes",
   pullRequestsReviewerCandidates: "pullRequests.reviewerCandidates",
   pullRequestsRequestReviewers: "pullRequests.requestReviewers",
+  pullRequestsLabelCandidates: "pullRequests.labelCandidates",
+  pullRequestsSetLabels: "pullRequests.setLabels",
   reviewGetDiffPreview: "review.getDiffPreview",
   reviewOpenDiffFileContents: "review.openDiffFileContents",
   reviewReadDiffFileChunk: "review.readDiffFileChunk",
@@ -346,6 +355,16 @@ const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadSc
 const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashCommands, {
   payload: ServerProviderSlashCommandsInput,
   success: ServerProviderSlashCommands,
+});
+
+const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
+  payload: Schema.Struct({
+    /** When supplied, only refresh this provider instance. Omitted refreshes every instance. */
+    instanceId: Schema.optional(ProviderInstanceId),
+    /** With `instanceId`, discover that instance's skills and commands for this workspace. */
+    cwd: Schema.optional(TrimmedNonEmptyString),
+  }),
+  success: ServerProviderUpdatedPayload,
 });
 
 const WsSubscribeVcsStatusRpc = Rpc.make(WS_METHODS.subscribeVcsStatus, {
@@ -534,6 +553,13 @@ const WsPullRequestsDetailRpc = Rpc.make(WS_METHODS.pullRequestsDetail, {
   success: PullRequestDetail,
   error: PullRequestRpcError,
 });
+
+const WsPullRequestsPreviewRpc = Rpc.make(WS_METHODS.pullRequestsPreview, {
+  payload: PullRequestRef,
+  success: PullRequestPreview,
+  error: PullRequestRpcError,
+});
+
 const WsPullRequestsActivityRpc = Rpc.make(WS_METHODS.pullRequestsActivity, {
   payload: PullRequestRef,
   success: PullRequestActivity,
@@ -612,6 +638,19 @@ const WsPullRequestsReviewerCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsRevi
 });
 const WsPullRequestsRequestReviewersRpc = Rpc.make(WS_METHODS.pullRequestsRequestReviewers, {
   payload: PullRequestReviewerRequestInput,
+  success: Schema.Void,
+  error: PullRequestRpcError,
+});
+
+/** Read when the label menu opens, for the same reason the reviewer candidates are. */
+const WsPullRequestsLabelCandidatesRpc = Rpc.make(WS_METHODS.pullRequestsLabelCandidates, {
+  payload: PullRequestRef,
+  success: PullRequestLabelCandidateList,
+  error: PullRequestRpcError,
+});
+
+const WsPullRequestsSetLabelsRpc = Rpc.make(WS_METHODS.pullRequestsSetLabels, {
+  payload: PullRequestLabelChangeInput,
   success: Schema.Void,
   error: PullRequestRpcError,
 });
@@ -786,6 +825,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
+  WsServerRefreshProvidersRpc,
   WsServerDiscoverSourceControlRpc,
   WsSourceControlProbeWriteAccessRpc,
   WsSourceControlLookupRepositoryRpc,
@@ -815,6 +855,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsPullRequestsStackRpc,
   WsPullRequestsLinkedThreadsRpc,
   WsPullRequestsDetailRpc,
+  WsPullRequestsPreviewRpc,
   WsPullRequestsActivityRpc,
   WsPullRequestsThreadCommentsRpc,
   WsPullRequestsDiffRpc,
@@ -833,6 +874,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsPullRequestsSubscribeRefreshesRpc,
   WsPullRequestsReviewerCandidatesRpc,
   WsPullRequestsRequestReviewersRpc,
+  WsPullRequestsLabelCandidatesRpc,
+  WsPullRequestsSetLabelsRpc,
   WsReviewGetDiffPreviewRpc,
   WsReviewOpenDiffFileContentsRpc,
   WsReviewReadDiffFileChunkRpc,

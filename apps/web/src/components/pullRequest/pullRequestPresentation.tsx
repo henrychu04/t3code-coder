@@ -4,7 +4,9 @@ import type {
   PullRequestCheck,
   PullRequestCheckStatus,
   PullRequestChecksState,
+  PullRequestLabel,
   PullRequestMergeability,
+  PullRequestReviewDecision,
   PullRequestState,
 } from "@t3tools/contracts";
 import {
@@ -13,14 +15,18 @@ import {
   CircleDotIcon,
   CircleXIcon,
   UserCheckIcon,
+  UserRoundIcon,
+  UserRoundXIcon,
 } from "lucide-react";
-import { Children, isValidElement, type ReactNode, useState } from "react";
+import { Children, type CSSProperties, isValidElement, type ReactNode } from "react";
 
 import { cn } from "~/lib/utils";
 
 import { Badge } from "../ui/badge";
+import { InlineButton } from "../ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { PullRequestReviewOutcome } from "./pullRequestDetail.logic";
+import { pullRequestLabelColor } from "./pullRequestList.logic";
 import {
   PULL_REQUEST_STATE_PRESENTATION,
   PullRequestGlyph,
@@ -28,17 +34,81 @@ import {
   type PullRequestGlyphIcon,
 } from "./pullRequestIcons";
 
-export function PullRequestApprovalGlyph() {
+/**
+ * A host label as a flat tinted tag in the label's own color: a wash of it behind, the name
+ * in a mix of it and the theme foreground. The mix leans to the foreground because hosts hand
+ * out any color at all: at 30% of the label on light and 45% on dark, white, black and
+ * GitHub's pale yellows all clear 4.5:1 on their wash, selected row included, and
+ * saturated colors sit well above.
+ * A label with no usable color falls back to the muted tag. Children ride after the name,
+ * for an overflow count. The height is pinned so a labeled row is as tall as one without.
+ */
+export function PullRequestLabelChip({
+  label,
+  size = "sm",
+  className,
+  children,
+}: {
+  label: Pick<PullRequestLabel, "name" | "color">;
+  size?: "sm" | "default";
+  className?: string;
+  children?: ReactNode;
+}) {
+  const color = pullRequestLabelColor(label.color);
+  return (
+    <Badge
+      size={size}
+      variant={color ? "label" : "secondary"}
+      className={cn("min-w-0 max-w-40 shrink justify-start", className)}
+      {...(color ? { style: { "--label": color } as CSSProperties } : {})}
+    >
+      <span className="truncate">{label.name}</span>
+      {children}
+    </Badge>
+  );
+}
+
+/**
+ * The review verdict as one glyph beside the checks glyph, so a row answers both "does it
+ * build" and "did someone say yes" in the same spot. "Awaiting review" is only drawn when the
+ * host reports it, which on GitHub means the branch rules require a review nobody has given.
+ */
+function reviewDecisionPresentation(decision: PullRequestReviewDecision) {
+  switch (decision) {
+    case "approved":
+      return {
+        Icon: UserCheckIcon,
+        label: "Approved",
+        toneClassName: CHECK_STATUS_PRESENTATION.success.toneClassName,
+      };
+    case "changes-requested":
+      return {
+        Icon: UserRoundXIcon,
+        label: "Changes requested",
+        toneClassName: "text-amber-600/90 dark:text-amber-400/80",
+      };
+    case "review-required":
+      return {
+        Icon: UserRoundIcon,
+        label: "Awaiting review",
+        toneClassName: "text-muted-foreground/60",
+      };
+  }
+}
+
+export function PullRequestReviewDecisionGlyph({
+  decision,
+}: {
+  decision: PullRequestReviewDecision;
+}) {
+  const presentation = reviewDecisionPresentation(decision);
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex shrink-0" />}>
-        <UserCheckIcon
-          aria-hidden
-          className={cn("size-3.5", CHECK_STATUS_PRESENTATION.success.toneClassName)}
-        />
-        <span className="sr-only">Approved</span>
+        <presentation.Icon aria-hidden className={cn("size-3.5", presentation.toneClassName)} />
+        <span className="sr-only">{presentation.label}</span>
       </TooltipTrigger>
-      <TooltipPopup>Approved</TooltipPopup>
+      <TooltipPopup>{presentation.label}</TooltipPopup>
     </Tooltip>
   );
 }
@@ -142,6 +212,11 @@ export function PullRequestConflictGlyph({
 
 const CHECK_STATUS_PRESENTATION = {
   pending: { label: "Running", Icon: Spinner, toneClassName: "text-amber-500" },
+  "action-required": {
+    label: "Awaiting action",
+    Icon: CircleDotIcon,
+    toneClassName: "text-amber-600 dark:text-amber-400/90",
+  },
   success: {
     label: "Passed",
     Icon: CircleCheckIcon,
@@ -156,8 +231,20 @@ const CHECK_STATUS_PRESENTATION = {
   { label: string; Icon: typeof CircleCheckIcon | typeof Spinner; toneClassName: string }
 >;
 
-export function pullRequestCheckStatusLabel(status: PullRequestCheckStatus): string {
-  return CHECK_STATUS_PRESENTATION[status].label;
+function isWorkflowApprovalCheck(check: Pick<PullRequestCheck, "status" | "url">): boolean {
+  return (
+    check.status === "action-required" &&
+    check.url !== null &&
+    /\/actions\/runs\/\d+(?:\/|$)/u.test(check.url)
+  );
+}
+
+export function pullRequestCheckStatusLabel(
+  check: Pick<PullRequestCheck, "status" | "url">,
+): string {
+  return isWorkflowApprovalCheck(check)
+    ? "Awaiting approval"
+    : CHECK_STATUS_PRESENTATION[check.status].label;
 }
 
 export function PullRequestCheckStatusIcon({ status }: { status: PullRequestCheckStatus }) {
@@ -209,10 +296,10 @@ export function pullRequestChecksState(
   checks: ReadonlyArray<PullRequestCheck>,
 ): PullRequestChecksState | null {
   if (checks.length === 0) return null;
-  const statuses = checks.map((check) => check.status);
-  if (statuses.includes("failure") || statuses.includes("cancelled")) return "failing";
-  if (statuses.includes("pending")) return "pending";
-  return statuses.includes("success") ? "passing" : null;
+  const statuses = new Set(checks.map((check) => check.status));
+  if (statuses.has("failure") || statuses.has("cancelled")) return "failing";
+  if (statuses.has("pending") || statuses.has("action-required")) return "pending";
+  return statuses.has("success") ? "passing" : null;
 }
 
 /**
@@ -319,7 +406,7 @@ export function PullRequestReviewOutcomeBadge({
 }) {
   const presentation = REVIEW_OUTCOME_PRESENTATION[outcome];
   return (
-    <Badge size="sm" variant={presentation.badgeVariant} className={cn("gap-1", className)}>
+    <Badge size="sm" variant={presentation.badgeVariant} className={className}>
       <presentation.Icon aria-hidden className="size-3" />
       {presentation.label}
     </Badge>
@@ -334,10 +421,8 @@ export function PullRequestActorAvatar({
   className?: string;
 }) {
   const login = actor?.login ?? "ghost";
-  const avatarUrl = actor?.avatarUrl ?? null;
-  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
-  return avatarUrl === null || failedAvatarUrl === avatarUrl ? (
-    // Not every host reports an avatar, and a private host may refuse the browser's request.
+  // Coder never loads external images, including avatars reported by GitLab.
+  return (
     <span
       aria-hidden
       className={cn(
@@ -347,63 +432,59 @@ export function PullRequestActorAvatar({
     >
       {login.slice(0, 1).toUpperCase()}
     </span>
-  ) : (
-    <img
-      aria-hidden
-      alt=""
-      src={avatarUrl}
-      loading="lazy"
-      className={cn("size-4 shrink-0 rounded-full bg-muted object-cover", className)}
-      onError={() => setFailedAvatarUrl(avatarUrl)}
-    />
   );
 }
 
-/** GitHub attributes work from a deleted account to "ghost"; say the same word everywhere. */
+/**
+ * GitHub attributes work from a deleted account to "ghost"; say the same word everywhere.
+ *
+ * An actor as a login beside its avatar, or as the avatar alone. With a profile URL the actor
+ * is an inline link; `className` places it and never restyles it.
+ */
 export function PullRequestActorLabel({
   actor,
   className,
-  labelClassName,
+  variant = "label",
   tooltip = true,
   profileUrl,
 }: {
   actor: PullRequestActor | null;
   className?: string;
-  labelClassName?: string;
+  variant?: "label" | "avatar";
   tooltip?: boolean;
   profileUrl?: string | null;
 }) {
   const login = actor?.login ?? "ghost";
   const label = (
-    <>
+    <span className={cn("flex min-w-0 items-center", variant === "label" && "gap-1.5")}>
       <PullRequestActorAvatar actor={actor} />
-      <span className={cn("truncate", labelClassName)}>{login}</span>
-    </>
+      <span className={variant === "label" ? "truncate font-medium text-foreground" : "sr-only"}>
+        {login}
+      </span>
+    </span>
   );
-  if (!tooltip) {
-    return <span className={cn("flex min-w-0 items-center gap-1.5", className)}>{label}</span>;
-  }
+  const placement = cn("flex min-w-0 shrink", className);
+  if (!tooltip) return <span className={placement}>{label}</span>;
   return (
     <Tooltip>
       <TooltipTrigger
         render={
           profileUrl ? (
-            <a
-              href={profileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={`Open ${login}'s profile`}
+            <InlineButton
+              className={placement}
+              render={
+                <a
+                  href={profileUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Open ${login}'s profile`}
+                />
+              }
             />
           ) : (
-            <span />
+            <span className={placement} />
           )
         }
-        className={cn(
-          "flex min-w-0 items-center gap-1.5",
-          profileUrl &&
-            "cursor-pointer rounded-sm underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
-          className,
-        )}
       >
         {label}
       </TooltipTrigger>
@@ -479,12 +560,24 @@ export function PullRequestMetaLine({
 
 export function summarizePullRequestChecks(checks: ReadonlyArray<PullRequestCheck>): string {
   if (checks.length === 0) return "No checks reported";
+  const actionRequired = checks.filter((check) => check.status === "action-required");
+  const workflowApprovalRequired = actionRequired.filter(isWorkflowApprovalCheck).length;
+  const otherActionRequired = actionRequired.length - workflowApprovalRequired;
   const failed = checks.filter(
     (check) => check.status === "failure" || check.status === "cancelled",
   ).length;
   const pending = checks.filter((check) => check.status === "pending").length;
   const passed = checks.filter((check) => check.status === "success").length;
   if (failed > 0) return `${failed} of ${checks.length} failing`;
+  if (workflowApprovalRequired > 0 && otherActionRequired > 0) {
+    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} and ${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+  }
+  if (workflowApprovalRequired > 0) {
+    return `${workflowApprovalRequired} ${workflowApprovalRequired === 1 ? "workflow" : "workflows"} awaiting approval`;
+  }
+  if (otherActionRequired > 0) {
+    return `${otherActionRequired} ${otherActionRequired === 1 ? "check" : "checks"} awaiting action`;
+  }
   if (pending > 0) return `${pending} of ${checks.length} running`;
   return passed === checks.length ? "All checks passed" : `${passed} of ${checks.length} passing`;
 }

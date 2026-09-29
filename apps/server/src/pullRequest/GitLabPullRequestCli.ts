@@ -1,6 +1,9 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Request from "effect/Request";
+import * as RequestResolver from "effect/RequestResolver";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type {
@@ -28,7 +31,9 @@ import {
   decodeCommitsJson,
   decodeDiffRefsJson,
   decodeDiscussionsJson,
+  buildMergeRequestSummariesGraphQlQuery,
   decodeMergeRequestDetailJson,
+  decodeMergeRequestSummariesJson,
   decodeMergeRequestDiffsJson,
   decodeMergeRequestListJson,
   decodeNotesJson,
@@ -44,7 +49,7 @@ import {
   type GitLabMergeRequestListItem,
   type GitLabProjectUsers,
 } from "./gitLabMergeRequestJson.ts";
-import type { ProviderListCursor } from "./PullRequestProvider.ts";
+import type { ProviderChangeRequestSummary, ProviderListCursor } from "./PullRequestProvider.ts";
 
 /**
  * Names the read that produced unusable output, so a failure reports the call it came from
@@ -246,6 +251,16 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly repository: string;
       readonly number: number;
     }) => Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError>;
+
+    /**
+     * The live fields linked threads need. Reads that arrive together from one checkout share an
+     * aliased GraphQL request; anything the batch cannot answer is read on its own.
+     */
+    readonly getMergeRequestSummary: (input: {
+      readonly cwd: string;
+      readonly repository: string;
+      readonly number: number;
+    }) => Effect.Effect<ProviderChangeRequestSummary, GitLabPullRequestCliError>;
 
     readonly listNotes: (input: {
       readonly cwd: string;
@@ -526,10 +541,30 @@ function actionArgs(
       return ["rebase"];
     case "reopen":
       return ["reopen"];
+    // Never reached: this host does not declare the action, so the service refuses it first.
+    case "revert":
+    case "approve-workflows":
+      throw new Error(`GitLab merge request action ${action} is unsupported`);
   }
 }
 
 /** @public Service construction is part of the canonical Effect module API. */
+/**
+ * How long a summary read waits for company. The background sync asks for every linked merge
+ * request at once, and each read reaches the resolver after its own cache check.
+ */
+const SUMMARY_BATCH_WINDOW = "10 millis";
+/** Aliases per GraphQL request, matching upstream's batched summary reads. */
+const SUMMARY_ALIASES_PER_REQUEST = 25;
+/** Individual fallback reads run at the sync reactor's former width. */
+const SUMMARY_FALLBACK_CONCURRENCY = 8;
+
+class MergeRequestSummaryRead extends Request.Class<
+  { readonly cwd: string; readonly repository: string; readonly number: number },
+  ProviderChangeRequestSummary,
+  GitLabPullRequestCliError
+> {}
+
 export const make = Effect.gen(function* () {
   const gitlab = yield* GitLabCli.GitLabCli;
 
@@ -952,6 +987,92 @@ export const make = Effect.gen(function* () {
       }),
     );
 
+  const detailSummary = (input: MergeRequestSummaryRead) =>
+    mergeRequestDetail(input).pipe(
+      Effect.map((detail): ProviderChangeRequestSummary => ({
+        number: detail.number,
+        title: detail.title,
+        url: detail.url,
+        headBranch: detail.headBranch,
+        baseBranch: detail.baseBranch,
+        state: detail.state,
+        isDraft: detail.isDraft,
+        closedAt: detail.closedAt,
+        mergedAt: detail.mergedAt,
+        updatedAt: detail.updatedAt,
+        author: detail.author,
+        changedFiles: detail.changedFiles,
+        mergeability: detail.mergeability,
+      })),
+    );
+
+  /**
+   * Summaries asked for together from one checkout share aliased GraphQL reads. `glab` resolves
+   * its host from the checkout, so the checkout is the batch key. A batch that fails as a whole
+   * (an older GitLab without a field, a project out of reach) leaves every entry to its own read.
+   */
+  const summaryResolver = RequestResolver.makeGrouped<MergeRequestSummaryRead, string>({
+    key: ({ request }) => request.cwd,
+    resolver: (entries) => {
+      const [first] = entries;
+      const query = buildMergeRequestSummariesGraphQlQuery(entries.map((entry) => entry.request));
+      const batched =
+        query === null
+          ? Effect.succeed(new Map<number, ProviderChangeRequestSummary>())
+          : api({
+              cwd: first.request.cwd,
+              path: "graphql",
+              method: "POST",
+              stdin: JSON.stringify({ query }),
+            }).pipe(
+              Effect.flatMap((result) => {
+                const decoded = decodeMergeRequestSummariesJson(
+                  result.stdout.trim(),
+                  entries.length,
+                );
+                return Result.isSuccess(decoded)
+                  ? Effect.succeed(decoded.success)
+                  : Effect.fail(
+                      new GitLabMergeRequestReadError({
+                        command: "glab",
+                        cwd: first.request.cwd,
+                        operation: "getMergeRequestSummary",
+                        cause: decoded.failure,
+                      }),
+                    );
+              }),
+              Effect.catch(() => Effect.succeed(new Map<number, ProviderChangeRequestSummary>())),
+            );
+      return batched.pipe(
+        Effect.flatMap((summaries) => {
+          const unanswered = entries.filter((entry, index) => {
+            const summary = summaries.get(index);
+            if (summary === undefined || summary.number !== entry.request.number) return true;
+            entry.completeUnsafe(Exit.succeed(summary));
+            return false;
+          });
+          return Effect.forEach(
+            unanswered,
+            (entry) =>
+              detailSummary(entry.request).pipe(
+                Effect.exit,
+                Effect.map((exit) => entry.completeUnsafe(exit)),
+              ),
+            { concurrency: SUMMARY_FALLBACK_CONCURRENCY, discard: true },
+          );
+        }),
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            for (const entry of entries) entry.completeUnsafe(Exit.failCause(cause));
+          }),
+        ),
+      );
+    },
+  }).pipe(
+    RequestResolver.setDelay(SUMMARY_BATCH_WINDOW),
+    RequestResolver.batchN(SUMMARY_ALIASES_PER_REQUEST),
+  );
+
   /** The people with access to the project, one page deep. */
   const projectUsers = (input: {
     readonly cwd: string;
@@ -1167,6 +1288,8 @@ export const make = Effect.gen(function* () {
     },
 
     getMergeRequestDetail: mergeRequestDetail,
+    getMergeRequestSummary: (input) =>
+      Effect.request(new MergeRequestSummaryRead(input), summaryResolver),
 
     listNotes: (input) => notesPage({ ...input, page: 1, collected: [] }),
 

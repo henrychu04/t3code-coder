@@ -67,7 +67,7 @@ export function PullRequestFilterOptionIcon<Value extends string>({
   option: PullRequestFilterOption<Value>;
 }) {
   return option.project ? (
-    <ProjectFavicon project={option.project} fallbackIcon={FolderGit2Icon} className="size-3.5" />
+    <ProjectFavicon project={option.project} className="size-3.5" />
   ) : (
     <option.Icon aria-hidden className="size-3.5" />
   );
@@ -113,8 +113,8 @@ export function PullRequestSearchInput({
         type="search"
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
-        placeholder="Search pull requests, or label:bug"
-        aria-label="Search pull requests"
+        placeholder="Search merge requests, or label:bug"
+        aria-label="Search merge requests"
       />
     </InputGroup>
   );
@@ -201,9 +201,7 @@ function PullRequestFilterRadioGroup<Value extends string>({
         return (
           <Tooltip key={option.value}>
             <TooltipTrigger render={item} />
-            <TooltipPopup side="top" className="max-w-80">
-              {option.unavailable}
-            </TooltipPopup>
+            <TooltipPopup side="top">{option.unavailable}</TooltipPopup>
           </Tooltip>
         );
       })}
@@ -233,7 +231,7 @@ function PullRequestFilterRadioSubmenu<Value extends string>({
           {current.label}
         </span>
       </MenuSubTrigger>
-      <MenuSubPopup className="min-w-56">
+      <MenuSubPopup>
         <PullRequestFilterRadioGroup
           label={label}
           value={value}
@@ -278,7 +276,7 @@ function PullRequestAuthorFilter({
           {value ?? "Anyone"}
         </span>
       </MenuSubTrigger>
-      <MenuSubPopup className="w-80">
+      <MenuSubPopup>
         <div className="p-1 pb-2">
           <InputGroup>
             <InputGroupAddon>
@@ -347,7 +345,7 @@ function PullRequestLabelFilter({
           {value.length === 0 ? "Any" : `${value.length} selected`}
         </span>
       </MenuSubTrigger>
-      <MenuSubPopup className="w-72">
+      <MenuSubPopup>
         {visible.length === 0 ? (
           <MenuItem disabled>No labels in this view</MenuItem>
         ) : (
@@ -358,7 +356,6 @@ function PullRequestLabelFilter({
             return (
               <MenuCheckboxItem
                 key={key}
-                className="grid-cols-[1rem_minmax(0,1fr)]"
                 checked={checked}
                 onCheckedChange={(next) =>
                   onChange(
@@ -439,12 +436,9 @@ export function PullRequestFiltersMenu({
   serverOptions: ReadonlyArray<PullRequestFilterOption<string>>;
   onServer: (server: EnvironmentId | undefined) => void;
   /** The projects of every connected environment, each carrying the one its favicon is read from. */
-  projects: ReadonlyArray<{
-    readonly id: ProjectId;
-    readonly environmentId: EnvironmentId;
-    readonly title: string;
-    readonly workspaceRoot: string;
-  }>;
+  projects: ReadonlyArray<
+    ProjectFaviconProject & { readonly id: ProjectId; readonly environmentId: EnvironmentId }
+  >;
   projectId: ProjectId | undefined;
   /**
    * The server the selected project belongs to. A project id is only unique within its own
@@ -507,23 +501,16 @@ export function PullRequestFiltersMenu({
   ];
   return (
     <Menu onOpenChange={onOpenChange}>
-      <MenuTrigger
-        render={
-          <Button
-            className={filterCount > 0 ? "[--control-icon-color:currentColor]" : undefined}
-            variant="outline"
-          />
-        }
-      >
+      <MenuTrigger render={<Button variant="outline" />}>
         <ListFilterIcon className="size-4" />
         <span>Filters</span>
         {filterCount > 0 ? (
-          <span className="rounded-full bg-primary/10 px-1.5 text-xs text-primary tabular-nums">
+          <span className="rounded-full bg-muted px-1.5 text-xs text-muted-foreground tabular-nums">
             {filterCount}
           </span>
         ) : null}
       </MenuTrigger>
-      <MenuPopup align="end" side="bottom" className="w-56">
+      <MenuPopup align="end" side="bottom">
         <PullRequestFilterRadioSubmenu
           label="State"
           value={state}

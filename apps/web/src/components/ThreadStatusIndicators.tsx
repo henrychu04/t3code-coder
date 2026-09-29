@@ -6,7 +6,7 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pullRequests";
+import { pullRequestDetailToVcsStatus } from "@t3tools/client-runtime/state/pull-requests";
 import type {
   ThreadPullRequestLink,
   EnvironmentId,
@@ -14,7 +14,7 @@ import type {
   VcsStatusResult,
 } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
-import { CloudIcon, FolderGit2Icon, GitPullRequestIcon, TerminalIcon } from "lucide-react";
+import { CloudIcon, FolderGit2Icon, TerminalIcon } from "lucide-react";
 import { useMemo } from "react";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useEnvironment } from "../state/environments";

@@ -39,8 +39,9 @@ vi.mock("../ui/toast", () => ({
 }));
 vi.mock("../ProjectFavicon", () => ({ ProjectFavicon: () => null }));
 vi.mock("./ProjectActionsSettings", () => ({ ProjectActionsSettings: () => null }));
-vi.mock("./SettingsPage", () => ({
-  SettingsPage: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+vi.mock("./ProjectDefaultsSettings", () => ({ ProjectDefaultsSettings: () => null }));
+vi.mock("./settingsLayout", () => ({
+  SettingsPageContainer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SettingsSection: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
   SettingsRow: ({ control }: { control: React.ReactNode }) => <div>{control}</div>,
   SettingResetButton: () => null,

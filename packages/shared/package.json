@@ -100,10 +100,6 @@
       "types": "./src/terminalEnvironment.ts",
       "import": "./src/terminalEnvironment.ts"
     },
-    "./threadEnvMode": {
-      "types": "./src/threadEnvMode.ts",
-      "import": "./src/threadEnvMode.ts"
-    },
     "./orchestrationTiming": {
       "types": "./src/orchestrationTiming.ts",
       "import": "./src/orchestrationTiming.ts"
@@ -211,6 +207,22 @@
     "./tokenFormat": {
       "types": "./src/tokenFormat.ts",
       "import": "./src/tokenFormat.ts"
+    },
+    "./image": {
+      "types": "./src/image.ts",
+      "import": "./src/image.ts"
+    },
+    "./video": {
+      "types": "./src/video.ts",
+      "import": "./src/video.ts"
+    },
+    "./composerContextLegacy": {
+      "types": "./src/composerContextLegacy.ts",
+      "import": "./src/composerContextLegacy.ts"
+    },
+    "./composerContextLegacySend": {
+      "types": "./src/composerContextLegacySend.ts",
+      "import": "./src/composerContextLegacySend.ts"
     }
   },
   "scripts": {

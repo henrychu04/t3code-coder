@@ -1,14 +1,14 @@
 import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
 import { createFileRoute } from "@tanstack/react-router";
 
-import { SettingsPage } from "../components/settings/SettingsPage";
+import { SettingsPageContainer } from "../components/settings/settingsLayout";
 import { WorkspaceProviderSettings } from "../components/settings/WorkspaceProviderSettings";
 
 function ProviderSettingsView() {
   return (
-    <SettingsPage>
+    <SettingsPageContainer>
       <WorkspaceProviderSettings />
-    </SettingsPage>
+    </SettingsPageContainer>
   );
 }
 

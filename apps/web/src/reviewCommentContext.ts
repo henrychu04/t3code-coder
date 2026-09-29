@@ -1,6 +1,5 @@
-import { PullRequestContextMetadata } from "@t3tools/contracts";
 import type { FileDiffMetadata, SelectedLineRange, SelectionSide } from "@pierre/diffs";
-import type { PullRequestReviewPosition } from "@t3tools/contracts";
+import { PullRequestContextMetadata, type PullRequestReviewPosition } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
 const ReviewCommentSelectionSchema = Schema.Struct({
@@ -48,168 +47,6 @@ interface DiffReviewLine {
   readonly content: string;
 }
 
-export type ReviewCommentMessageSegment =
-  | {
-      readonly kind: "text";
-      readonly id: string;
-      readonly text: string;
-    }
-  | {
-      readonly kind: "review-comment";
-      readonly comment: ReviewCommentContext;
-    };
-
-const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b([^>]*)>\s*([\s\S]*?)<\/review_comment>/g;
-const REVIEW_COMMENT_ATTRIBUTE_PATTERN = /([a-zA-Z][a-zA-Z0-9_-]*)="([^"]*)"/g;
-const REVIEW_COMMENT_FENCE_PATTERN = /(`{3,})([^\s`]*)[^\n]*\n([\s\S]*?)\n\1/g;
-
-function escapeReviewCommentAttribute(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function unescapeReviewCommentAttribute(value: string): string {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&");
-}
-
-function readReviewCommentAttributes(rawAttributes: string): Record<string, string> {
-  const attributes: Record<string, string> = {};
-  for (const match of rawAttributes.matchAll(REVIEW_COMMENT_ATTRIBUTE_PATTERN)) {
-    attributes[match[1]!] = unescapeReviewCommentAttribute(match[2] ?? "");
-  }
-  return attributes;
-}
-
-function readNonNegativeInteger(value: string | undefined): number | null {
-  if (value === undefined || !/^\d+$/.test(value)) {
-    return null;
-  }
-  return Number(value);
-}
-
-function extractReviewCommentBody(rawBody: string): {
-  text: string;
-  language: string;
-  contents: string;
-} {
-  const matches = Array.from(rawBody.matchAll(REVIEW_COMMENT_FENCE_PATTERN));
-  const match = matches.at(-1);
-  const fenceIndex = match?.index;
-  return {
-    text: rawBody.slice(0, fenceIndex ?? rawBody.length).trim(),
-    language: match?.[2]?.trim() || "diff",
-    contents: match?.[3] ?? "",
-  };
-}
-
-function parseReviewCommentContext(
-  rawAttributes: string,
-  rawBody: string,
-  index: number,
-): ReviewCommentContext | null {
-  const attributes = readReviewCommentAttributes(rawAttributes);
-  const startIndex = readNonNegativeInteger(attributes.startIndex);
-  const endIndex = readNonNegativeInteger(attributes.endIndex);
-  const filePath = attributes.filePath?.trim();
-  const sectionId = attributes.sectionId?.trim();
-  if (!filePath || !sectionId || startIndex === null || endIndex === null) {
-    return null;
-  }
-  const body = extractReviewCommentBody(rawBody);
-
-  return {
-    id:
-      attributes.id || `review-comment:${index}:${sectionId}:${filePath}:${startIndex}:${endIndex}`,
-    sectionId,
-    sectionTitle: attributes.sectionTitle?.trim() || "Review",
-    filePath,
-    startIndex: Math.min(startIndex, endIndex),
-    endIndex: Math.max(startIndex, endIndex),
-    rangeLabel: attributes.rangeLabel?.trim() || "line",
-    text: body.text,
-    diff: body.contents,
-    fenceLanguage: body.language,
-    ...(attributes.pullRequest
-      ? (() => {
-          try {
-            return {
-              pullRequest: Schema.decodeSync(Schema.fromJsonString(PullRequestContextMetadata))(
-                attributes.pullRequest,
-              ),
-            };
-          } catch {
-            return {};
-          }
-        })()
-      : {}),
-    ...(attributes.selection
-      ? (() => {
-          try {
-            return {
-              selection: Schema.decodeSync(Schema.fromJsonString(ReviewCommentSelectionSchema))(
-                attributes.selection,
-              ),
-            };
-          } catch {
-            return {};
-          }
-        })()
-      : {}),
-  };
-}
-
-export function parseReviewCommentMessageSegments(
-  value: string,
-): ReadonlyArray<ReviewCommentMessageSegment> {
-  const segments: ReviewCommentMessageSegment[] = [];
-  let cursor = 0;
-  let parsedCommentIndex = 0;
-
-  for (const match of value.matchAll(REVIEW_COMMENT_BLOCK_PATTERN)) {
-    const matchIndex = match.index ?? 0;
-    const beforeText = value.slice(cursor, matchIndex);
-    if (beforeText.length > 0) {
-      segments.push({
-        kind: "text",
-        id: `review-comment-text:${cursor}`,
-        text: beforeText,
-      });
-    }
-
-    const comment = parseReviewCommentContext(match[1] ?? "", match[2] ?? "", parsedCommentIndex);
-    if (comment) {
-      segments.push({ kind: "review-comment", comment });
-      parsedCommentIndex += 1;
-    } else {
-      segments.push({
-        kind: "text",
-        id: `review-comment-invalid:${matchIndex}`,
-        text: match[0],
-      });
-    }
-
-    cursor = matchIndex + match[0].length;
-  }
-
-  const rest = value.slice(cursor);
-  if (rest.length > 0) {
-    segments.push({
-      kind: "text",
-      id: `review-comment-text:${cursor}`,
-      text: rest,
-    });
-  }
-
-  return segments;
-}
-
 export function formatReviewCommentFence(language: string, contents: string): string {
   const longestBacktickRun = Math.max(
     0,
@@ -217,54 +54,6 @@ export function formatReviewCommentFence(language: string, contents: string): st
   );
   const fence = "`".repeat(Math.max(3, longestBacktickRun + 1));
   return [`${fence}${language}`, contents.trimEnd(), fence].join("\n");
-}
-
-/**
- * Keeps a comment's own words from closing the block they travel in. The parser ends an
- * attachment at the first `</review_comment>`, so text carrying one would spill the rest of
- * itself into the prompt — and could open a forged attachment naming any file it liked. Only
- * ever the local reader's words before, but a pull request's review bodies come from whoever
- * wrote them.
- */
-function neutralizeReviewCommentTags(text: string): string {
-  return text.replace(/<(?=\/?review_comment\b)/giu, "&lt;");
-}
-
-export function formatReviewCommentContext(comment: ReviewCommentContext): string {
-  return [
-    [
-      "<review_comment",
-      ` id="${escapeReviewCommentAttribute(comment.id)}"`,
-      ...(comment.pullRequest
-        ? [` pullRequest="${escapeReviewCommentAttribute(JSON.stringify(comment.pullRequest))}"`]
-        : []),
-      ...(comment.selection
-        ? [` selection="${escapeReviewCommentAttribute(JSON.stringify(comment.selection))}"`]
-        : []),
-      ` sectionId="${escapeReviewCommentAttribute(comment.sectionId)}"`,
-      ` sectionTitle="${escapeReviewCommentAttribute(comment.sectionTitle)}"`,
-      ` filePath="${escapeReviewCommentAttribute(comment.filePath)}"`,
-      ` startIndex="${comment.startIndex}"`,
-      ` endIndex="${comment.endIndex}"`,
-      ` rangeLabel="${escapeReviewCommentAttribute(comment.rangeLabel)}"`,
-      ">",
-    ].join(""),
-    neutralizeReviewCommentTags(comment.text.trim()),
-    formatReviewCommentFence(comment.fenceLanguage ?? "diff", comment.diff),
-    "</review_comment>",
-  ].join("\n");
-}
-
-export function appendReviewCommentsToPrompt(
-  prompt: string,
-  comments: ReadonlyArray<ReviewCommentContext>,
-): string {
-  const blocks = comments.map(formatReviewCommentContext);
-  if (blocks.length === 0) return prompt;
-  const trimmedPrompt = prompt.trim();
-  return trimmedPrompt.length > 0
-    ? `${trimmedPrompt}\n\n${blocks.join("\n\n")}`
-    : blocks.join("\n\n");
 }
 
 export function buildFileReviewComment(input: {
@@ -542,6 +331,7 @@ function findDiffReviewLineIndex(
     : findOnSide(selectedSide === "left" ? "right" : "left");
 }
 
+/** Resolve the host-facing coordinates of a line selected in the diff viewer. */
 export function resolveDiffReviewPosition(
   fileDiff: FileDiffMetadata,
   lineNumber: number,
@@ -554,6 +344,7 @@ export function resolveDiffReviewPosition(
     endIndex: lineIndex,
   })[0];
   if (line === undefined) return null;
+
   switch (line.change) {
     case "add":
       return line.newLineNumber === null ? null : { kind: "added", newLine: line.newLineNumber };

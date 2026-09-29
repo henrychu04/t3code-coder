@@ -1,37 +1,41 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ComposerStashMenu } from "./ComposerStashMenu";
 
-const baseEntry = {
-  id: "entry-1",
-  createdAt: "2026-07-24T12:00:00.000Z",
-  environmentId: "env-1",
-  prompt: "Compare these screenshots",
-};
-
 describe("ComposerStashMenu", () => {
-  it("renders as an attached composer drawer with a close control", () => {
+  it("shows saved image thumbnails and incomplete image states", () => {
     const markup = renderToStaticMarkup(
       <ComposerStashMenu
-        entries={[]}
-        stashShortcutLabel={null}
-        onRestore={() => {}}
-        onDelete={() => {}}
-        onClose={() => {}}
-      />,
-    );
-
-    expect(markup).toContain('data-slot="composer-banner"');
-    expect(markup).toContain('data-composer-stash-drawer="true"');
-    expect(markup).toContain('aria-label="Close stash"');
-    expect(markup).toContain('role="list"');
-  });
-
-  it("shows the stash shortcut in the empty-state hint", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerStashMenu
-        entries={[]}
+        entries={[
+          {
+            id: "with-images",
+            createdAt: new Date(0).toISOString(),
+            prompt: "Compare these screenshots",
+            attachments: [
+              {
+                id: "image-one",
+                name: "before.png",
+                mimeType: "image/png",
+                sizeBytes: 128,
+                dataUrl: "data:image/png;base64,AA==",
+              },
+            ],
+            droppedImageNames: ["after.png"],
+            unreadableImageNames: [],
+            pendingImageCount: 0,
+          },
+          {
+            id: "saving-images",
+            createdAt: new Date(0).toISOString(),
+            prompt: "Save this image",
+            attachments: [],
+            droppedImageNames: [],
+            unreadableImageNames: [],
+            pendingImageCount: 1,
+          },
+        ]}
         stashShortcutLabel="Ctrl+S"
         onRestore={() => {}}
         onDelete={() => {}}
@@ -39,13 +43,41 @@ describe("ComposerStashMenu", () => {
       />,
     );
 
-    expect(markup).toContain("Press Ctrl+S with a prompt in the composer to stash it.");
+    expect(markup).toContain('src="data:image/png;base64,AA=="');
+    expect(markup).toContain("1 image dropped");
+    expect(markup).toContain("saving 1 image");
   });
 
-  it("lists stashed prompts with a snippet and a delete control", () => {
+  it("labels mixed file and image stashes without treating images as files", () => {
     const markup = renderToStaticMarkup(
       <ComposerStashMenu
-        entries={[baseEntry]}
+        entries={[
+          {
+            id: "mixed-attachments",
+            createdAt: new Date(0).toISOString(),
+            prompt: "",
+            attachments: [
+              {
+                id: "image-one",
+                name: "before.png",
+                mimeType: "image/png",
+                sizeBytes: 128,
+                dataUrl: "data:image/png;base64,AA==",
+              },
+            ],
+            files: [
+              {
+                id: "file-one",
+                name: "report.pdf",
+                mimeType: "application/pdf",
+                sizeBytes: 42,
+                attachmentId: "pending-report-pdf",
+                environmentId: EnvironmentId.make("environment-1"),
+              },
+            ],
+            droppedImageNames: [],
+          },
+        ]}
         stashShortcutLabel={null}
         onRestore={() => {}}
         onDelete={() => {}}
@@ -53,25 +85,7 @@ describe("ComposerStashMenu", () => {
       />,
     );
 
-    expect(markup).toContain("Compare these screenshots");
-    expect(markup).toContain('aria-label="Delete stashed prompt"');
-    expect(markup).toContain('data-stash-restore="entry-1"');
-    expect(markup).toContain('aria-label="Restore stashed prompt: Compare these screenshots"');
-    expect(markup).toContain('dateTime="2026-07-24T12:00:00.000Z"');
-  });
-
-  it("truncates long prompts to the snippet limit", () => {
-    const markup = renderToStaticMarkup(
-      <ComposerStashMenu
-        entries={[{ ...baseEntry, prompt: "x".repeat(200) }]}
-        stashShortcutLabel={null}
-        onRestore={() => {}}
-        onDelete={() => {}}
-        onClose={() => {}}
-      />,
-    );
-
-    expect(markup).toContain("x".repeat(90));
-    expect(markup).not.toContain("x".repeat(91));
+    expect(markup).toContain("(2 attachments)");
+    expect(markup).not.toContain("(2 files)");
   });
 });

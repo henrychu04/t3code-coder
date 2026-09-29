@@ -4,13 +4,13 @@ import type {
   PullRequestDetailView,
   PullRequestRef,
   PullRequestReviewThread,
+  ScopedThreadRef,
 } from "@t3tools/contracts";
 import {
   ArrowDownUpIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   HammerIcon,
-  PencilIcon,
   TagIcon,
   UsersIcon,
 } from "lucide-react";
@@ -19,22 +19,25 @@ import { useRef, useState, type ReactNode } from "react";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { pullRequestEnvironment } from "~/state/pullRequests";
 import { cn } from "~/lib/utils";
-import { readLocalApi } from "~/localApi";
+import { useOpenLink } from "~/browser/useOpenLink";
 import { formatRelativeTimeLabel } from "~/timestampFormat";
 
 import { Button } from "../ui/button";
+import { PullRequestEditButton } from "./PullRequestEditButton";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   PullRequestActorLabel,
   PullRequestCheckStatusIcon,
-  PullRequestReviewOutcomeBadge,
   pullRequestCheckStatusLabel,
+  PullRequestLabelChip,
+  PullRequestReviewOutcomeBadge,
   pullRequestReviewOutcomeLabel,
   pullRequestReviewOutcomeRingClassName,
   pullRequestReviewOutcomeStaleLabel,
 } from "./pullRequestPresentation";
+import { PullRequestLabelPicker } from "./PullRequestLabelPicker";
 import { PullRequestReviewerPicker } from "./PullRequestReviewerPicker";
 import { PullRequestActivityUnavailableState } from "./PullRequestActivityUnavailableState";
 import {
@@ -54,7 +57,6 @@ import { PullRequestCommentBody } from "./PullRequestCommentBody";
 import { PullRequestMarkdownEditor } from "./PullRequestMarkdownEditor";
 import { PullRequestReactionBar } from "./PullRequestReactions";
 import { PullRequestConversationGhost } from "./PullRequestGhosts";
-import { pullRequestLabelColor } from "./pullRequestList.logic";
 import { sectionCollapseAnchorScrollTop } from "./pullRequestSummaryScroll.logic";
 
 /** One reviewer, however a host happens to have cased their login this time. */
@@ -76,11 +78,7 @@ function CommentIdentity({
       : null;
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-      <PullRequestActorLabel
-        actor={actor}
-        profileUrl={profileUrl}
-        className="max-w-full font-medium text-foreground [&>img]:size-6 [&>span:first-child]:size-6"
-      />
+      <PullRequestActorLabel actor={actor} profileUrl={profileUrl} className="max-w-full" />
       <Tooltip>
         <TooltipTrigger
           render={
@@ -137,8 +135,8 @@ function reviewStateLabel(state: string): string {
 /** What every remark in the conversation needs to be rewritten where it sits. */
 interface CommentEditing {
   readonly cwd: string;
-  readonly hostUrl: string;
   readonly environmentId: EnvironmentId;
+  readonly threadRef: ScopedThreadRef | null;
   readonly canEdit: (comment: PullRequestComment) => boolean;
   readonly editingId: string | null;
   readonly saving: boolean;
@@ -164,9 +162,9 @@ function CommentBody({
       <PullRequestMarkdownEditor
         className={className}
         value={comment.body}
-        hostUrl={editing.hostUrl}
         cwd={editing.cwd}
         environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
         label="Edit comment"
         saving={editing.saving}
         onSave={(body) => editing.onSave(comment, body)}
@@ -180,20 +178,12 @@ function CommentBody({
         key={comment.id}
         className="min-w-0 flex-1"
         text={comment.body}
-        hostUrl={editing.hostUrl}
         cwd={editing.cwd}
         environmentId={editing.environmentId}
+        threadRef={editing.threadRef}
       />
       {editing.canEdit(comment) ? (
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
-          aria-label="Edit comment"
-          onClick={() => editing.onEdit(comment)}
-        >
-          <PencilIcon className="size-3" />
-        </Button>
+        <PullRequestEditButton aria-label="Edit comment" onClick={() => editing.onEdit(comment)} />
       ) : null}
     </div>
   );
@@ -281,7 +271,7 @@ function MetaRow({
   children: ReactNode;
 }) {
   return (
-    <div className="grid min-w-0 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 text-xs">
+    <div className="grid min-h-7 min-w-0 grid-cols-[6rem_minmax(0,1fr)] items-center gap-2 text-xs sm:min-h-6">
       <span className="flex items-center gap-1.5 text-muted-foreground">
         {icon}
         {label}
@@ -384,74 +374,77 @@ function CommentGroup({
     null,
   );
   return (
-    <Collapsible
-      className="overflow-hidden rounded-lg border border-border/70 bg-muted/20"
-      onOpenChange={onOpenChange}
-    >
-      <div className="flex items-center gap-3 pl-3">
-        <div className="flex shrink-0 -space-x-1.5">
-          {authors.slice(0, 3).map((actor) => (
-            <PullRequestActorLabel
-              key={actor?.login ?? "ghost"}
-              actor={actor}
-              profileUrl={
-                detail.provider === "github" && actor
-                  ? new URL(
-                      actor.isBot || actor.login.endsWith("[bot]")
-                        ? `/apps/${encodeURIComponent(actor.login.replace(/\[bot\]$/, ""))}`
-                        : `/${encodeURIComponent(actor.login)}`,
-                      detail.url,
-                    ).toString()
-                  : null
-              }
-              labelClassName="sr-only"
-              className="relative rounded-full bg-background ring-2 ring-background hover:z-10 focus-visible:z-10 [&>img]:size-6 [&>span:first-child]:size-6"
-            />
-          ))}
-          {authors.length > 3 ? (
-            <span className="relative flex size-6 items-center justify-center rounded-full bg-muted text-[10px] text-muted-foreground ring-2 ring-background">
-              +{authors.length - 3}
-            </span>
-          ) : null}
-        </div>
-        <CollapsibleTrigger
-          aria-label={label}
-          className="group flex min-w-0 flex-1 items-center gap-3 rounded-md py-3 pr-3 text-left hover:bg-muted/30"
-        >
-          <span className="min-w-0 flex-1 space-y-1">
-            <span className="block text-xs font-medium text-foreground/90">{label}</span>
-            <span className="flex flex-wrap gap-x-1.5 text-[11px] text-muted-foreground">
-              <span>
-                {authors.length} {authors.length === 1 ? "author" : "authors"}
+    <div className="overflow-hidden rounded-lg border border-border bg-background">
+      <Collapsible onOpenChange={onOpenChange}>
+        <div className="flex items-center gap-3 pl-3">
+          <div className="flex shrink-0 -space-x-1.5">
+            {authors.slice(0, 3).map((actor) => (
+              // The ring separates the overlapping faces; it belongs to the stack, not the actor.
+              <span
+                key={actor?.login ?? "ghost"}
+                className="relative flex rounded-full ring-2 ring-background hover:z-10 focus-within:z-10"
+              >
+                <PullRequestActorLabel
+                  actor={actor}
+                  profileUrl={
+                    detail.provider === "github" && actor
+                      ? new URL(
+                          actor.isBot || actor.login.endsWith("[bot]")
+                            ? `/apps/${encodeURIComponent(actor.login.replace(/\[bot\]$/, ""))}`
+                            : `/${encodeURIComponent(actor.login)}`,
+                          detail.url,
+                        ).toString()
+                      : null
+                  }
+                  variant="avatar"
+                />
               </span>
-              {fileCount > 0 ? (
+            ))}
+            {authors.length > 3 ? (
+              <span className="relative flex size-6 items-center justify-center rounded-full bg-muted text-[10px] text-muted-foreground ring-2 ring-background">
+                +{authors.length - 3}
+              </span>
+            ) : null}
+          </div>
+          <CollapsibleTrigger
+            aria-label={label}
+            className="group flex min-w-0 flex-1 items-center gap-3 rounded-md py-3 pr-3 text-left hover:bg-muted/30"
+          >
+            <span className="min-w-0 flex-1 space-y-1">
+              <span className="block text-xs font-medium text-foreground/90">{label}</span>
+              <span className="flex flex-wrap gap-x-1.5 text-[11px] text-muted-foreground">
                 <span>
-                  · {fileCount} {fileCount === 1 ? "file" : "files"}
+                  {authors.length} {authors.length === 1 ? "author" : "authors"}
                 </span>
-              ) : null}
-              {latest ? (
-                <span>
-                  · Latest{" "}
-                  <Tooltip>
-                    <TooltipTrigger render={<time dateTime={latest} />}>
-                      {formatRelativeTimeLabel(latest)}
-                    </TooltipTrigger>
-                    <TooltipPopup>{new Date(latest).toLocaleString()}</TooltipPopup>
-                  </Tooltip>
-                </span>
-              ) : null}
+                {fileCount > 0 ? (
+                  <span>
+                    · {fileCount} {fileCount === 1 ? "file" : "files"}
+                  </span>
+                ) : null}
+                {latest ? (
+                  <span>
+                    · Latest{" "}
+                    <Tooltip>
+                      <TooltipTrigger render={<time dateTime={latest} />}>
+                        {formatRelativeTimeLabel(latest)}
+                      </TooltipTrigger>
+                      <TooltipPopup>{new Date(latest).toLocaleString()}</TooltipPopup>
+                    </Tooltip>
+                  </span>
+                ) : null}
+              </span>
             </span>
-          </span>
-          <ChevronRightIcon
-            aria-hidden
-            className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90"
-          />
-        </CollapsibleTrigger>
-      </div>
-      <CollapsiblePanel keepMounted>
-        <div className="border-t border-border/60 px-3 pb-3">{children}</div>
-      </CollapsiblePanel>
-    </Collapsible>
+            <ChevronRightIcon
+              aria-hidden
+              className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90"
+            />
+          </CollapsibleTrigger>
+        </div>
+        <CollapsiblePanel keepMounted>
+          <div className="border-t border-border/60 px-3 pb-3">{children}</div>
+        </CollapsiblePanel>
+      </Collapsible>
+    </div>
   );
 }
 
@@ -463,20 +456,25 @@ const COMMENT_PAGE = 10;
 
 export function PullRequestSummaryTab({
   environmentId,
+  threadRef,
   reference,
   detail,
   activityPending,
+  checksStale = false,
   activityError,
   pendingFinding,
   fixFindingLabel = "Fix in a thread",
   fixCheckLabel = "Fix",
   onFixFinding,
   onRefresh,
+  onRefreshChecks = onRefresh,
 }: {
   environmentId: EnvironmentId;
+  threadRef: ScopedThreadRef | null;
   reference: PullRequestRef;
   detail: PullRequestDetailView;
   activityPending: boolean;
+  checksStale?: boolean;
   activityError: string | null;
   /** The hand-off currently preparing, if any, so only the finding it belongs to says so. */
   pendingFinding?: string | null;
@@ -484,6 +482,7 @@ export function PullRequestSummaryTab({
   fixCheckLabel?: string;
   onFixFinding?: (finding: PullRequestFinding) => void;
   onRefresh: () => void;
+  onRefreshChecks?: () => void;
 }) {
   // Keyed by the pull request, so opening another one starts at the end of its conversation
   // rather than wherever the last one had been read back to.
@@ -568,8 +567,12 @@ export function PullRequestSummaryTab({
       })),
   ];
 
+  const openLink = useOpenLink(threadRef);
   const openCheck = (url: string) => {
-    void readLocalApi()?.shell.openExternal(url);
+    void openLink(url).catch((error: unknown) => {
+      console.error(error);
+      toastManager.add({ type: "error", title: "Unable to open check details" });
+    });
   };
 
   const update = useAtomCommand(pullRequestEnvironment.update, { reportFailure: false });
@@ -606,8 +609,8 @@ export function PullRequestSummaryTab({
 
   const commentEditing: CommentEditing = {
     cwd: detail.workspaceRoot,
-    hostUrl: detail.url,
     environmentId,
+    threadRef,
     canEdit: (comment) => canEditPullRequestComment(detail, comment),
     editingId: editingCommentId,
     saving: commentSaving,
@@ -749,14 +752,7 @@ export function PullRequestSummaryTab({
                           <PullRequestActorLabel
                             actor={entry.actor}
                             tooltip={false}
-                            className={cn(
-                              "gap-0 [&>span:last-child]:sr-only",
-                              // Only where the wrapper is not already drawing one, or the opaque
-                              // separator would cover the verdict in the band they share.
-                              entry.outcome
-                                ? undefined
-                                : "[&>img]:ring-2 [&>img]:ring-background [&>span:first-child]:ring-2 [&>span:first-child]:ring-background",
-                            )}
+                            variant="avatar"
                           />
                           {/* Colour alone says nothing to a reader who cannot see it, and the
                               login beside this is already in the accessible name. */}
@@ -797,25 +793,30 @@ export function PullRequestSummaryTab({
               ) : null}
             </span>
           </MetaRow>
-          {detail.labels.length > 0 ? (
+          {/* The row is shown empty only where a label could be put on it from here; on a host
+              with none to offer, an empty row is a row about nothing. */}
+          {detail.labels.length > 0 || detail.capabilities.labels === true ? (
             <MetaRow icon={<TagIcon className="size-3.5" />} label="Labels">
               <span className="flex min-w-0 flex-wrap items-center gap-1">
-                {detail.labels.map((label) => {
-                  const dot = pullRequestLabelColor(label.color);
-                  return (
-                    <span
+                {detail.labels.length === 0 ? (
+                  <span className="text-muted-foreground">None</span>
+                ) : (
+                  detail.labels.map((label) => (
+                    <PullRequestLabelChip
                       key={label.name}
-                      className="inline-flex max-w-48 items-center gap-1.5 rounded-full border border-border/70 bg-muted/40 py-0.5 pl-1.5 pr-2 text-xs"
-                    >
-                      <span
-                        aria-hidden
-                        className="size-2 shrink-0 rounded-full bg-muted-foreground"
-                        {...(dot ? { style: { backgroundColor: dot } } : {})}
-                      />
-                      <span className="truncate">{label.name}</span>
-                    </span>
-                  );
-                })}
+                      label={label}
+                      size="default"
+                      className="max-w-48"
+                    />
+                  ))
+                )}
+                {detail.capabilities.labels === true ? (
+                  <PullRequestLabelPicker
+                    environmentId={environmentId}
+                    reference={reference}
+                    allowed={detail.viewerPermissions.labels !== false}
+                  />
+                ) : null}
               </span>
             </MetaRow>
           ) : null}
@@ -829,11 +830,11 @@ export function PullRequestSummaryTab({
               // Empty is a real answer here: saving nothing is how a description is cleared.
               allowEmpty
               value={detail.body}
-              hostUrl={detail.url}
               cwd={detail.workspaceRoot}
               environmentId={environmentId}
-              label="Pull request description"
-              placeholder="Describe this pull request"
+              threadRef={threadRef}
+              label="Merge request description"
+              placeholder="Describe this merge request"
               saving={bodySaving}
               onSave={(body) => void saveBody(body)}
               onCancel={() => setBodyScope(null)}
@@ -843,20 +844,15 @@ export function PullRequestSummaryTab({
               <PullRequestMarkdown
                 className="min-w-0 flex-1"
                 text={detail.body.trim().length > 0 ? detail.body : "_No description provided._"}
-                hostUrl={detail.url}
                 cwd={detail.workspaceRoot}
                 environmentId={environmentId}
+                threadRef={threadRef}
               />
               {canEditPullRequestChangeRequest(detail) ? (
-                <Button
-                  size="icon-xs"
-                  variant="ghost"
-                  className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"
+                <PullRequestEditButton
                   aria-label="Edit description"
                   onClick={() => setBodyScope(detail.url)}
-                >
-                  <PencilIcon className="size-3" />
-                </Button>
+                />
               ) : null}
             </div>
           )}
@@ -864,7 +860,14 @@ export function PullRequestSummaryTab({
       </Section>
 
       <Section key={`checks:${detail.url}`} title="Checks" defaultOpen={false}>
-        {detail.checks.length === 0 ? (
+        {checksStale ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>Check details are out of date.</span>
+            <Button size="xs" variant="ghost" onClick={onRefreshChecks}>
+              Refresh
+            </Button>
+          </div>
+        ) : detail.checks.length === 0 ? (
           <p className="text-xs text-muted-foreground">No checks reported.</p>
         ) : (
           detail.checks.map((check, index) => {
@@ -889,7 +892,7 @@ export function PullRequestSummaryTab({
                   <PullRequestCheckStatusIcon status={check.status} />
                   <span className="min-w-0 flex-1 wrap-anywhere">{check.name}</span>
                   <span className="shrink-0 text-muted-foreground">
-                    {pullRequestCheckStatusLabel(check.status)}
+                    {pullRequestCheckStatusLabel(check)}
                   </span>
                 </button>
                 {/* Only where there is something to fix. A passing check has no failure to
@@ -919,8 +922,8 @@ export function PullRequestSummaryTab({
         actions={
           <Button
             size="xs"
-            variant="ghost"
-            className="h-7 shrink-0 px-2 text-[10px] text-muted-foreground"
+            variant="ghost-muted"
+            className="shrink-0"
             aria-label={
               commentOrder === "newest"
                 ? "Show oldest comments first"
