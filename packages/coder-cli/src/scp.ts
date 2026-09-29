@@ -17,6 +17,7 @@ import {
 } from "./command.ts";
 import {
   normalizeCoderWorkspaceProfile,
+  normalizeCoderDeploymentProfile,
   type CoderDeploymentProfile,
   type CoderWorkspaceProfile,
 } from "./profile.ts";
@@ -68,6 +69,7 @@ export function runProcess(
               shell: false,
               stdio: ["ignore", "pipe", "pipe"],
               windowsHide: true,
+              ...(invocation.env ? { env: { ...process.env, ...invocation.env } } : {}),
             });
             child.stdout.on("data", (chunk: Buffer) => {
               stdout = appendOutput(stdout, chunk);
@@ -268,15 +270,20 @@ function copyWithCoderScp(input: {
     ...(input.invocationOptions ? { invocationOptions: input.invocationOptions } : {}),
     action: ({ path, host }) =>
       runProcess(
-        buildCoderScpInvocation({
-          platform: input.platform ?? process.platform,
-          sshConfigPath: path,
-          localPath: input.localPath,
-          sshHost: host,
-          remotePath: input.remotePath,
-          ...(input.recursive ? { recursive: true } : {}),
-          ...(input.scpExecutable ? { scpExecutable: input.scpExecutable } : {}),
-        }),
+        {
+          ...buildCoderScpInvocation({
+            platform: input.platform ?? process.platform,
+            sshConfigPath: path,
+            localPath: input.localPath,
+            sshHost: host,
+            remotePath: input.remotePath,
+            ...(input.recursive ? { recursive: true } : {}),
+            ...(input.scpExecutable ? { scpExecutable: input.scpExecutable } : {}),
+          }),
+          // config-ssh omits --url from its ProxyCommand. Override the CLI's saved URL
+          // through the environment inherited by the foreground Coder proxy process.
+          env: { CODER_URL: normalizeCoderDeploymentProfile(input.deployment).url },
+        },
         "Coder SCP transfer",
         DEFAULT_SCP_TIMEOUT_MS,
       ),
