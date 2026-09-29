@@ -462,6 +462,37 @@ stream prevents stale changes from overwriting a reconnect snapshot. Only decode
 travels over the existing server-config stdio stream. It introduces no listener, general file API,
 local file transfer, credential handling, or telemetry.
 
+## Upstream seams
+
+Shared product subsystems are upstream's code with the Coder deltas below layered on top. When
+syncing, take upstream's version of these files and reapply only these seams; a difference not
+listed here is drift to remove rather than fork behavior to keep.
+
+- **Transport.** The browser reaches the helper through the gateway's stdio bridge. Upstream's
+  environment HTTP loaders, relay, pairing, and account routing are absent. Coder adds
+  `orchestration.getThreadSnapshot` and cursor-only shell watermarks (see
+  [Runtime boundary](#runtime-boundary)).
+- **Runtime modes.** New threads default to `approval-required` rather than upstream's
+  `full-access`. Until a provider reports its supported modes, the composer and the Codex adapter
+  offer only the safe modes.
+- **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
+  work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
+  and remote icons. Images move through the gateway and SCP (see
+  [Network and transfer constraints](#network-and-transfer-constraints)).
+- **Markdown.** Upstream's file links and chips. External links stay inert except GitLab hosts,
+  and external images never load.
+- **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
+  come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
+  `!` references and GitLab wording are used.
+- **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
+  GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
+  pairing, or `keybindings.json` editor.
+- **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last
+  project grouping mode stay in memory where upstream uses browser storage. Composer drafts and
+  the prompt stash keep text in browser storage but never image bytes.
+- **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
+  export, the diagnostics page, usage dashboards, and hosted providers other than GitLab.
+
 ## Distribution
 
 `npm start` builds the web client and a Linux x86-64 helper bundle from the checked-out source and
