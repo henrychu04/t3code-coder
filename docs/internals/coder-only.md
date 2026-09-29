@@ -426,6 +426,16 @@ selected". Links the panels open go to the system browser through the validated 
 references, render uploads as inert attachment rows, and resolve `/uploads/` links against the
 repository host.
 
+Settings use upstream's layout, sidebar navigation, search catalog, and scope picker with these
+seams. The Integrations and SnapShot categories, desktop update and quit rows, the diagnostics row,
+browser and hosted-pairing settings, and the `keybindings.json` editor do not exist; keybinding
+changes are made in the table. Connections holds the Coder deployments, workspaces, workspace icon,
+and TCP/UDP port forwards instead of upstream's pairing and network access. Providers keeps the
+workspace provider settings, which accept no credentials. Source Control appends GitLab
+workspace status and the write-policy probe. Background activity keeps the fork's Git fetch and
+provider health presets under General. The last project grouping mode is remembered in memory for
+the page session rather than in browser storage.
+
 Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
 of emoji text. Choices persist on workspace-owned project records and travel through the existing
 project metadata command/event stream over helper stdio. SQLite migration 052 adds the nullable

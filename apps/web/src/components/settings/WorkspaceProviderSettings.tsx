@@ -21,7 +21,7 @@ import { ScrollArea } from "../ui/scroll-area";
 import { Switch } from "../ui/switch";
 import { DraftInput } from "../ui/draft-input";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
-import { SettingResetButton, SettingsRow, SettingsSection } from "./SettingsPage";
+import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { ProviderModelsSection } from "./ProviderModelsSection";
 import { ProviderSettingsForm, readProviderConfigString } from "./ProviderSettingsForm";
 import { PROVIDER_CLIENT_DEFINITIONS, type ProviderClientDefinition } from "./providerDriverMeta";
@@ -513,7 +513,7 @@ function WorkspaceProviderSettingsForEnvironment(props: {
 
 export function WorkspaceProviderSettings() {
   return (
-    <SettingsSection title="Providers" unframed>
+    <SettingsSection title="Providers" variant="plain">
       <WorkspaceSettingsTarget ariaLabel="Provider settings workspace">
         {(environment) => (
           <WorkspaceProviderSettingsForEnvironment

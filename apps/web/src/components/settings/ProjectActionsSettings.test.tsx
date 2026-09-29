@@ -44,7 +44,7 @@ vi.mock("../projectScriptEditor", () => ({
   EMPTY_PROJECT_SCRIPT_INPUT: {},
   ProjectScriptEditorDialog: () => null,
 }));
-vi.mock("./SettingsPage", () => ({
+vi.mock("./settingsLayout", () => ({
   SettingsSection: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SettingsRow: ({ control, title }: { control: React.ReactNode; title: string }) => (
     <div>

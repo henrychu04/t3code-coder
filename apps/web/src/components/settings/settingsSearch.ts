@@ -1,21 +1,31 @@
-import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { KEYBINDING_ACTIONS } from "~/keybindingCatalog";
+import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
+import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@t3tools/contracts";
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import type { ResolvedSettingsScope } from "./settingsScope";
-import { validateSettingsScopeSearch, type SettingsScopeSearch } from "./settingsScope";
-export type CoderSettingsPath =
-  | "/settings/storage"
-  | "/settings/projects"
-  | "/settings/providers"
-  | "/settings/preferences"
-  | "/settings/appearance"
-  | "/settings/shortcuts"
-  | "/settings/general"
-  | "/settings/source-control"
-  | "/settings/archived"
-  | "/settings/open-source-licenses";
+import { DEFAULT_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { commandLabel } from "./KeybindingsSettings.logic";
+import {
+  validateSettingsScopeSearch,
+  type ResolvedSettingsScope,
+  type SettingsScopeSearch,
+} from "./settingsScope";
 
+export type SettingsPath =
+  | "/settings/projects"
+  | "/settings/general"
+  | "/settings/appearance"
+  | "/settings/keybindings"
+  | "/settings/providers"
+  | "/settings/source-control"
+  | "/settings/storage"
+  | "/settings/connections"
+  | "/settings/archived";
+
+/**
+ * Where a setting can be edited. Device-local rows have no scope: they render
+ * at every selection. `project-defaults` rows accept project overrides, so
+ * they are reachable from any server-backed selection.
+ */
 export type SettingsSearchScope =
   | "environment"
   | "environment-defaults"
@@ -23,249 +33,546 @@ export type SettingsSearchScope =
   | "project"
   | "checkout"
   | "connections";
+
 export interface SettingsSearchItem {
-  readonly scope?: SettingsSearchScope;
-  readonly environmentOnly?: boolean;
   readonly id: string;
   readonly title: string;
-  readonly to: CoderSettingsPath;
-  readonly section: string;
-  readonly searchTerms: ReadonlyArray<string>;
+  readonly to: SettingsPath;
   readonly targetId?: string;
-  /** Command shortcuts sort below the settings they control. */
+  /** Descriptions, option labels, and aliases people may remember instead of the title. */
+  readonly searchTerms?: ReadonlyArray<string>;
+  readonly scope?: SettingsSearchScope;
+  // Its row only renders in the desktop app, so a browser result would land on
+  // an anchor that isn't there.
+  readonly desktopOnly?: boolean;
+  readonly macOnly?: boolean;
+  // Its row only renders on Windows desktop, so other desktop platforms must
+  // not expose a result that points to a missing anchor.
+  readonly windowsOnly?: boolean;
+  readonly cloudOnly?: boolean;
+  readonly environmentOnly?: boolean;
+  readonly providerSettingsOnly?: boolean;
+  readonly localBackendManagementOnly?: boolean;
+  readonly localEnvironmentOnly?: boolean;
+  readonly wslAvailableOnly?: boolean;
+  /**
+   * Sorts after every other match. Keybinding commands mirror rows on other
+   * surfaces, so "model" must still lead with Default model, not Model Picker.
+   */
   readonly secondary?: boolean;
   readonly requiresThreadAutoSettlement?: boolean;
 }
 
-/** Coder-only settings destinations, including individual source-control controls. */
-export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
-  ...KEYBINDING_ACTIONS.toSorted((left, right) => left.label.localeCompare(right.label)).map(
-    (action): SettingsSearchItem => ({
-      id: `keybinding-${action.command}`,
-      title: action.label,
-      to: "/settings/shortcuts",
-      section: "Keyboard shortcuts",
-      scope: "environment-defaults",
-      searchTerms: [
-        action.command,
-        ...DEFAULT_KEYBINDINGS.filter((binding) => binding.command === action.command).map(
-          (binding) => binding.key,
-        ),
-      ],
-      secondary: true,
-    }),
-  ),
+export interface SettingsSearchAvailability {
+  readonly localEnvironmentDisabled?: boolean;
+  readonly hasCloudPublicConfig: boolean;
+  readonly hasEnvironment: boolean;
+  readonly hasProviderSettingsEnvironment: boolean;
+  readonly canManageLocalBackend: boolean;
+  readonly isWslSettingsRowVisible: boolean;
+  readonly hasThreadAutoSettlement: boolean;
+}
+
+/**
+ * Section labels in sidebar order. The sidebar nav and the search-result
+ * subtitles both render from this record, so each label exists once.
+ */
+export const SETTINGS_SECTION_LABELS: Readonly<Record<SettingsPath, string>> = {
+  "/settings/projects": "Project",
+  "/settings/general": "General",
+  "/settings/appearance": "Appearance",
+  "/settings/keybindings": "Keybindings",
+  "/settings/providers": "Providers",
+  "/settings/source-control": "Source Control",
+  "/settings/storage": "Storage",
+  "/settings/connections": "Connections",
+  "/settings/archived": "Archive",
+};
+
+/** Anchor id of the first row bound to `command` on the Keybindings page. */
+export function keybindingSearchAnchorId<Command extends KeybindingCommand>(command: Command) {
+  return `keybinding-${command}` as const;
+}
+
+/**
+ * One result per built-in command, alphabetical by label. The anchor is
+ * the command's first row; default keys are searchable so "mod+b" lands on
+ * Sidebar: Toggle. A command with no default binding may have no row, so it
+ * points at the section instead.
+ */
+const KEYBINDING_SEARCH_ITEMS = STATIC_KEYBINDING_COMMANDS.toSorted((left, right) =>
+  commandLabel(left).localeCompare(commandLabel(right)),
+).map((command) => {
+  const defaultKeys = DEFAULT_KEYBINDINGS.filter((binding) => binding.command === command).map(
+    (binding) => binding.key,
+  );
+  return {
+    id: keybindingSearchAnchorId(command),
+    title: commandLabel(command),
+    to: "/settings/keybindings" as const,
+    searchTerms: [command, ...defaultKeys],
+    secondary: true,
+    ...(defaultKeys.length === 0 ? { targetId: "keybindings" } : {}),
+  };
+});
+
+/**
+ * Searchable settings and stable destinations, in result order. Rows with a
+ * dedicated anchor render their id and title via `searchableSetting`; items
+ * that may not be mounted point at their nearest stable section instead.
+ */
+export const SETTINGS_SEARCH_ITEMS = [
   {
-    id: "storage-cleanup",
-    title: "Storage cleanup",
+    id: "storage-worktrees",
+    title: "Worktree cleanup",
     to: "/settings/storage",
-    section: "Storage",
-    searchTerms: ["worktrees artifacts retention logs cleanup"],
+    scope: "project-defaults",
+    searchTerms: [
+      "disk storage delete deleted archived threads old inactive merged unchanged worktrees retention days project inherit off custom",
+    ],
   },
   {
-    id: "plan-mode",
-    title: "Plan mode",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["Build Plan shift tab workflow"],
-  },
-  {
-    id: "context-window-indicator",
-    title: "Context window indicator",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["tokens composer meter usage"],
-  },
-  {
-    id: "add-project-starts-in",
-    title: "Add project starts in",
+    id: "storage-artifacts",
+    title: "Artifacts and logs",
+    to: "/settings/storage",
     scope: "environment-defaults",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["folder directory home"],
+    searchTerms: ["disk storage browser screenshots captures rotated logs cleanup retention"],
   },
   {
-    id: "environment-icon",
-    title: "Workspace icon",
-    scope: "environment-defaults",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["machine cloud identity"],
+    id: "project-defaults",
+    title: "Project defaults and overrides",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["model workspace environments projects inheritance checkout"],
   },
   {
-    id: "background-activity",
-    title: "Background activity",
-    scope: "environment-defaults",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["scheduling profile balanced performance battery saver git polling"],
-  },
-  {
-    id: "provider-health-check-interval",
-    title: "Provider health check interval",
-    scope: "environment-defaults",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["poll refresh seconds"],
-  },
-  {
-    id: "continue-threads-after-server-update",
-    title: "Continue threads after restarts",
-    scope: "environment-defaults",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["recovery resume crash helper"],
-  },
-  {
-    id: "thread-notifications",
-    title: "System notifications",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["sound alerts browser permissions"],
-  },
-  {
-    id: "default-project-actions",
-    scope: "environment-defaults",
-    title: "Default actions",
-    to: "/settings/preferences",
-    section: "General",
-    searchTerms: ["workspace default scripts commands inherited actions"],
-  },
-  {
-    id: "custom-themes",
-    title: "Create and edit custom themes",
-    to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["colors palette accent canvas custom theme"],
-  },
-  {
-    id: "projects",
-    scope: "project",
-    targetId: "project-overview",
-    title: "Projects and actions",
+    id: "project-overview",
+    title: "Project overview",
     to: "/settings/projects",
-    section: "Projects",
-    searchTerms: ["name rename scripts commands checkouts remove"],
-  },
-  {
-    id: "providers",
-    scope: "environment",
-    environmentOnly: true,
-    title: "Provider configuration and models",
-    to: "/settings/providers",
-    section: "Providers",
-    searchTerms: ["codex claude api models authentication"],
+    searchTerms: ["name icon emoji image checkout remove delete"],
   },
   {
     id: "default-model",
-    scope: "project-defaults",
     title: "Default model",
-    to: "/settings/preferences",
-    section: "New threads",
-    searchTerms: ["new thread model inherit"],
-  },
-  {
-    id: "automatic-pull",
+    to: "/settings/general",
     scope: "project-defaults",
-    title: "Automatically pull",
-    to: "/settings/source-control",
-    section: "Repositories",
-    searchTerms: ["default branch clean checkout fast forward"],
-  },
-
-  {
-    id: "notifications",
-    title: "Thread notifications and sounds",
-    to: "/settings/preferences",
-    section: "Notifications",
-    targetId: "notifications",
-    searchTerms: ["alert sound badge completed input approval"],
+    searchTerms: ["new thread project provider reasoning effort"],
   },
   {
-    id: "open-source-licenses",
-    title: "Open source licenses",
-    to: "/settings/open-source-licenses",
-    section: "About",
-    searchTerms: ["third party notices attribution dependencies"],
+    id: "default-permissions",
+    title: "Permissions",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: [
+      "new thread default runtime mode supervised approvals auto accept edits full access",
+    ],
   },
   {
-    id: "restore-client-defaults",
-    title: "Restore browser preferences",
-    to: "/settings/preferences",
-    section: "Defaults",
-    searchTerms: ["reset appearance interface"],
-  },
-  {
-    id: "restore-workspace-defaults",
-    scope: "environment-defaults",
-    title: "Restore workspace preferences",
-    to: "/settings/preferences",
-    section: "Defaults",
-    searchTerms: ["reset general source control"],
-  },
-  {
-    id: "skills-in-slash-menu",
-    title: "Skills in slash menu",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["slash commands dollar skills picker"],
-  },
-  {
-    id: "panel-animations",
-    title: "Panel animations",
+    id: "color-scheme",
+    title: "Color scheme",
     to: "/settings/appearance",
-    section: "Motion",
-    searchTerms: ["duration transition reduced motion"],
+    searchTerms: ["appearance light dark system mode"],
+    // The scheme tiles sit at the top of the Appearance section.
+    targetId: "appearance",
   },
   {
     id: "theme",
     title: "Themes",
     to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["bundled palette light dark variants"],
-  },
-
-  {
-    id: "git-fetch-interval",
-    scope: "environment-defaults",
-    title: "Git fetch interval",
-    to: "/settings/source-control",
-    section: "GitLab source control",
-    searchTerms: ["automatic remote branch merge request refresh background seconds off"],
+    searchTerms: ["appearance colors palette custom import"],
+    // Theme cards live directly under the scheme tiles; the section is the
+    // stable scroll destination for both.
+    targetId: "appearance",
   },
   {
-    id: "source-control-writing-style",
+    // Prefixed because the slider control already owns the `appearance-contrast` id.
+    id: "setting-appearance-contrast",
+    title: "Contrast",
+    to: "/settings/appearance",
+    searchTerms: ["colors borders interface"],
+  },
+  {
+    // Prefixed because the slider control already owns the `glass-opacity` id.
+    id: "setting-glass-opacity",
+    title: "Glass opacity",
+    to: "/settings/appearance",
+    searchTerms: ["transparent transparency solid menus dialogs composer"],
+  },
+  {
+    id: "diff-color-scheme",
+    title: "Diff colors",
+    to: "/settings/appearance",
+    searchTerms: ["red green blue orange additions deletions changes counts palette colorblind"],
+  },
+  {
+    id: "panel-animations",
+    title: "Panel animations",
+    to: "/settings/appearance",
+  },
+  {
+    id: "environment-identification",
+    title: "Environment identification",
+    to: "/settings/appearance",
+    searchTerms: ["dev nightly artwork pill label hide none"],
+    // The setting is stage-dependent, so its parent section is the stable destination.
+    targetId: "appearance-interface",
+  },
+  {
+    id: "interface-font",
+    title: "Interface font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family size system sans"],
+  },
+  {
+    id: "prompt-font",
+    title: "Prompt font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family size composer input"],
+  },
+  {
+    id: "code-font",
+    title: "Code font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family size monospace code blocks diffs file previews"],
+  },
+  {
+    id: "terminal-font",
+    title: "Terminal font",
+    to: "/settings/appearance",
+    searchTerms: ["typography family size monospace output"],
+  },
+  {
+    id: "font-smoothing",
+    title: "Font smoothing",
+    to: "/settings/appearance",
+    searchTerms: ["typography text grayscale anti aliasing macos thin"],
+    macOnly: true,
+  },
+  {
+    id: "word-wrap",
+    title: "Word wrap",
+    to: "/settings/appearance",
+    searchTerms: ["long lines code blocks tables diffs file previews"],
+  },
+  {
+    id: "project-grouping",
+    title: "Project grouping",
+    to: "/settings/general",
+    searchTerms: ["combine matching repositories environments sidebar"],
+  },
+  {
+    id: "auto-settle-inactive-threads",
+    title: "Auto-settle inactive threads",
+    to: "/settings/general",
+    searchTerms: ["sidebar inactivity days no activity automatically"],
+    requiresThreadAutoSettlement: true,
     scope: "project-defaults",
-    title: "Source control writing style",
-    to: "/settings/source-control",
-    section: "GitLab source control",
+  },
+  {
+    id: "auto-settle-merged-threads",
+    title: "Auto-settle merged threads",
+    to: "/settings/general",
+    searchTerms: ["pull request merge closed automatically sidebar"],
+    requiresThreadAutoSettlement: true,
+    scope: "project-defaults",
+  },
+  {
+    id: "days-before-auto-settle",
+    title: "Days of inactivity before auto-settle",
+    to: "/settings/general",
+    targetId: "auto-settle-inactive-threads",
+    searchTerms: ["thread timeout activity sidebar"],
+    requiresThreadAutoSettlement: true,
+    scope: "project-defaults",
+  },
+  {
+    id: "thread-notifications",
+    title: "Thread notifications",
+    to: "/settings/general",
+    searchTerms: ["notification sound alert completion input approval desktop"],
+  },
+  {
+    id: "in-app-notifications",
+    title: "In-app notifications",
+    to: "/settings/general",
+    searchTerms: ["notification toast popup completion input approval failure"],
+  },
+  {
+    id: "time-format",
+    title: "Time format",
+    to: "/settings/general",
+    searchTerms: ["timestamp clock locale system browser os 12 hour 24 hour"],
+  },
+  {
+    id: "response-streaming",
+    title: "Response streaming",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["output token paragraph buffered wait turn legacy"],
+  },
+  {
+    id: "hide-whitespace-changes",
+    title: "Hide whitespace changes",
+    to: "/settings/general",
+    searchTerms: ["diff ignore spaces edits default"],
+  },
+  {
+    id: "default-diff-file-state",
+    title: "Default diff file state",
+    to: "/settings/general",
+    searchTerms: ["collapsed expanded collapse expand files pull request pr code tab"],
+  },
+  {
+    id: "diff-layout",
+    title: "Diff layout",
+    to: "/settings/general",
+    searchTerms: ["stacked split side by side unified inline view"],
+  },
+  {
+    id: "proactive-panels",
+    title: "Proactive panels",
+    to: "/settings/general",
+    searchTerms: ["automatically open diff pull request pr right panel agent completion"],
+  },
+  {
+    id: "skills-in-slash-menu",
+    title: "Show skills in slash menu",
+    to: "/settings/general",
+    searchTerms: ["command menu dollar $ slash /"],
+  },
+  {
+    id: "composer-rich-text",
+    title: "Rich text composer",
+    to: "/settings/general",
+    searchTerms: ["composer rich text tiptap bold italic markdown styled wysiwyg"],
+  },
+  {
+    id: "composer-collapse",
+    title: "Collapse composer on scroll",
+    to: "/settings/general",
+    searchTerms: ["composer rest resting scroll wheel conversation timeline shrink minimize"],
+  },
+  {
+    id: "send-shortcut",
+    title: "Send shortcut",
+    to: "/settings/general",
+    searchTerms: ["enter return command ctrl multiline prompt new line composer"],
+  },
+  {
+    id: "follow-up-behavior",
+    title: "Follow-up behavior",
+    to: "/settings/general",
+    searchTerms: ["queue steer running turn send default behavior composer"],
+  },
+  {
+    id: "continue-threads-after-server-update",
+    title: "Continue threads after restarts",
+    to: "/settings/general",
+    scope: "project-defaults",
     searchTerms: [
-      "repository conventions conventional commits custom instructions commit merge request titles descriptions",
+      "resume running active interrupted work restart reboot machine crash desktop update automatically",
     ],
   },
   {
-    id: "follow-merge-request-templates",
+    id: "background-activity",
+    title: "Background activity",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: [
+      "balanced performance battery saver advanced git fetch provider health refresh host power monitor idle policy",
+    ],
+  },
+  {
+    id: "new-threads",
+    title: "New threads",
+    to: "/settings/general",
     scope: "project-defaults",
-    title: "Follow merge request templates",
+    searchTerms: ["default workspace mode draft local worktree"],
+  },
+  {
+    id: "worktree-submodules",
+    title: "Submodules",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["git submodule init recursive top-level none worktree t3.json"],
+  },
+  {
+    id: "start-from-origin",
+    title: "Start from origin",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["new worktrees latest matching remote branch local"],
+  },
+  {
+    id: "add-project-starts-in",
+    title: "Add project starts in",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["base directory folder browser path home"],
+  },
+  {
+    id: "unpin-confirmation",
+    title: "Unpin confirmation",
+    to: "/settings/general",
+    searchTerms: ["ask before thread pinned section"],
+  },
+  {
+    id: "archive-confirmation",
+    title: "Archive confirmation",
+    to: "/settings/general",
+    searchTerms: ["ask before thread second click inline action"],
+  },
+  {
+    id: "delete-confirmation",
+    title: "Delete confirmation",
+    to: "/settings/general",
+    searchTerms: ["ask before thread chat history"],
+  },
+  {
+    id: "text-generation-model",
+    title: "Text generation model",
+    to: "/settings/general",
+    scope: "project-defaults",
+    searchTerms: ["generated thread titles source control content default provider"],
+  },
+  {
+    id: "open-source-licenses",
+    title: "Open source licenses",
+    to: "/settings/general",
+  },
+  {
+    id: "legacy-plan-mode",
+    title: "Plan mode (legacy)",
+    to: "/settings/general",
+    searchTerms: ["build plan composer old"],
+  },
+  {
+    id: "legacy-context-window-indicator",
+    title: "Context window indicator (legacy)",
+    to: "/settings/general",
+    searchTerms: ["composer meter usage tokens circle old"],
+  },
+  {
+    id: "legacy-sidebar",
+    title: "Sidebar (legacy)",
+    to: "/settings/general",
+    searchTerms: ["project thread tree old flat list"],
+  },
+  {
+    id: "keybindings",
+    title: "Keybindings",
+    to: "/settings/keybindings",
+    searchTerms: ["keyboard shortcuts hotkeys commands bindings json"],
+  },
+  ...KEYBINDING_SEARCH_ITEMS,
+  {
+    id: "providers",
+    title: "Providers",
+    to: "/settings/providers",
+    searchTerms: [
+      "agents cli codex claude install instances authentication models configuration binary path config directory arguments environment variables display name accent color custom favorite hidden auto compact",
+    ],
+  },
+  {
+    id: "provider-health-check-interval",
+    title: "Health check interval",
+    to: "/settings/general",
+    searchTerms: ["refresh availability versions auth state models background probes seconds off"],
+    providerSettingsOnly: true,
+  },
+  {
+    id: "automatic-pull",
+    title: "Automatically pull",
     to: "/settings/source-control",
-    section: "GitLab source control",
-    searchTerms: ["repository gitlab mr description structure template"],
+    scope: "project-defaults",
+    searchTerms: ["auto pull default branch current checkout fast forward upstream"],
+  },
+  {
+    id: "pull-request-merge-method",
+    title: "Default merge method",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["pull request merge squash rebase last selected"],
+  },
+  {
+    id: "source-control",
+    title: "Source control",
+    to: "/settings/source-control",
+    scope: "environment-defaults",
+    searchTerms: [
+      "version control git github gitlab forgejo gitea tea codeberg bitbucket azure devops hosting integrations credentials scan server environment",
+    ],
+  },
+  {
+    id: "git-fetch-interval",
+    title: "Git fetch interval",
+    to: "/settings/source-control",
+    searchTerms: [
+      "automatic remote branch refresh background credentials security keys seconds off",
+    ],
+    environmentOnly: true,
+    scope: "environment-defaults",
+  },
+  {
+    id: "source-control-writing-style",
+    title: "Source control writing style",
+    to: "/settings/source-control",
+    searchTerms: [
+      "repository conventions conventional commits custom instructions change descriptions request titles",
+    ],
+    environmentOnly: true,
+  },
+  {
+    id: "follow-change-request-templates",
+    title: "Follow change request templates",
+    to: "/settings/source-control",
+    searchTerms: ["repository pr pull request description structure"],
+    environmentOnly: true,
   },
   {
     id: "source-control-writer-model",
-    scope: "project-defaults",
     title: "Source control writer model",
     to: "/settings/source-control",
-    section: "GitLab source control",
-    searchTerms: ["generated commit branch merge request titles descriptions separate model"],
+    searchTerms: [
+      "override generated commit change request pr titles descriptions branch bookmark",
+    ],
+    environmentOnly: true,
+    scope: "project-defaults",
   },
   {
-    id: "reset-source-control-defaults",
-    scope: "environment-defaults",
-    title: "Reset source control defaults",
-    to: "/settings/source-control",
-    section: "GitLab source control",
-    searchTerms: ["restore writing style templates writer model fetch interval"],
+    id: "project-actions",
+    title: "Actions",
+    to: "/settings/projects",
+    searchTerms: ["commands scripts setup run dev server checkout worktree t3.json import"],
+  },
+  {
+    id: "environment-icon",
+    title: "Environment icon",
+    to: "/settings/connections",
+    targetId: "connections-environment",
+    searchTerms: ["machine glyph sidebar mac mini studio laptop desktop server cloud vm"],
+    localBackendManagementOnly: true,
+  },
+  {
+    id: "coder-connections",
+    scope: "connections",
+    title: "Coder connections",
+    to: "/settings/connections",
+    searchTerms: ["deployment workspace domain authentication executable path"],
+  },
+  {
+    id: "coder-workspaces",
+    scope: "connections",
+    title: "Workspace connections",
+    to: "/settings/connections",
+    searchTerms: ["start stop restart update reconnect workspace diagnostics status"],
+  },
+  {
+    id: "port-forwarding",
+    scope: "connections",
+    title: "Port forwarding",
+    to: "/settings/connections",
+    searchTerms: ["ports tcp udp localhost loopback forward local remote restart"],
   },
   {
     id: "gitlab-workspace-status",
@@ -273,7 +580,6 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     environmentOnly: true,
     title: "Workspace GitLab status",
     to: "/settings/source-control",
-    section: "GitLab source control",
     searchTerms: ["git glab cli authentication account host installation discovery rescan"],
   },
   {
@@ -282,314 +588,36 @@ export const SETTINGS_SEARCH_ITEMS: ReadonlyArray<SettingsSearchItem> = [
     environmentOnly: true,
     title: "GitLab write access probe",
     to: "/settings/source-control",
-    section: "GitLab source control",
     searchTerms: ["workspace policy blocked writable authentication reprobe write commands"],
     targetId: "gitlab-workspace-status",
   },
   {
-    id: "default-checkout-mode",
-    scope: "project-defaults",
-    title: "Default checkout mode",
-    to: "/settings/preferences",
-    section: "New threads",
-    searchTerms: ["project checkout worktree new threads workspace"],
-  },
-  {
-    id: "worktrees-from-origin",
-    scope: "project-defaults",
-    title: "Start worktrees from origin",
-    to: "/settings/preferences",
-    section: "New threads",
-    searchTerms: ["remote tracking branch local base"],
-  },
-  {
-    id: "worktree-submodules",
-    scope: "project-defaults",
-    title: "Submodules",
-    to: "/settings/preferences",
-    section: "New threads",
-    searchTerms: ["git submodule init recursive top-level none worktree t3.json"],
-  },
-  {
-    id: "project-grouping",
-    title: "Group projects",
-    to: "/settings/preferences",
-    section: "Sidebar",
-    searchTerms: ["repository path separate checkouts sidebar"],
-  },
-  {
-    id: "project-order",
-    title: "Project order",
-    to: "/settings/preferences",
-    section: "Sidebar",
-    searchTerms: ["recent activity added manual sort sidebar"],
-  },
-  {
-    id: "thread-order",
-    title: "Thread order",
-    to: "/settings/preferences",
-    section: "Sidebar",
-    searchTerms: ["recent activity created sort sidebar"],
-  },
-  {
-    id: "visible-threads-per-project",
-    title: "Visible threads per project",
-    to: "/settings/preferences",
-    section: "Sidebar",
-    searchTerms: ["preview count expand sidebar"],
-  },
-  {
-    requiresThreadAutoSettlement: true,
-    id: "auto-settle-inactive-threads",
-    scope: "project-defaults",
-    title: "Auto-settle inactive threads",
-    to: "/settings/preferences",
-    section: "Thread settlement",
-    searchTerms: ["sidebar inactivity days no activity automatically"],
-  },
-  {
-    requiresThreadAutoSettlement: true,
-    id: "auto-settle-merged-threads",
-    scope: "project-defaults",
-    title: "Auto-settle merged threads",
-    to: "/settings/preferences",
-    section: "Thread settlement",
-    searchTerms: ["gitlab merge request merged closed automatically sidebar"],
-  },
-  {
-    id: "proactive-panels",
-    title: "Proactive panels",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["automatic merge request diff completed turn panel"],
-  },
-  {
-    id: "time-format",
-    title: "Time format",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["timestamp locale 12 hour 24 hour clock"],
-  },
-  {
-    id: "diff-layout",
-    title: "Diff layout",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["stacked split side by side review"],
-  },
-  {
-    id: "wrap-long-lines",
-    title: "Wrap long lines",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["diff file view word wrap overflow"],
-  },
-  {
-    id: "ignore-diff-whitespace",
-    title: "Ignore whitespace in diffs",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["review changes spacing diff"],
-  },
-  {
-    id: "confirm-thread-unpin",
-    title: "Confirm before unpinning",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["thread confirmation pinned sidebar"],
-  },
-  {
-    id: "confirm-thread-archive",
-    title: "Confirm before archiving",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["thread confirmation history hide"],
-  },
-  {
-    id: "confirm-thread-delete",
-    title: "Confirm before deleting",
-    to: "/settings/preferences",
-    section: "Editor and history",
-    searchTerms: ["thread confirmation destructive remove"],
-  },
-  {
-    id: "coder-connections",
-    scope: "connections",
-    title: "Coder connections",
-    to: "/settings/general",
-    section: "Coder connections",
-    searchTerms: ["deployment workspace domain authentication executable path"],
-  },
-  {
-    id: "coder-workspaces",
-    scope: "connections",
-    title: "Workspace connections",
-    to: "/settings/general",
-    section: "Coder connections",
-    searchTerms: ["start stop restart update reconnect workspace diagnostics status"],
-  },
-  {
-    id: "port-forwarding",
-    scope: "connections",
-    title: "Port forwarding",
-    to: "/settings/general",
-    section: "Coder connections",
-    searchTerms: ["ports tcp udp localhost loopback forward local remote restart"],
-  },
-  {
-    id: "color-mode",
-    title: "Color mode",
-    to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["theme system light dark interface"],
-  },
-  {
-    id: "appearance-contrast",
-    title: "Contrast",
-    to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["colors borders accessibility interface"],
-  },
-  {
-    id: "glass-opacity",
-    title: "Glass opacity",
-    to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["menus dialogs composer transparency"],
-  },
-  {
-    id: "environment-identification",
-    title: "Environment identification",
-    to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["workspace artwork version pill marker"],
-  },
-  {
-    id: "font-smoothing",
-    title: "Font smoothing",
-    to: "/settings/appearance",
-    section: "Appearance",
-    searchTerms: ["macos grayscale thinner text"],
-  },
-  {
-    id: "interface-font",
-    title: "Interface font",
-    to: "/settings/appearance",
-    section: "Typography",
-    searchTerms: ["family size sans ui"],
-  },
-  {
-    id: "prompt-font",
-    title: "Prompt font",
-    to: "/settings/appearance",
-    section: "Typography",
-    searchTerms: ["family size composer input"],
-  },
-  {
-    id: "code-font",
-    title: "Code font",
-    to: "/settings/appearance",
-    section: "Typography",
-    searchTerms: ["family size monospace diff files"],
-  },
-  {
-    id: "terminal-font",
-    title: "Terminal font",
-    to: "/settings/appearance",
-    section: "Typography",
-    searchTerms: ["family size monospace shell"],
-  },
-  {
-    id: "keyboard-shortcuts",
-    scope: "environment-defaults",
-    title: "Keyboard shortcuts",
-    to: "/settings/shortcuts",
-    section: "Keyboard shortcuts",
-    searchTerms: ["keybindings hotkeys commands bindings json"],
-  },
-  {
-    id: "archived-threads",
+    id: "archive",
     title: "Archived threads",
     to: "/settings/archived",
-    section: "Archived threads",
-    searchTerms: ["archive restore deleted hidden conversations"],
+    searchTerms: ["restore reopen deleted history projects"],
   },
-];
+] as const satisfies ReadonlyArray<SettingsSearchItem>;
 
-export const SETTINGS_SECTION_LABELS: Readonly<Record<CoderSettingsPath, string>> = {
-  "/settings/storage": "Storage",
-  "/settings/preferences": "General",
-  "/settings/appearance": "Appearance",
-  "/settings/shortcuts": "Keyboard shortcuts",
-  "/settings/projects": "Projects",
-  "/settings/providers": "Providers",
-  "/settings/general": "Coder connections",
-  "/settings/source-control": "GitLab source control",
-  "/settings/open-source-licenses": "Open source licenses",
-  "/settings/archived": "Archived threads",
+export type SettingsSearchItemId = (typeof SETTINGS_SEARCH_ITEMS)[number]["id"];
+
+const SEARCH_ITEMS_BY_ID = new Map(SETTINGS_SEARCH_ITEMS.map((item) => [item.id, item] as const));
+
+const SETTINGS_CATEGORY_SCOPES: Readonly<Record<SettingsPath, SettingsSearchScope | null>> = {
+  "/settings/projects": "project",
+  "/settings/general": null,
+  "/settings/appearance": null,
+  // Keybindings fan out to the selection; Providers shows the representative
+  // environment at any selection. Neither needs a particular scope to render.
+  "/settings/keybindings": null,
+  "/settings/providers": null,
+  "/settings/source-control": "environment-defaults",
+  "/settings/storage": "project-defaults",
+  "/settings/connections": "connections",
+  "/settings/archived": "project-defaults",
 };
 
-function normalizeSearchText(value: string): string {
-  return value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-export function searchSettings(
-  query: string,
-  items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
-): ReadonlyArray<SettingsSearchItem> {
-  const normalizedQuery = normalizeSearchText(query);
-  if (normalizedQuery.length === 0) return [];
-  const queryTokens = normalizedQuery.split(" ");
-
-  return items
-    .flatMap((item, index) => {
-      const title = normalizeSearchText(item.title);
-      const fields = [
-        title,
-        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
-        ...(item.searchTerms ?? []).map(normalizeSearchText),
-      ];
-      if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
-
-      const exactPhraseField = fields.findIndex((field) => field.includes(normalizedQuery));
-      const rank =
-        title === normalizedQuery
-          ? 5
-          : title.startsWith(normalizedQuery)
-            ? 4
-            : title.includes(normalizedQuery)
-              ? 3
-              : queryTokens.every((token) => title.includes(token))
-                ? 2
-                : exactPhraseField >= 0
-                  ? 1
-                  : 0;
-      return [{ item, index, rank }];
-    })
-    .toSorted(
-      (left, right) =>
-        Number(left.item.secondary ?? false) - Number(right.item.secondary ?? false) ||
-        right.rank - left.rank ||
-        left.index - right.index,
-    )
-    .map(({ item }) => item);
-}
-
-export function isSettingsOverviewVisible(search: SettingsScopeSearch): boolean {
-  const target = validateSettingsScopeSearch({ ...search });
-  return Boolean(target.project);
-}
-export function filterAvailableSettingsSearchItems(availability: {
-  hasThreadAutoSettlement: boolean;
-  hasEnvironment?: boolean;
-}): readonly SettingsSearchItem[] {
-  return SETTINGS_SEARCH_ITEMS.filter(
-    (item) =>
-      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement) &&
-      (!item.environmentOnly || availability.hasEnvironment !== false),
-  );
-}
-
+/** Search keeps the selected target. A missing row can explain its owning scope instead. */
 export function getSettingsSearchTargetScope(targetId: string) {
   const items: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
   const item =
@@ -598,7 +626,7 @@ export function getSettingsSearchTargetScope(targetId: string) {
   return item
     ? {
         title: item.title,
-        scope: item.scope ?? null,
+        scope: item.scope ?? SETTINGS_CATEGORY_SCOPES[item.to],
         ...(item.requiresThreadAutoSettlement ? { requiresThreadAutoSettlement: true } : {}),
       }
     : null;
@@ -665,4 +693,93 @@ export function isSettingsSearchScopeAvailable(
         scopeKind === "checkout"
       );
   }
+}
+
+function settingsScopeKindFromSearch(search: SettingsScopeSearch): ResolvedSettingsScope["kind"] {
+  const target = validateSettingsScopeSearch({ ...search });
+  if (target.checkout && !target.project) return "unavailable";
+  if (target.project) return target.checkout ? "checkout" : "project";
+  return target.machine ? "environment" : "all";
+}
+
+export function isSettingsOverviewVisible(search: SettingsScopeSearch): boolean {
+  const kind = settingsScopeKindFromSearch(search);
+  return kind === "project" || kind === "checkout";
+}
+
+/**
+ * `id` and `title` props for the element a search item anchors to. Panels
+ * spread (or pick from) this instead of restating the strings, so the catalog
+ * and the rendered settings cannot drift apart.
+ */
+export function searchableSetting(id: SettingsSearchItemId): {
+  readonly id: string;
+  readonly title: string;
+} {
+  const { id: anchorId, title } = SEARCH_ITEMS_BY_ID.get(id)!;
+  return { id: anchorId, title };
+}
+
+export function filterAvailableSettingsSearchItems(
+  availability: SettingsSearchAvailability,
+): ReadonlyArray<SettingsSearchItem> {
+  const items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS;
+  return items.filter(
+    (item) =>
+      (!item.cloudOnly || availability.hasCloudPublicConfig) &&
+      (!item.environmentOnly || availability.hasEnvironment) &&
+      (!item.providerSettingsOnly || availability.hasProviderSettingsEnvironment) &&
+      (!item.localBackendManagementOnly || availability.canManageLocalBackend) &&
+      (!item.localEnvironmentOnly || !availability.localEnvironmentDisabled) &&
+      (!item.wslAvailableOnly || availability.isWslSettingsRowVisible) &&
+      (!item.requiresThreadAutoSettlement || availability.hasThreadAutoSettlement),
+  );
+}
+
+export function searchSettings(
+  query: string,
+  items: ReadonlyArray<SettingsSearchItem> = SETTINGS_SEARCH_ITEMS,
+): ReadonlyArray<SettingsSearchItem> {
+  const normalizedQuery = normalizeSearchText(query);
+  if (normalizedQuery.length === 0) return [];
+  const queryTokens = normalizedQuery.split(" ");
+  const platform = typeof navigator === "undefined" ? "" : navigator.platform;
+
+  return items
+    .flatMap((item, index) => {
+      // Coder runs in a browser, so desktop-only rows never render.
+      if (item.desktopOnly === true) return [];
+      if (item.macOnly && !isMacPlatform(platform)) return [];
+      if (item.windowsOnly && !isWindowsPlatform(platform)) return [];
+
+      const title = normalizeSearchText(item.title);
+      const fields = [
+        title,
+        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),
+        ...(item.searchTerms ?? []).map(normalizeSearchText),
+      ];
+      if (!queryTokens.every((token) => fields.some((field) => field.includes(token)))) return [];
+
+      const exactPhraseField = fields.findIndex((field) => field.includes(normalizedQuery));
+      const rank =
+        title === normalizedQuery
+          ? 5
+          : title.startsWith(normalizedQuery)
+            ? 4
+            : title.includes(normalizedQuery)
+              ? 3
+              : queryTokens.every((token) => title.includes(token))
+                ? 2
+                : exactPhraseField >= 0
+                  ? 1
+                  : 0;
+      return [{ item, index, rank }];
+    })
+    .toSorted(
+      (left, right) =>
+        Number(left.item.secondary ?? false) - Number(right.item.secondary ?? false) ||
+        right.rank - left.rank ||
+        left.index - right.index,
+    )
+    .map(({ item }) => item);
 }

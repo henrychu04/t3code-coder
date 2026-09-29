@@ -82,6 +82,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   threadTitleRegeneration: Schema.optionalKey(Schema.Boolean),
   /** Server persists a pull request reference on thread.meta.update. */
   threadPullRequests: Schema.optionalKey(Schema.Boolean),
+  /** Server persists the opt-in for continuing interrupted threads after restarts. */
+  threadRestartContinuation: Schema.optionalKey(Schema.Boolean),
   /** Native host stacks can be merged or rebased as one; absent on hosts without native stacks. */
   pullRequestStackActions: Schema.optionalKey(Schema.Boolean),
   threadPullRequestLinking: Schema.optionalKey(Schema.Boolean),

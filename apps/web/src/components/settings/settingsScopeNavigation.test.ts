@@ -96,7 +96,7 @@ describe("settings scope navigation", () => {
   it("preserves the checkout through category and settings-search navigation", async () => {
     const router = createSettingsRouter();
     await router.navigate({ to: "/settings/general", search: checkoutSearch, hash: "new-threads" });
-    await router.navigate({ to: "/settings/preferences", hash: "", replace: true });
+    await router.navigate({ to: "/settings/general", hash: "", replace: true });
     expect(router.state.location.search).toEqual(checkoutSearch);
     expect(router.state.location.hash).toBe("");
     await router.navigate({ to: "/settings/source-control", hash: "source-control-writing-style" });
@@ -106,7 +106,7 @@ describe("settings scope navigation", () => {
     expect(router.state.location.search).toEqual(checkoutSearch);
   });
 
-  it.each(["/settings/projects", "/settings/preferences", "/settings/source-control"] as const)(
+  it.each(["/settings/projects", "/settings/general", "/settings/source-control"] as const)(
     "keeps %s when regrouping or selecting a target from the shared settings layout",
     async (to) => {
       const router = createSettingsRouter();
@@ -219,7 +219,7 @@ describe("settings scope navigation", () => {
     const reloaded = createSettingsRouter(checkoutHref);
     await reloaded.load();
     expect(reloaded.state.location.search).toEqual(checkoutSearch);
-    await reloaded.navigate({ to: "/settings/preferences", hash: "agent-browser-access" });
+    await reloaded.navigate({ to: "/settings/general", hash: "agent-browser-access" });
     expect(reloaded.state.location.search).toEqual(checkoutSearch);
   });
 

@@ -1,3 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ScopedProjectDefaults } from "../components/settings/ScopedProjectDefaults";
-export const Route = createFileRoute("/settings/projects")({ component: ScopedProjectDefaults });
+import { ProjectsSettings } from "../components/settings/ProjectsSettings";
+
+export const Route = createFileRoute("/settings/projects")({
+  component: ProjectsSettings,
+});

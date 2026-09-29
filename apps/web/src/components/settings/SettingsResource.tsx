@@ -9,7 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "../ui/dialog";
-import { SettingsRow } from "./SettingsPage";
+import { SettingsRow } from "./settingsLayout";
 import { Label } from "../ui/label";
 
 /** Resource collections share settings geometry, while keeping their operational controls explicit. */

@@ -1,3 +1,4 @@
+import { SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import type { SearchOverlayMode } from "./CommandPalette.logic";
@@ -377,9 +378,9 @@ function CoderCommandPaletteDialog(props: {
       availableSettingsItems.map((item) => ({
         kind: "action",
         value: `setting:${item.id}`,
-        searchTerms: [item.title, item.section, ...item.searchTerms],
+        searchTerms: [item.title, SETTINGS_SECTION_LABELS[item.to], ...(item.searchTerms ?? [])],
         title: item.title,
-        description: item.section,
+        description: `Settings · ${SETTINGS_SECTION_LABELS[item.to]}`,
         ...(item.secondary === undefined ? {} : { secondary: item.secondary }),
         icon: <SettingsIcon className="size-4 shrink-0 text-icon-muted" />,
         run: async () => {
@@ -476,24 +477,22 @@ function CoderCommandPaletteDialog(props: {
     threadItems.splice(
       0,
       threadItems.length,
-      ...props.openDetail.linkedThreads.threads.map(
-        (thread): CommandPaletteActionItem => ({
-          kind: "action",
-          value: `linked-thread:${thread.id}`,
-          title: thread.title || "Untitled thread",
-          description: thread.archivedAt === null ? "Linked thread" : "Archived thread",
-          icon: <MessageSquareIcon className="size-4" />,
-          searchTerms: [query],
-          run: async () => {
-            await navigate({
-              to: "/$environmentId/$threadId",
-              params: buildThreadRouteParams(
-                scopeThreadRef(props.openDetail.linkedThreads!.environmentId, thread.id),
-              ),
-            });
-          },
-        }),
-      ),
+      ...props.openDetail.linkedThreads.threads.map((thread): CommandPaletteActionItem => ({
+        kind: "action",
+        value: `linked-thread:${thread.id}`,
+        title: thread.title || "Untitled thread",
+        description: thread.archivedAt === null ? "Linked thread" : "Archived thread",
+        icon: <MessageSquareIcon className="size-4" />,
+        searchTerms: [query],
+        run: async () => {
+          await navigate({
+            to: "/$environmentId/$threadId",
+            params: buildThreadRouteParams(
+              scopeThreadRef(props.openDetail.linkedThreads!.environmentId, thread.id),
+            ),
+          });
+        },
+      })),
     );
   }
   const preferredProject =

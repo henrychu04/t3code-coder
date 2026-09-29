@@ -2,7 +2,7 @@ import * as Option from "effect/Option";
 import type { SourceControlWriteAccessStatus } from "@t3tools/contracts";
 import { GitBranchIcon, RefreshCwIcon } from "lucide-react";
 import { GitLabIcon } from "../Icons";
-import { SettingsRow, SettingsSection } from "./SettingsPage";
+import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { SettingsResource, SettingsResourceEmpty, SettingsResourceError } from "./SettingsResource";
 import { useSettingsOperation } from "./useSettingsOperation";
 import { useSettingsScope } from "./SettingsScopeContext";

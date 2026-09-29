@@ -14,7 +14,7 @@ import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../ui/input-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { SettingsPage, SettingsSection } from "./SettingsPage";
+import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
 type LicenseManifestState =
   | { readonly status: "loading" }
@@ -209,7 +209,7 @@ export function OpenSourceLicensesPanel() {
   const retry = useCallback(() => setRequestVersion((value) => value + 1), []);
 
   return (
-    <SettingsPage>
+    <SettingsPageContainer>
       <SettingsSection
         title="Third-party notices"
         headerAction={
@@ -253,6 +253,6 @@ export function OpenSourceLicensesPanel() {
           </p>
         )}
       </SettingsSection>
-    </SettingsPage>
+    </SettingsPageContainer>
   );
 }

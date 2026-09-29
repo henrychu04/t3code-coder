@@ -1,4 +1,5 @@
 import {
+  type ServerProvider,
   type EnvironmentId,
   type ServerConfig,
   type ServerConfigStreamEvent,
@@ -12,6 +13,8 @@ import { AsyncResult, Atom } from "effect/unstable/reactivity";
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { environmentSession } from "./session";
+
+export const EMPTY_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
 
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,

@@ -6,7 +6,7 @@ import { useCoder } from "../../coder/CoderBootstrap";
 import { coderWorkspaceIdForEnvironment } from "../../coder/environmentStore";
 import { useActiveEnvironmentId } from "../../state/entities";
 import { type EnvironmentPresentation, useEnvironments } from "../../state/environments";
-import { SettingsSelect } from "./SettingsPage";
+import { SettingsSelect } from "./settingsSelect";
 
 let lastSettingsWorkspaceId: string | null = null;
 

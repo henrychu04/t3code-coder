@@ -20,7 +20,8 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuTrigger, MenuPopup, MenuItem } from "../ui/menu";
-import { SettingsSection, SettingsSelect } from "./SettingsPage";
+import { SettingsSection } from "./settingsLayout";
+import { SettingsSelect } from "./settingsSelect";
 import {
   SettingsResource,
   SettingsResourceDialog,
