@@ -3,7 +3,7 @@ import { CloudIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import type { EnvironmentOption } from "./BranchToolbar.logic";
-import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
   Select,

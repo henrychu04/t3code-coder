@@ -15,7 +15,6 @@ import { Minimize2Icon } from "lucide-react";
 import {
   omitSupersededLifecycleMarkers,
   summarizeToolGroup,
-  normalizeCompactToolLabel,
   resolveWorkEntryToolPresentation,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -102,7 +101,7 @@ import { inferEntryKindFromPath } from "../../pierre-icons";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import { commandProgramName } from "@t3tools/client-runtime/work-log/command-label";
+
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 import type {
@@ -185,10 +184,10 @@ import { Button } from "../ui/button";
 import type { QueuedComposerMessage } from "../../queuedMessageStore";
 import { ProposedPlanCard } from "./ProposedPlanCard";
 import { ChangedFilesCard } from "./ChangedFilesTree";
-import { useAtomValue } from "@effect/atom-react";
+
 import { useFileContextMenuHandler } from "../../fileContextMenu";
 import { useProject, useThread } from "../../state/entities";
-import { serverEnvironment } from "../../state/server";
+
 import {
   CHAT_TIMELINE_ANCHOR_OFFSET,
   readTimelinePosition,
@@ -2430,7 +2429,7 @@ function ActivityGroupTimelineRow({
     (entry) => entry,
   );
   const liveWork = trailingWork.findLast(workEntryIsActiveTurnActivity) ?? trailingWork.at(-1);
-  const thinking = row.active && liveWork === undefined;
+
   const iconWork = row.active ? liveWork : work.at(-1);
   const failed = iconWork !== undefined && workEntryDisplayIndicatesToolFailure(iconWork);
   const label = row.active
@@ -3135,7 +3134,6 @@ const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection(
 function AssistantChangedFilesSectionInner({
   turnSummary,
   checkpointFiles,
-  routeThreadKey,
   resolvedTheme,
   onOpenTurnDiff,
 }: {
@@ -3154,9 +3152,7 @@ function AssistantChangedFilesSectionInner({
       ? { environmentId: thread.environmentId, projectId: thread.projectId }
       : null,
   );
-  const serverConfig = useAtomValue(
-    serverEnvironment.configValueAtom(ctx.activeThreadEnvironmentId),
-  );
+
   const onFileContextMenu = useFileContextMenuHandler(ctx.activeThreadEnvironmentId);
 
   return (

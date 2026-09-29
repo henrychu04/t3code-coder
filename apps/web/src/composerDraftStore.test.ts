@@ -2887,19 +2887,6 @@ describe("composerDraftStore inline context references", () => {
     diff: "const x = 1;",
   };
   const reviewLink = "[b.ts L4](t3-context://v1/review-comment/review-comment_rc-1)";
-  const annotation = {
-    id: "ann-1",
-    pageUrl: "http://localhost:3000/",
-    pageTitle: "Home",
-    comment: "Bigger",
-    elements: [],
-    regions: [],
-    strokes: [],
-    styleChanges: [],
-    screenshot: null,
-    createdAt: "2026-01-01T00:00:00.000Z",
-  };
-  const annotationLink = "[Bigger](t3-context://v1/preview-annotation/preview-annotation_ann-1)";
 
   beforeEach(() => {
     resetComposerDraftStore();

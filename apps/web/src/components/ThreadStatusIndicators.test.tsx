@@ -1,6 +1,6 @@
 import type { ThreadPullRequestLink } from "@t3tools/contracts";
 import { linkedPullRequestSnapshotStatus } from "./ThreadStatusIndicators";
-import { ProjectId, ThreadId, type VcsStatusResult } from "@t3tools/contracts";
+import { ProjectId, type VcsStatusResult } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import { AtomRegistry } from "effect/unstable/reactivity";

@@ -92,7 +92,6 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadTitle,
   isServerThread,
   activeProject,
-  keybindings,
   rightPanelOpen,
   gitCwd,
   onOpenPullRequest,

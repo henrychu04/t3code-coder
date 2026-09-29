@@ -24,6 +24,7 @@ import {
 } from "../attachmentStore.ts";
 import { ServerConfig } from "../config.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+import { readAttachmentBytes } from "../readAttachmentBytes.ts";
 
 export const canonicalizeClientCommandTimestamps = (
   command: ClientOrchestrationCommand,
@@ -68,9 +69,7 @@ async function readStagedAttachment(path: string, sizeBytes: number): Promise<Bu
     ) {
       throw new Error("Staged attachment is not a regular file of the declared size.");
     }
-    const bytes = await handle.readFile();
-    if (bytes.byteLength !== sizeBytes) throw new Error("Staged attachment changed while reading.");
-    return bytes;
+    return await readAttachmentBytes(handle, sizeBytes);
   } finally {
     await handle.close();
   }
@@ -85,15 +84,9 @@ const removeClaimedAttachmentPaths = Effect.fn("Normalizer.removeClaimedAttachme
     yield* Effect.forEach(
       attachmentPaths,
       (attachmentPath) =>
-        fileSystem.remove(attachmentPath, { force: true }).pipe(
-          Effect.tapError((cause) =>
-            Effect.logWarning("Failed to remove an unclaimed attachment copy.", {
-              attachmentPath,
-              cause,
-            }),
-          ),
-          Effect.orElseSucceed(() => undefined),
-        ),
+        fileSystem
+          .remove(attachmentPath, { force: true })
+          .pipe(Effect.orElseSucceed(() => undefined)),
       { concurrency: 1 },
     );
   },
@@ -214,10 +207,9 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
             readStagedAttachment(claim.currentPath, attachment.sizeBytes),
           ).pipe(
             Effect.mapError(
-              (cause) =>
+              () =>
                 new OrchestrationDispatchCommandError({
                   message: `Attachment '${attachment.name}' cannot be sent: attachment not found or size does not match.`,
-                  cause,
                 }),
             ),
           );
@@ -238,10 +230,9 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
           // mutate the retry source.
           yield* fileSystem.writeFile(claim.finalPath, bytes, { flag: "wx", mode: 0o600 }).pipe(
             Effect.mapError(
-              (cause) =>
+              () =>
                 new OrchestrationDispatchCommandError({
                   message: `Failed to claim attachment '${attachment.name}' for this thread.`,
-                  cause,
                 }),
             ),
           );

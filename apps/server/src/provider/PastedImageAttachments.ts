@@ -13,6 +13,7 @@ import {
 import * as Effect from "effect/Effect";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
+import { readAttachmentBytes } from "../readAttachmentBytes.ts";
 
 type PastedImageMimeType = "image/jpeg" | "image/png" | "image/webp";
 
@@ -62,7 +63,7 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
           if (!stat.isFile() || stat.size === 0 || stat.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
             throw new Error("Pasted image attachment has an invalid size or file type.");
           }
-          const bytes = await handle.readFile();
+          const bytes = await readAttachmentBytes(handle, stat.size);
           const mimeType = detectImageMimeType(bytes);
           if (mimeType !== expectedMimeType) {
             throw new Error("Pasted image attachment content does not match its declared type.");
@@ -77,10 +78,8 @@ export const resolvePastedImageAttachment = Effect.fn("resolvePastedImageAttachm
           await handle.close();
         }
       },
-      catch: (cause) =>
-        new PastedImageAttachmentError("Pasted image attachment could not be read safely.", {
-          cause,
-        }),
+      catch: () =>
+        new PastedImageAttachmentError("Pasted image attachment could not be read safely."),
     });
 
     return resolved;

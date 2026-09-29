@@ -14,6 +14,7 @@ export default defineConfig({
       "apps/server/src/orchestration/messageContext.test.ts",
       "apps/server/src/orchestration/Normalizer.attachments.test.ts",
       "apps/server/src/attachmentStore.test.ts",
+      "apps/server/src/readAttachmentBytes.test.ts",
       "apps/server/src/imageMime.test.ts",
       "apps/server/src/project/ProjectCloneTracker.test.ts",
       "apps/server/src/textGeneration/ThreadTitleContext.test.ts",

@@ -371,10 +371,6 @@ function RightPanelEmptyState(props: {
     );
   };
 
-  const cardShellClass =
-    "rounded-lg border border-border/80 bg-card dark:border-transparent dark:shadow-none dark:inset-ring-1 dark:inset-ring-white/5";
-  const highlightedCardClass = "bg-accent/60 dark:inset-ring-white/20";
-
   return (
     <div
       ref={focusOnMount}

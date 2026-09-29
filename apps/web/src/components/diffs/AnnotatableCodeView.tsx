@@ -115,7 +115,6 @@ export function AnnotatableCodeView({
   renderCodeViewFooter,
   unsafeCSSExtra,
   renderHeaderMetadata,
-  renderHeaderFilenameSuffix,
   renderHeaderPrefix,
 }: AnnotatableCodeViewProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);

@@ -1,4 +1,3 @@
-import { Button } from "../ui/button";
 import {
   type EnvironmentId,
   type ProviderInstanceId,
@@ -185,12 +184,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     () => new Set(selectedModelKeys ?? (activeModelKey ? [activeModelKey] : [])),
     [selectedModelKeys, activeModelKey],
   );
-  const activeInstanceHasSelectableUnavailableModel =
-    activeEntry !== undefined &&
-    (modelOptionsByInstance.get(props.activeInstanceId) ?? []).some((option) =>
-      isProviderInstancePickerReady(activeEntry),
-    ) &&
-    !isProviderInstancePickerReady(activeEntry);
+
   const activeInstanceNeedsSetup =
     props.onOpenProviderSetup !== undefined &&
     activeEntry !== undefined &&
@@ -1008,13 +1002,4 @@ export function resolveModelPickerSelectedModel(input: {
   options: ReadonlyArray<ModelEsque>;
 }) {
   return input.options.find((option) => option.slug === input.model);
-}
-
-function shouldIncludeModelPickerOption(input: {
-  entry: ProviderInstanceEntry;
-  option: ModelEsque;
-  activeInstanceId: ProviderInstanceId;
-  activeModel: string;
-}): boolean {
-  return isProviderInstancePickerReady(input.entry);
 }

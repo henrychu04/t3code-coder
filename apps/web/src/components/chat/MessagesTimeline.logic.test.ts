@@ -30,7 +30,6 @@ import {
   resolveWorkGroupScrollIndex,
   shouldFollowWorkGroupAppend,
   shouldPreserveAssistantLineBreaks,
-  type MessagesTimelineRow,
   type MessagesTimelineRowsProjection,
   WORKTREE_SETUP_ROW_ID,
   workEntryDisplayLabel,
@@ -41,7 +40,7 @@ import {
   type WorkLogEntry,
   type TimelineEntriesProjection,
 } from "../../session-logic";
-import { isImageAttachment, type ChatMessage, type TurnDiffSummary } from "../../types";
+import { type ChatMessage, type TurnDiffSummary } from "../../types";
 
 describe("streaming row projection", () => {
   function fixture(text = "") {

@@ -16,8 +16,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   asKnownContextRecord,
-  attachmentContextRecord,
-  buildMessageContext,
   composerContextImportLookupIds,
   isPullRequestSummaryContext,
   isSameComposerContextPayload,

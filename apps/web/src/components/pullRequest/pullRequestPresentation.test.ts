@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vite-plus/test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
-import { resolvePullRequestConflict, resolvePullRequestState } from "./pullRequestPresentation";
+import {
+  PullRequestActorAvatar,
+  resolvePullRequestConflict,
+  resolvePullRequestState,
+} from "./pullRequestPresentation";
 import { PullRequestGlyph } from "./pullRequestIcons";
+
+it("renders actor initials without loading external avatar images", () => {
+  const markup = renderToStaticMarkup(
+    createElement(PullRequestActorAvatar, {
+      actor: {
+        login: "reviewer",
+        name: "Reviewer",
+        avatarUrl: "https://gitlab.example/avatar.png",
+      },
+    }),
+  );
+  expect(markup).toContain(">R</span>");
+  expect(markup).not.toContain("<img");
+  expect(markup).not.toContain("https://");
+});
 
 describe("resolvePullRequestState", () => {
   it.each([

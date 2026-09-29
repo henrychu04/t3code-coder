@@ -6,7 +6,6 @@ import {
   FolderGit2Icon,
   FolderGitIcon,
   FolderIcon,
-  HistoryIcon,
 } from "lucide-react";
 import {
   type Ref,

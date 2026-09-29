@@ -10,7 +10,7 @@ import { sortScopedProjectsForSidebar } from "../components/Sidebar.logic";
 import { Button } from "../components/ui/button";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "../components/ui/empty";
 import { SidebarInset } from "../components/ui/sidebar";
-import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
+
 import { WorkspaceConnectionStatus } from "../components/WorkspaceConnectionStatus";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useEnvironments } from "../state/environments";

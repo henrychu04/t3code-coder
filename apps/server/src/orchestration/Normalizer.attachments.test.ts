@@ -299,6 +299,8 @@ describe("question attachments", () => {
         }),
       ).pipe(Effect.flip);
       expect(failure.message).toContain("cannot be sent");
+      expect(failure.cause).toBeUndefined();
+      expect(JSON.stringify(failure)).not.toContain(target);
     }).pipe(Effect.provide(testLayer)),
   );
 });

@@ -85,7 +85,6 @@ import { useWorkspaceMutationRefresh } from "../hooks/useWorkspaceMutationRefres
 
 import { useReviewFilePatches } from "./diffs/useReviewFilePatches";
 import { DiffFileLoadingBoundary } from "./diffs/DiffFileLoadingBoundary";
-import { DiffFileStatus } from "./diffs/DiffFileStatus";
 
 type DiffThemeType = "light" | "dark";
 const AUTOMATIC_BASE_REF = "__automatic_base_ref__";
@@ -130,14 +129,12 @@ interface DiffPanelProps {
 export default function DiffPanel({
   mode = "inline",
   composerDraftTarget,
-  initialGitScope: initialGitScopeProp,
   onOpenFile,
   workspaceMutationId,
 }: DiffPanelProps) {
   const { resolvedTheme } = useTheme();
   const settings = useClientSettings();
   const updateClientSettings = useUpdateClientSettings();
-  const [initialGitScope] = useState(initialGitScopeProp);
   const diffLayout = settings.diffLayout;
   const [wordWrap, setWordWrap] = useState(settings.wordWrap);
   const [diffIgnoreWhitespace, setDiffIgnoreWhitespace] = useState(settings.diffIgnoreWhitespace);
@@ -447,15 +444,9 @@ export default function DiffPanel({
           }),
     [lazySource, resolvedTheme, selectedPatch, selectedTurnId],
   );
-  const fileStats = useMemo(
-    () => new Map(lazySource?.files?.map((file) => [file.path, file])),
-    [lazySource?.files],
-  );
+
   const {
-    scope: filePatchScope,
     isPending: areFilePatchesPending,
-    fileStates,
-    retry,
     requestFile,
     readyFilePaths,
     renderableFiles,

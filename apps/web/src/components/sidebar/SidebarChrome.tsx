@@ -1,5 +1,5 @@
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
-import { ArrowLeftIcon, GitPullRequestIcon, SettingsIcon } from "lucide-react";
+import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo, useCallback } from "react";
 import { Link, useCanGoBack, useLocation, useNavigate } from "@tanstack/react-router";

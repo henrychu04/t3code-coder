@@ -1,6 +1,5 @@
 import { useComposerMenuProps } from "./chat/composerEventScope";
-import { useSupportsMultiplePullRequests } from "~/hooks/useSupportsMultiplePullRequests";
-import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
+
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -34,7 +33,7 @@ import type { ContextMenuItem } from "../localApiTypes";
 import { parsePullRequestReference } from "../pullRequestReference";
 import { useRightPanelStore } from "../rightPanelStore";
 import { GitLabIcon } from "./Icons";
-import { composerFloatingLayerProps } from "./chat/composerEventScope";
+
 import { shouldLoadNextBranchPageAfterScroll } from "../state/paginatedBranches";
 import { usePaginatedBranches } from "../state/queries";
 import { useProject, useThreadShell } from "../state/entities";

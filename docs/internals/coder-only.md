@@ -43,9 +43,10 @@ client to a browser opened by the user. It stores only non-secret Coder deployme
 targets, structured port-forward rules, and an optional Coder executable path. An attached image may
 be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
 copy is deleted immediately after the transfer attempt. Browser UI preferences
-such as theme and panel size may use browser storage; messages, drafts, prompt stashes, active workspace projections,
-open Files tabs and editor state, provider sessions, and screenshot artifact object URLs are
-memory-only.
+such as theme and panel size may use browser storage. Composer drafts and prompt stashes retain
+text in browser storage, but never image bytes or upload IDs. Messages, active workspace
+projections, open Files tabs and editor state, provider sessions, and screenshot artifact object
+URLs are memory-only.
 Each active workspace accepts one loopback WebSocket at a time. The workspace helper can outlive
 that browser connection, so the gateway treats every accepted WebSocket as a distinct RPC session:
 it translates browser-local request IDs to helper-lifetime unique IDs, restores the browser IDs on
@@ -483,7 +484,8 @@ listed here is drift to remove rather than fork behavior to keep.
   and external images never load.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
-  `!` references and GitLab wording are used.
+  `!` references and GitLab wording are used. Actor avatars render as initials without loading
+  external images.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor.

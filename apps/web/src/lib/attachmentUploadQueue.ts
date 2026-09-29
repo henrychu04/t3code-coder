@@ -33,7 +33,6 @@ type PersistedAttachmentVerification =
   | { readonly status: "failed"; readonly error: unknown };
 
 const MAX_UPLOADS_PER_ENVIRONMENT = 3;
-const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 
 interface AttachmentUploadStore {
   readonly uploadsByImageId: Readonly<Record<string, AttachmentUploadState>>;
