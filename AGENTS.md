@@ -106,7 +106,7 @@ claim: shared provider protocols may still report subscription metadata.
     images at or below 10 MiB. The browser upload API, gateway body/signature validation, and
     provider-input reader must share main's 10 MiB attachment limit. Environment previews accept
     main's browser media formats — PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO images; MP4,
-    M4V, MOV, WebM, and OGV videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and AIFF audio —
+    M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and AIFF audio —
     each signature-checked against its extension. Image previews retain their separate 20 MiB read
     bound. Video and audio previews are bounded at 256 MiB and read only after the user presses
     play or opens the file.

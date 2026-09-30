@@ -154,11 +154,10 @@ describe("local Coder gateway", () => {
       ),
       true,
     );
-    // Web media may render, but scripts still cannot reach other origins; `blob:` lets media
-    // actions read bytes already held in browser memory.
+    // As on main, media actions fetch web media and in-memory blobs; the host's CORS decides.
     strictEqual(
       response.headers["content-security-policy"]?.includes(
-        "connect-src 'self' blob: ws://127.0.0.1:*;",
+        "connect-src 'self' blob: https: http: ws://127.0.0.1:*;",
       ),
       true,
     );

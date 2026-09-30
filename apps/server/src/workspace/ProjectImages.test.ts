@@ -131,60 +131,80 @@ it.effect(
       );
     }),
 );
-it.effect("reads additional browser image, video, and audio formats only when signatures match", () =>
-  Effect.gen(function* () {
-    const root = yield* fixture;
-    const cwd = path.join(root, "project");
-    const mp4 = Buffer.concat([
-      Buffer.from([0, 0, 0, 0x18]),
-      Buffer.from("ftypisom"),
-      Buffer.alloc(12),
-    ]);
-    const files: Record<string, Buffer | string> = {
-      "anim.gif": Buffer.from("GIF89a\x01\x00\x01\x00", "latin1"),
-      "icon.svg": '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>',
-      "clip.mp4": mp4,
-      "clip.mov": mp4,
-      "clip.webm": Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]),
-      "clip.ogv": Buffer.from("OggS\0\0\0\0", "latin1"),
-      "song.mp3": Buffer.from("ID3\x04\x00\x00\x00\x00", "latin1"),
-      "tone.wav": Buffer.from("RIFF\x00\x00\x00\x00WAVEfmt ", "latin1"),
-      "voice.opus": Buffer.from("OggS\0\0\0\0", "latin1"),
-      "track.flac": Buffer.from("fLaC\0\0\0\0", "latin1"),
-      "track.m4a": mp4,
-      "fake.mp4": "not a video",
-      "fake.mp3": "not audio",
-      "fake.svg": "plain text",
-      "renamed.gif": mp4,
-      "large.png": png,
-      "large.mp4": mp4,
-    };
-    yield* Effect.promise(async () => {
-      await fs.mkdir(cwd);
-      for (const [name, content] of Object.entries(files))
-        await fs.writeFile(path.join(cwd, name), content);
-      // Images keep their 20 MiB bound; videos may be larger.
-      await fs.truncate(path.join(cwd, "large.png"), MAX_SCREENSHOT_ARTIFACT_BYTES + 1);
-      await fs.truncate(path.join(cwd, "large.mp4"), MAX_SCREENSHOT_ARTIFACT_BYTES + 1);
-    });
-    const read = (filePath: string) =>
-      readProjectImage({ threadId: ThreadId.make("thread"), cwd, filePath, offset: 0, limit: 512 });
-    for (const [filePath, mimeType] of [
-      ["anim.gif", "image/gif"],
-      ["icon.svg", "image/svg+xml"],
-      ["clip.mp4", "video/mp4"],
-      ["clip.mov", "video/quicktime"],
-      ["clip.webm", "video/webm"],
-      ["clip.ogv", "video/ogg"],
-      ["large.mp4", "video/mp4"],
-      ["song.mp3", "audio/mpeg"],
-      ["tone.wav", "audio/wav"],
-      ["voice.opus", "audio/ogg"],
-      ["track.flac", "audio/flac"],
-      ["track.m4a", "audio/mp4"],
-    ] as const)
-      expect((yield* read(filePath)).mimeType).toBe(mimeType);
-    for (const filePath of ["fake.mp4", "fake.mp3", "fake.svg", "renamed.gif", "large.png"])
-      expect((yield* read(filePath).pipe(Effect.result))._tag).toBe("Failure");
-  }),
+it.effect(
+  "reads additional browser image, video, and audio formats only when signatures match",
+  () =>
+    Effect.gen(function* () {
+      const root = yield* fixture;
+      const cwd = path.join(root, "project");
+      const mp4 = Buffer.concat([
+        Buffer.from([0, 0, 0, 0x18]),
+        Buffer.from("ftypisom"),
+        Buffer.alloc(12),
+      ]);
+      const files: Record<string, Buffer | string> = {
+        "anim.gif": Buffer.from("GIF89a\x01\x00\x01\x00", "latin1"),
+        "icon.svg": '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>',
+        "clip.mp4": mp4,
+        "clip.mov": mp4,
+        "clip.webm": Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]),
+        "clip.ogv": Buffer.from("OggS\0\0\0\0", "latin1"),
+        "clip.mkv": Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]),
+        "clip.avi": Buffer.from("RIFF\x00\x00\x00\x00AVI LIST", "latin1"),
+        "fake.avi": Buffer.from("RIFF\x00\x00\x00\x00WAVEfmt ", "latin1"),
+        "song.mp3": Buffer.from("ID3\x04\x00\x00\x00\x00", "latin1"),
+        "tone.wav": Buffer.from("RIFF\x00\x00\x00\x00WAVEfmt ", "latin1"),
+        "voice.opus": Buffer.from("OggS\0\0\0\0", "latin1"),
+        "track.flac": Buffer.from("fLaC\0\0\0\0", "latin1"),
+        "track.m4a": mp4,
+        "fake.mp4": "not a video",
+        "fake.mp3": "not audio",
+        "fake.svg": "plain text",
+        "renamed.gif": mp4,
+        "large.png": png,
+        "large.mp4": mp4,
+      };
+      yield* Effect.promise(async () => {
+        await fs.mkdir(cwd);
+        for (const [name, content] of Object.entries(files))
+          await fs.writeFile(path.join(cwd, name), content);
+        // Images keep their 20 MiB bound; videos may be larger.
+        await fs.truncate(path.join(cwd, "large.png"), MAX_SCREENSHOT_ARTIFACT_BYTES + 1);
+        await fs.truncate(path.join(cwd, "large.mp4"), MAX_SCREENSHOT_ARTIFACT_BYTES + 1);
+      });
+      const read = (filePath: string) =>
+        readProjectImage({
+          threadId: ThreadId.make("thread"),
+          cwd,
+          filePath,
+          offset: 0,
+          limit: 512,
+        });
+      for (const [filePath, mimeType] of [
+        ["anim.gif", "image/gif"],
+        ["icon.svg", "image/svg+xml"],
+        ["clip.mp4", "video/mp4"],
+        ["clip.mov", "video/quicktime"],
+        ["clip.webm", "video/webm"],
+        ["clip.ogv", "video/ogg"],
+        ["clip.mkv", "video/x-matroska"],
+        ["clip.avi", "video/x-msvideo"],
+        ["large.mp4", "video/mp4"],
+        ["song.mp3", "audio/mpeg"],
+        ["tone.wav", "audio/wav"],
+        ["voice.opus", "audio/ogg"],
+        ["track.flac", "audio/flac"],
+        ["track.m4a", "audio/mp4"],
+      ] as const)
+        expect((yield* read(filePath)).mimeType).toBe(mimeType);
+      for (const filePath of [
+        "fake.mp4",
+        "fake.mp3",
+        "fake.avi",
+        "fake.svg",
+        "renamed.gif",
+        "large.png",
+      ])
+        expect((yield* read(filePath).pipe(Effect.result))._tag).toBe("Failure");
+    }),
 );

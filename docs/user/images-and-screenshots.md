@@ -49,13 +49,14 @@ copy, or rename an image and embed its final file path without viewing it first 
 through another tool. Relative paths resolve from the active project; absolute paths, `~/` paths,
 and symlinks can point to images elsewhere on the workspace machine. They never refer to files on
 your local computer. Supported images are PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO, up to
-20 MiB each. Videos (MP4, M4V, MOV, WebM, and OGV, up to 256 MiB) show a play card; press it to load
+20 MiB each. Videos (MP4, M4V, MOV, WebM, OGV, MKV, and AVI, up to 256 MiB) show a play card; press it to load
 the video, or select a video link to open it in the gallery. Images and videos hosted on the web
 load directly from their site.
 
 Right-click an image or video to save it, copy its path or URL, open it in the Files panel, or copy
-an image. Saving works for files on the workspace machine once they have loaded; saving media hosted
-on the web is not supported.
+an image. Saving works for files on the workspace machine once they have loaded, and for media
+hosted on the web when its site allows browser access. Playback depends on your browser; save a
+video it cannot play to open it in another app.
 
 A fresh read shows the current file. Moving or deleting it can break its preview, and editing it can
 change what you see in an older conversation. Keep the source file if you need the preview later.
@@ -81,6 +82,6 @@ and current workspace source images.
 
 The flow follows [main's image previews](https://github.com/henrychu04/t3code-coder/blob/f328db30da063a7bce9a9d038fc583d3ff83673a/docs/user/composer.md#images-and-videos-in-messages).
 Attachment sizing follows main. Coder-specific differences are bounded helper stdio transport,
-size bounds for current-file previews, workspace videos that load on play rather than streaming,
-and no saving of media hosted on the web.
+size bounds for current-file previews, and workspace videos that load on play rather than
+streaming.
 Unsupported image formats show an explanation instead of a retry button.

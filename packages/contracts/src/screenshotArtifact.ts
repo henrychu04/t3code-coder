@@ -81,6 +81,8 @@ export const ProjectMediaMimeType = Schema.Literals([
   "video/quicktime",
   "video/webm",
   "video/ogg",
+  "video/x-matroska",
+  "video/x-msvideo",
   "audio/mpeg",
   "audio/wav",
   "audio/ogg",

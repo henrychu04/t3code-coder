@@ -372,7 +372,7 @@ that the requested root belongs to the thread, resolves relative paths from that
 absolute or home-relative image paths elsewhere on the Linux workspace machine. Symlinks resolve
 to an exact file; the helper checks its opened path, device and inode, rejects non-files, and
 validates each file's signature against its extension: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and
-ICO images; MP4, M4V, MOV, WebM, and OGV videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and
+ICO images; MP4, M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and
 AIFF audio. No remote URLs or general file reads are accepted. Each image is limited to 20 MiB, each
 video or audio file to 256 MiB, and each stdio chunk to 512 KiB. A revision based on file identity,
 size, and modification/change timestamps must remain constant across chunks; a changed file fails
@@ -394,11 +394,13 @@ Main streams workspace video through signed range URLs; Coder instead reads the 
 memory-only blob URL for main's `MediaVideoPlayer`. Because that read is not a cheap metadata
 preload, inline videos show a play card and load only when pressed, with byte progress; a video
 link opens main's gallery, which loads it on open. External web images and videos load directly
-from their host as on main, allowed by the gateway CSP's `img-src`/`media-src`; `connect-src`
-admits only the gateway and `blob:`. Main's `MediaActions` menu copies paths and URLs and offers
-Save and Copy image. Coder has no signed asset URL to re-request, so those byte actions read the
-media element's current source: the memory-only blob for workspace media, or the web URL, which the
-CSP blocks from `fetch` so saving web media fails with an error.
+from their host as on main. Like main's desktop policy, the gateway CSP allows `https:`/`http:` in
+`img-src`, `media-src`, and `connect-src`, plus `blob:`; `script-src` stays limited to the app.
+Main's `MediaActions` menu copies paths and URLs and offers Save and Copy image. Coder has no signed
+asset URL to re-request, so those byte actions read the media element's current source: the
+memory-only blob for workspace media, or the web URL, which works when its host allows CORS.
+Browsers may be unable to play some accepted containers, such as AVI; main's player then shows its
+unavailable state with a download action.
 
 The Files surface uses main's image, video, and audio previews through the same helper reads. Opening
 the file is the explicit request, so it loads immediately. Images reread after a workspace mutation,

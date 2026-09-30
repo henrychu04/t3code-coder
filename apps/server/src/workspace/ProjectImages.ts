@@ -75,14 +75,25 @@ async function detectProjectMediaMimeType(
       return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
         ? "video/webm"
         : undefined;
+    case ".mkv":
+      return bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))
+        ? "video/x-matroska"
+        : undefined;
+    case ".avi":
+      return ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 12) === "AVI "
+        ? "video/x-msvideo"
+        : undefined;
     case ".ogv":
       return ascii(bytes, 0, 4) === "OggS" ? "video/ogg" : undefined;
     case ".mp3":
-      return ascii(bytes, 0, 3) === "ID3" || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0)
+      return ascii(bytes, 0, 3) === "ID3" ||
+        (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0)
         ? "audio/mpeg"
         : undefined;
     case ".wav":
-      return ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 12) === "WAVE" ? "audio/wav" : undefined;
+      return ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 12) === "WAVE"
+        ? "audio/wav"
+        : undefined;
     case ".ogg":
     case ".oga":
     case ".opus":
@@ -90,7 +101,8 @@ async function detectProjectMediaMimeType(
     case ".flac":
       return ascii(bytes, 0, 4) === "fLaC" ? "audio/flac" : undefined;
     case ".aac":
-      return ascii(bytes, 0, 3) === "ID3" || (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xf6) === 0xf0)
+      return ascii(bytes, 0, 3) === "ID3" ||
+        (bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xf6) === 0xf0)
         ? "audio/aac"
         : undefined;
     case ".m4a":
