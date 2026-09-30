@@ -1306,7 +1306,7 @@ export const layer = CoderWsRpcGroup.toLayer(
           const owned = yield* workspaceOwnedByThread(input).pipe(
             Effect.orElseSucceed(() => false),
           );
-          if (!owned) return yield* new ProjectImageReadError({ message: "Image is unavailable." });
+          if (!owned) return yield* new ProjectImageReadError({ message: "Media is unavailable." });
           return yield* readProjectImage(input);
         }),
       [WS_METHODS.projectsWriteFile]: (input) =>

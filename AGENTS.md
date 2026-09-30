@@ -100,27 +100,38 @@ claim: shared provider protocols may still report subscription metadata.
       files, oversized files, regex failures, cancellation, and time budgets.
     - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
       reads, or non-Coder workspace connections.
-  - **Images: composer attachments and on-demand environment previews.** Accept PNG, JPEG, and WebP
-    images only and validate their signatures rather than trusting metadata. Composer source files
-    may be up to 50 MiB; use main's compression algorithm to prepare images at or below 10 MiB.
-    The browser upload API, gateway body/signature validation, and provider-input reader must share
-    main's 10 MiB attachment limit. Current-file previews retain their separate 20 MiB read bound.
+  - **Media: composer attachments and on-demand environment previews.** Composer attachments
+    accept PNG, JPEG, and WebP images only and validate their signatures rather than trusting
+    metadata. Composer source files may be up to 50 MiB; use main's compression algorithm to prepare
+    images at or below 10 MiB. The browser upload API, gateway body/signature validation, and
+    provider-input reader must share main's 10 MiB attachment limit. Environment previews accept
+    main's browser media formats — PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO images; MP4,
+    M4V, MOV, WebM, and OGV videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and AIFF audio —
+    each signature-checked against its extension. Image previews retain their separate 20 MiB read
+    bound. Video and audio previews are bounded at 256 MiB and read only after the user presses
+    play or opens the file.
     - Images pasted, selected, or dropped into the composer: generate filenames internally and copy
       only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
       Submitted image references may read these validated workspace copies by opaque generated ID
       through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
-    - Image previews follow main's file-based flow. Markdown image references, image links,
-      and expanded image-view activities may read the current image without a preceding capture or
-      provider event. Verify the root belongs to the requesting thread, resolve relative paths from
+    - Media previews follow main's file-based flow. Markdown image and video references, media
+      links, and expanded image-view activities may read the current file without a preceding
+      capture or provider event. The Files surface may preview these media files with main's image,
+      video, and audio viewers. Main's media menu may copy a previewed file's full or
+      project-relative path or a web media URL to the local clipboard, and its explicit Save and
+      Copy image actions may save the displayed media to the local machine or copy an image to the
+      clipboard; these are the only media download and clipboard exceptions. Verify the root belongs to the requesting thread, resolve relative paths from
       that root, and allow exact absolute image paths elsewhere on the Linux workspace machine,
-      including symlinks. Verify the actual opened file identity and reject non-images and files
-      over 20 MiB. This does not authorize general file reads or outside-project text editing.
+      including symlinks. Verify the actual opened file identity and reject unsupported media and
+      files over their bound. This does not authorize general file reads or outside-project text
+      editing.
       Serve bounded chunks over helper stdio, with a file revision checked across chunks. Do not
       create artifact copies, source-path associations, turn capture budgets, or storage quotas.
       File changes are visible on a fresh read; moving or deleting a source may break its preview.
-    - Submitted thumbnails and environment images may load automatically near the viewport. Image
-      links may open the gallery. Browser image bytes remain bounded and memory-only. Do not expose
-      external images, download/export actions, or a general file-reading API.
+    - Submitted thumbnails and environment images may load automatically near the viewport. Media
+      links may open the gallery. Browser media bytes remain bounded and memory-only. External web
+      images and videos load directly from their own host as on main; they never pass through the
+      helper. Do not expose other download/export actions or a general file-reading API.
     - Existing artifact IDs remain readable for older conversations through the bounded legacy
       chunk RPC. Submitted composer attachments remain preserved. Saved legacy image artifacts may be deleted by
       the upstream-compatible, opt-in artifact retention policy; cleanup is disabled by default.
@@ -138,10 +149,10 @@ claim: shared provider protocols may still report subscription metadata.
   forwarding, arbitrary tunnels, or providers other than Codex and Claude. OpenSSH use is limited
   to helper bootstrap and validated composer-image uploads through a `coder ssh --stdio`
   ProxyCommand.
-- External markdown links remain inert except user-clicked HTTP(S) links to `gitlab.com` or
-  self-hosted hosts identified by project repository metadata as GitLab. Known merge requests keep
-  their internal navigation; other GitLab links open in a new tab. External images remain inert,
-  and terminal URLs must not open automatically.
+- Markdown HTTP(S) links follow main: they open in a new tab with `noopener noreferrer`, show
+  main's favicon, and preview media links in the gallery. Relative and non-web links stay inert.
+  Known merge requests keep their internal navigation. External images, videos, and GitLab actor
+  avatars load from their host as on main. Terminal URLs must not open automatically.
 
 ## Supported platforms
 

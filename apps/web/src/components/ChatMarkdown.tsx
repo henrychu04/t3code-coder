@@ -2,8 +2,17 @@ import { createIncrementalMarkdownPlugin } from "../markdown-incremental";
 import { createIncrementalHighlightedDocument } from "../lib/incrementalHighlighting";
 import { HighlightedCodeLines } from "./chat/HighlightedCodeLines";
 import { toHtml } from "hast-util-to-html";
-import { rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
+import { authoredImageSizeStyle, rehypeMarkStandaloneImages } from "./chat/markdownImageLayout";
 import { ProjectImageLink, isImageFilePath } from "./chat/ProjectImageLink";
+import { ProjectMarkdownVideo, ProjectVideoLink, isVideoFilePath } from "./chat/ProjectVideo";
+import { MediaVideoPlayer } from "./media/MediaVideoPlayer";
+import { resolveProtocolRelativeMediaUrl } from "./media/mediaContent";
+import { resolveExternalWebLinkHost } from "./chat/externalLinkContextMenu";
+import { ChatMarkdownImage } from "./chat/CapturedMarkdownImage";
+import { ExpandedImageDialog, type ExpandedImagePreview } from "./chat/ExpandedImageDialog";
+import { faviconUrlForOrigin } from "@t3tools/shared/favicon";
+import { mediaKindFromPath } from "@t3tools/shared/filePreview";
+import { mediaUrlReference } from "@t3tools/client-runtime/media-reference";
 import { parseAssistantCitationHref } from "@t3tools/shared/assistantCitations";
 import { parseComposerContextHref } from "@t3tools/shared/composerContextReferences";
 import { AssistantCitationChip } from "./chat/AssistantCitationChip";
@@ -42,7 +51,7 @@ import {
   WrapTextIcon,
   type LucideIcon,
 } from "lucide-react";
-import {
+import React, {
   Children,
   createContext,
   useContext,
@@ -99,7 +108,6 @@ import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore"
 import { readThreadShell, useProjects, useServerConfigs } from "../state/entities";
 import {
   findProjectForGitLabMergeRequest,
-  isGitLabExternalUrl,
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
 } from "../lib/openPullRequestLink";
@@ -693,12 +701,246 @@ function UncachedShikiCodeBlock({
   );
 }
 
-function InertMarkdownImage({ alt }: { alt: string }) {
+function UnavailableMarkdownImage({ alt }: { alt: string }) {
   return (
     <span className="my-1 inline-flex items-center gap-1.5 rounded-md border border-border/40 bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
       <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
       {alt ? `Image unavailable · ${alt}` : "Image unavailable"}
     </span>
+  );
+}
+
+const MARKDOWN_LINK_FAVICON_CLASS_NAME = "block size-full shrink-0 select-none";
+
+/** Hosts whose favicon request already failed this session — skip straight to the globe. */
+const failedFaviconHosts = new Set<string>();
+
+/** Sites whose brand mark (drawn in `currentColor`) replaces the fetched favicon so it follows the theme. */
+const CHAT_MARKDOWN_VIDEO_CLASS_NAME = "inline-block! w-full max-w-[min(100%,30rem)]";
+const CHAT_MARKDOWN_VIDEO_ELEMENT_CLASS_NAME =
+  "max-h-[30rem] max-w-[min(100%,30rem)] rounded-lg border border-border/40";
+
+/** Main's direct ChatMarkdownImage, with its gallery opened from the image itself. */
+function ExternalMarkdownImage(
+  props: Omit<ComponentProps<typeof ChatMarkdownImage>, "onImageExpand">,
+) {
+  const [preview, setPreview] = useState<ExpandedImagePreview | null>(null);
+  return (
+    <>
+      <ChatMarkdownImage {...props} onImageExpand={setPreview} />
+      {preview ? <ExpandedImageDialog preview={preview} onClose={() => setPreview(null)} /> : null}
+    </>
+  );
+}
+
+function brandLinkIcon(host: string): typeof GitHubIcon | null {
+  const hostname = host.toLowerCase();
+  if (hostname === "github.com" || hostname.endsWith(".github.com")) return GitHubIcon;
+  return null;
+}
+
+const MarkdownLinkFavicon = memo(function MarkdownLinkFavicon({ host }: { host: string }) {
+  const [failedHost, setFailedHost] = useState<string | null>(null);
+  const BrandIcon = brandLinkIcon(host);
+  const faviconUrl = BrandIcon ? null : faviconUrlForOrigin(`https://${host}`);
+  return (
+    <span
+      className="ms-[0.25em] me-[0.2em] inline-flex size-[14px] [vertical-align:-0.125em]"
+      aria-hidden
+    >
+      {BrandIcon ? (
+        <BrandIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
+      ) : faviconUrl === null || failedHost === host || failedFaviconHosts.has(host) ? (
+        <GlobeIcon className={MARKDOWN_LINK_FAVICON_CLASS_NAME} />
+      ) : (
+        <img
+          src={faviconUrl}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          className={cn(MARKDOWN_LINK_FAVICON_CLASS_NAME, "rounded-sm")}
+          onError={() => {
+            failedFaviconHosts.add(host);
+            setFailedHost(host);
+          }}
+        />
+      )}
+    </span>
+  );
+});
+
+function leadingExternalLinkTextLength(text: string): number {
+  const protocol = /^(?:https?:\/\/)/i.exec(text)?.[0];
+  if (protocol) return protocol.length;
+  return Math.min(text.length, 1);
+}
+
+function breakableExternalLinkText(text: string): ReactNode[] {
+  return Array.from(text, (character, index) => (
+    <React.Fragment key={`${index}:${character}`}>
+      {character}
+      <wbr />
+    </React.Fragment>
+  ));
+}
+
+function plainHastText(node: unknown): string | null {
+  if (!node || typeof node !== "object" || !("children" in node) || !Array.isArray(node.children)) {
+    return null;
+  }
+  const parts = node.children.map((child) => {
+    if (
+      child &&
+      typeof child === "object" &&
+      "type" in child &&
+      child.type === "text" &&
+      "value" in child &&
+      typeof child.value === "string"
+    ) {
+      return child.value;
+    }
+    return null;
+  });
+  return parts.every((part) => part !== null) ? parts.join("") : null;
+}
+
+/**
+ * Whether the link carries any words of its own. An anchor that is only an image — a badge, a
+ * "Fix in Cursor" button — already shows its identity, and a favicon bolted on in front of it
+ * is a stray logo rather than a hint.
+ */
+function hastHasText(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false;
+  if (
+    "type" in node &&
+    node.type === "text" &&
+    "value" in node &&
+    typeof node.value === "string" &&
+    node.value.trim().length > 0
+  ) {
+    return true;
+  }
+  return "children" in node && Array.isArray(node.children) && node.children.some(hastHasText);
+}
+
+function MarkdownExternalLinkContent({
+  host,
+  plainText,
+  children,
+}: {
+  host: string;
+  plainText: string | null;
+  children: ReactNode;
+}) {
+  if (plainText) {
+    const leadingLength = leadingExternalLinkTextLength(plainText);
+    return (
+      <>
+        <span className="whitespace-nowrap">
+          <MarkdownLinkFavicon host={host} />
+          {plainText.slice(0, leadingLength)}
+        </span>
+        {breakableExternalLinkText(plainText.slice(leadingLength))}
+      </>
+    );
+  }
+
+  const childNodes = Children.toArray(children);
+  const firstChild = childNodes[0];
+
+  if (typeof firstChild === "string" && firstChild.length > 0) {
+    const leadingLength = leadingExternalLinkTextLength(firstChild);
+    return (
+      <>
+        <span className="whitespace-nowrap">
+          <MarkdownLinkFavicon host={host} />
+          {firstChild.slice(0, leadingLength)}
+        </span>
+        {breakableExternalLinkText(firstChild.slice(leadingLength))}
+        {childNodes.slice(1)}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <span className="whitespace-nowrap">
+        <MarkdownLinkFavicon host={host} />
+        {firstChild}
+      </span>
+      {childNodes.slice(1)}
+    </>
+  );
+}
+
+/**
+ * Main's external link: a new-tab anchor with the site's favicon and the full URL on hover. A link
+ * to an image or video opens it in the media dialog. Coder omits main's in-app browser preview.
+ */
+function MarkdownExternalLink({
+  anchorProps,
+  href,
+  faviconHost,
+  node,
+  isPullRequestAutolink,
+  children,
+}: {
+  anchorProps: ComponentProps<"a">;
+  href: string;
+  faviconHost: string;
+  node: unknown;
+  isPullRequestAutolink: boolean;
+  children: ReactNode;
+}) {
+  const [mediaPreview, setMediaPreview] = useState<ExpandedImagePreview | null>(null);
+  const onClick = anchorProps.onClick;
+  const link = (
+    <a
+      {...anchorProps}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(event) => {
+        onClick?.(event);
+        const kind = mediaKindFromPath(href);
+        if (
+          kind === null ||
+          event.defaultPrevented ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        const src = resolveProtocolRelativeMediaUrl(href);
+        const name = src.split(/[?#]/, 1)[0]?.split("/").at(-1) || kind;
+        setMediaPreview({
+          index: 0,
+          images: [kind === "video" ? { src, name, type: "video" } : { src, name }],
+        });
+      }}
+    >
+      {hastHasText(node) && !isPullRequestAutolink ? (
+        <MarkdownExternalLinkContent host={faviconHost} plainText={plainHastText(node)}>
+          {children}
+        </MarkdownExternalLinkContent>
+      ) : (
+        children
+      )}
+    </a>
+  );
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger render={link} />
+        <TooltipPopup side="top">{href}</TooltipPopup>
+      </Tooltip>
+      {mediaPreview ? (
+        <ExpandedImageDialog preview={mediaPreview} onClose={() => setMediaPreview(null)} />
+      ) : null}
+    </>
   );
 }
 
@@ -1161,6 +1403,17 @@ const MARKDOWN_COMPONENTS: Components = {
       );
     }
     const fileLink = resolveMarkdownFileLinkMeta(href, cwd);
+    if (fileLink && isVideoFilePath(fileLink.filePath)) {
+      return (
+        <ProjectVideoLink
+          cwd={cwd}
+          threadRef={threadRef}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
+        >
+          {children}
+        </ProjectVideoLink>
+      );
+    }
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
         <ProjectImageLink
@@ -1275,38 +1528,28 @@ const MARKDOWN_COMPONENTS: Components = {
         </button>
       );
     }
-    if (isGitLabExternalUrl(targetHref, projects)) {
+    const faviconHost = resolveExternalWebLinkHost(targetHref);
+    /* Relative and malformed links remain plain inert text. */
+    if (faviconHost === null) {
       return (
-        <a
-          {...props}
-          {...autolinkProps}
-          href={targetHref}
-          target="_blank"
-          rel="noopener noreferrer"
+        <span
+          className={cn(autolinkProps.className, "text-primary underline")}
+          data-markdown-copy={pullRequestCopy}
         >
           {children}
-        </a>
+        </span>
       );
     }
-    let githubLink = false;
-    try {
-      const url = new URL(targetHref);
-      githubLink =
-        (url.protocol === "https:" || url.protocol === "http:") &&
-        (url.hostname === "github.com" || url.hostname.endsWith(".github.com"));
-    } catch {
-      /* Relative and malformed links remain plain inert text. */
-    }
     return (
-      <span
-        className={cn(autolinkProps.className, "text-primary underline")}
-        data-markdown-copy={pullRequestCopy}
+      <MarkdownExternalLink
+        anchorProps={{ ...props, ...autolinkProps }}
+        href={targetHref}
+        faviconHost={faviconHost}
+        node={node}
+        isPullRequestAutolink={pullRequestCopy !== undefined}
       >
-        {githubLink && (
-          <GitHubIcon aria-hidden className="mr-1 inline-block size-3.5 align-text-bottom" />
-        )}
         {children}
-      </span>
+      </MarkdownExternalLink>
     );
   },
   img({
@@ -1333,6 +1576,28 @@ const MARKDOWN_COMPONENTS: Components = {
       );
     }
     const fileLink = resolveMarkdownFileLinkMeta(src, cwd);
+    const copyMarkdown = markdownImageCopy(alt ?? "", typeof src === "string" ? src : "", title);
+    const authoredSizeStyle = authoredImageSizeStyle(width, height);
+    if (fileLink && isVideoFilePath(fileLink.filePath))
+      return cwd && threadRef ? (
+        <ProjectMarkdownVideo
+          source={{
+            environmentId: threadRef.environmentId,
+            target: {
+              threadId: threadRef.threadId,
+              cwd,
+              filePath: fileLink.workspaceRelativePath ?? fileLink.filePath,
+            },
+          }}
+          alt={alt || fileLink.basename}
+          copyMarkdown={copyMarkdown}
+          style={authoredSizeStyle}
+          className={CHAT_MARKDOWN_VIDEO_CLASS_NAME}
+          videoClassName={CHAT_MARKDOWN_VIDEO_ELEMENT_CLASS_NAME}
+        />
+      ) : (
+        <span title="Video preview unavailable">{alt || fileLink.basename}</span>
+      );
     if (fileLink)
       return (
         <ProjectImageLink
@@ -1355,7 +1620,46 @@ const MARKDOWN_COMPONENTS: Components = {
           {alt || fileLink.basename}
         </ProjectImageLink>
       );
-    return <InertMarkdownImage alt={alt ?? ""} />;
+    const srcString = typeof src === "string" ? src : "";
+    if (resolveExternalWebLinkHost(srcString) === null)
+      return <UnavailableMarkdownImage alt={alt ?? ""} />;
+    // Main's direct media: web images and videos load in place from their own host.
+    const mediaSrc = resolveProtocolRelativeMediaUrl(srcString);
+    const kind = mediaKindFromPath(srcString) ?? "image";
+    const reference = mediaUrlReference(srcString);
+    const actionsSource = {
+      kind,
+      name: alt || kind,
+      src: mediaSrc,
+      ...(reference ? { reference } : {}),
+    };
+    if (kind === "video")
+      return (
+        <MediaVideoPlayer
+          key={mediaSrc}
+          src={mediaSrc}
+          label={alt ?? ""}
+          originalUrl={srcString}
+          style={authoredSizeStyle}
+          copyMarkdown={copyMarkdown}
+          className={CHAT_MARKDOWN_VIDEO_CLASS_NAME}
+          videoClassName={CHAT_MARKDOWN_VIDEO_ELEMENT_CLASS_NAME}
+          actionsSource={actionsSource}
+        />
+      );
+    return (
+      <ExternalMarkdownImage
+        actionsSource={actionsSource}
+        key={mediaSrc}
+        src={mediaSrc}
+        alt={alt ?? ""}
+        copyMarkdown={copyMarkdown}
+        standalone={node?.properties?.dataStandalone === true}
+        className={className}
+        style={authoredSizeStyle}
+        imageProps={{ id, ...imageProps }}
+      />
+    );
   },
   code({ node, children, className: codeClassName, ...props }) {
     const { cwd, threadRef } = useMarkdownState();
@@ -1364,6 +1668,17 @@ const MARKDOWN_COMPONENTS: Components = {
       node?.properties?.dataInlineCode != null
         ? resolveInlineCodeFileLinkMeta(codeText, cwd)
         : null;
+    if (fileLink && isVideoFilePath(fileLink.filePath)) {
+      return (
+        <ProjectVideoLink
+          cwd={cwd}
+          threadRef={threadRef}
+          filePath={fileLink.workspaceRelativePath ?? fileLink.filePath}
+        >
+          {children}
+        </ProjectVideoLink>
+      );
+    }
     if (fileLink && isImageFilePath(fileLink.filePath)) {
       return (
         <ProjectImageLink

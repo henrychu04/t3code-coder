@@ -42,6 +42,17 @@ import {
 } from "react";
 
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
+import {
+  isWorkspaceAudioPreviewPath,
+  isWorkspaceImagePreviewPath,
+  isWorkspaceVideoPreviewPath,
+} from "@t3tools/shared/filePreview";
+import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
+import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
+import { useProjectImages } from "~/components/chat/useProjectImages";
+import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useProjectVideo";
+import { projectMediaReference } from "~/components/chat/projectMediaReference";
+import { AudioPreview } from "./AudioPreview";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import ChatMarkdown from "~/components/ChatMarkdown";
 import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
@@ -55,11 +66,7 @@ import {
   DialogTitle,
 } from "~/components/ui/dialog";
 import { Input } from "~/components/ui/input";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "~/components/ui/input-group";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Kbd, KbdGroup } from "~/components/ui/kbd";
 import { Toggle } from "~/components/ui/toggle";
@@ -137,6 +144,112 @@ type FileSearchCommandRequest = {
 };
 
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
+
+/**
+ * Main's workspace media previews. Main loads each file from a signed asset URL; Coder reads it
+ * through bounded helper stdio chunks into a memory-only blob URL. Opening the file is the
+ * explicit request, so the read starts immediately.
+ */
+function WorkspaceImagePreview(props: {
+  readonly source: ProjectVideoSource;
+  readonly alt: string;
+}) {
+  const image = useProjectImages(props.source.environmentId, props.source.target, true, true);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const imageUrl = image?.status === "loaded" ? image.url : null;
+  const actionsSource: MediaActionSource = {
+    kind: "image",
+    name: props.alt,
+    src: imageUrl,
+    reference: projectMediaReference(props.source.target),
+  };
+
+  if (image?.status === "error" || (imageUrl !== null && failedUrl === imageUrl)) {
+    return (
+      <MediaActions source={actionsSource}>
+        <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
+          Unable to load workspace image.
+        </div>
+      </MediaActions>
+    );
+  }
+
+  return imageUrl !== null ? (
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+      <MediaActions source={actionsSource}>
+        <img
+          className="max-h-full max-w-full object-contain"
+          src={imageUrl}
+          alt={props.alt}
+          onError={() => setFailedUrl(imageUrl)}
+        />
+      </MediaActions>
+    </div>
+  ) : (
+    <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
+      <Spinner className="size-5" />
+    </div>
+  );
+}
+
+function WorkspaceVideoPreview(props: {
+  readonly source: ProjectVideoSource;
+  readonly name: string;
+}) {
+  const { state, retry } = useProjectMedia("video", props.source, true);
+  const src = state.status === "loaded" ? state.src : null;
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
+      <MediaVideoPlayer
+        src={src}
+        sourceFailed={state.status === "failed"}
+        label={props.name}
+        preload="metadata"
+        className="flex h-full min-h-0 w-full max-w-5xl items-center justify-center"
+        onRetry={retry}
+        actionsSource={{
+          kind: "video",
+          name: props.name,
+          src,
+          reference: projectMediaReference(props.source.target),
+        }}
+      />
+    </div>
+  );
+}
+
+function WorkspaceAudioPreview(props: {
+  readonly source: ProjectVideoSource;
+  readonly name: string;
+}) {
+  const { state, retry } = useProjectMedia("audio", props.source, true);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const url = state.status === "loaded" ? state.src : null;
+  if (state.status === "failed" || (url !== null && failedUrl === url)) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-xs leading-relaxed text-destructive">
+        Unable to load audio.
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() => {
+            setFailedUrl(null);
+            void retry();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (url === null)
+    return (
+      <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
+        <Spinner className="size-5" />
+      </div>
+    );
+  return <AudioPreview src={url} name={props.name} onError={() => setFailedUrl(url)} />;
+}
 
 function parseLineColumn(value: string): { line: number; column: number } | null {
   const match = /^\s*(\d+)(?:\s*:\s*(\d+))?\s*$/.exec(value);
@@ -1553,8 +1666,28 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
     props.relativePath,
   );
   const previewPath = file.isNotFile ? null : props.relativePath;
+  const isVideo = props.relativePath !== null && isWorkspaceVideoPreviewPath(props.relativePath);
+  const isAudio =
+    props.relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(props.relativePath);
+  const isImage =
+    props.relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(props.relativePath);
+  const isMedia = isImage || isVideo || isAudio;
+  const mediaSource: ProjectVideoSource | null =
+    props.relativePath !== null && isMedia
+      ? {
+          environmentId: props.environmentId,
+          target: {
+            threadId: props.threadRef.threadId,
+            cwd: props.cwd,
+            filePath: props.relativePath,
+          },
+        }
+      : null;
   useWorkspaceMutationRefresh({
-    enabled: props.relativePath !== null && !props.selectedFilePending,
+    // Media never shows its contents as text, so re-reading it on every mutation is waste. A folder
+    // named like one still re-reads, so it notices when the path becomes a file.
+    enabled:
+      props.relativePath !== null && (file.isNotFile || !isMedia) && !props.selectedFilePending,
     mutationId: props.workspaceMutationId,
     refresh: file.refresh,
     resourceKey: `file:${props.environmentId}:${props.cwd}:${props.relativePath ?? ""}`,
@@ -1878,7 +2011,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
           onMatchChange={revealFindMatch}
         />
       ) : null}
-      {props.relativePath && file.data?.truncated ? (
+      {props.relativePath && !isMedia && file.data?.truncated ? (
         <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-[11px] text-warning-foreground">
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
@@ -1897,7 +2030,26 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
         <div
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
-          {props.relativePath && file.error && file.data === null ? (
+          {file.isNotFile ? null : mediaSource && isVideo ? (
+            <WorkspaceVideoPreview
+              key={`${props.environmentId}:${props.threadRef.threadId}:${props.relativePath}`}
+              source={mediaSource}
+              name={props.relativePath ?? "video"}
+            />
+          ) : mediaSource && isAudio ? (
+            <WorkspaceAudioPreview
+              key={`${props.environmentId}:${props.threadRef.threadId}:${props.relativePath}`}
+              source={mediaSource}
+              name={props.relativePath ?? "audio"}
+            />
+          ) : mediaSource && isImage ? (
+            // Like main's revision suffix, a workspace mutation rereads the current image.
+            <WorkspaceImagePreview
+              key={`${props.relativePath}:${props.workspaceMutationId ?? ""}`}
+              source={mediaSource}
+              alt={props.relativePath ?? "image"}
+            />
+          ) : props.relativePath && file.error && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-destructive">
               {file.error}
             </div>

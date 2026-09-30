@@ -54,7 +54,7 @@ it("previews copied and renamed project files without captured activities or pat
     host.remove();
   }
 });
-it("opens file links on demand, reads outside-project images, and keeps external images inert", async () => {
+it("opens file links on demand, reads outside-project images, and loads external images directly", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -75,7 +75,13 @@ it("opens file links on demand, reads outside-project images, and keeps external
         ([, target, enabled]) => enabled && target.filePath === "/outside/image.png",
       ),
     ).toBe(true);
-    expect(host.querySelector('img[alt="Remote"]')).toBeNull();
+    // External images load from their own host, never through the helper.
+    expect(load.mock.calls.some(([, target]) => target?.filePath.includes("example.com"))).toBe(
+      false,
+    );
+    expect(host.querySelector('img[alt="Remote"]')?.getAttribute("src")).toBe(
+      "https://example.com/a.png",
+    );
     expect(host.querySelectorAll('a[title="Preview image"]')).toHaveLength(1);
     await act(async () =>
       host.querySelector<HTMLAnchorElement>('a[title="Preview image"]')!.click(),
@@ -194,11 +200,11 @@ it("explains unsupported formats without fetching or offering a futile retry", a
         <ChatMarkdown
           cwd="/project"
           threadRef={threadRef}
-          text="![Logo](/tmp/logo.svg) [Animation](movie.gif)"
+          text="![Scan](/tmp/scan.tiff) ![Photo](photo.heic)"
         />,
       ),
     );
-    expect(host.textContent).toContain("Unsupported image format. Use PNG, JPEG, or WebP.");
+    expect(host.textContent).toContain("Unsupported image format.");
     expect(host.textContent).not.toContain("Retry image");
     expect(load).not.toHaveBeenCalled();
     expect(host.querySelector("a, img, button")).toBeNull();

@@ -6,6 +6,7 @@ import {
   type ComponentProps,
   type MouseEvent,
   type KeyboardEvent,
+  type ReactElement,
 } from "react";
 import type { EnvironmentId, ScreenshotArtifactReference } from "@t3tools/contracts";
 import { TriangleAlertIcon } from "lucide-react";
@@ -16,19 +17,28 @@ import { useScreenshotArtifacts } from "./useScreenshotArtifacts";
 import { ExpandedImageDialog, type ExpandedImagePreview } from "./ExpandedImageDialog";
 import { markdownImageGallery, markdownImageItems } from "./markdownImageGallery";
 import { authoredImageSizeStyle } from "./markdownImageLayout";
+import { MediaActions, type MediaActionSource } from "../media/MediaActions";
 const CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME =
   "h-auto w-auto object-contain max-h-[30rem] max-w-[min(100%,30rem)]";
 const CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME = "inline-block!";
 const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME =
   "aspect-video w-[30rem] overflow-hidden bg-muted/60 max-w-[min(100%,30rem)] rounded-lg border border-border/40";
-function ChatMarkdownMediaUnavailableLabel({ alt, retry }: { alt: string; retry: () => void }) {
+function ChatMarkdownMediaUnavailableLabel({
+  alt,
+  retry,
+}: {
+  alt: string;
+  retry?: (() => void) | undefined;
+}) {
   return (
     <span className="inline-flex items-center gap-1.5">
       <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />
       Image unavailable{alt ? ` · ${alt}` : ""}{" "}
-      <button type="button" className="underline" onClick={retry}>
-        Retry image
-      </button>
+      {retry ? (
+        <button type="button" className="underline" onClick={retry}>
+          Retry image
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -38,7 +48,7 @@ function ChatMarkdownImageFallback({
   copyMarkdown,
 }: {
   alt: string;
-  retry: () => void;
+  retry?: (() => void) | undefined;
   copyMarkdown?: string | undefined;
 }) {
   return (
@@ -87,11 +97,19 @@ export function ChatMarkdownImage(props: {
   readonly imageProps?:
     | Omit<ComponentProps<"img">, "src" | "alt" | "className" | "style">
     | undefined;
-  readonly retry: () => void;
+  /** Absent for external images, which have no Coder transport to retry. */
+  readonly retry?: (() => void) | undefined;
   readonly artifact?: ScreenshotArtifactReference | undefined;
   readonly projectImage?: import("../../lib/readProjectImageBlob").ProjectImageTarget | undefined;
   readonly onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
+  readonly actionsSource?: MediaActionSource | undefined;
 }) {
+  const withActions = (element: ReactElement) =>
+    props.actionsSource ? (
+      <MediaActions source={props.actionsSource}>{element}</MediaActions>
+    ) : (
+      element
+    );
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const src = props.src ?? loadedSrc;
@@ -129,35 +147,35 @@ export function ChatMarkdownImage(props: {
   });
 
   if (settled) {
-    return (
-      <>
-        <img
-          {...props.imageProps}
-          ref={markLoadedIfComplete}
-          src={src}
-          alt={props.alt}
-          data-markdown-copy={props.copyMarkdown}
-          decoding="async"
-          draggable={false}
-          className={cn(
-            CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
-            props.className,
-            props.onImageExpand && "cursor-zoom-in",
-          )}
-          style={props.style}
-          {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
-          {...imageEvents(src)}
-        />
-      </>
+    return withActions(
+      <img
+        {...props.imageProps}
+        ref={markLoadedIfComplete}
+        src={src}
+        alt={props.alt}
+        data-markdown-copy={props.copyMarkdown}
+        decoding="async"
+        draggable={false}
+        className={cn(
+          CHAT_MARKDOWN_IMAGE_SIZE_CLASS_NAME,
+          props.className,
+          props.onImageExpand && "cursor-zoom-in",
+        )}
+        style={props.style}
+        {...expandableMarkdownImageProps(props.onImageExpand, props.alt)}
+        {...imageEvents(src)}
+      />,
     );
   }
   if (!props.standalone) {
     return failed ? (
-      <ChatMarkdownImageFallback
-        alt={props.alt}
-        copyMarkdown={props.copyMarkdown}
-        retry={props.retry}
-      />
+      withActions(
+        <ChatMarkdownImageFallback
+          alt={props.alt}
+          copyMarkdown={props.copyMarkdown}
+          retry={props.retry}
+        />,
+      )
     ) : (
       <span
         id={props.imageProps?.id}
@@ -168,38 +186,36 @@ export function ChatMarkdownImage(props: {
       />
     );
   }
-  return (
-    <>
-      <span
-        id={props.imageProps?.id}
-        data-markdown-copy={props.copyMarkdown}
-        className={cn(
-          CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
-          CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
-          "relative",
-        )}
-        style={props.style}
-        {...(failed
-          ? { role: "alert" as const }
-          : { role: "status" as const, "aria-label": "Loading image" })}
-      >
-        {failed ? (
-          <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
-            <ChatMarkdownMediaUnavailableLabel alt={props.alt} retry={props.retry} />
-          </span>
-        ) : src !== null ? (
-          <img
-            ref={markLoadedIfComplete}
-            src={src}
-            alt={props.alt}
-            decoding="async"
-            draggable={false}
-            className="invisible absolute inset-0 size-full"
-            {...imageEvents(src)}
-          />
-        ) : null}
-      </span>
-    </>
+  return withActions(
+    <span
+      id={props.imageProps?.id}
+      data-markdown-copy={props.copyMarkdown}
+      className={cn(
+        CHAT_MARKDOWN_MEDIA_LAYOUT_CLASS_NAME,
+        CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME,
+        "relative",
+      )}
+      style={props.style}
+      {...(failed
+        ? { role: "alert" as const }
+        : { role: "status" as const, "aria-label": "Loading image" })}
+    >
+      {failed ? (
+        <span className="flex size-full items-center justify-center p-2 text-center text-xs text-muted-foreground">
+          <ChatMarkdownMediaUnavailableLabel alt={props.alt} retry={props.retry} />
+        </span>
+      ) : src !== null ? (
+        <img
+          ref={markLoadedIfComplete}
+          src={src}
+          alt={props.alt}
+          decoding="async"
+          draggable={false}
+          className="invisible absolute inset-0 size-full"
+          {...imageEvents(src)}
+        />
+      ) : null}
+    </span>,
   );
 }
 

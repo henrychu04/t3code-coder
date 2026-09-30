@@ -82,8 +82,8 @@ while data loads prevents delayed automatic requests from replacing that choice;
 turn can trigger automatic panels again.
 
 Recognized GitLab merge-request links in MR descriptions and comments open in the current panel.
-On the merge-request page, navigation also updates the selected MR in the page URL. External media
-attachments remain inert.
+On the merge-request page, navigation also updates the selected MR in the page URL. Video uploads
+play inline, and other attachments open on their GitLab host.
 
 ## Thread notifications
 

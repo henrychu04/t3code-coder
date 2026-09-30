@@ -9,19 +9,16 @@ import {
 } from "./pullRequestPresentation";
 import { PullRequestGlyph } from "./pullRequestIcons";
 
-it("renders actor initials without loading external avatar images", () => {
-  const markup = renderToStaticMarkup(
-    createElement(PullRequestActorAvatar, {
-      actor: {
-        login: "reviewer",
-        name: "Reviewer",
-        avatarUrl: "https://gitlab.example/avatar.png",
-      },
-    }),
+it("renders the reported avatar, and initials when there is none", () => {
+  const actor = { login: "reviewer", name: "Reviewer", avatarUrl: "https://gitlab.example/a.png" };
+  const markup = renderToStaticMarkup(createElement(PullRequestActorAvatar, { actor }));
+  expect(markup).toContain('src="https://gitlab.example/a.png"');
+  expect(markup).toContain('referrerPolicy="no-referrer"');
+  const initials = renderToStaticMarkup(
+    createElement(PullRequestActorAvatar, { actor: { ...actor, avatarUrl: null } }),
   );
-  expect(markup).toContain(">R</span>");
-  expect(markup).not.toContain("<img");
-  expect(markup).not.toContain("https://");
+  expect(initials).toContain(">R</span>");
+  expect(initials).not.toContain("<img");
 });
 
 describe("resolvePullRequestState", () => {

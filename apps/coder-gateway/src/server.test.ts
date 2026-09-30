@@ -149,7 +149,17 @@ describe("local Coder gateway", () => {
       false,
     );
     strictEqual(
-      response.headers["content-security-policy"]?.includes("img-src 'self' data: blob:"),
+      response.headers["content-security-policy"]?.includes(
+        "img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:;",
+      ),
+      true,
+    );
+    // Web media may render, but scripts still cannot reach other origins; `blob:` lets media
+    // actions read bytes already held in browser memory.
+    strictEqual(
+      response.headers["content-security-policy"]?.includes(
+        "connect-src 'self' blob: ws://127.0.0.1:*;",
+      ),
       true,
     );
     const webIndex = await NodeFS.readFile(
