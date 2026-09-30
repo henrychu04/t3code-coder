@@ -149,7 +149,16 @@ describe("local Coder gateway", () => {
       false,
     );
     strictEqual(
-      response.headers["content-security-policy"]?.includes("img-src 'self' data: blob:"),
+      response.headers["content-security-policy"]?.includes(
+        "img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:;",
+      ),
+      true,
+    );
+    // As on main, media actions fetch web media and in-memory blobs; the host's CORS decides.
+    strictEqual(
+      response.headers["content-security-policy"]?.includes(
+        "connect-src 'self' blob: https: http: ws://127.0.0.1:*;",
+      ),
       true,
     );
     const webIndex = await NodeFS.readFile(

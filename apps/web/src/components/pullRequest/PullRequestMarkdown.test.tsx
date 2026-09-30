@@ -86,7 +86,7 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
     expect.objectContaining({ to: "/pull-requests", replace: true }),
   );
 });
-it("keeps external video and attachment cards inert", async () => {
+it("plays videos from their host and links other attachments, as on main", async () => {
   await act(() =>
     root.render(
       <PullRequestMarkdown
@@ -99,7 +99,14 @@ it("keeps external video and attachment cards inert", async () => {
       />,
     ),
   );
-  expect(container.textContent).toContain("Video attachment");
-  expect(container.textContent).toContain("Attachment on gitlab.example");
-  expect(container.querySelector("a[href], video, iframe, img[src]")).toBeNull();
+  expect(container.querySelector("video")?.getAttribute("src")).toBe(
+    "https://example.com/demo.mp4",
+  );
+  const attachment = container.querySelector<HTMLAnchorElement>(
+    'a[href="https://gitlab.example/uploads/abc/file.zip"]',
+  );
+  expect(attachment?.textContent).toContain("Open attachment on gitlab.example");
+  expect(attachment?.target).toBe("_blank");
+  expect(attachment?.rel).toContain("noopener");
+  expect(container.querySelector("iframe")).toBeNull();
 });

@@ -144,6 +144,10 @@
       "types": "./src/terminalBuffer.ts",
       "import": "./src/terminalBuffer.ts"
     },
+    "./favicon": {
+      "types": "./src/favicon.ts",
+      "import": "./src/favicon.ts"
+    },
     "./filePreview": {
       "types": "./src/filePreview.ts",
       "import": "./src/filePreview.ts"

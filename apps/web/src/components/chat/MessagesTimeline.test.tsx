@@ -813,7 +813,7 @@ describe("MessagesTimeline", () => {
     expect(markup).toContain("&lt;root&gt;&lt;child enabled=&quot;true&quot; /&gt;&lt;/root&gt;");
   });
 
-  it("keeps external links and images inert and drops their title attributes", async () => {
+  it("renders external links and images as on main and drops their title attributes", async () => {
     const { MessagesTimeline } = await import("./MessagesTimeline");
     const markup = renderToStaticMarkup(
       <MessagesTimeline
@@ -826,9 +826,8 @@ describe("MessagesTimeline", () => {
       />,
     );
 
-    expect(markup).toContain(">link</span>");
-    expect(markup).toContain("Image unavailable · image");
-    expect(markup).not.toContain("https://example.com");
+    expect(markup).toContain('href="https://example.com"');
+    expect(markup).toContain('src="https://example.com/image.png"');
     expect(markup).not.toContain('title="link tip"');
     expect(markup).not.toContain('title="image tip"');
   });

@@ -19,9 +19,11 @@ import { ChatMarkdownImage } from "./CapturedMarkdownImage";
 import { ExpandedImageDialog, type ExpandedImagePreview } from "./ExpandedImageDialog";
 import { authoredImageSizeStyle } from "./markdownImageLayout";
 import { markdownImageGallery, markdownImageItems } from "./markdownImageGallery";
+import { projectMediaActionFields } from "./projectMediaReference";
 
+/** The image formats the helper validates by signature and a browser can render. */
 export function isImageFilePath(path: string): boolean {
-  return /\.(?:png|jpe?g|webp|gif|svg|avif|bmp|ico|tiff?)$/i.test(path);
+  return /\.(?:png|jpe?g|webp|gif|svg|avif|bmp|ico)$/i.test(path);
 }
 const InsideImageLink = createContext(false);
 export function ProjectImageLink(props: {
@@ -42,14 +44,14 @@ export function ProjectImageLink(props: {
   if (nested && !props.inline) return <>{props.children}</>;
   if (!props.filePath || !props.cwd || !props.threadRef)
     return <span title="Image preview unavailable">{props.children}</span>;
-  if (!/\.(?:png|jpe?g|webp)$/i.test(props.filePath))
+  if (!isImageFilePath(props.filePath))
     return (
       <span
         id={props.imageProps?.id}
         className="inline-flex max-w-full flex-wrap gap-1 text-xs text-muted-foreground"
-        title="Supported image formats: PNG, JPEG, and WebP"
+        title="Supported image formats: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO"
       >
-        {props.children} · Unsupported image format. Use PNG, JPEG, or WebP.
+        {props.children} · Unsupported image format.
       </span>
     );
   const target = {
@@ -184,6 +186,12 @@ function ProjectImageContent(
               retry={retry}
               projectImage={props.target}
               onImageExpand={setPreview}
+              actionsSource={{
+                kind: "image",
+                name: alt || "image",
+                src: item.src,
+                ...projectMediaActionFields(props.environmentId, props.target),
+              }}
             />
           )}
         </span>

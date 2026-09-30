@@ -4,6 +4,8 @@ import { NonNegativeInt, PositiveInt, ThreadId, TrimmedNonEmptyString } from "./
 
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 512 * 1024;
+/** Workspace video and audio are read whole into browser memory, so they keep a larger explicit bound. */
+export const MAX_PROJECT_MEDIA_BYTES = 256 * 1024 * 1024;
 
 // Attachment reads share this id; upstream's thread-scoped attachment ids run up to 128 characters.
 export const ScreenshotArtifactId = TrimmedNonEmptyString.check(Schema.isMaxLength(128)).pipe(
@@ -65,6 +67,32 @@ export class ScreenshotArtifactReadError extends Schema.TaggedError<ScreenshotAr
   },
 ) {}
 
+/** Browser-renderable images, videos, and audio an on-demand workspace media read may return. */
+export const ProjectMediaMimeType = Schema.Literals([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "image/bmp",
+  "image/x-icon",
+  "image/svg+xml",
+  "video/mp4",
+  "video/quicktime",
+  "video/webm",
+  "video/ogg",
+  "video/x-matroska",
+  "video/x-msvideo",
+  "audio/mpeg",
+  "audio/wav",
+  "audio/ogg",
+  "audio/flac",
+  "audio/aac",
+  "audio/mp4",
+  "audio/aiff",
+]);
+export type ProjectMediaMimeType = typeof ProjectMediaMimeType.Type;
+
 /** On-demand image paths resolve on the environment machine, relative to the verified thread root. */
 export const ProjectImageReadInput = Schema.Struct({
   threadId: ThreadId,
@@ -77,9 +105,9 @@ export const ProjectImageReadInput = Schema.Struct({
 export type ProjectImageReadInput = typeof ProjectImageReadInput.Type;
 export const ProjectImageChunk = Schema.Struct({
   dimensions: Schema.optional(ScreenshotArtifactDimensions),
-  mimeType: ScreenshotArtifactMimeType,
+  mimeType: ProjectMediaMimeType,
   offset: NonNegativeInt,
-  totalBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_BYTES)),
+  totalBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_PROJECT_MEDIA_BYTES)),
   dataBase64: Schema.String,
   nextOffset: Schema.NullOr(NonNegativeInt),
   revision: Schema.String,

@@ -361,17 +361,20 @@ only for project-content search. It does not change ordinary file-read or edit l
 not authorize uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace
 connections.
 
-The Files surface exposes no upload, download, export, drag-and-drop, absolute path, or local file access. An
-explicit Copy path action may copy only the project-relative path to the browser clipboard. Open
+The Files surface exposes no upload, export, drag-and-drop, absolute path, or local file access for
+text files. An explicit Copy path action may copy only the project-relative path to the browser
+clipboard. Media previews carry main's media menu, described below. Open
 tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
 
-Image previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
-resolve image paths without capture events or source-path fingerprints. The helper verifies
+Media previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
+resolve image and video paths without capture events or source-path fingerprints. The helper verifies
 that the requested root belongs to the thread, resolves relative paths from that root and accepts
 absolute or home-relative image paths elsewhere on the Linux workspace machine. Symlinks resolve
 to an exact file; the helper checks its opened path, device and inode, rejects non-files, and
-validates PNG/JPEG/WebP signatures and extensions. No remote URLs or general file reads are accepted.
-Each image is limited to 20 MiB and each stdio chunk to 512 KiB. A revision based on file identity,
+validates each file's signature against its extension: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and
+ICO images; MP4, M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and
+AIFF audio. No remote URLs or general file reads are accepted. Each image is limited to 20 MiB, each
+video or audio file to 256 MiB, and each stdio chunk to 512 KiB. A revision based on file identity,
 size, and modification/change timestamps must remain constant across chunks; a changed file fails
 with a generic retryable error. No file content or path is included in image errors.
 
@@ -387,8 +390,24 @@ Environment image links open a gallery directly; inline images load near the vie
 memory-only image resource store permits three concurrent reads and reserves at most 100 MiB.
 Selected gallery images take priority over other previews; deferred previews can still be opened.
 The gateway persists no image bytes and opens no additional route or workspace connection.
-External web images, video, and download/export remain excluded. Outside-project access is limited
-to validated image previews; the text Files surface and search retain project containment.
+Main streams workspace video through signed range URLs; Coder instead reads the whole file into a
+memory-only blob URL for main's `MediaVideoPlayer`. Because that read is not a cheap metadata
+preload, inline videos show a play card and load only when pressed, with byte progress; a video
+link opens main's gallery, which loads it on open. External web images and videos load directly
+from their host as on main. Like main's desktop policy, the gateway CSP allows `https:`/`http:` in
+`img-src`, `media-src`, and `connect-src`, plus `blob:`; `script-src` stays limited to the app.
+Main's `MediaActions` menu copies paths and URLs and offers Save and Copy image. Coder has no signed
+asset URL to re-request, so those byte actions read the media element's current source: the
+memory-only blob for workspace media, or the web URL, which works when its host allows CORS.
+Browsers may be unable to play some accepted containers, such as AVI; main's player then shows its
+unavailable state with a download action.
+
+The Files surface uses main's image, video, and audio previews through the same helper reads. Opening
+the file is the explicit request, so it loads immediately. Images reread after a workspace mutation,
+like main's revision suffix; video and audio keep the loaded copy until the file is reopened, because
+a whole-file reread on every mutation would be expensive. PDF and HTML browser previews are not
+ported. Outside-project access is limited to validated media previews; the text Files surface and
+search retain project containment.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be
@@ -424,8 +443,8 @@ storage, the right-panel tabs, and the last merge method chosen stay in memory f
 session; a project's default merge method is a workspace setting whose `null` means "last
 selected". Links the panels open go to the system browser through the validated HTTP(S)
 `shell.openExternal`, because Coder has no in-app preview. The panels use GitLab wording and `!`
-references, render uploads as inert attachment rows, and resolve `/uploads/` links against the
-repository host.
+references, play video uploads inline and link other uploads as on main, and resolve `/uploads/`
+links against the repository host.
 
 Settings use upstream's layout, sidebar navigation, search catalog, and scope picker with these
 seams. The Integrations and SnapShot categories, desktop update and quit rows, the diagnostics row,
@@ -480,12 +499,12 @@ listed here is drift to remove rather than fork behavior to keep.
   work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
   and remote icons. Images move through the gateway and SCP (see
   [Network and transfer constraints](#network-and-transfer-constraints)).
-- **Markdown.** Upstream's file links and chips. External links stay inert except GitLab hosts,
-  and external images never load.
+- **Markdown.** Upstream's file links, chips, external links with favicons, and direct external
+  images and videos. Links open in a new tab; main's in-app browser preview and link context menu
+  are excluded.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
-  `!` references and GitLab wording are used. Actor avatars render as initials without loading
-  external images.
+  `!` references and GitLab wording are used. Actor avatars load as on main.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor.

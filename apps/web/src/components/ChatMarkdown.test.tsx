@@ -55,7 +55,7 @@ describe("orderedListGutterStyle", () => {
 });
 
 describe("ChatMarkdown", () => {
-  it("opens project image links without captures and keeps external images inert", () => {
+  it("opens project image links without captures and loads external images in place", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown
         cwd="/project"
@@ -64,8 +64,7 @@ describe("ChatMarkdown", () => {
       />,
     );
     expect(markup.match(/title="Preview image"/g)).toHaveLength(2);
-    expect(markup).not.toContain('src="https://example.com/image.png"');
-    expect(markup).not.toContain("<img");
+    expect(markup).toContain('src="https://example.com/image.png"');
   });
 
   it("opens GitLab links in a separate tab", () => {
@@ -77,7 +76,7 @@ describe("ChatMarkdown", () => {
     expect(markup).toContain('rel="noopener noreferrer"');
   });
 
-  it("renders validated internal citations while keeping external links inert", () => {
+  it("renders validated internal citations beside external links", () => {
     const citation: AssistantCitation = {
       version: 1,
       environmentId: EnvironmentId.make("env"),
@@ -103,7 +102,7 @@ describe("ChatMarkdown", () => {
     expect(markup).toContain("Quoted answer");
     expect(markup.match(/data-citation-message=/g)).toHaveLength(1);
     expect(markup).not.toContain('href="t3-citation://invalid"');
-    expect(markup).not.toContain('href="https://example.com"');
+    expect(markup).toContain('href="https://example.com"');
   });
 
   it("keeps negative-exponent monetary values as text even when a skill has that name", () => {
@@ -117,7 +116,7 @@ describe("ChatMarkdown", () => {
     expect(markup).toContain("$1e-9");
     expect(markup).not.toContain("Numeric skill");
   });
-  it("restores rich presentation while keeping external resources inert", () => {
+  it("restores rich presentation with main's external links and images", () => {
     const markup = renderToStaticMarkup(
       <ChatMarkdown
         cwd="/workspace/project"
@@ -145,9 +144,8 @@ describe("ChatMarkdown", () => {
     expect(markup).toContain("chat-markdown-table-container");
     expect(markup).toContain('aria-label="Copy table as Markdown"');
     expect(markup).toContain('data-markdown-details=""');
-    expect(markup).toContain("Image unavailable · diagram");
-    expect(markup).not.toContain('href="https://example.com"');
-    expect(markup).not.toContain('src="https://example.com/diagram.png"');
+    expect(markup).toContain('href="https://example.com"');
+    expect(markup).toContain('src="https://example.com/diagram.png"');
   });
 
   it("adds code block controls while retaining a plain-text fallback", () => {
@@ -251,17 +249,31 @@ describe("ChatMarkdown", () => {
   });
 });
 
-it("uses a bundled GitHub mark while keeping links inert and rejecting lookalike hosts", () => {
+it("uses a bundled GitHub mark instead of a fetched favicon and rejects lookalike hosts", () => {
   const markup = renderToStaticMarkup(
     <ChatMarkdown cwd="/workspace" text="[repository](https://github.com/org/repo)" />,
   );
   expect(markup).toContain('viewBox="0 0 1024 1024"');
-  expect(markup).not.toContain("<a ");
+  expect(markup).toContain('href="https://github.com/org/repo"');
+  expect(markup).toContain('target="_blank"');
   expect(markup).not.toContain("<img");
   const other = renderToStaticMarkup(
     <ChatMarkdown cwd="/workspace" text="[other](https://github.com.example.org/repo)" />,
   );
   expect(other).not.toContain('viewBox="0 0 1024 1024"');
+  expect(other).toContain("google.com/s2/favicons?domain=github.com.example.org");
+});
+
+it("keeps relative links inert and loads external videos in place", () => {
+  const markup = renderToStaticMarkup(
+    <ChatMarkdown
+      cwd={undefined}
+      text="[relative](docs/page) ![clip](https://example.com/clip.mp4)"
+    />,
+  );
+  expect(markup).not.toContain('href="docs/page"');
+  expect(markup).toContain("<video");
+  expect(markup).toContain('src="https://example.com/clip.mp4"');
 });
 
 describe("ChatMarkdown accessible headings", () => {

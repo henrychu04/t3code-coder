@@ -18,7 +18,7 @@ import {
   UserRoundIcon,
   UserRoundXIcon,
 } from "lucide-react";
-import { Children, type CSSProperties, isValidElement, type ReactNode } from "react";
+import { Children, type CSSProperties, isValidElement, type ReactNode, useState } from "react";
 
 import { cn } from "~/lib/utils";
 
@@ -421,8 +421,10 @@ export function PullRequestActorAvatar({
   className?: string;
 }) {
   const login = actor?.login ?? "ghost";
-  // Coder never loads external images, including avatars reported by GitLab.
-  return (
+  const avatarUrl = actor?.avatarUrl ?? null;
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
+  return avatarUrl === null || failedAvatarUrl === avatarUrl ? (
+    // Not every host reports an avatar, and a private host may refuse the browser's request.
     <span
       aria-hidden
       className={cn(
@@ -432,6 +434,16 @@ export function PullRequestActorAvatar({
     >
       {login.slice(0, 1).toUpperCase()}
     </span>
+  ) : (
+    <img
+      aria-hidden
+      alt=""
+      src={avatarUrl}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      className={cn("size-4 shrink-0 rounded-full bg-muted object-cover", className)}
+      onError={() => setFailedAvatarUrl(avatarUrl)}
+    />
   );
 }
 

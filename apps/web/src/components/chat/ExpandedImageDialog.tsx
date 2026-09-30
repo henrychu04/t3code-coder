@@ -1,5 +1,5 @@
 // Adapted from main f328db30d ExpandedImageDialog: layout, navigation and zoom/pan.
-// Coder supplies memory-only Blob URLs; external assets and media export are omitted.
+// Coder supplies memory-only Blob URLs; media export is omitted.
 import type { ProjectImageTarget } from "../../lib/readProjectImageBlob";
 import type { ScreenshotArtifactReference } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -9,6 +9,8 @@ import { Button } from "../ui/button";
 import { isContextMenuOpen } from "../../contextMenuFallback";
 import { composerFloatingLayerProps } from "./composerEventScope";
 import { ZoomableImage, type ZoomableImageHandle } from "./ZoomableImage";
+import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
+import { useProjectVideo, type ProjectVideoSource } from "./useProjectVideo";
 
 // Same state dimensions as upstream, with retry supplied by the Coder transport.
 const EXPANDED_MEDIA_STATE_CLASS_NAME =
@@ -22,10 +24,33 @@ export interface ExpandedImagePreview {
       | (Omit<ScreenshotArtifactReference, "sizeBytes"> & { sizeBytes?: number })
       | undefined;
     name: string;
+    type?: "video";
+    projectVideo?: ProjectVideoSource | undefined;
     loading?: boolean;
     retry?: (() => void) | undefined;
   }[];
   index: number;
+}
+
+type ExpandedImageItem = ExpandedImagePreview["images"][number];
+
+/** Main's ExpandedVideo; opening the dialog is the explicit request that reads the video. */
+function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
+  const { state, retry } = useProjectVideo(item.projectVideo, item.projectVideo !== undefined);
+  const src = item.projectVideo ? (state.status === "loaded" ? state.src : null) : item.src;
+  return (
+    <MediaVideoPlayer
+      src={src}
+      label={item.name}
+      sourceFailed={state.status === "failed"}
+      preload="metadata"
+      autoPlay
+      className="block max-h-[var(--media-height)] max-w-[var(--media-width)] text-center"
+      videoClassName="aspect-auto max-h-[var(--media-height)] w-auto max-w-[var(--media-width)] rounded-lg border border-border/70 shadow-2xl"
+      stateClassName={EXPANDED_MEDIA_STATE_CLASS_NAME}
+      onRetry={item.projectVideo ? retry : undefined}
+    />
+  );
 }
 /** Upstream's preview builder for images already in memory; Coder has no video previews. */
 export function buildExpandedImagePreview(
@@ -153,7 +178,9 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
           >
             <XIcon />
           </Button>
-          {item.loading ? (
+          {item.type === "video" ? (
+            <ExpandedVideo key={index} item={item} />
+          ) : item.loading ? (
             <div role="status" className={EXPANDED_MEDIA_STATE_CLASS_NAME}>
               Loading image…
             </div>

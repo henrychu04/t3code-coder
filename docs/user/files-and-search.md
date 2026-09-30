@@ -11,8 +11,12 @@ folders show a limit notice after 1,000 inspected entries. Filename search conti
 separate path index, so ignored files can be browsed without adding them to search results.
 
 Selecting a text file shows it in the preview.
-Files up to 1 MiB can be opened fully; larger text files open truncated and read-only, and binary
-files are rejected rather than rendered as garbage.
+Files up to 1 MiB can be opened fully; larger text files open truncated and read-only, and other
+binary files are rejected rather than rendered as garbage.
+
+Images, videos, and audio open in a media viewer instead: images up to 20 MiB, and videos and audio
+up to 256 MiB. The file loads in full through the workspace connection when you open it. Right-click
+media to save it or copy its path. PDF and HTML files are not previewed.
 
 Path safety is enforced for you: files are always addressed relative to the project root, and
 links that would escape the project — including through symlinks — do not resolve.

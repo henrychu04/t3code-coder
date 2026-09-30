@@ -1,4 +1,4 @@
-import { PaperclipIcon, PlayIcon } from "lucide-react";
+import { ExternalLinkIcon, PaperclipIcon } from "lucide-react";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
 import { createContext, useContext, useMemo } from "react";
 import type { Options as ReactMarkdownOptions } from "react-markdown";
@@ -7,6 +7,7 @@ import { cn } from "~/lib/utils";
 import { PULL_REQUESTS_PANEL_REF } from "~/rightPanelStore";
 
 import ChatMarkdown from "../ChatMarkdown";
+import { MediaVideoPlayer } from "../media/MediaVideoPlayer";
 import { remarkPullRequestAutolinks, splitPullRequestBody } from "./pullRequestMarkdown.logic";
 
 export const PullRequestMarkdownContext = createContext<{
@@ -15,9 +16,9 @@ export const PullRequestMarkdownContext = createContext<{
 } | null>(null);
 
 /**
- * Upstream's change-request body renderer with Coder's media rule: recognized GitLab navigation
- * stays internal, and uploads render as inert attachment rows rather than fetched media. Relative
- * GitLab uploads resolve against the repository's host.
+ * Upstream's change-request body renderer: recognized GitLab navigation stays internal, videos play
+ * inline from their host, and other uploads open there. Relative GitLab uploads resolve against the
+ * repository's host. Coder has no GitHub credential-backed media fetch.
  */
 export function PullRequestMarkdown({
   text,
@@ -65,20 +66,30 @@ export function PullRequestMarkdown({
             />
           );
         }
-        const isVideo = segment.media === "video";
-        const Icon = isVideo ? PlayIcon : PaperclipIcon;
+        if (segment.media === "video") {
+          return (
+            <MediaVideoPlayer
+              key={`${segment.id}:${segment.url}`}
+              src={segment.url}
+              originalUrl={segment.url}
+              label="Merge request video"
+              className="w-full"
+              videoClassName="rounded-lg border border-border/60"
+            />
+          );
+        }
         return (
-          <div
+          <a
             key={segment.id}
-            className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm"
+            href={segment.url}
+            rel="noreferrer noopener"
+            target="_blank"
+            className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm hover:bg-muted/60"
           >
-            <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 flex-1 truncate">
-              {isVideo
-                ? `Video attachment on ${segment.hostLabel}`
-                : `Attachment on ${segment.hostLabel}`}
-            </span>
-          </div>
+            <PaperclipIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">Open attachment on {segment.hostLabel}</span>
+            <ExternalLinkIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
+          </a>
         );
       })}
     </div>
