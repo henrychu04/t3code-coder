@@ -4,10 +4,7 @@ import { EnvironmentId, ScreenshotArtifactId, TurnId } from "@t3tools/contracts"
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import {
-  ArtifactNavigationContext,
-  ArtifactTurnContext,
-} from "./ArtifactNavigation";
+import { ArtifactNavigationContext, ArtifactTurnContext } from "./ArtifactNavigation";
 const load = vi.hoisted(() =>
   vi.fn((_environmentId: unknown, _artifacts: unknown, _expanded: boolean) => ({})),
 );
@@ -58,12 +55,12 @@ it("opens images from separate tool activities in one deduplicated turn gallery"
     );
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("shot.png");
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[aria-label="Next media"]')!.click(),
     );
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("second.png");
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain("(2/2)");
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[aria-label="Next media"]')!.click(),
     );
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("alt")).toBe("shot.png");
   } finally {

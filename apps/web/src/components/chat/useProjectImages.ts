@@ -7,7 +7,7 @@ import { readProjectImageBlob, type ProjectImageTarget } from "../../lib/readPro
 import { imageResources } from "./imageResources";
 
 export function useProjectImages(
-  environmentId: EnvironmentId,
+  environmentId: EnvironmentId | undefined,
   target: ProjectImageTarget | undefined,
   enabled: boolean,
   priority = false,
@@ -18,7 +18,7 @@ export function useProjectImages(
   const serialized = target ? JSON.stringify(target) : null;
   const key = JSON.stringify([environmentId, "project-image", serialized]);
   useEffect(() => {
-    if (!enabled || !serialized) return;
+    if (!enabled || !environmentId || !serialized) return;
     const resource = JSON.parse(serialized) as ProjectImageTarget;
     return imageResources.subscribe(
       key,
@@ -36,5 +36,5 @@ export function useProjectImages(
       priority,
     );
   }, [key, serialized, environmentId, enabled, priority, read]);
-  return enabled && target ? imageResources.get(key) : undefined;
+  return enabled && environmentId && target ? imageResources.get(key) : undefined;
 }

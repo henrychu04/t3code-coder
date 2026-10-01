@@ -9,7 +9,8 @@ import {
   removeInlineContextReference,
   stripInlineContextReferences,
 } from "../lib/composerContextReferences";
-import { ExpandedImageDialog, type ExpandedImagePreview } from "./chat/ExpandedImageDialog";
+import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
+import { expandedImageKey, type ExpandedImagePreview } from "./chat/ExpandedImagePreview";
 import { useProjectClone } from "../state/projectClones";
 import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/contracts";
 import { useRemoveClonedProject } from "../hooks/useRemoveClonedProject";
@@ -1483,6 +1484,15 @@ export default function ChatView(props: ChatViewProps) {
   const onExpandComposerImage = useCallback((preview: ExpandedImagePreview) => {
     setExpandedImage(preview);
   }, []);
+  const onExpandTimelineImage = useCallback((preview: ExpandedImagePreview) => {
+    setExpandedImage(preview);
+  }, []);
+  // Timeline media belongs to one thread; a thread switch closes it, as upstream's reset does.
+  const [expandedImageThreadKey, setExpandedImageThreadKey] = useState(routeThreadKey);
+  if (expandedImageThreadKey !== routeThreadKey) {
+    setExpandedImageThreadKey(routeThreadKey);
+    setExpandedImage(null);
+  }
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
   const branchToolbarRef = useRef<BranchToolbarHandle>(null);
@@ -7509,6 +7519,7 @@ export default function ChatView(props: ChatViewProps) {
                     paintOnlyDisplayedTimeline ? noopHeldRevert : onRevertTimelineTurn
                   }
                   isRevertingCheckpoint={!paintOnlyDisplayedTimeline && isRevertingCheckpoint}
+                  onImageExpand={onExpandTimelineImage}
                   markdownCwd={
                     paintOnlyDisplayedTimeline
                       ? (heldPaintContext?.markdownCwd ?? undefined)
@@ -7995,7 +8006,11 @@ export default function ChatView(props: ChatViewProps) {
         </RightPanelSheet>
       ) : null}
       {expandedImage && (
-        <ExpandedImageDialog preview={expandedImage} onClose={() => setExpandedImage(null)} />
+        <ExpandedImageDialog
+          key={expandedImageKey(expandedImage)}
+          preview={expandedImage}
+          onClose={() => setExpandedImage(null)}
+        />
       )}
     </div>
   );

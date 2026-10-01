@@ -386,14 +386,15 @@ The artifact directory is no longer created for new workspaces. Draft attachment
 browser memory; submitted copies remain under the workspace attachment directory.
 
 The UI retains main's thumbnail, Markdown, zoom/pan, and gallery presentation with Coder transport.
-Environment image links open a gallery directly; inline images load near the viewport. The shared
+Media links follow main's file chips: a project file opens in the Files surface, and media outside
+the project opens the gallery. Inline images load near the viewport. The shared
 memory-only image resource store permits three concurrent reads and reserves at most 100 MiB.
 Selected gallery images take priority over other previews; deferred previews can still be opened.
 The gateway persists no image bytes and opens no additional route or workspace connection.
 Main streams workspace video through signed range URLs; Coder instead reads the whole file into a
 memory-only blob URL for main's `MediaVideoPlayer`. Because that read is not a cheap metadata
 preload, inline videos show a play card and load only when pressed, with byte progress; a video
-link opens main's gallery, which loads it on open. External web images and videos load directly
+opened in main's gallery loads when the gallery opens. External web images and videos load directly
 from their host as on main. Like main's desktop policy, the gateway CSP allows `https:`/`http:` in
 `img-src`, `media-src`, and `connect-src`, plus `blob:`; `script-src` stays limited to the app.
 Main's `MediaActions` menu copies paths and URLs and offers Save and Copy image. Coder has no signed
@@ -499,12 +500,41 @@ listed here is drift to remove rather than fork behavior to keep.
   work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
   and remote icons. Images move through the gateway and SCP (see
   [Network and transfer constraints](#network-and-transfer-constraints)).
-- **Markdown.** Upstream's file links, chips, external links with favicons, and direct external
-  images and videos. Links open in a new tab; main's in-app browser preview and link context menu
-  are excluded.
+- **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
+  the file):
+  - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's props
+    (minus `fallbackSrc`) but reads images through the shared helper-backed image store and shows
+    videos as a play card that reads the file when pressed. It needs the thread root (`cwd`), which
+    the helper verifies. Images in formats the helper does not read show "Unsupported image
+    format" without a read, and authored `id`s stay on workspace images.
+  - The gallery item (`ExpandedImagePreview.tsx`) is upstream's shape plus `projectImage`,
+    `projectVideo`, legacy `artifact`, `loading`, and `retry`. `resolveMarkdownMediaPreview`
+    returns helper sources rather than asset URLs. The dialog reads the selected image with
+    priority, the gallery also collects `[data-project-image]` wrappers so unloaded images stay
+    navigable, and byte actions use the blob the dialog shows. Timeline galleries are hosted by
+    `ChatView`, as on main.
+  - There is no in-app browser, local editor, or file manager: `MarkdownFileLink` never receives
+    `onOpen`, `onOpenInBrowser`, or `onReveal`, and the link context menu never offers the
+    integrated browser. Without a primary action a chip opens only its copy menu.
+  - File chips open only project-relative files in the Files surface; other host paths do not
+    open the panel. Media outside the project opens the gallery. Upstream's chip menu may copy
+    the chip's relative or full path, which is the path already written in the message; this is
+    separate from the Files surface, whose Copy path action stays project-relative.
+  - Relative and non-web links render as inert text. GitHub-authenticated media (`githubMedia`)
+    is omitted; web images and videos load directly from their host.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
-  `!` references and GitLab wording are used. Actor avatars load as on main.
+  `!` references and GitLab wording are used. Actor avatars load as on main. MR links everywhere
+  (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
+  upstream's `useOpenChangeRequestLink` and `useOpenPrLink` with GitLab-only URL and project
+  matching: a plain click opens the panel or page, and a modifier click or an MR no workspace
+  project can read goes to the system browser. In Markdown they are upstream's new-tab anchors
+  with hover previews. Coder has no primary
+  environment, so the merge requests page resolves a link against every workspace that reads
+  merge requests. Right-clicking a web link shows upstream's menu (system browser, Copy Link, and
+  Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
+  `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
+  unused.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor.

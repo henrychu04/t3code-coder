@@ -2,8 +2,10 @@ import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  resolvePullRequestPanelTarget,
+  findProjectOnChangeRequestHost,
   findProjectForGitLabMergeRequest,
+  parseChangeRequestUrl,
+  shouldOpenPullRequestExternally,
   isGitLabExternalUrl,
   matchesLinkedPullRequestUrl,
   parseGitLabMergeRequestUrl,
@@ -159,7 +161,7 @@ describe("external GitLab links", () => {
   });
 });
 
-it("routes the selected MR identity through a same-host project in its own environment", () => {
+it("routes an MR through a same-host project, never another host's", () => {
   const environmentId = EnvironmentId.make("workspace");
   const projectId = ProjectId.make("frontend");
   const projects = [
@@ -178,28 +180,23 @@ it("routes the selected MR identity through a same-host project in its own envir
       },
     },
   ];
-  const threadRef = { environmentId, threadId: ThreadId.make("thread") };
   const url = "https://code.example/team/backend/-/merge_requests/42";
-  expect(resolvePullRequestPanelTarget(projects, threadRef, url)).toEqual({
-    environmentId,
-    projectId,
-    host: "code.example",
-    repository: "team/backend",
-    number: 42,
-    url,
+  expect(findProjectOnChangeRequestHost(projects, parseChangeRequestUrl(url)!)?.id).toBe(projectId);
+  expect(
+    findProjectOnChangeRequestHost(
+      projects,
+      parseChangeRequestUrl(url.replace("code.example", "unknown.example"))!,
+    ),
+  ).toBeUndefined();
+});
+
+describe("shouldOpenPullRequestExternally", () => {
+  it("uses the browser for command-click and control-click", () => {
+    expect(shouldOpenPullRequestExternally({ metaKey: true, ctrlKey: false })).toBe(true);
+    expect(shouldOpenPullRequestExternally({ metaKey: false, ctrlKey: true })).toBe(true);
   });
-  expect(
-    resolvePullRequestPanelTarget(
-      projects,
-      { ...threadRef, environmentId: EnvironmentId.make("other") },
-      url,
-    ),
-  ).toBeNull();
-  expect(
-    resolvePullRequestPanelTarget(
-      projects,
-      threadRef,
-      url.replace("code.example", "unknown.example"),
-    ),
-  ).toBeNull();
+
+  it("keeps an unmodified click in the merge request view", () => {
+    expect(shouldOpenPullRequestExternally({ metaKey: false, ctrlKey: false })).toBe(false);
+  });
 });

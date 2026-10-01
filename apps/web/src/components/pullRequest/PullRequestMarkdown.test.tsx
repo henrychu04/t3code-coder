@@ -30,6 +30,8 @@ vi.mock("../../state/entities", async (original) => ({
       },
     },
   ],
+  useServerConfigs: () =>
+    new Map([["workspace", { environment: { capabilities: { pullRequests: true } } }]]),
 }));
 let root: Root;
 let container: HTMLDivElement;
@@ -63,11 +65,15 @@ it("opens a recognized MR in the page panel and updates its URL selection", asyn
       </PullRequestMarkdownContext>,
     ),
   );
-  const button = [...container.querySelectorAll("button")].find(
-    (entry) => entry.textContent === "Next MR",
+  // Upstream's anchor: a plain click opens the panel, a modifier click leaves it to the browser.
+  const link = [...container.querySelectorAll("a")].find((entry) =>
+    entry.textContent?.includes("Next MR"),
   );
-  expect(button).toBeDefined();
-  await act(() => button!.click());
+  expect(link?.getAttribute("href")).toBe(
+    "https://gitlab.example/group/project/-/merge_requests/42",
+  );
+  expect(link?.target).toBe("_blank");
+  await act(() => link!.click());
   expect(
     selectActiveRightPanelSurface(
       useRightPanelStore.getState().byThreadKey,

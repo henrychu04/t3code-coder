@@ -61,7 +61,7 @@ export function PullRequestMarkdown({
               cwd={cwd}
               environmentId={environmentId}
               threadRef={resolvedThreadRef}
-              panelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
+              pullRequestPanelRef={resolvedThreadRef ?? PULL_REQUESTS_PANEL_REF}
               extraRemarkPlugins={extraRemarkPlugins}
             />
           );
