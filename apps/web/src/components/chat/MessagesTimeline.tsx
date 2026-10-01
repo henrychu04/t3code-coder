@@ -104,6 +104,7 @@ import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 
 import { deriveAgentSpawnSummary } from "./agentSpawnSummary";
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
+import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type {
   AgentPanelModel,
   RuntimeSubagent,
@@ -258,6 +259,7 @@ interface TimelineRowSharedState {
   activeThreadEnvironmentId: EnvironmentId;
   onRevertToTurnCount: (turnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
+  onImageExpand: ((preview: ExpandedImagePreview) => void) | undefined;
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onToggleTurnFold: (turnId: TurnId) => void;
   onToggleWorkGroup: (groupId: string, anchorKey: string) => void;
@@ -398,6 +400,7 @@ interface MessagesTimelineProps {
   onOpenTurnDiff: (turnId: TurnId, filePath?: string) => void;
   onRevertToTurnCount: (turnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate?: (template: CodexArtifactTemplate) => void;
+  onImageExpand?: (preview: ExpandedImagePreview) => void;
   isRevertingCheckpoint: boolean;
   activeThreadEnvironmentId: EnvironmentId;
   markdownCwd: string | undefined;
@@ -463,6 +466,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   onOpenTurnDiff,
   onRevertToTurnCount,
   onUseArtifactTemplate = NOOP_USE_ARTIFACT_TEMPLATE,
+  onImageExpand,
   isRevertingCheckpoint,
   activeThreadEnvironmentId,
   markdownCwd,
@@ -1144,6 +1148,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertToTurnCount,
       onUseArtifactTemplate,
+      onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
@@ -1175,6 +1180,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertToTurnCount,
       onUseArtifactTemplate,
+      onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
       onToggleWorkGroup,
@@ -2202,6 +2208,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
             skills={ctx.skills}
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+            onImageExpand={ctx.onImageExpand}
           />
         </AssistantCitationSource>
         <AssistantChangedFilesSection
@@ -2587,6 +2594,7 @@ function ReasoningTraceBlock({
               skills={ctx.skills}
               headingLevelOffset={MESSAGE_HEADING_LEVEL}
               onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+              onImageExpand={ctx.onImageExpand}
             />
           ))}
         </div>
@@ -2653,6 +2661,7 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
             skills={ctx.skills}
             headingLevelOffset={MESSAGE_HEADING_LEVEL}
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+            onImageExpand={ctx.onImageExpand}
           />
         </div>
       ) : null}
@@ -4206,7 +4215,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
   onToggleEntry?: ((collapsed: boolean) => void) | undefined;
 }) {
   const { workEntry, workspaceRoot, isExpandedToolGroupEntry, displayLabel } = props;
-  const { threadRef, timestampFormat } = use(TimelineRowCtx);
+  const { threadRef, onImageExpand, timestampFormat } = use(TimelineRowCtx);
   const groupView = use(WorkGroupViewCtx);
   const [expanded, setExpanded] = useState(
     () => groupView?.state.expandedEntries.has(workEntry.id) ?? false,
@@ -4381,12 +4390,12 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
           onPointerDown={stopRowToggle}
         >
           <ProjectImageLink
-            inline
             cwd={workspaceRoot}
             threadRef={threadRef}
             filePath={viewedImage.workspaceRelativePath ?? viewedImage.filePath}
             maxHeightRem={16}
             alt={viewedImage.basename}
+            onImageExpand={onImageExpand}
           >
             {viewedImage.basename}
           </ProjectImageLink>

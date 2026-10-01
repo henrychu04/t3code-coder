@@ -9,10 +9,12 @@ import {
   type ProjectMediaKind,
 } from "../../lib/readProjectImageBlob";
 
-export interface ProjectVideoSource {
+/** A workspace media file the helper reads for one environment. */
+export interface ProjectMediaSource {
   readonly environmentId: EnvironmentId;
   readonly target: ProjectImageTarget;
 }
+export type ProjectVideoSource = ProjectMediaSource;
 
 type ProjectVideoState =
   | { readonly status: "idle" | "failed" }

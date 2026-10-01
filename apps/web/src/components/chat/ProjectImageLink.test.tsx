@@ -19,7 +19,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
-it("previews copied and renamed project files without captured activities or path associations", async () => {
+it("reads workspace images by their resolved path and navigates the gallery", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -29,32 +29,35 @@ it("previews copied and renamed project files without captured activities or pat
         <ChatMarkdown
           cwd="/project"
           threadRef={threadRef}
-          text={'[![Generated](copied.png "Figure")](copied.png) ![Renamed](/project/renamed.png)'}
+          text={"![Generated](copied.png) ![Renamed](/project/renamed.png)"}
         />,
       ),
     );
     expect(host.querySelectorAll("img")).toHaveLength(2);
-    expect(load.mock.calls.some(([, target]) => target?.filePath === "copied.png")).toBe(true);
-    expect(load.mock.calls.some(([, target]) => target?.filePath === "renamed.png")).toBe(true);
+    // Relative sources resolve against the project root, as upstream's media-file assets do.
+    expect(load.mock.calls.some(([, target]) => target?.filePath === "/project/copied.png")).toBe(
+      true,
+    );
+    expect(load.mock.calls.some(([, target]) => target?.filePath === "/project/renamed.png")).toBe(
+      true,
+    );
     await act(async () => {
       for (const image of host.querySelectorAll("img")) image.dispatchEvent(new Event("load"));
     });
-    expect(host.querySelector('img[alt="Generated"]')?.getAttribute("title")).toBe("Figure");
-    expect(host.querySelectorAll('a[title="Preview image"]')).toHaveLength(1);
     await act(async () => host.querySelector<HTMLImageElement>('img[alt="Generated"]')!.click());
     expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[aria-label="Next media"]')!.click(),
     );
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
-      "blob:renamed.png",
+      "blob:/project/renamed.png",
     );
   } finally {
     await act(async () => root.unmount());
     host.remove();
   }
 });
-it("opens file links on demand, reads outside-project images, and loads external images directly", async () => {
+it("opens outside-project media links in the gallery and loads external images directly", async () => {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
@@ -64,17 +67,10 @@ it("opens file links on demand, reads outside-project images, and loads external
         <ChatMarkdown
           cwd="/project"
           threadRef={threadRef}
-          text={
-            "[Open](new.png) ![Outside](/outside/image.png) ![Remote](https://example.com/a.png)"
-          }
+          text={"[Open](/outside/new.png) ![Remote](https://example.com/a.png)"}
         />,
       ),
     );
-    expect(
-      load.mock.calls.some(
-        ([, target, enabled]) => enabled && target.filePath === "/outside/image.png",
-      ),
-    ).toBe(true);
     // External images load from their own host, never through the helper.
     expect(load.mock.calls.some(([, target]) => target?.filePath.includes("example.com"))).toBe(
       false,
@@ -82,16 +78,14 @@ it("opens file links on demand, reads outside-project images, and loads external
     expect(host.querySelector('img[alt="Remote"]')?.getAttribute("src")).toBe(
       "https://example.com/a.png",
     );
-    expect(host.querySelectorAll('a[title="Preview image"]')).toHaveLength(1);
+    expect(load.mock.calls.some(([, , enabled]) => enabled)).toBe(false);
     await act(async () =>
-      host.querySelector<HTMLAnchorElement>('a[title="Preview image"]')!.click(),
+      host.querySelector<HTMLAnchorElement>("a.chat-markdown-file-link")!.click(),
     );
-    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe("blob:new.png");
-    expect(
-      load.mock.calls
-        .filter(([, , enabled]) => enabled)
-        .every(([, target]) => ["new.png", "/outside/image.png"].includes(target.filePath)),
-    ).toBe(true);
+    await act(async () => Promise.resolve());
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+      "blob:/outside/new.png",
+    );
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -137,14 +131,16 @@ it.each([true, false])(
     load.mockReturnValue({ status: "loading" });
     const host = document.createElement("div");
     const root = createRoot(host);
+    // The mocked store cannot notify, so each render changes a prop to reread it.
+    let maxHeightRem = 30;
     const render = () =>
       root.render(
         <ProjectImageLink
-          inline
           cwd="/project"
           threadRef={threadRef}
           filePath="copy.png"
           alt="Image"
+          maxHeightRem={maxHeightRem++ === 30 ? 30 : 30.0001}
         >
           Image
         </ProjectImageLink>,
@@ -238,13 +234,48 @@ it("keeps unloaded images in gallery navigation and loads the selected image on 
     expect(load.mock.calls.every(([, , enabled]) => !enabled)).toBe(true);
     await act(async () => host.querySelector<HTMLElement>('[aria-label="Preview First"]')!.click());
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
-      "blob:first.png",
+      "blob:/project/first.png",
     );
     await act(async () =>
-      document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+      document.querySelector<HTMLButtonElement>('[aria-label="Next media"]')!.click(),
     );
     expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
       "blob:/tmp/second.png",
+    );
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("selects a linked workspace image by its file while gallery images are unloaded", async () => {
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <ChatMarkdown
+          cwd="/project"
+          threadRef={threadRef}
+          text="![First](first.png) ![Second](/outside/second.png) [Open](/outside/second.png)"
+        />,
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLAnchorElement>("a.chat-markdown-file-link")!.click(),
+    );
+    await act(async () => Promise.resolve());
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain("(2/2)");
+    expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe(
+      "blob:/outside/second.png",
     );
   } finally {
     await act(async () => root.unmount());

@@ -1,4 +1,4 @@
-import type { ExpandedImagePreview } from "./ExpandedImageDialog";
+import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import type { EnvironmentId, ScreenshotArtifactReference, TurnId } from "@t3tools/contracts";
 import { createContext, useContext } from "react";
 

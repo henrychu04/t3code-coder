@@ -54,7 +54,7 @@ import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useP
 import { projectMediaReference } from "~/components/chat/projectMediaReference";
 import { AudioPreview } from "./AudioPreview";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
-import ChatMarkdown from "~/components/ChatMarkdown";
+import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
 import { Button } from "~/components/ui/button";
 import { CommandDialog, CommandDialogPopup, CommandFooter } from "~/components/ui/command";
@@ -1630,11 +1630,11 @@ function RenderedMarkdownSurface(props: {
   const saveCoordinator = useFileSaveCoordinator(props);
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <ChatMarkdown
+      <FileMarkdownPreview
         text={props.contents}
         cwd={props.cwd}
+        relativePath={props.relativePath}
         threadRef={props.threadRef}
-        className="mx-auto max-w-4xl px-6 py-5"
         onTaskListChange={({ markerOffset, checked }) => {
           const current =
             getOptimisticProjectFileQueryData(props.environmentId, props.cwd, props.relativePath)

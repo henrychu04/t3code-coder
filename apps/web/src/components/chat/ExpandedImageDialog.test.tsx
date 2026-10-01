@@ -2,10 +2,13 @@
 import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { ExpandedImageDialog } from "./ExpandedImageDialog";
 
 const menu = vi.hoisted(() => ({ open: false }));
 vi.mock("../../contextMenuFallback", () => ({ isContextMenuOpen: () => menu.open }));
+const loadProjectImage = vi.hoisted(() => vi.fn());
+vi.mock("./useProjectImages", () => ({ useProjectImages: loadProjectImage }));
 let root: Root;
 let host: HTMLDivElement;
 const retry = vi.fn();
@@ -139,3 +142,26 @@ it.each([true, false])(
     );
   },
 );
+
+it("reads the selected workspace image through the helper with priority", async () => {
+  const projectImage = {
+    environmentId: EnvironmentId.make("env"),
+    target: { threadId: ThreadId.make("thread"), cwd: "/repo", filePath: "/repo/shot.svg" },
+  };
+  loadProjectImage.mockImplementation((_env, target, enabled) =>
+    enabled && target ? { status: "loaded", url: "blob:shot", retry } : undefined,
+  );
+  await act(async () =>
+    root.render(
+      <ExpandedImageDialog
+        onClose={() => undefined}
+        preview={{
+          index: 0,
+          images: [{ src: null, name: "shot.svg", srcFragment: "#mark", projectImage }],
+        }}
+      />,
+    ),
+  );
+  expect(loadProjectImage).toHaveBeenCalledWith("env", projectImage.target, true, true);
+  expect(document.querySelector('[role="dialog"] img')?.getAttribute("src")).toBe("blob:shot#mark");
+});

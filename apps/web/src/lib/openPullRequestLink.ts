@@ -2,9 +2,12 @@ import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useMemo, type MouseEvent } from "react";
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
-import { useProjects } from "../state/entities";
+import { useNavigate } from "@tanstack/react-router";
+import { useProjects, useServerConfigs } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { useRightPanelStore } from "../rightPanelStore";
+import { useOpenLink } from "../browser/useOpenLink";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import {
   pullRequestHostOf,
   type RepositoryIdentity,
@@ -249,34 +252,155 @@ export function findProjectOnChangeRequestHost(
   );
 }
 
-export function resolvePullRequestPanelTarget(
-  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
-  threadRef: ScopedThreadRef,
-  url: string,
-) {
-  const link = parseChangeRequestUrl(url);
-  if (!link) return null;
-  const project = findProjectOnChangeRequestHost(
-    projects.filter((entry) => entry.environmentId === threadRef.environmentId),
-    link,
-  );
-  return project
-    ? { environmentId: threadRef.environmentId, projectId: project.id, ...link, url }
-    : null;
+/**
+ * Upstream's modifier rule: cmd/ctrl+click leaves a change-request link to the browser.
+ */
+export function shouldOpenPullRequestExternally(
+  event: Pick<MouseEvent<HTMLElement>, "metaKey" | "ctrlKey">,
+): boolean {
+  return event.metaKey || event.ctrlKey;
 }
 
-export function useOpenPrLink(defaultThreadRef?: ScopedThreadRef) {
-  const projects = useProjects();
+/**
+ * Upstream's change-request opener with GitLab-only matching. Opens a merge request link on the
+ * page and says whether it did; anything else is left to the caller as an ordinary link.
+ *
+ * Given a thread, the link opens beside it in the right panel. Without one it opens the merge
+ * requests page. Coder has no primary environment, so the page resolves the link against every
+ * workspace that reads merge requests, in project order.
+ */
+export function useOpenChangeRequestLink(
+  threadRef?: ScopedThreadRef,
+  panelRef?: ScopedThreadRef,
+): (
+  event: Pick<
+    MouseEvent<HTMLElement>,
+    "preventDefault" | "stopPropagation" | "metaKey" | "ctrlKey"
+  >,
+  targetUrl: string,
+  targetThreadRef?: ScopedThreadRef,
+  targetEnvironmentId?: EnvironmentId,
+) => boolean {
+  const navigate = useNavigate();
+  const allProjects = useProjects();
+  const serverConfigs = useServerConfigs();
   return useCallback(
-    (event: MouseEvent, url: string, threadRef = defaultThreadRef) => {
+    (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
+      if (shouldOpenPullRequestExternally(event)) return false;
+      const resolvedThreadRef = targetThreadRef ?? threadRef;
+      const resolvedPanelRef = panelRef ?? resolvedThreadRef;
+      const parsed = parseChangeRequestUrl(targetUrl);
+      if (parsed === null) return false;
+      const reads = (environmentId: EnvironmentId) =>
+        serverConfigs.get(environmentId)?.environment.capabilities.pullRequests === true;
+      // Beside a thread the panel reads on that thread's environment; the page lists them all.
+      const projects = resolvedThreadRef
+        ? allProjects.filter((project) => project.environmentId === resolvedThreadRef.environmentId)
+        : targetEnvironmentId
+          ? allProjects.filter((project) => project.environmentId === targetEnvironmentId)
+          : allProjects.filter((project) => reads(project.environmentId));
+      const exactProject = findProjectForChangeRequest(projects, parsed);
+      const project =
+        exactProject ??
+        (resolvedPanelRef
+          ? findProjectOnChangeRequestHost(
+              projects.filter(
+                (candidate) =>
+                  serverConfigs.get(candidate.environmentId)?.environment.capabilities
+                    .threadPullRequests === true,
+              ),
+              parsed,
+            )
+          : undefined);
+      if (project === undefined || !reads(project.environmentId)) return false;
+      const repository =
+        serverConfigs.get(project.environmentId)?.environment.capabilities.threadPullRequests ===
+        true
+          ? parsed.repository
+          : (sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository);
       event.preventDefault();
       event.stopPropagation();
-      if (!threadRef) return false;
-      const target = resolvePullRequestPanelTarget(projects, threadRef, url);
-      if (!target) return false;
-      useRightPanelStore.getState().openPullRequest(threadRef, target);
+      if (resolvedPanelRef) {
+        useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
+          // The standalone MR panel has a synthetic ref; each tab keeps its real environment.
+          ...(resolvedPanelRef.environmentId === project.environmentId
+            ? {}
+            : { environmentId: project.environmentId }),
+          projectId: project.id,
+          ...(serverConfigs.get(project.environmentId)?.environment.capabilities
+            .threadPullRequests === true
+            ? { host: parsed.host }
+            : {}),
+          repository,
+          url: targetUrl,
+          number: parsed.number,
+        });
+        if (!resolvedThreadRef) {
+          void navigate({
+            to: "/pull-requests",
+            search: (previous) => ({
+              ...previous,
+              involvement: previous.involvement ?? "all",
+              state: previous.state ?? "all",
+              repository,
+              number: parsed.number,
+              selectedHost: parsed.host,
+              selectedProjectId: project.id,
+              selectedEnvironmentId: project.environmentId,
+            }),
+            replace: true,
+          });
+        }
+        return true;
+      }
+      void navigate({
+        to: "/pull-requests",
+        search: {
+          involvement: "all",
+          state: "all",
+          repository,
+          number: parsed.number,
+          selectedHost: parsed.host,
+          selectedProjectId: project.id,
+          selectedEnvironmentId: project.environmentId,
+        },
+      });
       return true;
     },
-    [defaultThreadRef, projects],
+    [allProjects, navigate, panelRef, serverConfigs, threadRef],
+  );
+}
+
+export function useOpenPrLink(threadRef?: ScopedThreadRef) {
+  const openChangeRequest = useOpenChangeRequestLink(threadRef);
+  const openLink = useOpenLink(threadRef);
+  return useCallback(
+    (event: MouseEvent<HTMLElement>, prUrl: string, targetThreadRef?: ScopedThreadRef) => {
+      event.stopPropagation();
+      const openInBrowser = shouldOpenPullRequestExternally(event);
+      const isAnchor =
+        event.currentTarget instanceof HTMLAnchorElement && event.currentTarget.href.length > 0;
+      // A real link already knows how to cmd/ctrl+click. Leave its default
+      // action alone so the browser opens the host. Buttons have no href, so
+      // they still go through openExternal.
+      if (openInBrowser && isAnchor) return false;
+
+      event.preventDefault();
+      if (!openInBrowser && openChangeRequest(event, prUrl, targetThreadRef)) return true;
+
+      // No project to show it in, so it is an ordinary link for the system browser.
+      void openLink(prUrl, { event, threadRef: targetThreadRef }).catch((error: unknown) => {
+        console.error(error);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Unable to open merge request link",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      });
+      return false;
+    },
+    [openChangeRequest, openLink],
   );
 }

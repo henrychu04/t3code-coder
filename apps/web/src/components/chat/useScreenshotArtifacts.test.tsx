@@ -212,7 +212,7 @@ it("reads only the selected gallery image and releases it when navigating", asyn
   expect(read).toHaveBeenCalledOnce();
   expect(read.mock.calls[0]![0].input.artifactId).toBe(artifact.id);
   await act(async () =>
-    document.querySelector<HTMLButtonElement>('[aria-label="Next image"]')!.click(),
+    document.querySelector<HTMLButtonElement>('[aria-label="Next media"]')!.click(),
   );
   expect(read).toHaveBeenCalledTimes(2);
   expect(read.mock.calls[1]![0].input.artifactId).toBe(second.id);
