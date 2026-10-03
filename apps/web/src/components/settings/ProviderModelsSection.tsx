@@ -273,7 +273,7 @@ export function ProviderModelsSection({
                     </PopoverTrigger>
                     <PopoverPopup side="top" tooltipStyle className="max-w-56">
                       <div className="space-y-1">
-                        <code className="block text-[11px] text-foreground">{model.slug}</code>
+                        <code className="block text-2xs text-foreground">{model.slug}</code>
                         {capLabels.length > 0 ? (
                           <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                             {capLabels.map((label) => (
