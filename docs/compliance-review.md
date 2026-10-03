@@ -8,7 +8,8 @@ Reviewers can expect:
 
 - repositories, prompts, responses, sessions, terminals, checkpoints, and the application database
   to remain in the workspace;
-- the local app to remember only non-secret Coder targets and explicit port-forward rules;
+- the local app to remember only non-secret Coder targets and explicit port-forward rules, while
+  the browser keeps UI preferences and the text of unsent drafts and stashed prompts;
 - Coder to own deployment authentication and provider CLIs to own provider authentication;
 - no general upload, download, synchronization, non-GitLab hosted source-control, MCP, or
   app-integration surface;
