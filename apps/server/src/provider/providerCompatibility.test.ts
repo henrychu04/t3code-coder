@@ -68,6 +68,23 @@ describe("provider compatibility", () => {
     assert.isUndefined(resolveProviderCompatibility([policy], driver, "0.9.0", "0.1.0"));
   });
 
+  it("supports Codex 0.156 and marks Codex without Thread.projectId broken", () => {
+    const bundled = ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility;
+    for (const [codexVersion, expected] of [
+      ["0.148.0", "broken"],
+      ["0.149.0", "unsupported"],
+      ["0.155.0", "unsupported"],
+      ["0.156.0", "supported"],
+      ["0.159.0", "supported"],
+    ] as const) {
+      assert.strictEqual(
+        resolveProviderCompatibility(bundled, driver, codexVersion, "0.0.45")?.status,
+        expected,
+        `Codex ${codexVersion}`,
+      );
+    }
+  });
+
   it("attaches advisories without replacing probe results", () => {
     const broken = applyProviderCompatibility(provider, [policy]);
     assert.strictEqual(broken.compatibilityAdvisory?.status, "broken");

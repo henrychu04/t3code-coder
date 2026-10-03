@@ -1,3 +1,4 @@
+import { resolveThreadCurrentPullRequestLink } from "@t3tools/shared/threadPullRequests";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import { LinkBranchPullRequestButton } from "./pullRequest/LinkBranchPullRequestButton";
 import { readThreadReference } from "../lib/threadReference";
@@ -189,8 +190,9 @@ import { createSidebarListMotion } from "./Sidebar.motion";
 import {
   ChangeRequestStatusIcon,
   nextThreadChangeRequestSnapshot,
+  resolveThreadPullRequestBadge,
+  ThreadPullRequestBadgeControl,
   prStatusIndicator,
-  PrStatusTooltipContent,
   resolveDisplayedThreadPr,
   resolveDisplayedThreadPrProvider,
   setThreadChangeRequestSnapshot,
@@ -214,7 +216,7 @@ import {
 } from "../providerInstances";
 import { useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { Button } from "./ui/button";
+import { Button, InlineButton } from "./ui/button";
 import {
   Combobox,
   ComboboxEmpty,
@@ -246,6 +248,7 @@ const SETTLED_TAIL_INITIAL_COUNT = 10;
 const SETTLED_TAIL_PAGE_COUNT = 25;
 // Keep the v2 key so existing preferences survive the v2-to-default rename.
 const SETTLED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:settled-expanded";
+const WORKING_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:working-expanded";
 const SNOOZED_SHELF_EXPANDED_KEY = "t3code:sidebar-v2:snoozed-expanded";
 
 function compactSidebarTimeLabel(label: string): string {
@@ -1075,6 +1078,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     linkedPullRequestStatus,
   });
   const changeRequestStatus = prStatusIndicator(changeRequest, changeRequestProvider);
+  const currentPullRequestLink = resolveThreadCurrentPullRequestLink(thread.pullRequests);
+  const changeRequestUrl = changeRequest?.url ?? currentPullRequestLink?.url;
   useEffect(() => {
     const nextSnapshot = nextThreadChangeRequestSnapshot({
       threadBranch: thread.branch,
@@ -1240,14 +1245,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
   const openPrLink = useOpenPrLink(threadRef);
   const handleChangeRequestClick = useCallback(
-    (event: ReactMouseEvent<HTMLButtonElement>) => {
+    (event: ReactMouseEvent<HTMLElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!changeRequest) return;
-      if (!openPrLink(event, changeRequest.url)) return;
+      if (!changeRequestUrl) return;
+      if (!openPrLink(event, changeRequestUrl)) return;
       if (!props.isActive) onThreadActivate(threadRef);
     },
-    [changeRequest, onThreadActivate, openPrLink, props.isActive, threadRef],
+    [changeRequestUrl, onThreadActivate, openPrLink, props.isActive, threadRef],
   );
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent) => {
@@ -1364,6 +1369,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           : shouldRecede
             ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+    // Background work fades as a whole row, including its status label.
+    shouldRecede &&
+      (status === "working" || status === "monitoring") &&
+      "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
     // The lifted row is an opaque card so the rows beneath it never show
     // through. The row tint is translucent in dark themes and the pointer
     // keeps the hover color applied, so both the tint and the solid sidebar
@@ -1862,47 +1871,18 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ) : null}
             </div>
             <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-secondary-label text-xs">
-              {changeRequestStatus && changeRequest ? (
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        aria-label={changeRequestStatus.tooltip}
-                        onClick={handleChangeRequestClick}
-                        className={cn(
-                          "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-ring",
-                          changeRequestStatus.colorClass,
-                        )}
-                      />
-                    }
-                  >
-                    <ChangeRequestStatusIcon
-                      state={changeRequest.state}
-                      isDraft={changeRequest.isDraft === true}
-                      className="size-3"
-                    />
-                  </TooltipTrigger>
-                  <TooltipPopup side="top">
-                    <PrStatusTooltipContent status={changeRequestStatus} />
-                  </TooltipPopup>
-                </Tooltip>
-              ) : null}
-              {thread.pullRequests.filter((link) => link.source !== "stack-dismissed").length >
-              1 ? (
-                <button
-                  type="button"
-                  aria-label="Show linked merge requests"
-                  className="text-secondary-label hover:text-foreground"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    useRightPanelStore.getState().open(threadRef, "pull-requests");
-                    if (!props.isActive) onThreadActivate(threadRef);
-                  }}
-                >
-                  +{thread.pullRequests.filter((link) => link.source !== "stack-dismissed").length}
-                </button>
-              ) : null}
+              <ThreadPullRequestBadgeControl
+                render={<InlineButton className="shrink-0 gap-1" />}
+                badge={resolveThreadPullRequestBadge(thread.pullRequests)}
+                number={changeRequest?.number ?? currentPullRequestLink?.number}
+                url={changeRequestUrl}
+                status={changeRequestStatus}
+                onOpenPullRequest={handleChangeRequestClick}
+                onOpenList={() => {
+                  useRightPanelStore.getState().open(threadRef, "pull-requests");
+                  if (!props.isActive) onThreadActivate(threadRef);
+                }}
+              />
               {changeRequest && variantAction !== "unsettle" && thread.pullRequests.length === 0 ? (
                 <LinkBranchPullRequestButton threadRef={threadRef} url={changeRequest.url} />
               ) : null}
@@ -2714,7 +2694,11 @@ export default function Sidebar() {
   // The Working shelf (beta) collapses the same way, with the same route
   // exception: sending a message folds the open thread into the shelf, and
   // its row must stay visible there.
-  const [workingShelfExpanded, setWorkingShelfExpanded] = useState(false);
+  const [workingShelfExpanded, setWorkingShelfExpanded] = useLocalStorage(
+    WORKING_SHELF_EXPANDED_KEY,
+    false,
+    Schema.Boolean,
+  );
   const toggleWorkingShelf = useCallback(
     () => setWorkingShelfExpanded((value) => !value),
     [setWorkingShelfExpanded],

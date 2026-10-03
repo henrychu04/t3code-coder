@@ -3337,13 +3337,31 @@ export default function ChatView(props: ChatViewProps) {
             }),
           },
         });
-        if (opened._tag !== "Success") return;
-        await writeTerminal({
+        if (opened._tag === "Failure") {
+          if (isAtomCommandInterrupted(opened)) return;
+          throw squashAtomCommandFailure(opened);
+        }
+        const written = await writeTerminal({
           environmentId,
           input: { threadId: activeThreadId, terminalId, data: command + "\n" },
         });
+        if (written._tag === "Failure") {
+          if (isAtomCommandInterrupted(written)) return;
+          throw squashAtomCommandFailure(written);
+        }
         setTerminalFocusRequestId((value) => value + 1);
-      })();
+      })().catch((cause: unknown) => {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not run shell command",
+            description:
+              cause instanceof Error
+                ? cause.message
+                : "The workspace terminal could not run the command.",
+          }),
+        );
+      });
     },
     [
       activeThreadRef,

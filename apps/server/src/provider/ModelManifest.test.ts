@@ -42,7 +42,7 @@ describe("bundled model manifest", () => {
         ["claude-fable-5-1", false],
         ["claude-fable-5", true],
         ["claude-opus-5-5", false],
-        ["claude-opus-5", true],
+        ["claude-opus-5", false],
         ["claude-sonnet-5", false],
         ["claude-opus-4-8", true],
       ],

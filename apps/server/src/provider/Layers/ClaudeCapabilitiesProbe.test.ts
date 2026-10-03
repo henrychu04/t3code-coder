@@ -476,3 +476,28 @@ it("prefers Fable 5.1 only when advertised by the workspace CLI", () => {
   });
   assert.strictEqual(fallback.find((model) => model.isDefault)?.slug, "claude-sonnet-5");
 });
+
+it("uses the bundled catalog for missing models without widening unreported runtime modes", () => {
+  const models = providerModelsFromClaudeCapabilities({
+    models: [],
+    version: "2.1.284",
+    autoModeDisabled: false,
+    bypassPermissionsDisabled: false,
+  });
+  for (const slug of ["claude-opus-5-5", "claude-sonnet-5-5"]) {
+    const model = models.find((entry) => entry.slug === slug);
+    assert.isDefined(model);
+    assert.deepEqual(model?.capabilities?.supportedRuntimeModes, [
+      "approval-required",
+      "auto-accept-edits",
+    ]);
+  }
+  assert.isFalse(models.find((entry) => entry.slug === "claude-opus-5")?.isLegacy ?? false);
+  const oldModels = providerModelsFromClaudeCapabilities({
+    models: [],
+    version: "2.1.219",
+    autoModeDisabled: true,
+    bypassPermissionsDisabled: true,
+  });
+  assert.isFalse(oldModels.some((entry) => entry.slug === "claude-sonnet-5-5"));
+});

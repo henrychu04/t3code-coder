@@ -1321,3 +1321,56 @@ layer("GitWorkflowService.prepareWorktreeBase", (it) => {
       }),
   );
 });
+
+it.effect("does not start Git auto-maintenance from status fetches", () => {
+  const driverLayer = GitVcsDriver.layer.pipe(
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" })),
+    Layer.provideMerge(VcsProcess.layer),
+    Layer.provideMerge(NodeServices.layer),
+  );
+  const testLayer = GitWorkflowService.layer.pipe(
+    Layer.provide(workflowSupport),
+    Layer.provide(
+      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+        resolveLink: () => undefined,
+        get: () => Effect.succeed(provider),
+      }),
+    ),
+    Layer.provideMerge(driverLayer),
+  );
+
+  return Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const driver = yield* GitVcsDriver.GitVcsDriver;
+    const git = (cwd: string, args: ReadonlyArray<string>) =>
+      driver.execute({ operation: "test.git", cwd, args, timeoutMs: 10_000 });
+    const remote = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-status-remote-" });
+    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-status-fetch-" });
+    yield* git(remote, ["init", "--bare"]);
+    yield* git(cwd, ["init", "--initial-branch=main"]);
+    yield* git(cwd, ["config", "user.email", "test@test.com"]);
+    yield* git(cwd, ["config", "user.name", "Test"]);
+    yield* git(cwd, ["remote", "add", "origin", remote]);
+    for (const name of ["first", "second"]) {
+      yield* fileSystem.writeFileString(path.join(cwd, `${name}.txt`), `${name}\n`);
+      yield* git(cwd, ["add", `${name}.txt`]);
+      yield* git(cwd, ["commit", "-m", name]);
+      yield* git(cwd, ["push", "-u", "origin", "main"]);
+      yield* git(cwd, ["repack", "-d"]);
+    }
+    // Two packs make `git gc --auto` due, and without detaching it would run inside the fetch.
+    yield* git(cwd, ["config", "gc.autoPackLimit", "1"]);
+    yield* git(cwd, ["config", "gc.autoDetach", "false"]);
+    yield* git(cwd, ["config", "maintenance.autoDetach", "false"]);
+    const packCount = git(cwd, ["count-objects", "-v"]).pipe(
+      Effect.map((result) => result.stdout.match(/^packs: (\d+)$/m)?.[1]),
+    );
+    expect(yield* packCount).toBe("2");
+
+    const workflow = yield* GitWorkflowService.GitWorkflowService;
+    yield* workflow.remoteStatus({ cwd }, { fetch: true });
+
+    expect(yield* packCount).toBe("2");
+  }).pipe(Effect.scoped, Effect.provide(testLayer));
+});

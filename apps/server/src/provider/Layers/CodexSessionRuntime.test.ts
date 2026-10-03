@@ -381,47 +381,45 @@ describe("buildTurnStartParams", () => {
   });
 });
 
-describe("buildCodexDeveloperInstructions", () => {
-  it("appends runtime info after the mode instructions", () => {
-    const instructions = buildCodexDeveloperInstructions("default", {
+describe("buildCodexAdditionalContext", () => {
+  it("includes runtime info in application context", () => {
+    const instructions = buildCodexAdditionalContext({
       model: "gpt-5.3-codex",
       reasoningEffort: "high",
-    });
+    }).t3_code_runtime!.value;
 
-    NodeAssert.ok(instructions.startsWith(codexDefaultModeDeveloperInstructions()));
     NodeAssert.match(instructions, /T3 Code/);
     NodeAssert.match(instructions, /Codex harness/);
     NodeAssert.match(instructions, /as gpt-5\.3-codex with high reasoning effort/);
   });
 
-  it("includes runtime info alongside plan mode instructions", () => {
-    const instructions = buildCodexDeveloperInstructions("plan", {
+  it("includes the turn reasoning effort", () => {
+    const instructions = buildCodexAdditionalContext({
       model: "gpt-5.3-codex",
       reasoningEffort: "medium",
-    });
+    }).t3_code_runtime!.value;
 
-    NodeAssert.ok(instructions.startsWith(codexPlanModeDeveloperInstructions()));
     NodeAssert.match(instructions, /as gpt-5\.3-codex with medium reasoning effort/);
   });
 
   it("varies with the model and effort of each turn", () => {
-    const first = buildCodexDeveloperInstructions("default", {
+    const first = buildCodexAdditionalContext({
       model: "gpt-5.3-codex",
       reasoningEffort: "medium",
-    });
-    const second = buildCodexDeveloperInstructions("default", {
+    }).t3_code_runtime!.value;
+    const second = buildCodexAdditionalContext({
       model: "gpt-5.4",
       reasoningEffort: "high",
-    });
+    }).t3_code_runtime!.value;
 
     NodeAssert.notEqual(first, second);
   });
 
   it("flattens multiline metadata into single-line runtime info", () => {
-    const instructions = buildCodexDeveloperInstructions("default", {
+    const instructions = buildCodexAdditionalContext({
       model: "gpt\n5.3\ncodex",
       reasoningEffort: " high\neffort ",
-    });
+    }).t3_code_runtime!.value;
 
     NodeAssert.match(instructions, /as gpt 5\.3 codex with high effort reasoning effort/);
     NodeAssert.doesNotMatch(instructions, /<runtime_info>[^<]*\n/);

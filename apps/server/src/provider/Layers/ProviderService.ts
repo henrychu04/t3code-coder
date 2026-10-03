@@ -1222,7 +1222,12 @@ const makeProviderService = Effect.fn("makeProviderService")(function* () {
       ),
     ).pipe(Effect.asVoid);
     yield* Effect.forEach(currentAdapters, ([, adapter]) => adapter.stopAll()).pipe(Effect.asVoid);
-    const bindings = yield* directory.listBindings().pipe(Effect.orElseSucceed(() => []));
+    // Stopped rows stay for their resume cursors, so long-lived installs hold
+    // thousands. Only rewrite the ones this shutdown actually stops.
+    const bindings = yield* directory.listBindings().pipe(
+      Effect.map((all) => all.filter((binding) => !isSettledBinding(binding))),
+      Effect.orElseSucceed(() => []),
+    );
     yield* Effect.forEach(bindings, (binding) =>
       Effect.gen(function* () {
         const providerInstanceId = dieOnMissingBindingInstanceId(

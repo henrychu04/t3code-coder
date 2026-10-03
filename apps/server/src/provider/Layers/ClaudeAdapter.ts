@@ -1,3 +1,7 @@
+import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  resolveClaudeCatalogContextWindowTokens,
+} from "../ClaudeModelCatalog.ts";
 import { homedir } from "node:os";
 import { readClaudeRewindHistory } from "../Drivers/ClaudeRewindHistory.ts";
 import * as FileSystem from "effect/FileSystem";
@@ -90,7 +94,6 @@ import {
   isClaudeUltracodeEffort,
   normalizeClaudeCliEffort,
   resolveClaudeApiModelId,
-  resolveClaudeContextWindow,
   resolveClaudeEffort,
 } from "./ClaudeProvider.ts";
 import {
@@ -672,21 +675,11 @@ function claudeContextWindowFromModelUsage(
 function selectedClaudeContextWindow(
   modelSelection: ModelSelection | undefined,
 ): number | undefined {
-  switch (modelSelection?.model) {
-    case "claude-opus-4-8":
-    case "claude-opus-4-7":
-      // Always 1M at the API; these models expose no contextWindow option.
-      return 1_000_000;
-  }
-
-  switch (resolveClaudeContextWindow(modelSelection)) {
-    case "1m":
-      return 1_000_000;
-    case "200k":
-      return 200_000;
-    default:
-      return undefined;
-  }
+  if (
+    !BUNDLED_CLAUDE_MODEL_CATALOG.models.some((entry) => entry.model.slug === modelSelection?.model)
+  )
+    return undefined;
+  return resolveClaudeCatalogContextWindowTokens(BUNDLED_CLAUDE_MODEL_CATALOG, modelSelection);
 }
 
 function finiteNonNegativeInteger(value: unknown): number | undefined {

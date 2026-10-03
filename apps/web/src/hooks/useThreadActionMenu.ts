@@ -199,6 +199,12 @@ export function useThreadActionMenu(input: {
           case "unpin":
             await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
             return;
+          case "auto-settle:enabled":
+          case "auto-settle:disabled":
+            await reportFailure("Failed to update auto-settle", () =>
+              setThreadAutoSettle(threadRef, action === "auto-settle:enabled"),
+            );
+            return;
           case "rename":
             onStartRename();
             return;
@@ -306,6 +312,7 @@ export function useThreadActionMenu(input: {
       onStartRename,
       pinThread,
       projectCwd,
+      setThreadAutoSettle,
       settleThread,
       snoozeThread,
       threadRef,

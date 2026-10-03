@@ -371,12 +371,15 @@ describe("ThreadSettlementReactor", () => {
               Queue.offer(snapshotReads, undefined).pipe(Effect.andThen(Effect.succeed(snapshot))),
           }),
           Layer.mock(GitWorkflow.GitWorkflowService)({
-            branchPullRequest: () =>
-              Effect.succeed({
-                state: "open",
-                number: 43,
-                updatedAt: NOW,
-                repositoryKey: "gitlab.example.test/owner/repository",
+            branchPullRequest: (_input, options) =>
+              Effect.sync(() => {
+                assert.isTrue(options?.refresh);
+                return {
+                  state: "open" as const,
+                  number: 43,
+                  updatedAt: NOW,
+                  repositoryKey: "gitlab.example.test/owner/repository",
+                };
               }),
             invalidateStatus: () => Effect.void,
           }),

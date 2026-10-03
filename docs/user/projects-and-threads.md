@@ -16,8 +16,10 @@ you always know where work is running.
 
 Choose **New project** in the command palette, select a Coder workspace, and enter a name.
 T3 Coder creates a folder under that workspace's `~/.t3-coder/projects`, with a README, an icon,
-and a first Git commit. If Git cannot make the commit, the project still opens and reports why.
+and a first Git commit. The dialog previews the destination; an existing folder adds a numeric suffix.
+If Git cannot make the commit, the project still opens and reports why.
 You may also publish it as a private GitLab repository using the workspace's existing GitLab login.
+The publish option appears only when workspace discovery reports authenticated, writable GitLab access.
 
 ## Start without a project
 

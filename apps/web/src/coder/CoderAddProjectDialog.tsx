@@ -1,3 +1,4 @@
+import { newProjectFolderName } from "@t3tools/shared/path";
 import { useNewProject } from "../hooks/useNewProject";
 import { useConnectDiscoveredWorkspace } from "./useConnectDiscoveredWorkspace";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -64,6 +65,24 @@ export function CoderAddProjectDialog({
   const [newProjectName, setNewProjectName] = useState("");
   const [publishNewProject, setPublishNewProject] = useState(false);
   const [creatingNewProject, setCreatingNewProject] = useState(false);
+
+  const sourceControl = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : sourceControlEnvironment.discovery({ environmentId, input: undefined }),
+  );
+  const canPublishToGitLab =
+    sourceControl.data?.sourceControlProviders.some(
+      (provider) =>
+        provider.kind === "gitlab" &&
+        provider.status === "available" &&
+        provider.auth.status === "authenticated" &&
+        provider.writeAccess?.writable === true,
+    ) ?? false;
+  const newProjectsRoot = environment?.serverConfig?.newProjectsRoot;
+  const projectDestination = newProjectsRoot
+    ? `${newProjectsRoot.replace(/\/$/, "")}/${newProjectFolderName(newProjectName)}`
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -342,7 +361,7 @@ export function CoderAddProjectDialog({
                   void createNewProject({
                     environmentId,
                     name: newProjectName.trim(),
-                    gitlab: publishNewProject ? { account: null } : null,
+                    gitlab: publishNewProject && canPublishToGitLab ? { account: null } : null,
                   })
                     .then((created) => {
                       if (created) onClose();
@@ -363,14 +382,22 @@ export function CoderAddProjectDialog({
                   Creates a folder with a README, an icon, and an initial Git commit in this
                   workspace.
                 </p>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={publishNewProject}
-                    onChange={(event) => setPublishNewProject(event.target.checked)}
-                  />
-                  Publish a private GitLab repository
-                </label>
+                {projectDestination ? (
+                  <p className="break-all text-xs text-muted-foreground">
+                    Destination: {projectDestination} (a numeric suffix is added if it already
+                    exists).
+                  </p>
+                ) : null}
+                {canPublishToGitLab ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={publishNewProject}
+                      onChange={(event) => setPublishNewProject(event.target.checked)}
+                    />
+                    Publish a private GitLab repository
+                  </label>
+                ) : null}
                 <Button
                   type="submit"
                   size="sm"

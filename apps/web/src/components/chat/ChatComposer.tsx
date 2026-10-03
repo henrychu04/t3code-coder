@@ -1478,8 +1478,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setThreadError,
     onExpandImage,
   } = props;
-  const activeTasksProgress = props.threadSyncPhase === null ? props.activeTasksProgress : null;
-  const activeTaskSteps = props.threadSyncPhase === null ? props.activeTaskSteps : null;
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
   // ------------------------------------------------------------------
@@ -1488,6 +1486,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   // happened while they awaited.
   const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
   const shownSyncPhase = useDelayedStatus(composerDraftTargetKey, props.threadSyncPhase);
+  const activeTasksProgress = shownSyncPhase === null ? props.activeTasksProgress : null;
+  const activeTaskSteps = shownSyncPhase === null ? props.activeTaskSteps : null;
   const composerDraftTargetKeyRef = useRef("");
   composerDraftTargetKeyRef.current = composerDraftTargetKey;
   const questionAttachmentTarget =

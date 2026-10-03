@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/coderWs.projects.test.ts",
+      "apps/server/src/provider/ClaudeModelCatalog.test.ts",
       "apps/server/src/storageCleanup.test.ts",
       "apps/server/src/persistence/Migrations/055_ProjectionMessageAttachments.test.ts",
       "apps/server/src/persistence/Migrations/056_ProjectionThreadMessageContext.test.ts",

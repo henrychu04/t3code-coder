@@ -262,7 +262,10 @@ export const make = Effect.gen(function* () {
           // that becomes eligible after this check waits for the next sweep
           // rather than settling on the unverified link.
           if (!(yield* wouldSettle(group, terminal))) return undefined;
-          const current = yield* git.branchPullRequest({ cwd, branch: thread.branch });
+          const current = yield* git.branchPullRequest(
+            { cwd, branch: thread.branch },
+            { refresh: true },
+          );
           if (current?.state === "open" && pullRequestMatchesProject(current, project))
             return current;
         }

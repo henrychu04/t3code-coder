@@ -156,18 +156,10 @@ function toSingleLine(value: string): string {
   return value.replaceAll(/\s+/g, " ").trim();
 }
 
-export function buildCodexDeveloperInstructions(
-  interactionMode: ProviderInteractionMode,
-  runtime?: CodexRuntimeInfo,
-): string {
-  const base =
-    interactionMode === "plan"
-      ? codexPlanModeDeveloperInstructions()
-      : codexDefaultModeDeveloperInstructions();
-  if (!runtime) return base;
-  return `${base}
-
-<runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
+export function buildCodexDeveloperInstructions(interactionMode: ProviderInteractionMode): string {
+  return interactionMode === "plan"
+    ? codexPlanModeDeveloperInstructions()
+    : codexDefaultModeDeveloperInstructions();
 }
 
 export function buildCodexAdditionalContext(
