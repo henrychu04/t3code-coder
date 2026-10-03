@@ -1,7 +1,6 @@
 import {
   type ClaudeSettings,
   type ModelCapabilities,
-  type ModelSelection,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
@@ -12,20 +11,13 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
-import {
-  createModelCapabilities,
-  getProviderOptionCurrentValue,
-  getProviderOptionDescriptors,
-} from "@t3tools/shared/model";
+import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
   scopeClaudeModelCatalog,
   formatClaudeVersionUpgradeMessage,
-  getClaudeCatalogModelCapabilities,
-  normalizeClaudeCatalogEffort,
-  resolveClaudeCatalogApiModelId,
   resolveClaudeModelSlug,
   resolveClaudeModelsForVersion,
 } from "../ClaudeModelCatalog.ts";
@@ -68,58 +60,6 @@ const CLAUDE_PRESENTATION = {
   showInteractionModeToggle: true,
   reportsContextWindow: true,
 } as const;
-const BUILT_IN_MODELS = BUNDLED_CLAUDE_MODEL_CATALOG.models.map((entry) => entry.model);
-
-export function getClaudeModelCapabilities(model: string | null | undefined): ModelCapabilities {
-  return BUILT_IN_MODELS.some((entry) => entry.slug === model)
-    ? getClaudeCatalogModelCapabilities(BUNDLED_CLAUDE_MODEL_CATALOG, model)
-    : DEFAULT_CLAUDE_MODEL_CAPABILITIES;
-}
-
-export function resolveClaudeEffort(
-  caps: ModelCapabilities,
-  raw: string | null | undefined,
-): string | undefined {
-  const descriptors = getProviderOptionDescriptors({
-    caps,
-    ...(raw ? { selections: [{ id: "effort", value: raw }] } : {}),
-  });
-  const effortDescriptor = descriptors.find((descriptor) => descriptor.id === "effort");
-  const value = getProviderOptionCurrentValue(effortDescriptor);
-  return typeof value === "string" ? value : undefined;
-}
-
-/**
- * Normalize a resolved Claude effort value into one suitable for the Claude
- * CLI's `--effort` flag.
- *
- * Mirrors the mapping used when invoking the Claude Code CLI
- * ({@link getEffectiveClaudeAgentEffort} in ClaudeAdapter): `ultracode` is a
- * Claude Code setting that pairs with `xhigh`, `ultrathink` is filtered out
- * because it is a prompt-prefix mode, and older model compatibility mappings
- * are preserved for current Claude Code behavior.
- */
-export function normalizeClaudeCliEffort(
-  effort: string | null | undefined,
-  model: string | null | undefined,
-): string | undefined {
-  if (!effort || effort === "ultrathink") return undefined;
-  if (effort === "ultracode") return "xhigh";
-  // Custom slugs remain opaque even if they shadow a built-in CLI alias.
-  if (!BUILT_IN_MODELS.some((entry) => entry.slug === model)) return effort ?? undefined;
-  return normalizeClaudeCatalogEffort(BUNDLED_CLAUDE_MODEL_CATALOG, effort, model);
-}
-
-export function isClaudeUltracodeEffort(effort: string | null | undefined): boolean {
-  return effort === "ultracode";
-}
-
-export function resolveClaudeApiModelId(modelSelection: ModelSelection): string {
-  return BUILT_IN_MODELS.some((entry) => entry.slug === modelSelection.model)
-    ? resolveClaudeCatalogApiModelId(BUNDLED_CLAUDE_MODEL_CATALOG, modelSelection)
-    : modelSelection.model;
-}
-
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];
   for (const part of value.split(/[\s_-]+/g)) {
@@ -345,8 +285,11 @@ export function providerModelsFromClaudeCapabilities(input: {
   readonly autoModeDisabled: boolean;
   readonly bypassPermissionsDisabled: boolean;
   readonly customModels?: ClaudeSettings["customModels"];
+  readonly catalog?: ClaudeModelCatalog;
 }): ReadonlyArray<ServerProviderModel> {
-  const catalog = scopeClaudeModelCatalog(BUNDLED_CLAUDE_MODEL_CATALOG, input.customModels ?? []);
+  const catalog =
+    input.catalog ??
+    scopeClaudeModelCatalog(BUNDLED_CLAUDE_MODEL_CATALOG, input.customModels ?? []);
   const catalogModels = catalog.models.map((entry) => entry.model);
   const versionModels =
     input.version === undefined
@@ -603,6 +546,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   ) => Effect.Effect<ClaudeCapabilitiesProbe | undefined>,
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
+  modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -610,6 +554,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 > {
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
+  const scopedModelCatalog = scopeClaudeModelCatalog(modelCatalog, claudeSettings.customModels);
   const configuredModels = providerModelsFromSettings(
     [],
     claudeSettings.customModels,
@@ -746,12 +691,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     autoModeDisabled: capabilities?.autoModeDisabled ?? true,
     bypassPermissionsDisabled: capabilities?.bypassPermissionsDisabled ?? true,
     customModels: claudeSettings.customModels,
+    catalog: scopedModelCatalog,
   });
   const models = builtInModels;
-  const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(
-    BUNDLED_CLAUDE_MODEL_CATALOG,
-    parsedVersion,
-  );
+  const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
 
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = capabilities?.slashCommands ?? [];

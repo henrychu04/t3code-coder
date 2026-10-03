@@ -33,7 +33,8 @@ This option is unavailable if T3 Coder's workspace data directory is inside a Gi
 
 A thread with unsent composer content shows an amber tint and pen icon after you navigate away
 from it. On an active-list row, hover and choose **X** to discard the draft without opening the
-thread. Draft contents stay in browser memory and are not saved locally.
+thread. Draft text is kept in this browser's storage so it survives a reload; attached images stay
+in browser memory and are not saved locally.
 
 Threads move through four states in the sidebar:
 

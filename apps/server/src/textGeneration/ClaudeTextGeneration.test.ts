@@ -11,6 +11,13 @@ import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import {
+  SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+  SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+  SYNTHETIC_CLAUDE_MODEL_CATALOG,
+  SYNTHETIC_CLAUDE_THINKING_MODEL,
+} from "../provider/ClaudeModelCatalog.testFixtures.ts";
+import type { ClaudeModelCatalog } from "../provider/ClaudeModelCatalog.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { sanitizeThreadTitle } from "./TextGenerationUtils.ts";
 import { makeClaudeTextGeneration } from "./ClaudeTextGeneration.ts";
@@ -119,6 +126,7 @@ function withFakeClaudeEnv<A, E, R>(
     configDirMustBe?: string;
     cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
+    modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -239,12 +247,128 @@ function withFakeClaudeEnv<A, E, R>(
     );
 
     const config = decodeClaudeSettings(input.claudeConfig ?? {});
-    const textGeneration = yield* makeClaudeTextGeneration(config);
+    const textGeneration = yield* makeClaudeTextGeneration(config, undefined, input.modelCatalog);
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
 
 it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
+  it.effect("forwards Claude thinking settings without passing unsupported effort", () =>
+    withFakeClaudeEnv(
+      {
+        modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
+        output: JSON.stringify({
+          structured_output: {
+            subject: "Add important change",
+            body: "",
+          },
+        }),
+        argsMustContain: '--settings {"disableAllHooks":true,"alwaysThinkingEnabled":false}',
+        argsMustNotContain: "--effort",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/claude-effect",
+            stagedSummary: "M README.md",
+            stagedPatch: "diff --git a/README.md b/README.md",
+            modelSelection: {
+              ...createModelSelection(
+                ProviderInstanceId.make("claudeAgent"),
+                SYNTHETIC_CLAUDE_THINKING_MODEL,
+                [
+                  { id: "thinking", value: false },
+                  { id: "effort", value: "high" },
+                ],
+              ),
+            },
+          });
+
+          expect(generated.subject).toBe("Add important change");
+        }),
+    ),
+  );
+
+  it.effect("keeps a configured custom alias opaque to the Claude CLI", () =>
+    withFakeClaudeEnv(
+      {
+        modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
+        output: JSON.stringify({
+          structured_output: {
+            title: "Keep custom model",
+            body: "",
+          },
+        }),
+        argsMustContain: `--model ${SYNTHETIC_CLAUDE_COLLIDING_ALIAS} --settings`,
+        claudeConfig: { customModels: [SYNTHETIC_CLAUDE_COLLIDING_ALIAS] },
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generatePrContent({
+            cwd: process.cwd(),
+            baseBranch: "main",
+            headBranch: "feature/custom-model",
+            commitSummary: "Keep custom model",
+            diffSummary: "1 file changed",
+            diffPatch: "diff --git a/README.md b/README.md",
+            modelSelection: createModelSelection(
+              ProviderInstanceId.make("claudeAgent"),
+              SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+              [
+                { id: "effort", value: "max" },
+                { id: "fastMode", value: true },
+                { id: "contextWindow", value: "expanded" },
+              ],
+            ),
+          });
+
+          expect(generated.title).toBe("Keep custom model");
+        }),
+    ),
+  );
+
+  it.effect(
+    "keeps canonical built-in capabilities when a custom model collides with its alias",
+    () =>
+      withFakeClaudeEnv(
+        {
+          modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
+          output: JSON.stringify({
+            structured_output: {
+              title: "Improve orchestration flow",
+              body: "Body",
+            },
+          }),
+          argsMustContain: `--model ${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded] --effort max --settings {"disableAllHooks":true,"fastMode":true}`,
+          claudeConfig: { customModels: [SYNTHETIC_CLAUDE_COLLIDING_ALIAS] },
+        },
+        (textGeneration) =>
+          Effect.gen(function* () {
+            const generated = yield* textGeneration.generatePrContent({
+              cwd: process.cwd(),
+              baseBranch: "main",
+              headBranch: "feature/claude-effect",
+              commitSummary: "Improve orchestration",
+              diffSummary: "1 file changed",
+              diffPatch: "diff --git a/README.md b/README.md",
+              modelSelection: {
+                ...createModelSelection(
+                  ProviderInstanceId.make("claudeAgent"),
+                  SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+                  [
+                    { id: "effort", value: "max" },
+                    { id: "fastMode", value: true },
+                  ],
+                ),
+              },
+            });
+
+            expect(generated.title).toBe("Improve orchestration flow");
+          }),
+      ),
+  );
+
   it.effect("generates labels without requiring bypass-permissions mode", () =>
     withFakeClaudeEnv(
       {
@@ -392,6 +516,40 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             subject: "Restore Git actions",
             body: "- Route operations through the workspace helper",
           });
+        }),
+    ),
+  );
+
+  it.effect("honors custom descriptors without resolving a shadowed Claude alias", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({ structured_output: { subject: "Use custom model", body: "" } }),
+        argsMustContain: "--model opus-4.6 --effort high",
+        claudeConfig: {
+          customModels: [
+            {
+              slug: "opus-4.6",
+              capabilities: {
+                optionDescriptors: [
+                  {
+                    id: "effort",
+                    label: "Effort",
+                    type: "select",
+                    options: [{ id: "high", label: "High", isDefault: true }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      },
+      (textGeneration) =>
+        textGeneration.generateCommitMessage({
+          cwd: process.cwd(),
+          branch: "feature/custom-model",
+          stagedSummary: "1 file changed",
+          stagedPatch: "+custom",
+          modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus-4.6"),
         }),
     ),
   );

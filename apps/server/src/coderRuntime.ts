@@ -85,6 +85,7 @@ const CoderProviderSessionDirectoryLive = ProviderSessionDirectoryLive.pipe(
 );
 
 const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
+  Layer.provide(ModelManifest.layer),
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(ScreenshotArtifacts.layer),
 );

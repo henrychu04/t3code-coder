@@ -68,6 +68,9 @@ claim: shared provider protocols may still report subscription metadata.
   rules, and ephemeral staging of validated composer images in an OS temporary directory. Delete
   staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
+- Browser storage may additionally keep UI preferences and, as on main, the text of unsent composer
+  drafts and stashed prompts, including their terminal excerpts. Never store image bytes, upload
+  IDs, credentials, or other application data there.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
   transfer, or background file synchronization. The only exceptions are listed below; each is
   scoped to its own mechanism and authorizes nothing beyond it.

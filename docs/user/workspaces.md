@@ -66,7 +66,8 @@ gateway starts; a rule that failed stays stopped until you restart it or change 
 
 Repositories, prompts, responses, provider sessions, terminals, checkpoints, project records, and
 the application database remain in the workspace. The local profile contains only the non-secret
-information needed to reconnect and recreate explicit port-forward rules. Coder owns Coder
+information needed to reconnect and recreate explicit port-forward rules. The browser keeps the
+text of unsent drafts and stashed prompts, but never their images. Coder owns Coder
 credentials, and provider credentials remain in the workspace.
 
 ## Troubleshooting

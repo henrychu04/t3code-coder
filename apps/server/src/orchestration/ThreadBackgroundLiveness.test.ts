@@ -2,6 +2,24 @@ import { describe, expect, it } from "vite-plus/test";
 import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
 
 describe("ThreadBackgroundLiveness", () => {
+  it("does not let status-free metadata restart an idle task, but accepts explicit running updates", () => {
+    const liveness = ThreadBackgroundLiveness.make();
+    const task = { threadId: "thread", taskId: "task", taskType: "subagent" };
+    liveness.recordTaskLiveness({ ...task, kind: "started", status: "running" });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBe("working");
+    liveness.recordTaskLiveness({
+      ...task,
+      taskType: undefined,
+      kind: "updated",
+      status: "idle",
+    });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+    liveness.recordTaskLiveness({ ...task, kind: "updated", status: undefined });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBeNull();
+    liveness.recordTaskLiveness({ ...task, kind: "updated", status: "running" });
+    expect(liveness.getThreadBackgroundLiveness("thread")).toBe("working");
+  });
+
   it("does not let status-free progress restart an idle task", () => {
     const liveness = ThreadBackgroundLiveness.make();
     liveness.recordTaskLiveness({
