@@ -10,13 +10,39 @@ import {
   buildClaudeCapabilitiesProbeQueryOptions,
   checkClaudeProviderStatus,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
+  makePendingClaudeProvider,
   probeClaudeCapabilities,
   providerModelsFromClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
+import { SYNTHETIC_CLAUDE_MODEL_CATALOG } from "../ClaudeModelCatalog.testFixtures.ts";
+
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 it.layer(NodeServices.layer)("Claude authentication status", (it) => {
+  it.effect("lists only configured models before the workspace CLI reports its models", () =>
+    Effect.gen(function* () {
+      const settings = decodeClaudeSettings({
+        enabled: false,
+        customModels: [{ slug: "custom-model", name: "Custom model" }],
+      });
+      const pending = yield* makePendingClaudeProvider(settings);
+      const checked = yield* checkClaudeProviderStatus(
+        settings,
+        undefined,
+        undefined,
+        undefined,
+        SYNTHETIC_CLAUDE_MODEL_CATALOG,
+      );
+      for (const snapshot of [pending, checked]) {
+        assert.deepEqual(
+          snapshot.models.map((model) => model.slug),
+          ["custom-model"],
+        );
+      }
+    }),
+  );
+
   for (const testCase of [
     {
       name: "signed out despite initialized account metadata",

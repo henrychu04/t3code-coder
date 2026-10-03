@@ -39,6 +39,12 @@ import { ServerSettingsService } from "../../serverSettings.ts";
 import { ProviderAdapterProcessError, ProviderAdapterValidationError } from "../Errors.ts";
 import type { ClaudeAdapterShape } from "../Services/ClaudeAdapter.ts";
 import { makeClaudeAdapter, type ClaudeAdapterLiveOptions } from "./ClaudeAdapter.ts";
+import {
+  SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+  SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+  SYNTHETIC_CLAUDE_MODEL_CATALOG,
+} from "../ClaudeModelCatalog.testFixtures.ts";
+import { providerModelsFromClaudeCapabilities } from "./ClaudeProvider.ts";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 // Test-local service tag so the rest of the file can keep using `yield* ClaudeAdapter`.
@@ -262,6 +268,337 @@ const THREAD_ID = ThreadId.make("thread-claude-1");
 const RESUME_THREAD_ID = ThreadId.make("thread-claude-resume");
 
 describe("ClaudeAdapterLive", () => {
+  it.effect(
+    "keeps a configured custom alias opaque without disabling the canonical built-in",
+    () => {
+      const claudeConfig = { customModels: [SYNTHETIC_CLAUDE_COLLIDING_ALIAS] };
+      const customHarness = makeHarness({
+        claudeConfig,
+        adapterOptions: { modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG) },
+      });
+      const builtInHarness = makeHarness({
+        claudeConfig,
+        adapterOptions: { modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG) },
+      });
+      const start = (harness: ReturnType<typeof makeHarness>, model: string) =>
+        Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          yield* adapter.startSession({
+            threadId: THREAD_ID,
+            provider: ProviderDriverKind.make("claudeAgent"),
+            modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), model, [
+              { id: "effort", value: "max" },
+              { id: "fastMode", value: true },
+              { id: "contextWindow", value: "expanded" },
+            ]),
+            runtimeMode: "full-access",
+          });
+          return harness.getLastCreateQueryInput()!.options;
+        }).pipe(
+          Effect.provideService(Random.Random, makeDeterministicRandomService()),
+          Effect.provide(harness.layer),
+        );
+      const runCustomFlow = Effect.gen(function* () {
+        const adapter = yield* ClaudeAdapter;
+        yield* adapter.startSession({
+          threadId: THREAD_ID,
+          provider: ProviderDriverKind.make("claudeAgent"),
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("claudeAgent"),
+            SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+            [
+              { id: "effort", value: "max" },
+              { id: "fastMode", value: true },
+              { id: "contextWindow", value: "expanded" },
+            ],
+          ),
+          runtimeMode: "full-access",
+        });
+        const options = customHarness.getLastCreateQueryInput()!.options;
+
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "use the built-in model",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("claudeAgent"),
+            SYNTHETIC_CLAUDE_CAPABLE_MODEL,
+            [{ id: "contextWindow", value: "expanded" }],
+          ),
+          attachments: [],
+        });
+        yield* Effect.promise(() => readFirstPromptText(customHarness.getLastCreateQueryInput()));
+        yield* adapter.sendTurn({
+          threadId: THREAD_ID,
+          input: "keep this prompt literal",
+          modelSelection: createModelSelection(
+            ProviderInstanceId.make("claudeAgent"),
+            SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+            [{ id: "effort", value: "ultrathink" }],
+          ),
+          attachments: [],
+        });
+        const prompt = yield* Effect.promise(() =>
+          readFirstPromptText(customHarness.getLastCreateQueryInput()),
+        );
+        return { options, prompt };
+      }).pipe(
+        Effect.provideService(Random.Random, makeDeterministicRandomService()),
+        Effect.provide(customHarness.layer),
+      );
+
+      return Effect.gen(function* () {
+        const { options: customOptions, prompt: customPrompt } = yield* runCustomFlow;
+        assert.equal(customOptions.model, SYNTHETIC_CLAUDE_COLLIDING_ALIAS);
+        assert.equal(customOptions.effort, undefined);
+        assert.deepEqual(customOptions.settings, { showThinkingSummaries: true });
+        assert.deepEqual(customHarness.query.setModelCalls, [
+          `${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded]`,
+          SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
+        ]);
+        assert.equal(customPrompt, "keep this prompt literal");
+
+        const builtInOptions = yield* start(builtInHarness, SYNTHETIC_CLAUDE_CAPABLE_MODEL);
+        assert.equal(builtInOptions.model, `${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded]`);
+        assert.equal(builtInOptions.effort, "max");
+        assert.deepEqual(builtInOptions.settings, {
+          showThinkingSummaries: true,
+          fastMode: true,
+        });
+      });
+    },
+  );
+
+  it.effect("forwards custom model descriptors into the Claude CLI query", () => {
+    const harness = makeHarness({
+      claudeConfig: {
+        customModels: [
+          {
+            slug: "custom-model",
+            name: "Custom",
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "effort",
+                  label: "Effort",
+                  type: "select",
+                  options: [{ id: "high", label: "High", isDefault: true }],
+                },
+                { id: "fastMode", label: "Fast", type: "boolean" },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        provider: ProviderDriverKind.make("claudeAgent"),
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "custom-model",
+          [
+            { id: "effort", value: "high" },
+            { id: "fastMode", value: true },
+          ],
+        ),
+        runtimeMode: "approval-required",
+      });
+      const input = harness.getLastCreateQueryInput();
+      assert.equal(input?.options.effort, "high");
+      assert.equal(input?.options.settings?.fastMode, true);
+    }).pipe(
+      Effect.provideService(Random.Random, makeDeterministicRandomService()),
+      Effect.provide(harness.layer),
+    );
+  });
+
+  it.effect("applies discovered custom options for the bound provider instance", () => {
+    const instanceId = ProviderInstanceId.make("claude_custom");
+    const customModels = [
+      {
+        slug: "opus-4.6",
+        name: "Custom Opus",
+        capabilities: {
+          optionDescriptors: [
+            {
+              id: "effort",
+              label: "Effort",
+              type: "select",
+              options: [{ id: "medium", label: "Medium", isDefault: true }],
+            },
+            { id: "thinking", label: "Thinking", type: "boolean", currentValue: true },
+            { id: "fastMode", label: "Fast", type: "boolean", currentValue: true },
+          ],
+        },
+      },
+    ] satisfies ClaudeSettings["customModels"];
+    const discovered = providerModelsFromClaudeCapabilities({
+      models: [],
+      version: "2.1.261",
+      customModels,
+      autoModeDisabled: true,
+      bypassPermissionsDisabled: true,
+    }).find((model) => model.slug === "opus-4.6");
+    assert.equal(discovered?.isCustom, true);
+    assert.deepEqual(
+      discovered?.capabilities?.optionDescriptors,
+      customModels[0]?.capabilities?.optionDescriptors,
+    );
+    const harness = makeHarness({ instanceId, claudeConfig: { customModels } });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      const session = yield* adapter.startSession({
+        threadId: THREAD_ID,
+        modelSelection: createModelSelection(instanceId, discovered!.slug, [
+          { id: "thinking", value: false },
+          { id: "fastMode", value: true },
+        ]),
+        runtimeMode: "approval-required",
+      });
+      assert.equal(session.model, "opus-4.6");
+      assert.equal(harness.getLastCreateQueryInput()?.options.model, "opus-4.6");
+      assert.equal(harness.getLastCreateQueryInput()?.options.effort, "medium");
+      assert.equal(
+        harness.getLastCreateQueryInput()?.options.settings?.alwaysThinkingEnabled,
+        false,
+      );
+      assert.equal(harness.getLastCreateQueryInput()?.options.settings?.fastMode, true);
+    }).pipe(Effect.provide(harness.layer));
+  });
+
+  for (const customModels of [[], ["opus-4.6"]] satisfies ReadonlyArray<
+    ClaudeSettings["customModels"]
+  >) {
+    const shadowed = customModels.length > 0;
+    it.effect(
+      `${shadowed ? "preserves a bare custom slug shadowing" : "resolves"} a bundled model alias`,
+      () => {
+        const harness = makeHarness({ claudeConfig: { customModels } });
+        return Effect.gen(function* () {
+          const adapter = yield* ClaudeAdapter;
+          const selection = createModelSelection(
+            ProviderInstanceId.make("claudeAgent"),
+            "opus-4.6",
+            [
+              { id: "effort", value: "max" },
+              { id: "contextWindow", value: "1m" },
+            ],
+          );
+          const session = yield* adapter.startSession({
+            threadId: THREAD_ID,
+            modelSelection: selection,
+            runtimeMode: "approval-required",
+          });
+          assert.equal(session.model, shadowed ? "opus-4.6" : "claude-opus-4-6");
+          assert.equal(
+            harness.getLastCreateQueryInput()?.options.model,
+            shadowed ? "opus-4.6" : "claude-opus-4-6[1m]",
+          );
+          assert.equal(
+            harness.getLastCreateQueryInput()?.options.effort,
+            shadowed ? undefined : "max",
+          );
+          yield* adapter.sendTurn({
+            threadId: THREAD_ID,
+            input: "hello",
+            modelSelection: selection,
+          });
+          assert.deepEqual(harness.query.setModelCalls, []);
+
+          const usageFiber = yield* adapter.streamEvents.pipe(
+            Stream.filter((event) => event.type === "thread.token-usage.updated"),
+            Stream.runHead,
+            Effect.forkChild,
+          );
+          harness.query.emit({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            session_id: "sdk-session-alias",
+            usage: { input_tokens: 100, output_tokens: 10 },
+          } as unknown as SDKMessage);
+          const usage = yield* Fiber.join(usageFiber);
+          assert.equal(usage._tag, "Some");
+          if (usage._tag === "Some" && usage.value.type === "thread.token-usage.updated") {
+            assert.equal(usage.value.payload.usage.maxTokens, shadowed ? undefined : 1_000_000);
+          }
+        }).pipe(Effect.provide(harness.layer));
+      },
+    );
+  }
+
+  it.effect("uses custom descriptors for subsequent turn prompts and inherited task effort", () => {
+    const harness = makeHarness({
+      claudeConfig: {
+        customModels: [
+          {
+            slug: "opus-4.6",
+            capabilities: {
+              optionDescriptors: [
+                {
+                  id: "effort",
+                  label: "Effort",
+                  type: "select",
+                  options: [
+                    { id: "medium", label: "Medium", isDefault: true },
+                    { id: "ultrathink", label: "Ultrathink" },
+                  ],
+                  promptInjectedValues: ["ultrathink"],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    return Effect.gen(function* () {
+      const adapter = yield* ClaudeAdapter;
+      yield* adapter.startSession({
+        threadId: THREAD_ID,
+        modelSelection: createModelSelection(
+          ProviderInstanceId.make("claudeAgent"),
+          "claude-opus-4-6",
+        ),
+        runtimeMode: "approval-required",
+      });
+      yield* adapter.sendTurn({
+        threadId: THREAD_ID,
+        input: "hello",
+        modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus-4.6", [
+          { id: "effort", value: "ultrathink" },
+        ]),
+      });
+      assert.deepEqual(harness.query.setModelCalls, ["opus-4.6"]);
+      assert.equal(
+        yield* Effect.promise(() => readFirstPromptText(harness.getLastCreateQueryInput())),
+        "Ultrathink:\nhello",
+      );
+      const taskFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter((event) => event.type === "task.started"),
+        Stream.runHead,
+        Effect.forkChild,
+      );
+      harness.query.emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "custom-task",
+        description: "Custom task",
+        task_type: "local_agent",
+        tool_use_id: "custom-tool",
+        uuid: "custom-task-uuid",
+        session_id: "sdk-session-custom",
+      } as unknown as SDKMessage);
+      const task = yield* Fiber.join(taskFiber);
+      assert.equal(task._tag, "Some");
+      if (task._tag === "Some" && task.value.type === "task.started") {
+        assert.equal(task.value.payload.model, "opus-4.6");
+        assert.equal(task.value.payload.effort, "medium");
+      }
+    }).pipe(Effect.provide(harness.layer));
+  });
+
   it.effect("returns validation error for non-claude provider on startSession", () => {
     const harness = makeHarness();
     return Effect.gen(function* () {
