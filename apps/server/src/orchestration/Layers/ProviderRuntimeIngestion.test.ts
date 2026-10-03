@@ -4283,6 +4283,82 @@ describe("ProviderRuntimeIngestion", () => {
     });
   });
 
+  it.each([
+    {
+      source: "Codex collabAgent/metadataUpdated",
+      provider: "codex",
+      // Shape emitted by CodexAdapter, including repeated agent metadata.
+      metadata: {
+        role: "reviewer",
+        title: "reviewer",
+        model: "gpt-5-codex",
+        effort: "high",
+        agentPath: "/reviewer",
+        timelineBypass: true,
+      },
+    },
+    {
+      source: "Claude task_updated",
+      provider: "claudeAgent",
+      // Shape emitted for a description/background patch without patch.status.
+      metadata: { description: "Reviewing changes", isBackgrounded: true },
+    },
+  ])("does not revive idle background work from $source", async ({ provider, metadata }) => {
+    const harness = await createHarness();
+    const base = {
+      provider: ProviderDriverKind.make(provider),
+      threadId: asThreadId("thread-1"),
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const taskId = "background-reviewer";
+
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "task.started",
+        eventId: asEventId("evt-background-started"),
+        payload: { taskId, description: "Review changes", ...metadata },
+      },
+      {
+        ...base,
+        type: "task.updated",
+        eventId: asEventId("evt-background-live-metadata"),
+        payload: { taskId, ...metadata },
+      },
+    ]);
+    expect((await harness.readThreadShell()).backgroundLiveness).toBe("working");
+
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "task.updated",
+        eventId: asEventId("evt-background-idle"),
+        payload: { taskId, status: "idle" },
+      },
+    ]);
+    expect((await harness.readThreadShell()).backgroundLiveness).toBeNull();
+
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "task.updated",
+        eventId: asEventId("evt-background-idle-metadata"),
+        payload: { taskId, ...metadata },
+      },
+    ]);
+    expect((await harness.readThreadShell()).backgroundLiveness).toBeNull();
+
+    await harness.emitAndDrain([
+      {
+        ...base,
+        type: "task.updated",
+        eventId: asEventId("evt-background-running"),
+        payload: { taskId, status: "running", ...metadata },
+      },
+    ]);
+    expect((await harness.readThreadShell()).backgroundLiveness).toBe("working");
+  });
+
   it("projects Codex task lifecycle chunks into thread activities", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";
