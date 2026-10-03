@@ -176,3 +176,10 @@ export function getQuestionAnswerPreview(answer: QuestionAnswer): string {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+export function getQuestionTextPreview(answer: typeof QuestionAnswer.Type): string {
+  return Object.values(answer.questionTextById ?? {})
+    .map((text) => text.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" · ");
+}

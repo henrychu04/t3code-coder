@@ -1,3 +1,11 @@
+import type { ServerProviderUpdateState } from "@t3tools/contracts";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
+const makeManualProviderMaintenanceCapabilities = (provider: ProviderDriverKind) =>
+  makeManualOnlyProviderMaintenanceCapabilities({
+    provider,
+    packageName: null,
+  });
+
 /**
  * ProviderRegistryLive — aggregates per-instance snapshot streams into a
  * single materialized list.
@@ -99,6 +107,15 @@ const mergeProviderModels = (
 };
 
 const MAX_WORKSPACE_SNAPSHOTS_PER_PROVIDER = 16;
+
+function dropProviderWorkspaceSnapshot(provider: ServerProvider, cwd: string): ServerProvider {
+  return provider.workspaceSnapshots?.some((snapshot) => snapshot.cwd === cwd)
+    ? {
+        ...provider,
+        workspaceSnapshots: provider.workspaceSnapshots.filter((snapshot) => snapshot.cwd !== cwd),
+      }
+    : provider;
+}
 
 export function upsertProviderWorkspaceSnapshot(
   provider: ServerProvider,
@@ -290,7 +307,7 @@ export const ProviderRegistryLive = Layer.effect(
     );
     // Bundled policies only: T3 Coder never refreshes the manifest over HTTP.
     const classifyCompatibility = (provider: ServerProvider) =>
-applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility);
+      applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility);
     const workspaceRefreshesRef = yield* Ref.make(new Map<ProviderInstance, Set<string>>());
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(
       cachedProviders.map(classifyCompatibility),
@@ -323,7 +340,11 @@ applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compat
           cacheDir: config.providerStatusCacheDir,
           instanceId: key,
         }).pipe(Effect.provideService(Path.Path, path));
-        const { workspaceSnapshots: _workspaceSnapshots, ...machineProvider } = provider;
+        const {
+          workspaceSnapshots: _workspaceSnapshots,
+          updateState: _updateState,
+          ...machineProvider
+        } = provider;
         yield* writeProviderStatusCache({ filePath, provider: machineProvider }).pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
@@ -331,6 +352,83 @@ applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compat
           Effect.ignore,
         );
       });
+
+    const maintenanceActionStatesRef = yield* Ref.make<
+      ReadonlyMap<ProviderInstanceId, { readonly update?: ServerProviderUpdateState | undefined }>
+    >(new Map());
+
+    const applyProviderUpdateState = Effect.fn("applyProviderUpdateState")(function* (
+      provider: ServerProvider,
+    ) {
+      const maintenanceActionStates = yield* Ref.get(maintenanceActionStatesRef);
+      const updateState = maintenanceActionStates.get(provider.instanceId)?.update;
+      if (!updateState) {
+        const { updateState: _updateState, ...providerWithoutUpdateState } = provider;
+        return providerWithoutUpdateState;
+      }
+      return {
+        ...provider,
+        updateState,
+      };
+    });
+
+    const setProviderMaintenanceActionState = Effect.fn("setProviderMaintenanceActionState")(
+      function* (input: {
+        readonly instanceId: ProviderInstanceId;
+        readonly action: "update";
+        readonly state: ServerProviderUpdateState | null;
+      }) {
+        yield* Ref.update(maintenanceActionStatesRef, (previous) => {
+          const previousActions = previous.get(input.instanceId);
+          const nextActions = { ...previousActions };
+          if (input.state === null || input.state.status === "idle") {
+            delete nextActions[input.action];
+          } else {
+            nextActions[input.action] = input.state;
+          }
+
+          const next = new Map(previous);
+          if (Object.keys(nextActions).length === 0) {
+            next.delete(input.instanceId);
+          } else {
+            next.set(input.instanceId, nextActions);
+          }
+          return next;
+        });
+
+        const existingProviders = yield* Ref.get(providersRef);
+        const matchingProvider = existingProviders.find(
+          (candidate) => candidate.instanceId === input.instanceId,
+        );
+        if (!matchingProvider) {
+          return existingProviders;
+        }
+
+        const nextProvider = yield* applyProviderUpdateState(matchingProvider);
+        return yield* upsertProviders([nextProvider], {
+          persist: false,
+        });
+      },
+    );
+
+    const getProviderMaintenanceCapabilitiesForInstance = Effect.fn(
+      "getProviderMaintenanceCapabilitiesForInstance",
+    )(function* (
+      instanceId: ProviderInstanceId,
+      provider: ProviderDriverKind,
+      options?: { readonly fresh?: boolean },
+    ) {
+      // Read the instance registry, not `liveSubsRef`: the latter trails
+      // reconciliation, and an update must never run a retired instance's
+      // command against a freshly configured executable.
+      const instance = yield* instanceRegistry.getInstance(instanceId);
+      if (!instance || instance.driverKind !== provider) {
+        return makeManualProviderMaintenanceCapabilities(provider);
+      }
+      return yield* instance.snapshot.resolveMaintenance
+        ? instance.snapshot.resolveMaintenance(options)
+        : Effect.succeed(makeManualProviderMaintenanceCapabilities(provider));
+    });
 
     const upsertProviders = Effect.fn("upsertProviders")(function* (
       nextProviders: ReadonlyArray<ServerProvider>,
@@ -340,6 +438,10 @@ applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compat
         readonly replace?: boolean;
       },
     ) {
+      const nextProvidersWithUpdateState = yield* Effect.forEach(
+        nextProviders,
+        applyProviderUpdateState,
+      );
       const [previousProviders, providers, providersToPersist] = yield* Ref.modify(
         providersRef,
         (previousProviders) => {
@@ -348,7 +450,7 @@ applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compat
           );
           const updatedKeys = new Set<ProviderInstanceId>();
 
-          for (const provider of nextProviders) {
+          for (const provider of nextProvidersWithUpdateState) {
             const key = snapshotInstanceKey(provider);
             updatedKeys.add(key);
             mergedProviders.set(
@@ -649,17 +751,44 @@ applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compat
       return yield* Ref.get(providersRef);
     });
 
+    const updateProviders = (
+      update: (providers: ReadonlyArray<ServerProvider>) => ReadonlyArray<ServerProvider>,
+    ) =>
+      Ref.modify(providersRef, (currentProviders) => {
+        const nextProviders = update(currentProviders);
+        return [[currentProviders, nextProviders] as const, nextProviders];
+      }).pipe(
+        Effect.tap(([previousProviders, nextProviders]) =>
+          haveProvidersChanged(previousProviders, nextProviders)
+            ? PubSub.publish(changesPubSub, nextProviders)
+            : Effect.void,
+        ),
+        Effect.map(([, nextProviders]) => nextProviders),
+      );
+
     const refreshWorkspaceSnapshot = Effect.fn("refreshWorkspaceSnapshot")(function* (input: {
       readonly instanceId: ProviderInstanceId;
       readonly cwd: string;
+      readonly fresh?: boolean;
     }) {
+      // Fresh scans drop other instances' snapshots for this cwd first, so a
+      // composer on one of them scans again on next use, even when this
+      // instance is gone or cannot be scanned.
+      if (input.fresh) {
+        yield* updateProviders((providers) =>
+          providers.map((candidate) =>
+            candidate.instanceId === input.instanceId
+              ? candidate
+              : dropProviderWorkspaceSnapshot(candidate, input.cwd),
+          ),
+        );
+      }
       const providers = yield* Ref.get(providersRef);
       const provider = providers.find((candidate) => candidate.instanceId === input.instanceId);
-      if (
-        !provider ||
-        !provider.enabled ||
-        provider.workspaceSnapshots?.some((s) => s.cwd === input.cwd)
-      ) {
+      const workspaceSnapshotOf = (candidate: ServerProvider | undefined) =>
+        candidate?.workspaceSnapshots?.find((s) => s.cwd === input.cwd);
+      const scannedFrom = workspaceSnapshotOf(provider);
+      if (!provider || !provider.enabled || (!input.fresh && scannedFrom)) {
         return providers;
       }
       const instance = yield* instanceRegistry.getInstance(input.instanceId);
@@ -671,47 +800,54 @@ applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compat
         next.set(instance, new Set(current).add(input.cwd));
         return [true, next] as const;
       });
-      if (!claimed) return yield* Ref.get(providersRef);
-      return yield* instance.snapshotForCwd(input.cwd).pipe(
+      // A fresh scan never joins a running one, which may predate the change.
+      if (!claimed && !input.fresh) return yield* Ref.get(providersRef);
+      // Fresh scans also re-read the machine snapshot: Claude's plugin
+      // commands come from it, not from the cwd scan.
+      const refreshMachineSnapshot = input.fresh
+        ? (instance.invalidateCaches ?? Effect.void).pipe(
+            Effect.andThen(refreshInstance(input.instanceId)),
+          )
+        : Effect.void;
+      return yield* refreshMachineSnapshot.pipe(
+        Effect.andThen(instance.snapshotForCwd(input.cwd)),
         Effect.flatMap((scopedSnapshot) =>
           scopedSnapshot.status === "error"
             ? Ref.get(providersRef)
             : instanceRegistry.getInstance(input.instanceId).pipe(
                 Effect.flatMap((currentInstance) => {
                   if (currentInstance !== instance) return Ref.get(providersRef);
-                  return Ref.modify(providersRef, (currentProviders) => {
-                    const nextProviders = currentProviders.map((candidate) =>
+                  // Write only if the cwd's snapshot did not change during the
+                  // scan. A session event or another scan that landed first is newer.
+                  return updateProviders((currentProviders) =>
+                    currentProviders.map((candidate) =>
                       candidate.instanceId === input.instanceId &&
-                      !candidate.workspaceSnapshots?.some((s) => s.cwd === input.cwd)
+                      Equal.equals(workspaceSnapshotOf(candidate), scannedFrom)
                         ? upsertProviderWorkspaceSnapshot(candidate, input.cwd, scopedSnapshot)
                         : candidate,
-                    );
-                    return [[currentProviders, nextProviders] as const, nextProviders];
-                  }).pipe(
-                    Effect.tap(([previousProviders, nextProviders]) =>
-                      haveProvidersChanged(previousProviders, nextProviders)
-                        ? PubSub.publish(changesPubSub, nextProviders)
-                        : Effect.void,
                     ),
-                    Effect.map(([, nextProviders]) => nextProviders),
                   );
                 }),
               ),
         ),
         Effect.ensuring(
-          Ref.update(workspaceRefreshesRef, (refreshes) => {
-            const next = new Map(refreshes);
-            const current = new Set(next.get(instance));
-            current.delete(input.cwd);
-            if (current.size) next.set(instance, current);
-            else next.delete(instance);
-            return next;
-          }),
+          claimed
+            ? Ref.update(workspaceRefreshesRef, (refreshes) => {
+                const next = new Map(refreshes);
+                const current = new Set(next.get(instance));
+                current.delete(input.cwd);
+                if (current.size) next.set(instance, current);
+                else next.delete(instance);
+                return next;
+              })
+            : Effect.void,
         ),
       );
     });
 
     return {
+      getProviderMaintenanceCapabilitiesForInstance,
+      setProviderMaintenanceActionState,
       refreshWorkspaceSnapshot: (input) =>
         refreshWorkspaceSnapshot(input).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviders: Ref.get(providersRef),

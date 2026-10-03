@@ -39,7 +39,7 @@ When delivery is uncertain, open the reported thread before explicitly allowing 
 
 With **Follow-up behavior → Queue** in **Settings → Preferences**, a message sent during a running
 turn waits at the end of the conversation. It sends after the next completed tool call or when
-the turn ends. Use its arrow to send now, or its X to return it to the composer. Choose **Steer**
+the turn ends, even while another thread is open. Use its arrow to send now, or its X to return it to the composer. Choose **Steer**
 to send follow-ups immediately instead. Already queued messages keep their place.
 
 Stop returns queued messages to the composer. If their combined images exceed the per-message
@@ -182,3 +182,12 @@ to search by text.
 A merge-request chip shows its number and the state captured when you attached it: open, draft,
 merged, or closed. Hover to inspect the captured title and branches. Select it to open the
 merge request in T3 Coder. The captured details remain part of the message after sending.
+
+## Run shell code blocks
+
+Completed shell code blocks in agent messages offer **Run**. It opens a terminal in the thread's
+workspace folder and runs the command there. Code never runs until you choose this action.
+
+After adding or changing workspace skills, plugins, or MCP servers, choose **Restart agent
+session** in the command palette. The conversation continues; the next message starts a fresh
+workspace provider process with the updated configuration and refreshes its slash menu.

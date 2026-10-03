@@ -1,3 +1,6 @@
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 /**
  * Bundled upstream model lifecycle classification.
  *
@@ -73,3 +76,20 @@ export function applyBundledModelManifest(
     models: classifyModels(draft.models, BUNDLED_MODEL_MANIFEST, driverKind),
   };
 }
+
+export class ModelManifest extends Context.Service<
+  ModelManifest,
+  {
+    readonly current: Effect.Effect<ModelManifestData>;
+    readonly refresh: Effect.Effect<ModelManifestData>;
+    readonly forceRefresh: Effect.Effect<ModelManifestData>;
+    readonly refreshInBackground: Effect.Effect<void>;
+  }
+>()("t3/provider/ModelManifest") {}
+
+export const layer = Layer.succeed(ModelManifest, {
+  current: Effect.succeed(BUNDLED_MODEL_MANIFEST),
+  refresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
+  forceRefresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
+  refreshInBackground: Effect.void,
+});

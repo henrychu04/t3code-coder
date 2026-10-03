@@ -1,3 +1,5 @@
+import { ServerConfig } from "../../config.ts";
+import { ServerSettingsService } from "../../serverSettings.ts";
 import * as NodePath from "node:path";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeAssert from "node:assert/strict";
@@ -839,3 +841,27 @@ failingLayer("CodexAdapter startup failure", (it) => {
     }),
   );
 });
+
+const USAGE_LIMIT_NOW = "2026-06-01T00:00:00.000Z";
+const CODEX_OUT_OF_CREDITS = "Usage limit exceeded";
+
+function codexUsageLimitTurnFailed(id: string, turnId = "turn-limit"): ProviderEvent {
+  return {
+    id: asEventId(id),
+    kind: "notification",
+    provider: ProviderDriverKind.make("codex"),
+    threadId: asThreadId("thread-1"),
+    turnId: asTurnId(turnId),
+    createdAt: USAGE_LIMIT_NOW,
+    method: "turn/completed",
+    payload: {
+      threadId: "thread-1",
+      turn: {
+        id: turnId,
+        items: [],
+        status: "failed",
+        error: { message: CODEX_OUT_OF_CREDITS, codexErrorInfo: "usageLimitExceeded" },
+      },
+    },
+  };
+}

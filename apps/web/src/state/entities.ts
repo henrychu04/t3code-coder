@@ -234,6 +234,14 @@ export function readThreadShell(ref: ScopedThreadRef): EnvironmentThreadShell | 
   return appAtomRegistry.get(environmentThreadShells.threadShellAtom(ref));
 }
 
+/** The thread as `useThread` returns it, read outside React. */
+export function readThread(ref: ScopedThreadRef): EnvironmentThread | null {
+  return mergeEnvironmentThread(
+    appAtomRegistry.get(environmentThreadDetails.detailAtom(ref)),
+    readThreadShell(ref),
+  );
+}
+
 /** Whether the environment's server understands thread.settle/unsettle.
     False for pre-settlement servers (capability defaults false on decode),
     so clients under version skew fall back instead of erroring. */
@@ -310,5 +318,36 @@ export function findThreadRef(threadId: ThreadId): ScopedThreadRef | null {
     appAtomRegistry
       .get(environmentThreadShells.threadRefsAtom)
       .find((ref) => ref.threadId === threadId) ?? null
+  );
+}
+
+export function waitForProject(
+  ref: ScopedProjectRef,
+  timeoutMs = 10_000,
+): Promise<EnvironmentProject> {
+  const current = readProject(ref);
+  if (current !== null) return Promise.resolve(current);
+
+  return new Promise((resolve, reject) => {
+    let unsubscribe: (() => void) | null = null;
+    const timeout = setTimeout(() => {
+      unsubscribe?.();
+      reject(new Error("The project did not appear in the desktop app."));
+    }, timeoutMs);
+    const finish = (project: EnvironmentProject | null) => {
+      if (project === null) return;
+      clearTimeout(timeout);
+      unsubscribe?.();
+      resolve(project);
+    };
+    unsubscribe = appAtomRegistry.subscribe(environmentProjects.projectAtom(ref), finish);
+    finish(readProject(ref));
+  });
+}
+
+export function readEnvironmentSupportsAutoSettleOptOut(environmentId: EnvironmentId): boolean {
+  return (
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.environment.capabilities
+      .threadAutoSettleOptOut === true
   );
 }

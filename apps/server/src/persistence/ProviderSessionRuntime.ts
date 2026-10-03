@@ -84,11 +84,14 @@ export class ProviderSessionRuntimeRepository extends Context.Service<
     >;
 
     /**
-     * List all provider runtime rows.
+     * List provider runtime rows.
      *
-     * Returned in ascending last-seen order.
+     * Returned in ascending last-seen order. `excludeStopped` filters stopped
+     * rows in SQL. Long-lived installs keep thousands for their resume cursors.
      */
-    readonly list: () => Effect.Effect<
+    readonly list: (options?: {
+      readonly excludeStopped?: boolean;
+    }) => Effect.Effect<
       ReadonlyArray<ProviderSessionRuntime>,
       ProviderSessionRuntimeRepositoryError
     >;
@@ -208,9 +211,9 @@ export const make = Effect.gen(function* () {
   });
 
   const listRuntimeRows = SqlSchema.findAll({
-    Request: Schema.Void,
+    Request: Schema.Struct({ excludeStopped: Schema.Boolean }),
     Result: ProviderSessionRuntimeRawDbRowSchema,
-    execute: () =>
+    execute: ({ excludeStopped }) =>
       sql`
         SELECT
           thread_id AS "threadId",
@@ -223,6 +226,7 @@ export const make = Effect.gen(function* () {
           resume_cursor_json AS "resumeCursor",
           runtime_payload_json AS "runtimePayload"
         FROM provider_session_runtime
+        ${excludeStopped ? sql`WHERE status != 'stopped'` : sql``}
         ORDER BY last_seen_at ASC, thread_id ASC
       `,
   });
@@ -258,7 +262,7 @@ export const make = Effect.gen(function* () {
       ),
       Effect.flatMap((runtimeRowOption) =>
         Option.match(runtimeRowOption, {
-          onNone: () => Effect.succeed(Option.none()),
+          onNone: () => Effect.succeedNone,
           onSome: (row) =>
             decodeRuntimeRow(row).pipe(
               Effect.mapError((cause) =>
@@ -268,14 +272,14 @@ export const make = Effect.gen(function* () {
                   { threadId: input.threadId },
                 ),
               ),
-              Effect.map((runtime) => Option.some(runtime)),
+              Effect.asSome,
             ),
         }),
       ),
     );
 
-  const list: ProviderSessionRuntimeRepository["Service"]["list"] = () =>
-    listRuntimeRows(undefined).pipe(
+  const list: ProviderSessionRuntimeRepository["Service"]["list"] = (options) =>
+    listRuntimeRows({ excludeStopped: options?.excludeStopped === true }).pipe(
       Effect.mapError(
         toPersistenceSqlOrDecodeError(
           "ProviderSessionRuntimeRepository.list:query",
@@ -288,7 +292,7 @@ export const make = Effect.gen(function* () {
         // every consumer that enumerates sessions, such as the reaper.
         Effect.forEach(rows, (row) =>
           decodeRuntimeRow(row).pipe(
-            Effect.map(Option.some),
+            Effect.asSome,
             Effect.catch((cause) =>
               Effect.logWarning("provider.session.runtime.row-skipped", {
                 threadId: row.threadId,

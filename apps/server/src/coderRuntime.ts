@@ -1,3 +1,6 @@
+import * as ModelManifest from "./provider/ModelManifest.ts";
+import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
+import { FetchHttpClient } from "effect/unstable/http";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
@@ -195,6 +198,13 @@ const CoderRuntimeCoreLive = Layer.empty.pipe(
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(CoderEnvironment.layer),
   Layer.provideMerge(CoderProviderRuntimeLive),
+  Layer.provideMerge(
+    ProviderMaintenanceRunner.layer.pipe(
+      Layer.provide(ModelManifest.layer),
+      Layer.provide(FetchHttpClient.layer),
+      Layer.provide(ProviderRegistryLive),
+    ),
+  ),
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
 );

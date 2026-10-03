@@ -1,3 +1,9 @@
+import { ServerProviderUpdateInput, ServerProviderUpdateError } from "./server.ts";
+import {
+  ProjectEnsureScratchResult,
+  ProjectCreateNewInput,
+  ProjectCreateNewResult,
+} from "./project.ts";
 import { ProjectGetConfigInput, ProjectGetConfigResult } from "./t3ProjectFile.ts";
 import {
   WorktreeSetupSubscribeInput,
@@ -179,6 +185,8 @@ import {
 } from "./screenshotArtifact.ts";
 
 export const WS_METHODS = {
+  projectsEnsureScratch: "projects.ensureScratch",
+  projectsCreateNew: "projects.createNew",
   projectsGetConfig: "projects.getConfig",
   projectsSearchEntries: "projects.searchEntries",
   projectsSearchText: "projects.searchText",
@@ -189,6 +197,7 @@ export const WS_METHODS = {
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   providerListSlashCommands: "provider.listSlashCommands",
+  serverUpdateProvider: "server.updateProvider",
   serverRefreshProviders: "server.refreshProviders",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
@@ -299,6 +308,17 @@ const WsServerRemoveKeybindingRpc = Rpc.make(WS_METHODS.serverRemoveKeybinding, 
   error: KeybindingsConfigError,
 });
 
+const WsProjectsEnsureScratchRpc = Rpc.make(WS_METHODS.projectsEnsureScratch, {
+  payload: Schema.Struct({}),
+  success: ProjectEnsureScratchResult,
+  error: OrchestrationDispatchCommandError,
+});
+const WsProjectsCreateNewRpc = Rpc.make(WS_METHODS.projectsCreateNew, {
+  payload: ProjectCreateNewInput,
+  success: ProjectCreateNewResult,
+  error: OrchestrationDispatchCommandError,
+});
+
 const WsProjectsGetConfigRpc = Rpc.make(WS_METHODS.projectsGetConfig, {
   payload: ProjectGetConfigInput,
   success: ProjectGetConfigResult,
@@ -357,12 +377,19 @@ const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashComm
   success: ServerProviderSlashCommands,
 });
 
+const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
+  payload: ServerProviderUpdateInput,
+  success: ServerProviderUpdatedPayload,
+  error: ServerProviderUpdateError,
+});
+
 const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProviders, {
   payload: Schema.Struct({
     /** When supplied, only refresh this provider instance. Omitted refreshes every instance. */
     instanceId: Schema.optional(ProviderInstanceId),
     /** With `instanceId`, discover that instance's skills and commands for this workspace. */
     cwd: Schema.optional(TrimmedNonEmptyString),
+    fresh: Schema.optional(Schema.Boolean),
   }),
   success: ServerProviderUpdatedPayload,
 });
@@ -807,6 +834,8 @@ const WsWorktreeSetupCancelRpc = Rpc.make(WS_METHODS.worktreeSetupCancel, {
 });
 
 export const CoderWsRpcGroup = RpcGroup.make(
+  WsProjectsEnsureScratchRpc,
+  WsProjectsCreateNewRpc,
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
   WsServerProbeRpc,
@@ -826,6 +855,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,
   WsServerRefreshProvidersRpc,
+  WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,
   WsSourceControlProbeWriteAccessRpc,
   WsSourceControlLookupRepositoryRpc,

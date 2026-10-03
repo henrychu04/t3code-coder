@@ -71,6 +71,7 @@ export interface ProviderInstance {
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
+  readonly invalidateCaches?: Effect.Effect<void>;
   readonly snapshot: ServerProviderShape;
   /** Resolve provider commands in the same cwd that will run the turn. */
   readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, unknown>;
@@ -108,6 +109,7 @@ export interface ProviderDriverCreateInput<Config> {
   readonly accentColor?: string | undefined;
   readonly environment: ProviderInstanceEnvironment;
   readonly enabled: boolean;
+  readonly invalidateCaches?: Effect.Effect<void>;
   readonly config: Config;
 }
 

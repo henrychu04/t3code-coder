@@ -122,3 +122,10 @@ reset time when available. These are provider runtime errors, not an API billing
 Claude verbose output is supported for generated titles, branch names, commit messages, and merge
 request descriptions. These metadata requests run in the workspace with executable tools, hooks,
 skills, and configured MCP servers disabled; title generation also runs outside the project folder.
+
+## Update providers
+
+**Update all** in the sidebar updates outdated Codex and Claude installations on connected Coder
+workspaces. Hover it to see which installations will update. Only installations whose updater can
+be identified are included; manual-only installations must be updated in their workspace terminal.
+Updates sharing an installer run one at a time and report their results together.

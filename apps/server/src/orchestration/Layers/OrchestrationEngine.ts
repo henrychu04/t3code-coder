@@ -101,6 +101,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
   const processEnvelope = (envelope: CommandEnvelope): Effect.Effect<void> => {
     const dispatchStartSequence = commandReadModel.snapshotSequence;
+    const appendedEventIds = new Set<OrchestrationEvent["eventId"]>();
     const aggregateRef = commandToAggregateRef(envelope.command);
     const reconcileReadModelAfterDispatchFailure = Effect.gen(function* () {
       const persistedEvents = yield* Stream.runCollect(
@@ -113,7 +114,9 @@ const makeOrchestrationEngine = Effect.gen(function* () {
       commandReadModel = yield* projectEventsOntoReadModel(commandReadModel, persistedEvents);
 
       for (const persistedEvent of persistedEvents) {
-        yield* PubSub.publish(eventPubSub, persistedEvent);
+        if (appendedEventIds.has(persistedEvent.eventId)) {
+          yield* PubSub.publish(eventPubSub, persistedEvent);
+        }
       }
     });
 
@@ -261,6 +264,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
 
               for (const nextEvent of eventBases) {
                 const savedEvent = yield* eventStore.append(nextEvent);
+                appendedEventIds.add(savedEvent.eventId);
                 nextCommandReadModel = yield* projectEvent(nextCommandReadModel, savedEvent);
                 yield* projectionPipeline.projectEvent(savedEvent);
                 committedEvents.push(savedEvent);
@@ -342,7 +346,7 @@ const makeOrchestrationEngine = Effect.gen(function* () {
                   status: "rejected",
                   error: error.message,
                 })
-                .pipe(Effect.catch(() => Effect.void));
+                .pipe(Effect.ignore);
             }
           }
 

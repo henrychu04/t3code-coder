@@ -17,6 +17,7 @@ export function useAvailableSettingsSearchItems() {
     () =>
       filterAvailableSettingsSearchItems({
         localEnvironmentDisabled: true,
+        hasMacProviderSettingsEnvironment: false,
         hasCloudPublicConfig: false,
         hasEnvironment: environments.some((environment) => environment.serverConfig !== null),
         hasProviderSettingsEnvironment: environments.some(

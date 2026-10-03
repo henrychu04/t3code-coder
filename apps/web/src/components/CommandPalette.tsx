@@ -1,3 +1,8 @@
+import { useAtomCommand } from "../state/use-atom-command";
+import { serverEnvironment } from "../state/server";
+import { threadEnvironment } from "../state/threads";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { useScratchProject } from "../hooks/useScratchProject";
 import { SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
@@ -105,6 +110,7 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
     mode: "command",
     openIntent: null,
   });
+  const [addProjectSource, setAddProjectSource] = useState<"folder" | "new">("folder");
   const [openDetail, setOpenDetail] = useState<CommandPaletteOpenDetail>({});
   const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
@@ -217,7 +223,10 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
               <CoderCommandPaletteDialog
                 setMode={(mode) => dispatch({ _tag: "ToggleMode", mode })}
                 clearOpenIntent={() => dispatch({ _tag: "ClearOpenIntent" })}
-                openAddProject={() => dispatch({ _tag: "OpenAddProject" })}
+                openAddProject={(source = "folder") => {
+                  setAddProjectSource(source);
+                  dispatch({ _tag: "OpenAddProject" });
+                }}
                 openDetail={openDetail}
                 openIntent={state.openIntent}
                 setOpen={setOpen}
@@ -226,7 +235,9 @@ export function CommandPalette({ children }: { readonly children: ReactNode }) {
           </CommandDialogPopup>
         ) : null}
       </CommandDialog>
-      {addProjectOpen ? <CoderAddProjectDialog onClose={() => setOpen(false)} /> : null}
+      {addProjectOpen ? (
+        <CoderAddProjectDialog initialSource={addProjectSource} onClose={() => setOpen(false)} />
+      ) : null}
     </ComposerHandleContext>
   );
 }
@@ -235,11 +246,16 @@ function CoderCommandPaletteDialog(props: {
   readonly setMode: (mode: SearchOverlayMode) => void;
   readonly openDetail: CommandPaletteOpenDetail;
   readonly clearOpenIntent: () => void;
-  readonly openAddProject: () => void;
+  readonly openAddProject: (source?: "folder" | "new") => void;
   readonly openIntent: CommandPaletteOpenIntent | null;
   readonly setOpen: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
+  const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, { reportFailure: false });
+  const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
+    reportFailure: false,
+  });
   const activeEnvironmentId = useActiveEnvironmentId();
   const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
   const projects = useProjects();
@@ -506,6 +522,26 @@ function CoderCommandPaletteDialog(props: {
     );
   const projectSearchUnavailableDescription = "Open a project to search its files.";
   const actionItems: Array<CommandPaletteActionItem | CommandPaletteSubmenuItem> = [];
+  const scratchTarget = scratchEnvironmentId(activeEnvironmentId);
+  if (scratchTarget !== null)
+    actionItems.push({
+      kind: "action",
+      value: "action:new-thread-without-project",
+      title: "New thread without a project",
+      searchTerms: ["scratch", "chat", "no project"],
+      shortcutCommand: "chat.newWithoutProject",
+      icon: <SquarePenIcon className="size-4 text-icon-muted" />,
+      run: () => startScratchThread(scratchTarget),
+    });
+  actionItems.push({
+    kind: "action",
+    value: "action:new-project",
+    title: "New project",
+    searchTerms: ["create project", "folder", "repository"],
+    keepOpen: true,
+    icon: <FolderPlusIcon className="size-4 text-icon-muted" />,
+    run: async () => props.openAddProject("new"),
+  });
   if (preferredProject) {
     actionItems.push({
       kind: "action",
@@ -607,6 +643,40 @@ function CoderCommandPaletteDialog(props: {
       },
     });
   if (activeThread !== null) {
+    const thread = activeThread;
+    actionItems.push({
+      kind: "action",
+      value: "action:restart-agent-session",
+      title: "Restart agent session",
+      searchTerms: ["restart", "reload", "agent", "session", "skills", "plugins", "mcp"],
+      icon: <SquarePenIcon className="size-4 text-icon-muted" />,
+      run: async () => {
+        const { environmentId } = thread;
+        if (thread.session && thread.session.status !== "stopped") {
+          const stopped = await stopThreadSession({
+            environmentId,
+            input: { threadId: thread.id },
+          });
+          if (stopped._tag === "Failure") throw squashAtomCommandFailure(stopped);
+        }
+        toastManager.add({
+          type: "success",
+          title: "Agent session will restart",
+          description: "Your next message starts a fresh session.",
+        });
+        const project = projectByRef.get(`${environmentId}:${thread.projectId}`);
+        if (!project) return;
+        const refreshed = await refreshProviders({
+          environmentId,
+          input: {
+            instanceId: thread.session?.providerInstanceId ?? thread.modelSelection.instanceId,
+            cwd: thread.worktreePath ?? project.workspaceRoot,
+            fresh: true,
+          },
+        });
+        if (refreshed._tag === "Failure") throw squashAtomCommandFailure(refreshed);
+      },
+    });
     const ref = scopeThreadRef(activeThread.environmentId, activeThread.id);
     actionItems.push(
       {
@@ -875,7 +945,6 @@ function CoderCommandPaletteDialog(props: {
         setHighlightedItemValue(null);
         setQuery(value);
       }}
-      panelClassName="max-h-[min(34rem,76vh)]"
       showBackHint={view !== "root"}
       testId="command-palette"
       value={query}

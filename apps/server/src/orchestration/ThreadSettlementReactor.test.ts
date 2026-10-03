@@ -14,11 +14,13 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
+import * as SqlClient from "effect/unstable/sql/SqlClient";
 
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
@@ -28,7 +30,12 @@ import {
   OrchestrationEngineService,
   type OrchestrationEngineShape,
 } from "./Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "./Services/ProjectionSnapshotQuery.ts";
+import {
+  ProjectionSnapshotQuery,
+  type ProjectionSnapshotQueryShape,
+} from "./Services/ProjectionSnapshotQuery.ts";
+import * as ThreadBackgroundLiveness from "./ThreadBackgroundLiveness.ts";
+import * as ThreadPlanProgress from "./ThreadPlanProgress.ts";
 import * as ThreadSettlementReactor from "./ThreadSettlementReactor.ts";
 
 const NOW = "2026-08-28T12:00:00.000Z";

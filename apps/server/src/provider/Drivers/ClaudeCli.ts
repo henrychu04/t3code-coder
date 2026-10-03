@@ -190,6 +190,9 @@ type SDKPartialAssistantMessage = {
 };
 
 export type SDKResultMessage = {
+  readonly user_message_uuids?: ReadonlyArray<string>;
+  readonly user_message_uuid?: string;
+  readonly origin?: { readonly kind: string };
   readonly type: "result";
   readonly subtype: "success" | "error_max_turns" | "error_during_execution" | string;
   readonly session_id: string;

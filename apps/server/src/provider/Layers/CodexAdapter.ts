@@ -25,6 +25,7 @@ import {
   type ProviderRequestKind,
   type ThreadTokenUsageSnapshot,
   type ProviderUserInputAnswers,
+  type ServerProviderModel,
   RuntimeItemId,
   RuntimeRequestId,
   RuntimeTaskId,
@@ -62,7 +63,6 @@ import {
   makeCodexSessionRuntime,
   type CodexSessionRuntimeError,
   type CodexSessionRuntimeOptions,
-  type CodexSessionRuntimeSendTurnInput,
   type CodexSessionRuntimeShape,
 } from "./CodexSessionRuntime.ts";
 import { resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
@@ -85,6 +85,7 @@ export interface CodexAdapterLiveOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly attachmentsDir?: string;
   readonly resolveMcpServerNames?: CodexMcpServerNameResolver;
+  readonly models?: CodexSessionRuntimeOptions["models"];
   readonly makeRuntime?: (
     options: CodexSessionRuntimeOptions,
   ) => Effect.Effect<
@@ -1775,6 +1776,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             ? getCodexServiceTierOptionValue(input.modelSelection)
             : undefined;
         const runtimeInput: CodexSessionRuntimeOptions = {
+          ...(options?.models ? { models: options.models } : {}),
           threadId: input.threadId,
           providerInstanceId: boundInstanceId,
           cwd,

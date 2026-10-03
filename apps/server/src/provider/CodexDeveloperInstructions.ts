@@ -147,6 +147,7 @@ In Default mode, strongly prefer making reasonable assumptions and executing the
 
 export interface CodexRuntimeInfo {
   readonly model: string;
+  readonly modelName?: string | undefined;
   readonly reasoningEffort: string;
 }
 
@@ -157,13 +158,28 @@ function toSingleLine(value: string): string {
 
 export function buildCodexDeveloperInstructions(
   interactionMode: ProviderInteractionMode,
-  runtime: CodexRuntimeInfo,
+  runtime?: CodexRuntimeInfo,
 ): string {
   const base =
     interactionMode === "plan"
       ? codexPlanModeDeveloperInstructions()
       : codexDefaultModeDeveloperInstructions();
+  if (!runtime) return base;
   return `${base}
 
 <runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${toSingleLine(runtime.model)} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise.</runtime_info>`;
+}
+
+export function buildCodexAdditionalContext(
+  runtime: CodexRuntimeInfo,
+): Record<string, { kind: "application"; value: string }> {
+  const model = toSingleLine(runtime.model);
+  const name = toSingleLine(runtime.modelName ?? "");
+  const modelLabel = name && name !== model ? `${name} (model slug: ${model})` : model;
+  return {
+    t3_code_runtime: {
+      kind: "application",
+      value: `<runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${modelLabel} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>`,
+    },
+  };
 }

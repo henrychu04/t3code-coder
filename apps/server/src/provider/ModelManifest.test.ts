@@ -11,16 +11,16 @@ describe("bundled model manifest", () => {
     assert.deepStrictEqual(
       [
         "gpt-6-luna",
-        "gpt-6-sol",
-        "gpt-6-sol-codex",
+        "gpt-6.1-sol",
+        "gpt-6.1-sol-codex",
         "gpt-5.6-luna",
         "gpt-5.4",
         "gpt-5.4-codex",
       ].map((model) => [model, isLegacyModel(BUNDLED_MODEL_MANIFEST, CODEX, model)]),
       [
         ["gpt-6-luna", false],
-        ["gpt-6-sol", false],
-        ["gpt-6-sol-codex", false],
+        ["gpt-6.1-sol", false],
+        ["gpt-6.1-sol-codex", false],
         ["gpt-5.6-luna", true],
         ["gpt-5.4", true],
         ["gpt-5.4-codex", true],
@@ -61,7 +61,7 @@ describe("bundled model manifest", () => {
     assert.deepStrictEqual(
       classifyModels(
         [
-          model({ slug: "gpt-6-sol" }),
+          model({ slug: "gpt-6.1-sol" }),
           model({ slug: "gpt-6-luna", isLegacy: true }),
           model({ slug: "gpt-5.4" }),
           model({ slug: "my-own-model", isCustom: true }),
@@ -70,7 +70,7 @@ describe("bundled model manifest", () => {
         CODEX,
       ).map((entry) => [entry.slug, entry.isLegacy ?? false]),
       [
-        ["gpt-6-sol", false],
+        ["gpt-6.1-sol", false],
         ["gpt-6-luna", false],
         ["gpt-5.4", true],
         ["my-own-model", false],
