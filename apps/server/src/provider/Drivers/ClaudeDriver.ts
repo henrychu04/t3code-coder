@@ -1,3 +1,11 @@
+import { HttpClient, FetchHttpClient } from "effect/unstable/http";
+import {
+  makeCachedProviderMaintenanceResolution,
+  makePackageManagedProviderMaintenanceResolver,
+  resolveProviderMaintenanceCapabilitiesEffect,
+  enrichProviderSnapshotWithVersionAdvisory,
+} from "../providerMaintenance.ts";
+import { normalizeCommandPath } from "../providerMaintenance.ts";
 import { discoverClaudeSkills } from "./ClaudeSkills.ts";
 /**
  * ClaudeDriver — `ProviderDriver` for the workspace Claude Code CLI runtime.
@@ -47,6 +55,24 @@ const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 const CAPABILITIES_PROBE_TTL = Duration.minutes(5);
+
+function isClaudeNativeCommandPath(commandPath: string): boolean {
+  const normalized = normalizeCommandPath(commandPath);
+  return (
+    normalized.endsWith("/.local/bin/claude") ||
+    normalized.endsWith("/.local/bin/claude.exe") ||
+    normalized.includes("/.local/share/claude/")
+  );
+}
+
+const UPDATE = makePackageManagedProviderMaintenanceResolver({
+  provider: DRIVER_KIND,
+  npmPackageName: "@anthropic-ai/claude-code",
+  nativeUpdate: {
+    args: ["update"],
+    isCommandPath: isClaudeNativeCommandPath,
+  },
+});
 
 export type ClaudeDriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -136,6 +162,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
           ),
       });
 
+      const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
+        resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
+          binaryPath: effectiveConfig.binaryPath || "claude",
+          env: processEnv,
+        }).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(FileSystem.FileSystem, yield* FileSystem.FileSystem),
+          Effect.provideService(Path.Path, yield* Path.Path),
+        ),
+      );
       const checkProvider = checkClaudeProviderStatus(
         effectiveConfig,
         () => Cache.get(capabilitiesProbeCache, capabilitiesCacheKey),
@@ -155,6 +191,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         initialSnapshot: (settings) =>
           makePendingClaudeProvider(settings).pipe(Effect.map(classifyAndStamp)),
         checkProvider,
+        enrichSnapshot: ({ snapshot, publishSnapshot }) =>
+          resolveMaintenance().pipe(
+            Effect.flatMap((capabilities) =>
+              enrichProviderSnapshotWithVersionAdvisory(snapshot, capabilities),
+            ),
+            Effect.provide(FetchHttpClient.layer),
+            Effect.flatMap(publishSnapshot),
+          ),
       }).pipe(
         Effect.mapError(
           (cause) =>
@@ -177,7 +221,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
         displayName,
         accentColor,
         enabled,
-        snapshot,
+        invalidateCaches: Effect.all(
+          [Cache.invalidateAll(capabilitiesProbeCache), Cache.invalidateAll(slashCommandsByCwd)],
+          { discard: true },
+        ),
+        snapshot: { ...snapshot, resolveMaintenance },
         snapshotForCwd: (commandCwd) =>
           Effect.all([
             snapshot.getSnapshot,

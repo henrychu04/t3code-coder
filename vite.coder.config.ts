@@ -7,6 +7,8 @@ export default defineConfig({
   test: {
     ...base.test,
     include: [
+      "apps/server/src/coderWs.projects.test.ts",
+      "apps/server/src/provider/ClaudeModelCatalog.test.ts",
       "apps/server/src/storageCleanup.test.ts",
       "apps/server/src/persistence/Migrations/055_ProjectionMessageAttachments.test.ts",
       "apps/server/src/persistence/Migrations/056_ProjectionThreadMessageContext.test.ts",
@@ -73,6 +75,12 @@ export default defineConfig({
       "apps/server/src/provider/Layers/CodexIntegrationPolicy.test.ts",
       "apps/server/src/provider/Layers/CodexProvider.test.ts",
       "apps/server/src/provider/ModelManifest.test.ts",
+      "apps/server/src/provider/providerMaintenance.test.ts",
+      "apps/server/src/provider/providerMaintenanceRunner.test.ts",
+      "apps/server/src/project/NewProject.test.ts",
+      "apps/server/src/persistence/Migrations/057_ProjectionThreadsAutoSettleDisabledAt.test.ts",
+      "apps/server/src/orchestration/decider.autoSettleSet.test.ts",
+      "apps/server/src/orchestration/projector.autoSettleSet.test.ts",
       "apps/server/src/provider/providerCompatibility.test.ts",
       "apps/server/src/provider/Layers/CodexSessionRuntime.test.ts",
       "apps/server/src/provider/Layers/ProviderInstanceRegistryHydration.test.ts",

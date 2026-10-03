@@ -1,3 +1,4 @@
+import { useClientSettings } from "~/hooks/useSettings";
 import {
   ContextChipPopover as UserMessageContextPopover,
   ContextChipShell,
@@ -24,6 +25,7 @@ import { ArrowUpIcon, ClockIcon } from "lucide-react";
 import {
   getQuestionAnswerPreview,
   getQuestionAnswerText,
+  getQuestionTextPreview,
   hasQuestionAnswer,
   type QuestionAnswer,
 } from "@t3tools/client-runtime/work-log/user-input";
@@ -213,6 +215,7 @@ import {
   resolveTimelineMinimapHitStripWidth,
   resolveTimelineMinimapIndexFromPointer,
   resolveTimelineMinimapInteractiveWidth,
+  resolveTimelineMinimapNavigationInteractive,
   resolveTimelineMinimapTopPercent,
   shouldPreserveAssistantLineBreaks,
   toolGroupAction,
@@ -247,6 +250,7 @@ import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 // ---------------------------------------------------------------------------
 
 interface TimelineRowSharedState {
+  onRunShellCommand?: ((command: string) => void) | undefined;
   citationRequest: AssistantCitationTarget | null;
   listRef: React.RefObject<LegendListRef | null>;
   timestampFormat: TimestampFormat;
@@ -322,8 +326,8 @@ function TimelineLoadEarlierHeader({
   fade: boolean;
 }) {
   return (
-    <div className={fade ? "pt-[var(--workspace-titlebar-scroll-fade-height)]" : "pt-3 sm:pt-4"}>
-      <div className="mx-auto w-full max-w-3xl pb-2">
+    <div className={fade ? "pt-(--workspace-titlebar-scroll-fade-height)" : "pt-3 sm:pt-4"}>
+      <div className="mx-auto w-full max-w-(--chat-max-width) pb-2">
         <button
           type="button"
           onClick={onLoadEarlier}
@@ -377,6 +381,7 @@ interface MessagesTimelineProps {
 
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
+  onRunShellCommand?: ((command: string) => void) | undefined;
   isPreparingWorktree?: boolean;
   worktreeSetup?: WorktreeSetupSnapshot | null;
   onCancelWorktreeSetup?: (() => void) | undefined;
@@ -456,6 +461,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   activeTurnStartedAt,
   agentPanelModel,
   onOpenAgents = NOOP_OPEN_AGENTS,
+  onRunShellCommand,
   listRef,
   timelineEntries,
   latestTurn,
@@ -943,6 +949,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   const [timelineViewportElement, setTimelineViewportElement] = useState<HTMLDivElement | null>(
     null,
   );
+  // Re-measure the minimap gutter when the chat column changes width without a viewport resize.
+  const chatWidth = useClientSettings((settings) => settings.chatWidth);
   const {
     target: readyCitationRequest,
     positioning: citationPositioning,
@@ -1114,11 +1122,19 @@ export const MessagesTimeline = memo(function MessagesTimeline({
 
     const measure = () => {
       const viewportWidth = timelineViewportElement.getBoundingClientRect().width;
-      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(viewportWidth);
+      // Without a mounted row, treat the column as full width so the strip stays inert.
+      const contentWidth =
+        timelineViewportElement
+          .querySelector<HTMLElement>("[data-timeline-root]")
+          ?.getBoundingClientRect().width ?? viewportWidth;
+      const nextHasPersistentGutter = resolveTimelineMinimapHasPersistentGutter(
+        viewportWidth,
+        contentWidth,
+      );
       setMinimapHasPersistentGutter((current) =>
         current === nextHasPersistentGutter ? current : nextHasPersistentGutter,
       );
-      setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth));
+      setMinimapHitStripWidth(resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth));
       reportContentOverflow();
     };
 
@@ -1131,7 +1147,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       cancelAnimationFrame(frame);
       observer.disconnect();
     };
-  }, [timelineViewportElement, rows.length, reportContentOverflow]);
+  }, [timelineViewportElement, rows.length, reportContentOverflow, chatWidth]);
 
   const sharedState = useMemo<TimelineRowSharedState>(
     () => ({
@@ -1148,6 +1164,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertToTurnCount,
       onUseArtifactTemplate,
+      onRunShellCommand,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -1180,6 +1197,7 @@ export const MessagesTimeline = memo(function MessagesTimeline({
       activeThreadEnvironmentId,
       onRevertToTurnCount,
       onUseArtifactTemplate,
+      onRunShellCommand,
       onImageExpand,
       onOpenTurnDiff,
       onToggleTurnFold,
@@ -1238,7 +1256,10 @@ export const MessagesTimeline = memo(function MessagesTimeline({
   // from TimelineRowCtx, which propagates through LegendList's memo.
   const renderItem = useCallback(
     ({ item }: { item: MessagesTimelineRow }) => (
-      <div className="mx-auto w-full min-w-0 max-w-3xl overflow-x-clip" data-timeline-root="true">
+      <div
+        className="mx-auto w-full min-w-0 max-w-(--chat-max-width) overflow-x-clip"
+        data-timeline-root="true"
+      >
         <TimelineRowContent row={item} />
       </div>
     ),
@@ -1406,6 +1427,7 @@ export function TimelineMinimap({
       ),
     [items, resolvedActiveIndex],
   );
+  const navigationInteractive = resolveTimelineMinimapNavigationInteractive(hitStripWidth);
   const activeTopPercent =
     resolvedActiveIndex === null
       ? 0
@@ -1487,6 +1509,7 @@ export function TimelineMinimap({
             direction="previous"
             hitStripWidth={hitStripWidth}
             disabled={previousItem === null}
+            interactive={navigationInteractive}
             onClick={() => {
               if (previousItem) onSelect(previousItem);
             }}
@@ -1546,7 +1569,7 @@ export function TimelineMinimap({
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "pointer-events-none absolute left-0 h-0.5 -translate-y-1/2 rounded-full bg-muted-foreground/35 transition-[background-color,width] duration-150 data-[in-view=true]:bg-foreground/90",
+                    "pointer-events-none absolute left-0 h-0.5 -translate-y-1/2 rounded-full bg-muted-foreground/35 transition-[width,background-color] duration-150 data-[in-view=true]:bg-foreground/90",
                     activeDistance === 0
                       ? "w-6 bg-muted-foreground/75"
                       : activeDistance === 1
@@ -1603,6 +1626,7 @@ export function TimelineMinimap({
             direction="next"
             hitStripWidth={hitStripWidth}
             disabled={nextItem === null}
+            interactive={navigationInteractive}
             onClick={() => {
               if (nextItem) onSelect(nextItem);
             }}
@@ -1617,11 +1641,13 @@ function TimelineMinimapNavigationButton({
   direction,
   hitStripWidth,
   disabled,
+  interactive,
   onClick,
 }: {
   direction: "previous" | "next";
   hitStripWidth: number;
   disabled: boolean;
+  interactive: boolean;
   onClick: () => void;
 }) {
   // The 20px button must fit entirely inside the same gutter as the rail.
@@ -1788,11 +1814,14 @@ function QueuedMessageTimelineRow({
   const attachmentCount = queuedMessage.images.length;
   const contextCount = queuedMessage.terminalContexts.length + queuedMessage.reviewComments.length;
   const text = queuedMessage.prompt.trim();
-  const statusLabel = queuedMessage.holdUntilUserAction
-    ? "Waits for Send now"
-    : row.isNext
-      ? "Sends after the next tool call or when the turn ends"
-      : "Sends after the messages above it";
+  const sending = queuedMessage.sending !== undefined;
+  const statusLabel = sending
+    ? "Sending to the agent"
+    : queuedMessage.holdUntilUserAction
+      ? "Waits for Send now"
+      : row.isNext
+        ? "Sends after the next tool call or when the turn ends"
+        : "Sends after the messages above it";
   return (
     <div className="flex flex-col items-end" data-queued-message-id={queuedMessage.id}>
       <div className="max-w-[80%] rounded-2xl border border-dashed border-border p-3 text-message-foreground/80">
@@ -1820,14 +1849,14 @@ function QueuedMessageTimelineRow({
           <Tooltip>
             <TooltipTrigger
               render={<span className="inline-flex h-6 items-center gap-1" />}
-              aria-label={`Queued. ${statusLabel}.`}
+              aria-label={`${sending ? "Sending" : "Queued"}. ${statusLabel}.`}
             >
               <ClockIcon className="size-3.5" aria-hidden />
-              Queued
+              {sending ? "Sending" : "Queued"}
             </TooltipTrigger>
             <TooltipPopup side="bottom">{statusLabel}</TooltipPopup>
           </Tooltip>
-          <div className="ml-auto flex items-center gap-0.5">
+          <div className={cn("ml-auto flex items-center gap-0.5", sending && "invisible")}>
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -1887,7 +1916,7 @@ function ContextCompactionTimelineRow({
     <div
       role="separator"
       aria-label={row.label}
-      className="mx-auto flex w-full max-w-3xl items-center gap-3 py-1 text-muted-foreground text-xs"
+      className="mx-auto flex w-full max-w-(--chat-max-width) items-center gap-3 py-1 text-muted-foreground text-xs"
     >
       <span className="h-px flex-1 bg-border/70" />
       <span className="flex shrink-0 items-center gap-1.5">
@@ -2208,6 +2237,7 @@ function AssistantTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mess
             lineBreaks={shouldPreserveAssistantLineBreaks(messageText)}
             skills={ctx.skills}
             onUseArtifactTemplate={ctx.onUseArtifactTemplate}
+            onRunShellCommand={ctx.onRunShellCommand}
             onImageExpand={ctx.onImageExpand}
           />
         </AssistantCitationSource>
@@ -2558,10 +2588,10 @@ function ReasoningTraceBlock({
           type="button"
           aria-expanded={expanded}
           onClick={() => ctx.onToggleReasoning(first.id, !expanded, anchorKey)}
-          className="flex min-h-6 cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 text-start text-sm leading-relaxed transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          className="flex min-h-6 cursor-pointer select-none items-center gap-1.5 rounded-md ps-0.5 pe-2 text-start text-sm leading-relaxed transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
         >
           <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-            <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-[1.8] opacity-70" />
+            <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-2 opacity-70" />
           </span>
           <span
             ref={streaming ? observeVisibleAnimation : undefined}
@@ -2634,7 +2664,7 @@ const ReasoningTimelineRow = memo(function ReasoningTimelineRow({
         className="flex cursor-pointer select-none items-center gap-1.5 rounded-md px-0.5 py-0.5 text-start transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
       >
         <span className="flex size-6 shrink-0 items-center justify-center text-icon-muted">
-          <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-[1.8] opacity-70" />
+          <BrainIcon aria-hidden className="block size-4 shrink-0 stroke-2 opacity-70" />
         </span>
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="relative min-w-0 flex-1 truncate text-secondary-label text-sm leading-relaxed">
@@ -2983,7 +3013,7 @@ function LiveActivityContent({
         >
           <ToolActivityIconView
             fallbackName={iconName}
-            className="block size-4 shrink-0 stroke-[1.8]"
+            className="block size-4 shrink-0 stroke-2"
             muted={!highlighted}
           />
         </span>
@@ -3007,7 +3037,10 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
       />
     );
   }
-  const label = liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
+  const questionHeading = row.entry.questionAnswer
+    ? getQuestionTextPreview(row.entry.questionAnswer)
+    : "";
+  const label = questionHeading || liveWorkEntryLabel(row.entry, ctx.workspaceRoot, row.active);
   const failed = workEntryDisplayIndicatesToolFailure(row.entry);
 
   return (
@@ -3020,17 +3053,10 @@ function LiveWorkEntryTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "
     >
       <LiveActivityRow
         label={
-          row.entry.questionAnswer ? (
+          row.entry.questionAnswer && hasQuestionAnswer(row.entry.questionAnswer) ? (
             <span className="flex min-w-0 gap-1.5">
-              <span className="shrink-0">{label}</span>
-              <span
-                className={cn(
-                  "truncate",
-                  !row.expanded && hasQuestionAnswer(row.entry.questionAnswer)
-                    ? "text-foreground"
-                    : "text-muted-foreground",
-                )}
-              >
+              <span className="min-w-0 truncate">{label}</span>
+              <span className="min-w-0 truncate text-foreground">
                 {getQuestionAnswerPreview(row.entry.questionAnswer)}
               </span>
             </span>
@@ -3600,7 +3626,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
         <div className="text-message-foreground text-xs font-medium">
           {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}
         </div>
-        <div className="text-secondary-label text-[11px]">
+        <div className="text-secondary-label text-2xs">
           {comment.sectionTitle} · {comment.rangeLabel}
         </div>
       </div>
@@ -3911,7 +3937,7 @@ export function buildToolCallExpandedBody(
 }
 
 const toolCallExpandedBodyClassName =
-  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-[length:var(--font-size-code,0.6875rem)] leading-relaxed select-text";
+  "max-h-64 cursor-text overflow-auto whitespace-pre-wrap break-words font-mono text-secondary-label text-(length:--font-size-code,var(--text-2xs)) leading-relaxed select-text";
 
 function workEntryIconName(workEntry: TimelineWorkEntry): WorkEntryIconName {
   if (
@@ -4121,12 +4147,12 @@ function AgentSpawnMemberRow({
             {agent.title}
           </span>
           {role ? (
-            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-[.65rem] text-muted-foreground">
+            <span className="max-w-28 shrink-0 truncate rounded-sm border border-border/60 px-1 font-mono text-3xs text-muted-foreground">
               {role}
             </span>
           ) : null}
         </p>
-        <span className="shrink-0 font-mono text-[.7rem] tabular-nums text-muted-foreground">
+        <span className="shrink-0 font-mono text-2xs tabular-nums text-muted-foreground">
           {statusLabel}
         </span>
       </div>
@@ -4327,7 +4353,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
         >
           <ToolActivityIconView
             fallbackName={entryIconName}
-            className="block size-4 shrink-0 stroke-[1.8]"
+            className="block size-4 shrink-0 stroke-2"
             muted
           />
         </span>
@@ -4336,7 +4362,7 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
             <p className="flex min-w-0 w-full items-baseline gap-1.5 text-sm leading-relaxed">
               <span
                 className={cn(
-                  answerPreview ? "shrink-0" : "min-w-0 flex-1",
+                  answerPreview ? "min-w-0" : "min-w-0 flex-1",
                   expanded ? "whitespace-pre-wrap break-words select-text" : "truncate",
                   headingClass,
                 )}

@@ -84,6 +84,7 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "composer.previousWorktree",
   "composer.branch",
   "chat.new",
+  "chat.newWithoutProject",
   "chat.newLocal",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,

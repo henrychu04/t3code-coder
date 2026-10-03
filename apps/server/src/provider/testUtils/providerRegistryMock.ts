@@ -1,3 +1,4 @@
+import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import { ProviderRegistry, type ProviderRegistryShape } from "../Services/ProviderRegistry.ts";
 import type { ServerProvider } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -8,6 +9,9 @@ const makeProviderRegistryMock = (
   providers: ReadonlyArray<ServerProvider> = [],
 ): ProviderRegistryShape => ({
   refreshWorkspaceSnapshot: () => Effect.succeed(providers),
+  getProviderMaintenanceCapabilitiesForInstance: (_instanceId, provider) =>
+    Effect.succeed(makeManualOnlyProviderMaintenanceCapabilities({ provider, packageName: null })),
+  setProviderMaintenanceActionState: () => Effect.succeed(providers),
   getProviders: Effect.succeed(providers),
   refresh: () => Effect.succeed(providers),
   refreshInstance: () => Effect.succeed(providers),

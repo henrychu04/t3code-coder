@@ -1,3 +1,8 @@
+import { ProviderMaintenanceRunner } from "./provider/providerMaintenanceRunner.ts";
+import * as NewProject from "./project/NewProject.ts";
+import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import type { ProjectCreateNewInput } from "@t3tools/contracts";
+import { normalizeProjectPathForComparison } from "@t3tools/shared/path";
 import {
   EventId,
   WORKTREE_SETUP_ACTIVITY_KIND,
@@ -458,6 +463,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const projections = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
     const diffs = yield* CheckpointDiffQuery.CheckpointDiffQuery;
     const providers = yield* ProviderRegistry.ProviderRegistry;
+    const providerMaintenance = yield* ProviderMaintenanceRunner;
     const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
     const providerService = yield* ProviderService;
     const settings = yield* ServerSettings.ServerSettingsService;
@@ -467,6 +473,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
     const git = yield* GitWorkflowService.GitWorkflowService;
+    const gitVcs = yield* GitVcsDriver.GitVcsDriver;
     const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
     const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
     const sourceControlDiscovery = yield* SourceControlDiscovery.SourceControlDiscovery;
@@ -1159,7 +1166,7 @@ export const layer = CoderWsRpcGroup.toLayer(
         return yield* Fiber.join(fiber);
       });
 
-    const dispatch = (command: OrchestrationCommand) =>
+    const dispatchPrepared = (command: OrchestrationCommand) =>
       Effect.suspend(() =>
         command.type === "thread.turn.start" && command.bootstrap
           ? dispatchBootstrap(command)
@@ -1175,6 +1182,248 @@ export const layer = CoderWsRpcGroup.toLayer(
             ),
       );
 
+    const [cachedScratchWorkspaceRoot, invalidateScratchWorkspaceRoot] =
+      yield* Effect.cachedInvalidateWithTTL(
+        gitVcs
+          .execute({
+            operation: "Scratch.isRepository",
+            cwd: config.baseDir,
+            args: ["rev-parse", "--is-inside-work-tree"],
+            allowNonZeroExit: true,
+            timeoutMs: 10_000,
+          })
+          .pipe(Effect.map((result) => result.exitCode === 0 && result.stdout.trim() === "true"))
+          .pipe(
+            Effect.map((isRepository) =>
+              isRepository ? undefined : path.resolve(config.baseDir, "scratch"),
+            ),
+            Effect.catchCause((cause) =>
+              Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.succeed(undefined),
+            ),
+          ),
+        Duration.infinity,
+      );
+
+    const resolveScratchWorkspaceRoot = cachedScratchWorkspaceRoot.pipe(
+      Effect.onInterrupt(() => invalidateScratchWorkspaceRoot),
+    );
+
+    const scratchThreadFolder = (input: {
+      readonly threadId: ThreadId;
+      readonly projectId: ProjectId;
+      readonly worktreePath: string | null;
+      readonly createdAt: string;
+      readonly text: string;
+    }): Effect.Effect<string | null, OrchestrationDispatchCommandError> =>
+      Effect.gen(function* () {
+        if (input.worktreePath !== null) return null;
+        const scratchRoot = yield* resolveScratchWorkspaceRoot;
+        if (scratchRoot === undefined) return null;
+        const project = yield* projections.getProjectShellById(input.projectId).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationDispatchCommandError({
+                message: "Failed to look up the thread's project.",
+                cause,
+              }),
+          ),
+        );
+        if (
+          Option.isNone(project) ||
+          normalizeProjectPathForComparison(project.value.workspaceRoot) !==
+            normalizeProjectPathForComparison(scratchRoot)
+        ) {
+          return null;
+        }
+        // Only [a-z0-9] reaches the name, so it stays one path segment inside
+        // the scratch root, and the words are capped so pasted data cannot
+        // outgrow a file name. Each leaf is created without `recursive`, so
+        // the create itself claims it: a taken short name falls back to the
+        // full id, which only the same thread can already hold.
+        const words = input.text
+          .toLowerCase()
+          .split(/[^a-z0-9]+/)
+          .filter(Boolean)
+          .slice(0, 5)
+          .join("-")
+          .slice(0, 48)
+          .replace(/-+$/, "");
+        const id = input.threadId.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const folderFor = (idPart: string) =>
+          path.join(
+            scratchRoot,
+            [input.createdAt.slice(0, 10), words, idPart].filter(Boolean).join("-"),
+          );
+        yield* fileSystem.makeDirectory(scratchRoot, { recursive: true }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationDispatchCommandError({
+                message: "Failed to create the folder for threads without a project.",
+                cause,
+              }),
+          ),
+        );
+        const claim = (folder: string) =>
+          fileSystem.makeDirectory(folder).pipe(
+            Effect.as(true),
+            Effect.catchIf(
+              (error) => error.reason._tag === "AlreadyExists",
+              () => Effect.succeed(false),
+            ),
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationDispatchCommandError({
+                  message: "Failed to create the thread's folder.",
+                  cause,
+                }),
+            ),
+          );
+        const shortFolder = folderFor(id.slice(0, 8));
+        if (yield* claim(shortFolder)) return shortFolder;
+        const fullFolder = folderFor(id);
+        yield* claim(fullFolder);
+        return fullFolder;
+      });
+
+    const withScratchThreadFolder = (
+      command: OrchestrationCommand,
+    ): Effect.Effect<OrchestrationCommand, OrchestrationDispatchCommandError> => {
+      if (command.type === "thread.create") {
+        return scratchThreadFolder({ ...command, text: command.title }).pipe(
+          Effect.map((worktreePath) =>
+            worktreePath === null ? command : { ...command, worktreePath },
+          ),
+        );
+      }
+      if (command.type !== "thread.turn.start") return Effect.succeed(command);
+      const bootstrap = command.bootstrap;
+      const createThread = bootstrap?.createThread;
+      if (bootstrap === undefined || createThread === undefined) return Effect.succeed(command);
+      return scratchThreadFolder({
+        ...createThread,
+        threadId: command.threadId,
+        text: command.message.text,
+      }).pipe(
+        Effect.map((worktreePath) =>
+          worktreePath === null
+            ? command
+            : {
+                ...command,
+                bootstrap: { ...bootstrap, createThread: { ...createThread, worktreePath } },
+              },
+        ),
+      );
+    };
+
+    const ensureScratchProject = Effect.gen(function* () {
+      const workspaceRoot = yield* resolveScratchWorkspaceRoot;
+      if (workspaceRoot === undefined) {
+        return yield* new OrchestrationDispatchCommandError({
+          message: "Threads without a project are not available on this environment.",
+        });
+      }
+      yield* fileSystem.makeDirectory(workspaceRoot, { recursive: true }).pipe(
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationDispatchCommandError({
+              message: "Failed to create the folder for threads without a project.",
+              cause,
+            }),
+        ),
+      );
+      const findScratchProjectId = projections.getActiveProjectByWorkspaceRoot(workspaceRoot).pipe(
+        Effect.map(Option.map((project) => project.id)),
+        Effect.mapError(
+          (cause) =>
+            new OrchestrationDispatchCommandError({
+              message: "Failed to look up the home for threads without a project.",
+              cause,
+            }),
+        ),
+      );
+      const existingProjectId = yield* findScratchProjectId;
+      if (Option.isSome(existingProjectId)) {
+        return { projectId: existingProjectId.value };
+      }
+      const projectId = ProjectId.make(yield* randomUuid);
+      return yield* Effect.gen(function* () {
+        const command = yield* normalizeDispatchCommand({
+          type: "project.create",
+          commandId: yield* commandId("scratch-project-create"),
+          projectId,
+          title: "No project",
+          workspaceRoot,
+          createdAt: yield* nowIso,
+        });
+        yield* dispatch(command);
+        // A dashed chat bubble in neutral gray marks Scratch. Set once at
+        // create, so a user's own icon choice is never overwritten.
+        yield* dispatch(
+          yield* normalizeDispatchCommand({
+            type: "project.meta.update",
+            commandId: yield* commandId("scratch-project-icon"),
+            projectId,
+            projectIcon: { kind: "lucide", name: "message-square-dashed", color: "gray" },
+          }),
+        );
+        return { projectId };
+      }).pipe(
+        Effect.catch((error) =>
+          findScratchProjectId.pipe(
+            Effect.flatMap(
+              Option.match({
+                onNone: () => Effect.fail(error),
+                onSome: (racedProjectId) => Effect.succeed({ projectId: racedProjectId }),
+              }),
+            ),
+          ),
+        ),
+      );
+    });
+
+    const newProjectsRoot = path.resolve(config.baseDir, "projects");
+
+    const createNewProject = (input: ProjectCreateNewInput) =>
+      Effect.gen(function* () {
+        const folder = yield* NewProject.createNewProjectFolder({
+          root: newProjectsRoot,
+          name: input.name,
+        }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationDispatchCommandError({
+                message: "Failed to create the project folder.",
+                cause,
+              }),
+          ),
+        );
+        const projectId = ProjectId.make(yield* randomUuid);
+        yield* Effect.gen(function* () {
+          const command = yield* normalizeDispatchCommand({
+            type: "project.create",
+            commandId: yield* commandId("project-create-new"),
+            projectId,
+            title: input.name,
+            workspaceRoot: folder.workspaceRoot,
+            createdAt: yield* nowIso,
+          });
+          yield* dispatch(command);
+        }).pipe(
+          // Only a rejected command means no project uses the folder. An
+          // interrupt can land after the command is queued, so keep it then.
+          Effect.tapError(() =>
+            fileSystem.remove(folder.workspaceRoot, { recursive: true }).pipe(Effect.ignore),
+          ),
+        );
+        return {
+          projectId,
+          workspaceRoot: folder.workspaceRoot,
+          ...(folder.commitError === undefined ? {} : { commitError: folder.commitError }),
+        };
+      });
+    const dispatch = (command: OrchestrationCommand) =>
+      withScratchThreadFolder(command).pipe(Effect.flatMap(dispatchPrepared));
+
     const loadServerConfig = Effect.gen(function* () {
       const providerSnapshots = yield* providers.getProviders;
       const keybindingsSnapshot = yield* keybindings.getSnapshot.pipe(
@@ -1186,6 +1435,8 @@ export const layer = CoderWsRpcGroup.toLayer(
       return {
         environment: environment.descriptor,
         cwd: config.cwd,
+        scratchWorkspaceRoot: yield* resolveScratchWorkspaceRoot,
+        newProjectsRoot,
         keybindingsConfigPath: config.keybindingsConfigPath,
         keybindings: keybindingsSnapshot.keybindings,
         issues: keybindingsSnapshot.issues,
@@ -1198,6 +1449,7 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     return CoderWsRpcGroup.of({
       [WS_METHODS.serverProbe]: () => Effect.succeed({}),
+      [WS_METHODS.serverUpdateProvider]: (input) => providerMaintenance.updateProvider(input),
       [WS_METHODS.serverGetConfig]: () => loadServerConfig,
       [WS_METHODS.serverGetSettings]: () =>
         settings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
@@ -1213,6 +1465,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         keybindings
           .removeKeybindingRule(input)
           .pipe(Effect.map((nextKeybindings) => ({ keybindings: nextKeybindings, issues: [] }))),
+      [WS_METHODS.projectsEnsureScratch]: () => ensureScratchProject,
+      [WS_METHODS.projectsCreateNew]: (input) => createNewProject(input),
       [WS_METHODS.projectsGetConfig]: ({ projectId }) =>
         Effect.gen(function* () {
           const project = yield* projections.getProjectShellById(projectId);
@@ -1348,7 +1602,11 @@ export const layer = CoderWsRpcGroup.toLayer(
       // Upstream's refresh without its remote model-manifest and usage-limit refreshes.
       [WS_METHODS.serverRefreshProviders]: (input) =>
         (input.cwd !== undefined && input.instanceId !== undefined
-          ? providers.refreshWorkspaceSnapshot({ instanceId: input.instanceId, cwd: input.cwd })
+          ? providers.refreshWorkspaceSnapshot({
+              instanceId: input.instanceId,
+              cwd: input.cwd,
+              ...(input.fresh === undefined ? {} : { fresh: input.fresh }),
+            })
           : input.instanceId !== undefined
             ? providers.refreshInstance(input.instanceId)
             : providers.refresh()

@@ -134,3 +134,5 @@ true while a text field, the composer, or another editor has the keyboard.
 
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
+
+`chat.newWithoutProject` (`mod+alt+n`) starts a thread without a project in the active Coder workspace.

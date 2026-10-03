@@ -56,6 +56,7 @@ export const layer = Layer.effect(
           connectionProbe: true,
           threadSettlement: true,
           threadAutoSettlement: true,
+          threadAutoSettleOptOut: true,
           threadSnooze: true,
           threadPinning: true,
           threadPinReorder: true,

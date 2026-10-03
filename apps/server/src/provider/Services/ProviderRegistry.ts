@@ -6,10 +6,18 @@
  *
  * @module ProviderRegistry
  */
-import type { ProviderInstanceId, ProviderDriverKind, ServerProvider } from "@t3tools/contracts";
+import type {
+  ProviderInstanceId,
+  ProviderDriverKind,
+  ServerProvider,
+  ServerProviderUpdateState,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Stream from "effect/Stream";
+import type { ProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
+
+export type ProviderMaintenanceActionKind = "update";
 
 export interface ProviderRegistryShape {
   /**
@@ -17,11 +25,6 @@ export interface ProviderRegistryShape {
    * Multiple snapshots may share the same `provider` kind (multiple
    * instances of the same driver) and disambiguate via `instanceId`.
    */
-  readonly refreshWorkspaceSnapshot: (input: {
-    instanceId: ProviderInstanceId;
-    cwd: string;
-  }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
-
   readonly getProviders: Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**
@@ -44,6 +47,41 @@ export interface ProviderRegistryShape {
   readonly refreshInstance: (
     instanceId: ProviderInstanceId,
   ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
+  /**
+   * Fill the skills and slash commands snapshot for one cwd. A cwd that
+   * already has a snapshot is left alone unless `fresh` is set. A fresh scan
+   * also refreshes the instance's machine snapshot and drops other
+   * instances' snapshots for the cwd.
+   */
+  readonly refreshWorkspaceSnapshot: (input: {
+    readonly instanceId: ProviderInstanceId;
+    readonly cwd: string;
+    readonly fresh?: boolean;
+  }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
+
+  /**
+   * Resolve the maintenance capabilities owned by one live provider instance.
+   * Falls back to manual-only capabilities when the instance is not live.
+   * `fresh` re-derives ownership from the executable instead of the cache.
+   */
+  readonly getProviderMaintenanceCapabilitiesForInstance: (
+    instanceId: ProviderInstanceId,
+    provider: ProviderDriverKind,
+    options?: { readonly fresh?: boolean },
+  ) => Effect.Effect<ProviderMaintenanceCapabilities>;
+
+  /**
+   * Apply volatile maintenance-action state to one configured instance.
+   * This state is never persisted to disk. Today only update actions are
+   * projected onto `ServerProvider.updateState`; install/auth actions can
+   * extend this action map without adding driver-scoped APIs.
+   */
+  readonly setProviderMaintenanceActionState: (input: {
+    readonly instanceId: ProviderInstanceId;
+    readonly action: ProviderMaintenanceActionKind;
+    readonly state: ServerProviderUpdateState | null;
+  }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
   /**
    * Stream of provider snapshot updates — one emission per aggregated

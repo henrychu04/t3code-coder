@@ -1,3 +1,11 @@
+import { HttpClient, FetchHttpClient } from "effect/unstable/http";
+import {
+  makeCachedProviderMaintenanceResolution,
+  makePackageManagedProviderMaintenanceResolver,
+  resolveProviderMaintenanceCapabilitiesEffect,
+  enrichProviderSnapshotWithVersionAdvisory,
+} from "../providerMaintenance.ts";
+import { normalizeCommandPath } from "../providerMaintenance.ts";
 import { CodexSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -27,6 +35,28 @@ import {
 
 const decodeCodexSettings = Schema.decodeSync(CodexSettings);
 const DRIVER_KIND = ProviderDriverKind.make("codex");
+
+function isCodexStandaloneCommandPath(commandPath: string): boolean {
+  return normalizeCommandPath(commandPath).includes("/packages/standalone/");
+}
+
+/**
+ * `codex update` replaces the standalone tree under `CODEX_HOME`. That tree
+ * lives in the shared home even when an auth-overlay shadow home is in use
+ * (the overlay only carries auth and a few local entries), so the updater
+ * runs against `sharedHomePath` rather than the instance's effective home.
+ */
+function makeCodexMaintenanceResolver(sharedHomePath: string) {
+  return makePackageManagedProviderMaintenanceResolver({
+    provider: DRIVER_KIND,
+    npmPackageName: "@openai/codex",
+    nativeUpdate: {
+      args: ["update"],
+      isCommandPath: isCodexStandaloneCommandPath,
+      env: { CODEX_HOME: sharedHomePath },
+    },
+  });
+}
 
 export type CodexDriverEnv =
   | ChildProcessSpawner.ChildProcessSpawner
@@ -95,12 +125,16 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         homePath: effectiveConfig.homePath,
         environment: processEnv,
       });
-      const adapter = yield* makeCodexAdapter(effectiveConfig, {
-        instanceId,
-        environment: processEnv,
-        attachmentsDir,
-        resolveMcpServerNames,
-      });
+      const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
+        resolveProviderMaintenanceCapabilitiesEffect(
+          makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
+          { binaryPath: effectiveConfig.binaryPath || "codex", env: processEnv },
+        ).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.provideService(FileSystem.FileSystem, yield* FileSystem.FileSystem),
+          Effect.provideService(Path.Path, yield* Path.Path),
+        ),
+      );
       const checkProvider = checkCodexProviderStatus(
         effectiveConfig,
         undefined,
@@ -117,6 +151,14 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         initialSnapshot: (settings) =>
           makePendingCodexProvider(settings).pipe(Effect.map(classifyAndStamp)),
         checkProvider,
+        enrichSnapshot: ({ snapshot, publishSnapshot }) =>
+          resolveMaintenance().pipe(
+            Effect.flatMap((capabilities) =>
+              enrichProviderSnapshotWithVersionAdvisory(snapshot, capabilities),
+            ),
+            Effect.provide(FetchHttpClient.layer),
+            Effect.flatMap(publishSnapshot),
+          ),
       }).pipe(
         Effect.mapError(
           (cause) =>
@@ -129,6 +171,13 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         ),
       );
 
+      const adapter = yield* makeCodexAdapter(effectiveConfig, {
+        instanceId,
+        environment: processEnv,
+        attachmentsDir,
+        resolveMcpServerNames,
+        models: snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
+      });
       const textGeneration = yield* makeCodexTextGeneration(
         effectiveConfig,
         processEnv,
@@ -144,7 +193,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         displayName,
         accentColor,
         enabled,
-        snapshot,
+        snapshot: { ...snapshot, resolveMaintenance },
         snapshotForCwd: (commandCwd) =>
           checkCodexProviderStatus(effectiveConfig, undefined, processEnv, commandCwd).pipe(
             Effect.map(classifyAndStamp),

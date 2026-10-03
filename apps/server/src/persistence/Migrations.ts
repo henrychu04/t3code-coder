@@ -1,3 +1,4 @@
+import Migration0057 from "./Migrations/057_ProjectionThreadsAutoSettleDisabledAt.ts";
 import Migration0052 from "./Migrations/052_ProjectionProjectIcon.ts";
 /**
  * MigrationsLive - Migration runner with inline loader
@@ -119,6 +120,7 @@ const migrationEntries = [
   [54, "PullRequestFilesViewed", Migration0054],
   [55, "ProjectionMessageAttachments", Migration0055],
   [56, "ProjectionThreadMessageContext", Migration0056],
+  [57, "ProjectionThreadsAutoSettleDisabledAt", Migration0057],
 ] as const;
 
 const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

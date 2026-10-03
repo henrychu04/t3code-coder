@@ -317,6 +317,7 @@ export const useRightPanelStore = create<RightPanelStoreState>()((set, get) => (
         const relativePath = /^[A-Za-z]:\/+$/.test(requestedPath)
           ? requestedPath
           : requestedPath.replace(/\/+$/, "") || requestedPath;
+        if (relativePath === ".") return upsertSurface(current, singletonSurface("files"));
         const withoutStandaloneExplorer = current.surfaces.filter(
           (surface) => surface.kind !== "files",
         );

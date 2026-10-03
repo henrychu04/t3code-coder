@@ -75,6 +75,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            listThreadsWithPullRequests: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
@@ -112,9 +113,9 @@ describe("CheckpointDiffQuery.layer", () => {
               }),
             getThreadRuntimeContext: () => Effect.die("unused"),
             getTurnStartMessage: () => Effect.die("unused"),
-            getThreadShellById: () => Effect.succeed(Option.none()),
-            getThreadDetailById: () => Effect.succeed(Option.none()),
-            getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            getThreadShellById: () => Effect.succeedNone,
+            getThreadDetailById: () => Effect.succeedNone,
+            getThreadDetailSnapshot: () => Effect.succeedNone,
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -191,6 +192,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            listThreadsWithPullRequests: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
@@ -213,9 +215,9 @@ describe("CheckpointDiffQuery.layer", () => {
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
             getTurnStartMessage: () => Effect.die("unused"),
-            getThreadShellById: () => Effect.succeed(Option.none()),
-            getThreadDetailById: () => Effect.succeed(Option.none()),
-            getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            getThreadShellById: () => Effect.succeedNone,
+            getThreadDetailById: () => Effect.succeedNone,
+            getThreadDetailSnapshot: () => Effect.succeedNone,
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -282,6 +284,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            listThreadsWithPullRequests: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
@@ -304,9 +307,9 @@ describe("CheckpointDiffQuery.layer", () => {
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
             getTurnStartMessage: () => Effect.die("unused"),
-            getThreadShellById: () => Effect.succeed(Option.none()),
-            getThreadDetailById: () => Effect.succeed(Option.none()),
-            getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            getThreadShellById: () => Effect.succeedNone,
+            getThreadDetailById: () => Effect.succeedNone,
+            getThreadDetailSnapshot: () => Effect.succeedNone,
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -358,6 +361,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            listThreadsWithPullRequests: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
@@ -380,9 +384,9 @@ describe("CheckpointDiffQuery.layer", () => {
             getFullThreadDiffContext: () => Effect.die("unused"),
             getThreadRuntimeContext: () => Effect.die("unused"),
             getTurnStartMessage: () => Effect.die("unused"),
-            getThreadShellById: () => Effect.succeed(Option.none()),
-            getThreadDetailById: () => Effect.succeed(Option.none()),
-            getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            getThreadShellById: () => Effect.succeedNone,
+            getThreadDetailById: () => Effect.succeedNone,
+            getThreadDetailSnapshot: () => Effect.succeedNone,
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),
@@ -419,6 +423,7 @@ describe("CheckpointDiffQuery.layer", () => {
         Layer.provideMerge(Layer.succeed(CheckpointStore.CheckpointStore, checkpointStore)),
         Layer.provideMerge(
           Layer.succeed(ProjectionSnapshotQuery.ProjectionSnapshotQuery, {
+            listThreadsWithPullRequests: () => Effect.die("unused"),
             getCommandReadModel: () =>
               Effect.die("CheckpointDiffQuery should not request the command read model"),
             getUserInputActivity: () => Effect.die("unused"),
@@ -441,9 +446,9 @@ describe("CheckpointDiffQuery.layer", () => {
             getFullThreadDiffContext: () => Effect.succeed(Option.none()),
             getThreadRuntimeContext: () => Effect.die("unused"),
             getTurnStartMessage: () => Effect.die("unused"),
-            getThreadShellById: () => Effect.succeed(Option.none()),
-            getThreadDetailById: () => Effect.succeed(Option.none()),
-            getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
+            getThreadShellById: () => Effect.succeedNone,
+            getThreadDetailById: () => Effect.succeedNone,
+            getThreadDetailSnapshot: () => Effect.succeedNone,
             searchThreads: () => Effect.succeed({ matches: [] }),
           }),
         ),

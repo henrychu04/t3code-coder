@@ -46,13 +46,13 @@ function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
   );
 }
 
-function useResolvedSettingsScope(search: SettingsScopeSearch) {
+function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironment: boolean) {
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
   const primaryEnvironmentId = useActiveEnvironmentId();
   const resolvedSearch = useMemo(
-    () => resolveLegacyProjectSettingsSearch(search, groups),
-    [groups, search],
+    () => resolveLegacyProjectSettingsSearch(rawSearch, groups),
+    [groups, rawSearch],
   );
   const scope = useMemo(
     () => resolveSettingsScope(resolvedSearch, groups, availableEnvironments),
@@ -84,6 +84,7 @@ function useResolvedSettingsScope(search: SettingsScopeSearch) {
 
 const SettingsScopeContext = createContext<
   | (ReturnType<typeof useResolvedSettingsScope> & {
+      singleEnvironment: boolean;
       search: SettingsScopeSearch;
       selectScope: (next: SettingsScopeSearch) => void;
     })
@@ -94,13 +95,18 @@ export function SettingsScopeProvider({
   search,
   onChange,
   children,
+  singleEnvironment = false,
 }: {
+  singleEnvironment?: boolean;
   search: SettingsScopeSearch;
   onChange: (next: SettingsScopeSearch) => void;
   children: ReactNode;
 }) {
-  const resolved = useResolvedSettingsScope(search);
-  const value = useMemo(() => ({ ...resolved, selectScope: onChange }), [onChange, resolved]);
+  const resolved = useResolvedSettingsScope(search, singleEnvironment);
+  const value = useMemo(
+    () => ({ ...resolved, singleEnvironment, selectScope: onChange }),
+    [onChange, resolved, singleEnvironment],
+  );
   return <SettingsScopeContext value={value}>{children}</SettingsScopeContext>;
 }
 

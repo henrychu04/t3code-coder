@@ -1,3 +1,5 @@
+import { newProjectFolderName } from "@t3tools/shared/path";
+import { useNewProject } from "../hooks/useNewProject";
 import { useConnectDiscoveredWorkspace } from "./useConnectDiscoveredWorkspace";
 import { useAtomCommand } from "../state/use-atom-command";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -35,7 +37,13 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 
-export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => void }) {
+export function CoderAddProjectDialog({
+  onClose,
+  initialSource = "folder",
+}: {
+  readonly onClose: () => void;
+  readonly initialSource?: "folder" | "new";
+}) {
   const navigate = useNavigate();
   const { config } = useCoder();
   const connectDiscoveredWorkspace = useConnectDiscoveredWorkspace();
@@ -47,12 +55,34 @@ export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => voi
   const [discovering, setDiscovering] = useState(false);
   const [connectingTarget, setConnectingTarget] = useState<string | null>(null);
   const [environmentId, setEnvironmentId] = useState<EnvironmentId | null>(null);
-  const [projectSource, setProjectSource] = useState<"folder" | "gitlab">("folder");
+  const [projectSource, setProjectSource] = useState<"folder" | "gitlab" | "new">(initialSource);
   const [error, setError] = useState<string | null>(null);
   const environment = useEnvironment(environmentId);
   const projects = useProjects();
   const createProject = useAtomCommand(projectEnvironment.create);
   const handleNewThread = useNewThreadHandler();
+  const createNewProject = useNewProject();
+  const [newProjectName, setNewProjectName] = useState("");
+  const [publishNewProject, setPublishNewProject] = useState(false);
+  const [creatingNewProject, setCreatingNewProject] = useState(false);
+
+  const sourceControl = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : sourceControlEnvironment.discovery({ environmentId, input: undefined }),
+  );
+  const canPublishToGitLab =
+    sourceControl.data?.sourceControlProviders.some(
+      (provider) =>
+        provider.kind === "gitlab" &&
+        provider.status === "available" &&
+        provider.auth.status === "authenticated" &&
+        provider.writeAccess?.writable === true,
+    ) ?? false;
+  const newProjectsRoot = environment?.serverConfig?.newProjectsRoot;
+  const projectDestination = newProjectsRoot
+    ? `${newProjectsRoot.replace(/\/$/, "")}/${newProjectFolderName(newProjectName)}`
+    : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -170,7 +200,7 @@ export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => voi
             Add project
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Open an existing folder or clone a GitLab repository inside an authenticated Coder
+            Create a project, open an existing folder, or clone a GitLab repository inside a Coder
             workspace.
           </p>
         </div>
@@ -290,6 +320,17 @@ export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => voi
               <Button
                 className="flex-1"
                 size="sm"
+                variant={projectSource === "new" ? "secondary" : "ghost"}
+                onClick={() => {
+                  setProjectSource("new");
+                  setError(null);
+                }}
+              >
+                New project
+              </Button>
+              <Button
+                className="flex-1"
+                size="sm"
                 variant={projectSource === "folder" ? "secondary" : "ghost"}
                 onClick={() => {
                   setProjectSource("folder");
@@ -310,7 +351,62 @@ export function CoderAddProjectDialog({ onClose }: { readonly onClose: () => voi
                 Clone from GitLab
               </Button>
             </div>
-            {projectSource === "folder" ? (
+            {projectSource === "new" ? (
+              <form
+                className="mt-4 space-y-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!newProjectName.trim() || creatingNewProject) return;
+                  setCreatingNewProject(true);
+                  void createNewProject({
+                    environmentId,
+                    name: newProjectName.trim(),
+                    gitlab: publishNewProject && canPublishToGitLab ? { account: null } : null,
+                  })
+                    .then((created) => {
+                      if (created) onClose();
+                    })
+                    .finally(() => setCreatingNewProject(false));
+                }}
+              >
+                <Label htmlFor="new-project-name">Project name</Label>
+                <Input
+                  id="new-project-name"
+                  autoFocus
+                  value={newProjectName}
+                  onChange={(event) => setNewProjectName(event.target.value)}
+                  maxLength={200}
+                  placeholder="My project"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Creates a folder with a README, an icon, and an initial Git commit in this
+                  workspace.
+                </p>
+                {projectDestination ? (
+                  <p className="break-all text-xs text-muted-foreground">
+                    Destination: {projectDestination} (a numeric suffix is added if it already
+                    exists).
+                  </p>
+                ) : null}
+                {canPublishToGitLab ? (
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={publishNewProject}
+                      onChange={(event) => setPublishNewProject(event.target.checked)}
+                    />
+                    Publish a private GitLab repository
+                  </label>
+                ) : null}
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={!newProjectName.trim() || creatingNewProject}
+                >
+                  {creatingNewProject ? "Creating…" : "Create project"}
+                </Button>
+              </form>
+            ) : projectSource === "folder" ? (
               <RemoteDirectoryBrowser environmentId={environmentId} onSelect={addProject} />
             ) : (
               <GitLabCloneProject

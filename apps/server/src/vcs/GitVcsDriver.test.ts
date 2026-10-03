@@ -736,6 +736,105 @@ it.effect("GitVcsDriver preserves empty review sources and includes untracked fi
   }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
 );
 
+const writeReviewIndexFile = (cwd: string, relativePath: string, contents: string) =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    yield* fileSystem.writeFileString(path.join(cwd, relativePath), contents);
+  });
+
+const makeReviewIndexRepo = () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-review-index-" });
+    yield* runGit(cwd, ["init", "--initial-branch=main"]);
+    yield* runGit(cwd, ["config", "user.email", "test@test.com"]);
+    yield* runGit(cwd, ["config", "user.name", "Test"]);
+    yield* runGit(cwd, ["commit", "--allow-empty", "-m", "Initial"]);
+    return cwd;
+  });
+
+for (const splitIndex of [false, true]) {
+  it.effect(`keeps the preceding second cached in review previews (split: ${splitIndex})`, () =>
+    Effect.gen(function* () {
+      const cwd = yield* makeReviewIndexRepo();
+      const driver = yield* GitVcsDriver.GitVcsDriver;
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      yield* writeReviewIndexFile(cwd, ".gitattributes", "stable.txt filter=probe\n");
+      yield* writeReviewIndexFile(cwd, "stable.txt", "unchanged\n");
+      yield* writeReviewIndexFile(
+        cwd,
+        ".git/filter.cjs",
+        'require("node:fs").appendFileSync(".git/filter-runs", "read\\n"); process.stdin.pipe(process.stdout);',
+      );
+      yield* runGit(cwd, ["config", "filter.probe.clean", "node .git/filter.cjs"]);
+      yield* fs.utimes(path.join(cwd, "stable.txt"), 1_699_999_999.5, 1_699_999_999.5);
+      yield* runGit(cwd, ["add", "."]);
+      yield* runGit(cwd, ["commit", "-m", "cache stable file"]);
+      if (splitIndex) yield* runGit(cwd, ["update-index", "--split-index"]);
+      const indexPath = path.join(cwd, ".git", "index");
+      yield* fs.utimes(indexPath, 1_700_000_000, 1_700_000_000);
+      const originalIndex = yield* fs.readFile(indexPath);
+      const originalMtime = (yield* fs.stat(indexPath)).mtime;
+      yield* writeReviewIndexFile(cwd, ".git/filter-runs", "");
+      yield* writeReviewIndexFile(cwd, "untracked.txt", "new\n");
+      const preview = yield* driver.getReviewDiffPreview({ cwd, sourceKind: "working-tree" });
+      assert.deepStrictEqual(
+        preview.sources.find((source) => source.kind === "working-tree")!.files,
+        [{ path: "untracked.txt", previousPath: null, additions: 1, deletions: 0 }],
+      );
+      assert.strictEqual(yield* fs.readFileString(path.join(cwd, ".git/filter-runs")), "");
+      assert.deepStrictEqual(yield* fs.readFile(indexPath), originalIndex);
+      assert.deepStrictEqual((yield* fs.stat(indexPath)).mtime, originalMtime);
+    }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+  );
+}
+
+for (const [timestamp, splitIndex] of [
+  [1_700_000_000, false],
+  [1_700_000_000.9999, false],
+  [1_700_000_000, true],
+  [1_700_000_000.9999, true],
+] as const) {
+  it.effect(
+    `preserves same-size edits with a racy review index (${timestamp}, split: ${splitIndex})`,
+    () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeReviewIndexRepo();
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const filePath = path.join(cwd, "tracked.txt");
+        const indexPath = path.join(cwd, ".git", "index");
+        // Reproduce a same-timestamp edit without relying on filesystem clock resolution.
+        yield* runGit(cwd, ["config", "core.trustctime", "false"]);
+        yield* writeReviewIndexFile(cwd, "tracked.txt", "before\n");
+        yield* fileSystem.utimes(filePath, timestamp, timestamp);
+        yield* runGit(cwd, ["add", "tracked.txt"]);
+        yield* runGit(cwd, ["commit", "-m", "record racy file"]);
+        if (splitIndex) yield* runGit(cwd, ["update-index", "--split-index"]);
+        yield* fileSystem.utimes(indexPath, timestamp, timestamp);
+        const originalIndex = yield* fileSystem.readFile(indexPath);
+        const originalIndexMtime = (yield* fileSystem.stat(indexPath)).mtime;
+        yield* writeReviewIndexFile(cwd, "tracked.txt", "after!\n");
+        yield* fileSystem.utimes(filePath, timestamp, timestamp);
+        yield* writeReviewIndexFile(cwd, "untracked.txt", "new\n");
+
+        const preview = yield* driver.getReviewDiffPreview({ cwd, sourceKind: "working-tree" });
+        const dirty = preview.sources.find((source) => source.kind === "working-tree")!;
+        assert.deepStrictEqual(dirty.files, [
+          { path: "tracked.txt", previousPath: null, additions: 1, deletions: 1 },
+          { path: "untracked.txt", previousPath: null, additions: 1, deletions: 0 },
+        ]);
+        assert.include(dirty.diff, "-before");
+        assert.include(dirty.diff, "+after!");
+        assert.deepStrictEqual(yield* fileSystem.readFile(indexPath), originalIndex);
+        assert.deepStrictEqual((yield* fileSystem.stat(indexPath)).mtime, originalIndexMtime);
+      }).pipe(Effect.scoped, Effect.provide(GitContractLayer)),
+  );
+}
+
 it.effect("GitVcsDriver bypasses textconv filters in review previews", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

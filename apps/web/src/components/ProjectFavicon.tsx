@@ -11,7 +11,7 @@ const DynamicIcon = lazy(() =>
   import("lucide-react/dynamic").then((module) => ({ default: module.DynamicIcon })),
 );
 function DynamicProjectIconFallback() {
-  return <FolderCodeIcon className="size-full text-[inherit]" />;
+  return <FolderCodeIcon className="size-full text-inherit" />;
 }
 
 /** Upstream metadata icons and monograms, without workspace image reads. */

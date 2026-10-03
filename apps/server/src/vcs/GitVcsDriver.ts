@@ -1043,8 +1043,8 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
             });
             const { mtime } = yield* fileSystem.stat(indexPath.stdout.trim());
             if (Option.isNone(mtime)) return false;
-            // Stay below the source timestamp even if Date rounded up, preserving Git's racy check.
-            const indexTime = Math.floor((mtime.value.getTime() - 1) / 1000);
+            // Node stat truncates to milliseconds; preserve the source second for Git's racy check.
+            const indexTime = Math.floor(mtime.value.getTime() / 1000);
             if (indexTime <= 0) return false;
             yield* fileSystem.copyFile(indexPath.stdout.trim(), tempIndexPath);
             // Retain stat data only where the copied index already matches HEAD.
@@ -1313,7 +1313,7 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
           /^warning: failed to remove \.\/: [^\n]+$/.test(cleaned.stderr.trim()) &&
           (yield* fileSystem.readDirectory(input.cwd).pipe(
             Effect.map((entries) => entries.length === 0),
-            Effect.catch(() => Effect.succeed(false)),
+            Effect.orElseSucceed(() => false),
           ));
         if (!emptiedWorkspace)
           return yield* new VcsProcessExitError({
@@ -1747,7 +1747,16 @@ const makeLocalGitService = Effect.gen(function* () {
       prefix: `t3code-review-index-${process.pid}-`,
     });
     const indexExists = yield* fileSystem.exists(indexPath);
-    if (indexExists) yield* fileSystem.copyFile(indexPath, tempIndexPath);
+    if (indexExists) {
+      const { mtime } = yield* fileSystem.stat(indexPath);
+      yield* fileSystem.copyFile(indexPath, tempIndexPath);
+      // Node stat truncates to milliseconds. Preserve the source second so Git checks
+      // same-timestamp edits without rereading unchanged files from the preceding second.
+      const indexTime = Option.isSome(mtime)
+        ? Math.max(0, Math.floor(mtime.value.getTime() / 1000))
+        : 0;
+      yield* fileSystem.utimes(tempIndexPath, indexTime, indexTime);
+    }
     const env = { GIT_INDEX_FILE: tempIndexPath } satisfies NodeJS.ProcessEnv;
     const tempIndexConfig = [
       "-c",
@@ -1791,13 +1800,14 @@ const makeLocalGitService = Effect.gen(function* () {
     const patchLimit = input.file
       ? REVIEW_DIFF_FILE_MAX_OUTPUT_BYTES
       : REVIEW_DIFF_PATCH_MAX_OUTPUT_BYTES;
-    const details = yield* statusDetailsLocal(input.cwd);
+    // Resolve the repository without a status scan, which can rewrite the user's index.
+    const details = yield* refStatusLocal(input.cwd);
     if (!details.isRepo) return { cwd: input.cwd, generatedAt: yield* DateTime.now, sources: [] };
     const cwd = (yield* runGitStdout("GitVcsDriver.review.root", input.cwd, [
       "rev-parse",
       "--show-toplevel",
     ])).trim();
-    const branch = details.branch;
+    const branch = details.refName;
     const sourceKind = input.file?.sourceKind ?? input.sourceKind;
     const baseRef =
       input.baseRef ??

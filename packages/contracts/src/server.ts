@@ -54,6 +54,8 @@ export const ServerProviderAuth = Schema.Struct({
   type: Schema.optional(TrimmedNonEmptyString),
   label: Schema.optional(TrimmedNonEmptyString),
   email: Schema.optional(TrimmedNonEmptyString),
+  subscriptionSharing: Schema.optional(Schema.Boolean),
+  profileId: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerProviderAuth = typeof ServerProviderAuth.Type;
 
@@ -62,6 +64,8 @@ export const ServerProviderModel = Schema.Struct({
   name: TrimmedNonEmptyString,
   shortName: Schema.optional(TrimmedNonEmptyString),
   subProvider: Schema.optional(TrimmedNonEmptyString),
+  aliases: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  badge: Schema.optional(Schema.Literal("new")),
   isCustom: Schema.Boolean,
   isDefault: Schema.optional(Schema.Boolean),
   isLegacy: Schema.optional(Schema.Boolean),
@@ -135,7 +139,72 @@ export const ServerProviderCompatibilityAdvisory = Schema.Struct({
 });
 export type ServerProviderCompatibilityAdvisory = typeof ServerProviderCompatibilityAdvisory.Type;
 
+export const ServerProviderVersionAdvisoryStatus = Schema.Literals([
+  "unknown",
+  "current",
+  "behind_latest",
+]);
+
+export type ServerProviderVersionAdvisoryStatus = typeof ServerProviderVersionAdvisoryStatus.Type;
+
+export const ServerProviderVersionAdvisory = Schema.Struct({
+  status: ServerProviderVersionAdvisoryStatus,
+  currentVersion: Schema.NullOr(TrimmedNonEmptyString),
+  latestVersion: Schema.NullOr(TrimmedNonEmptyString),
+  updateCommand: Schema.NullOr(TrimmedNonEmptyString),
+  canUpdate: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  canInstallVersion: Schema.optionalKey(Schema.Boolean),
+  checkedAt: Schema.NullOr(IsoDateTime),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+});
+
+export type ServerProviderVersionAdvisory = typeof ServerProviderVersionAdvisory.Type;
+
+export const ServerProviderUpdateStatus = Schema.Literals([
+  "idle",
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "unchanged",
+]);
+
+export type ServerProviderUpdateStatus = typeof ServerProviderUpdateStatus.Type;
+
+export const ServerProviderUpdateState = Schema.Struct({
+  status: ServerProviderUpdateStatus,
+  startedAt: Schema.NullOr(IsoDateTime),
+  finishedAt: Schema.NullOr(IsoDateTime),
+  message: Schema.NullOr(TrimmedNonEmptyString),
+  output: Schema.NullOr(Schema.String.check(Schema.isMaxLength(10_000))),
+});
+
+export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
+
+export const ServerProviderUpdateInput = Schema.Struct({
+  provider: ProviderDriverKind,
+  targetVersion: Schema.optionalKey(TrimmedNonEmptyString),
+  instanceId: Schema.optionalKey(ProviderInstanceId),
+});
+
+export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
+
+export class ServerProviderUpdateError extends Schema.TaggedError<ServerProviderUpdateError>()(
+  "ServerProviderUpdateError",
+  {
+    provider: ProviderDriverKind,
+    reason: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `Provider update failed for ${this.provider}: ${this.reason}`;
+  }
+}
+
 export const ServerProvider = Schema.Struct({
+  versionAdvisory: Schema.optionalKey(ServerProviderVersionAdvisory),
+  updateState: Schema.optionalKey(ServerProviderUpdateState),
   usageLimits: Schema.optional(ServerProviderUsageLimits),
   instanceId: ProviderInstanceId,
   driver: ProviderDriverKind,
@@ -259,6 +328,8 @@ export function environmentThemeFileHasColors(file: EnvironmentThemeFile): boole
 
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
+  scratchWorkspaceRoot: Schema.optional(TrimmedNonEmptyString),
+  newProjectsRoot: Schema.optional(TrimmedNonEmptyString),
   cwd: TrimmedNonEmptyString,
   keybindingsConfigPath: TrimmedNonEmptyString,
   keybindings: ResolvedKeybindingsConfig,

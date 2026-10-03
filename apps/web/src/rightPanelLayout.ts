@@ -23,10 +23,7 @@ export function resolveRightPanelWidths(
       : Math.floor(containerWidth) - RIGHT_PANEL_SIBLING_MIN_WIDTH;
   const maxWidth = Math.max(
     RIGHT_PANEL_MIN_WIDTH,
-    Math.min(
-      Math.floor(viewportWidth * RIGHT_PANEL_MAX_WIDTH_FRACTION),
-      containerCap,
-    ),
+    Math.min(Math.floor(viewportWidth * RIGHT_PANEL_MAX_WIDTH_FRACTION), containerCap),
   );
 
   return {

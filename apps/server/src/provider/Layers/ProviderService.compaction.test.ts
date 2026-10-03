@@ -71,6 +71,7 @@ const harness = (
       enabled: boolean;
       session: ProviderSession;
       writes: ProviderRuntimeBinding[];
+      bindings?: Array<ProviderRuntimeBinding & { lastSeenAt: string }>;
     };
   } = {},
 ) =>
@@ -157,16 +158,17 @@ const harness = (
         listThreadIds: () => Effect.succeed([threadId]),
         listBindings: () =>
           Effect.succeed(
-            options.shutdown
-              ? [
-                  {
-                    threadId,
-                    provider,
-                    providerInstanceId: instanceId,
-                    lastSeenAt: baseEvent.createdAt,
-                  },
-                ]
-              : [],
+            options.shutdown?.bindings ??
+              (options.shutdown
+                ? [
+                    {
+                      threadId,
+                      provider,
+                      providerInstanceId: instanceId,
+                      lastSeenAt: baseEvent.createdAt,
+                    },
+                  ]
+                : []),
           ),
       }),
       Layer.succeed(ServerConfig, {
@@ -242,6 +244,52 @@ describe("ProviderService restart markers", () => {
       );
     }
   }
+});
+
+describe("ProviderService settled shutdown bindings", () => {
+  it.effect("preserves settled rows while clearing stopped rows with an active turn", () =>
+    Effect.gen(function* () {
+      const writes: ProviderRuntimeBinding[] = [];
+      const bindings: Array<ProviderRuntimeBinding & { lastSeenAt: string }> = [
+        undefined,
+        {},
+        { activeTurnId: null },
+        { activeTurnId: turnId },
+      ].map((runtimePayload, index) => ({
+        threadId: ThreadId.make(`stopped-${index}`),
+        provider,
+        providerInstanceId: instanceId,
+        status: "stopped",
+        runtimePayload,
+        lastSeenAt: baseEvent.createdAt,
+      }));
+      yield* harness({
+        shutdown: {
+          enabled: false,
+          writes,
+          bindings,
+          session: {
+            provider,
+            providerInstanceId: instanceId,
+            threadId,
+            status: "ready",
+            runtimeMode: "approval-required",
+            createdAt: baseEvent.createdAt,
+            updatedAt: baseEvent.createdAt,
+          },
+        },
+      }).pipe(Effect.scoped);
+      const stoppedWrites = writes.filter((binding) =>
+        String(binding.threadId).startsWith("stopped-"),
+      );
+      assert.equal(stoppedWrites.length, 1);
+      assert.equal(stoppedWrites[0]?.threadId, ThreadId.make("stopped-3"));
+      assert.equal(
+        (stoppedWrites[0]?.runtimePayload as { activeTurnId: unknown }).activeTurnId,
+        null,
+      );
+    }),
+  );
 });
 
 describe("ProviderService compaction lifecycle", () => {

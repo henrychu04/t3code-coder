@@ -248,6 +248,14 @@ export const layer = Layer.effect(
     const STATUS_CACHE_TTL = Duration.seconds(1);
     const STATUS_CACHE_CAPACITY = 2_048;
     const FETCH_CACHE_TTL = Duration.seconds(1);
+    // Status fetches run unattended, so a credential prompt must fail instead of waiting.
+    const STATUS_FETCH_ENV = Object.freeze({
+      GCM_INTERACTIVE: "never",
+      GIT_ASKPASS: "",
+      GIT_TERMINAL_PROMPT: "0",
+      SSH_ASKPASS: "",
+      SSH_ASKPASS_REQUIRE: "never",
+    } satisfies NodeJS.ProcessEnv);
     // Match the automatic settlement sweep cadence so an external merge is
     // observed on the next sweep instead of waiting on an older cache entry.
     const PR_CACHE_TTL = Duration.seconds(60);
@@ -684,7 +692,12 @@ export const layer = Layer.effect(
         git.execute({
           operation: "GitWorkflowService.remoteStatus.fetch",
           cwd,
-          args: ["fetch", "--prune", "origin"],
+          // `--no-auto-gc` (a synonym of `--no-auto-maintenance` that older Git also knows) keeps
+          // this poll from starting `git gc --auto`. When that gc fails, for example on a repository
+          // with missing objects, Git retries it on every fetch and leaves a full-size `tmp_pack_*`
+          // behind each time, so a background poll could fill the disk.
+          args: ["fetch", "--prune", "--no-auto-gc", "origin"],
+          env: STATUS_FETCH_ENV,
           timeoutMs: 300_000,
           maxOutputBytes: 512 * 1024,
         }),

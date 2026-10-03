@@ -5,6 +5,7 @@ export interface ContextMenuItem<T extends string = string> {
   readonly label: string;
   readonly destructive?: boolean;
   readonly disabled?: boolean;
+  readonly checked?: boolean;
   readonly header?: boolean;
   readonly icon?: string;
   readonly separatorBefore?: boolean;

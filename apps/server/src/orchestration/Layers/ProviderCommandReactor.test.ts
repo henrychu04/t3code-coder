@@ -1,3 +1,4 @@
+import * as TerminalManager from "../../terminal/Manager.ts";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
@@ -292,6 +293,7 @@ describe("ProviderCommandReactor", () => {
     );
     const moveWorktree = vi.fn((_: unknown) => Effect.void);
     const pruneWorktrees = vi.fn((_: { readonly cwd: string }) => Effect.void);
+    const closeIdleTerminals = vi.fn((_: { readonly threadId: string }) => Effect.void);
     const createWorktree = vi.fn(
       (input: { readonly refName: string; readonly path: string | null }) =>
         Effect.succeed({ worktree: { path: input.path ?? "", refName: input.refName } }),
@@ -510,6 +512,9 @@ describe("ProviderCommandReactor", () => {
         ),
       ),
       Layer.provideMerge(ServerConfig.layerTest(process.cwd(), baseDir)),
+      Layer.provideMerge(
+        Layer.mock(TerminalManager.TerminalManager)({ closeIdle: () => Effect.void }),
+      ),
       Layer.provideMerge(NodeServices.layer),
     );
     runtime = ManagedRuntime.make(layer);
@@ -629,6 +634,7 @@ describe("ProviderCommandReactor", () => {
       moveWorktree,
       pruneWorktrees,
       createWorktree,
+      closeIdleTerminals,
       refreshStatus,
       generateBranchName,
       generateThreadTitle,
@@ -755,6 +761,7 @@ describe("ProviderCommandReactor", () => {
     expect(thread?.session?.threadId).toBe("thread-1");
     expect(thread?.session?.status).toBe("starting");
     expect(thread?.session?.runtimeMode).toBe("approval-required");
+    expect(harness.startSession.mock.calls[0]?.[1]).not.toHaveProperty("title");
   });
 
   it("projects inline context before sending the provider turn", async () => {

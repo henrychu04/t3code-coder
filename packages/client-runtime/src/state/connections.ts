@@ -88,3 +88,11 @@ export function createEnvironmentCatalogAtoms<R, E>(
     retryNow,
   };
 }
+
+export function* enabledEnvironmentIds(
+  catalog: EnvironmentCatalogState,
+): Generator<EnvironmentIdType> {
+  for (const environmentId of catalog.entries.keys()) {
+    yield environmentId;
+  }
+}

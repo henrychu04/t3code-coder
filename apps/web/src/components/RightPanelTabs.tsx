@@ -362,7 +362,7 @@ function RightPanelEmptyState(props: {
         {action.badgeCount > 0 ? (
           <span
             aria-hidden
-            className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-[9px] font-semibold tabular-nums text-white"
+            className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold tabular-nums text-white"
           >
             {action.badgeCount}
           </span>
@@ -383,7 +383,7 @@ function RightPanelEmptyState(props: {
         "pb-[calc(var(--workspace-topbar-height)+--spacing(6))]",
       )}
     >
-      <div className="w-full max-w-xs">
+      <div className="w-full max-w-xs py-6">
         <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
         <div className="flex flex-col gap-0.5">
           {actions.map((action) => (

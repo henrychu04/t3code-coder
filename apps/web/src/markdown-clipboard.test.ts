@@ -14,6 +14,7 @@ class FakeText {
 
 class FakeElement {
   readonly nodeType = ELEMENT_NODE;
+  checked = false;
   readonly childNodes: Array<FakeElement | FakeText> = [];
   readonly classList = {
     contains: (name: string) => this.classNames.includes(name),
@@ -56,18 +57,31 @@ class FakeElement {
 
   /** Supports only the selectors markdown-clipboard actually asks for. */
   querySelector(selector: string): FakeElement | null {
+    if (selector.includes(", ")) {
+      for (const part of selector.split(", ")) {
+        const match = this.querySelector(part);
+        if (match) return match;
+      }
+      return null;
+    }
     const childOnly = selector.startsWith(":scope > ");
-    const target = childOnly ? selector.slice(":scope > ".length) : selector;
+    const [target, ...rest] = (childOnly ? selector.slice(":scope > ".length) : selector).split(
+      " > ",
+    );
     const matches = (element: FakeElement): boolean => {
       if (target === 'input[type="checkbox"]') {
         return element.tagName === "INPUT" && element.getAttribute("type") === "checkbox";
       }
-      return element.tagName === target.toUpperCase();
+      return element.tagName === target?.toUpperCase();
     };
     const search = (parent: FakeElement): FakeElement | null => {
       for (const child of parent.childNodes) {
         if (!(child instanceof FakeElement)) continue;
-        if (matches(child)) return child;
+        if (matches(child)) {
+          if (rest.length === 0) return child;
+          const nested = child.querySelector(`:scope > ${rest.join(" > ")}`);
+          if (nested) return nested;
+        }
         if (!childOnly) {
           const nested = search(child);
           if (nested) return nested;
