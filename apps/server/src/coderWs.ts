@@ -87,6 +87,7 @@ import * as ServerConfig from "./config.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as CoderVcsStatus from "./coderVcsStatus.ts";
+import { RepositoryIdentityResolver } from "./project/RepositoryIdentityResolver.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -472,6 +473,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
+    const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
     const git = yield* GitWorkflowService.GitWorkflowService;
     const gitVcs = yield* GitVcsDriver.GitVcsDriver;
     const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
@@ -1640,9 +1642,15 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.sourceControlCloneRepository]: (input) =>
         sourceControlRepositories.cloneRepository(input),
       [WS_METHODS.sourceControlPublishRepository]: (input) =>
-        sourceControlRepositories
-          .publishRepository(input)
-          .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
+        sourceControlRepositories.publishRepository(input).pipe(
+          // A new remote can change the cached identity. Only the `cwd` entry
+          // refreshes, so after a publish from a linked worktree the project
+          // root entry waits for its TTL.
+          Effect.tap(() =>
+            repositoryIdentityResolver.resolve(input.cwd, { refresh: true }).pipe(Effect.ignore),
+          ),
+          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+        ),
       [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
       [WS_METHODS.subscribeWorktreeSetup]: ({ threadId }) => worktreeSetupTracker.stream(threadId),
       [WS_METHODS.worktreeSetupCancel]: ({ threadId }) =>

@@ -331,7 +331,7 @@ export function providerModelsFromClaudeCapabilities(input: {
   }
 
   // Catalog entries remain available when the CLI reports only aliases. Unreported
-  // models retain safe modes until the workspace probe supplies their capabilities.
+  // built-in models retain safe modes until the workspace probe supplies their capabilities.
   if (input.version !== undefined) {
     for (const model of versionModels) {
       if (seen.has(model.slug)) continue;
@@ -339,7 +339,9 @@ export function providerModelsFromClaudeCapabilities(input: {
         ...model,
         capabilities: withSupportedRuntimeModes(
           model.capabilities ?? DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-          buildSupportedRuntimeModes({}),
+          buildSupportedRuntimeModes({
+            fullAccess: model.isCustom === true && !input.bypassPermissionsDisabled,
+          }),
         ),
       });
     }

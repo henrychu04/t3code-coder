@@ -361,3 +361,35 @@ it("does not dispatch unselected Codex catalog defaults", () => {
   });
   expect(state.modelOptionsForDispatch).toBeUndefined();
 });
+
+it("uses a selectable custom model's descriptors and preserves full-access", () => {
+  // An exact custom slug wins even when it collides with a Claude alias.
+  const state = getComposerProviderState({
+    provider: PROVIDER,
+    model: "opus",
+    models: [
+      { slug: "claude-opus-4-8", name: "Opus", isCustom: false, capabilities: {} },
+      {
+        slug: "opus",
+        name: "Custom Opus",
+        isCustom: true,
+        capabilities: {
+          optionDescriptors: [
+            selectDescriptor("effort", [
+              { id: "low", label: "Low" },
+              { id: "high", label: "High", isDefault: true },
+            ]),
+          ],
+          supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
+        },
+      },
+    ],
+    modelOptions: selections(["effort", "low"], ["unknown", "value"]),
+    planModeEnabled: false,
+  });
+  expect(state.promptEffort).toBe("low");
+  expect(state.modelOptionsForDispatch).toEqual(selections(["effort", "low"]));
+  const modes = resolveAvailableRuntimeModes("ready", state.supportedRuntimeModes);
+  expect(modes).toEqual(["approval-required", "auto-accept-edits", "full-access"]);
+  expect(resolveComposerRuntimeMode("full-access", modes)).toBe("full-access");
+});

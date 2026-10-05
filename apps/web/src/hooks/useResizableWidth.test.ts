@@ -1,84 +1,67 @@
 import * as Schema from "effect/Schema";
+import { act, createElement, useLayoutEffect } from "react";
+import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { reactHookHarness } from "../test/reactHookHarness";
 import { removeLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
+import { useResizableWidth, type UseResizableWidthOptions } from "./useResizableWidth";
 
-vi.mock("react", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("react")>();
-  const { reactHookHarness } = await import("../test/reactHookHarness");
-  return {
-    ...actual,
-    useCallback: reactHookHarness.useCallback,
-    useRef: reactHookHarness.useRef,
-    useState: reactHookHarness.useState,
-  };
-});
+let renderer: ReactTestRenderer | undefined;
+let width: number;
 
-vi.mock("react/compiler-runtime", async () => {
-  const { reactHookHarness } = await import("../test/reactHookHarness");
-  return { c: reactHookHarness.useMemoCache };
-});
+function Panel(options: UseResizableWidthOptions) {
+  const result = useResizableWidth(options);
+  useLayoutEffect(() => {
+    width = result.width;
+  });
+  return null;
+}
 
-import { useResizableWidth } from "./useResizableWidth";
+const initialOptions: UseResizableWidthOptions = {
+  storageKey: "panel-width",
+  defaultWidth: 576,
+  minWidth: 320,
+  maxWidth: 840,
+  edge: "left",
+};
+const measuredOptions = { ...initialOptions, defaultWidth: 384, maxWidth: 440 };
 
 describe("useResizableWidth", () => {
   beforeEach(() => {
-    reactHookHarness.reset();
     removeLocalStorageItem("panel-width");
+    const events = new EventTarget();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("window", {
+      addEventListener: events.addEventListener.bind(events),
+      removeEventListener: events.removeEventListener.bind(events),
+    });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(() => renderer?.unmount());
+    renderer = undefined;
     removeLocalStorageItem("panel-width");
     vi.unstubAllGlobals();
   });
 
-  it("tracks a changed default until the user chooses a width", () => {
-    reactHookHarness.beginRender();
-    const initial = useResizableWidth({
-      storageKey: "panel-width",
-      defaultWidth: 576,
-      minWidth: 320,
-      maxWidth: 840,
-      edge: "left",
+  it("tracks a changed default until the user chooses a width", async () => {
+    await act(() => {
+      renderer = create(createElement(Panel, initialOptions));
     });
+    expect(width).toBe(576);
 
-    reactHookHarness.beginRender();
-    const measured = useResizableWidth({
-      storageKey: "panel-width",
-      defaultWidth: 384,
-      minWidth: 320,
-      maxWidth: 440,
-      edge: "left",
-    });
-
-    expect(initial.width).toBe(576);
-    expect(measured.width).toBe(384);
+    await act(() => renderer!.update(createElement(Panel, measuredOptions)));
+    expect(width).toBe(384);
   });
 
-  it("preserves a saved width when the default changes", () => {
+  it("preserves a saved width when the default changes", async () => {
     setLocalStorageItem("panel-width", 400, Schema.Finite);
-    vi.stubGlobal("window", {});
-
-    reactHookHarness.beginRender();
-    const initial = useResizableWidth({
-      storageKey: "panel-width",
-      defaultWidth: 576,
-      minWidth: 320,
-      maxWidth: 840,
-      edge: "left",
+    await act(() => {
+      renderer = create(createElement(Panel, initialOptions));
     });
+    expect(width).toBe(400);
 
-    reactHookHarness.beginRender();
-    const measured = useResizableWidth({
-      storageKey: "panel-width",
-      defaultWidth: 384,
-      minWidth: 320,
-      maxWidth: 440,
-      edge: "left",
-    });
-
-    expect(initial.width).toBe(400);
-    expect(measured.width).toBe(400);
+    await act(() => renderer!.update(createElement(Panel, measuredOptions)));
+    expect(width).toBe(400);
   });
 });

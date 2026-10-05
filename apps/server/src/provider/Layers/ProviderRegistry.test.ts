@@ -99,6 +99,55 @@ describe("project catalogs", () => {
     }),
   );
 
+  it.effect("classifies latest versions after enriched snapshots reach the registry", () =>
+    Effect.gen(function* () {
+      const provider = makeProvider();
+      const updates = yield* PubSub.unbounded<ServerProvider>();
+      const instance = {
+        instanceId: provider.instanceId,
+        driverKind: provider.driver,
+        snapshot: {
+          getSnapshot: Effect.succeed(provider),
+          refresh: Effect.succeed(provider),
+          streamChanges: Stream.fromPubSub(updates),
+        },
+      } as unknown as ProviderInstance;
+      const registryLayer = ProviderRegistryLive.pipe(
+        Layer.provide(
+          Layer.succeed(ProviderInstanceRegistry, {
+            getInstance: () => Effect.succeed(instance),
+            listInstances: Effect.succeed([instance]),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.never,
+            subscribeChanges: PubSub.subscribe(yield* PubSub.unbounded<void>()),
+          }),
+        ),
+        Layer.provide(ServerConfig.layerTest("/project", { prefix: "t3-provider-compatibility-" })),
+      );
+      yield* Effect.gen(function* () {
+        const registry = yield* ProviderRegistry;
+        const update = yield* registry.streamChanges.pipe(Stream.runHead, Effect.forkScoped);
+        yield* Effect.yieldNow;
+        yield* PubSub.publish(updates, {
+          ...provider,
+          versionAdvisory: {
+            status: "behind_latest",
+            updateCommand: null,
+            canUpdate: false,
+            message: null,
+            currentVersion: provider.version,
+            latestVersion: "2.1.300",
+            checkedAt: provider.checkedAt,
+          },
+        });
+        yield* Fiber.join(update);
+        const snapshots = yield* registry.getProviders;
+        expect(snapshots[0]?.versionAdvisory?.latestVersion).toBe("2.1.300");
+        expect(snapshots[0]?.compatibilityAdvisory?.latestVersionStatus).toBe("supported");
+      }).pipe(Effect.provide(registryLayer));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
   it.effect("publishes catalog removal when an otherwise identical provider is rebuilt", () =>
     Effect.gen(function* () {
       const provider = makeProvider();

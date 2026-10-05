@@ -30,8 +30,9 @@ but provider sessions, repositories, terminals, and durable T3 state belong to t
 ### Providers are workspace capabilities
 
 T3 Coder supports Codex and Claude Code when their CLIs are available in the workspace. The app
-does not install either provider or move its credentials to the local computer. A workspace can
-connect with either provider present.
+does not install a missing provider or move its credentials to the local computer. On explicit
+request, it can update an existing workspace installation using its identified installer. A
+workspace can connect with either provider present.
 
 The model picker offers models only from providers that are enabled, available, and ready. If
 Codex is missing or unauthenticated, Claude remains usable when it is ready, and the reverse is

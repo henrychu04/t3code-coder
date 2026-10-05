@@ -101,5 +101,17 @@ export function applyProviderCompatibility(
   const { compatibilityAdvisory: _previous, ...base } = snapshot;
   if (!snapshot.enabled || !snapshot.installed) return base;
   const advisory = resolveProviderCompatibility(policies, snapshot.driver, snapshot.version);
-  return advisory ? { ...base, compatibilityAdvisory: advisory } : base;
+  const latestVersion = snapshot.versionAdvisory?.latestVersion;
+  const latestAdvisory = latestVersion
+    ? resolveProviderCompatibility(policies, snapshot.driver, latestVersion)
+    : undefined;
+  return advisory
+    ? {
+        ...base,
+        compatibilityAdvisory: {
+          ...advisory,
+          ...(latestAdvisory ? { latestVersionStatus: latestAdvisory.status } : {}),
+        },
+      }
+    : base;
 }

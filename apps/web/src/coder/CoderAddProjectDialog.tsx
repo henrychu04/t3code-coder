@@ -27,7 +27,6 @@ import {
 import { useCoder } from "../coder/CoderBootstrap";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { newProjectId } from "../lib/utils";
-import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { useEnvironment } from "../state/environments";
 import { useProjects } from "../state/entities";
 import { projectEnvironment } from "../state/projects";
@@ -165,10 +164,7 @@ export function CoderAddProjectDialog({
             title: inferProjectTitleFromPath(cwd),
             workspaceRoot: cwd,
             createWorkspaceRootIfMissing: false,
-            defaultModelSelection: resolveDefaultProviderModelSelection(
-              environment?.serverConfig?.providers ?? [],
-              null,
-            ),
+            defaultModelSelection: null,
           },
         });
         if (result._tag === "Failure") throw squashAtomCommandFailure(result);
