@@ -69,7 +69,7 @@ export function resolveCoderTextGenerationModelSelection(
       provider.enabled &&
       provider.availability !== "unavailable" &&
       provider.status === "ready" &&
-      provider.models.some((model) => !model.isCustom),
+      provider.models.length > 0,
   );
   const selectedProvider = candidates.find(
     (provider) => provider.instanceId === selection.instanceId,
@@ -77,14 +77,15 @@ export function resolveCoderTextGenerationModelSelection(
   const provider = selectedProvider ?? candidates[0];
   if (!provider) return selection;
 
-  const models = provider.models.filter((model) => !model.isCustom);
+  const models = provider.models;
   const selectedModel = selectedProvider
     ? models.find((model) => model.slug === selection.model)
     : undefined;
   if (selectedModel) return selection;
 
   const model =
-    models.find((candidate) => candidate.isDefault)?.slug ??
+    models.find((candidate) => candidate.isDefault && !candidate.isCustom)?.slug ??
+    models.find((candidate) => !candidate.isCustom)?.slug ??
     models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[provider.driver] ??
     DEFAULT_MODEL;

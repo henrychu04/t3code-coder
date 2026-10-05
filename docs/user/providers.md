@@ -1,8 +1,8 @@
 # Codex and Claude Code
 
 T3 Coder uses the Codex and Claude Code installations already available in the connected Coder
-workspace. It does not run a provider on the local computer, install a provider in the workspace,
-or copy provider credentials between them.
+workspace. It does not run a provider on the local computer, install a missing provider in the
+workspace, or copy provider credentials between them.
 
 This fork supports API-backed usage only. Subscription-backed ChatGPT and Claude consumer plans
 are outside the supported product scope. This describes the supported configuration, rather than
@@ -125,7 +125,14 @@ skills, and configured MCP servers disabled; title generation also runs outside 
 
 ## Update providers
 
+**Provider update checks** is on by default. For each enabled provider installed through an
+identifiable package manager, the workspace helper checks the npm registry (`registry.npmjs.org`)
+for its latest version. Manual installations are not checked. To turn these checks off, disable
+**Settings → General → Provider update checks** for the workspace.
+
 **Update all** in the sidebar updates outdated Codex and Claude installations on connected Coder
-workspaces. Hover it to see which installations will update. Only installations whose updater can
-be identified are included; manual-only installations must be updated in their workspace terminal.
-Updates sharing an installer run one at a time and report their results together.
+workspaces by running each provider’s identified installer inside its workspace. Hover it to see
+which installations will update. Only installations whose updater can be identified are included;
+manual-only installations must be updated in their workspace terminal.
+Updates to versions marked broken or unsupported by the bundled compatibility policy are not
+offered. Updates sharing an installer run one at a time and report their results together.

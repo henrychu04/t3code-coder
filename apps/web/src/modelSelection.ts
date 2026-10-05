@@ -7,7 +7,12 @@ import {
   ProviderInstanceId,
   type ServerProvider,
 } from "@t3tools/contracts";
-import { createModelSelection, resolveSelectableModel } from "@t3tools/shared/model";
+import {
+  type CustomModelDefinition,
+  createModelSelection,
+  readCustomModelEntries,
+  resolveSelectableModel,
+} from "@t3tools/shared/model";
 import { resolveCoderTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
@@ -24,7 +29,49 @@ import {
 } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
 
+const MAX_CUSTOM_MODEL_COUNT = 32;
+export const MAX_CUSTOM_MODEL_LENGTH = 256;
 const DEFAULT_TEXT_GENERATION_INSTANCE_ID = ProviderInstanceId.make("codex");
+
+/**
+ * Resolve the custom-model list for a given instance, preferring the
+ * instance's own `providerInstances[id].config.customModels` blob when
+ * present and falling back to the legacy per-kind
+ * `settings.providers[kind].customModels` bucket for default instances only.
+ *
+ * The Settings UI promotes the legacy bucket into an explicit
+ * `providerInstances[defaultId]` entry on every edit (the "migrate on
+ * first write" scheme documented in
+ * `ProviderInstanceRegistryHydration`), so this helper exists primarily
+ * so readers pick up that promotion immediately — and so first-time
+ * viewers on pre-migration settings still see their legacy list on
+ * default slots. Custom instances intentionally do not read the legacy
+ * per-driver bucket; otherwise one custom model added to `claude_openrouter`
+ * can appear on the stock `claudeAgent` instance.
+ */
+function readInstanceCustomModels(
+  settings: UnifiedSettings,
+  instanceId: ProviderInstanceId,
+  driverKind: ProviderDriverKind,
+): ReadonlyArray<CustomModelDefinition> {
+  const instance = settings.providerInstances?.[instanceId];
+  const config = instance?.config;
+  if (config !== null && typeof config === "object") {
+    const value = (config as Record<string, unknown>).customModels;
+    if (Array.isArray(value)) {
+      return readCustomModelEntries(value);
+    }
+  }
+  const defaultInstanceId = defaultInstanceIdForDriver(driverKind);
+  if (instanceId !== defaultInstanceId) {
+    return [];
+  }
+  const legacyProviders = settings.providers as Record<
+    string,
+    { readonly customModels: ReadonlyArray<unknown> } | undefined
+  >;
+  return readCustomModelEntries(legacyProviders[driverKind]?.customModels ?? []);
+}
 
 export interface AppModelOption {
   slug: string;
@@ -70,9 +117,35 @@ function applyInstanceModelPreferences(
 ): AppModelOption[] {
   const hiddenModels = new Set(preferences.hiddenModels);
   return sortModelsForProviderInstance(
-    options.filter((option) => !hiddenModels.has(option.slug)),
+    options.filter((option) => option.isCustom || !hiddenModels.has(option.slug)),
     { modelOrder: preferences.modelOrder },
   );
+}
+
+function normalizeCustomModelEntries(
+  models: ReadonlyArray<CustomModelDefinition>,
+  builtInModelSlugs: ReadonlySet<string>,
+): CustomModelDefinition[] {
+  const normalizedModels: CustomModelDefinition[] = [];
+  const seen = new Set<string>();
+
+  for (const candidate of models) {
+    if (
+      candidate.slug.length > MAX_CUSTOM_MODEL_LENGTH ||
+      builtInModelSlugs.has(candidate.slug) ||
+      seen.has(candidate.slug)
+    ) {
+      continue;
+    }
+
+    seen.add(candidate.slug);
+    normalizedModels.push(candidate);
+    if (normalizedModels.length >= MAX_CUSTOM_MODEL_COUNT) {
+      break;
+    }
+  }
+
+  return normalizedModels;
 }
 
 export function getAppModelOptions(
@@ -89,15 +162,37 @@ export function getAppModelOptions(
 }
 
 /**
- * Return the built-in models reported by one supported workspace provider.
- * Stored custom-model data remains decodable for compatibility but is not a
- * selectable T3 Coder product surface.
+ * Instance-scoped variant of {@link getAppModelOptions}. Built-in models
+ * come from the instance's own `entry.models` snapshot (rather than the
+ * first-matching-kind fallback in `getProviderModels`), so each custom
+ * instance gets the precise model list its driver reported. Custom model
+ * slugs come from the instance's own `providerInstances[id].config.customModels`
+ * when present, falling back to the legacy per-kind
+ * `settings.providers[driverKind].customModels` bucket for default
+ * instances only. This keeps two instances of the same kind from leaking
+ * custom slugs into each other. Custom rows reported by the server are
+ * ignored so a slug removed in Settings disappears without waiting for the
+ * next provider probe.
  */
 export function getAppModelOptionsForInstance(
   settings: UnifiedSettings,
   entry: ProviderInstanceEntry,
 ): AppModelOption[] {
-  const options = entry.models.filter((model) => !model.isCustom).map(toAppModelOption);
+  const options: AppModelOption[] = entry.models
+    .filter((model) => !model.isCustom)
+    .map(toAppModelOption);
+  const seen = new Set(options.map((option) => option.slug));
+  const builtInModelSlugs = new Set(options.map((option) => option.slug));
+
+  const customModels = readInstanceCustomModels(settings, entry.instanceId, entry.driverKind);
+  for (const custom of normalizeCustomModelEntries(customModels, builtInModelSlugs)) {
+    if (seen.has(custom.slug)) {
+      continue;
+    }
+
+    seen.add(custom.slug);
+    options.push({ slug: custom.slug, name: custom.name, isCustom: true });
+  }
 
   return applyInstanceModelPreferences(
     options,

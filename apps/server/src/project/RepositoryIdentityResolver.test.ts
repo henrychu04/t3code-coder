@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Duration from "effect/Duration";
+import { TestClock } from "effect/testing";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import * as ProcessRunner from "../processRunner.ts";
@@ -80,7 +82,7 @@ describe("repositoryPathFromRemoteUrl", () => {
     }),
   );
 
-  it.effect("retries Git root discovery after a failed lookup", () =>
+  it.effect("caches failed Git root discovery until an explicit refresh", () =>
     Effect.gen(function* () {
       let rootAttempts = 0;
       const process = ProcessRunner.ProcessRunner.of({
@@ -100,7 +102,10 @@ describe("repositoryPathFromRemoteUrl", () => {
       );
 
       expect(yield* resolver.resolve("/workspace/project/src")).toBeNull();
-      expect((yield* resolver.resolve("/workspace/project/src"))?.rootPath).toBe(
+      yield* TestClock.adjust(Duration.seconds(59));
+      expect(yield* resolver.resolve("/workspace/project/src")).toBeNull();
+      expect(rootAttempts).toBe(1);
+      expect((yield* resolver.resolve("/workspace/project/src", { refresh: true }))?.rootPath).toBe(
         "/workspace/project",
       );
       expect(rootAttempts).toBe(2);

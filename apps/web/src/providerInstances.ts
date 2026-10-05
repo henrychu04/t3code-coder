@@ -404,7 +404,7 @@ export function resolveDefaultProviderModelSelection(
     const entry = deriveCoderProviderInstanceEntries(providers).find(
       (candidate) => candidate.instanceId === instanceId,
     );
-    if (entry?.models.some((model) => !model.isCustom && model.slug === selection.model)) {
+    if (entry?.models.some((model) => model.slug === selection.model)) {
       return selection;
     }
   }

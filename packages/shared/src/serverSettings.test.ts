@@ -202,3 +202,15 @@ it("merges custom cleanup rules without losing inherited retention and replaces 
   ).toEqual({ mode: "off" });
   expect(applyServerSettingsPatch(changed, { worktreeCleanup: null }).worktreeCleanup).toBeNull();
 });
+
+it("preserves a custom generated-name model and options from the live snapshot", () => {
+  const snapshot = providerSnapshot({ instanceId: "codex", models: [{ slug: "custom" }] });
+  const custom = {
+    ...snapshot,
+    models: snapshot.models.map((model) => ({ ...model, isCustom: true })),
+  };
+  const selection = createModelSelection(custom.instanceId, "custom", [
+    { id: "effort", value: "high" },
+  ]);
+  expect(resolveCoderTextGenerationModelSelection(selection, [custom])).toBe(selection);
+});

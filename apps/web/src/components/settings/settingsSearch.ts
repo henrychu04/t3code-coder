@@ -379,6 +379,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["queue steer running turn send default behavior composer"],
   },
   {
+    id: "provider-update-checks",
+    title: "Provider update checks",
+    to: "/settings/general",
+    searchTerms: ["installed cli versions newer available codex claude"],
+    scope: "environment-defaults",
+  },
+  {
     id: "continue-threads-after-server-update",
     title: "Continue threads after restarts",
     to: "/settings/general",

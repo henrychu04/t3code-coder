@@ -1,4 +1,8 @@
 import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
+import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import { resolveSelectableModel } from "@t3tools/shared/model";
+import { getAppModelOptionsForInstance } from "../../modelSelection";
+import { scoreModelPickerSearch } from "./modelPickerSearch";
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { adjacentModelPickerProvider, shouldOfferModelPickerSetup } from "./ModelPickerContent";
@@ -106,4 +110,33 @@ it("offers setup for unready providers and permits keyboard access to their setu
       selectableUnavailableInstanceIds: new Set([unavailable.instanceId]),
     }),
   ).toBe(unavailable.instanceId);
+});
+
+it("offers configured custom models to picker search and selection", () => {
+  const providerEntry = { ...entry("ready"), instanceId: ProviderInstanceId.make("codex") };
+  const settings = {
+    ...DEFAULT_UNIFIED_SETTINGS,
+    providerInstances: {
+      [providerEntry.instanceId]: {
+        driver: providerEntry.driverKind,
+        config: { customModels: [{ slug: "custom-model", name: "Custom Display Name" }] },
+      },
+    },
+  };
+  const options = getAppModelOptionsForInstance(settings, providerEntry);
+  expect(shouldOfferModelPickerSetup(providerEntry, options)).toBe(false);
+  expect(options).toEqual([{ slug: "custom-model", name: "Custom Display Name", isCustom: true }]);
+  expect(
+    scoreModelPickerSearch(
+      {
+        ...options[0]!,
+        driverKind: providerEntry.driverKind,
+        providerDisplayName: providerEntry.displayName,
+      },
+      "custom display",
+    ),
+  ).not.toBeNull();
+  expect(resolveSelectableModel(providerEntry.driverKind, "custom-model", options)).toBe(
+    "custom-model",
+  );
 });

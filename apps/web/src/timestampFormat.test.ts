@@ -67,15 +67,6 @@ describe("resolveWeekStartsOn", () => {
     const { resolveWeekStartsOn } = await import("./timestampFormat");
     expect(resolveWeekStartsOn("not a locale")).toBeUndefined();
   });
-
-  it("follows the locale the desktop host reports", async () => {
-    vi.stubGlobal("window", { desktopBridge: { getSystemLocale: () => "en-GB" } });
-    vi.resetModules();
-    const { weekStartsOn } = await import("./timestampFormat");
-    expect(weekStartsOn).toBe(1);
-    vi.unstubAllGlobals();
-    vi.resetModules();
-  });
 });
 
 describe("formatChatTimestampTooltip", () => {

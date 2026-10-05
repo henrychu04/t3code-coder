@@ -527,3 +527,38 @@ it("uses the bundled catalog for missing models without widening unreported runt
   });
   assert.isFalse(oldModels.some((entry) => entry.slug === "claude-sonnet-5-5"));
 });
+
+it("gives declared and bare custom models the same modes while preserving descriptors", () => {
+  for (const bypassPermissionsDisabled of [false, true]) {
+    const models = providerModelsFromClaudeCapabilities({
+      models: [],
+      version: "2.1.300",
+      autoModeDisabled: false,
+      bypassPermissionsDisabled,
+      customModels: [
+        "plain-custom",
+        { slug: "described-custom", name: "Described", capabilities: { optionDescriptors: [] } },
+      ],
+    });
+    const expected = [
+      "approval-required",
+      "auto-accept-edits",
+      ...(!bypassPermissionsDisabled ? (["full-access"] as const) : []),
+    ] as const;
+    for (const slug of ["plain-custom", "described-custom"]) {
+      const model = models.find((entry) => entry.slug === slug);
+      assert.deepEqual(model?.capabilities?.supportedRuntimeModes, expected);
+      assert.equal(model?.isCustom, true);
+    }
+    assert.deepEqual(
+      models.find((entry) => entry.slug === "described-custom")?.capabilities?.optionDescriptors,
+      [],
+    );
+    for (const model of models.filter((entry) => !entry.isCustom)) {
+      assert.deepEqual(model.capabilities?.supportedRuntimeModes, [
+        "approval-required",
+        "auto-accept-edits",
+      ]);
+    }
+  }
+});

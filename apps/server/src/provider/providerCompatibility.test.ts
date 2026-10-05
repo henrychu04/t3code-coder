@@ -101,6 +101,39 @@ describe("provider compatibility", () => {
     );
   });
 
+  it("classifies the latest advertised version and clears stale classifications", () => {
+    for (const [latestVersion, expected] of [
+      ["0.9.0", "broken"],
+      ["1.0.0", "unsupported"],
+      ["1.5.0", "graceful"],
+      ["2.0.0", "supported"],
+      ["3.0.0", "unknown"],
+      [null, undefined],
+    ] as const) {
+      const classified = applyProviderCompatibility(
+        {
+          ...provider,
+          versionAdvisory: {
+            status: "behind_latest",
+            updateCommand: null,
+            canUpdate: false,
+            message: null,
+            currentVersion: provider.version,
+            latestVersion,
+            checkedAt: provider.checkedAt,
+          },
+        },
+        [policy],
+      );
+      assert.strictEqual(classified.compatibilityAdvisory?.latestVersionStatus, expected);
+      const { versionAdvisory: _versionAdvisory, ...withoutVersionAdvisory } = classified;
+      assert.isUndefined(
+        applyProviderCompatibility(withoutVersionAdvisory, [policy]).compatibilityAdvisory
+          ?.latestVersionStatus,
+      );
+    }
+  });
+
   it("rejects invalid ranges and recommendations outside the first supported match", () => {
     const decode = Schema.decodeUnknownSync(ProviderCompatibilityPolicy);
     assert.doesNotThrow(() => decode(policy));

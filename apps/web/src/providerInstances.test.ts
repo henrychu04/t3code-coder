@@ -560,3 +560,16 @@ describe("resolveDefaultProviderModelSelection", () => {
     ).toBeNull();
   });
 });
+
+it("preserves a custom project/default selection and its options", () => {
+  const instanceId = ProviderInstanceId.make("codex");
+  const stored = { instanceId, model: "custom", options: [{ id: "effort", value: "high" }] };
+  const providers = [
+    provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId,
+      models: [model("gpt-5.6", false, true), model("custom", true)],
+    }),
+  ];
+  expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+});

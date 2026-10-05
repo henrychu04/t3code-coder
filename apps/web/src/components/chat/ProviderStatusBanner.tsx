@@ -27,6 +27,7 @@ export function getProviderStatusBannerKey(status: ServerProvider | null): strin
       incompatible.message ?? "",
     ].join("\u0000");
   }
+  if (status.status === "ready") return null;
   return [status.instanceId, status.status, status.auth.status, status.message ?? ""].join(
     "\u0000",
   );
