@@ -752,7 +752,8 @@ const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMeta
 });
 
 export const WsSubscribeServerConfigRpc = Rpc.make(WS_METHODS.subscribeServerConfig, {
-  payload: Schema.Struct({}),
+  // Coder: only the supported environment-theme capability is negotiated; quota sources are absent.
+  payload: Schema.Struct({ environmentThemes: Schema.optional(Schema.Boolean) }),
   success: ServerConfigStreamEvent,
   error: ServerSettingsError,
   stream: true,

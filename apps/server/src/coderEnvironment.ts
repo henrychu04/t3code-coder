@@ -47,6 +47,7 @@ export const layer = Layer.effect(
         platform: { os: "linux", arch: platformArch() },
         serverVersion: process.env.T3_CODER_BUILD_VERSION?.trim() || packageJson.version,
         capabilities: {
+          environmentThemes: true,
           repositoryIdentity: true,
           requiredWorktreeBootstrap: true,
           projectCloneTracking: true,

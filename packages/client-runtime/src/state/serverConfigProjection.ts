@@ -7,13 +7,44 @@ export interface ServerConfigProjection {
   readonly source: "cache" | "live";
 }
 
+/**
+ * Cached config keeps the provider and model catalog available across reconnects.
+ * Published themes are current machine state, so a
+ * cache could restore a set the machine no longer reports. Replay sends themes
+ * as separate events.
+ */
+// Coder: API-only config omits upstream subscription quota sources.
+export function withoutEnvironmentThemes(config: ServerConfig): ServerConfig {
+  if (config.environmentThemes === undefined) {
+    return config;
+  }
+  const { environmentThemes: _themes, ...rest } = config;
+  return rest;
+}
+
 export function applyServerConfigProjection(
   current: Option.Option<ServerConfigProjection>,
   event: ServerConfigStreamEvent,
 ): Option.Option<ServerConfigProjection> {
   switch (event.type) {
-    case "snapshot":
-      return Option.some({ config: event.config, latestEvent: event, source: "live" });
+    case "snapshot": {
+      // Wire snapshots never contain published themes. Keep the previous set
+      // until a capable server sends its authoritative theme event. A legacy
+      // server cannot send a later removal, so a downgrade must clear the set.
+      const capabilities = event.config.environment.capabilities;
+      const carriedThemes =
+        capabilities.environmentThemes === true && Option.isSome(current)
+          ? current.value.config.environmentThemes
+          : undefined;
+      return Option.some({
+        config: {
+          ...event.config,
+          ...(carriedThemes === undefined ? {} : { environmentThemes: carriedThemes }),
+        },
+        latestEvent: event,
+        source: "live" as const,
+      });
+    }
     case "keybindingsUpdated":
       return Option.map(current, (projection) => ({
         config: {
@@ -24,43 +55,30 @@ export function applyServerConfigProjection(
         latestEvent: event,
         source: "live",
       }));
-    case "providerUpdated":
+    case "providerStatuses":
       return Option.map(current, (projection) => ({
         config: {
           ...projection.config,
-          providers: projection.config.providers.some(
-            (provider) => provider.instanceId === event.payload.provider.instanceId,
-          )
-            ? projection.config.providers.map((provider) =>
-                provider.instanceId === event.payload.provider.instanceId
-                  ? event.payload.provider
-                  : provider,
-              )
-            : [...projection.config.providers, event.payload.provider],
+          providers: event.payload.providers,
         },
         latestEvent: event,
         source: "live",
       }));
-    case "providerRemoved":
+    case "settingsUpdated":
       return Option.map(current, (projection) => ({
         config: {
           ...projection.config,
-          providers: projection.config.providers.filter(
-            (provider) => provider.instanceId !== event.payload.instanceId,
-          ),
+          settings: event.payload.settings,
         },
         latestEvent: event,
         source: "live",
       }));
     case "environmentThemesUpdated":
       return Option.map(current, (projection) => ({
-        config: { ...projection.config, environmentThemes: event.payload.themes },
-        latestEvent: event,
-        source: "live",
-      }));
-    case "settingsUpdated":
-      return Option.map(current, (projection) => ({
-        config: { ...projection.config, settings: event.payload.settings },
+        config: {
+          ...projection.config,
+          environmentThemes: event.payload.themes.length > 0 ? event.payload.themes : undefined,
+        },
         latestEvent: event,
         source: "live",
       }));

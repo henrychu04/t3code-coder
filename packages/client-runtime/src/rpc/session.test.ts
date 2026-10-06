@@ -159,7 +159,7 @@ const completeInitialConfig = Effect.fn("TestRpcSessionFactory.completeInitialCo
   expect(request).toMatchObject({
     _tag: "Request",
     tag: WS_METHODS.subscribeServerConfig,
-    payload: {},
+    payload: { environmentThemes: true },
   });
   socket.serverMessage(
     encodeJson({
@@ -205,7 +205,7 @@ describe("RpcSessionFactory", () => {
         yield* Fiber.join(readyFiber);
 
         const collectTwo = session
-          .subscribeServerConfig({})
+          .subscribeServerConfig({ environmentThemes: true })
           .pipe(Stream.take(2), Stream.runCollect);
         const firstSubscriber = yield* Effect.forkChild(collectTwo);
         const secondSubscriber = yield* Effect.forkChild(collectTwo);
@@ -245,7 +245,9 @@ describe("RpcSessionFactory", () => {
           1,
         );
 
-        const replay = yield* session.subscribeServerConfig({}).pipe(Stream.runHead);
+        const replay = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(Stream.runHead);
         expect(replay).toMatchObject({
           _tag: "Some",
           value: {
@@ -263,7 +265,7 @@ describe("RpcSessionFactory", () => {
         const session = yield* factory.connect(PREPARED);
         const readyFiber = yield* Effect.forkChild(Effect.flip(session.ready));
         const configFiber = yield* session
-          .subscribeServerConfig({})
+          .subscribeServerConfig({ environmentThemes: true })
           .pipe(Stream.runHead, Effect.flip, Effect.forkChild);
         const socket = yield* awaitSocket(sockets);
         socket.open();
@@ -281,6 +283,59 @@ describe("RpcSessionFactory", () => {
           message: "Connected environment environment-2 does not match environment-1.",
         });
         expect((yield* Fiber.join(configFiber))._tag).toBe("RpcClientError");
+      }),
+    ),
+  );
+  it.effect("replays themes separately from the config snapshot to later consumers", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { factory, sockets } = yield* makeFactory();
+        const session = yield* factory.connect(PREPARED);
+        const readyFiber = yield* Effect.forkChild(session.ready);
+        const socket = yield* awaitSocket(sockets);
+        socket.open();
+        yield* completeInitialConfig(socket, {
+          ...ENCODED_SERVER_CONFIG,
+          environment: {
+            ...ENCODED_SERVER_CONFIG.environment,
+            capabilities: {
+              ...ENCODED_SERVER_CONFIG.environment.capabilities,
+              environmentThemes: true,
+            },
+          },
+        });
+        yield* Fiber.join(readyFiber);
+        const eventsFiber = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(Stream.take(2), Stream.runCollect, Effect.forkChild);
+        yield* Effect.yieldNow;
+        const request = yield* awaitRequest(socket);
+        const themes = [
+          { id: "night", name: "Night", appearance: "dark", canvas: "#111111", accent: "#ff8800" },
+        ];
+        socket.serverMessage(
+          encodeJson({
+            _tag: "Chunk",
+            requestId: request.id,
+            values: [{ version: 1, type: "environmentThemesUpdated", payload: { themes } }],
+          }),
+        );
+        const first = yield* Fiber.join(eventsFiber);
+        expect(first.map((event) => event.type)).toEqual(["snapshot", "environmentThemesUpdated"]);
+        const replay = yield* session
+          .subscribeServerConfig({ environmentThemes: true })
+          .pipe(Stream.take(2), Stream.runCollect);
+        expect(replay.map((event) => event.type)).toEqual(["snapshot", "environmentThemesUpdated"]);
+        if (replay[0]?.type === "snapshot")
+          expect(replay[0].config.environmentThemes).toBeUndefined();
+        expect(replay[1]).toEqual({
+          version: 1,
+          type: "environmentThemesUpdated",
+          payload: { themes },
+        });
+        expect(socket.sent.map((message) => decodeJson(message)).filter(isRpcRequest)).toHaveLength(
+          1,
+        );
       }),
     ),
   );

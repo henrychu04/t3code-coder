@@ -79,13 +79,14 @@ WebSocket server, or other listening socket. Closing the Coder connection stops 
 active turn. Reloading or temporarily disconnecting the browser does not stop the helper; the
 gateway keeps it attached and reconnects the loopback WebSocket. If the helper or Coder SSH process
 exits, the next browser connection runs preflight again and starts a fresh foreground helper.
-Shell and thread subscriptions always emit a `synchronized` item between their initial
-snapshot/replay and live events. The browser does not negotiate this guarantee: it keeps restored
-data in `synchronizing` state until the item arrives, except for upstream's warm resume behavior:
-a recently viewed live thread renders its retained snapshot immediately and only shows synchronization
-progress if replay changes its contents. Every subscription still waits for the completion marker
-internally and requests a clean connection retry if it is missing for 15 seconds. These guarantees
-define helper protocol version 2; older helpers are not accepted or adapted.
+Shell and thread subscriptions use upstream's optional `requestCompletionMarker` negotiation.
+The helper advertises `shellResumeCompletionMarker`, `threadResumeCompletionMarker`, and
+`threadSnapshotPagination`, and the browser requests the corresponding `synchronized` items.
+Restored data stays in `synchronizing` state until the marker arrives, except for upstream's warm
+resume behavior: a recently viewed live thread renders its retained snapshot immediately and only
+shows synchronization progress if replay changes its contents. The marker follows buffered live
+events accumulated during snapshot or replay loading. The browser and helper are built from the
+same checkout; helper protocol version 2 remains the transport compatibility fence.
 
 Live shell and thread subscriptions retain at most 1,000 events and 8 MiB of serialized live data
 per subscription, including batches awaiting an RPC acknowledgement. Overflow detaches that live
@@ -103,11 +104,12 @@ existing bounded memory-only cache.
 
 The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
-receive a complete capped snapshot. Shell subscriptions coalesce filtered high-frequency activity
-into cursor-only watermarks so reconnect cursors advance without reprojecting sidebar rows. The
-browser applies each bounded received RPC batch with one state write, retaining those watermarks
-and the mandatory synchronization marker. Migration 049 stores manual active-thread order in the
-workspace. Initial thread snapshots target 512 KiB and older pages target 1 MiB by reducing the requested turn window;
+receive a complete capped snapshot. Shell subscriptions use upstream's per-aggregate coalescing
+window, projecting the latest project or thread state once per batch. Thread subscriptions use
+upstream's live-event coalescer and per-thread replay limits, including the serialized replay
+payload budget. The browser applies each bounded received RPC batch with one state write.
+Migration 049 stores manual active-thread order in the workspace. Initial thread snapshots target
+512 KiB and older pages target 1 MiB by reducing the requested turn window;
 the newest requested turn is always retained, even when that one turn exceeds the target. Older
 pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
 and immutable, use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
@@ -499,10 +501,38 @@ Shared product subsystems are upstream's code with the Coder deltas below layere
 syncing, take upstream's version of these files and reapply only these seams; a difference not
 listed here is drift to remove rather than fork behavior to keep.
 
-- **Transport.** The browser reaches the helper through the gateway's stdio bridge. Upstream's
-  environment HTTP loaders, relay, pairing, and account routing are absent. Coder adds
-  `orchestration.getThreadSnapshot` and cursor-only shell watermarks (see
-  [Runtime boundary](#runtime-boundary)).
+- **Transport and RPC handlers.** `coderWs.ts` follows upstream's `ws.ts` handler and helper
+  order, using `CoderWsRpcGroup.toLayer` over the gateway's stdio bridge. Bootstrap preparation,
+  setup activities, cancellation, archive cleanup, clone identity refresh, MR sync-key resolution,
+  and `server:` command IDs follow upstream, including its behavior of preserving a worktree
+  after a non-cancel bootstrap failure. Reapply only these differences, each marked `Coder:` in
+  code (see [Runtime boundary](#runtime-boundary)):
+  - No HTTP/WebSocket listener, auth/session scopes, pairing, relay, client-origin attribution,
+    analytics, RPC metrics, or trace export. `CoderRuntimeStartup` completes before the RPC
+    layer is built, replacing upstream's startup command queue. Lifecycle welcome/ready events
+    are synthesized from workspace projections rather than a startup publisher.
+  - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
+    remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
+    keybinding-config load falls back to defaults because the trimmed config RPC has no error
+    channel for it. Config updates use upstream's full `providerStatuses` events and gated
+    environment themes; subscriptions do not force a provider refresh.
+  - Shell/thread streams, replay validation, live-event budgets and coalescing, completion-marker
+    negotiation, and capability flags follow upstream. Coder replaces HTTP thread snapshot
+    loading with `orchestration.getThreadSnapshot` over stdio. Initial snapshots and older pages
+    retain `targetBytes` budgeting and the newest requested turn. Shell and thread snapshots
+    that exceed the stdio frame bound fail before transport encoding. Shell snapshot loading
+    uses upstream's socket fallback because no HTTP shell loader exists.
+  - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials.
+    Thread MR links must belong to a known GitLab host. Project-settings migration retains its
+    accepted-command receipt check so retries cannot overwrite settings.
+  - Files listings, reads, writes, content search, and media reads verify the requesting thread's
+    project root. Path-only FFF errors and stale-write errors retain the fork's bounded-service
+    error mapping.
+  - Coder-only methods remain beside their upstream neighbors: local ref status, managed
+    branch/worktree rename with `moveWorktree`, write-access probing, chunked review files,
+    bounded text/content/media and legacy-artifact reads, fixed project-config reads, workspace
+    directory listing, workspace-provider slash commands, and merge-request diffs. The method
+    set stays `CoderWsRpcGroup`; unsupported upstream methods stay omitted.
 - **Runtime modes.** New threads default to `approval-required` rather than upstream's
   `full-access`. Until a provider reports its supported modes, the composer and the Codex adapter
   offer only the safe modes.
@@ -573,10 +603,12 @@ listed here is drift to remove rather than fork behavior to keep.
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
-  pairing, or `keybindings.json` editor.
+  pairing, external agent-session imports, or `keybindings.json` editor.
 - **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last
-  project grouping mode stay in memory where upstream uses browser storage. Composer drafts and
-  the prompt stash keep text in browser storage but never image bytes.
+  project grouping mode stay in memory where upstream uses browser storage. The upstream idle
+  thread-snapshot retention lifecycle keeps Coder's 24-thread / 64 MiB cap because projections
+  cannot fall back to durable browser storage. Composer drafts and the prompt stash keep text in
+  browser storage but never image bytes.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab.
 

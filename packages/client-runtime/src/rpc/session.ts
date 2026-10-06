@@ -31,6 +31,7 @@ import type {
 import { ConnectionTransientError as ConnectionTransientErrorClass } from "../connection/model.ts";
 import {
   applyServerConfigProjection,
+  withoutEnvironmentThemes,
   type ServerConfigProjection,
 } from "../state/serverConfigProjection.ts";
 import { makeWsRpcProtocolClient, type WsRpcProtocolClient } from "./protocol.ts";
@@ -76,6 +77,9 @@ type ServerConfigSubscriptionInput = Parameters<
 interface ServerConfigReplayState {
   readonly projection: ServerConfigProjection;
   readonly revision: number;
+  readonly themesEvent:
+    | Extract<ServerConfigStreamEvent, { type: "environmentThemesUpdated" }>
+    | undefined;
 }
 
 interface BufferedServerConfigEvent {
@@ -87,13 +91,12 @@ interface BufferedServerConfigEvent {
 function serverConfigReplayEvents(
   state: ServerConfigReplayState,
 ): ReadonlyArray<ServerConfigStreamEvent> {
-  return [
-    {
-      version: 1,
-      type: "snapshot",
-      config: state.projection.config,
-    },
-  ];
+  const snapshot = {
+    version: 1 as const,
+    type: "snapshot" as const,
+    config: withoutEnvironmentThemes(state.projection.config),
+  };
+  return [snapshot, ...(state.themesEvent === undefined ? [] : [state.themesEvent])];
 }
 
 function mapSessionRpcError(
@@ -115,7 +118,8 @@ function mapSessionRpcError(
 
 const make = Effect.gen(function* () {
   const webSocketConstructor = yield* Socket.WebSocketConstructor;
-  const serverConfigInput: ServerConfigSubscriptionInput = {};
+  // Coder: supported config negotiation includes themes, without quota-source protocols.
+  const serverConfigInput: ServerConfigSubscriptionInput = { environmentThemes: true };
 
   const connect = Effect.fnUntraced(function* (connection: PreparedConnection) {
     yield* Effect.annotateCurrentSpan({
@@ -191,6 +195,13 @@ const make = Effect.gen(function* () {
                 onNone: () => 1,
                 onSome: (state) => state.revision + 1,
               }),
+              themesEvent:
+                event.type === "environmentThemesUpdated"
+                  ? event
+                  : event.type === "snapshot" &&
+                      event.config.environment.capabilities.environmentThemes !== true
+                    ? undefined
+                    : Option.getOrUndefined(current)?.themesEvent,
             } satisfies ServerConfigReplayState;
             return [
               Option.some({ event, replay: next, revision: next.revision }),

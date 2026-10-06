@@ -93,6 +93,41 @@ export const makeLiveStreamBudget = Effect.fn("makeLiveStreamBudget")(function* 
       return Effect.succeed(item);
     });
 
+  // Replace one coalescing batch atomically. Queued and coalesced payloads
+  // count against the same budget, and discarded updates release their charge.
+  const replace = <A extends object>(
+    previous: ReadonlyArray<RetainedLiveItem<unknown>>,
+    values: ReadonlyArray<A>,
+    payload: (value: A) => object = (value) => value,
+  ) =>
+    Effect.suspend(() => {
+      if (failure) {
+        return Effect.fail(failure);
+      }
+      const next = values.map((value) => ({
+        value,
+        serializedBytes: serializedSize(payload(value)),
+      }));
+      let nextItems = retained.size + next.length;
+      let nextSerializedBytes =
+        retainedSerializedBytes + next.reduce((sum, item) => sum + item.serializedBytes, 0);
+      for (const item of previous) {
+        if (retained.has(item)) {
+          nextItems -= 1;
+          nextSerializedBytes -= item.serializedBytes;
+        }
+      }
+      if (nextItems > maxItems || nextSerializedBytes > maxSerializedBytes) {
+        return overflow(nextItems, nextSerializedBytes);
+      }
+      release(previous);
+      for (const item of next) {
+        retained.add(item);
+      }
+      retainedSerializedBytes = nextSerializedBytes;
+      return Effect.succeed(next);
+    });
+
   const deliver = <A, E, R>(stream: Stream.Stream<RetainedLiveItem<A>, E, R>) =>
     Stream.fromPull(
       Effect.gen(function* () {
@@ -150,8 +185,10 @@ export const makeLiveStreamBudget = Effect.fn("makeLiveStreamBudget")(function* 
 
   return {
     retain,
+    replace,
     release,
     deliver,
+    check,
     failed: Deferred.await(failed),
     closed: Deferred.await(cleanupComplete),
     usage: Effect.sync(() => ({ retainedItems: retained.size, retainedSerializedBytes })),

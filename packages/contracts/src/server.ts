@@ -335,8 +335,19 @@ export const ServerConfig = Schema.Struct({
   keybindings: ResolvedKeybindingsConfig,
   issues: ServerConfigIssues,
   providers: ServerProviders,
-  environmentThemes: Schema.optional(Schema.Array(EnvironmentTheme).check(Schema.isMaxLength(32))),
+  /** Published only by the opt-in theme stream; snapshots omit it. */
+  environmentThemes: Schema.optional(Schema.Array(EnvironmentTheme)),
   settings: ServerSettings,
+  /** Whether shell subscriptions can emit an opt-in catch-up completion marker. */
+  shellResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /** Whether thread subscriptions can emit an opt-in catch-up completion marker. */
+  threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
+  /**
+   * Whether thread detail reads accept a turn window (`turnLimit`/
+   * `beforeCursor`) and return `page` metadata. Clients must not send window
+   * fields to servers that don't advertise this.
+   */
+  threadSnapshotPagination: Schema.optionalKey(Schema.Boolean),
   reasoningMessages: Schema.optionalKey(Schema.Boolean),
 });
 export type ServerConfig = typeof ServerConfig.Type;
@@ -381,10 +392,11 @@ export const ServerConfigKeybindingsUpdatedPayload = Schema.Struct({
 });
 export type ServerConfigKeybindingsUpdatedPayload =
   typeof ServerConfigKeybindingsUpdatedPayload.Type;
-export const ServerConfigProviderUpdatedPayload = Schema.Struct({ provider: ServerProvider });
-export type ServerConfigProviderUpdatedPayload = typeof ServerConfigProviderUpdatedPayload.Type;
-export const ServerConfigProviderRemovedPayload = Schema.Struct({ instanceId: ProviderInstanceId });
-export type ServerConfigProviderRemovedPayload = typeof ServerConfigProviderRemovedPayload.Type;
+export const ServerConfigProviderStatusesPayload = Schema.Struct({
+  providers: ServerProviders,
+});
+export type ServerConfigProviderStatusesPayload = typeof ServerConfigProviderStatusesPayload.Type;
+
 export const ServerConfigSettingsUpdatedPayload = Schema.Struct({ settings: ServerSettings });
 export type ServerConfigSettingsUpdatedPayload = typeof ServerConfigSettingsUpdatedPayload.Type;
 
@@ -401,20 +413,14 @@ export const ServerConfigStreamKeybindingsUpdatedEvent = Schema.Struct({
 });
 export type ServerConfigStreamKeybindingsUpdatedEvent =
   typeof ServerConfigStreamKeybindingsUpdatedEvent.Type;
-export const ServerConfigStreamProviderUpdatedEvent = Schema.Struct({
+export const ServerConfigStreamProviderStatusesEvent = Schema.Struct({
   version: Schema.Literal(1),
-  type: Schema.Literal("providerUpdated"),
-  payload: ServerConfigProviderUpdatedPayload,
+  type: Schema.Literal("providerStatuses"),
+  payload: ServerConfigProviderStatusesPayload,
 });
-export type ServerConfigStreamProviderUpdatedEvent =
-  typeof ServerConfigStreamProviderUpdatedEvent.Type;
-export const ServerConfigStreamProviderRemovedEvent = Schema.Struct({
-  version: Schema.Literal(1),
-  type: Schema.Literal("providerRemoved"),
-  payload: ServerConfigProviderRemovedPayload,
-});
-export type ServerConfigStreamProviderRemovedEvent =
-  typeof ServerConfigStreamProviderRemovedEvent.Type;
+export type ServerConfigStreamProviderStatusesEvent =
+  typeof ServerConfigStreamProviderStatusesEvent.Type;
+
 export const ServerConfigStreamSettingsUpdatedEvent = Schema.Struct({
   version: Schema.Literal(1),
   type: Schema.Literal("settingsUpdated"),
@@ -431,8 +437,7 @@ export const ServerConfigStreamEvent = Schema.Union([
   ServerConfigStreamSnapshotEvent,
   ServerConfigStreamEnvironmentThemesUpdatedEvent,
   ServerConfigStreamKeybindingsUpdatedEvent,
-  ServerConfigStreamProviderUpdatedEvent,
-  ServerConfigStreamProviderRemovedEvent,
+  ServerConfigStreamProviderStatusesEvent,
   ServerConfigStreamSettingsUpdatedEvent,
 ]);
 export type ServerConfigStreamEvent = typeof ServerConfigStreamEvent.Type;

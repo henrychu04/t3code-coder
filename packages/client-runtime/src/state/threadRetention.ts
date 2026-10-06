@@ -2,6 +2,7 @@
 // when the last detail consumer leaves.
 export const THREAD_SNAPSHOT_IDLE_TTL_MS = 5 * 60_000;
 
+// Coder: memory-only browser caches need a 24-thread/64 MiB retention bound.
 // Match the browser's settled-thread cache limits for the additional resume
 // snapshots. Active views own their data; only idle snapshots count here.
 const THREAD_SNAPSHOT_MAX_BYTES = 64 * 1024 * 1024;

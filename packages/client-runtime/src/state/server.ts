@@ -27,6 +27,7 @@ import {
 } from "./runtime.ts";
 import {
   applyServerConfigProjection,
+  withoutEnvironmentThemes,
   type ServerConfigProjection,
 } from "./serverConfigProjection.ts";
 
@@ -71,7 +72,7 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
     const persistence = yield* Queue.sliding<ServerConfig>(1);
     const pendingPersistence = yield* Ref.make<Option.Option<ServerConfig>>(Option.none());
     const persist = (config: ServerConfig) =>
-      cache.saveServerConfig(environmentId, config).pipe(
+      cache.saveServerConfig(environmentId, withoutEnvironmentThemes(config)).pipe(
         Effect.as(true),
         Effect.catch((error) =>
           Effect.logWarning("Could not persist cached server configuration.").pipe(
@@ -97,7 +98,7 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
       Effect.forkScoped,
     );
 
-    yield* subscribe(WS_METHODS.subscribeServerConfig, {}).pipe(
+    yield* subscribe(WS_METHODS.subscribeServerConfig, { environmentThemes: true }).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           const next = applyServerConfigProjection(yield* SubscriptionRef.get(state), event);
