@@ -44,8 +44,9 @@ claim: shared provider protocols may still report subscription metadata.
 
 ## Non-negotiable boundary
 
-- Keep the local gateway on IPv4 loopback with an ephemeral port, exact Host/Origin checks, no
-  CORS, and no application authentication token.
+- Keep the local gateway on IPv4 loopback with exact Host/Origin checks, no CORS, and no
+  application authentication token. It reuses its last port when that port is free, so browser
+  storage keeps one origin across restarts, and otherwise binds an ephemeral port.
 - The installed Coder CLI is the only process allowed to make a non-loopback workspace connection.
   OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated composer-image
   uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
@@ -65,12 +66,15 @@ claim: shared provider protocols may still report subscription metadata.
   provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
   non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
-  rules, and ephemeral staging of validated composer images in an OS temporary directory. Delete
-  staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
+  rules, the last gateway port, and ephemeral staging of validated composer images in an OS
+  temporary directory. Delete staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Browser storage may additionally keep UI preferences and, as on main, the text of unsent composer
-  drafts and stashed prompts, including their terminal excerpts. Never store image bytes, upload
-  IDs, credentials, or other application data there.
+  drafts and stashed prompts, including their terminal excerpts, and main's IndexedDB caches of
+  environment shells, thread snapshots, server config, and branch lists. These caches are keyed by
+  environment and cleared when a workspace is removed from the Coder config; the workspace stays
+  the source of truth. Never store image bytes, upload IDs, credentials, or other application data
+  there.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
   transfer, or background file synchronization. The only exceptions are listed below; each is
   scoped to its own mechanism and authorizes nothing beyond it.

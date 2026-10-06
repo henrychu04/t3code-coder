@@ -174,6 +174,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
     networkStatus: yield* SubscriptionRef.make<NetworkStatus>("online"),
     start: Effect.void,
     reconcilePlatform: () => Effect.die("Unexpected environment reconciliation"),
+    remove: () => Effect.die("Unexpected environment removal"),
     retryNow: () => Effect.void,
     state: () => SubscriptionRef.get(supervisor.state),
     stateChanges: () => SubscriptionRef.changes(supervisor.state),

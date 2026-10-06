@@ -63,9 +63,11 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
         ),
       );
     const state = yield* SubscriptionRef.make<Option.Option<ServerConfigProjection>>(
-      Option.map(cachedConfig, (config) => ({
-        config,
-        latestEvent: cachedConfigSnapshotEvent(config),
+      // Stripped on load as well as on save: a cache written by an earlier
+      // build can still carry published themes.
+      Option.map(cachedConfig, (cached) => ({
+        config: withoutEnvironmentThemes(cached),
+        latestEvent: cachedConfigSnapshotEvent(withoutEnvironmentThemes(cached)),
         source: "cache" as const,
       })),
     );

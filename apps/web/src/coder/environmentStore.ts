@@ -1,4 +1,4 @@
-import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
+import type { EnvironmentId, ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 
 export interface CoderWorkspaceEnvironment {
   readonly workspaceId: string;
@@ -8,6 +8,11 @@ export interface CoderWorkspaceEnvironment {
 let environments: readonly CoderWorkspaceEnvironment[] = [];
 let workspaceOrder: readonly string[] = [];
 const listeners = new Set<() => void>();
+// Coder: a workspace also leaves `environments` while stopped or disconnected. Remember each
+// connected workspace's environment for this session only, so removing the workspace from the
+// config can still clear its browser data.
+const knownEnvironmentIds = new Map<string, EnvironmentId>();
+const removalListeners = new Set<(environmentId: EnvironmentId) => void>();
 
 function sortEnvironments(
   values: readonly CoderWorkspaceEnvironment[],
@@ -37,6 +42,7 @@ export function setCoderWorkspaceEnvironment(
 ): void {
   const next = environments.filter((entry) => entry.workspaceId !== workspaceId);
   environments = sortEnvironments([...next, { workspaceId, descriptor }]);
+  knownEnvironmentIds.set(workspaceId, descriptor.environmentId);
   for (const listener of listeners) listener();
 }
 
@@ -45,6 +51,11 @@ export function setCoderWorkspaceOrder(workspaceIds: readonly string[]): void {
   const allowed = new Set(workspaceIds);
   environments = sortEnvironments(environments.filter((entry) => allowed.has(entry.workspaceId)));
   for (const listener of listeners) listener();
+  for (const [workspaceId, environmentId] of knownEnvironmentIds) {
+    if (allowed.has(workspaceId)) continue;
+    knownEnvironmentIds.delete(workspaceId);
+    for (const listener of removalListeners) listener(environmentId);
+  }
 }
 
 export function removeCoderWorkspaceEnvironment(workspaceId: string): void {
@@ -57,4 +68,12 @@ export function removeCoderWorkspaceEnvironment(workspaceId: string): void {
 export function subscribeCoderWorkspaceEnvironments(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Reports environments whose workspace was removed from the Coder config. */
+export function subscribeCoderWorkspaceEnvironmentRemovals(
+  listener: (environmentId: EnvironmentId) => void,
+): () => void {
+  removalListeners.add(listener);
+  return () => removalListeners.delete(listener);
 }

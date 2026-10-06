@@ -9,6 +9,7 @@ import {
   Wakeups,
 } from "@t3tools/client-runtime/connection";
 import { EnvironmentRpcRequestObserver } from "@t3tools/client-runtime/rpc";
+import type { EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
@@ -17,6 +18,7 @@ import * as Stream from "effect/Stream";
 import { clearComposerDraftsEnvironment } from "../composerDraftStore";
 import {
   readCoderWorkspaceEnvironments,
+  subscribeCoderWorkspaceEnvironmentRemovals,
   subscribeCoderWorkspaceEnvironments,
 } from "../coder/environmentStore";
 import { acknowledgeRpcRequest, trackRpcRequestSent } from "../rpc/requestLatencyState";
@@ -78,6 +80,16 @@ const platformConnectionSourceLayer = Layer.effect(
           (unsubscribe) => Effect.sync(unsubscribe),
         ).pipe(Effect.asVoid),
       ),
+      removedEnvironmentIds: Stream.callback<EnvironmentId>((queue) =>
+        Effect.acquireRelease(
+          Effect.sync(() =>
+            subscribeCoderWorkspaceEnvironmentRemovals((environmentId) => {
+              Queue.offerUnsafe(queue, environmentId);
+            }),
+          ),
+          (unsubscribe) => Effect.sync(unsubscribe),
+        ).pipe(Effect.asVoid),
+      ),
     });
   }),
 );
@@ -101,15 +113,19 @@ const rpcRequestObserverLayer = Layer.succeed(
   }),
 );
 
-type ConnectionPlatformServices =
-  | Layer.Success<typeof connectionStorageLayer>
-  | Layer.Success<typeof connectivityLayer>
-  | Layer.Success<typeof wakeupsLayer>
-  | Layer.Success<typeof platformConnectionSourceLayer>
-  | Layer.Success<typeof environmentOwnedDataCleanupLayer>
-  | Layer.Success<typeof rpcRequestObserverLayer>;
+type ConnectionPlatformLayerSource =
+  | typeof connectionStorageLayer
+  | typeof connectivityLayer
+  | typeof wakeupsLayer
+  | typeof platformConnectionSourceLayer
+  | typeof environmentOwnedDataCleanupLayer
+  | typeof rpcRequestObserverLayer;
 
-export const connectionPlatformLayer: Layer.Layer<ConnectionPlatformServices> = Layer.mergeAll(
+export const connectionPlatformLayer: Layer.Layer<
+  Layer.Success<ConnectionPlatformLayerSource>,
+  Layer.Error<ConnectionPlatformLayerSource>,
+  Layer.Services<ConnectionPlatformLayerSource>
+> = Layer.mergeAll(
   connectionStorageLayer,
   connectivityLayer,
   wakeupsLayer,

@@ -4,6 +4,7 @@
  *
  * - The prompt stash persists images as base64 in localStorage (~5MB origin
  *   quota), so `compressImageForStash` targets a per-image character budget.
+ *   Coder: the stash keeps image bytes in memory only and never persists them.
  * - The composer accepts pasted/dropped images larger than the provider's
  *   `PROVIDER_SEND_TURN_MAX_IMAGE_BYTES` wire cap and shrinks them to fit
  *   via `compressImageToByteLimit` instead of rejecting the paste.

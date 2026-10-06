@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 // @effect-diagnostics nodeBuiltinImport:off
 import { spawn } from "node:child_process";
 import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
@@ -11,12 +12,14 @@ import { resolveCoderConfigPath } from "@t3tools/coder-cli/configPath";
 import { makeLocalCoderGateway } from "./server.ts";
 
 const main = Effect.gen(function* () {
+  const configPath = resolveCoderConfigPath({
+    platform: process.platform,
+    homeDirectory: NodeOS.homedir(),
+    environment: process.env,
+  });
   const gateway = yield* makeLocalCoderGateway({
-    configPath: resolveCoderConfigPath({
-      platform: process.platform,
-      homeDirectory: NodeOS.homedir(),
-      environment: process.env,
-    }),
+    configPath,
+    portPath: NodePath.join(NodePath.dirname(configPath), "gateway-port"),
     staticDir: fileURLToPath(new URL("../../web/dist", import.meta.url)),
     helperBundlePath: fileURLToPath(
       new URL("../../coder-helper/dist/workspace-helper", import.meta.url),
