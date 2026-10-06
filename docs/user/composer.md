@@ -43,8 +43,9 @@ the turn ends, even while another thread is open. Use its arrow to send now, or 
 to send follow-ups immediately instead. Already queued messages keep their place.
 
 Stop returns queued messages to the composer. If their combined images exceed the per-message
-limit, the remaining messages stay intact in the queue, held until you act. Drafts and queues
-remain in browser memory. A queued send waits while the agent needs approval or an answer.
+limit, the remaining messages stay intact in the queue, held until you act. Queued messages
+stay in browser memory; unsent draft text is kept in this browser’s storage so it survives a reload.
+A queued send waits while the agent needs approval or an answer.
 Use `mod+shift+Enter` to send the oldest queued message now without replacing your current draft.
 
 ## Inline context
@@ -62,8 +63,10 @@ thread’s project or worktree.
 
 Pasted plain-text fragments of at least 32,768 characters fold into a **Long text** chip. Select it to
 read or edit the text. Folding keeps the full text in the prompt: it counts toward the message
-limit and is sent to the provider as text. Drafts and image bytes remain in browser memory, including
-when moved between threads or restored from a prompt stash.
+limit and is sent to the provider as text. Unsent draft and stashed prompt text, including terminal
+excerpts, is kept in browser storage. Image bytes stay in browser memory, including when moved
+between threads or restored from a prompt stash. Image bytes, upload IDs, and credentials are never
+saved in browser storage.
 
 ## Images
 
@@ -94,6 +97,10 @@ Type `/` to open the command menu. Commands and skills discovered in the workspa
 built-in Claude commands such as `/compact` as well as commands your project defines. Type `$` to
 find and add a skill.
 
+After you add or change skills, plugins, or configuration in the workspace, use **Restart agent
+session** in the command palette. The conversation continues, and your next message starts the
+agent again with the new setup. T3 Coder disables MCP servers for managed sessions.
+
 ## Recall a sent prompt
 
 Press `ArrowUp` in an empty composer to recall the last prompt sent in this thread. Press it
@@ -104,7 +111,8 @@ and attached terminal context keep their normal keyboard behavior.
 
 In an unedited recalled prompt, recall works from the first visual line with `ArrowUp` or the
 last visual line with `ArrowDown`, including wrapped lines. Elsewhere the keys move the caret.
-Editing a recalled prompt turns it into a normal draft. History stays in browser memory.
+Editing a recalled prompt turns it into a normal draft. Recall is derived from loaded conversation
+messages; it does not keep a separate prompt-history store in the browser.
 
 ## Edit an earlier prompt
 
@@ -127,9 +135,10 @@ the stash contains exactly one entry, the same shortcut restores it directly; ot
 entry from the stash menu. This is useful when a long prompt is blocked on something else — stash
 it, ask your question, then bring it back.
 
-The stash is per-browser and holds up to 20 entries. Wait for uploads to finish before stashing.
-Pasted images and their previews move with the prompt in browser memory. Restoring an entry into
-another workspace uploads its pasted images to that workspace before sending. Legacy file links
+The stash is per-browser and holds up to 20 entries. Its text, including terminal excerpts, survives
+a reload in browser storage. Wait for uploads to finish before stashing. Pasted images and their
+previews move with the prompt in browser memory. Restoring an entry into another workspace uploads
+its pasted images to that workspace before sending. Legacy file links
 remain workspace-specific and show a warning when restored elsewhere.
 
 ## Model and mode
@@ -138,8 +147,14 @@ The model picker in the composer sets the model for the thread; open it with `mo
 the picker is open, `mod+1` through `mod+9` jump straight to a model. The permission mode control
 sits next to it — see [Permission modes](./permission-modes.md).
 
-Fast/Normal selections survive model changes and new chats during the current browser session.
-Draft and selection state remains in browser memory.
+## Model defaults
+
+T3 Coder remembers your provider, model, and model options for new threads. A project’s configured
+model takes precedence; resetting that project setting returns to the remembered selection.
+Creating a project does not set a project model default.
+
+Only explicitly chosen model options are sent. Leaving reasoning level or service tier unset uses
+the provider’s own configuration in the workspace.
 
 ## Context meter
 
@@ -187,7 +202,3 @@ merge request in T3 Coder. The captured details remain part of the message after
 
 Completed shell code blocks in agent messages offer **Run**. It opens a terminal in the thread's
 workspace folder and runs the command there. Code never runs until you choose this action.
-
-After adding or changing workspace skills, plugins, or MCP servers, choose **Restart agent
-session** in the command palette. The conversation continues; the next message starts a fresh
-workspace provider process with the updated configuration and refreshes its slash menu.

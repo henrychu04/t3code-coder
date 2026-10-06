@@ -88,6 +88,7 @@ import * as ServerConfig from "./config.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
 import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
+import { RepositoryIdentityResolver } from "./project/RepositoryIdentityResolver.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -473,6 +474,7 @@ export const layer = CoderWsRpcGroup.toLayer(
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
     const vcsStatus = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
+    const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
     // Coder: read the flat fetch setting on each upstream poll loop, including live changes.
     const automaticGitFetchInterval = settings.getSettings.pipe(
       Effect.map((value) => value.automaticGitFetchInterval),
@@ -1682,9 +1684,15 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.sourceControlCloneRepository]: (input) =>
         sourceControlRepositories.cloneRepository(input),
       [WS_METHODS.sourceControlPublishRepository]: (input) =>
-        sourceControlRepositories
-          .publishRepository(input)
-          .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        sourceControlRepositories.publishRepository(input).pipe(
+          // A new remote can change the cached identity. Only the `cwd` entry
+          // refreshes, so after a publish from a linked worktree the project
+          // root entry waits for its TTL.
+          Effect.tap(() =>
+            repositoryIdentityResolver.resolve(input.cwd, { refresh: true }).pipe(Effect.ignore),
+          ),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
+        ),
       [WS_METHODS.subscribeVcsStatus]: (input) =>
         vcsStatus.streamStatus(input, {
           automaticRemoteRefreshInterval: automaticGitFetchInterval,

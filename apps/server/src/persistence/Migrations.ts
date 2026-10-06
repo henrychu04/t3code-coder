@@ -1,3 +1,4 @@
+import Migration0058 from "./Migrations/058_ClearAutomaticProjectModelDefaults.ts";
 import Migration0057 from "./Migrations/057_ProjectionThreadsAutoSettleDisabledAt.ts";
 import Migration0052 from "./Migrations/052_ProjectionProjectIcon.ts";
 /**
@@ -121,6 +122,7 @@ const migrationEntries = [
   [55, "ProjectionMessageAttachments", Migration0055],
   [56, "ProjectionThreadMessageContext", Migration0056],
   [57, "ProjectionThreadsAutoSettleDisabledAt", Migration0057],
+  [58, "ClearAutomaticProjectModelDefaults", Migration0058],
 ] as const;
 
 const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

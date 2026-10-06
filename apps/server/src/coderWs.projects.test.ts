@@ -50,6 +50,7 @@ import * as GitManager from "./git/GitManager.ts";
 import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
 import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
+import { RepositoryIdentityResolver } from "./project/RepositoryIdentityResolver.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -95,6 +96,7 @@ const harness = (
       Effect.provide(ServerConfig.layerTest("/", { prefix: "t3-coder-project-rpc-" })),
     );
     const commands: OrchestrationCommand[] = [];
+    const publishSteps: string[] = [];
     const projects = new Map<ProjectId, OrchestrationProject>();
     const dependencies = Layer.mergeAll(
       stub(EnvironmentThemeService),
@@ -160,7 +162,34 @@ const harness = (
       stub(WorkspaceEntries.WorkspaceEntries),
       stub(WorkspaceFileSystem.WorkspaceFileSystem),
       stub(ScreenshotArtifacts.ScreenshotArtifacts),
-      stub(VcsStatusBroadcaster.VcsStatusBroadcaster, options.vcsStatus),
+      stub(VcsStatusBroadcaster.VcsStatusBroadcaster, {
+        refreshStatus: (cwd) =>
+          Effect.sync(() => {
+            publishSteps.push(`status:${cwd}`);
+            return {
+              isRepo: true,
+              hasPrimaryRemote: true,
+              isDefaultRef: true,
+              refName: "main",
+              hasWorkingTreeChanges: false,
+              workingTree: { files: [], insertions: 0, deletions: 0 },
+              hasUpstream: true,
+              aheadCount: 0,
+              behindCount: 0,
+              aheadOfDefaultCount: 0,
+              pr: null,
+            };
+          }),
+        ...options.vcsStatus,
+      }),
+      stub(RepositoryIdentityResolver, {
+        resolve: (cwd, options) =>
+          Effect.sync(() => {
+            assert.isTrue(options?.refresh);
+            publishSteps.push(`identity:${cwd}`);
+            return null;
+          }),
+      }),
       Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
       stub(SourceControlProviderRegistry.SourceControlProviderRegistry),
       stub(TextGeneration.TextGeneration),
@@ -178,7 +207,24 @@ const harness = (
       stub(WorktreeSetupTracker.WorktreeSetupTracker),
       stub(ProjectSetupScriptRunner.ProjectSetupScriptRunner),
       stub(SourceControlDiscovery.SourceControlDiscovery),
-      stub(SourceControlRepositoryService.SourceControlRepositoryService),
+      stub(SourceControlRepositoryService.SourceControlRepositoryService, {
+        publishRepository: (input) =>
+          Effect.sync(() => {
+            publishSteps.push(`publish:${input.cwd}`);
+            return {
+              repository: {
+                provider: "gitlab" as const,
+                nameWithOwner: input.repository,
+                url: "https://gitlab.example.test/owner/repository",
+                sshUrl: "git@gitlab.example.test:owner/repository.git",
+              },
+              remoteName: "origin",
+              remoteUrl: "git@gitlab.example.test:owner/repository.git",
+              branch: "main",
+              status: "pushed" as const,
+            };
+          }),
+      }),
       stub(GitLabCli.GitLabCli),
       stub(ProjectCloneTracker.ProjectCloneTracker, { get: () => Effect.succeed(null) }),
       stub(PullRequestService.PullRequestService),
@@ -197,10 +243,32 @@ const harness = (
     const client = yield* RpcTest.makeClient(CoderWsRpcGroup).pipe(
       Effect.provide(CoderWs.layer.pipe(Layer.provide(services))),
     );
-    return { fs, path, config, commands, projects, client };
+    return { fs, path, config, commands, projects, client, publishSteps };
   });
 
 describe("Coder project RPCs", () => {
+  it.effect("refreshes repository identity after publishing and before VCS status", () =>
+    Effect.gen(function* () {
+      const h = yield* harness();
+      const result = yield* h.client[WS_METHODS.sourceControlPublishRepository]({
+        cwd: "/workspace/project",
+        provider: "gitlab",
+        repository: "owner/repository",
+        visibility: "private",
+      });
+      assert.equal(result.status, "pushed");
+      // The status refresh is detached, as in upstream ws.ts; wait for it to run.
+      for (let attempt = 0; attempt < 100 && h.publishSteps.length < 3; attempt++) {
+        yield* Effect.yieldNow;
+      }
+      assert.deepEqual(h.publishSteps, [
+        "publish:/workspace/project",
+        "identity:/workspace/project",
+        "status:/workspace/project",
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
   it.effect("creates scratch once and restores its deleted folder on reuse", () =>
     Effect.gen(function* () {
       const h = yield* harness();

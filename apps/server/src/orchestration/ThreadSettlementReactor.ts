@@ -229,45 +229,55 @@ export const make = Effect.gen(function* () {
       const thread = group[0]!;
       const reference = thread.linkedPullRequest ?? thread.branchPullRequest;
       if (reference != null) {
-        if (!projects.has(reference.projectId)) {
-          return yield* Effect.die(new Error("linked merge request project not found"));
-        }
-        const detail =
+        const matchesMerge =
           mergedPullRequest !== null &&
           reference.projectId === mergedPullRequest.projectId &&
           reference.repository.toLowerCase() === mergedPullRequest.repository.toLowerCase() &&
-          reference.number === mergedPullRequest.number
-            ? {
-                state: "merged" as const,
-                mergedAt: mergedPullRequest.mergedAt,
-                closedAt: null,
-              }
-            : yield* pullRequests.detail({
+          reference.number === mergedPullRequest.number;
+        if (!matchesMerge && !projects.has(reference.projectId)) {
+          return yield* Effect.die(new Error("linked merge request project not found"));
+        }
+        const summary = matchesMerge
+          ? ({
+              state: "merged",
+              closedAt: null,
+              mergedAt: mergedPullRequest.mergedAt,
+            } satisfies SettlementPullRequest)
+          : yield* pullRequests.summary(
+              {
                 projectId: reference.projectId,
                 repository: reference.repository,
                 number: reference.number,
-              });
+              },
+              { recoverTransientFailure: false },
+            );
         const terminal = {
-          state: detail.state,
-          closedAt: detail.closedAt,
-          mergedAt: detail.mergedAt,
+          state: summary.state,
+          closedAt: summary.closedAt ?? null,
+          mergedAt: summary.mergedAt ?? null,
         } satisfies SettlementPullRequest;
-        // A terminal old MR must not settle a thread whose branch now has an open MR.
         const cwd = lookupCwdByThreadId.get(thread.id);
-        const project = projects.get(thread.projectId);
-        if (detail.state !== "open" && cwd !== undefined && thread.branch !== null && project) {
+        if (summary.state !== "open" && thread.branch !== null && cwd !== undefined) {
+          // A reused branch can already have a new open MR while discovery
+          // is replacing its old link. Do not let settlement win that race.
           // Only pay for the uncached lookup when this sweep would otherwise
           // settle: a terminal link that settles nothing (resumed thread,
-          // settle-on-merge off) would re-query GitLab every minute. A group
-          // that becomes eligible after this check waits for the next sweep
-          // rather than settling on the unverified link.
+          // settle-on-merge off) would re-query GitLab every minute. A
+          // group that becomes eligible after this check waits for the next
+          // sweep rather than settling on the unverified link.
           if (!(yield* wouldSettle(group, terminal))) return undefined;
           const current = yield* git.branchPullRequest(
             { cwd, branch: thread.branch },
             { refresh: true },
           );
-          if (current?.state === "open" && pullRequestMatchesProject(current, project))
+          const project = projects.get(thread.projectId);
+          if (
+            current?.state === "open" &&
+            project !== undefined &&
+            pullRequestMatchesProject(current, project)
+          ) {
             return current;
+          }
         }
         return terminal;
       }

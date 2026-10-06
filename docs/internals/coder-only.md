@@ -120,7 +120,7 @@ helper memory and are not persisted by the gateway.
 
 Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLab MR links at
 startup, after relevant thread changes, and periodically without an open browser. It uses the
-existing repository-scoped GitWorkflowService cache and glab-backed MR service, verifies both the
+existing repository-scoped GitManager cache and glab-backed MR service, verifies both the
 branch and project repository identity before saving, and rejects updates after the lookup inputs
 change. Migration 048 adds the branch MR projection independently of explicit links. Migration 051 adds
 multiple explicit MR links, preserving migration 050 for pending-input repair. Link commands validate
@@ -270,6 +270,15 @@ addresses, and raw tunnel arguments are not exposed. The gateway may invoke Open
 bootstrap and validated composer-image uploads only, with `coder ssh --stdio` as its ProxyCommand.
 SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
 no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
+
+Provider version checks are workspace-originated network requests: the helper queries
+`registry.npmjs.org` for the latest version of each enabled provider whose installer it can
+identify; manual installations are not checked. The workspace
+setting `enableProviderUpdateChecks` is on by default; disabling **Settings → General → Provider
+update checks** opts that workspace out. Explicit provider updates run the installation’s identified
+installer inside the workspace. Versions marked broken or unsupported by the bundled compatibility
+policy are not offered. The model manifest and compatibility policy remain bundled-only and are
+never refreshed over HTTP.
 
 General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
 message composer. The browser sends the image only to the loopback gateway. The gateway accepts

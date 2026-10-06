@@ -1,4 +1,3 @@
-import type { GitCommandError } from "@t3tools/contracts";
 import type { RepositoryIdentity } from "@t3tools/contracts";
 import {
   detectSourceControlProviderFromGitRemoteUrl,
@@ -25,9 +24,6 @@ export interface RepositoryIdentityResolverOptions {
   readonly cacheCapacity?: number;
   readonly positiveCacheTtl?: Duration.Input;
   readonly negativeCacheTtl?: Duration.Input;
-  readonly refine?: (
-    identity: RepositoryIdentity,
-  ) => Effect.Effect<RepositoryIdentity, GitCommandError>;
 }
 
 export class RepositoryIdentityResolver extends Context.Service<
@@ -150,7 +146,6 @@ export const make = Effect.fn("RepositoryIdentityResolver.make")(function* (
 ) {
   const processRunner = yield* ProcessRunner.ProcessRunner;
   const cacheCapacity = options.cacheCapacity ?? DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY;
-  const refine = options.refine ?? Effect.succeed;
   // Git errors and timeouts resolve to null, so they use the negative TTL like
   // "no repository" or "no remote". Only interrupts and defects skip the cache.
   const timeToLive = (exit: Exit.Exit<unknown>) =>

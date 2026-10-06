@@ -11,6 +11,10 @@ const entries: ReadonlyArray<readonly [key: string, value: string]> = [
   ["commit.gpgsign", "false"],
   ["tag.gpgsign", "false"],
   ["init.defaultBranch", "main"],
+  // Coder: Git 2.54 runs `git maintenance run --auto --detach` after commits. The detached
+  // process can still be writing `.git/objects/pack` when a scoped temp repo is deleted,
+  // failing cleanup with ENOTEMPTY.
+  ["maintenance.auto", "false"],
 ];
 
 const existing = Number(process.env.GIT_CONFIG_COUNT ?? "0");

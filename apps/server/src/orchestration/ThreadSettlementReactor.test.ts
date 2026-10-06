@@ -1,6 +1,7 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
+  PullRequestOperationError,
   ProviderInstanceId,
   ThreadId,
   type OrchestrationCommand,
@@ -155,7 +156,7 @@ describe("ThreadSettlementReactor", () => {
               invalidateStatus: () => Effect.void,
             }),
             Layer.mock(PullRequestService.PullRequestService)({
-              detail: () => Effect.die(new Error("No linked merge request expected.")),
+              summary: () => Effect.die(new Error("No linked merge request expected.")),
               subscribeMerges: Effect.succeed(Stream.empty),
             }),
             Layer.mock(OrchestrationEngineService)({
@@ -209,103 +210,138 @@ describe("ThreadSettlementReactor", () => {
       ),
   );
 
-  it.effect("settles a matching linked thread immediately after an in-app merge", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        yield* TestClock.setTime(Date.parse(NOW));
-        const snapshot: OrchestrationShellSnapshot = {
-          snapshotSequence: 8,
-          projects: [makeProject()],
-          threads: [
-            makeThread("merged-thread", {
-              linkedPullRequest: {
-                projectId: PROJECT_ID,
-                repository: "owner/repository",
-                number: 42,
-                url: "https://gitlab.example.test/owner/repository/-/merge_requests/42",
-              },
-            }),
-          ],
-          updatedAt: NOW,
-        };
-        const activation = yield* Deferred.make<void>();
-        const snapshotReads = yield* Queue.unbounded<void>();
-        const settingsChanges = yield* PubSub.unbounded<typeof DEFAULT_SERVER_SETTINGS>();
-        const mergedPullRequests =
-          yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
-        const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
-        const dispatched = yield* Queue.unbounded<AutoSettleCommand>();
-        const settings = { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null };
-        const settingsService = ServerSettingsService.of({
-          start: Effect.void,
-          ready: Effect.void,
-          getSettings: Effect.succeed(settings),
-          updateSettings: () => Effect.succeed(settings),
-          streamChanges: Stream.fromPubSub(settingsChanges),
-          subscribeChanges: PubSub.subscribe(settingsChanges).pipe(
-            Effect.map(Stream.fromSubscription),
-          ),
-        });
-        const dispatch: OrchestrationEngineShape["dispatch"] = (command) => {
-          if (command.type !== "thread.auto-settle") {
-            return Effect.die(new Error(`Unexpected command: ${command.type}`));
-          }
-          return Ref.update(commands, (recorded) => [...recorded, command]).pipe(
-            Effect.andThen(Queue.offer(dispatched, command)),
-            Effect.as({ sequence: 1 }),
-          );
-        };
-        const dependencies = Layer.mergeAll(
-          Layer.mock(ProjectionSnapshotQuery)({
-            getShellSnapshot: () =>
-              Queue.offer(snapshotReads, undefined).pipe(Effect.andThen(Effect.succeed(snapshot))),
-          }),
-          Layer.mock(GitWorkflow.GitManager)({
-            branchPullRequest: () => Effect.die(new Error("No branch lookup expected.")),
-            invalidateStatus: () => Effect.void,
-          }),
-          Layer.mock(PullRequestService.PullRequestService)({
-            detail: () => Effect.succeed({ state: "open", updatedAt: NOW } as never),
-            subscribeMerges: PubSub.subscribe(mergedPullRequests).pipe(
+  for (const scenario of [
+    "merge event",
+    "fresh summary",
+    "transient failure",
+    "missing linked project",
+  ] as const) {
+    it.effect(`settles a matching linked thread via ${scenario}`, () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* TestClock.setTime(Date.parse(NOW));
+          const linkedProjectId =
+            scenario === "missing linked project" ? ProjectId.make("missing-project") : PROJECT_ID;
+          let summaryCalls = 0;
+          const summaryRecoveryOptions: Array<boolean | undefined> = [];
+          const snapshot: OrchestrationShellSnapshot = {
+            snapshotSequence: 8,
+            projects: [makeProject()],
+            threads: [
+              makeThread("merged-thread", {
+                linkedPullRequest: {
+                  projectId: linkedProjectId,
+                  repository: "owner/repository",
+                  number: 42,
+                  url: "https://gitlab.example.test/owner/repository/-/merge_requests/42",
+                },
+              }),
+            ],
+            updatedAt: NOW,
+          };
+          const activation = yield* Deferred.make<void>();
+          const snapshotReads = yield* Queue.unbounded<void>();
+          const settingsChanges = yield* PubSub.unbounded<typeof DEFAULT_SERVER_SETTINGS>();
+          const mergedPullRequests =
+            yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
+          const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
+          const dispatched = yield* Queue.unbounded<AutoSettleCommand>();
+          const settings = { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null };
+          const settingsService = ServerSettingsService.of({
+            start: Effect.void,
+            ready: Effect.void,
+            getSettings: Effect.succeed(settings),
+            updateSettings: () => Effect.succeed(settings),
+            streamChanges: Stream.fromPubSub(settingsChanges),
+            subscribeChanges: PubSub.subscribe(settingsChanges).pipe(
               Effect.map(Stream.fromSubscription),
             ),
-          }),
-          Layer.mock(OrchestrationEngineService)({
-            readEvents: () => Stream.empty,
-            dispatch,
-            streamDomainEvents: Stream.empty,
-            subscribeDomainEvents: Effect.succeed(Stream.empty),
-            latestSequence: Effect.succeed(0),
-          }),
-          Layer.succeed(ServerSettingsService, settingsService),
-          Layer.succeed(ServerActivation, Deferred.await(activation)),
-          Layer.succeed(Crypto.Crypto, testCrypto),
-          FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
-        );
-
-        yield* Effect.gen(function* () {
-          const reactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
-          yield* reactor.start();
-          yield* Deferred.succeed(activation, undefined);
-          yield* Queue.take(snapshotReads);
-          yield* reactor.drain;
-          assert.deepStrictEqual(yield* Ref.get(commands), []);
-
-          yield* PubSub.publish(mergedPullRequests, {
-            projectId: PROJECT_ID,
-            repository: "owner/repository",
-            number: 42,
-            mergedAt: NOW,
           });
-          const command = yield* Queue.take(dispatched);
+          const dispatch: OrchestrationEngineShape["dispatch"] = (command) => {
+            if (command.type !== "thread.auto-settle") {
+              return Effect.die(new Error(`Unexpected command: ${command.type}`));
+            }
+            return Ref.update(commands, (recorded) => [...recorded, command]).pipe(
+              Effect.andThen(Queue.offer(dispatched, command)),
+              Effect.as({ sequence: 1 }),
+            );
+          };
+          const dependencies = Layer.mergeAll(
+            Layer.mock(ProjectionSnapshotQuery)({
+              getShellSnapshot: () =>
+                Queue.offer(snapshotReads, undefined).pipe(
+                  Effect.andThen(Effect.succeed(snapshot)),
+                ),
+            }),
+            Layer.mock(GitWorkflow.GitManager)({
+              branchPullRequest: () => Effect.die(new Error("No branch lookup expected.")),
+              invalidateStatus: () => Effect.void,
+            }),
+            Layer.mock(PullRequestService.PullRequestService)({
+              detail: () => Effect.die(new Error("Settlement must read a fresh summary.")),
+              summary: (_input, options) => {
+                summaryCalls += 1;
+                summaryRecoveryOptions.push(options?.recoverTransientFailure);
+                if (scenario === "transient failure") {
+                  return Effect.fail(
+                    new PullRequestOperationError({ operation: "summary", detail: "unavailable" }),
+                  );
+                }
+                return Effect.succeed({
+                  state: scenario === "fresh summary" ? "merged" : "open",
+                  updatedAt: NOW,
+                  mergedAt: scenario === "fresh summary" ? NOW : null,
+                } as never);
+              },
+              subscribeMerges: PubSub.subscribe(mergedPullRequests).pipe(
+                Effect.map(Stream.fromSubscription),
+              ),
+            }),
+            Layer.mock(OrchestrationEngineService)({
+              readEvents: () => Stream.empty,
+              dispatch,
+              streamDomainEvents: Stream.empty,
+              subscribeDomainEvents: Effect.succeed(Stream.empty),
+              latestSequence: Effect.succeed(0),
+            }),
+            Layer.succeed(ServerSettingsService, settingsService),
+            Layer.succeed(ServerActivation, Deferred.await(activation)),
+            Layer.succeed(Crypto.Crypto, testCrypto),
+            FileSystem.layerNoop({ exists: () => Effect.succeed(false) }),
+          );
 
-          assert.strictEqual(command.threadId, ThreadId.make("merged-thread"));
-          assert.strictEqual(command.settledAt, "2026-08-20T00:00:00.000Z");
-          assert.strictEqual(command.snapshotSequence, 8);
-        }).pipe(Effect.provide(ThreadSettlementReactor.layer.pipe(Layer.provide(dependencies))));
-      }),
-    ),
-  );
+          yield* Effect.gen(function* () {
+            const reactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
+            yield* reactor.start();
+            yield* Deferred.succeed(activation, undefined);
+            yield* Queue.take(snapshotReads);
+            yield* reactor.drain;
+            assert.strictEqual(summaryCalls, scenario === "missing linked project" ? 0 : 1);
+            if (scenario !== "fresh summary") {
+              assert.deepStrictEqual(yield* Ref.get(commands), []);
+              yield* PubSub.publish(mergedPullRequests, {
+                projectId: linkedProjectId,
+                repository: "OWNER/REPOSITORY",
+                number: 42,
+                mergedAt: NOW,
+              });
+            }
+            const command = yield* Queue.take(dispatched);
+
+            assert.strictEqual(command.threadId, ThreadId.make("merged-thread"));
+            assert.strictEqual(command.settledAt, "2026-08-20T00:00:00.000Z");
+            assert.strictEqual(command.snapshotSequence, 8);
+            assert.strictEqual(summaryCalls, scenario === "missing linked project" ? 0 : 1);
+            // Settlement must never accept held data after a transient host failure.
+            assert.deepStrictEqual(
+              summaryRecoveryOptions,
+              scenario === "missing linked project" ? [] : [false],
+            );
+          }).pipe(Effect.provide(ThreadSettlementReactor.layer.pipe(Layer.provide(dependencies))));
+        }),
+      ),
+    );
+  }
   it.effect("does not settle a stale branch MR when a newer MR is open", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -346,6 +382,7 @@ describe("ThreadSettlementReactor", () => {
         const mergedPullRequests =
           yield* PubSub.unbounded<PullRequestService.PullRequestMergeEvent>();
         const commands = yield* Ref.make<ReadonlyArray<AutoSettleCommand>>([]);
+        const summaryRecoveryOptions: Array<boolean | undefined> = [];
         const settings = { ...DEFAULT_SERVER_SETTINGS, sidebarAutoSettleAfterDays: null };
         const settingsService = ServerSettingsService.of({
           start: Effect.void,
@@ -388,7 +425,10 @@ describe("ThreadSettlementReactor", () => {
             invalidateStatus: () => Effect.void,
           }),
           Layer.mock(PullRequestService.PullRequestService)({
-            detail: () => Effect.succeed({ state: "open", updatedAt: NOW } as never),
+            summary: (_input, options) => {
+              summaryRecoveryOptions.push(options?.recoverTransientFailure);
+              return Effect.succeed({ state: "open", updatedAt: NOW } as never);
+            },
             subscribeMerges: PubSub.subscribe(mergedPullRequests).pipe(
               Effect.map(Stream.fromSubscription),
             ),
@@ -431,6 +471,8 @@ describe("ThreadSettlementReactor", () => {
           });
           yield* Queue.take(snapshotReads);
           assert.deepStrictEqual(yield* Ref.get(commands), []);
+          assert.isAbove(summaryRecoveryOptions.length, 0);
+          assert.isTrue(summaryRecoveryOptions.every((option) => option === false));
         }).pipe(Effect.provide(ThreadSettlementReactor.layer.pipe(Layer.provide(dependencies))));
       }),
     ),
