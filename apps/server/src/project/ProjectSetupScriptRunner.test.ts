@@ -38,6 +38,7 @@ const makeProjectionSnapshotQueryLayer = (project: OrchestrationProject) =>
     getShellSnapshot: () => Effect.die("unused"),
     getArchivedShellSnapshot: () => Effect.die("unused"),
     getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 1 }),
+    getEventReplayStats: () => Effect.die("unused"),
     getCounts: () => Effect.die("unused"),
     getActiveProjectByWorkspaceRoot: (workspaceRoot) =>
       Effect.succeed(

@@ -22,10 +22,11 @@ import { safeErrorLogAttributes } from "../errors/safeLog.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { subscribeDynamic } from "../rpc/client.ts";
 import type { RpcSession } from "../rpc/session.ts";
+// Coder: the loader uses the helper stream fallback instead of an environment HTTP endpoint.
+import { ShellSnapshotLoader } from "./shellSnapshotRpc.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
-import type { EnvironmentCatalogState } from "./connections.ts";
+import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
-import { makeSynchronizationCompletion } from "./synchronizationCompletion.ts";
 
 export type EnvironmentShellStatus = "empty" | "cached" | "synchronizing" | "live";
 
@@ -52,6 +53,7 @@ const SHELL_SYNCHRONIZATION_ERROR_MESSAGE = "Could not synchronize environment d
 export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")(function* () {
   const supervisor = yield* EnvironmentSupervisor;
   const cache = yield* EnvironmentCacheStore;
+  const snapshotLoader = yield* ShellSnapshotLoader;
   const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
   const cachedSnapshot = yield* cache.loadShell(environmentId).pipe(
@@ -70,12 +72,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     status: shellStatusForSnapshot(cachedSnapshot),
     error: Option.none(),
   });
-  const resumeSequence = yield* Ref.make(
-    Option.match(cachedSnapshot, {
-      onNone: () => 0,
-      onSome: (snapshot) => snapshot.snapshotSequence,
-    }),
-  );
+  const awaitingCompletion = yield* Ref.make(false);
   const lastAuthoritativeSession = yield* Ref.make<RpcSession | null>(null);
   const activeSubscriptionSession = yield* Ref.make<RpcSession | null>(null);
   const persistence = yield* Queue.sliding<OrchestrationShellSnapshot>(1);
@@ -101,13 +98,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
     Effect.forkScoped,
   );
 
-  const synchronizationCompletion = yield* makeSynchronizationCompletion({
-    onTimeout: Effect.logWarning(
-      "Shell synchronization did not complete before its deadline.",
-    ).pipe(Effect.annotateLogs({ environmentId }), Effect.andThen(supervisor.retryNow)),
-  });
-
-  const setDisconnected = synchronizationCompletion.stop.pipe(
+  const setDisconnected = Ref.set(awaitingCompletion, false).pipe(
     Effect.andThen(
       SubscriptionRef.update(state, (current) => ({
         ...current,
@@ -130,7 +121,7 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         },
   );
   const setStreamError = (error: unknown) =>
-    synchronizationCompletion.stop.pipe(
+    Ref.set(awaitingCompletion, false).pipe(
       Effect.andThen(Effect.logWarning("Could not synchronize the environment shell.")),
       Effect.annotateLogs({
         environmentId,
@@ -145,26 +136,22 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ),
     );
 
-  // One projection write per bounded RPC batch keeps bulk thread updates responsive.
+  // Apply each received batch with one state write. The RPC client's bounded
+  // buffer can split a server chunk, so a bulk action can still need several
+  // writes, but each write includes every event in that batch.
   const applyItems = Effect.fn("EnvironmentShellState.applyItems")(function* (
     items: ReadonlyArray<OrchestrationShellStreamItem>,
   ) {
     const initial = yield* SubscriptionRef.get(state);
+    let waiting = yield* Ref.get(awaitingCompletion);
     let next = initial;
-    let waiting = yield* synchronizationCompletion.isWaiting;
-    let cursor = yield* Ref.get(resumeSequence);
     let receivedSnapshot = false;
     for (const item of items) {
       if (item.kind === "synchronized") {
         waiting = false;
-        yield* synchronizationCompletion.stop;
         if (Option.isSome(next.snapshot)) {
           next = { ...next, status: "live", error: Option.none() };
         }
-        continue;
-      }
-      if (item.kind === "cursor") {
-        cursor = Math.max(cursor, item.sequence);
         continue;
       }
       const nextSnapshot =
@@ -178,8 +165,6 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
                   : snapshot,
             });
       if (nextSnapshot === null) continue;
-      cursor =
-        item.kind === "snapshot" ? item.snapshot.snapshotSequence : Math.max(cursor, item.sequence);
       receivedSnapshot ||= item.kind === "snapshot";
       next = {
         snapshot: Option.some(nextSnapshot),
@@ -187,12 +172,14 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
         error: Option.none(),
       };
     }
-    yield* Ref.set(resumeSequence, cursor);
+    yield* Ref.set(awaitingCompletion, waiting);
     if (next === initial) return;
     yield* SubscriptionRef.set(state, next);
     if (receivedSnapshot) {
       const session = yield* Ref.get(activeSubscriptionSession);
-      if (session !== null) yield* Ref.set(lastAuthoritativeSession, session);
+      if (session !== null) {
+        yield* Ref.set(lastAuthoritativeSession, session);
+      }
     }
     if (next.snapshot !== initial.snapshot && Option.isSome(next.snapshot)) {
       yield* Queue.offer(persistence, next.snapshot.value);
@@ -211,18 +198,60 @@ export const makeEnvironmentShellState = Effect.fn("EnvironmentShellState.make")
       ORCHESTRATION_WS_METHODS.subscribeShell,
       Effect.fn("EnvironmentShellState.makeSubscribeInput")(function* (session) {
         yield* Ref.set(activeSubscriptionSession, session);
-        yield* synchronizationCompletion.startWaiting;
+        const supportsCompletionMarker = yield* session.initialConfig.pipe(
+          Effect.map((config) => config.shellResumeCompletionMarker === true),
+          Effect.orElseSucceed(() => false),
+        );
+        yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
         yield* setSynchronizing;
 
         // Foreground resubscriptions on the same live session can resume from
-        // the in-memory cursor. A new session omits the cursor so the socket
-        // sends an authoritative snapshot instead of preserving stale cache data.
+        // the in-memory cursor.
+        // Coder: a new session uses the authoritative stream snapshot fallback so
+        // a valid cursor cannot preserve incomplete cached data.
         const hasAuthoritativeSnapshot = (yield* Ref.get(lastAuthoritativeSession)) === session;
-        const current = yield* SubscriptionRef.get(state);
-        yield* synchronizationCompletion.arm;
-        if (!hasAuthoritativeSnapshot || Option.isNone(current.snapshot)) return {};
+        let canResume = hasAuthoritativeSnapshot;
+        let current = yield* SubscriptionRef.get(state);
+        if (!hasAuthoritativeSnapshot || Option.isNone(current.snapshot)) {
+          const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
+            Effect.flatMap(
+              Option.match({
+                onSome: Effect.succeed,
+                onNone: () =>
+                  SubscriptionRef.changes(supervisor.prepared).pipe(
+                    Stream.filter(Option.isSome),
+                    Stream.map((value) => value.value),
+                    Stream.runHead,
+                    Effect.map(Option.getOrThrow),
+                  ),
+              }),
+            ),
+          );
+          const httpSnapshot = yield* snapshotLoader.load(prepared);
+          if (Option.isSome(httpSnapshot)) {
+            yield* applyItems([{ kind: "snapshot", snapshot: httpSnapshot.value }]);
+            canResume = true;
+            current = yield* SubscriptionRef.get(state);
+          }
+        }
+
+        // If the authoritative refresh failed, omit the cached cursor so the
+        // socket fallback sends a complete snapshot for this new session.
+        if (!canResume || Option.isNone(current.snapshot)) {
+          return supportsCompletionMarker ? { requestCompletionMarker: true as const } : {};
+        }
+        if (!supportsCompletionMarker) {
+          // Without a completion marker there is no synchronized signal for a
+          // resumed subscription, so report live immediately, like threads.
+          yield* SubscriptionRef.update(state, (value) => ({
+            ...value,
+            status: "live" as const,
+            error: Option.none(),
+          }));
+        }
         return {
-          afterSequence: yield* Ref.get(resumeSequence),
+          afterSequence: current.snapshot.value.snapshotSequence,
+          ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
         };
       }),
       {
@@ -315,7 +344,7 @@ export function createEnvironmentShellSummaryAtom(input: {
     let firstError: string | null = null;
     let latestSnapshotUpdatedAt: string | null = null;
 
-    for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+    for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const state = get(input.shellStateValueAtom(environmentId));
       hasSynchronizingShell ||= state.status === "synchronizing";
       hasCachedShell ||= state.status === "cached";
@@ -356,7 +385,7 @@ export function createEnvironmentServerConfigsAtom(input: {
   let previousServerConfigs = EMPTY_SERVER_CONFIGS;
   return Atom.make((get) => {
     const next = new Map<EnvironmentId, ServerConfig>();
-    for (const environmentId of get(input.catalogValueAtom).entries.keys()) {
+    for (const environmentId of enabledEnvironmentIds(get(input.catalogValueAtom))) {
       const config = get(input.serverConfigValueAtom(environmentId));
       if (config !== null) {
         next.set(environmentId, config);
@@ -393,4 +422,5 @@ export function createEnvironmentShellAtoms<R, E>(
 
 export * from "./models.ts";
 export * from "./shellReducer.ts";
+export * from "./shellSnapshotRpc.ts";
 export * from "./snapshots.ts";

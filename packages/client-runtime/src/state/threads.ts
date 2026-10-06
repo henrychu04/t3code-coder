@@ -23,12 +23,16 @@ import { connectionProjectionPhase } from "../connection/model.ts";
 import { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import * as ConnectionWakeups from "../connection/wakeups.ts";
 import { EnvironmentCacheStore } from "../platform/persistence.ts";
-import { request, subscribeDynamic } from "../rpc/client.ts";
+import { subscribeDynamic } from "../rpc/client.ts";
+import {
+  ThreadSnapshotLoader,
+  makeThreadSnapshotLoader,
+  type ThreadSnapshotWindow,
+} from "./threadSnapshotRpc.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 import { makeThreadSnapshotRetention, THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
-import { makeSynchronizationCompletion } from "./synchronizationCompletion.ts";
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
   type EnvironmentThreadPageState,
@@ -46,10 +50,8 @@ function statusWithoutLiveData(data: Option.Option<OrchestrationThread>): Enviro
  * "load earlier" tap fetches 20 more. Sized so first paint on the heaviest
  * observed threads stays around 100K gzipped while median threads load fully.
  */
-const INITIAL_THREAD_USER_TURN_LIMIT = 10;
+export const INITIAL_THREAD_USER_TURN_LIMIT = 10;
 const OLDER_THREAD_PAGE_USER_TURN_LIMIT = 20;
-const INITIAL_THREAD_TARGET_BYTES = 512 * 1024;
-const OLDER_THREAD_PAGE_TARGET_BYTES = 1024 * 1024;
 
 function pageStateFromSnapshot(
   page: OrchestrationThreadDetailPage | undefined,
@@ -69,12 +71,12 @@ interface ThreadOlderTurnRequestRegistry {
    * cleanup; registration lives exactly as long as the machine's scope, and a
    * successor machine for the same thread simply replaces the entry.
    */
-  readonly register: (key: string, handler: () => boolean) => () => void;
+  readonly register: (key: string, handler: () => void) => () => void;
   readonly request: (key: string) => boolean;
 }
 
 function makeThreadOlderTurnRequestRegistry(): ThreadOlderTurnRequestRegistry {
-  const handlers = new Map<string, () => boolean>();
+  const handlers = new Map<string, () => void>();
   return {
     register: (key, handler) => {
       handlers.set(key, handler);
@@ -89,7 +91,8 @@ function makeThreadOlderTurnRequestRegistry(): ThreadOlderTurnRequestRegistry {
       if (handler === undefined) {
         return false;
       }
-      return handler();
+      handler();
+      return true;
     },
   };
 }
@@ -109,8 +112,9 @@ class ThreadOlderTurnRequests extends Context.Reference<ThreadOlderTurnRequestRe
 
 /**
  * Asks the live state machine for `threadId` to fetch the next older page.
- * Returns false when no machine is live or another request is already pending;
- * callers render eligibility from `EnvironmentThreadState.page`.
+ * Returns false when no machine is live or no fetch was started (no cursor,
+ * already loading); callers render from `EnvironmentThreadState.page` and can
+ * treat false as "nothing to do".
  */
 export function requestOlderThreadTurns(
   environmentId: EnvironmentIdType,
@@ -147,6 +151,7 @@ interface ThreadResumeSnapshot {
 interface ThreadResumeCache {
   snapshot: ThreadResumeSnapshot | undefined;
   owner: object | undefined;
+  // Coder: active views release the bounded idle retention budget; idle views rejoin it.
   readonly onActive?: () => void;
   readonly onIdle?: () => void;
 }
@@ -190,10 +195,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 ) {
   const supervisor = yield* EnvironmentSupervisor;
   const cache = yield* EnvironmentCacheStore;
+  // Coder: load snapshots through this supervisor's current helper RPC session, never HTTP.
+  const snapshotLoader = Option.getOrElse(yield* Effect.serviceOption(ThreadSnapshotLoader), () =>
+    makeThreadSnapshotLoader(supervisor),
+  );
   const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
   const retained = resumeCache?.snapshot;
   const owner = {};
+  // Coder: memory-only idle retention must release active snapshots and charge them after stream cleanup.
   if (resumeCache) {
     resumeCache.owner = owner;
     resumeCache.onActive?.();
@@ -244,6 +254,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     persisted: retained?.persisted ?? Option.isSome(cached),
   };
   if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
+  const awaitingCompletion = yield* Ref.make(false);
   // Bumped whenever loaded history may have been rewritten out from under an
   // in-flight older-page fetch (snapshot replacement, revert, deletion). A
   // page response captured under an older epoch is discarded, not merged.
@@ -271,6 +282,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     };
     if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
   });
+  // Whether the connected server accepts windowed reads; set per subscription
+  // from the session config. Gates loadOlderTurns so a reconnect to a
+  // pre-pagination server never sends unsupported window parameters.
+  const paginationSupported = yield* Ref.make(false);
+  const reasoningMessagesSupported = yield* Ref.make(false);
   // An older page whose thread watermark is ahead of the live state, parked
   // until the subscription catches up (see mergeOlderPage's caller). At most
   // one can exist because loadOlderTurns no-ops while loadingOlder is true.
@@ -341,21 +357,22 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           error: Option.none(),
         },
   );
-  const synchronizationCompletion = yield* makeSynchronizationCompletion({
-    onTimeout: Effect.logWarning(
-      "Thread synchronization did not complete before its deadline.",
-    ).pipe(Effect.annotateLogs({ environmentId, threadId }), Effect.andThen(supervisor.retryNow)),
-  });
-
   const setDisconnected = Effect.gen(function* () {
-    yield* synchronizationCompletion.stop;
+    yield* Ref.set(awaitingCompletion, false);
+    // The capability belongs to the session that advertised it. During a
+    // reconnect, a new prepared connection can exist before the new session's
+    // config arrives; leaving the old value would let loadOlderTurns send
+    // window parameters to a server that may not accept them (review
+    // finding). makeSubscribeInput re-sets it from the next session's config.
+    yield* Ref.set(paginationSupported, false);
+    yield* Ref.set(reasoningMessagesSupported, false);
     yield* SubscriptionRef.update(state, (current) => ({
       ...current,
       status: current.status === "deleted" ? current.status : statusWithoutLiveData(current.data),
     }));
   });
   const setStreamError = (message: string) =>
-    synchronizationCompletion.stop.pipe(
+    Ref.set(awaitingCompletion, false).pipe(
       Effect.andThen(
         SubscriptionRef.update(state, (current) => ({
           ...current,
@@ -366,29 +383,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ),
     );
 
-  const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
-    thread: OrchestrationThread,
-    // "keep" preserves the current page state (live events touch only loaded
-    // recent turns); a snapshot or merged page passes its own page state.
-    page: Option.Option<EnvironmentThreadPageState> | "keep",
-  ) {
-    const waiting = yield* synchronizationCompletion.isWaiting;
-    yield* SubscriptionRef.update(state, (current) => ({
-      data: Option.some(thread),
-      // Buffered values from the failed attempt can still arrive after its error.
-      status: Option.isSome(current.error)
-        ? ("cached" as const)
-        : waiting
-          ? ("synchronizing" as const)
-          : ("live" as const),
-      error: current.error,
-      page: page === "keep" ? current.page : page,
-    }));
-    // Active threads can update many times per second and retain large tool
-    // payloads. The server remains the source of truth while a turn is active;
-    // persist once it settles so cache encoding stays off the streaming path.
-    if (shouldPersistThread(thread)) {
-      const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
+  const offerThreadPersistence = Effect.fn("EnvironmentThreadState.offerThreadPersistence")(
+    function* (thread: OrchestrationThread, snapshotSequence: number) {
       const currentPage = yield* SubscriptionRef.get(state).pipe(Effect.map((value) => value.page));
       yield* Queue.offer(persistence, {
         snapshotSequence,
@@ -407,11 +403,38 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             }) as const,
         }),
       });
+    },
+  );
+
+  const setThread = Effect.fn("EnvironmentThreadState.setThread")(function* (
+    thread: OrchestrationThread,
+    // "keep" preserves the current page state (live events touch only loaded
+    // recent turns); a snapshot or merged page passes its own page state.
+    page: Option.Option<EnvironmentThreadPageState> | "keep",
+  ) {
+    const waiting = yield* Ref.get(awaitingCompletion);
+    yield* SubscriptionRef.update(state, (current) => ({
+      data: Option.some(thread),
+      // Buffered values from the failed attempt can still arrive after its error.
+      status: Option.isSome(current.error)
+        ? ("cached" as const)
+        : waiting
+          ? ("synchronizing" as const)
+          : ("live" as const),
+      error: current.error,
+      page: page === "keep" ? current.page : page,
+    }));
+    // Active threads can update many times per second and retain large tool
+    // payloads. The server remains the source of truth while a turn is active;
+    // persist once it settles so cache encoding stays off the streaming path.
+    if (shouldPersistThread(thread)) {
+      const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
+      yield* offerThreadPersistence(thread, snapshotSequence);
     }
   });
 
   const setDeleted = Effect.fn("EnvironmentThreadState.setDeleted")(function* () {
-    yield* synchronizationCompletion.stop;
+    yield* Ref.set(awaitingCompletion, false);
     yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
     yield* SubscriptionRef.set(state, {
       data: Option.none(),
@@ -439,7 +462,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     item: OrchestrationThreadStreamItem,
   ) {
     if (item.kind === "synchronized") {
-      yield* synchronizationCompletion.stop;
+      yield* Ref.set(awaitingCompletion, false);
       yield* SubscriptionRef.update(state, (current) =>
         Option.isSome(current.data) && current.status !== "deleted" && Option.isNone(current.error)
           ? { ...current, status: "live" as const, error: Option.none() }
@@ -454,6 +477,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       // in the preserved history with no event left to remove it. The
       // epoch bump discards any older-page fetch racing this snapshot.
       yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
+      // A parked response must not clear loadingOlder on a request started
+      // from the replacement snapshot's cursor.
+      yield* Ref.set(pendingOlderPage, null);
       yield* SubscriptionRef.set(lastSequence, item.snapshot.snapshotSequence);
       yield* setThread(item.snapshot.thread, pageStateFromSnapshot(item.snapshot.page));
       return;
@@ -552,17 +578,26 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         let thread = current.data.value;
         let sequence = yield* SubscriptionRef.get(lastSequence);
         let synchronized = false;
+        // Retain the last settled state even if the next turn starts before
+        // this batch publishes. Its cursor must describe that settled content.
+        let persistable: { thread: OrchestrationThread; sequence: number } | undefined;
         for (const item of items) {
           if (item.kind === "synchronized") {
             synchronized = true;
           } else if (item.kind === "event" && item.event.sequence > sequence) {
             sequence = item.event.sequence;
             const result = applyThreadDetailEvent(thread, item.event);
-            if (result.kind === "updated") thread = result.thread;
+            if (result.kind === "updated") {
+              thread = result.thread;
+              if (shouldPersistThread(thread)) persistable = { thread, sequence };
+            }
           }
         }
         yield* SubscriptionRef.set(lastSequence, sequence);
         if (thread !== current.data.value) yield* setThread(thread, "keep");
+        if (persistable !== undefined && !shouldPersistThread(thread)) {
+          yield* offerThreadPersistence(persistable.thread, persistable.sequence);
+        }
         if (synchronized) yield* applyItemLocked({ kind: "synchronized" });
         yield* remember;
       }),
@@ -627,9 +662,18 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   const loadOlderTurns = Effect.fn("EnvironmentThreadState.loadOlderTurns")(function* () {
+    // Gated on the connected server's capability: a reconnect to a
+    // pre-pagination server must never receive window parameters.
+    if (!(yield* Ref.get(paginationSupported))) {
+      return;
+    }
     const current = yield* SubscriptionRef.get(state);
     const page = Option.getOrNull(current.page);
     if (page === null || page.loadingOlder || !page.hasMore || page.beforeCursor === null) {
+      return;
+    }
+    const prepared = Option.getOrNull(yield* SubscriptionRef.get(supervisor.prepared));
+    if (prepared === null) {
       return;
     }
     const epochAtStart = yield* Ref.get(historyEpoch);
@@ -637,22 +681,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       ...value,
       page: Option.map(value.page, (existing) => ({ ...existing, loadingOlder: true })),
     }));
-    const window = {
+    const window: ThreadSnapshotWindow = {
       turnLimit: OLDER_THREAD_PAGE_USER_TURN_LIMIT,
       beforeCursor: page.beforeCursor,
     };
-    const response = yield* request(ORCHESTRATION_WS_METHODS.getThreadSnapshot, {
+    const response = yield* snapshotLoader.load(
+      prepared,
       threadId,
-      ...window,
-      targetBytes: OLDER_THREAD_PAGE_TARGET_BYTES,
-    }).pipe(
-      Effect.map(Option.some),
-      Effect.catch((error) =>
-        Effect.logWarning("Could not load older thread turns.").pipe(
-          Effect.annotateLogs({ environmentId, threadId, error: String(error) }),
-          Effect.as(Option.none<OrchestrationThreadDetailSnapshot>()),
-        ),
-      ),
+      window,
+      yield* Ref.get(reasoningMessagesSupported),
     );
     // Staleness check and merge run under the same lock as stream-item
     // application, so a revert/snapshot cannot land between them (TOCTOU
@@ -738,24 +775,99 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   yield* Effect.forkScoped(
     subscribeDynamic(
       ORCHESTRATION_WS_METHODS.subscribeThread,
-      Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* () {
-        yield* synchronizationCompletion.startWaiting;
+      Effect.fn("EnvironmentThreadState.makeSubscribeInput")(function* (session) {
+        const config = yield* session.initialConfig.pipe(
+          Effect.orElseSucceed(
+            () =>
+              ({}) as {
+                threadResumeCompletionMarker?: boolean;
+                threadSnapshotPagination?: boolean;
+                reasoningMessages?: boolean;
+              },
+          ),
+        );
+        const supportsCompletionMarker = config.threadResumeCompletionMarker === true;
+        // Windowed loads are gated on the server capability: pre-pagination
+        // servers reject unknown query params, and a windowed WS fallback to
+        // such a server would silently hide history.
+        const supportsPagination = config.threadSnapshotPagination === true;
+        const supportsReasoningMessages = config.reasoningMessages === true;
+        yield* Ref.set(reasoningMessagesSupported, supportsReasoningMessages);
+        yield* Ref.set(paginationSupported, supportsPagination);
+        yield* Ref.set(awaitingCompletion, supportsCompletionMarker);
         yield* markSynchronizing;
         yield* Ref.set(resumingLive, false);
 
-        const current = yield* SubscriptionRef.get(state);
+        let current = yield* SubscriptionRef.get(state);
+        // A windowed cache resuming against a server without pagination is a
+        // trap: afterSequence resume keeps only the window, and the missing
+        // older turns can never be loaded (the server has no cursor reads).
+        // Drop the window marker and treat the data as needing a full reload.
+        if (!supportsPagination) {
+          yield* applyLock.withPermits(1)(
+            Effect.gen(function* () {
+              if (Option.isNone((yield* SubscriptionRef.get(state)).page)) return;
+              yield* Ref.update(historyEpoch, (epoch) => epoch + 1);
+              yield* SubscriptionRef.update(state, (value) => ({
+                ...value,
+                data: Option.none(),
+                status: value.status === "deleted" ? value.status : ("empty" as const),
+                page: Option.none(),
+              }));
+              yield* SubscriptionRef.set(lastSequence, 0);
+              yield* remember;
+            }),
+          );
+          current = yield* SubscriptionRef.get(state);
+        }
+        if (Option.isNone(current.data) && current.status !== "deleted") {
+          const prepared = yield* SubscriptionRef.get(supervisor.prepared).pipe(
+            Effect.flatMap(
+              Option.match({
+                onSome: Effect.succeed,
+                onNone: () =>
+                  SubscriptionRef.changes(supervisor.prepared).pipe(
+                    Stream.filter(Option.isSome),
+                    Stream.map((value) => value.value),
+                    Stream.runHead,
+                    Effect.map(Option.getOrThrow),
+                  ),
+              }),
+            ),
+          );
+          const httpSnapshot = yield* snapshotLoader.load(
+            prepared,
+            threadId,
+            supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : undefined,
+            supportsReasoningMessages,
+          );
+          if (Option.isSome(httpSnapshot)) {
+            yield* applyItem({ kind: "snapshot", snapshot: httpSnapshot.value });
+            current = yield* SubscriptionRef.get(state);
+          }
+        }
+
         const sequence = yield* SubscriptionRef.get(lastSequence);
         const canResume = Option.isSome(current.data);
-        yield* synchronizationCompletion.arm;
+        if (!supportsCompletionMarker && canResume) {
+          yield* SubscriptionRef.update(state, (value) => ({
+            ...value,
+            status: value.status === "deleted" ? value.status : ("live" as const),
+            error: Option.none(),
+          }));
+        }
 
         return {
+          // Coder: bound fallback frames on the helper stdio connection.
+          targetBytes: 512 * 1024,
           threadId,
           ...(canResume ? { afterSequence: sequence } : {}),
-          // Initial snapshots and resume fallbacks stay windowed so a cold
-          // load or large replay gap does not download the full thread.
-          turnLimit: INITIAL_THREAD_USER_TURN_LIMIT,
-          targetBytes: INITIAL_THREAD_TARGET_BYTES,
-          reasoningMessages: true,
+          ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
+          ...(supportsReasoningMessages ? { reasoningMessages: true as const } : {}),
+          // The WS fallback snapshot (sent when afterSequence is missing or
+          // the gap is too large) should be windowed the same as the HTTP
+          // path; without this a resume failure re-downloads the full thread.
+          ...(supportsPagination ? { turnLimit: INITIAL_THREAD_USER_TURN_LIMIT } : {}),
         };
       }),
       {
@@ -777,28 +889,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   // in flight).
   const olderTurnRequestRegistry = yield* ThreadOlderTurnRequests;
   const olderTurnRequests = yield* Queue.sliding<void>(1);
-  let olderTurnRequestPending = false;
   yield* Stream.fromQueue(olderTurnRequests).pipe(
-    Stream.runForEach(() =>
-      loadOlderTurns().pipe(
-        Effect.ensuring(
-          Effect.sync(() => {
-            olderTurnRequestPending = false;
-          }),
-        ),
-      ),
-    ),
+    Stream.runForEach(() => loadOlderTurns()),
     Effect.forkScoped,
   );
   const deregister = olderTurnRequestRegistry.register(
     threadKey({ environmentId, threadId }),
     () => {
-      if (olderTurnRequestPending) {
-        return false;
-      }
-      olderTurnRequestPending = true;
       Queue.offerUnsafe(olderTurnRequests, undefined);
-      return true;
     },
   );
   yield* Effect.addFinalizer(() => Effect.sync(deregister));
@@ -849,7 +947,7 @@ function threadStateChanges(
 export function createEnvironmentThreadStateAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | EnvironmentCacheStore | R, E>,
 ) {
-  // The Coder browser also bounds idle snapshots by count and bytes. This
+  // Coder: memory-only browser retention bounds idle snapshots by count and bytes. This
   // budget belongs to the atom registry, just like upstream's resume snapshots.
   const retentionAtom = Atom.make(() => makeThreadSnapshotRetention<ThreadResumeSnapshot>());
   // Cache definitions must outlive collectible live-atom definitions. The
@@ -901,6 +999,7 @@ export function createEnvironmentThreadStateAtoms<R, E>(
 
 export * from "./archivedThreads.ts";
 export * from "./checkpointDiff.ts";
+export * from "./threadSnapshotRpc.ts";
 export * from "./composerPathSearch.ts";
 export * from "./threadCommands.ts";
 export * from "./threadDetail.ts";

@@ -53,6 +53,8 @@ export type WorktreeSubmodules = typeof WorktreeSubmodules.Type;
 export type ExecutionEnvironmentPlatform = typeof ExecutionEnvironmentPlatform.Type;
 
 export const ExecutionEnvironmentCapabilities = Schema.Struct({
+  /** Server publishes palettes through the opt-in config stream. */
+  environmentThemes: Schema.optionalKey(Schema.Boolean),
   /** Helper supports project overrides and inheritance resets. */
   projectSettingsOverrides: Schema.optionalKey(Schema.Boolean),
   repositoryIdentity: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
