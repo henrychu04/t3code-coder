@@ -250,10 +250,7 @@ export function CoderWorkspaceLatency({
       >
         <div className="px-1.5 pb-2 pt-1.5">
           <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="font-semibold text-foreground">Coder workspace</div>
-              <div className="mt-0.5 text-[10px] text-muted-foreground">Connected workspace</div>
-            </div>
+            <div className="font-semibold text-foreground">Coder workspace</div>
             <span
               className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium ${healthPillClass}`}
             >
