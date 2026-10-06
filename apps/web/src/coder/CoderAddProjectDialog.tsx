@@ -52,6 +52,7 @@ export function CoderAddProjectDialog({
   >({});
   const [workspaces, setWorkspaces] = useState<readonly DiscoveredCoderWorkspace[]>([]);
   const [discovering, setDiscovering] = useState(false);
+  const [workspaceRefresh, setWorkspaceRefresh] = useState(0);
   const [connectingTarget, setConnectingTarget] = useState<string | null>(null);
   const [environmentId, setEnvironmentId] = useState<EnvironmentId | null>(null);
   const [projectSource, setProjectSource] = useState<"folder" | "gitlab" | "new">(initialSource);
@@ -121,18 +122,30 @@ export function CoderAddProjectDialog({
   const authenticationStatus = authByDeployment[deploymentId];
   const authenticated = authenticationStatus === "authenticated";
 
-  const discover = async (): Promise<void> => {
-    if (!selectedDeployment) return;
+  useEffect(() => {
+    if (!deploymentId || !authenticated) {
+      setDiscovering(false);
+      return;
+    }
+    const controller = new AbortController();
     setDiscovering(true);
     setError(null);
-    try {
-      setWorkspaces(await discoverCoderWorkspaces(selectedDeployment.id));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not discover workspaces.");
-    } finally {
-      setDiscovering(false);
-    }
-  };
+    void discoverCoderWorkspaces(deploymentId, controller.signal)
+      .then((workspaces) => {
+        if (!controller.signal.aborted) setWorkspaces(workspaces);
+      })
+      .catch((cause) => {
+        if (!controller.signal.aborted) {
+          setError(cause instanceof Error ? cause.message : "Could not discover workspaces.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDiscovering(false);
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [deploymentId, authenticated, workspaceRefresh]);
 
   const chooseWorkspace = async (workspace: DiscoveredCoderWorkspace): Promise<void> => {
     if (!selectedDeployment) return;
@@ -251,13 +264,9 @@ export function CoderAddProjectDialog({
                       size="sm"
                       variant="outline"
                       disabled={!authenticated || discovering}
-                      onClick={() => void discover()}
+                      onClick={() => setWorkspaceRefresh((current) => current + 1)}
                     >
-                      {discovering
-                        ? "Loading…"
-                        : workspaces.length > 0
-                          ? "Refresh"
-                          : "Load workspaces"}
+                      {discovering ? "Loading…" : "Refresh"}
                     </Button>
                   </div>
                   {workspaces.length > 0 ? (
@@ -300,7 +309,11 @@ export function CoderAddProjectDialog({
                   ) : (
                     <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                       {authenticated
-                        ? "Load the workspaces available on this domain."
+                        ? discovering
+                          ? "Loading workspaces…"
+                          : error
+                            ? "Could not load workspaces. Refresh to try again."
+                            : "No workspaces available on this domain."
                         : authenticationStatus === "unauthenticated"
                           ? "Sign in to this domain from Settings before adding a project."
                           : "Verify this Coder domain in Settings before adding a project."}
