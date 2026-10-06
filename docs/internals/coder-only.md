@@ -431,8 +431,9 @@ inside the Linux workspace. The helper uses repository-scoped Git commands and t
 workspace-installed `glab` CLI to read MR summary, hover preview, activity, discussions, checks,
 reviewers, and diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
 state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
-default sends an incomplete merge-request creation request to the impossible project ID `0`; a
-normal GitLab validation or not-found response with a GitLab-specific response fingerprint proves
+default sends an incomplete merge-request creation request to the impossible project ID `0` and
+includes the response headers. A normal GitLab validation or not-found response with a
+GitLab-specific response fingerprint proves
 the request reached GitLab, while neither a project nor an MR can be changed. A generic proxy 404,
 failed probe, or indeterminate response disables every GitLab mutation
 while leaving reads, Git operations, and MR checkout available. The Source Control settings surface

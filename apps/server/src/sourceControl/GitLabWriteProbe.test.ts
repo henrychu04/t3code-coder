@@ -39,7 +39,7 @@ it.effect("uses a state-free workspace-level mutation canary", () =>
         command: "glab",
         cwd: "/repo",
         allowNonZeroExit: true,
-        args: ["api", "--method", "POST", "projects/0/merge_requests"],
+        args: ["api", "--include", "--method", "POST", "projects/0/merge_requests"],
       }),
     );
     expect(mockedRun.mock.calls[0]?.[0]).not.toHaveProperty("stdin");
@@ -177,6 +177,31 @@ it.effect("recognizes an included HTTP/2 GitLab response", () =>
     const result = yield* probe.check({ cwd: "/workspace" });
 
     expect(result).toEqual({ status: "writable", writable: true });
+  }).pipe(
+    Effect.provide(
+      GitLabWriteProbe.layer.pipe(
+        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+      ),
+    ),
+  ),
+);
+
+it.effect("recognizes GitLab's missing-field rejection with included response headers", () =>
+  Effect.gen(function* () {
+    mockedRun.mockReturnValueOnce(
+      Effect.succeed({
+        ...output(1, "glab: HTTP 400"),
+        stdout:
+          'HTTP/1.1 400 Bad Request\r\nX-Gitlab-Meta: {"version":"1"}\r\n\r\n' +
+          '{"error":"title is missing, source_branch is missing, target_branch is missing"}',
+      }),
+    );
+    const probe = yield* GitLabWriteProbe.GitLabWriteProbe;
+
+    expect(yield* probe.check({ cwd: "/workspace" })).toEqual({
+      status: "writable",
+      writable: true,
+    });
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(

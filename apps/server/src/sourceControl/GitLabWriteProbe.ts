@@ -144,7 +144,9 @@ function processFailureDetail(error: VcsError): string {
  */
 const workspacePolicyWriteProbe: GitLabWriteProbeBehavior = {
   request: () => ({
-    args: ["api", "--method", "POST", "projects/0/merge_requests"],
+    // Coder: GitLab may validate missing MR fields before the project ID. Include headers
+    // so its state-free 400 rejection still carries a verifiable GitLab fingerprint.
+    args: ["api", "--include", "--method", "POST", "projects/0/merge_requests"],
   }),
   classifyProbe: (output) => {
     const response = `${output.stdout}\n${output.stderr}`;
