@@ -143,6 +143,32 @@ it.layer(NodeServices.layer)("CodexTextGeneration", (it) => {
     ),
   );
 
+  it.effect("generates commit message with branch when includeBranch is true", () =>
+    withFakeCodex(
+      {
+        output: JSON.stringify({
+          subject: "Add important change",
+          body: "",
+          branch: "fix/important-system-change",
+        }),
+      },
+      ({ textGeneration }) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "feature/codex-effect",
+            stagedSummary: "M README.md",
+            stagedPatch: "diff --git a/README.md b/README.md",
+            includeBranch: true,
+            modelSelection: DEFAULT_SELECTION,
+          });
+
+          expect(generated.subject).toBe("Add important change");
+          expect(generated.branch).toBe("feature/fix/important-system-change");
+        }),
+    ),
+  );
+
   it.effect("generates merge request content through workspace Codex", () =>
     withFakeCodex(
       {
