@@ -1,6 +1,7 @@
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
+  isProviderAvailable,
   isProviderDriverKind,
   resolveProviderInstanceEnabled,
   type ModelSelection,
@@ -91,9 +92,20 @@ export function resolveCoderTextGenerationModelSelection(
   return createModelSelection(provider.instanceId, model);
 }
 
-export function resolveSourceControlWriterModelSelection(settings: ServerSettings): ModelSelection {
+export function resolveSourceControlWriterModelSelection(
+  settings: ServerSettings,
+  providers?: ReadonlyArray<ServerProvider>,
+): ModelSelection {
   const selection = settings.sourceControlWriterModelSelection;
-  return selection && isModelSelectionProviderEnabled(settings, selection)
+  if (!selection || !isModelSelectionProviderEnabled(settings, selection)) {
+    return settings.textGenerationModelSelection;
+  }
+  if (providers === undefined) {
+    return selection;
+  }
+
+  const provider = providers.find((candidate) => candidate.instanceId === selection.instanceId);
+  return provider?.enabled === true && isProviderAvailable(provider)
     ? selection
     : settings.textGenerationModelSelection;
 }

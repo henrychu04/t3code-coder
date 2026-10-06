@@ -1,66 +1,21 @@
 import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
-import type {
-  OrchestrationProjectShell,
-  ServerSettings,
-  VcsStatusLocalResult,
-  VcsStatusRemoteResult,
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type OrchestrationProjectShell,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-
-import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-
-export type AutomaticPullSkipReason =
-  | "not-a-repository"
-  | "not-on-default-branch"
-  | "no-upstream"
-  | "working-tree-changes"
-  | "local-commits"
-  | "already-current";
-
-export function automaticPullSkipReason(
-  local: VcsStatusLocalResult,
-  remote: VcsStatusRemoteResult | null,
-): AutomaticPullSkipReason | null {
-  if (!local.isRepo) return "not-a-repository";
-  if (!local.isDefaultRef) return "not-on-default-branch";
-  if (remote === null || !remote.hasUpstream) return "no-upstream";
-  if (local.hasWorkingTreeChanges) return "working-tree-changes";
-  if (remote.aheadCount > 0) return "local-commits";
-  if (remote.behindCount <= 0) return "already-current";
-  return null;
-}
-
-const pullProjectIfEligible = Effect.fn("pullProjectIfEligible")(function* (cwd: string) {
-  const workflow = yield* GitWorkflowService.GitWorkflowService;
-  yield* workflow.invalidateStatus(cwd);
-  const remote = yield* workflow.remoteStatus({ cwd }, { fetch: true });
-  // Re-read local state after fetching so the final safety check is as fresh
-  // as possible immediately before the checkout can move.
-  const local = yield* workflow.localStatus({ cwd });
-  const skipReason = automaticPullSkipReason(local, remote);
-  if (skipReason !== null) {
-    yield* Effect.logDebug("Skipped automatic project pull", { cwd, reason: skipReason });
-    return false;
-  }
-
-  const result = yield* workflow.pull({ cwd }, { automatic: true });
-  yield* workflow.invalidateStatus(cwd);
-  yield* Effect.logDebug("Automatic project pull completed", {
-    cwd,
-    status: result.status,
-    refName: result.refName,
-  });
-  return true;
-});
+import * as GitVcsDriver from "./GitVcsDriver.ts";
 
 export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   projects: ReadonlyArray<OrchestrationProjectShell>,
   settings: ServerSettings = DEFAULT_SERVER_SETTINGS,
 ) {
+  const git = yield* GitVcsDriver.GitVcsDriver;
   const workspaceRoots = [
     ...new Set(
       projects
+        // Coder: retain per-project enablement from the fork settings model.
         .filter((project) => resolveProjectAutoPull(settings, project.id, project.autoPull))
         .map((project) => project.workspaceRoot),
     ),
@@ -69,8 +24,45 @@ export const autoPullProjects = Effect.fn("autoPullProjects")(function* (
   yield* Effect.forEach(
     workspaceRoots,
     (cwd) =>
-      pullProjectIfEligible(cwd).pipe(
-        Effect.catch((cause) => Effect.logWarning("Automatic project pull failed", { cwd, cause })),
+      Effect.gen(function* () {
+        const status = yield* git.statusDetails(cwd);
+        if (
+          !status.isRepo ||
+          !status.isDefaultBranch ||
+          !status.hasUpstream ||
+          status.hasWorkingTreeChanges ||
+          status.aheadCount > 0
+        ) {
+          yield* Effect.logDebug("Skipped automatic project pull", {
+            cwd,
+            reason: !status.isRepo
+              ? "not-a-repository"
+              : !status.isDefaultBranch
+                ? "not-on-default-branch"
+                : !status.hasUpstream
+                  ? "no-upstream"
+                  : status.hasWorkingTreeChanges
+                    ? "working-tree-changes"
+                    : "local-commits",
+          });
+          return;
+        }
+
+        if (status.behindCount <= 0) return;
+
+        const result = yield* git.pullCurrentBranch(cwd);
+        yield* Effect.logDebug("Automatic project pull completed", {
+          cwd,
+          status: result.status,
+          refName: result.refName,
+        });
+      }).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("Automatic project pull failed", {
+            cwd,
+            cause,
+          }),
+        ),
       ),
     { concurrency: 4, discard: true },
   );

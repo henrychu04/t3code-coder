@@ -243,7 +243,7 @@ export const ServerProviderUpdatedPayload = Schema.Struct({
   providers: ServerProviders,
 });
 export type ServerProviderUpdatedPayload = typeof ServerProviderUpdatedPayload.Type;
-const isProviderAvailable = (snapshot: ServerProvider): boolean =>
+export const isProviderAvailable = (snapshot: ServerProvider): boolean =>
   snapshot.availability !== "unavailable";
 
 export const EnvironmentThemeColor = Schema.String.check(

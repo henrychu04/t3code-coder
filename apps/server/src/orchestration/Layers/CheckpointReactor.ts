@@ -37,7 +37,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import { RuntimeReceiptBus } from "../Services/RuntimeReceiptBus.ts";
 import type { CheckpointStoreError } from "../../checkpointing/Errors.ts";
 import type { OrchestrationDispatchError } from "../Errors.ts";
-import { CoderVcsStatus } from "../../coderVcsStatus.ts";
+import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as WorkspaceEntries from "../../workspace/WorkspaceEntries.ts";
 import * as PullRequestService from "../../pullRequest/PullRequestService.ts";
 
@@ -97,7 +97,7 @@ const make = Effect.gen(function* () {
   const checkpointStore = yield* CheckpointStore.CheckpointStore;
   const receiptBus = yield* RuntimeReceiptBus;
   const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
-  const vcsStatus = yield* CoderVcsStatus;
+  const vcsStatus = yield* VcsStatusBroadcaster;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const pullRequests = yield* PullRequestService.PullRequestService;
@@ -527,7 +527,7 @@ const make = Effect.gen(function* () {
     readonly cwd: string;
     readonly followWorktreePath: boolean;
   }) {
-    const local = yield* vcsStatus.refresh(input.cwd, { fetch: false }).pipe(
+    const local = yield* vcsStatus.refreshLocalStatus(input.cwd).pipe(
       Effect.catch((error) =>
         Effect.logWarning("failed to refresh local git status after agent command", {
           threadId: input.event.threadId,

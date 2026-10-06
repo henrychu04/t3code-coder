@@ -3,7 +3,10 @@ import { ExitCode } from "effect/unstable/process/ChildProcessSpawner";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as RpcTest from "effect/unstable/rpc/RpcTest";
 import * as Context from "effect/Context";
+// Coder: verify the flat fetch interval supplied to the upstream status stream.
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -11,6 +14,9 @@ import * as Path from "effect/Path";
 import { assert, describe, it } from "@effect/vitest";
 import {
   CoderWsRpcGroup,
+  DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
+  DEFAULT_SERVER_SETTINGS,
+  ServerSettingsError,
   WS_METHODS,
   ORCHESTRATION_WS_METHODS,
   ProjectId,
@@ -39,7 +45,11 @@ import * as Keybindings from "./keybindings.ts";
 import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
-import * as CoderVcsStatus from "./coderVcsStatus.ts";
+import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
+import * as GitManager from "./git/GitManager.ts";
+import * as VcsDriverRegistry from "./vcs/VcsDriverRegistry.ts";
+import * as SourceControlProviderRegistry from "./sourceControl/SourceControlProviderRegistry.ts";
+import * as TextGeneration from "./textGeneration/TextGeneration.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
@@ -69,7 +79,14 @@ function stub<I, S extends object>(key: Context.Key<I, S>, overrides: Partial<S>
 }
 
 const harness = (
-  options: { repository?: boolean; rejectCreate?: boolean; scratchRace?: boolean } = {},
+  options: {
+    repository?: boolean;
+    rejectCreate?: boolean;
+    scratchRace?: boolean;
+    // Coder: exercise status RPC wiring with settings and broadcaster effects stubbed.
+    settings?: Partial<ServerSettings.ServerSettingsService["Service"]>;
+    vcsStatus?: Partial<VcsStatusBroadcaster.VcsStatusBroadcaster["Service"]>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
@@ -79,7 +96,7 @@ const harness = (
     );
     const commands: OrchestrationCommand[] = [];
     const projects = new Map<ProjectId, OrchestrationProject>();
-    const services = Layer.mergeAll(
+    const dependencies = Layer.mergeAll(
       stub(EnvironmentThemeService),
       stub(CoderEnvironment.CoderEnvironment),
       stub(CoderRuntimeStartup.CoderRuntimeStartup),
@@ -136,14 +153,19 @@ const harness = (
       stub(ProviderMaintenanceRunner),
       stub(ProviderInstanceRegistry.ProviderInstanceRegistry),
       stub(ProviderService),
-      ServerSettings.layerTest(),
+      options.settings
+        ? stub(ServerSettings.ServerSettingsService, options.settings)
+        : ServerSettings.layerTest(),
       stub(Keybindings.Keybindings),
       stub(WorkspaceEntries.WorkspaceEntries),
       stub(WorkspaceFileSystem.WorkspaceFileSystem),
       stub(ScreenshotArtifacts.ScreenshotArtifacts),
-      stub(CoderVcsStatus.CoderVcsStatus),
-      stub(GitWorkflowService.GitWorkflowService),
+      stub(VcsStatusBroadcaster.VcsStatusBroadcaster, options.vcsStatus),
+      Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({}),
+      stub(SourceControlProviderRegistry.SourceControlProviderRegistry),
+      stub(TextGeneration.TextGeneration),
       stub(GitVcsDriver.GitVcsDriver, {
+        readConfigValue: () => Effect.succeed(null),
         execute: () =>
           Effect.succeed({
             stdout: options.repository ? "true" : "",
@@ -168,6 +190,10 @@ const harness = (
       ServerConfig.layer(config),
       WorkspacePaths.layer,
     ).pipe(Layer.provideMerge(NodeServices.layer));
+    // Exercise the real service layers with workspace/provider effects stubbed.
+    const services = GitWorkflowService.layer.pipe(
+      Layer.provideMerge(GitManager.layer.pipe(Layer.provideMerge(dependencies))),
+    );
     const client = yield* RpcTest.makeClient(CoderWsRpcGroup).pipe(
       Effect.provide(CoderWs.layer.pipe(Layer.provide(services))),
     );
@@ -272,3 +298,64 @@ describe("Coder project RPCs", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 });
+
+// Coder: the broadcaster must receive a fresh settings read, including upstream's fallback.
+it.effect(
+  "reads the current flat fetch interval for each status loop and falls back on failure",
+  () =>
+    Effect.gen(function* () {
+      let settings = DEFAULT_SERVER_SETTINGS;
+      let settingsFail = false;
+      const intervals: number[] = [];
+      const h = yield* harness({
+        settings: {
+          getSettings: Effect.suspend(() =>
+            settingsFail
+              ? Effect.fail(
+                  new ServerSettingsError({
+                    operation: "read-file",
+                    settingsPath: "<test>",
+                    cause: new Error("Unavailable test settings"),
+                  }),
+                )
+              : Effect.succeed(settings),
+          ),
+        },
+        vcsStatus: {
+          streamStatus: (input, options) =>
+            Stream.fromEffect(
+              Effect.gen(function* () {
+                assert.equal(input.cwd, "/repo");
+                const interval = options!.automaticRemoteRefreshInterval!;
+                intervals.push(Duration.toMillis(yield* interval));
+                settings = { ...settings, automaticGitFetchInterval: Duration.seconds(2) };
+                intervals.push(Duration.toMillis(yield* interval));
+                settings = { ...settings, automaticGitFetchInterval: Duration.zero };
+                intervals.push(Duration.toMillis(yield* interval));
+                settingsFail = true;
+                intervals.push(Duration.toMillis(yield* interval));
+                return {
+                  _tag: "snapshot" as const,
+                  local: {
+                    isRepo: false,
+                    hasPrimaryRemote: false,
+                    isDefaultRef: false,
+                    refName: null,
+                    hasWorkingTreeChanges: false,
+                    workingTree: { files: [], insertions: 0, deletions: 0 },
+                  },
+                  remote: null,
+                };
+              }),
+            ),
+        },
+      });
+      yield* h.client[WS_METHODS.subscribeVcsStatus]({ cwd: "/repo" }).pipe(Stream.runDrain);
+      assert.deepEqual(intervals, [
+        Duration.toMillis(DEFAULT_SERVER_SETTINGS.automaticGitFetchInterval),
+        2000,
+        0,
+        Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL),
+      ]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

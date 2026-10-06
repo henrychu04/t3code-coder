@@ -22,7 +22,7 @@ import * as Deletion from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as Providers from "./provider/Services/ProviderService.ts";
 import * as Terminals from "./terminal/Manager.ts";
 import * as Git from "./vcs/GitVcsDriver.ts";
-import * as Workflow from "./git/GitWorkflowService.ts";
+import * as Workflow from "./git/GitManager.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 
 const emptySnapshot = { projects: [], threads: [] } as unknown as OrchestrationShellSnapshot;
@@ -38,9 +38,9 @@ function fixtures(snapshot = emptySnapshot) {
     } as unknown as Engine.OrchestrationEngineShape),
     Layer.succeed(Deletion.ThreadDeletionReactor, {} as Deletion.ThreadDeletionReactor["Service"]),
     Layer.succeed(Providers.ProviderService, {} as Providers.ProviderService["Service"]),
-    Layer.succeed(Workflow.GitWorkflowService, {
+    Layer.succeed(Workflow.GitManager, {
       invalidateStatus: () => Effect.void,
-    } as unknown as Workflow.GitWorkflowService["Service"]),
+    } as unknown as Workflow.GitManager["Service"]),
     Layer.succeed(Terminals.TerminalManager, {
       subscribeMetadata: () => Effect.succeed(() => {}),
     } as unknown as Terminals.TerminalManager["Service"]),

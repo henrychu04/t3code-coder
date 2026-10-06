@@ -69,7 +69,7 @@ import { ProjectionSnapshotQuery } from "../Services/ProjectionSnapshotQuery.ts"
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Clock from "effect/Clock";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { CoderVcsStatus } from "../../coderVcsStatus.ts";
+import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 
 const asProjectId = (value: string): ProjectId => ProjectId.make(value);
@@ -492,10 +492,8 @@ describe("ProviderCommandReactor", () => {
         } satisfies Partial<GitWorkflowService.GitWorkflowService["Service"]>),
       ),
       Layer.provideMerge(
-        Layer.succeed(CoderVcsStatus, {
-          refresh: refreshStatus,
-          stream: () => Stream.die("stream should not be called in this test"),
-          refStream: () => Stream.die("refStream should not be called in this test"),
+        Layer.mock(VcsStatusBroadcaster)({
+          refreshStatus,
         }),
       ),
       Layer.provideMerge(

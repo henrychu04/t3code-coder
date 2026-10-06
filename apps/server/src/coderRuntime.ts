@@ -19,7 +19,9 @@ import * as ServerConfig from "./config.ts";
 import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
-import * as CoderVcsStatus from "./coderVcsStatus.ts";
+import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
+import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
+import * as GitManager from "./git/GitManager.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import * as PullRequestProviderRegistry from "./pullRequest/PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
@@ -130,13 +132,20 @@ const CoderProjectSetupScriptRunnerLive = ProjectSetupScriptRunner.layer.pipe(
   Layer.provideMerge(CoderTerminalLive),
 );
 
-const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(
+const CoderGitManagerLive = GitManager.layer.pipe(
   Layer.provide(SqlitePersistenceLayerLive),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderSourceControlLive),
   Layer.provideMerge(CoderTextGenerationLive),
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(CoderProjectSetupScriptRunnerLive),
+  Layer.provideMerge(CoderProviderInstancesLive),
+);
+
+const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(
+  Layer.provideMerge(CoderGitManagerLive),
+  Layer.provideMerge(GitVcsDriver.layer),
+  Layer.provideMerge(CoderVcsDriverRegistryLive),
 );
 
 const CoderSourceControlRepositoriesLive = SourceControlRepositoryService.layer.pipe(
@@ -152,7 +161,17 @@ const CoderVcsLive = Layer.mergeAll(
   CoderGitWorkflowLive,
   CoderSourceControlRepositoriesLive,
   ProjectCloneTracker.layer.pipe(Layer.provide(CoderSourceControlRepositoriesLive)),
-  CoderVcsStatus.layer.pipe(Layer.provide(CoderGitWorkflowLive)),
+  // Coder: provide the demand-only background policy and fork settings resolution.
+  VcsStatusBroadcaster.layer.pipe(
+    Layer.provide(CoderGitWorkflowLive),
+    Layer.provide(BackgroundPolicy.layer),
+    Layer.provide(
+      VcsStatusBroadcaster.autoPullPolicyLayer.pipe(
+        Layer.provide(CoderOrchestrationLayerLive),
+        Layer.provide(CoderSettingsLive),
+      ),
+    ),
+  ),
   ReviewService.layer.pipe(
     Layer.provideMerge(GitVcsDriver.layer),
     Layer.provideMerge(CoderVcsDriverRegistryLive),

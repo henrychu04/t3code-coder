@@ -29,7 +29,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import { GitWorkflowService as GitManager } from "../git/GitWorkflowService.ts";
+import { GitManager } from "../git/GitManager.ts";
 type GitBranchPullRequest = NonNullable<
   Effect.Success<ReturnType<GitManager["Service"]["branchPullRequest"]>>
 >;
@@ -67,6 +67,9 @@ function branchPullRequest(
 ): GitBranchPullRequest {
   return {
     ...reference(number),
+    title: "Merge request",
+    baseRef: "main",
+    headRef: "feature",
     state,
     updatedAt: NOW,
     repositoryKey: REPOSITORY_KEY,

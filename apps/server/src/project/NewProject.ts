@@ -138,14 +138,7 @@ export const createNewProjectFolder = Effect.fn("NewProject.createNewProjectFold
     return yield* Effect.gen(function* () {
       const branch =
         (yield* git
-          .execute({
-            operation: "NewProject.defaultBranch",
-            cwd,
-            args: ["config", "--get", "init.defaultBranch"],
-            allowNonZeroExit: true,
-            timeoutMs: 10_000,
-          })
-          .pipe(Effect.map((result) => result.stdout.trim() || null))
+          .readConfigValue(cwd, "init.defaultBranch")
           .pipe(Effect.orElseSucceed(() => null))) ?? "main";
       yield* git.execute({
         operation: "NewProject.init",

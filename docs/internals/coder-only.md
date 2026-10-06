@@ -535,6 +535,32 @@ listed here is drift to remove rather than fork behavior to keep.
   Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
   `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
   unused.
+- **Git layer.** `vcs/GitVcsDriver.ts`, `vcs/GitVcsDriverCore.ts`, `vcs/VcsProcess.ts`,
+  `vcs/VcsStatusBroadcaster.ts`, `git/GitManager.ts`, `git/GitWorkflowService.ts`, and
+  `git/remoteRefs.ts` are upstream's. Each difference is marked `Coder:` in the file:
+  - The driver core has no Git metrics or span events. It adds `moveWorktree`, which
+    renames a thread's worktree folder together with its branch, and `refStatusLocal`, a
+    branch read that never refreshes the real index. Review file expansion allows up to
+    `MAX_REVIEW_DIFF_FILE_BYTES` and fails with `ReviewDiffFileTooLargeError` for the chunked
+    review RPCs, rejecting malformed UTF-8. A top-level review `sourceKind` returns only that
+    source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
+    Checkpoint commits use the "T3 Coder" identity.
+  - `VcsProcess` has no GitHub CLI semaphore, classifies only `glab` failures, and keeps the
+    `classifyNonZeroExit` hook used by the GitLab write probe.
+  - `GitManager` probes the resolved provider's write access before any stacked action that
+    creates a merge request, so a blocked workspace, or a remote that resolves to no registered
+    provider, commits and pushes nothing. It also reads merge-request
+    templates for GitLab and fetches merge-request heads from `refs/merge-requests/<n>/head`.
+    Custom writing instructions remain one string. Upstream's GitHub and Forgejo branches stay
+    verbatim but are unreachable with the GitLab-only registry.
+  - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
+  - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
+    auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
+    Coder-owned stub that always allows work, because polling already stops when the last
+    status subscription ends. `coderWs.ts` reads the remote refresh interval from the flat
+    `automaticGitFetchInterval` setting.
+  - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
+    `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor.

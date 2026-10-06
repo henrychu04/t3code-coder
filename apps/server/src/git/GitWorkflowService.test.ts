@@ -1,1376 +1,277 @@
-import * as ServerSettings from "../serverSettings.ts";
-import * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import { beforeEach, expect, it, vi } from "@effect/vitest";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import { DEFAULT_SERVER_SETTINGS, ThreadId } from "@t3tools/contracts";
+import { assert, describe, expect, it, vi } from "@effect/vitest";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Deferred from "effect/Deferred";
-import * as Fiber from "effect/Fiber";
-import { TestClock } from "effect/testing";
-import * as Duration from "effect/Duration";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as FileSystem from "effect/FileSystem";
-import * as Path from "effect/Path";
-import { ChildProcessSpawner } from "effect/unstable/process";
 
-import * as ServerConfig from "../config.ts";
-import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
-import * as SourceControlProvider from "../sourceControl/SourceControlProvider.ts";
-import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
-import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
+import { VcsRepositoryDetectionError } from "@t3tools/contracts";
+
+import * as GitManager from "./GitManager.ts";
 import * as GitWorkflowService from "./GitWorkflowService.ts";
+import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
-const getChangeRequest = vi.fn(() =>
-  Effect.succeed({
-    provider: "gitlab" as const,
-    number: 42,
-    title: "Restore the panel",
-    url: "https://gitlab.example.com/group/project/-/merge_requests/42",
-    baseRefName: "main",
-    headRefName: "feature/panel",
-    state: "open" as const,
-    updatedAt: Option.none(),
-  }),
-);
-const listChangeRequests =
-  vi.fn<SourceControlProvider.SourceControlProvider["Service"]["listChangeRequests"]>();
-const probeWriteAccess =
-  vi.fn<SourceControlProvider.SourceControlProvider["Service"]["probeWriteAccess"]>();
-const checkoutChangeRequest = vi.fn(() => Effect.void);
-const getRepositoryCloneUrls = vi.fn(() =>
-  Effect.succeed({
-    nameWithOwner: "contributor/project",
-    url: "https://gitlab.example.com/contributor/project.git",
-    sshUrl: "git@gitlab.example.com:contributor/project.git",
-  }),
-);
-const provider = {
-  kind: "gitlab" as const,
-  probeWriteAccess,
-  getChangeRequest,
-  listChangeRequests,
-  checkoutChangeRequest,
-  getRepositoryCloneUrls,
-} as unknown as SourceControlProvider.SourceControlProvider["Service"];
-
-const listRefs = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["listRefs"]>();
-const createWorktree = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["createWorktree"]>();
-const refStatusLocal = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["refStatusLocal"]>();
-const execute = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["execute"]>();
-const ensureRemote = vi.fn<GitVcsDriver.GitVcsDriver["Service"]["ensureRemote"]>();
-const runSetupScript =
-  vi.fn<ProjectSetupScriptRunner.ProjectSetupScriptRunner["Service"]["runForThread"]>();
-
-function gitOutput(stdout = "", exitCode = 0): GitVcsDriver.ExecuteGitResult {
-  return {
-    exitCode: ChildProcessSpawner.ExitCode(exitCode),
-    stdout,
-    stderr: "",
-    stdoutTruncated: false,
-    stderrTruncated: false,
-  };
+function makeLayer(input: {
+  readonly detect: VcsDriverRegistry.VcsDriverRegistry["Service"]["detect"];
+}) {
+  return GitWorkflowService.layer.pipe(
+    Layer.provide(
+      Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+        detect: input.detect,
+      }),
+    ),
+    Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+    Layer.provide(Layer.mock(GitManager.GitManager)({})),
+  );
 }
 
-beforeEach(() => {
-  execute.mockReset();
-  execute.mockImplementation((input) => {
-    if (input.args[0] === "remote" && input.args.length === 1) {
-      return Effect.succeed(gitOutput("origin\n"));
-    }
-    if (input.args[0] === "config" && input.args[1] === "--get") {
-      return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
-    }
-    return Effect.succeed(gitOutput());
-  });
-  ensureRemote.mockReset();
-  ensureRemote.mockReturnValue(Effect.succeed("fork"));
-  runSetupScript.mockReset();
-  runSetupScript.mockReturnValue(Effect.succeed({ status: "no-script" }));
-  listRefs.mockReset();
-  createWorktree.mockReset();
-  refStatusLocal.mockReset();
-  checkoutChangeRequest.mockClear();
-  getRepositoryCloneUrls.mockClear();
-  getChangeRequest.mockClear();
-  listChangeRequests.mockReset();
-  probeWriteAccess.mockReset();
-  probeWriteAccess.mockReturnValue(Effect.succeed({ status: "writable", writable: true }));
-  listChangeRequests.mockReturnValue(
-    Effect.succeed([
-      {
-        provider: "gitlab" as const,
-        number: 42,
-        title: "Restore the panel",
-        url: "https://gitlab.example.com/group/project/-/merge_requests/42",
-        baseRefName: "main",
-        headRefName: "feature/panel",
-        state: "open" as const,
-        updatedAt: Option.none(),
-      },
-    ]),
-  );
-});
+describe("GitWorkflowService", () => {
+  it.effect("reports a non-Git VCS repository as not a Git repository", () =>
+    Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const isRepository = yield* workflow.isRepository("/jj-repo");
 
-const workflowSupport = Layer.mergeAll(
-  NodeServices.layer,
-  Layer.mock(ServerSettings.ServerSettingsService)({
-    getSettings: Effect.succeed(DEFAULT_SERVER_SETTINGS),
-  }),
-  Layer.mock(TextGeneration.TextGeneration)({
-    generatePrContent: () => Effect.succeed({ title: "Restore Git actions", body: "" }),
-  }),
-  Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({ runForThread: runSetupScript }),
-);
-
-const layer = it.layer(
-  GitWorkflowService.layer.pipe(
-    Layer.provide(workflowSupport),
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.mock(GitVcsDriver.GitVcsDriver)({
-          execute,
-          ensureRemote,
-          listRefs,
-          createWorktree,
-          refStatusLocal,
-        }),
-        Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({
-          runForThread: runSetupScript,
-        }),
-        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-          resolveLink: () => undefined,
-          get: () => Effect.succeed(provider),
+      assert.equal(isRepository, false);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          detect: () =>
+            Effect.succeed({
+              kind: "jj",
+              repository: {
+                kind: "jj",
+                rootPath: "/jj-repo",
+                metadataPath: "/jj-repo/.jj",
+                freshness: {
+                  source: "live-local",
+                  observedAt: DateTime.makeUnsafe("2026-01-01T00:00:00.000Z"),
+                  expiresAt: Option.none(),
+                },
+              },
+              driver: {} as VcsDriverRegistry.VcsDriverHandle["driver"],
+            }),
         }),
       ),
     ),
-  ),
-);
-
-layer("GitWorkflowService.runStackedAction", (it) => {
-  it.effect(
-    "rejects MR workflows before changing the repository when GitLab writes are blocked",
-    () =>
-      Effect.gen(function* () {
-        probeWriteAccess.mockReturnValueOnce(
-          Effect.succeed({ status: "policy-blocked", writable: false }),
-        );
-        const service = yield* GitWorkflowService.GitWorkflowService;
-
-        const error = yield* service
-          .runStackedAction({
-            actionId: "blocked-action",
-            cwd: "/repo",
-            action: "commit_push_pr",
-            commitMessage: "Must not commit",
-          })
-          .pipe(Effect.flip);
-
-        expect(error).toMatchObject({
-          _tag: "SourceControlProviderError",
-          provider: "gitlab",
-          operation: "createChangeRequest",
-          detail: "GitLab write operations are blocked by this workspace.",
-        });
-        expect(execute).not.toHaveBeenCalled();
-      }),
-  );
-});
-
-layer("GitWorkflowService.preparePullRequestThread", (it) => {
-  it.effect("checks an MR out in the project checkout", () =>
-    Effect.gen(function* () {
-      refStatusLocal.mockReturnValueOnce(
-        Effect.succeed({ isRepo: true, refName: "feature/panel" }),
-      );
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "local",
-      });
-
-      expect(checkoutChangeRequest).toHaveBeenCalledWith({
-        cwd: "/repo",
-        reference: "42",
-        force: true,
-      });
-      expect(result).toMatchObject({
-        branch: "feature/panel",
-        worktreePath: null,
-        isOnPullRequestHead: true,
-      });
-    }),
   );
 
-  it.effect("creates an isolated branch and checks the MR out inside its worktree", () =>
+  it.effect("returns an empty local status when no VCS repository is detected", () =>
     Effect.gen(function* () {
-      listRefs.mockReturnValueOnce(
-        Effect.succeed({
-          refs: [],
-          isRepo: true,
-          hasPrimaryRemote: true,
-          nextCursor: null,
-          totalCount: 0,
-        }),
-      );
-      listRefs.mockReturnValueOnce(
-        Effect.succeed({
-          refs: [
-            {
-              name: "feature/panel",
-              isRemote: false,
-              worktreePath: null,
-              current: false,
-              isDefault: false,
-            },
-          ],
-          isRepo: true,
-          hasPrimaryRemote: true,
-          nextCursor: null,
-          totalCount: 1,
-        }),
-      );
-      createWorktree.mockReturnValueOnce(
-        Effect.succeed({
-          worktree: {
-            path: "/worktrees/project/feature-panel",
-            refName: "feature/panel",
-          },
-        }),
-      );
-      const service = yield* GitWorkflowService.GitWorkflowService;
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const status = yield* workflow.localStatus({ cwd: "/not-a-repo" });
 
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "worktree",
-        threadId: ThreadId.make("thread-1"),
+      assert.deepStrictEqual(status, {
+        isRepo: false,
+        hasPrimaryRemote: false,
+        isDefaultRef: false,
+        refName: null,
+        hasWorkingTreeChanges: false,
+        workingTree: {
+          files: [],
+          insertions: 0,
+          deletions: 0,
+        },
       });
-
-      expect(createWorktree).toHaveBeenCalledWith({
-        cwd: "/repo",
-        refName: "feature/panel",
-        path: null,
-      });
-      expect(execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          cwd: "/repo",
-          args: ["fetch", "origin", "+refs/merge-requests/42/head:refs/heads/feature/panel"],
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          detect: () => Effect.succeed(null),
         }),
-      );
-      expect(runSetupScript).toHaveBeenCalledWith({
-        threadId: "thread-1",
-        projectCwd: "/repo",
-        worktreePath: "/worktrees/project/feature-panel",
-      });
-      expect(result).toMatchObject({
-        branch: "feature/panel",
-        worktreePath: "/worktrees/project/feature-panel",
-        isOnPullRequestHead: true,
-      });
-    }),
+      ),
+    ),
   );
 
-  it.effect("refreshes a clean reused worktree after the MR head is force-pushed", () =>
+  it.effect("returns an empty full status when no VCS repository is detected", () =>
     Effect.gen(function* () {
-      listRefs.mockReturnValue(
-        Effect.succeed({
-          refs: [
-            {
-              name: "feature/panel",
-              isRemote: false,
-              worktreePath: "/worktrees/project/feature-panel",
-              current: false,
-              isDefault: false,
-            },
-          ],
-          isRepo: true,
-          hasPrimaryRemote: true,
-          nextCursor: null,
-          totalCount: 1,
-        }),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "rev-parse") {
-          const revision = input.args[1];
-          return Effect.succeed(
-            gitOutput(revision === "refs/t3code/merge-requests/42/head" ? "new\n" : "old\n"),
-          );
-        }
-        if (input.args[0] === "status") return Effect.succeed(gitOutput());
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const status = yield* workflow.status({ cwd: "/not-a-repo" });
 
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "worktree",
-        threadId: ThreadId.make("thread-1"),
+      assert.deepStrictEqual(status, {
+        isRepo: false,
+        hasPrimaryRemote: false,
+        isDefaultRef: false,
+        refName: null,
+        hasWorkingTreeChanges: false,
+        workingTree: {
+          files: [],
+          insertions: 0,
+          deletions: 0,
+        },
+        hasUpstream: false,
+        aheadCount: 0,
+        behindCount: 0,
+        aheadOfDefaultCount: 0,
+        pr: null,
       });
-
-      expect(execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          cwd: "/worktrees/project/feature-panel",
-          args: ["reset", "--hard", "new"],
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          detect: () => Effect.succeed(null),
         }),
-      );
-      expect(runSetupScript).toHaveBeenCalledOnce();
-      expect(result).toMatchObject({
-        worktreePath: "/worktrees/project/feature-panel",
-        isOnPullRequestHead: true,
-      });
-    }),
+      ),
+    ),
   );
 
-  it.effect("preserves dirty work in a reused worktree and reports that it is stale", () =>
-    Effect.gen(function* () {
-      listRefs.mockReturnValue(
-        Effect.succeed({
-          refs: [
-            {
-              name: "feature/panel",
-              isRemote: false,
-              worktreePath: "/worktrees/project/feature-panel",
-              current: false,
-              isDefault: false,
-            },
-          ],
-          isRepo: true,
-          hasPrimaryRemote: true,
-          nextCursor: null,
-          totalCount: 1,
+  it.effect("does not call GitManager status methods when no VCS repository is detected", () => {
+    const localStatus = vi.fn();
+    const remoteStatus = vi.fn();
+    const status = vi.fn();
+
+    const testLayer = GitWorkflowService.layer.pipe(
+      Layer.provide(
+        Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+          detect: () => Effect.succeed(null),
         }),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "rev-parse") {
-          const revision = input.args[1];
-          return Effect.succeed(
-            gitOutput(revision === "refs/t3code/merge-requests/42/head" ? "new\n" : "old\n"),
-          );
-        }
-        if (input.args[0] === "status") return Effect.succeed(gitOutput(" M src/panel.ts\n"));
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
+      ),
+      Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
+      Layer.provide(
+        Layer.mock(GitManager.GitManager)({
+          localStatus,
+          remoteStatus,
+          status,
+        }),
+      ),
+    );
 
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "worktree",
-        threadId: ThreadId.make("thread-1"),
-      });
+    return Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      yield* workflow.localStatus({ cwd: "/not-a-repo" });
+      yield* workflow.remoteStatus({ cwd: "/not-a-repo" });
+      yield* workflow.status({ cwd: "/not-a-repo" });
 
-      expect(execute.mock.calls.some((call) => call[0].args[0] === "reset")).toBe(false);
-      expect(runSetupScript).not.toHaveBeenCalled();
-      expect(result.isOnPullRequestHead).toBe(false);
-    }),
+      assert.equal(localStatus.mock.calls.length, 0);
+      assert.equal(remoteStatus.mock.calls.length, 0);
+      assert.equal(status.mock.calls.length, 0);
+    }).pipe(Effect.provide(testLayer));
+  });
+
+  it.effect("returns an empty ref list when no VCS repository is detected", () =>
+    Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const refs = yield* workflow.listRefs({ cwd: "/not-a-repo" });
+
+      assert.deepStrictEqual(refs, {
+        refs: [],
+        isRepo: false,
+        hasPrimaryRemote: false,
+        nextCursor: null,
+        totalCount: 0,
+      });
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          detect: () => Effect.succeed(null),
+        }),
+      ),
+    ),
   );
 
-  it.effect("preserves local commits in a reused worktree", () =>
-    Effect.gen(function* () {
-      listRefs.mockReturnValue(
-        Effect.succeed({
-          refs: [
-            {
-              name: "feature/panel",
-              isRemote: false,
-              worktreePath: "/worktrees/project/feature-panel",
-              current: false,
-              isDefault: false,
-            },
-          ],
-          isRepo: true,
-          hasPrimaryRemote: true,
-          nextCursor: null,
-          totalCount: 1,
-        }),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "rev-parse") {
-          const revision = input.args[1];
-          return Effect.succeed(
-            gitOutput(
-              revision === "@{upstream}"
-                ? "base\n"
-                : revision === "refs/t3code/merge-requests/42/head"
-                  ? "new\n"
-                  : "local\n",
-            ),
-          );
-        }
-        if (input.args[0] === "merge-base") return Effect.succeed(gitOutput("", 1));
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
+  it.effect("structures workflow detection failures without exposing upstream details", () => {
+    const cause = new VcsRepositoryDetectionError({
+      operation: "VcsDriverRegistry.detect",
+      cwd: "/repo",
+      detail: "upstream detail must stay in the cause chain",
+    });
 
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "worktree",
-      });
-
-      expect(
-        execute.mock.calls.some(
-          (call) => call[0].args[0] === "reset" || call[0].args[0] === "merge",
-        ),
-      ).toBe(false);
-      expect(result.isOnPullRequestHead).toBe(false);
-    }),
-  );
-
-  it.effect("preserves local commits on a branch that is not attached to a worktree", () =>
-    Effect.gen(function* () {
-      listRefs.mockReturnValue(
-        Effect.succeed({
-          refs: [
-            {
-              name: "feature/panel",
-              isRemote: false,
-              worktreePath: null,
-              current: false,
-              isDefault: false,
-            },
-          ],
-          isRepo: true,
-          hasPrimaryRemote: true,
-          nextCursor: null,
-          totalCount: 1,
-        }),
-      );
-      createWorktree.mockReturnValueOnce(
-        Effect.succeed({
-          worktree: {
-            path: "/worktrees/project/feature-panel",
-            refName: "feature/panel",
-          },
-        }),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "rev-parse") {
-          const revision = input.args[1];
-          return Effect.succeed(
-            gitOutput(
-              revision === "@{upstream}"
-                ? "base\n"
-                : revision === "refs/t3code/merge-requests/42/head"
-                  ? "new\n"
-                  : "local\n",
-            ),
-          );
-        }
-        if (input.args[0] === "merge-base") return Effect.succeed(gitOutput("", 1));
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "worktree",
-        threadId: ThreadId.make("thread-1"),
-      });
-
-      expect(createWorktree).toHaveBeenCalledWith({
-        cwd: "/repo",
-        refName: "feature/panel",
-        path: null,
-      });
-      expect(
-        execute.mock.calls.some(
-          (call) =>
-            call[0].args[0] === "fetch" &&
-            call[0].args.some((arg) => arg.endsWith(":refs/heads/feature/panel")),
-        ),
-      ).toBe(false);
-      expect(
-        execute.mock.calls.some(
-          (call) => call[0].args[0] === "reset" || call[0].args[0] === "merge",
-        ),
-      ).toBe(false);
-      expect(runSetupScript).toHaveBeenCalledOnce();
-      expect(result).toMatchObject({
-        worktreePath: "/worktrees/project/feature-panel",
-        isOnPullRequestHead: false,
-      });
-    }),
-  );
-
-  it.effect("uses a namespaced local branch and fork remote for cross-project MRs", () =>
-    Effect.gen(function* () {
-      getChangeRequest.mockReturnValueOnce(
-        Effect.succeed({
-          provider: "gitlab" as const,
-          number: 42,
-          title: "Restore the panel",
-          url: "https://gitlab.example.com/group/project/-/merge_requests/42",
-          baseRefName: "main",
-          headRefName: "Feature/Panel",
-          state: "open" as const,
-          updatedAt: Option.none(),
-          isCrossRepository: true,
-          headRepositoryNameWithOwner: "contributor/project",
-          headRepositoryOwnerLogin: "contributor",
-        }),
-      );
-      listRefs
-        .mockReturnValueOnce(
-          Effect.succeed({
-            refs: [],
-            isRepo: true,
-            hasPrimaryRemote: true,
-            nextCursor: null,
-            totalCount: 0,
-          }),
-        )
-        .mockReturnValueOnce(
-          Effect.succeed({
-            refs: [
-              {
-                name: "t3code/pr-42/feature/panel",
-                isRemote: false,
-                worktreePath: null,
-                current: false,
-                isDefault: false,
-              },
-            ],
-            isRepo: true,
-            hasPrimaryRemote: true,
-            nextCursor: null,
-            totalCount: 1,
-          }),
-        );
-      createWorktree.mockReturnValueOnce(
-        Effect.succeed({
-          worktree: {
-            path: "/worktrees/project/fork-panel",
-            refName: "t3code/pr-42/feature/panel",
-          },
-        }),
-      );
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.preparePullRequestThread({
-        cwd: "/repo",
-        reference: "42",
-        mode: "worktree",
-      });
-
-      expect(ensureRemote).toHaveBeenCalledWith({
-        cwd: expect.any(String),
-        preferredName: "contributor",
-        url: expect.any(String),
-      });
-      expect(createWorktree).toHaveBeenCalledWith({
-        cwd: "/repo",
-        refName: "t3code/pr-42/feature/panel",
-        path: null,
-      });
-      expect(result.branch).toBe("t3code/pr-42/feature/panel");
-    }),
-  );
-});
-
-layer("GitWorkflowService.branchPullRequest", (it) => {
-  it.effect("resolves a saved branch merge request without changing the checkout", () =>
-    Effect.gen(function* () {
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
-          return Effect.succeed(
-            gitOutput(
-              "refs/heads/feature/panel\0origin/feature/panel\0origin\0refs/heads/feature/panel\n",
-            ),
-          );
-        }
-        if (input.args[0] === "symbolic-ref") {
-          return Effect.succeed(gitOutput("origin/main\n"));
-        }
-        if (input.args[0] === "config" && input.args[1] === "--get") {
-          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
-        }
-        return Effect.succeed(gitOutput());
-      });
-      listChangeRequests.mockReturnValueOnce(
-        Effect.succeed([
-          {
-            provider: "gitlab" as const,
-            number: 42,
-            title: "Restore the panel",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/42",
-            baseRefName: "main",
-            headRefName: "feature/panel",
-            state: "merged" as const,
-            updatedAt: Option.none(),
-            closedAt: null,
-            mergedAt: "2026-09-05T10:00:00.000Z",
-          },
-        ]),
-      );
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.branchPullRequest({
-        cwd: "/repo",
-        branch: "feature/panel",
-      });
-
-      expect(result).toMatchObject({
-        state: "merged",
-        updatedAt: null,
-        closedAt: null,
-        mergedAt: "2026-09-05T10:00:00.000Z",
-      });
-      expect(listChangeRequests).toHaveBeenCalledWith({
-        cwd: "/repo",
-        headSelector: "feature/panel",
-        state: "all",
-        limit: 20,
-      });
-      expect(
-        execute.mock.calls.some(([input]) =>
-          ["checkout", "switch", "fetch", "pull", "push"].includes(input.args[0] ?? ""),
-        ),
-      ).toBe(false);
-    }),
-  );
-
-  it.effect("rejects an unqualified branch tracked by multiple remotes", () =>
-    Effect.gen(function* () {
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\nfork\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
-          return Effect.succeed(gitOutput());
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/remotes") {
-          return Effect.succeed(
-            gitOutput("refs/remotes/origin/feature/panel\nrefs/remotes/fork/feature/panel\n"),
-          );
-        }
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const error = yield* service
-        .branchPullRequest({ cwd: "/repo", branch: "feature/panel" })
-        .pipe(Effect.flip);
+    return Effect.gen(function* () {
+      const workflow = yield* GitWorkflowService.GitWorkflowService;
+      const error = yield* workflow.status({ cwd: "/repo" }).pipe(Effect.flip);
 
       expect(error).toMatchObject({
         _tag: "GitManagerError",
-        detail: "Multiple remotes track feature/panel. Its merge request is ambiguous.",
-      });
-      expect(listChangeRequests).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("does not query GitLab for a known unpublished local branch", () =>
-    Effect.gen(function* () {
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
-          return Effect.succeed(gitOutput("refs/heads/feature/panel\0\0\0\n"));
-        }
-        if (input.args[0] === "symbolic-ref") {
-          return Effect.succeed(gitOutput("origin/main\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/remotes") {
-          return Effect.succeed(gitOutput("refs/remotes/origin/main\n"));
-        }
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.branchPullRequest({
+        operation: "GitWorkflowService.status",
         cwd: "/repo",
-        branch: "feature/panel",
+        detail: "Failed to detect a VCS repository for this Git workflow.",
       });
-
-      expect(result).toBeNull();
-      expect(listChangeRequests).not.toHaveBeenCalled();
-    }),
-  );
-
-  it.effect("uses the default branch of a non-origin remote", () =>
-    Effect.gen(function* () {
-      listChangeRequests.mockReturnValueOnce(
-        Effect.succeed([
-          {
-            provider: "gitlab" as const,
-            number: 43,
-            title: "Merged main branch",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/43",
-            baseRefName: "develop",
-            headRefName: "main",
-            state: "merged" as const,
-            updatedAt: Option.none(),
-          },
-        ]),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("upstream\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/main") {
-          return Effect.succeed(
-            gitOutput("refs/heads/main\0upstream/main\0upstream\0refs/heads/main\n"),
-          );
-        }
-        if (input.args[0] === "symbolic-ref") {
-          return Effect.succeed(gitOutput("upstream/develop\n"));
-        }
-        if (input.args[0] === "config" && input.args[1] === "--get") {
-          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
-        }
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.branchPullRequest({ cwd: "/repo", branch: "main" });
-
-      expect(result).toMatchObject({
-        state: "merged",
-        updatedAt: null,
-        closedAt: null,
-        mergedAt: null,
-        number: 43,
-        url: "https://gitlab.example.com/group/project/-/merge_requests/43",
-        repositoryKey: "gitlab.example.com/group/project",
-      });
-      expect(execute).toHaveBeenCalledWith(
-        expect.objectContaining({
-          args: ["symbolic-ref", "--quiet", "--short", "refs/remotes/upstream/HEAD"],
-        }),
-      );
-    }),
-  );
-
-  it.effect("suppresses terminal master MRs when the remote default cannot be resolved", () =>
-    Effect.gen(function* () {
-      listChangeRequests.mockReturnValueOnce(
-        Effect.succeed([
-          {
-            provider: "gitlab" as const,
-            number: 48,
-            title: "Merged master branch",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/48",
-            baseRefName: "master",
-            headRefName: "master",
-            state: "merged" as const,
-            updatedAt: Option.none(),
-          },
-        ]),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/master") {
-          return Effect.succeed(
-            gitOutput("refs/heads/master\0origin/master\0origin\0refs/heads/master\n"),
-          );
-        }
-        if (input.args[0] === "show-ref") {
-          return Effect.succeed(gitOutput("", 1));
-        }
-        if (input.args[0] === "config" && input.args[1] === "--get") {
-          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
-        }
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.branchPullRequest({ cwd: "/repo", branch: "master" });
-
-      expect(result).toBeNull();
-    }),
-  );
-
-  it.effect("disambiguates fork merge requests by remote repository identity", () =>
-    Effect.gen(function* () {
-      listChangeRequests.mockReturnValueOnce(
-        Effect.succeed([
-          {
-            provider: "gitlab" as const,
-            number: 44,
-            title: "Unrelated branch",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/44",
-            baseRefName: "main",
-            headRefName: "feature/panel",
-            headRepositoryNameWithOwner: "group/project",
-            state: "closed" as const,
-            updatedAt: Option.none(),
-          },
-          {
-            provider: "gitlab" as const,
-            number: 45,
-            title: "Fork branch",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/45",
-            baseRefName: "main",
-            headRefName: "feature/panel",
-            headRepositoryNameWithOwner: "contributor/project",
-            state: "merged" as const,
-            updatedAt: Option.none(),
-          },
-        ]),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\nfork\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
-          return Effect.succeed(
-            gitOutput(
-              "refs/heads/feature/panel\0fork/feature/panel\0fork\0refs/heads/feature/panel\n",
-            ),
-          );
-        }
-        if (input.args[0] === "symbolic-ref") {
-          return Effect.succeed(gitOutput("origin/main\n"));
-        }
-        if (input.args[0] === "config" && input.args[1] === "--get") {
-          const key = input.args[2];
-          return Effect.succeed(
-            gitOutput(
-              key === "remote.fork.url"
-                ? "git@gitlab.example.com:contributor/project.git\n"
-                : "git@gitlab.example.com:group/project.git\n",
-            ),
-          );
-        }
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.branchPullRequest({
-        cwd: "/repo",
-        branch: "feature/panel",
-      });
-
-      expect(result).toMatchObject({
-        state: "merged",
-        updatedAt: null,
-        closedAt: null,
-        mergedAt: null,
-        number: 45,
-        url: "https://gitlab.example.com/group/project/-/merge_requests/45",
-        repositoryKey: "gitlab.example.com/group/project",
-      });
-    }),
-  );
-
-  it.effect("does not attach a fork MR to a same-named target-repository branch", () =>
-    Effect.gen(function* () {
-      listChangeRequests.mockReturnValueOnce(
-        Effect.succeed([
-          {
-            provider: "gitlab" as const,
-            number: 46,
-            title: "Fork branch",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/46",
-            baseRefName: "main",
-            headRefName: "feature/panel",
-            isCrossRepository: true,
-            headRepositoryNameWithOwner: "contributor/project",
-            headRepositoryOwnerLogin: "contributor",
-            state: "closed" as const,
-            updatedAt: Option.none(),
-          },
-          {
-            provider: "gitlab" as const,
-            number: 47,
-            title: "Target branch",
-            url: "https://gitlab.example.com/group/project/-/merge_requests/47",
-            baseRefName: "main",
-            headRefName: "feature/panel",
-            isCrossRepository: false,
-            headRepositoryNameWithOwner: "group/project",
-            headRepositoryOwnerLogin: "group",
-            state: "merged" as const,
-            updatedAt: Option.none(),
-          },
-        ]),
-      );
-      execute.mockImplementation((input) => {
-        if (input.args[0] === "remote" && input.args.length === 1) {
-          return Effect.succeed(gitOutput("origin\n"));
-        }
-        if (input.args[0] === "for-each-ref" && input.args.at(-1) === "refs/heads/feature/panel") {
-          return Effect.succeed(
-            gitOutput(
-              "refs/heads/feature/panel\0origin/feature/panel\0origin\0refs/heads/feature/panel\n",
-            ),
-          );
-        }
-        if (input.args[0] === "symbolic-ref") {
-          return Effect.succeed(gitOutput("origin/main\n"));
-        }
-        if (input.args[0] === "config" && input.args[1] === "--get") {
-          return Effect.succeed(gitOutput("git@gitlab.example.com:group/project.git\n"));
-        }
-        return Effect.succeed(gitOutput());
-      });
-      const service = yield* GitWorkflowService.GitWorkflowService;
-
-      const result = yield* service.branchPullRequest({
-        cwd: "/repo/same-target",
-        branch: "feature/panel",
-      });
-
-      expect(result).toMatchObject({
-        state: "merged",
-        updatedAt: null,
-        closedAt: null,
-        mergedAt: null,
-        number: 47,
-        url: "https://gitlab.example.com/group/project/-/merge_requests/47",
-        repositoryKey: "gitlab.example.com/group/project",
-      });
-    }),
-  );
-});
-
-it.effect("coalesces status reads and invalidates them explicitly", () => {
-  let statusReads = 0;
-  const testLayer = GitWorkflowService.layer.pipe(
-    Layer.provide(workflowSupport),
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.mock(GitVcsDriver.GitVcsDriver)({
-          statusDetailsLocal: () =>
-            Effect.sync(() => {
-              statusReads += 1;
-              return {
-                isRepo: true,
-                isDefaultBranch: false,
-                branch: "feature/cache",
-                hasWorkingTreeChanges: false,
-                workingTree: { files: [], insertions: 0, deletions: 0 },
-              };
-            }),
-          execute: () =>
-            Effect.succeed({
-              exitCode: ChildProcessSpawner.ExitCode(0),
-              stdout: "git@gitlab.example.com:group/project.git\n",
-              stderr: "",
-              stdoutTruncated: false,
-              stderrTruncated: false,
-            }),
-        }),
-        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-          resolveLink: () => undefined,
-          get: () => Effect.succeed(provider),
+      expect(error.message).not.toContain(cause.detail);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          detect: () => Effect.fail(cause),
         }),
       ),
-    ),
-  );
-
-  return Effect.gen(function* () {
-    const workflow = yield* GitWorkflowService.GitWorkflowService;
-    yield* Effect.all(
-      Array.from({ length: 8 }, () => workflow.localStatus({ cwd: "/repo" })),
-      { concurrency: "unbounded" },
     );
-    expect(statusReads).toBe(1);
-
-    yield* workflow.invalidateStatus("/repo");
-    yield* workflow.localStatus({ cwd: "/repo" });
-    expect(statusReads).toBe(2);
-  }).pipe(Effect.provide(testLayer));
-});
-
-it.effect("commits, pushes, and creates a GitLab merge request through the workflow", () => {
-  let listCalls = 0;
-  const createdRequests: unknown[] = [];
-  const mergeRequest = {
-    provider: "gitlab" as const,
-    number: 17,
-    title: "Restore Git actions",
-    url: "https://gitlab.example.com/group/project/-/merge_requests/17",
-    baseRefName: "main",
-    headRefName: "feature/panel",
-    state: "open" as const,
-    updatedAt: Option.none(),
-  };
-  const workflowProvider = {
-    kind: "gitlab" as const,
-    probeWriteAccess: () => Effect.succeed({ status: "writable" as const, writable: true }),
-    listChangeRequests: () => {
-      listCalls += 1;
-      return Effect.succeed(listCalls === 1 ? [] : [mergeRequest]);
-    },
-    createChangeRequest: (input: unknown) =>
-      Effect.sync(() => {
-        createdRequests.push(input);
-      }),
-  } as unknown as SourceControlProvider.SourceControlProvider["Service"];
-  const configLayer = ServerConfig.layerTest(process.cwd(), {
-    prefix: "t3-git-workflow-actions-",
   });
-  const gitLayer = GitVcsDriver.layer.pipe(
-    Layer.provide(configLayer),
-    Layer.provideMerge(VcsProcess.layer),
-    Layer.provideMerge(NodeServices.layer),
-  );
-  const workflowLayer = GitWorkflowService.layer.pipe(
-    Layer.provide(workflowSupport),
-    Layer.provideMerge(gitLayer),
-    Layer.provide(
-      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-        resolveLink: () => undefined,
-        get: () => Effect.succeed(workflowProvider),
-      }),
-    ),
-  );
 
-  return Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const git = yield* GitVcsDriver.GitVcsDriver;
-    const workflow = yield* GitWorkflowService.GitWorkflowService;
-    const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-workflow-action-" });
-    const repo = path.join(root, "repo");
-    const remote = path.join(root, "remote.git");
-    yield* fileSystem.makeDirectory(repo);
-    yield* fileSystem.makeDirectory(remote);
-    const run = (cwd: string, args: readonly string[]) =>
-      git.execute({ operation: "GitWorkflowService.test", cwd, args });
-    yield* run(repo, ["init", "--initial-branch=main"]);
-    yield* run(repo, ["config", "user.email", "test@test.com"]);
-    yield* run(repo, ["config", "user.name", "Test"]);
-    yield* fileSystem.writeFileString(path.join(repo, "README.md"), "initial\n");
-    yield* run(repo, ["add", "README.md"]);
-    yield* run(repo, ["commit", "-m", "Initial"]);
-    yield* run(remote, ["init", "--bare", "--initial-branch=main"]);
-    yield* run(repo, ["remote", "add", "origin", remote]);
-    yield* run(repo, ["push", "--set-upstream", "origin", "main"]);
-    yield* run(repo, ["switch", "-c", "feature/panel"]);
-    yield* fileSystem.writeFileString(path.join(repo, "panel.ts"), "export const panel = true;\n");
-    yield* fileSystem.writeFileString(
-      path.join(repo, "excluded.ts"),
-      "export const excluded = true;\n",
-    );
-    const hookPath = path.join(repo, ".git", "hooks", "pre-commit");
-    yield* fileSystem.writeFileString(hookPath, "#!/bin/sh\necho checking-panel >&2\n");
-    yield* fileSystem.chmod(hookPath, 0o755);
-    const progress: string[] = [];
-
-    const result = yield* workflow.runStackedAction(
-      {
-        actionId: "action-1",
-        cwd: repo,
-        action: "commit_push_pr",
-        commitMessage: "Restore Git actions",
-        filePaths: ["panel.ts"],
-      },
-      {
-        publish: (event) =>
-          Effect.sync(() => {
-            progress.push(event.kind);
-          }),
-      },
-    );
-
-    expect(result.commit.status).toBe("created");
-    expect(result.push).toMatchObject({
-      status: "pushed",
-      branch: "feature/panel",
-      upstreamBranch: "origin/feature/panel",
-      setUpstream: true,
+  it.effect("structures command detection failures without exposing upstream details", () => {
+    const cause = new VcsRepositoryDetectionError({
+      operation: "VcsDriverRegistry.detect",
+      cwd: "/repo",
+      detail: "upstream command detail must stay in the cause chain",
     });
-    expect(result.pr).toMatchObject({
-      status: "created",
-      number: 17,
-      headBranch: "feature/panel",
-      baseBranch: "main",
-    });
-    expect(createdRequests).toEqual([
-      {
-        cwd: repo,
-        baseRefName: "main",
-        headSelector: "feature/panel",
-        title: "Restore Git actions",
-        bodyFile: "/dev/null",
-      },
-    ]);
-    expect(progress[0]).toBe("action_started");
-    expect(progress).toContain("hook_started");
-    expect(progress).toContain("hook_output");
-    expect(progress).toContain("hook_finished");
-    expect(progress.at(-1)).toBe("action_finished");
-    const remaining = yield* run(repo, ["status", "--short"]);
-    expect(remaining.stdout).toContain("?? excluded.ts");
-  }).pipe(Effect.scoped, Effect.provide(workflowLayer), Effect.provide(NodeServices.layer));
-});
 
-it.effect("serializes a branch switch behind an in-flight pull", () =>
-  Effect.gen(function* () {
-    const started = yield* Deferred.make<void>();
-    const release = yield* Deferred.make<void>();
-    let branch = "main";
-    let pulledBranch = "";
-    const testLayer = GitWorkflowService.layer.pipe(
-      Layer.provide(workflowSupport),
-      Layer.provide(
-        Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-          resolveLink: () => undefined,
-          get: () => Effect.succeed(provider),
-        }),
-      ),
-      Layer.provide(
-        Layer.mock(GitVcsDriver.GitVcsDriver)({
-          statusDetailsLocal: () =>
-            Effect.succeed({
-              isRepo: true,
-              branch,
-              isDefaultBranch: branch === "main",
-              hasWorkingTreeChanges: false,
-              workingTree: { files: [], insertions: 0, deletions: 0 },
-            } as never),
-          switchRef: (input) =>
-            Effect.sync(() => {
-              if (input.cwd === "/repo") branch = input.refName;
-              return { refName: input.refName };
-            }),
-          execute: (input) => {
-            if (input.operation === "GitWorkflowService.pull.upstream")
-              return Deferred.succeed(started, undefined).pipe(
-                Effect.andThen(Deferred.await(release)),
-                Effect.as(gitOutput("origin/main")),
-              );
-            if (input.args[0] === "pull")
-              return Effect.sync(() => {
-                pulledBranch = branch;
-                return gitOutput();
-              });
-            return Effect.succeed(gitOutput());
-          },
-        }),
-      ),
-    );
-    yield* Effect.gen(function* () {
+    return Effect.gen(function* () {
       const workflow = yield* GitWorkflowService.GitWorkflowService;
-      const pulling = yield* workflow.pull({ cwd: "/repo" }).pipe(Effect.forkChild);
-      yield* Deferred.await(started);
-      const switching = yield* workflow
-        .switchRef({ cwd: "/repo", refName: "feature" })
-        .pipe(Effect.forkChild);
-      yield* TestClock.adjust(Duration.zero);
-      expect(branch).toBe("main");
-      expect((yield* workflow.switchRef({ cwd: "/other", refName: "independent" })).refName).toBe(
-        "independent",
-      );
-      yield* Deferred.succeed(release, undefined);
-      const result = yield* Fiber.join(pulling);
-      yield* Fiber.join(switching);
-      expect(branch).toBe("feature");
-      expect({ pulledBranch, reportedBranch: result.refName }).toEqual({
-        pulledBranch: "main",
-        reportedBranch: "main",
+      const error = yield* workflow.listRefs({ cwd: "/repo" }).pipe(Effect.flip);
+
+      expect(error).toMatchObject({
+        _tag: "GitCommandError",
+        operation: "GitWorkflowService.listRefs",
+        command: "vcs-route",
+        cwd: "/repo",
+        detail: "Failed to detect a VCS repository for this Git command.",
       });
-    }).pipe(Effect.provide(testLayer));
-  }),
-);
-
-for (const scenario of [
-  { name: "branch changed", branch: "feature", dirty: false, counts: "0 1", allowed: false },
-  { name: "working tree changed", branch: "main", dirty: true, counts: "0 1", allowed: false },
-  { name: "local commits appeared", branch: "main", dirty: false, counts: "1 1", allowed: false },
-  { name: "already current", branch: "main", dirty: false, counts: "0 0", allowed: false },
-  { name: "still eligible", branch: "main", dirty: false, counts: "0 1", allowed: true },
-]) {
-  it.effect(`rechecks automatic pull after a queued mutation: ${scenario.name}`, () =>
-    Effect.gen(function* () {
-      const started = yield* Deferred.make<void>();
-      const release = yield* Deferred.make<void>();
-      let changed = false;
-      let pulls = 0;
-      const testLayer = GitWorkflowService.layer.pipe(
-        Layer.provide(workflowSupport),
-        Layer.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => undefined,
-            get: () => Effect.succeed(provider),
-          }),
-        ),
-        Layer.provide(
-          Layer.mock(GitVcsDriver.GitVcsDriver)({
-            statusDetailsLocal: () =>
-              Effect.sync(
-                () =>
-                  ({
-                    isRepo: true,
-                    branch: changed ? scenario.branch : "main",
-                    isDefaultBranch: !changed || scenario.branch === "main",
-                    hasWorkingTreeChanges: changed && scenario.dirty,
-                    workingTree: { files: [], insertions: 0, deletions: 0 },
-                  }) as never,
-              ),
-            switchRef: () =>
-              Effect.gen(function* () {
-                yield* Deferred.succeed(started, undefined);
-                yield* Deferred.await(release);
-                changed = true;
-                return { refName: scenario.branch };
-              }),
-            execute: (input) =>
-              Effect.sync(() => {
-                if (input.operation === "GitWorkflowService.pull.automaticCounts")
-                  return gitOutput(scenario.counts);
-                if (input.operation === "GitWorkflowService.pull.upstream")
-                  return gitOutput("origin/main");
-                if (input.args[0] === "pull") pulls++;
-                return gitOutput();
-              }),
-          }),
-        ),
-      );
-      yield* Effect.gen(function* () {
-        const workflow = yield* GitWorkflowService.GitWorkflowService;
-        yield* workflow.localStatus({ cwd: "/repo" });
-        const changing = yield* workflow
-          .switchRef({ cwd: "/repo", refName: scenario.branch })
-          .pipe(Effect.forkChild);
-        yield* Deferred.await(started);
-        const pulling = yield* workflow
-          .pull({ cwd: "/repo" }, { automatic: true })
-          .pipe(Effect.result, Effect.forkChild);
-        yield* TestClock.adjust(Duration.zero);
-        expect(pulls).toBe(0);
-        yield* Deferred.succeed(release, undefined);
-        yield* Fiber.join(changing);
-        const result = yield* Fiber.join(pulling);
-        expect(result._tag).toBe(scenario.allowed ? "Success" : "Failure");
-        expect(pulls).toBe(scenario.allowed ? 1 : 0);
-      }).pipe(Effect.provide(testLayer));
-    }),
-  );
-}
-
-layer("GitWorkflowService.prepareWorktreeBase", (it) => {
-  it.effect("falls back to the project checkout for a non-repository or unborn branch", () =>
-    Effect.gen(function* () {
-      const service = yield* GitWorkflowService.GitWorkflowService;
-      execute.mockReturnValue(Effect.succeed(gitOutput("", 128)));
-      expect(yield* service.prepareWorktreeBase({ cwd: "/repo", baseBranch: "main" })).toBeNull();
-      expect(execute).toHaveBeenCalledTimes(1);
-      execute.mockClear();
-      execute.mockImplementation((input) =>
-        Effect.succeed(
-          input.args.includes("--is-inside-work-tree") ? gitOutput("true") : gitOutput("", 128),
-        ),
-      );
-      expect(yield* service.prepareWorktreeBase({ cwd: "/repo", baseBranch: "main" })).toBeNull();
-      expect(createWorktree).not.toHaveBeenCalled();
-    }),
-  );
-  it.effect(
-    "uses the fetched origin commit and falls back to the local branch when unavailable",
-    () =>
-      Effect.gen(function* () {
-        const service = yield* GitWorkflowService.GitWorkflowService;
-        const local = "a".repeat(40),
-          remote = "b".repeat(40);
-        let remoteAvailable = true;
-        execute.mockImplementation((input) => {
-          if (input.args.includes("--is-inside-work-tree"))
-            return Effect.succeed(gitOutput("true"));
-          if (input.args[0] === "remote") return Effect.succeed(gitOutput("origin\n"));
-          if (input.args.at(-1) === "refs/remotes/origin/main^{commit}")
-            return Effect.succeed(remoteAvailable ? gitOutput(remote) : gitOutput("", 128));
-          if (input.args.at(-1) === "main^{commit}") return Effect.succeed(gitOutput(local));
-          return Effect.succeed(gitOutput());
-        });
-        expect(
-          yield* service.prepareWorktreeBase({
-            cwd: "/repo",
-            baseBranch: "main",
-            startFromOrigin: true,
-          }),
-        ).toBe(remote);
-        expect(
-          execute.mock.calls.some(([input]) => input.args.join(" ") === "fetch --no-tags origin"),
-        ).toBe(true);
-        remoteAvailable = false;
-        expect(
-          yield* service.prepareWorktreeBase({
-            cwd: "/repo",
-            baseBranch: "main",
-            startFromOrigin: true,
-          }),
-        ).toBe(local);
-      }),
-  );
+      expect(error.message).not.toContain(cause.detail);
+    }).pipe(
+      Effect.provide(
+        makeLayer({
+          detect: () => Effect.fail(cause),
+        }),
+      ),
+    );
+  });
 });
 
-it.effect("does not start Git auto-maintenance from status fetches", () => {
-  const driverLayer = GitVcsDriver.layer.pipe(
-    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-workflow-" })),
-    Layer.provideMerge(VcsProcess.layer),
-    Layer.provideMerge(NodeServices.layer),
+// Coder: the two helper passthroughs retain Git-only routing.
+it.effect("routes worktree moves and lightweight ref reads through the Git command guard", () => {
+  let kind: "git" | "jj" = "git";
+  let moves = 0;
+  let reads = 0;
+  const move = vi.fn(() =>
+    Effect.sync(() => {
+      moves += 1;
+    }),
   );
-  const testLayer = GitWorkflowService.layer.pipe(
-    Layer.provide(workflowSupport),
-    Layer.provide(
-      Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-        resolveLink: () => undefined,
-        get: () => Effect.succeed(provider),
-      }),
-    ),
-    Layer.provideMerge(driverLayer),
+  const ref = vi.fn(() =>
+    Effect.sync(() => {
+      reads += 1;
+      return { isRepo: true, refName: "feature" };
+    }),
   );
-
+  const input = { cwd: "/repo", oldPath: "/repo/old", newPath: "/repo/new" };
   return Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const driver = yield* GitVcsDriver.GitVcsDriver;
-    const git = (cwd: string, args: ReadonlyArray<string>) =>
-      driver.execute({ operation: "test.git", cwd, args, timeoutMs: 10_000 });
-    const remote = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-status-remote-" });
-    const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-status-fetch-" });
-    yield* git(remote, ["init", "--bare"]);
-    yield* git(cwd, ["init", "--initial-branch=main"]);
-    yield* git(cwd, ["config", "user.email", "test@test.com"]);
-    yield* git(cwd, ["config", "user.name", "Test"]);
-    yield* git(cwd, ["remote", "add", "origin", remote]);
-    for (const name of ["first", "second"]) {
-      yield* fileSystem.writeFileString(path.join(cwd, `${name}.txt`), `${name}\n`);
-      yield* git(cwd, ["add", `${name}.txt`]);
-      yield* git(cwd, ["commit", "-m", name]);
-      yield* git(cwd, ["push", "-u", "origin", "main"]);
-      yield* git(cwd, ["repack", "-d"]);
-    }
-    // Two packs make `git gc --auto` due, and without detaching it would run inside the fetch.
-    yield* git(cwd, ["config", "gc.autoPackLimit", "1"]);
-    yield* git(cwd, ["config", "gc.autoDetach", "false"]);
-    yield* git(cwd, ["config", "maintenance.autoDetach", "false"]);
-    const packCount = git(cwd, ["count-objects", "-v"]).pipe(
-      Effect.map((result) => result.stdout.match(/^packs: (\d+)$/m)?.[1]),
-    );
-    expect(yield* packCount).toBe("2");
-
     const workflow = yield* GitWorkflowService.GitWorkflowService;
-    yield* workflow.remoteStatus({ cwd }, { fetch: true });
-
-    expect(yield* packCount).toBe("2");
-  }).pipe(Effect.scoped, Effect.provide(testLayer));
+    yield* workflow.moveWorktree(input);
+    expect(yield* workflow.localRefStatus({ cwd: "/repo" })).toEqual({
+      isRepo: true,
+      refName: "feature",
+    });
+    expect(move).toHaveBeenCalledExactlyOnceWith(input);
+    expect(ref).toHaveBeenCalledExactlyOnceWith("/repo");
+    kind = "jj";
+    expect(yield* workflow.moveWorktree(input).pipe(Effect.flip)).toMatchObject({
+      _tag: "GitCommandError",
+      command: "vcs-route",
+    });
+    expect(yield* workflow.localRefStatus({ cwd: "/repo" }).pipe(Effect.flip)).toMatchObject({
+      _tag: "GitCommandError",
+      command: "vcs-route",
+    });
+    expect(moves).toBe(1);
+    expect(reads).toBe(1);
+  }).pipe(
+    Effect.provide(
+      GitWorkflowService.layer.pipe(
+        Layer.provide(
+          Layer.mock(VcsDriverRegistry.VcsDriverRegistry)({
+            resolve: () => Effect.succeed({ kind } as VcsDriverRegistry.VcsDriverHandle),
+          }),
+        ),
+        Layer.provide(
+          Layer.mock(GitVcsDriver.GitVcsDriver)({ moveWorktree: move, refStatusLocal: ref }),
+        ),
+        Layer.provide(Layer.mock(GitManager.GitManager)({})),
+      ),
+    ),
+  );
 });

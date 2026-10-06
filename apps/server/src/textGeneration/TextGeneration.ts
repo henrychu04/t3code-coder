@@ -17,6 +17,8 @@ export interface CommitMessageGenerationInput {
   branch: string | null;
   stagedSummary: string;
   stagedPatch: string;
+  /** When true, the model also returns a semantic branch name for the change. */
+  includeBranch?: boolean;
   modelSelection: ModelSelection;
   policy?: TextGenerationPolicy;
 }
@@ -24,6 +26,8 @@ export interface CommitMessageGenerationInput {
 export interface CommitMessageGenerationResult {
   subject: string;
   body: string;
+  /** Only present when `includeBranch` was set on the input. */
+  branch?: string | undefined;
 }
 
 export interface PrContentGenerationInput {
