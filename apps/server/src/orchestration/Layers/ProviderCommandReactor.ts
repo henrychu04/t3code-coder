@@ -60,7 +60,7 @@ import {
 } from "../../textGeneration/ThreadTitleContext.ts";
 import { canReplaceThreadTitle, DEFAULT_THREAD_TITLE } from "../threadTitles.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
-import { CoderVcsStatus } from "../../coderVcsStatus.ts";
+import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import { GitWorkflowService } from "../../git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "../../git/renameBranchWithCompensation.ts";
 import { PersistenceSqlError } from "../../persistence/Errors.ts";
@@ -218,7 +218,7 @@ const make = Effect.gen(function* () {
   const providerRegistry = yield* ProviderRegistry;
   const gitWorkflow = yield* GitWorkflowService;
   const fileSystem = yield* FileSystem.FileSystem;
-  const vcsStatus = yield* CoderVcsStatus;
+  const vcsStatus = yield* VcsStatusBroadcaster;
   const path = yield* Path.Path;
   const textGeneration = yield* TextGeneration;
   const serverSettingsService = yield* ServerSettingsService;
@@ -1003,7 +1003,7 @@ const make = Effect.gen(function* () {
             ),
           ),
       });
-      yield* vcsStatus.refresh(cwd).pipe(Effect.ignoreCause({ log: true }));
+      yield* vcsStatus.refreshStatus(cwd).pipe(Effect.ignoreCause({ log: true }));
     }).pipe(
       reportGeneratedNameFailure({
         threadId: input.threadId,

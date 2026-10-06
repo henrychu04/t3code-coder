@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Match from "effect/Match";
 import * as Schedule from "effect/Schedule";
+import * as Semaphore from "effect/Semaphore";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
 import {
@@ -33,10 +34,8 @@ export interface VcsProcessInput {
   readonly maxOutputBytes?: number;
   readonly outputMode?: ProcessRunner.ProcessRunInput["outputMode"];
   readonly appendTruncationMarker?: boolean;
-  /** Classifies a non-zero result before stderr is discarded at the process boundary. */
+  // Coder: the GitLab write probe classifies stderr before it is discarded.
   readonly classifyNonZeroExit?: (stderr: string) => VcsProcessExitFailureKind | undefined;
-  readonly onStdoutLine?: (line: string) => Effect.Effect<void, never>;
-  readonly onStderrLine?: (line: string) => Effect.Effect<void, never>;
 }
 
 export interface VcsProcessOutput {
@@ -60,11 +59,15 @@ export class VcsProcess extends Context.Service<
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
+const VCS_PROCESS_CONCURRENCY = 8;
+// Coder: GitLab-only source control does not allocate a GitHub CLI semaphore.
 
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
 
+// Coder: hosted CLI authentication/not-found classification is GitLab-only.
 const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFailureKind => {
   const normalized = stderr.toLowerCase();
+
   if (
     normalized.includes("authentication failed") ||
     normalized.includes("not logged in") ||
@@ -74,14 +77,17 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
   ) {
     return "authentication";
   }
+
   if (
     normalized.includes("api rate limit") ||
     normalized.includes("rate limit exceeded") ||
+    normalized.includes("secondary rate limit") ||
     normalized.includes("too many requests") ||
     normalized.includes("http 429")
   ) {
     return "rate-limited";
   }
+
   if (
     command === "glab" &&
     (normalized.includes("merge request not found") ||
@@ -90,6 +96,7 @@ const classifyNonZeroExit = (command: string, stderr: string): VcsProcessExitFai
   ) {
     return "not-found";
   }
+
   return "command-failed";
 };
 
@@ -100,8 +107,9 @@ const isTransientGitExit = (stderr: string) =>
 
 export const make = Effect.gen(function* () {
   const processRunner = yield* ProcessRunner.ProcessRunner;
+  const vcsProcesses = yield* Semaphore.make(VCS_PROCESS_CONCURRENCY);
 
-  const runOnce = Effect.fn("VcsProcess.runOnce")(function* (input: VcsProcessInput) {
+  const runUnbounded = Effect.fn("VcsProcess.runUnbounded")(function* (input: VcsProcessInput) {
     const baseError = {
       operation: input.operation,
       command: input.command,
@@ -123,8 +131,6 @@ export const make = Effect.gen(function* () {
         outputMode: input.outputMode ?? "truncate",
         truncatedMarker: input.appendTruncationMarker ? OUTPUT_TRUNCATED_MARKER : "",
         timeoutBehavior: "error",
-        ...(input.onStdoutLine ? { onStdoutLine: input.onStdoutLine } : {}),
-        ...(input.onStderrLine ? { onStderrLine: input.onStderrLine } : {}),
       })
       .pipe(
         Effect.mapError(
@@ -161,6 +167,7 @@ export const make = Effect.gen(function* () {
     }
 
     if (!input.allowNonZeroExit && result.code !== 0) {
+      // Coder: preserve the GitLab write probe's classification hook.
       const failureKind =
         input.classifyNonZeroExit?.(result.stderr) ??
         classifyNonZeroExit(input.command, result.stderr);
@@ -190,13 +197,20 @@ export const make = Effect.gen(function* () {
   });
 
   const run = Effect.fn("VcsProcess.run")(function* (input: VcsProcessInput) {
+    const bounded = vcsProcesses.withPermits(1)(runUnbounded(input));
     if (
       input.command === "git" &&
       input.operation === CHECKPOINT_CAPTURE_OPERATION &&
       input.onStdoutChunk === undefined
     ) {
       // Retry the failed command, retaining the private index/tree and recovery's outer deadline.
-      return yield* runOnce(input).pipe(
+      return yield* bounded.pipe(
+        Effect.tapError((error) =>
+          Effect.logDebug("checkpoint Git command failed", {
+            operation: input.operation,
+            errorTag: error._tag,
+          }),
+        ),
         Effect.retry({
           times: 2,
           while: (error) => error._tag === "VcsProcessExitError" && error.retryable === true,
@@ -204,7 +218,8 @@ export const make = Effect.gen(function* () {
         }),
       );
     }
-    return yield* runOnce(input);
+    // Coder: all supported VCS processes use only the general semaphore.
+    return yield* bounded;
   });
 
   return VcsProcess.of({ run });

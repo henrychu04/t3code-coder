@@ -23,7 +23,7 @@ import * as Schedule from "effect/Schedule";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as GitManager from "../git/GitManager.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import { forkParked } from "../serverActivation.ts";
@@ -62,7 +62,7 @@ interface RefreshRequest {
 
 export function pullRequestMatchesProject(
   pullRequest: NonNullable<
-    Effect.Success<ReturnType<GitWorkflow.GitWorkflowService["Service"]["branchPullRequest"]>>
+    Effect.Success<ReturnType<GitManager.GitManager["Service"]["branchPullRequest"]>>
   >,
   project: OrchestrationProjectShell,
 ): boolean {
@@ -108,7 +108,7 @@ export const readSweepSnapshot = (
 export const make = Effect.gen(function* () {
   const engine = yield* OrchestrationEngine.OrchestrationEngineService;
   const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
-  const git = yield* GitWorkflow.GitWorkflowService;
+  const git = yield* GitManager.GitManager;
   const pullRequests = yield* PullRequestService.PullRequestService;
   const repositoryIdentities = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
   const crypto = yield* Crypto.Crypto;

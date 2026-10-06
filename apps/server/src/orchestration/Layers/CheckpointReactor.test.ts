@@ -37,7 +37,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import * as CheckpointStore from "../../checkpointing/CheckpointStore.ts";
 import * as VcsDriverRegistry from "../../vcs/VcsDriverRegistry.ts";
 import * as VcsProcess from "../../vcs/VcsProcess.ts";
-import { CoderVcsStatus } from "../../coderVcsStatus.ts";
+import { VcsStatusBroadcaster } from "../../vcs/VcsStatusBroadcaster.ts";
 import * as RepositoryIdentityResolver from "../../project/RepositoryIdentityResolver.ts";
 import { CheckpointReactorLive } from "./CheckpointReactor.ts";
 import { OrchestrationEngineLive } from "./OrchestrationEngine.ts";
@@ -331,8 +331,8 @@ describe("CheckpointReactor", () => {
     const refreshAfterTurn = Effect.sync(() => void pullRequestRefreshes.push(1)).pipe(
       Effect.andThen(options?.pullRequestRefresh ?? Effect.void),
     );
-    const vcsStatusLayer = Layer.succeed(CoderVcsStatus, {
-      refresh: (cwd: string) =>
+    const vcsStatusLayer = Layer.mock(VcsStatusBroadcaster)({
+      refreshLocalStatus: (cwd: string) =>
         Effect.sync(() => {
           options?.gitStatusRefreshCalls?.push(cwd);
         }).pipe(
@@ -351,8 +351,6 @@ describe("CheckpointReactor", () => {
             pr: null,
           }),
         ),
-      stream: () => Stream.empty,
-      refStream: () => Stream.empty,
     });
 
     const layer = CheckpointReactorLive.pipe(

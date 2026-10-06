@@ -520,6 +520,41 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
+  it.effect("returns a semantic branch with the commit message when requested", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          structured_output: {
+            subject: "Restore Git actions",
+            body: "",
+            branch: "Restore Git Actions",
+          },
+        }),
+        stdinMustContain: "Return a JSON object with keys: subject, body, branch.",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const generated = yield* textGeneration.generateCommitMessage({
+            cwd: process.cwd(),
+            branch: "main",
+            stagedSummary: "1 file changed",
+            stagedPatch: "+restore",
+            includeBranch: true,
+            modelSelection: {
+              instanceId: ProviderInstanceId.make("claudeAgent"),
+              model: "claude-sonnet-4-6",
+            },
+          });
+
+          expect(generated).toEqual({
+            subject: "Restore Git actions",
+            body: "",
+            branch: "feature/restore-git-actions",
+          });
+        }),
+    ),
+  );
+
   it.effect("honors custom descriptors without resolving a shadowed Claude alias", () =>
     withFakeClaudeEnv(
       {

@@ -116,7 +116,7 @@ export function getChangeRequestTerminology(
   };
 }
 
-function getChangeRequestTerminologyForKind(
+export function getChangeRequestTerminologyForKind(
   kind: SourceControlProviderKind,
 ): ChangeRequestTerminology {
   const presentation = resolveChangeRequestPresentationForKind(kind);
@@ -128,7 +128,7 @@ function getChangeRequestTerminologyForKind(
 
 const SCP_SSH_REMOTE_PATTERN = /^[a-zA-Z0-9._-]+@([^:/]+):/;
 
-function isSshRemoteUrl(remoteUrl: string): boolean {
+export function isSshRemoteUrl(remoteUrl: string): boolean {
   const trimmed = remoteUrl.trim();
   return SCP_SSH_REMOTE_PATTERN.test(trimmed) || trimmed.toLowerCase().startsWith("ssh://");
 }

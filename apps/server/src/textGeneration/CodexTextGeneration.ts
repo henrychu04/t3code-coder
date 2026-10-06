@@ -14,7 +14,7 @@ import {
   type ModelSelection,
   TextGenerationError,
 } from "@t3tools/contracts";
-import { sanitizeBranchFragment } from "@t3tools/shared/git";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
@@ -272,6 +272,9 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       return {
         subject: sanitizeCommitSubject(generated.subject),
         body: generated.body.trim(),
+        ...("branch" in generated && typeof generated.branch === "string"
+          ? { branch: sanitizeFeatureBranchName(generated.branch) }
+          : {}),
       };
     });
 

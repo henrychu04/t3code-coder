@@ -120,7 +120,7 @@ helper memory and are not persisted by the gateway.
 
 Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLab MR links at
 startup, after relevant thread changes, and periodically without an open browser. It uses the
-existing repository-scoped GitWorkflowService cache and glab-backed MR service, verifies both the
+existing repository-scoped GitManager cache and glab-backed MR service, verifies both the
 branch and project repository identity before saving, and rejects updates after the lookup inputs
 change. Migration 048 adds the branch MR projection independently of explicit links. Migration 051 adds
 multiple explicit MR links, preserving migration 050 for pending-input repair. Link commands validate
@@ -431,8 +431,9 @@ inside the Linux workspace. The helper uses repository-scoped Git commands and t
 workspace-installed `glab` CLI to read MR summary, hover preview, activity, discussions, checks,
 reviewers, and diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
 state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
-default sends an incomplete merge-request creation request to the impossible project ID `0`; a
-normal GitLab validation or not-found response with a GitLab-specific response fingerprint proves
+default sends an incomplete merge-request creation request to the impossible project ID `0` and
+includes the response headers. A normal GitLab validation or not-found response with a
+GitLab-specific response fingerprint proves
 the request reached GitLab, while neither a project nor an MR can be changed. A generic proxy 404,
 failed probe, or indeterminate response disables every GitLab mutation
 while leaving reads, Git operations, and MR checkout available. The Source Control settings surface
@@ -544,6 +545,32 @@ listed here is drift to remove rather than fork behavior to keep.
   Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
   `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
   unused.
+- **Git layer.** `vcs/GitVcsDriver.ts`, `vcs/GitVcsDriverCore.ts`, `vcs/VcsProcess.ts`,
+  `vcs/VcsStatusBroadcaster.ts`, `git/GitManager.ts`, `git/GitWorkflowService.ts`, and
+  `git/remoteRefs.ts` are upstream's. Each difference is marked `Coder:` in the file:
+  - The driver core has no Git metrics or span events. It adds `moveWorktree`, which
+    renames a thread's worktree folder together with its branch, and `refStatusLocal`, a
+    branch read that never refreshes the real index. Review file expansion allows up to
+    `MAX_REVIEW_DIFF_FILE_BYTES` and fails with `ReviewDiffFileTooLargeError` for the chunked
+    review RPCs, rejecting malformed UTF-8. A top-level review `sourceKind` returns only that
+    source. Worktree creation reads `t3.json` through the bounded `readProjectConfig`.
+    Checkpoint commits use the "T3 Coder" identity.
+  - `VcsProcess` has no GitHub CLI semaphore, classifies only `glab` failures, and keeps the
+    `classifyNonZeroExit` hook used by the GitLab write probe.
+  - `GitManager` probes the resolved provider's write access before any stacked action that
+    creates a merge request, so a blocked workspace, or a remote that resolves to no registered
+    provider, commits and pushes nothing. It also reads merge-request
+    templates for GitLab and fetches merge-request heads from `refs/merge-requests/<n>/head`.
+    Custom writing instructions remain one string. Upstream's GitHub and Forgejo branches stay
+    verbatim but are unreachable with the GitLab-only registry.
+  - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
+  - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
+    auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
+    Coder-owned stub that always allows work, because polling already stops when the last
+    status subscription ends. `coderWs.ts` reads the remote refresh interval from the flat
+    `automaticGitFetchInterval` setting.
+  - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
+    `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor.

@@ -1,126 +1,77 @@
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
-import { ProjectId } from "@t3tools/contracts";
-import type {
-  ChangeRequest,
-  GitActionProgressEvent,
-  GitActionProgressPhase,
-  GitPreparePullRequestThreadInput,
-  GitPreparePullRequestThreadResult,
-  GitManagerServiceError,
-  GitPullRequestRefInput,
-  GitResolvePullRequestResult,
-  GitRunStackedActionInput,
-  GitRunStackedActionResult,
-  ServerSettings as ServerSettingsValue,
-  VcsCreateRefInput,
-  VcsCreateRefResult,
-  VcsCreateWorktreeInput,
-  VcsCreateWorktreeResult,
-  VcsListRefsInput,
-  VcsListRefsResult,
-  VcsRemoveWorktreeInput,
-  VcsRefStatusResult,
-  VcsStatusInput,
-  VcsStatusLocalResult,
-  VcsStatusRemoteResult,
-  VcsStatusResult,
-  VcsPullInput,
-  VcsPullResult,
-  VcsSwitchRefInput,
-  VcsSwitchRefResult,
-} from "@t3tools/contracts";
-import { GitCommandError, GitManagerError, SourceControlProviderError } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Cache from "effect/Cache";
-import * as Duration from "effect/Duration";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as RcMap from "effect/RcMap";
-import * as Semaphore from "effect/Semaphore";
 
 import {
-  detectSourceControlProviderFromGitRemoteUrl,
-  mergeGitStatusParts,
-  normalizeGitRemoteUrl,
-  resolveAutoFeatureBranchName,
-  sanitizeBranchFragment,
-} from "@t3tools/shared/git";
-import { resolveSourceControlWriterModelSelection } from "@t3tools/shared/serverSettings";
+  GitManagerError,
+  GitCommandError,
+  type VcsSwitchRefInput,
+  type VcsSwitchRefResult,
+  type VcsCreateRefInput,
+  type VcsCreateRefResult,
+  type VcsCreateWorktreeInput,
+  type VcsCreateWorktreeResult,
+  type VcsListRefsInput,
+  type VcsListRefsResult,
+  type GitManagerServiceError,
+  type GitPreparePullRequestThreadInput,
+  type GitPreparePullRequestThreadResult,
+  type GitPullRequestRefInput,
+  type VcsPullResult,
+  type VcsRemoveWorktreeInput,
+  type GitResolvePullRequestResult,
+  type GitRunStackedActionInput,
+  type GitRunStackedActionResult,
+  type VcsStatusInput,
+  type VcsStatusLocalResult,
+  type VcsStatusRemoteResult,
+  type VcsStatusResult,
+  type VcsRefStatusResult,
+} from "@t3tools/contracts";
 
+import * as GitManager from "./GitManager.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
-import { detectPrTemplate } from "../sourceControl/PrTemplateDetection.ts";
-import * as ServerSettings from "../serverSettings.ts";
-import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
-import * as TextGeneration from "../textGeneration/TextGeneration.ts";
-import {
-  conventionalCommitsTextGenerationPolicy,
-  customTextGenerationPolicy,
-  repositoryConventionsTextGenerationPolicy,
-} from "../textGeneration/TextGenerationPresets.ts";
-
-export interface GitActionProgressReporter {
-  readonly publish: (event: GitActionProgressEvent) => Effect.Effect<void, never>;
-}
+import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 
 export class GitWorkflowService extends Context.Service<
   GitWorkflowService,
   {
-    readonly prepareWorktreeBase: (input: {
+    readonly isRepository: (cwd: string) => Effect.Effect<boolean, GitManagerServiceError>;
+    readonly hasCommit: (input: {
       readonly cwd: string;
-      readonly baseBranch: string;
-      readonly startFromOrigin?: boolean;
-    }) => Effect.Effect<string | null, GitCommandError>;
-    readonly localStatus: (
-      input: VcsStatusInput,
-    ) => Effect.Effect<VcsStatusLocalResult, GitCommandError>;
-    readonly remoteStatus: (
-      input: VcsStatusInput,
-      options?: { readonly fetch?: boolean },
-    ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
+      readonly refName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
     readonly status: (
       input: VcsStatusInput,
-      options?: { readonly fetch?: boolean },
     ) => Effect.Effect<VcsStatusResult, GitManagerServiceError>;
-    /** Resolve the MR for a saved branch without changing the current checkout. */
-    readonly branchPullRequest: (
-      input: {
-        readonly cwd: string;
-        readonly branch: string;
-      },
-      options?: { readonly refresh?: boolean },
-    ) => Effect.Effect<
-      {
-        readonly number?: number;
-        readonly url?: string;
-        readonly repositoryKey?: string | null;
-        readonly state: "open" | "closed" | "merged";
-        readonly updatedAt: string | null;
-        readonly closedAt?: string | null;
-        readonly mergedAt?: string | null;
-      } | null,
-      GitManagerServiceError
-    >;
+    readonly localStatus: (
+      input: VcsStatusInput,
+    ) => Effect.Effect<VcsStatusLocalResult, GitManagerServiceError>;
+    readonly remoteStatus: (
+      input: VcsStatusInput,
+      options?: GitManager.GitRemoteStatusOptions,
+    ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
+    readonly invalidateLocalStatus: (cwd: string) => Effect.Effect<void, never>;
+    readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
-    readonly pull: (
-      input: VcsPullInput,
-      options?: { readonly automatic?: boolean },
-    ) => Effect.Effect<VcsPullResult, GitCommandError>;
-    readonly resolvePullRequest: (
-      input: GitPullRequestRefInput,
-    ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
-    readonly runStackedAction: (
-      input: GitRunStackedActionInput,
-      progressReporter?: GitActionProgressReporter,
-    ) => Effect.Effect<GitRunStackedActionResult, GitManagerServiceError>;
+    // Coder: worktree moves and lightweight ref reads serve existing helper RPC callers.
+    readonly moveWorktree: (
+      input: GitVcsDriver.GitMoveWorktreeInput,
+    ) => Effect.Effect<void, GitCommandError>;
     readonly localRefStatus: (
       input: VcsStatusInput,
     ) => Effect.Effect<VcsRefStatusResult, GitCommandError>;
+    readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
+    readonly runStackedAction: (
+      input: GitRunStackedActionInput,
+      options?: GitManager.GitRunStackedActionOptions,
+    ) => Effect.Effect<GitRunStackedActionResult, GitManagerServiceError>;
+    readonly resolvePullRequest: (
+      input: GitPullRequestRefInput,
+    ) => Effect.Effect<GitResolvePullRequestResult, GitManagerServiceError>;
+    readonly preparePullRequestThread: (
+      input: GitPreparePullRequestThreadInput,
+    ) => Effect.Effect<GitPreparePullRequestThreadResult, GitManagerServiceError>;
     readonly listRefs: (
       input: VcsListRefsInput,
     ) => Effect.Effect<VcsListRefsResult, GitCommandError>;
@@ -128,6 +79,28 @@ export class GitWorkflowService extends Context.Service<
       input: VcsCreateWorktreeInput,
       options?: GitVcsDriver.CreateWorktreeOptions,
     ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
+    readonly fetchRemote: (input: {
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly refName?: string;
+    }) => Effect.Effect<void, GitCommandError>;
+    readonly remoteExists: (input: {
+      readonly cwd: string;
+      readonly remoteName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
+    readonly remoteBranchExists: (input: {
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly refName: string;
+    }) => Effect.Effect<boolean, GitCommandError>;
+    readonly resolveRemoteTrackingCommit: (input: {
+      readonly cwd: string;
+      readonly refName: string;
+      readonly fallbackRemoteName: string;
+    }) => Effect.Effect<
+      { readonly commitSha: string; readonly remoteRefName: string },
+      GitCommandError
+    >;
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
@@ -144,1469 +117,287 @@ export class GitWorkflowService extends Context.Service<
       readonly cwd: string;
       readonly oldBranch: string;
       readonly newBranch: string;
-    }) => Effect.Effect<{ readonly branch: string }, GitCommandError>;
-    readonly moveWorktree: (input: {
-      readonly cwd: string;
-      readonly oldPath: string;
-      readonly newPath: string;
-    }) => Effect.Effect<void, GitCommandError>;
-    readonly preparePullRequestThread: (
-      input: GitPreparePullRequestThreadInput,
-    ) => Effect.Effect<
-      GitPreparePullRequestThreadResult,
-      GitCommandError | GitManagerError | SourceControlProviderError
-    >;
+    }) => Effect.Effect<{ readonly branch: string }, GitManagerServiceError>;
   }
 >()("t3/git/GitWorkflowService") {}
 
-export const layer = Layer.effect(
-  GitWorkflowService,
-  Effect.gen(function* () {
-    const sqlOption = yield* Effect.serviceOption(SqlClient.SqlClient);
-    const git = yield* GitVcsDriver.GitVcsDriver;
-    const sourceControls = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
-    const textGeneration = yield* TextGeneration.TextGeneration;
-    const serverSettings = yield* ServerSettings.ServerSettingsService;
-    const fileSystem = yield* FileSystem.FileSystem;
-    const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
-    const mutationLocks = yield* RcMap.make({ lookup: (_cwd: string) => Semaphore.make(1) });
-    // Keep the complete mutation (including eligibility reads) under the same
-    // permit. Different checkouts remain independent, and idle locks are released.
-    const mutate = <A, E, R>(cwd: string, operation: Effect.Effect<A, E, R>) =>
-      Effect.scoped(
-        Effect.gen(function* () {
-          const key = yield* fileSystem.realPath(cwd).pipe(Effect.orElseSucceed(() => cwd));
-          const lock = yield* RcMap.get(mutationLocks, key);
-          return yield* lock.withPermits(1)(
-            invalidateStatus(cwd).pipe(
-              Effect.andThen(operation),
-              Effect.ensuring(invalidateStatus(cwd)),
-            ),
-          );
-        }),
-      );
-    const readGenerationSettings = (cwd: string) =>
-      serverSettings.getSettings.pipe(
-        Effect.flatMap((settings) =>
-          Effect.gen(function* () {
-            if (Option.isNone(sqlOption)) return settings;
-            const sql = sqlOption.value;
-            const rows = yield* sql<{ projectId: string }>`
-            SELECT p.project_id AS "projectId" FROM projection_projects p
-            WHERE p.deleted_at IS NULL AND (p.workspace_root = ${cwd} OR EXISTS (
-              SELECT 1 FROM projection_threads t WHERE t.project_id = p.project_id
-                AND t.deleted_at IS NULL AND t.worktree_path = ${cwd}
-            )) LIMIT 1`;
-            return resolveProjectSettings(
-              settings,
-              rows[0] ? ProjectId.make(rows[0].projectId) : null,
-            ).settings;
+function nonRepositoryLocalStatus(): VcsStatusLocalResult {
+  return {
+    isRepo: false,
+    hasPrimaryRemote: false,
+    isDefaultRef: false,
+    refName: null,
+    hasWorkingTreeChanges: false,
+    workingTree: {
+      files: [],
+      insertions: 0,
+      deletions: 0,
+    },
+  };
+}
+
+function nonRepositoryStatus(): VcsStatusResult {
+  return {
+    ...nonRepositoryLocalStatus(),
+    hasUpstream: false,
+    aheadCount: 0,
+    behindCount: 0,
+    aheadOfDefaultCount: 0,
+    pr: null,
+  };
+}
+
+function nonRepositoryListRefs(): VcsListRefsResult {
+  return {
+    refs: [],
+    isRepo: false,
+    hasPrimaryRemote: false,
+    nextCursor: null,
+    totalCount: 0,
+  };
+}
+
+/** @public Service construction is part of the canonical Effect module API. */
+export const make = Effect.gen(function* () {
+  const registry = yield* VcsDriverRegistry.VcsDriverRegistry;
+  const git = yield* GitVcsDriver.GitVcsDriver;
+  const gitManager = yield* GitManager.GitManager;
+
+  const ensureGit = Effect.fn("GitWorkflowService.ensureGit")(function* (
+    operation: string,
+    cwd: string,
+  ) {
+    const handle = yield* registry.resolve({ cwd }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitManagerError({
+            operation,
+            cwd,
+            detail: "Failed to resolve the VCS driver for this Git workflow.",
+            cause,
           }),
-        ),
+      ),
+    );
+    if (handle.kind !== "git") {
+      return yield* new GitManagerError({
+        operation,
+        cwd,
+        detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
+      });
+    }
+  });
+
+  const ensureGitCommand = Effect.fn("GitWorkflowService.ensureGitCommand")(function* (
+    operation: string,
+    cwd: string,
+  ) {
+    const handle = yield* registry.resolve({ cwd }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation,
+            command: "vcs-route",
+            cwd,
+            detail: "Failed to resolve the VCS driver for this Git command.",
+            cause,
+          }),
+      ),
+    );
+    if (handle.kind !== "git") {
+      return yield* new GitCommandError({
+        operation,
+        command: "vcs-route",
+        cwd,
+        detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
+      });
+    }
+  });
+
+  const detectGitRepositoryForStatus = Effect.fn("GitWorkflowService.detectGitRepositoryForStatus")(
+    function* (operation: string, cwd: string) {
+      const handle = yield* registry.detect({ cwd }).pipe(
         Effect.mapError(
           (cause) =>
             new GitManagerError({
-              operation: "readGenerationSettings",
+              operation,
               cwd,
-              detail: "Could not read text-generation settings.",
+              detail: "Failed to detect a VCS repository for this Git workflow.",
               cause,
             }),
         ),
       );
-    const resolveWritingPolicy = Effect.fn("GitWorkflowService.resolveWritingPolicy")(function* (
-      cwd: string,
-      settings: ServerSettingsValue,
-    ) {
-      const style = settings.sourceControlWritingStyle;
-      if (style.mode === "conventional_commits") {
-        return conventionalCommitsTextGenerationPolicy;
+      if (!handle) {
+        return false;
       }
-      if (style.mode === "custom") {
-        return customTextGenerationPolicy(style.customInstructions);
-      }
-      const recent = yield* git.execute({
-        operation: "GitWorkflowService.resolveWritingPolicy.recentCommits",
-        cwd,
-        args: ["log", "-20", "--pretty=%s"],
-        allowNonZeroExit: true,
-        maxOutputBytes: 16 * 1024,
-      });
-      const examples = recent.stdout.trim();
-      return examples
-        ? {
-            ...repositoryConventionsTextGenerationPolicy,
-            commitInstructions: `${repositoryConventionsTextGenerationPolicy.commitInstructions}\n\nRecent commit subjects:\n${examples}`,
-          }
-        : repositoryConventionsTextGenerationPolicy;
-    });
-
-    const parseCount = (value: string): number => {
-      const count = Number.parseInt(value.trim(), 10);
-      return Number.isSafeInteger(count) && count >= 0 ? count : 0;
-    };
-
-    const STATUS_CACHE_TTL = Duration.seconds(1);
-    const STATUS_CACHE_CAPACITY = 2_048;
-    const FETCH_CACHE_TTL = Duration.seconds(1);
-    // Status fetches run unattended, so a credential prompt must fail instead of waiting.
-    const STATUS_FETCH_ENV = Object.freeze({
-      GCM_INTERACTIVE: "never",
-      GIT_ASKPASS: "",
-      GIT_TERMINAL_PROMPT: "0",
-      SSH_ASKPASS: "",
-      SSH_ASKPASS_REQUIRE: "never",
-    } satisfies NodeJS.ProcessEnv);
-    // Match the automatic settlement sweep cadence so an external merge is
-    // observed on the next sweep instead of waiting on an older cache entry.
-    const PR_CACHE_TTL = Duration.seconds(60);
-    const FAILURE_BASE_TTL = Duration.seconds(20);
-    const FAILURE_MAX_TTL = Duration.minutes(15);
-    const failureTtl = (failures: number) =>
-      Duration.min(
-        Duration.millis(
-          Duration.toMillis(FAILURE_BASE_TTL) * Math.pow(2, Math.max(0, failures - 1)),
-        ),
-        FAILURE_MAX_TTL,
-      );
-    const setBounded = <K, V>(map: Map<K, V>, key: K, value: V) => {
-      if (!map.has(key) && map.size >= STATUS_CACHE_CAPACITY) {
-        const oldest = map.keys().next().value;
-        if (oldest !== undefined) map.delete(oldest);
-      }
-      map.set(key, value);
-    };
-
-    const readLocalStatus = Effect.fn("GitWorkflowService.readLocalStatus")(function* ({
-      cwd,
-    }: VcsStatusInput) {
-      const details = yield* git.statusDetailsLocal(cwd);
-      if (!details.isRepo) {
-        return {
-          isRepo: false,
-          hasPrimaryRemote: false,
-          isDefaultRef: false,
-          refName: null,
-          hasWorkingTreeChanges: false,
-          workingTree: details.workingTree,
-        } satisfies VcsStatusLocalResult;
-      }
-      const remote = yield* git.execute({
-        operation: "GitWorkflowService.localStatus.remote",
-        cwd,
-        args: ["remote", "get-url", "origin"],
-        allowNonZeroExit: true,
-      });
-      const remoteUrl = remote.exitCode === 0 ? remote.stdout.trim() : "";
-      const sourceControlProvider = remoteUrl
-        ? detectSourceControlProviderFromGitRemoteUrl(remoteUrl)
-        : null;
-      return {
-        isRepo: true,
-        ...(sourceControlProvider ? { sourceControlProvider } : {}),
-        hasPrimaryRemote: remote.exitCode === 0,
-        isDefaultRef: details.isDefaultBranch,
-        refName: details.branch,
-        hasWorkingTreeChanges: details.hasWorkingTreeChanges,
-        workingTree: details.workingTree,
-      } satisfies VcsStatusLocalResult;
-    });
-    const localStatusCache = yield* Cache.makeWith((cwd: string) => readLocalStatus({ cwd }), {
-      capacity: STATUS_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_CACHE_TTL : Duration.zero),
-    });
-    const localStatus = ({ cwd }: VcsStatusInput) => Cache.get(localStatusCache, cwd);
-
-    const resolveDefaultBranch = Effect.fn("GitWorkflowService.resolveDefaultBranch")(function* (
-      cwd: string,
-      remoteName = "origin",
-    ) {
-      const symbolic = yield* git.execute({
-        operation: "GitWorkflowService.resolveDefaultBranch.symbolic",
-        cwd,
-        args: ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remoteName}/HEAD`],
-        allowNonZeroExit: true,
-      });
-      if (symbolic.exitCode === 0) {
-        const value = symbolic.stdout.trim();
-        const prefix = `${remoteName}/`;
-        if (value.startsWith(prefix) && value.length > prefix.length) {
-          return value.slice(prefix.length);
-        }
-      }
-      for (const candidate of ["main", "master"] as const) {
-        const exists = yield* git.execute({
-          operation: "GitWorkflowService.resolveDefaultBranch.exists",
-          cwd,
-          args: ["show-ref", "--verify", "--quiet", `refs/remotes/${remoteName}/${candidate}`],
-          allowNonZeroExit: true,
-        });
-        if (exists.exitCode === 0) return candidate;
-      }
-      return null;
-    });
-
-    const prEpochByCwd = new Map<string, number>();
-    const prFailureStreak = new Map<string, number>();
-    const lastKnownPr = new Map<string, ChangeRequest | null>();
-    const prLookupCache = yield* Cache.makeWith(
-      (key: string) => {
-        const [cwd = "", branch = ""] = key.split("\0");
-        return Effect.gen(function* () {
-          const provider = yield* sourceControls.get("gitlab");
-          const requests = yield* provider.listChangeRequests({
-            cwd,
-            headSelector: branch,
-            state: "all",
-            limit: 20,
-          });
-          return requests.find((candidate) => candidate.headRefName === branch) ?? null;
-        });
-      },
-      {
-        capacity: STATUS_CACHE_CAPACITY,
-        timeToLive: (exit, key) => {
-          if (Exit.isSuccess(exit)) {
-            prFailureStreak.delete(key);
-            return PR_CACHE_TTL;
-          }
-          const failures = (prFailureStreak.get(key) ?? 0) + 1;
-          setBounded(prFailureStreak, key, failures);
-          return failureTtl(failures);
-        },
-      },
-    );
-    const lookupMergeRequest = (cwd: string, branch: string) => {
-      const branchKey = `${cwd}\0${branch}`;
-      const cacheKey = `${branchKey}\0${prEpochByCwd.get(cwd) ?? 0}`;
-      return Cache.get(prLookupCache, cacheKey).pipe(
-        Effect.tap((request) => Effect.sync(() => setBounded(lastKnownPr, branchKey, request))),
-        Effect.catch((error) =>
-          Effect.logWarning("GitLab merge request lookup failed; keeping last known state.", {
-            operation: "GitWorkflowService.lookupMergeRequest",
-            errorTag:
-              typeof error === "object" && error !== null && "_tag" in error
-                ? String(error._tag)
-                : typeof error,
-          }).pipe(Effect.as(lastKnownPr.get(branchKey) ?? null)),
-        ),
-      );
-    };
-
-    const readGitConfig = Effect.fn("GitWorkflowService.readGitConfig")(function* (
-      cwd: string,
-      key: string,
-    ) {
-      const result = yield* git.execute({
-        operation: "GitWorkflowService.readGitConfig",
-        cwd,
-        args: ["config", "--get", key],
-        allowNonZeroExit: true,
-      });
-      return result.exitCode === 0 ? result.stdout.trim() || null : null;
-    });
-    const repositoryPathFromRemoteKey = (remoteKey: string): string | null => {
-      const separator = remoteKey.indexOf("/");
-      return separator > 0 && separator < remoteKey.length - 1
-        ? remoteKey.slice(separator + 1)
-        : null;
-    };
-    const branchPrFailureStreak = new Map<string, number>();
-    const branchPrCache = yield* Cache.makeWith(
-      (key: string) => {
-        const [cwd = "", headBranch = "", headRemoteKey = "", targetRemoteKey = ""] =
-          key.split("\0");
-        return Effect.gen(function* () {
-          const provider = yield* sourceControls.get("gitlab");
-          const requests = yield* provider.listChangeRequests({
-            cwd,
-            headSelector: headBranch,
-            state: "all",
-            limit: 20,
-          });
-          const headRepository = repositoryPathFromRemoteKey(headRemoteKey);
-          const targetRepository = repositoryPathFromRemoteKey(targetRemoteKey);
-          const headOwner = headRepository?.split("/")[0] ?? null;
-          const isCrossRepository =
-            headRepository !== null &&
-            targetRepository !== null &&
-            headRepository !== targetRepository;
-          const matching = requests.filter((candidate) => {
-            if (candidate.headRefName !== headBranch) return false;
-            const candidateRepository =
-              candidate.headRepositoryNameWithOwner?.toLowerCase() ?? null;
-            const candidateOwner = candidate.headRepositoryOwnerLogin?.toLowerCase() ?? null;
-            if (headRepository !== null && candidateRepository !== null) {
-              if (candidateRepository !== headRepository) return false;
-            }
-            if (headOwner !== null && candidateOwner !== null && candidateOwner !== headOwner) {
-              return false;
-            }
-            if (isCrossRepository) {
-              if (candidate.isCrossRepository === false) return false;
-              return candidateRepository !== null || candidateOwner !== null;
-            }
-            if (
-              candidate.isCrossRepository === true &&
-              candidateRepository === null &&
-              candidateOwner === null
-            ) {
-              return false;
-            }
-            return true;
-          });
-          const request =
-            matching.toSorted((left, right) => {
-              const leftAt = Option.match(left.updatedAt, {
-                onNone: () => Number.NEGATIVE_INFINITY,
-                onSome: DateTime.toEpochMillis,
-              });
-              const rightAt = Option.match(right.updatedAt, {
-                onNone: () => Number.NEGATIVE_INFINITY,
-                onSome: DateTime.toEpochMillis,
-              });
-              return rightAt - leftAt;
-            })[0] ?? null;
-          return { request, headRemoteKey, targetRemoteKey };
-        });
-      },
-      {
-        capacity: STATUS_CACHE_CAPACITY,
-        timeToLive: (exit, key) => {
-          if (Exit.isSuccess(exit)) {
-            branchPrFailureStreak.delete(key);
-            return PR_CACHE_TTL;
-          }
-          const failures = (branchPrFailureStreak.get(key) ?? 0) + 1;
-          setBounded(branchPrFailureStreak, key, failures);
-          return failureTtl(failures);
-        },
-      },
-    );
-
-    const branchPullRequest: GitWorkflowService["Service"]["branchPullRequest"] = Effect.fn(
-      "GitWorkflowService.branchPullRequest",
-    )(function* ({ cwd, branch }, options) {
-      const remotes = yield* git.execute({
-        operation: "GitWorkflowService.branchPullRequest.remotes",
-        cwd,
-        args: ["remote"],
-      });
-      const remoteNames = remotes.stdout
-        .split(/\r?\n/u)
-        .map((name) => name.trim())
-        .filter(Boolean);
-      const firstRemote = remoteNames[0];
-      if (firstRemote === undefined) return null;
-      const targetRemote = remoteNames.includes("origin") ? "origin" : firstRemote;
-
-      const branchRef = yield* git.execute({
-        operation: "GitWorkflowService.branchPullRequest.branchRef",
-        cwd,
-        args: [
-          "for-each-ref",
-          "--format=%(refname)%00%(upstream:short)%00%(upstream:remotename)%00%(upstream:remoteref)",
-          `refs/heads/${branch}`,
-        ],
-      });
-      const exactBranch = branchRef.stdout
-        .split(/\r?\n/u)
-        .find((line) => line.split("\0", 1)[0] === `refs/heads/${branch}`);
-      const [refName = "", savedUpstream = "", savedRemote = "", savedRemoteRef = ""] =
-        exactBranch?.split("\0") ?? [];
-      const localBranchExists = refName.length > 0;
-      let headRemote = savedRemote || targetRemote;
-      let headBranch = branch;
-
-      if (savedUpstream.length > 0) {
-        if (savedRemote.length === 0 || savedRemoteRef.length === 0) {
-          return yield* new GitManagerError({
-            operation: "branchPullRequest",
-            cwd,
-            detail: `Saved upstream for ${branch} is incomplete.`,
-          });
-        }
-        headBranch = savedRemoteRef.replace(/^refs\/heads\//u, "");
-      } else if (!localBranchExists) {
-        const trackingRefs = yield* git.execute({
-          operation: "GitWorkflowService.branchPullRequest.remoteTrackingRefs",
-          cwd,
-          args: ["for-each-ref", "--format=%(refname)", "refs/remotes"],
-        });
-        const refs = new Set(
-          trackingRefs.stdout
-            .split(/\r?\n/u)
-            .map((ref) => ref.trim())
-            .filter(Boolean),
-        );
-        const matchingRemotes = remoteNames.filter((remote) =>
-          refs.has(`refs/remotes/${remote}/${branch}`),
-        );
-        if (matchingRemotes.length > 1) {
-          return yield* new GitManagerError({
-            operation: "branchPullRequest",
-            cwd,
-            detail: `Multiple remotes track ${branch}. Its merge request is ambiguous.`,
-          });
-        }
-        headRemote = matchingRemotes[0] ?? targetRemote;
-      }
-
-      const defaultBranch = yield* resolveDefaultBranch(cwd, targetRemote);
-      const headBranchIsDefault =
-        headBranch === defaultBranch ||
-        (defaultBranch === null && (headBranch === "main" || headBranch === "master"));
-      if (headBranch !== branch && headBranchIsDefault && headRemote === targetRemote) {
-        return null;
-      }
-      if (localBranchExists && savedUpstream.length === 0) {
-        const trackingRefs = yield* git.execute({
-          operation: "GitWorkflowService.branchPullRequest.publishedRef",
-          cwd,
-          args: ["for-each-ref", "--format=%(refname)", "refs/remotes"],
-        });
-        const refs = trackingRefs.stdout
-          .split(/\r?\n/u)
-          .map((ref) => ref.trim())
-          .filter(Boolean);
-        if (
-          refs.length > 0 &&
-          !remoteNames.some((remote) => refs.includes(`refs/remotes/${remote}/${headBranch}`))
-        ) {
-          return null;
-        }
-      }
-
-      const readIdentity = Effect.fn("GitWorkflowService.branchPullRequest.identity")(function* () {
-        const [headUrl, targetUrl] = yield* Effect.all(
-          [
-            readGitConfig(cwd, `remote.${headRemote}.url`),
-            readGitConfig(cwd, `remote.${targetRemote}.url`),
-          ],
-          { concurrency: "unbounded" },
-        );
-        if (headUrl === null || targetUrl === null) {
-          return yield* new GitManagerError({
-            operation: "branchPullRequest",
-            cwd,
-            detail: `Repository identity for ${branch} could not be verified.`,
-          });
-        }
-        return {
-          headRemoteKey: normalizeGitRemoteUrl(headUrl),
-          targetRemoteKey: normalizeGitRemoteUrl(targetUrl),
-        };
-      });
-      const identity = yield* readIdentity();
-      const cacheKey = [
-        cwd,
-        headBranch,
-        identity.headRemoteKey,
-        identity.targetRemoteKey,
-        String(prEpochByCwd.get(cwd) ?? 0),
-      ].join("\0");
-      if (options?.refresh) yield* Cache.invalidate(branchPrCache, cacheKey);
-      const cached = yield* Cache.get(branchPrCache, cacheKey);
-      const currentIdentity = yield* readIdentity();
-      if (
-        cached.headRemoteKey !== currentIdentity.headRemoteKey ||
-        cached.targetRemoteKey !== currentIdentity.targetRemoteKey
-      ) {
+      if (handle.kind !== "git") {
         return yield* new GitManagerError({
-          operation: "branchPullRequest",
+          operation,
           cwd,
-          detail: `Repository identity for ${branch} changed during merge request lookup.`,
+          detail: `The ${operation} workflow currently supports Git repositories only; detected ${handle.kind}. (${cwd})`,
         });
       }
-      if (cached.request === null) return null;
-      const branchIsDefault =
-        branch === defaultBranch ||
-        (defaultBranch === null && (branch === "main" || branch === "master"));
-      if (branchIsDefault && cached.request.state !== "open") return null;
-      return {
-        number: cached.request.number,
-        url: cached.request.url,
-        repositoryKey: currentIdentity.targetRemoteKey,
-        state: cached.request.state,
-        closedAt: cached.request.closedAt ?? null,
-        mergedAt: cached.request.mergedAt ?? null,
-        updatedAt: Option.match(cached.request.updatedAt, {
-          onNone: () => null,
-          onSome: DateTime.formatIso,
-        }),
-      };
-    });
+      return true;
+    },
+  );
 
-    const readRemoteStatus = Effect.fn("GitWorkflowService.readRemoteStatus")(function* ({
-      cwd,
-    }: VcsStatusInput) {
-      const local = yield* localStatus({ cwd });
-      if (!local.isRepo || !local.hasPrimaryRemote || local.refName === null) return null;
-      const upstream = yield* git.execute({
-        operation: "GitWorkflowService.remoteStatus.upstream",
-        cwd,
-        args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-        allowNonZeroExit: true,
-      });
-      const hasUpstream = upstream.exitCode === 0 && upstream.stdout.trim().length > 0;
-      let aheadCount = 0;
-      let behindCount = 0;
-      if (hasUpstream) {
-        const counts = yield* git.execute({
-          operation: "GitWorkflowService.remoteStatus.counts",
-          cwd,
-          args: ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
-        });
-        const [behind = "0", ahead = "0"] = counts.stdout.trim().split(/\s+/u);
-        behindCount = parseCount(behind);
-        aheadCount = parseCount(ahead);
-      }
-      const defaultBranch = (yield* resolveDefaultBranch(cwd)) ?? "main";
-      const aheadOfDefault = yield* git.execute({
-        operation: "GitWorkflowService.remoteStatus.aheadOfDefault",
-        cwd,
-        args: ["rev-list", "--count", `origin/${defaultBranch}..HEAD`],
-        allowNonZeroExit: true,
-      });
-      const request = yield* lookupMergeRequest(cwd, local.refName);
-      return {
-        hasUpstream,
-        aheadCount,
-        behindCount,
-        aheadOfDefaultCount: aheadOfDefault.exitCode === 0 ? parseCount(aheadOfDefault.stdout) : 0,
-        pr: request
-          ? {
-              number: request.number,
-              title: request.title,
-              url: request.url,
-              baseRef: request.baseRefName,
-              headRef: request.headRefName,
-              state: request.state,
-            }
-          : null,
-      } satisfies VcsStatusRemoteResult;
-    });
-
-    const fetchFailureStreak = new Map<string, number>();
-    const fetchCache = yield* Cache.makeWith(
-      (cwd: string) =>
-        git.execute({
-          operation: "GitWorkflowService.remoteStatus.fetch",
-          cwd,
-          // `--no-auto-gc` (a synonym of `--no-auto-maintenance` that older Git also knows) keeps
-          // this poll from starting `git gc --auto`. When that gc fails, for example on a repository
-          // with missing objects, Git retries it on every fetch and leaves a full-size `tmp_pack_*`
-          // behind each time, so a background poll could fill the disk.
-          args: ["fetch", "--prune", "--no-auto-gc", "origin"],
-          env: STATUS_FETCH_ENV,
-          timeoutMs: 300_000,
-          maxOutputBytes: 512 * 1024,
-        }),
-      {
-        capacity: STATUS_CACHE_CAPACITY,
-        timeToLive: (exit, key) => {
-          if (Exit.isSuccess(exit)) {
-            fetchFailureStreak.delete(key);
-            return FETCH_CACHE_TTL;
-          }
-          const failures = (fetchFailureStreak.get(key) ?? 0) + 1;
-          setBounded(fetchFailureStreak, key, failures);
-          return failureTtl(failures);
-        },
-      },
+  const detectGitRepositoryForCommand = Effect.fn(
+    "GitWorkflowService.detectGitRepositoryForCommand",
+  )(function* (operation: string, cwd: string) {
+    const handle = yield* registry.detect({ cwd }).pipe(
+      Effect.mapError(
+        (cause) =>
+          new GitCommandError({
+            operation,
+            command: "vcs-route",
+            cwd,
+            detail: "Failed to detect a VCS repository for this Git command.",
+            cause,
+          }),
+      ),
     );
-    const remoteStatusCache = yield* Cache.makeWith((cwd: string) => readRemoteStatus({ cwd }), {
-      capacity: STATUS_CACHE_CAPACITY,
-      timeToLive: (exit) => (Exit.isSuccess(exit) ? STATUS_CACHE_TTL : Duration.zero),
-    });
-    const remoteStatus = Effect.fn("GitWorkflowService.remoteStatus")(function* (
-      { cwd }: VcsStatusInput,
-      options?: { readonly fetch?: boolean },
-    ) {
-      if (options?.fetch === true) {
-        yield* Cache.get(fetchCache, cwd).pipe(
-          Effect.catch((error) =>
-            Effect.logWarning("Git fetch failed; using the last fetched refs.", {
-              operation: "GitWorkflowService.remoteStatus.fetch",
-              errorTag:
-                typeof error === "object" && error !== null && "_tag" in error
-                  ? String(error._tag)
-                  : typeof error,
-            }),
-          ),
-        );
-        yield* Cache.invalidate(remoteStatusCache, cwd);
-      }
-      return yield* Cache.get(remoteStatusCache, cwd);
-    });
-
-    const invalidateStatus = Effect.fn("GitWorkflowService.invalidateStatus")(function* (
-      cwd: string,
-    ) {
-      yield* Cache.invalidate(localStatusCache, cwd);
-      yield* Cache.invalidate(remoteStatusCache, cwd);
-      setBounded(prEpochByCwd, cwd, (prEpochByCwd.get(cwd) ?? 0) + 1);
-    });
-
-    const status = Effect.fn("GitWorkflowService.status")(function* (
-      input: VcsStatusInput,
-      options?: { readonly fetch?: boolean },
-    ) {
-      const local = yield* localStatus(input);
-      const remote = yield* remoteStatus(input, options);
-      return mergeGitStatusParts(local, remote);
-    });
-
-    const pull = Effect.fn("GitWorkflowService.pull")(function* (
-      { cwd }: VcsPullInput,
-      options?: { readonly automatic?: boolean },
-    ) {
-      const local = yield* readLocalStatus({ cwd });
-      const branch = local.refName;
-      if (options?.automatic) {
-        if (!local.isRepo || !local.isDefaultRef || local.hasWorkingTreeChanges) {
-          return yield* new GitCommandError({
-            operation: "GitWorkflowService.pull",
-            command: "git pull",
-            cwd,
-            detail: "The checkout is no longer eligible for automatic pull.",
-          });
-        }
-        // Read the current upstream counts after waiting for other mutations.
-        const counts = yield* git.execute({
-          operation: "GitWorkflowService.pull.automaticCounts",
-          cwd,
-          args: ["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
-        });
-        const [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number);
-        if (ahead !== 0 || behind === undefined || !Number.isSafeInteger(behind) || behind <= 0) {
-          return yield* new GitCommandError({
-            operation: "GitWorkflowService.pull",
-            command: "git pull",
-            cwd,
-            detail: "The checkout is no longer behind its upstream without local commits.",
-          });
-        }
-      }
-      if (branch === null) {
-        return yield* new GitCommandError({
-          operation: "GitWorkflowService.pull",
-          command: "git pull",
-          cwd,
-          detail: "A checked-out branch is required before pulling.",
-        });
-      }
-      const upstream = yield* git.execute({
-        operation: "GitWorkflowService.pull.upstream",
+    if (!handle) {
+      return false;
+    }
+    if (handle.kind !== "git") {
+      return yield* new GitCommandError({
+        operation,
+        command: "vcs-route",
         cwd,
-        args: ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
-        allowNonZeroExit: true,
+        detail: `The ${operation} command currently supports Git repositories only; detected ${handle.kind}.`,
       });
-      const upstreamRef = upstream.exitCode === 0 ? upstream.stdout.trim() || null : null;
-      if (upstreamRef === null) {
-        return yield* new GitCommandError({
-          operation: "GitWorkflowService.pull",
-          command: "git pull",
-          cwd,
-          detail: "The current branch has no upstream branch.",
-        });
-      }
-      yield* git.execute({
-        operation: "GitWorkflowService.pull",
-        cwd,
-        args: ["pull", "--ff-only"],
-        timeoutMs: 300_000,
-        maxOutputBytes: 512 * 1024,
-      });
-      return { status: "pulled", refName: branch, upstreamRef } satisfies VcsPullResult;
-    });
+    }
+    return true;
+  });
 
-    const resolvePullRequest = Effect.fn("GitWorkflowService.resolvePullRequest")(function* (
-      input: GitPullRequestRefInput,
-    ) {
-      const provider = yield* sourceControls.get("gitlab");
-      const request = yield* provider.getChangeRequest(input);
-      return {
-        pullRequest: {
-          number: request.number,
-          title: request.title,
-          url: request.url,
-          baseBranch: request.baseRefName,
-          headBranch: request.headRefName,
-          state: request.state,
-        },
-      } satisfies GitResolvePullRequestResult;
-    });
+  const routeGitManager =
+    <Input extends { readonly cwd: string }, Output>(
+      operation: string,
+      run: (input: Input) => Effect.Effect<Output, GitManagerServiceError>,
+    ) =>
+    (input: Input) =>
+      ensureGit(operation, input.cwd).pipe(Effect.andThen(run(input)));
 
-    const runStackedAction = Effect.fn("GitWorkflowService.runStackedAction")(function* (
-      input: GitRunStackedActionInput,
-      progressReporter?: GitActionProgressReporter,
-    ) {
-      const report = (event: GitActionProgressEvent) =>
-        progressReporter?.publish(event) ?? Effect.void;
-      const base = { actionId: input.actionId, cwd: input.cwd, action: input.action } as const;
-      const makeGitProgress = () => {
-        let currentHookName: string | null = null;
-        const reportOutput = (stream: "stdout" | "stderr", text: string) => {
-          const trimmed = text.trim();
-          if (!trimmed) return Effect.void;
-          return report({
-            ...base,
-            kind: "hook_output",
-            hookName: currentHookName,
-            stream,
-            text: trimmed.slice(0, 500).trimEnd(),
-          });
-        };
-        return {
-          onStdoutLine: (line: string) => reportOutput("stdout", line),
-          onStderrLine: (line: string) => reportOutput("stderr", line),
-          onHookStarted: (hookName: string) => {
-            currentHookName = hookName;
-            return report({ ...base, kind: "hook_started", hookName });
-          },
-          onHookFinished: (event: {
-            hookName: string;
-            exitCode: number | null;
-            durationMs: number | null;
-          }) => {
-            if (currentHookName === event.hookName) currentHookName = null;
-            return report({ ...base, kind: "hook_finished", ...event });
-          },
-        } satisfies GitVcsDriver.ExecuteGitProgress;
-      };
-      const wantsCommit =
-        input.action === "commit" ||
-        input.action === "commit_push" ||
-        input.action === "commit_push_pr";
-      const wantsPush = input.action !== "commit";
-      const wantsPr = input.action === "create_pr" || input.action === "commit_push_pr";
-      const phases: GitActionProgressPhase[] = [
-        ...(input.featureBranch ? (["branch"] as const) : []),
-        ...(wantsCommit ? (["commit"] as const) : []),
-        ...(wantsPush ? (["push"] as const) : []),
-        ...(wantsPr ? (["pr"] as const) : []),
-      ];
-      yield* report({ ...base, kind: "action_started", phases });
-
-      const changeRequestProvider = wantsPr ? yield* sourceControls.get("gitlab") : null;
-      if (changeRequestProvider !== null) {
-        const writeAccess = yield* changeRequestProvider.probeWriteAccess({ cwd: input.cwd });
-        if (!writeAccess.writable) {
-          const detail =
-            writeAccess.detail ??
-            (writeAccess.status === "policy-blocked"
-              ? "GitLab write operations are blocked by this workspace."
-              : writeAccess.status === "unauthenticated"
-                ? "The GitLab CLI is not authenticated."
-                : "GitLab write access could not be verified for this workspace.");
-          return yield* new SourceControlProviderError({
-            provider: "gitlab",
-            operation: "createChangeRequest",
-            cwd: input.cwd,
-            detail,
-          });
-        }
-      }
-
-      let branchStatus: GitRunStackedActionResult["branch"] = {
-        status: "skipped_not_requested",
-      };
-      let commitStatus: GitRunStackedActionResult["commit"] = {
-        status: "skipped_not_requested",
-      };
-      let pushStatus: GitRunStackedActionResult["push"] = {
-        status: "skipped_not_requested",
-      };
-      let prStatus: GitRunStackedActionResult["pr"] = {
-        status: "skipped_not_requested",
-      };
-
-      if (input.featureBranch) {
-        yield* report({
-          ...base,
-          kind: "phase_started",
-          phase: "branch",
-          label: "Preparing feature branch...",
-        });
-        const refs = yield* git.execute({
-          operation: "GitWorkflowService.runStackedAction.listBranches",
-          cwd: input.cwd,
-          args: ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
-        });
-        let preferred = input.commitMessage?.split("\n")[0] ?? "update";
-        if (input.commitMessage === undefined) {
-          const changes = yield* git.execute({
-            operation: "GitWorkflowService.runStackedAction.branchContext",
-            cwd: input.cwd,
-            args: ["status", "--short"],
-          });
-          const settings = yield* readGenerationSettings(input.cwd);
-          const generated = yield* textGeneration.generateBranchName({
-            cwd: input.cwd,
-            message: changes.stdout.trim() || "Update project files",
-            modelSelection: resolveSourceControlWriterModelSelection(settings),
-          });
-          preferred = generated.branch;
-        }
-        const name = resolveAutoFeatureBranchName(
-          refs.stdout
-            .split("\n")
-            .map((value) => value.trim())
-            .filter(Boolean),
-          preferred,
-        );
-        yield* git.execute({
-          operation: "GitWorkflowService.runStackedAction.createBranch",
-          cwd: input.cwd,
-          args: ["switch", "-c", name],
-        });
-        branchStatus = { status: "created", name };
-      }
-
-      if (wantsCommit) {
-        if (input.filePaths?.length) {
-          yield* git.execute({
-            operation: "GitWorkflowService.runStackedAction.unstageExcludedFiles",
-            cwd: input.cwd,
-            args: ["reset", "--mixed"],
-          });
-        }
-        yield* git.execute({
-          operation: "GitWorkflowService.runStackedAction.stage",
-          cwd: input.cwd,
-          args: input.filePaths?.length ? ["add", "--", ...input.filePaths] : ["add", "--all"],
-        });
-        const staged = yield* git.execute({
-          operation: "GitWorkflowService.runStackedAction.staged",
-          cwd: input.cwd,
-          args: ["diff", "--cached", "--quiet"],
-          allowNonZeroExit: true,
-        });
-        if (staged.exitCode === 0) {
-          commitStatus = { status: "skipped_no_changes" };
-        } else {
-          const names = yield* git.execute({
-            operation: "GitWorkflowService.runStackedAction.changedFiles",
-            cwd: input.cwd,
-            args: ["diff", "--cached", "--name-only"],
-          });
-          const firstPath = names.stdout
-            .split("\n")
-            .map((value) => value.trim())
-            .find(Boolean);
-          const fallbackSubject = firstPath
-            ? `Update ${firstPath.split("/").at(-1) ?? "project files"}`
-            : "Update project files";
-          let subject = input.commitMessage?.trim() || fallbackSubject;
-          let body = "";
-          if (input.commitMessage === undefined) {
-            yield* report({
-              ...base,
-              kind: "phase_started",
-              phase: "commit",
-              label: "Generating commit message...",
-            });
-            const [summary, patch] = yield* Effect.all([
-              git.execute({
-                operation: "GitWorkflowService.runStackedAction.commitSummary",
-                cwd: input.cwd,
-                args: ["diff", "--cached", "--stat"],
-                maxOutputBytes: 64 * 1024,
-              }),
-              git.execute({
-                operation: "GitWorkflowService.runStackedAction.commitPatch",
-                cwd: input.cwd,
-                args: ["diff", "--cached"],
-                maxOutputBytes: 512 * 1024,
-                appendTruncationMarker: true,
-              }),
-            ]);
-            const settings = yield* readGenerationSettings(input.cwd);
-            const generated = yield* textGeneration.generateCommitMessage({
-              cwd: input.cwd,
-              branch: (yield* localStatus({ cwd: input.cwd })).refName,
-              stagedSummary: summary.stdout,
-              stagedPatch: patch.stdout,
-              modelSelection: resolveSourceControlWriterModelSelection(settings),
-              policy: yield* resolveWritingPolicy(input.cwd, settings),
-            });
-            subject = generated.subject;
-            body = generated.body;
-          }
-          yield* report({
-            ...base,
-            kind: "phase_started",
-            phase: "commit",
-            label: "Committing...",
-          });
-          yield* git.execute({
-            operation: "GitWorkflowService.runStackedAction.commit",
-            cwd: input.cwd,
-            args: ["commit", "-m", subject, ...(body ? ["-m", body] : [])],
-            timeoutMs: 600_000,
-            maxOutputBytes: 1024 * 1024,
-            progress: makeGitProgress(),
-          });
-          const sha = yield* git.execute({
-            operation: "GitWorkflowService.runStackedAction.commitSha",
-            cwd: input.cwd,
-            args: ["rev-parse", "HEAD"],
-          });
-          commitStatus = {
-            status: "created",
-            commitSha: sha.stdout.trim(),
-            subject: subject.split("\n")[0] ?? subject,
-          };
-        }
-      }
-
-      const localAfterCommit = yield* localStatus({ cwd: input.cwd });
-      const branch = localAfterCommit.refName;
-      if (wantsPush) {
-        yield* report({ ...base, kind: "phase_started", phase: "push", label: "Pushing..." });
-        const pushed = yield* git.pushCurrentBranch(input.cwd, branch, {
-          progress: makeGitProgress(),
-        });
-        pushStatus = {
-          status: "pushed",
-          branch: pushed.branch,
-          ...(pushed.upstreamBranch ? { upstreamBranch: pushed.upstreamBranch } : {}),
-          setUpstream: pushed.setUpstream,
-        };
-      }
-
-      if (wantsPr) {
-        yield* report({
-          ...base,
-          kind: "phase_started",
-          phase: "pr",
-          label: "Creating GitLab merge request...",
-        });
-        if (branch === null) {
-          return yield* new GitManagerError({
-            operation: "runStackedAction",
-            cwd: input.cwd,
-            detail: "A checked-out branch is required before creating a merge request.",
-          });
-        }
-        const provider = changeRequestProvider;
-        if (provider === null) {
-          return yield* new GitManagerError({
-            operation: "runStackedAction",
-            cwd: input.cwd,
-            detail: "The GitLab source control provider is unavailable.",
-          });
-        }
-        const baseBranch = (yield* resolveDefaultBranch(input.cwd)) ?? "main";
-        const existing = yield* provider.listChangeRequests({
-          cwd: input.cwd,
-          headSelector: branch,
-          state: "open",
-          limit: 20,
-        });
-        let request = existing.find((candidate) => candidate.headRefName === branch) ?? null;
-        const openedExisting = request !== null;
-        if (request === null) {
-          yield* report({
-            ...base,
-            kind: "phase_started",
-            phase: "pr",
-            label: "Generating merge request content...",
-          });
-          const baseRef = `origin/${baseBranch}`;
-          const settings = yield* readGenerationSettings(input.cwd);
-          const [commitSummary, diffSummary, diffPatch, template] = yield* Effect.all([
-            git.execute({
-              operation: "GitWorkflowService.runStackedAction.mergeRequestCommits",
-              cwd: input.cwd,
-              args: ["log", "--oneline", `${baseRef}..HEAD`],
-              maxOutputBytes: 128 * 1024,
-              appendTruncationMarker: true,
-            }),
-            git.execute({
-              operation: "GitWorkflowService.runStackedAction.mergeRequestSummary",
-              cwd: input.cwd,
-              args: ["diff", "--stat", `${baseRef}...HEAD`],
-              maxOutputBytes: 128 * 1024,
-              appendTruncationMarker: true,
-            }),
-            git.execute({
-              operation: "GitWorkflowService.runStackedAction.mergeRequestPatch",
-              cwd: input.cwd,
-              args: ["diff", `${baseRef}...HEAD`],
-              maxOutputBytes: 512 * 1024,
-              appendTruncationMarker: true,
-            }),
-            settings.sourceControlWritingStyle.followChangeRequestTemplates
-              ? detectPrTemplate(input.cwd, baseRef, git.execute)
-              : Effect.succeed(Option.none()),
-          ]);
-          const { title, body } = yield* textGeneration.generatePrContent({
-            cwd: input.cwd,
-            baseBranch,
-            headBranch: branch,
-            commitSummary: commitSummary.stdout,
-            diffSummary: diffSummary.stdout,
-            diffPatch: diffPatch.stdout,
-            ...(Option.isSome(template) ? { changeRequestTemplate: template.value } : {}),
-            modelSelection: resolveSourceControlWriterModelSelection(settings),
-            policy: yield* resolveWritingPolicy(input.cwd, settings),
-          });
-          const fs = fileSystem;
-          const bodyFile = body
-            ? yield* fs.makeTempFile({ prefix: "t3-gitlab-mr-", suffix: ".md" }).pipe(
-                Effect.mapError(
-                  (cause) =>
-                    new GitManagerError({
-                      operation: "runStackedAction",
-                      cwd: input.cwd,
-                      detail: "Could not create the merge request body file.",
-                      cause,
-                    }),
-                ),
-              )
-            : "/dev/null";
-          if (bodyFile !== "/dev/null") {
-            yield* fs.writeFileString(bodyFile, body).pipe(
-              Effect.mapError(
-                (cause) =>
-                  new GitManagerError({
-                    operation: "runStackedAction",
-                    cwd: input.cwd,
-                    detail: "Could not write the merge request body file.",
-                    cause,
-                  }),
-              ),
-            );
-          }
-          yield* provider
-            .createChangeRequest({
-              cwd: input.cwd,
-              baseRefName: baseBranch,
-              headSelector: branch,
-              title,
-              bodyFile,
-            })
-            .pipe(
-              Effect.ensuring(
-                bodyFile === "/dev/null" ? Effect.void : fs.remove(bodyFile).pipe(Effect.ignore),
-              ),
-            );
-          const created = yield* provider.listChangeRequests({
-            cwd: input.cwd,
-            headSelector: branch,
-            state: "open",
-            limit: 20,
-          });
-          request = created.find((candidate) => candidate.headRefName === branch) ?? null;
-        }
-        prStatus = {
-          status: openedExisting ? "opened_existing" : "created",
-          ...(request
-            ? {
-                url: request.url,
-                number: request.number,
-                baseBranch: request.baseRefName,
-                headBranch: request.headRefName,
-                title: request.title,
-              }
-            : { baseBranch, headBranch: branch }),
-        };
-      }
-
-      const title = wantsPr
-        ? prStatus.status === "opened_existing"
-          ? "Merge request already open"
-          : "Merge request created"
-        : wantsPush
-          ? "Changes pushed"
-          : commitStatus.status === "skipped_no_changes"
-            ? "No changes to commit"
-            : "Changes committed";
-      const result: GitRunStackedActionResult = {
-        action: input.action,
-        branch: branchStatus,
-        commit: commitStatus,
-        push: pushStatus,
-        pr: prStatus,
-        toast: {
-          title,
-          cta: prStatus.url
-            ? { kind: "open_pr", label: "Open merge request", url: prStatus.url }
-            : { kind: "none" },
-        },
-      };
-      yield* report({ ...base, kind: "action_finished", result });
-      return result;
-    });
-
-    const preparePullRequestThreadImpl = Effect.fn("GitWorkflowService.preparePullRequestThread")(
-      function* (input: GitPreparePullRequestThreadInput) {
-        const provider = yield* sourceControls.get("gitlab");
-        const summary = yield* provider.getChangeRequest({
-          cwd: input.cwd,
-          reference: input.reference,
-        });
-        const pullRequest = {
-          number: summary.number,
-          title: summary.title,
-          url: summary.url,
-          baseBranch: summary.baseRefName,
-          headBranch: summary.headRefName,
-          state: summary.state,
-        } as const;
-
-        const canonicalizeExistingPath = (value: string) =>
-          fileSystem.realPath(value).pipe(Effect.orElseSucceed(() => value));
-        const execute = (
-          cwd: string,
-          operation: string,
-          args: ReadonlyArray<string>,
-          allowNonZeroExit = false,
-        ) =>
-          git.execute({
-            cwd,
-            operation: `GitWorkflowService.preparePullRequestThread.${operation}`,
-            args,
-            allowNonZeroExit,
-            maxOutputBytes: 64 * 1024,
-          });
-        const primaryRemoteName = Effect.fn("preparePullRequestThread.primaryRemoteName")(
-          function* (cwd: string) {
-            const remotes = yield* execute(cwd, "listRemotes", ["remote"]);
-            const names = remotes.stdout
-              .split(/\r?\n/u)
-              .map((name) => name.trim())
-              .filter(Boolean);
-            const remote = names.includes("origin") ? "origin" : names[0];
-            if (!remote) {
-              return yield* new GitManagerError({
-                operation: "preparePullRequestThread",
-                cwd,
-                detail: "The repository has no Git remote for fetching the merge request.",
-              });
-            }
-            return remote;
-          },
-        );
-        const readConfig = Effect.fn("preparePullRequestThread.readConfig")(function* (
-          cwd: string,
-          key: string,
-        ) {
-          const result = yield* execute(cwd, "readConfig", ["config", "--get", key], true);
-          return Number(result.exitCode) === 0 ? result.stdout.trim() || null : null;
-        });
-        const configureUpstreamBase = Effect.fn("preparePullRequestThread.configureUpstream")(
-          function* (cwd: string, localBranch: string) {
-            let remoteName = yield* primaryRemoteName(cwd);
-            if (summary.isCrossRepository && summary.headRepositoryNameWithOwner) {
-              const cloneUrls = yield* provider.getRepositoryCloneUrls({
-                cwd,
-                repository: summary.headRepositoryNameWithOwner,
-              });
-              const originUrl = yield* readConfig(cwd, "remote.origin.url");
-              const remoteUrl = /^(?:git@|ssh:)/iu.test(originUrl ?? "")
-                ? cloneUrls.sshUrl
-                : cloneUrls.url;
-              remoteName = yield* git.ensureRemote({
-                cwd,
-                preferredName:
-                  summary.headRepositoryOwnerLogin?.trim() ||
-                  summary.headRepositoryNameWithOwner.split("/")[0]?.trim() ||
-                  "fork",
-                url: remoteUrl,
-              });
-            }
-            yield* execute(cwd, "fetchHeadTrackingBranch", [
-              "fetch",
-              remoteName,
-              `+refs/heads/${pullRequest.headBranch}:refs/remotes/${remoteName}/${pullRequest.headBranch}`,
-            ]);
-            yield* execute(cwd, "setHeadUpstream", [
-              "branch",
-              "--set-upstream-to",
-              `${remoteName}/${pullRequest.headBranch}`,
-              localBranch,
-            ]);
-          },
-        );
-        const configureUpstream = (cwd: string, localBranch: string) =>
-          configureUpstreamBase(cwd, localBranch).pipe(
-            Effect.catch((cause) =>
-              Effect.logWarning("GitWorkflowService prepare MR upstream configuration failed", {
-                cwd,
-                localBranch,
-                cause,
-              }).pipe(Effect.asVoid),
-            ),
-          );
-        const maybeRunSetupScript = (worktreePath: string) => {
-          if (!input.threadId) return Effect.void;
-          return projectSetupScriptRunner
-            .runForThread({
-              threadId: input.threadId,
-              projectCwd: input.cwd,
-              worktreePath,
-            })
-            .pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("GitWorkflowService prepare MR setup script failed", {
-                  threadId: input.threadId,
-                  worktreePath,
-                  cause,
-                }).pipe(Effect.asVoid),
-              ),
-              Effect.asVoid,
-            );
-        };
-
-        if (input.mode === "local") {
-          yield* provider.checkoutChangeRequest({
-            cwd: input.cwd,
-            reference: input.reference,
-            force: true,
-          });
-          const status = yield* git.refStatusLocal(input.cwd);
-          const branch = status.refName ?? pullRequest.headBranch;
-          yield* configureUpstream(input.cwd, branch);
-          return {
-            pullRequest,
-            branch,
-            worktreePath: null,
-            isOnPullRequestHead: true,
-          };
-        }
-
-        const sanitizedHeadBranch = sanitizeBranchFragment(pullRequest.headBranch).trim();
-        const localBranch = summary.isCrossRepository
-          ? `t3code/pr-${pullRequest.number}/${sanitizedHeadBranch || "head"}`
-          : pullRequest.headBranch;
-        const rootWorktreePath = yield* canonicalizeExistingPath(input.cwd);
-        const listLocalRefs = () =>
-          git.listRefs({ cwd: input.cwd, query: localBranch, refresh: true, limit: 500 });
-        const findLocalHeadBranch = Effect.fn("preparePullRequestThread.findLocalHeadBranch")(
-          function* () {
-            const refs = yield* listLocalRefs();
-            const exact = refs.refs.find((ref) => !ref.isRemote && ref.name === localBranch);
-            if (exact || localBranch === pullRequest.headBranch) return exact ?? null;
-            return (
-              refs.refs.find(
-                (ref) =>
-                  !ref.isRemote && ref.name === pullRequest.headBranch && ref.worktreePath !== null,
-              ) ?? null
-            );
-          },
-        );
-        const resolveCommit = Effect.fn("preparePullRequestThread.resolveCommit")(function* (
-          cwd: string,
-          revision: string,
-        ) {
-          const result = yield* execute(cwd, "resolveCommit", ["rev-parse", revision], true);
-          return Number(result.exitCode) === 0 ? result.stdout.trim() || null : null;
-        });
-        const fetchPullRequestHead = Effect.fn("preparePullRequestThread.fetchHead")(function* (
-          cwd: string,
-        ) {
-          const remoteName = yield* primaryRemoteName(cwd);
-          const targetRef = `refs/t3code/merge-requests/${pullRequest.number}/head`;
-          yield* execute(cwd, "fetchHead", [
-            "fetch",
-            remoteName,
-            `+refs/merge-requests/${pullRequest.number}/head:${targetRef}`,
-          ]);
-          const commit = yield* resolveCommit(cwd, targetRef);
-          if (!commit) {
-            return yield* new GitManagerError({
-              operation: "preparePullRequestThread",
+  return GitWorkflowService.of({
+    isRepository: (cwd) =>
+      registry.detect({ cwd }).pipe(
+        Effect.map((handle) => handle?.kind === "git"),
+        Effect.mapError(
+          (cause) =>
+            new GitManagerError({
+              operation: "GitWorkflowService.isRepository",
               cwd,
-              detail: "The merge request head could not be resolved after fetching it.",
-            });
-          }
-          return commit;
-        });
-        const refreshReusedWorktree = Effect.fn("preparePullRequestThread.refreshReusedWorktree")(
-          function* (worktreePath: string, upstreamCommitBeforeFetch: string | null) {
-            const targetCommit = yield* fetchPullRequestHead(worktreePath);
-            const headCommit = yield* resolveCommit(worktreePath, "HEAD");
-            if (headCommit === targetCommit) return { moved: false, onTarget: true } as const;
-            const dirty = yield* execute(worktreePath, "statusPorcelain", [
-              "status",
-              "--porcelain=v1",
-              "--untracked-files=normal",
-            ]);
-            if (dirty.stdout.trim()) return { moved: false, onTarget: false } as const;
-            if (headCommit && upstreamCommitBeforeFetch === headCommit) {
-              yield* execute(worktreePath, "resetRewrittenHead", ["reset", "--hard", targetCommit]);
-              return { moved: true, onTarget: true } as const;
-            }
-            const ancestor = yield* execute(
-              worktreePath,
-              "headIsAncestor",
-              ["merge-base", "--is-ancestor", "HEAD", targetCommit],
-              true,
-            );
-            if (Number(ancestor.exitCode) !== 0) {
-              return { moved: false, onTarget: false } as const;
-            }
-            yield* execute(worktreePath, "fastForwardHead", ["merge", "--ff-only", targetCommit]);
-            return { moved: true, onTarget: true } as const;
-          },
-        );
-        const reuseExistingWorktree = Effect.fn("preparePullRequestThread.reuseExistingWorktree")(
-          function* (worktreePath: string, checkedOutBranch: string, newlyCreated = false) {
-            if (checkedOutBranch !== localBranch) {
-              yield* configureUpstream(worktreePath, checkedOutBranch);
-              return {
-                pullRequest,
-                branch: localBranch,
-                worktreePath,
-                isOnPullRequestHead: false,
-              };
-            }
-            const upstreamCommitBeforeFetch = yield* resolveCommit(worktreePath, "@{upstream}");
-            yield* configureUpstream(worktreePath, localBranch);
-            const refreshed = yield* refreshReusedWorktree(
-              worktreePath,
-              upstreamCommitBeforeFetch,
-            ).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("GitWorkflowService reused MR worktree refresh failed", {
-                  worktreePath,
-                  localBranch,
-                  cause,
-                }).pipe(Effect.as({ moved: false, onTarget: false } as const)),
-              ),
-            );
-            if (newlyCreated || refreshed.moved) yield* maybeRunSetupScript(worktreePath);
-            return {
-              pullRequest,
-              branch: localBranch,
-              worktreePath,
-              isOnPullRequestHead: refreshed.onTarget,
-            };
-          },
-        );
-        const reuseOrReject = Effect.fn("preparePullRequestThread.reuseOrReject")(function* (
-          candidate: VcsListRefsResult["refs"][number] | null,
-        ) {
-          if (!candidate?.worktreePath) return null;
-          const candidatePath = yield* canonicalizeExistingPath(candidate.worktreePath);
-          if (candidatePath === rootWorktreePath) {
-            return yield* new GitManagerError({
-              operation: "preparePullRequestThread",
-              cwd: input.cwd,
-              detail:
-                "This merge-request branch is already checked out in the main repository. Use Local or switch the main repository before creating a worktree.",
-            });
-          }
-          return yield* reuseExistingWorktree(candidate.worktreePath, candidate.name);
-        });
-
-        const beforeFetch = yield* findLocalHeadBranch();
-        if (beforeFetch && beforeFetch.worktreePath === null) {
-          const worktree = yield* git.createWorktree({
+              detail: "Failed to detect a VCS repository for this Git workflow.",
+              cause,
+            }),
+        ),
+      ),
+    hasCommit: (input) =>
+      ensureGitCommand("GitWorkflowService.hasCommit", input.cwd).pipe(
+        Effect.andThen(
+          git.execute({
+            operation: "GitWorkflowService.hasCommit",
             cwd: input.cwd,
-            refName: beforeFetch.name,
-            path: null,
-          });
-          return yield* reuseExistingWorktree(
-            worktree.worktree.path,
-            worktree.worktree.refName,
-            true,
-          );
-        }
-        const reusedBeforeFetch = yield* reuseOrReject(beforeFetch);
-        if (reusedBeforeFetch) return reusedBeforeFetch;
+            args: ["rev-parse", "--verify", `${input.refName}^{commit}`],
+            allowNonZeroExit: true,
+          }),
+        ),
+        Effect.map((result) => result.exitCode === 0),
+      ),
+    status: (input) =>
+      detectGitRepositoryForStatus("GitWorkflowService.status", input.cwd).pipe(
+        Effect.flatMap((isGitRepository) =>
+          isGitRepository ? gitManager.status(input) : Effect.succeed(nonRepositoryStatus()),
+        ),
+      ),
+    localStatus: (input) =>
+      detectGitRepositoryForStatus("GitWorkflowService.localStatus", input.cwd).pipe(
+        Effect.flatMap((isGitRepository) =>
+          isGitRepository
+            ? gitManager.localStatus(input)
+            : Effect.succeed(nonRepositoryLocalStatus()),
+        ),
+      ),
+    remoteStatus: (input, options) =>
+      detectGitRepositoryForStatus("GitWorkflowService.remoteStatus", input.cwd).pipe(
+        Effect.flatMap((isGitRepository) =>
+          isGitRepository ? gitManager.remoteStatus(input, options) : Effect.succeed(null),
+        ),
+      ),
+    invalidateLocalStatus: gitManager.invalidateLocalStatus,
+    invalidateRemoteStatus: gitManager.invalidateRemoteStatus,
+    invalidateStatus: gitManager.invalidateStatus,
+    // Coder: route these driver seams through the same Git-only command guard.
+    moveWorktree: (input) =>
+      ensureGitCommand("GitWorkflowService.moveWorktree", input.cwd).pipe(
+        Effect.andThen(git.moveWorktree(input)),
+      ),
+    localRefStatus: (input) =>
+      ensureGitCommand("GitWorkflowService.localRefStatus", input.cwd).pipe(
+        Effect.andThen(git.refStatusLocal(input.cwd)),
+      ),
+    pullCurrentBranch: (cwd) =>
+      ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
+        Effect.andThen(git.pullCurrentBranch(cwd)),
+      ),
+    runStackedAction: (input, options) =>
+      ensureGit("GitWorkflowService.runStackedAction", input.cwd).pipe(
+        Effect.andThen(gitManager.runStackedAction(input, options)),
+      ),
+    resolvePullRequest: routeGitManager(
+      "GitWorkflowService.resolvePullRequest",
+      gitManager.resolvePullRequest,
+    ),
+    preparePullRequestThread: routeGitManager(
+      "GitWorkflowService.preparePullRequestThread",
+      gitManager.preparePullRequestThread,
+    ),
+    listRefs: (input) =>
+      detectGitRepositoryForCommand("GitWorkflowService.listRefs", input.cwd).pipe(
+        Effect.flatMap((isGitRepository) =>
+          isGitRepository ? git.listRefs(input) : Effect.succeed(nonRepositoryListRefs()),
+        ),
+      ),
+    createWorktree: (input, options) =>
+      ensureGitCommand("GitWorkflowService.createWorktree", input.cwd).pipe(
+        Effect.andThen(git.createWorktree(input, options)),
+      ),
+    fetchRemote: (input) =>
+      ensureGitCommand("GitWorkflowService.fetchRemote", input.cwd).pipe(
+        Effect.andThen(git.fetchRemote(input)),
+      ),
+    remoteExists: (input) =>
+      ensureGitCommand("GitWorkflowService.remoteExists", input.cwd).pipe(
+        Effect.andThen(git.remoteExists(input)),
+      ),
+    remoteBranchExists: (input) =>
+      ensureGitCommand("GitWorkflowService.remoteBranchExists", input.cwd).pipe(
+        Effect.andThen(git.remoteBranchExists(input)),
+      ),
+    resolveRemoteTrackingCommit: (input) =>
+      ensureGitCommand("GitWorkflowService.resolveRemoteTrackingCommit", input.cwd).pipe(
+        Effect.andThen(git.resolveRemoteTrackingCommit(input)),
+      ),
+    removeWorktree: (input) =>
+      ensureGitCommand("GitWorkflowService.removeWorktree", input.cwd).pipe(
+        Effect.andThen(git.removeWorktree(input)),
+      ),
+    pruneWorktrees: (input) =>
+      ensureGitCommand("GitWorkflowService.pruneWorktrees", input.cwd).pipe(
+        Effect.andThen(git.pruneWorktrees(input)),
+      ),
+    createRef: (input) =>
+      ensureGitCommand("GitWorkflowService.createRef", input.cwd).pipe(
+        Effect.andThen(git.createRef(input)),
+      ),
+    switchRef: (input) =>
+      ensureGitCommand("GitWorkflowService.switchRef", input.cwd).pipe(
+        Effect.andThen(Effect.scoped(git.switchRef(input))),
+      ),
+    renameBranch: (input) =>
+      ensureGit("GitWorkflowService.renameBranch", input.cwd).pipe(
+        Effect.andThen(git.renameBranch(input)),
+      ),
+  });
+});
 
-        const remoteName = yield* primaryRemoteName(input.cwd);
-        yield* execute(input.cwd, "materializeHead", [
-          "fetch",
-          remoteName,
-          `+refs/merge-requests/${pullRequest.number}/head:refs/heads/${localBranch}`,
-        ]);
-        yield* configureUpstream(input.cwd, localBranch);
-
-        const afterFetch = yield* findLocalHeadBranch();
-        const reusedAfterFetch = yield* reuseOrReject(afterFetch);
-        if (reusedAfterFetch) return reusedAfterFetch;
-
-        const worktree = yield* git.createWorktree({
-          cwd: input.cwd,
-          refName: localBranch,
-          path: null,
-        });
-        yield* configureUpstream(worktree.worktree.path, localBranch);
-        yield* maybeRunSetupScript(worktree.worktree.path);
-        return {
-          pullRequest,
-          branch: worktree.worktree.refName,
-          worktreePath: worktree.worktree.path,
-          isOnPullRequestHead: true,
-        };
-      },
-    );
-    const preparePullRequestThread: GitWorkflowService["Service"]["preparePullRequestThread"] = (
-      input,
-    ) => preparePullRequestThreadImpl(input).pipe(Effect.ensuring(invalidateStatus(input.cwd)));
-
-    const prepareWorktreeBase: GitWorkflowService["Service"]["prepareWorktreeBase"] = Effect.fn(
-      "GitWorkflowService.prepareWorktreeBase",
-    )(function* (input) {
-      const inspect = (args: ReadonlyArray<string>) =>
-        git.execute({
-          operation: "GitWorkflowService.prepareWorktreeBase",
-          cwd: input.cwd,
-          args,
-          allowNonZeroExit: true,
-          maxOutputBytes: 65536,
-        });
-      const repository = yield* inspect(["rev-parse", "--is-inside-work-tree"]);
-      if (repository.exitCode !== 0 || repository.stdout.trim() !== "true") return null;
-      const resolve = (ref: string) =>
-        inspect(["rev-parse", "--verify", "--end-of-options", `${ref}^{commit}`]).pipe(
-          Effect.map((result) =>
-            result.exitCode === 0 && /^[0-9a-f]{40,64}$/i.test(result.stdout.trim())
-              ? result.stdout.trim()
-              : null,
-          ),
-        );
-      if (input.startFromOrigin) {
-        const remotes = yield* inspect(["remote"]);
-        if (remotes.stdout.split("\n").includes("origin")) {
-          yield* git.execute({
-            operation: "GitWorkflowService.prepareWorktreeBase.fetch",
-            cwd: input.cwd,
-            args: ["fetch", "--no-tags", "origin"],
-            maxOutputBytes: 65536,
-          });
-          const branch = input.baseBranch.replace(/^(?:refs\/remotes\/)?origin\//, "");
-          const remote = yield* resolve(`refs/remotes/origin/${branch}`);
-          if (remote) return remote;
-        }
-      }
-      return yield* resolve(input.baseBranch);
-    });
-
-    return GitWorkflowService.of({
-      prepareWorktreeBase,
-      localStatus,
-      remoteStatus,
-      status,
-      branchPullRequest,
-      invalidateStatus,
-      pull: (input, options) => mutate(input.cwd, pull(input, options)),
-      resolvePullRequest,
-      runStackedAction: (input, reporter) => mutate(input.cwd, runStackedAction(input, reporter)),
-      localRefStatus: ({ cwd }) => git.refStatusLocal(cwd),
-      listRefs: git.listRefs,
-      createWorktree: (input, options) => mutate(input.cwd, git.createWorktree(input, options)),
-      removeWorktree: (input) => mutate(input.cwd, git.removeWorktree(input)),
-      pruneWorktrees: (input) => mutate(input.cwd, git.pruneWorktrees(input)),
-      createRef: (input) => mutate(input.cwd, git.createRef(input)),
-      switchRef: (input) => mutate(input.cwd, git.switchRef(input)),
-      renameBranch: (input) => mutate(input.cwd, git.renameBranch(input)),
-      moveWorktree: (input) => mutate(input.cwd, git.moveWorktree(input)),
-      preparePullRequestThread: (input) => mutate(input.cwd, preparePullRequestThread(input)),
-    });
-  }),
-);
+export const layer = Layer.effect(GitWorkflowService, make);

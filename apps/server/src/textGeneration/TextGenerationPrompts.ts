@@ -22,14 +22,21 @@ export function buildCommitMessagePrompt(input: {
   readonly branch: string | null;
   readonly stagedSummary: string;
   readonly stagedPatch: string;
+  readonly includeBranch?: boolean;
   readonly policy?: TextGenerationPolicy;
 }) {
+  const wantsBranch = input.includeBranch === true;
   const prompt = [
     "You write concise git commit messages.",
-    "Return a JSON object with keys: subject, body.",
+    wantsBranch
+      ? "Return a JSON object with keys: subject, body, branch."
+      : "Return a JSON object with keys: subject, body.",
     "Rules:",
     "- subject must be imperative, <= 72 chars, and no trailing period",
     "- body can be an empty string or short markdown bullet points",
+    ...(wantsBranch
+      ? ["- branch must be a short semantic git branch fragment for this change"]
+      : []),
     "- capture the primary user-visible or developer-visible change",
     ...policyInstruction(input.policy?.commitInstructions),
     "",
@@ -41,6 +48,16 @@ export function buildCommitMessagePrompt(input: {
     "Staged patch:",
     limitSection(input.stagedPatch, 40_000),
   ].join("\n");
+  if (wantsBranch) {
+    return {
+      prompt,
+      outputSchema: Schema.Struct({
+        subject: Schema.String,
+        body: Schema.String,
+        branch: Schema.String,
+      }),
+    };
+  }
   return {
     prompt,
     outputSchema: Schema.Struct({ subject: Schema.String, body: Schema.String }),

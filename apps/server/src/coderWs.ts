@@ -40,6 +40,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
   CoderWsRpcGroup,
+  DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
   CommandId,
   GitCommandError,
   type GitActionProgressEvent,
@@ -86,7 +87,7 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
 import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
-import * as CoderVcsStatus from "./coderVcsStatus.ts";
+import * as VcsStatusBroadcaster from "./vcs/VcsStatusBroadcaster.ts";
 import { RepositoryIdentityResolver } from "./project/RepositoryIdentityResolver.ts";
 import * as GitWorkflowService from "./git/GitWorkflowService.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
@@ -472,9 +473,50 @@ export const layer = CoderWsRpcGroup.toLayer(
     const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
     const workspaceFileSystem = yield* WorkspaceFileSystem.WorkspaceFileSystem;
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
-    const vcsStatus = yield* CoderVcsStatus.CoderVcsStatus;
+    const vcsStatus = yield* VcsStatusBroadcaster.VcsStatusBroadcaster;
     const repositoryIdentityResolver = yield* RepositoryIdentityResolver;
+    // Coder: read the flat fetch setting on each upstream poll loop, including live changes.
+    const automaticGitFetchInterval = settings.getSettings.pipe(
+      Effect.map((value) => value.automaticGitFetchInterval),
+      Effect.catch((cause) =>
+        Effect.logWarning("Failed to read automatic Git fetch interval setting", {
+          detail: cause.message,
+        }).pipe(Effect.as(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL)),
+      ),
+    );
+    const refreshGitStatus = (cwd: string) =>
+      vcsStatus
+        .refreshStatus(cwd)
+        .pipe(Effect.ignoreCause({ log: true }), Effect.forkDetach, Effect.asVoid);
     const git = yield* GitWorkflowService.GitWorkflowService;
+    const prepareWorktreeBase = Effect.fn("prepareWorktreeBase")(function* (input: {
+      readonly cwd: string;
+      readonly baseBranch: string;
+      readonly startFromOrigin?: boolean;
+    }) {
+      if (!(yield* git.isRepository(input.cwd))) return null;
+      let baseRef = input.baseBranch;
+      if (
+        input.startFromOrigin &&
+        (yield* git.remoteExists({ cwd: input.cwd, remoteName: "origin" }))
+      ) {
+        yield* git.fetchRemote({ cwd: input.cwd, remoteName: "origin", refName: input.baseBranch });
+        if (
+          yield* git.remoteBranchExists({
+            cwd: input.cwd,
+            remoteName: "origin",
+            refName: input.baseBranch,
+          })
+        ) {
+          baseRef = (yield* git.resolveRemoteTrackingCommit({
+            cwd: input.cwd,
+            refName: input.baseBranch,
+            fallbackRemoteName: "origin",
+          })).commitSha;
+        }
+      }
+      return (yield* git.hasCommit({ cwd: input.cwd, refName: baseRef })) ? baseRef : null;
+    });
     const gitVcs = yield* GitVcsDriver.GitVcsDriver;
     const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
     const projectSetupScriptRunner = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
@@ -743,7 +785,7 @@ export const layer = CoderWsRpcGroup.toLayer(
       );
 
       const refreshCwd = nextWorktreePath ?? project.workspaceRoot;
-      yield* Effect.all([vcsStatus.refresh(refreshCwd), vcsStatus.refresh(project.workspaceRoot)], {
+      yield* Effect.all([refreshGitStatus(refreshCwd), refreshGitStatus(project.workspaceRoot)], {
         concurrency: "unbounded",
       }).pipe(Effect.ignore);
       return { branch: input.newBranch, worktreePath: nextWorktreePath };
@@ -871,7 +913,7 @@ export const layer = CoderWsRpcGroup.toLayer(
             ),
           );
           const worktreeBase = prepareWorktree
-            ? yield* git.prepareWorktreeBase({
+            ? yield* prepareWorktreeBase({
                 cwd: prepareWorktree.projectCwd,
                 baseBranch: prepareWorktree.baseBranch,
                 ...(prepareWorktree.startFromOrigin ? { startFromOrigin: true } : {}),
@@ -988,7 +1030,7 @@ export const layer = CoderWsRpcGroup.toLayer(
               branch: worktree.worktree.refName,
               worktreePath: worktree.worktree.path,
             });
-            yield* vcsStatus.refresh(worktree.worktree.path).pipe(Effect.ignore);
+            yield* refreshGitStatus(worktree.worktree.path);
           }
           if (tracked && !createdWorktree) {
             yield* worktreeSetupTracker.stageStatus(
@@ -1632,7 +1674,7 @@ export const layer = CoderWsRpcGroup.toLayer(
             }).pipe(
               Effect.mapError((cause) => toDispatchError(cause, "Failed to create project.")),
             ),
-          onCloned: ({ workspaceRoot }) => vcsStatus.refresh(workspaceRoot).pipe(Effect.ignore),
+          onCloned: ({ workspaceRoot }) => refreshGitStatus(workspaceRoot),
         }),
       [WS_METHODS.projectCloneCancel]: ({ projectId }) =>
         projectClones.cancel(projectId).pipe(Effect.map((applied) => ({ applied }))),
@@ -1649,36 +1691,40 @@ export const layer = CoderWsRpcGroup.toLayer(
           Effect.tap(() =>
             repositoryIdentityResolver.resolve(input.cwd, { refresh: true }).pipe(Effect.ignore),
           ),
-          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
         ),
-      [WS_METHODS.subscribeVcsStatus]: ({ cwd }) => vcsStatus.stream(cwd),
+      [WS_METHODS.subscribeVcsStatus]: (input) =>
+        vcsStatus.streamStatus(input, {
+          automaticRemoteRefreshInterval: automaticGitFetchInterval,
+        }),
       [WS_METHODS.subscribeWorktreeSetup]: ({ threadId }) => worktreeSetupTracker.stream(threadId),
       [WS_METHODS.worktreeSetupCancel]: ({ threadId }) =>
         worktreeSetupTracker.cancel(threadId).pipe(Effect.map((cancelled) => ({ cancelled }))),
-      [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.refStream(cwd),
-      [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refresh(cwd),
+      // Coder: the sidebar ref subscription remains non-mutating and never fetches.
+      [WS_METHODS.subscribeVcsRefStatus]: ({ cwd }) => vcsStatus.streamRefStatus(cwd),
+      [WS_METHODS.vcsRefreshStatus]: ({ cwd }) => vcsStatus.refreshStatus(cwd),
       [WS_METHODS.vcsPull]: (input) =>
-        git.pull(input).pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
+        git.pullCurrentBranch(input.cwd).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
       [WS_METHODS.vcsListRefs]: (input) => git.listRefs(input),
       [WS_METHODS.vcsCreateWorktree]: (input) =>
         git.createWorktree(input).pipe(
           Effect.mapError((cause) => gitCommandError("create-worktree", input.cwd, cause)),
-          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
         ),
       [WS_METHODS.vcsRemoveWorktree]: (input) =>
         git.removeWorktree(input).pipe(
           Effect.mapError((cause) => gitCommandError("remove-worktree", input.cwd, cause)),
-          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
         ),
       [WS_METHODS.vcsCreateRef]: (input) =>
         git.createRef(input).pipe(
           Effect.mapError((cause) => gitCommandError("create-ref", input.cwd, cause)),
-          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
         ),
       [WS_METHODS.vcsSwitchRef]: (input) =>
         git.switchRef(input).pipe(
           Effect.mapError((cause) => gitCommandError("switch-ref", input.cwd, cause)),
-          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
         ),
       [WS_METHODS.vcsRenameThreadBranch]: (input) =>
         renameThreadBranch(input).pipe(
@@ -1697,13 +1743,15 @@ export const layer = CoderWsRpcGroup.toLayer(
               Effect.andThen(Effect.die(Cause.squash(cause))),
             ),
           ),
-          Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore)),
+          Effect.tap(() => refreshGitStatus(input.cwd)),
         ),
       [WS_METHODS.gitRunStackedAction]: (input) =>
         Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
           git
             .runStackedAction(input, {
-              publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
+              progressReporter: {
+                publish: (event) => Queue.offer(queue, event).pipe(Effect.asVoid),
+              },
             })
             .pipe(
               Effect.tap((result) =>
@@ -1727,17 +1775,15 @@ export const layer = CoderWsRpcGroup.toLayer(
               Effect.matchCauseEffect({
                 onFailure: (cause) => Queue.failCause(queue, cause),
                 onSuccess: () =>
-                  vcsStatus
-                    .refresh(input.cwd)
-                    .pipe(Effect.ignore, Effect.andThen(Queue.end(queue).pipe(Effect.asVoid))),
+                  refreshGitStatus(input.cwd).pipe(
+                    Effect.andThen(Queue.end(queue).pipe(Effect.asVoid)),
+                  ),
               }),
             ),
         ),
       [WS_METHODS.gitResolvePullRequest]: (input) => git.resolvePullRequest(input),
       [WS_METHODS.gitPreparePullRequestThread]: (input) =>
-        git
-          .preparePullRequestThread(input)
-          .pipe(Effect.tap(() => vcsStatus.refresh(input.cwd).pipe(Effect.ignore))),
+        git.preparePullRequestThread(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
       [WS_METHODS.pullRequestsList]: (input) => pullRequests.list(input),
       [WS_METHODS.pullRequestsListStats]: (input) => pullRequests.listStats(input),
       [WS_METHODS.pullRequestsSummary]: (input) => pullRequests.summary(input),

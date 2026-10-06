@@ -23,7 +23,7 @@ import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 
-import * as GitWorkflow from "../git/GitWorkflowService.ts";
+import * as GitWorkflow from "../git/GitManager.ts";
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { ServerActivation } from "../serverActivation.ts";
 import { ServerSettingsService } from "../serverSettings.ts";
@@ -150,7 +150,7 @@ describe("ThreadSettlementReactor", () => {
                   Effect.andThen(Effect.succeed(snapshot)),
                 ),
             }),
-            Layer.mock(GitWorkflow.GitWorkflowService)({
+            Layer.mock(GitWorkflow.GitManager)({
               branchPullRequest: (input) =>
                 Ref.update(branchCalls, (calls) => [...calls, input]).pipe(Effect.as(null)),
               invalidateStatus: () => Effect.void,
@@ -273,7 +273,7 @@ describe("ThreadSettlementReactor", () => {
                   Effect.andThen(Effect.succeed(snapshot)),
                 ),
             }),
-            Layer.mock(GitWorkflow.GitWorkflowService)({
+            Layer.mock(GitWorkflow.GitManager)({
               branchPullRequest: () => Effect.die(new Error("No branch lookup expected.")),
               invalidateStatus: () => Effect.void,
             }),
@@ -407,13 +407,17 @@ describe("ThreadSettlementReactor", () => {
             getShellSnapshot: () =>
               Queue.offer(snapshotReads, undefined).pipe(Effect.andThen(Effect.succeed(snapshot))),
           }),
-          Layer.mock(GitWorkflow.GitWorkflowService)({
+          Layer.mock(GitWorkflow.GitManager)({
             branchPullRequest: (_input, options) =>
               Effect.sync(() => {
                 assert.isTrue(options?.refresh);
                 return {
                   state: "open" as const,
                   number: 43,
+                  title: "Merge request",
+                  url: "https://gitlab.example.test/owner/repository/-/merge_requests/43",
+                  baseRef: "main",
+                  headRef: "feature",
                   updatedAt: NOW,
                   repositoryKey: "gitlab.example.test/owner/repository",
                 };
