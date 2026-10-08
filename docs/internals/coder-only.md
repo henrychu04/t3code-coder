@@ -136,17 +136,24 @@ that arrive together share one aliased `glab api graphql` request per checkout a
 individual REST reads. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
-Agent MR commands use a generated workspace-local CLI, invoked with the helper's pinned Node
-runtime. The shared provider service supplies its command to Codex and Claude on ordinary message
-turns; native slash commands retain their original input. Temporary
-private directories hold one request/reply exchange per thread; no socket or MCP server is opened.
-The helper captures the thread identity, validates GitLab URLs, and dispatches normal orchestration
-commands rather than writing SQLite directly. Plan-mode invocations are read-only. Requests are
-limited to 16 KiB, responses to 256 KiB, and execution to 10 seconds; the CLI waits at most 15 seconds.
-At most 64 tool sessions exist at once; if tool setup is unavailable, ordinary provider turns still
-run without these commands. Turn completion, abortion, session exit/stop, and helper
-shutdown revoke the commands and remove their temporary files. Workspace processes run as the same
-OS user; these directories are not an isolation boundary between mutually untrusted agents.
+Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP. Each provider
+session credential from upstream's `McpSessionRegistry` is a private temporary directory holding a
+standalone CLI (run with the helper's pinned Node runtime) and a read-only tool catalog; no socket,
+listener, or MCP server is opened. The CLI writes one request per call into its own call directory,
+and the helper runs the named tool through upstream's toolkit handlers with the credential's
+thread identity, never one the agent supplies. Plan-mode threads may call only tools upstream marks
+read-only. Requests and responses are limited to 256 KiB. A call still running after 8 seconds
+answers with a `bridge-job:` task id that `task_status` resolves, so long tools never depend on a
+provider's shell timeout; at most 16 such calls run per thread and unread results are discarded
+after an hour. Upstream's lifecycle owns the bridges: credentials are reused across turns and
+revoked, which deletes the directory, when the session is released, the thread is archived or
+deleted, or the helper stops. If a bridge cannot be created, turns run without T3 tools. Workspace
+processes run as the same OS user; these directories are not an isolation boundary between mutually
+untrusted agents.
+
+The bridge carries upstream's pull-request toolkit (`link_pull_request`, `unlink_pull_request`,
+`list_thread_pull_requests`), which accepts only merge requests on a GitLab host that a workspace
+project uses.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -554,13 +561,27 @@ listed here is drift to remove rather than fork behavior to keep.
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
     than copying transcript files.
-  - MCP is disabled for both providers: `McpSessionRegistry` never issues or resolves a
-    credential, the provider session manager runs with `configureMcp: false`, Codex app-server
-    launches pass `features.apps=false` and disable every workspace MCP server for the session
-    cwd, and `declineCodexMcpElicitation` declines every elicitation. `RuntimeInstructions.ts`
-    omits upstream's `link_pull_request` block; agents link merge requests through the workspace
-    MR command. Bridging upstream's T3 tools to the helper (for example through an async file
-    channel) is follow-up work.
+  - MCP is disabled for both providers. Codex app-server launches pass `features.apps=false` and
+    disable every workspace MCP server for the session cwd, and `declineCodexMcpElicitation`
+    declines every elicitation. Upstream's T3 toolkits reach agents over the workspace file bridge
+    instead (see [Runtime boundary](#runtime-boundary)):
+    - `mcp/McpSessionRegistry.ts` keeps upstream's shape and lifecycle, but each credential is a
+      bridge (`mcp/bridge/FileBridge.ts`) whose `toolCommand` (a Coder field on
+      `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory.
+    - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
+      `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
+      8 seconds into `bridge-job:` tasks. `server.ts` binds it once the orchestrator runs.
+    - `toolkits/pullRequests/handlers.ts` rejects merge requests outside the workspace's GitLab
+      hosts and passes no Forgejo remote to the shared URL helpers, which carry no Forgejo
+      authority.
+    - `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge
+      exists, and never advertises preview or device tools; `CodexDeveloperInstructions.ts` and
+      `ClaudeAdapterV2.ts` describe the bridge command (`mcp/bridge/T3ToolInstructions.ts`) in
+      place of upstream's MCP orchestration text. Claude pre-approves the command as a Bash
+      prefix, limited to read-only tools in a read-only sandbox, as upstream pre-approves its MCP
+      tools. `RuntimeInstructions.ts` keeps upstream's `link_pull_request` block, worded for T3
+      tools.
+    - Preview, device, and attachment-upload toolkits are not carried.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
     and WebP. Tool-result image bytes are omitted from persisted raw events
@@ -572,10 +593,6 @@ listed here is drift to remove rather than fork behavior to keep.
     images whose signature does not match their media type, and writes the validated bytes
     exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
     so upstream's attachment-cleanup side effects are absent.
-  - `ProviderTurnStartService` prepends the agent MR command instructions to ordinary turns. A
-    failed send revokes them, as does run finalization (`server.ts` wraps the run-finalization
-    observer), the thread's next turn, and helper shutdown. V2 has no session-exit or stop-all
-    hook, so a stopped session's commands stay open until one of those.
   - Only the Codex and Claude adapters are registered
     (`ProviderOrchestrationAdapterInfrastructure.ts`), and only shipped providers have replay
     harnesses. Pi (`PiDriver.ts`, `PiAdapterV2.ts`, `PiProvider.ts`, `PiTextGeneration.ts`) stays

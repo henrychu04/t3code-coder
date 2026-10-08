@@ -453,17 +453,10 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
   });
 });
 
+// Coder: T3 tools run over the workspace file bridge, so the session's tool command is
+// pre-approved as a Bash prefix instead of attaching a `t3-code` MCP server.
 describe("ClaudeAdapterV2 MCP query overrides", () => {
-  const T3_MCP_SERVERS = {
-    "t3-code": {
-      type: "http",
-      url: "http://127.0.0.1:43123/mcp",
-      headers: {
-        Authorization: "Bearer secret-claude-token",
-      },
-      timeout: ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
-    },
-  } as const;
+  const TOOL_COMMAND = "/nix/store/node/bin/node /tmp/t3-tools-claude/t3.mjs";
 
   const withMcpSession = (threadId: ThreadId, run: () => void) => {
     McpProviderSession.setMcpProviderSession({
@@ -471,9 +464,10 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       threadId,
       providerSessionId: `mcp-session-${threadId}`,
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      endpoint: "http://127.0.0.1:43123/mcp",
+      endpoint: "/tmp/t3-tools-claude",
       authorizationHeader: "Bearer secret-claude-token",
       browserToolsAvailable: true,
+      toolCommand: TOOL_COMMAND,
     });
     try {
       run();
@@ -481,6 +475,10 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       McpProviderSession.clearMcpProviderSession(threadId);
     }
   };
+
+  const readOnlyBridgeRules = ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.map(
+    (tool) => `Bash(${TOOL_COMMAND} ${tool.replace(/^mcp__t3-code__/u, "")}:*)`,
+  );
 
   it("leaves an absent allowlist absent when no MCP session exists", () => {
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
@@ -501,7 +499,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.deepEqual(overrides, { allowedTools: ["Read"] });
   });
 
-  it("pre-approves all t3-code tools when attaching an MCP session without an allowlist", () => {
+  it("pre-approves the T3 tool command when a bridge session exists without an allowlist", () => {
     const threadId = ThreadId.make("thread-claude-mcp-no-allowlist");
     withMcpSession(threadId, () => {
       const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
@@ -510,26 +508,51 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       });
 
       assert.deepEqual(overrides, {
-        allowedTools: [ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD],
-        mcpServers: T3_MCP_SERVERS,
+        allowedTools: [`Bash(${TOOL_COMMAND}:*)`],
+        t3ToolCommand: TOOL_COMMAND,
       });
     });
   });
 
-  it("extends an explicit allowlist with the t3-code wildcard", () => {
+  it("extends an explicit allowlist with the T3 tool command", () => {
     const threadId = ThreadId.make("thread-claude-mcp-with-allowlist");
     withMcpSession(threadId, () => {
       const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
         threadId,
         readOnlySandbox: false,
-        allowedTools: ["Read", "mcp__t3-code__*"],
+        allowedTools: ["Read"],
       });
 
       assert.deepEqual(overrides, {
-        allowedTools: ["Read", "mcp__t3-code__*"],
-        mcpServers: T3_MCP_SERVERS,
+        allowedTools: ["Read", `Bash(${TOOL_COMMAND}:*)`],
+        t3ToolCommand: TOOL_COMMAND,
       });
     });
+  });
+
+  it("attaches nothing when the session's bridge could not be created", () => {
+    const threadId = ThreadId.make("thread-claude-mcp-no-bridge");
+    McpProviderSession.setMcpProviderSession({
+      environmentId: EnvironmentId.make(`environment-${threadId}`),
+      threadId,
+      providerSessionId: `mcp-session-${threadId}`,
+      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+      endpoint: "",
+      authorizationHeader: "Bearer secret-claude-token",
+      browserToolsAvailable: true,
+    });
+    try {
+      assert.deepEqual(
+        ClaudeAdapterV2.claudeMcpQueryOverrides({
+          threadId,
+          readOnlySandbox: false,
+          allowedTools: ["Read"],
+        }),
+        { allowedTools: ["Read"] },
+      );
+    } finally {
+      McpProviderSession.clearMcpProviderSession(threadId);
+    }
   });
 
   it("pre-approves only read-only t3-code tools in a read-only sandbox", () => {
@@ -544,11 +567,11 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       assert.deepEqual(overrides, {
         allowedTools: [
           ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
-          ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
+          ...readOnlyBridgeRules,
         ],
-        mcpServers: T3_MCP_SERVERS,
+        t3ToolCommand: TOOL_COMMAND,
       });
-      assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
+      assert.isFalse(overrides.allowedTools?.includes(`Bash(${TOOL_COMMAND}:*)`));
     });
   });
 
@@ -560,9 +583,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
         readOnlySandbox: true,
       });
 
-      assert.deepEqual(overrides.allowedTools, [
-        ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
-      ]);
+      assert.deepEqual(overrides.allowedTools, readOnlyBridgeRules);
     });
   });
 
@@ -618,9 +639,10 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
         threadId,
         providerSessionId: `mcp-session-${threadId}`,
         providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-        endpoint: "http://127.0.0.1:43123/mcp",
+        endpoint: "/tmp/t3-tools-rotated",
         authorizationHeader: "Bearer rotated-claude-token",
         browserToolsAvailable: true,
+        toolCommand: "/nix/store/node/bin/node /tmp/t3-tools-rotated/t3.mjs",
       });
 
       const rotatedKey = ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
@@ -656,16 +678,19 @@ describe("ClaudeAdapterV2 tool result bytes", () => {
 });
 
 describe("ClaudeAdapterV2 native protocol logging", () => {
-  it("injects thread-scoped MCP configuration without logging the credential", () => {
+  // Coder: the T3 tool bridge command reaches the system prompt; no MCP server or credential does.
+  it("injects the thread's T3 tool command without an MCP server or credential", () => {
     const threadId = ThreadId.make("thread-claude-mcp");
+    const toolCommand = "/nix/store/node/bin/node /tmp/t3-tools-claude/t3.mjs";
     McpProviderSession.setMcpProviderSession({
       environmentId: EnvironmentId.make("environment-claude-mcp"),
       threadId,
       providerSessionId: "mcp-session-claude",
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      endpoint: "http://127.0.0.1:43123/mcp",
+      endpoint: "/tmp/t3-tools-claude",
       authorizationHeader: "Bearer secret-claude-token",
       browserToolsAvailable: true,
+      toolCommand,
     });
 
     try {
@@ -674,20 +699,6 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
         readOnlySandbox: false,
         allowedTools: ["Read"],
       });
-      assert.deepEqual(overrides, {
-        allowedTools: ["Read", "mcp__t3-code__*"],
-        mcpServers: {
-          "t3-code": {
-            type: "http",
-            url: "http://127.0.0.1:43123/mcp",
-            headers: {
-              Authorization: "Bearer secret-claude-token",
-            },
-            timeout: ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
-          },
-        },
-      });
-
       const options = ClaudeAdapterV2.makeClaudeQueryOptions({
         modelSelection: {
           instanceId: ProviderInstanceId.make("claudeAgent"),
@@ -698,18 +709,12 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
         cwd: "/workspace",
         ...overrides,
       });
-      assert.isObject(options.systemPrompt);
-      const systemPrompt = options.systemPrompt as {
-        readonly type: string;
-        readonly preset: string;
-        readonly append?: string;
-      };
-      assert.equal(systemPrompt.type, "preset");
-      assert.equal(systemPrompt.preset, "claude_code");
-      assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
+      const systemPrompt = options.systemPrompt as { readonly append?: string };
+      assert.include(systemPrompt.append ?? "", `${toolCommand} --list`);
+      assert.include(systemPrompt.append ?? "", "link_pull_request");
       const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
-      assert.equal(logged.hasMcpServers, true);
-      assert.notInclude(JSON.stringify(logged), "secret-claude-token");
+      assert.isUndefined(logged.hasMcpServers);
+      assert.notInclude(JSON.stringify(options), "secret-claude-token");
     } finally {
       McpProviderSession.clearMcpProviderSession(threadId);
     }
