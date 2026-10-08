@@ -504,7 +504,9 @@ Shared product subsystems are upstream's code with the Coder deltas below layere
 syncing, take upstream's version of these files and reapply only these seams; a difference not
 listed here is drift to remove rather than fork behavior to keep.
 
-- **Transport and RPC handlers.** `coderWs.ts` follows upstream's `ws.ts` handler and helper
+- **Transport and RPC handlers.** `ws.ts`, `server.ts`, and `serverRuntimeStartup.ts` keep
+  upstream's paths, and so do client-runtime's `threadSnapshotHttp.ts` and `shellSnapshotHttp.ts`,
+  whose loaders use helper stdio rather than HTTP. `ws.ts` follows upstream's handler and helper
   order, using `CoderWsRpcGroup.toLayer` over the gateway's stdio bridge. Bootstrap preparation,
   setup activities, cancellation, archive cleanup, clone identity refresh, MR sync-key resolution,
   and `server:` command IDs follow upstream, including its behavior of preserving a worktree
@@ -625,7 +627,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
     Coder-owned stub that always allows work, because polling already stops when the last
-    status subscription ends. `coderWs.ts` reads the remote refresh interval from the flat
+    status subscription ends. `ws.ts` reads the remote refresh interval from the flat
     `automaticGitFetchInterval` setting.
   - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
     `serverRuntimeStartup.ts`, with the same per-project enablement.

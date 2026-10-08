@@ -28,7 +28,7 @@ import {
   ThreadSnapshotLoader,
   makeThreadSnapshotLoader,
   type ThreadSnapshotWindow,
-} from "./threadSnapshotRpc.ts";
+} from "./threadSnapshotHttp.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 import { makeThreadSnapshotRetention, THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
@@ -999,7 +999,7 @@ export function createEnvironmentThreadStateAtoms<R, E>(
 
 export * from "./archivedThreads.ts";
 export * from "./checkpointDiff.ts";
-export * from "./threadSnapshotRpc.ts";
+export * from "./threadSnapshotHttp.ts";
 export * from "./composerPathSearch.ts";
 export * from "./threadCommands.ts";
 export * from "./threadDetail.ts";

@@ -111,7 +111,7 @@ import { makeLiveStreamBudget, type RetainedLiveItem } from "./orchestration/Liv
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { sanitizeBranchFragment } from "@t3tools/shared/git";
 import * as CoderEnvironment from "./coderEnvironment.ts";
-import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
+import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import { readProjectImage } from "./workspace/ProjectImages.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
@@ -1824,7 +1824,7 @@ export const layer = CoderWsRpcGroup.toLayer(
       });
 
     // Coder: verify file and media roots belong to the requesting thread.
-    const workspaceOwnedByThread = Effect.fn("coderWs.workspaceOwnedByThread")(function* (input: {
+    const workspaceOwnedByThread = Effect.fn("ws.workspaceOwnedByThread")(function* (input: {
       readonly threadId: ThreadId;
       readonly cwd: string;
     }) {

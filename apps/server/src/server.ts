@@ -71,8 +71,8 @@ import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
 import * as ProcessRunner from "./processRunner.ts";
-import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
-import * as CoderWs from "./coderWs.ts";
+import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
+import * as CoderWs from "./ws.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 
 const CoderOrchestrationLayerLive = OrchestrationLayerLive.pipe(
