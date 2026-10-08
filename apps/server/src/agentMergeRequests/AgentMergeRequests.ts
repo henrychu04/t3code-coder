@@ -2,6 +2,8 @@ import {
   CommandId,
   type OrchestrationProjectShell,
   type OrchestrationV2Command,
+  type OrchestrationV2DomainEvent,
+  type OrchestrationV2Run,
   type OrchestrationV2ThreadShell,
   type ProviderInstanceId,
   type RunId,
@@ -18,6 +20,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
+import * as Stream from "effect/Stream";
 import { isCoderPullRequestLink } from "../coderPullRequestLink.ts";
 import { createAgentMrBridge, type AgentMrRequest } from "./bridge.ts";
 
@@ -201,3 +204,27 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(AgentMergeRequests, make);
+
+/** A run's provider turn is over in these states; `waiting` is the post-turn checkpoint drain. */
+const ENDED_RUN_STATUSES = new Set<OrchestrationV2Run["status"]>([
+  "waiting",
+  "completed",
+  "interrupted",
+  "failed",
+  "cancelled",
+  "rolled_back",
+]);
+
+/**
+ * Releases a run's commands however the run ends, including a failed checkpoint capture and a
+ * failed run, which captures nothing.
+ */
+export const releaseEndedRuns = <E>(
+  tools: Pick<AgentMergeRequestsShape, "release">,
+  events: Stream.Stream<OrchestrationV2DomainEvent, E>,
+) =>
+  Stream.runForEach(events, (event) =>
+    event.type === "run.updated" && ENDED_RUN_STATUSES.has(event.payload.status)
+      ? tools.release(event.threadId, event.runId)
+      : Effect.void,
+  );

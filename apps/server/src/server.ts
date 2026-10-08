@@ -193,24 +193,14 @@ const CoderResourceCleanupLive = Layer.effect(
   }),
 );
 
-// Coder: one instance serves turn start, run finalization, and the startup binding.
+// Coder: one instance serves turn start, provider session release, and the startup binding.
 const CoderAgentMergeRequestsLive = AgentMergeRequests.layer;
 
-// Coder: run finalization also revokes the turn's workspace MR commands.
-const CoderRunFinalizationObserverLive = Layer.effect(
-  RunFinalizationService.RunFinalizationObserver,
-  Effect.gen(function* () {
-    const upstream = yield* RunFinalizationService.RunFinalizationObserver;
-    const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
-    return {
-      refreshAfterTurn: upstream.refreshAfterTurn,
-      refresh: (input) =>
-        upstream
-          .refresh(input)
-          .pipe(Effect.ensuring(agentMergeRequests.release(input.threadId, input.runId))),
-    };
-  }),
-).pipe(
+// Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
+const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
+  Layer.provide(CoderCheckpointStoreLive),
+  Layer.provide(CoderGitWorkflowLive),
+  Layer.provide(CoderResourceCleanupLive),
   Layer.provide(
     RunFinalizationService.observerLive.pipe(
       Layer.provide(ProjectionStoreV2.layer),
@@ -218,15 +208,6 @@ const CoderRunFinalizationObserverLive = Layer.effect(
       Layer.provide(ProjectServiceLayerLive),
     ),
   ),
-  Layer.provide(CoderAgentMergeRequestsLive),
-);
-
-// Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
-const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
-  Layer.provide(CoderCheckpointStoreLive),
-  Layer.provide(CoderGitWorkflowLive),
-  Layer.provide(CoderResourceCleanupLive),
-  Layer.provide(CoderRunFinalizationObserverLive),
   Layer.provide(CoderAgentMergeRequestsLive),
 );
 
@@ -349,6 +330,11 @@ const CoderRuntimeStartupLive = Layer.effect(
     }
     yield* legacyV1ThreadImporter.reconcileShells;
     yield* providerRuntimeRecovery.recover;
+    // Coder: a run's workspace MR commands end with the run, whichever path ends it.
+    yield* AgentMergeRequests.releaseEndedRuns(
+      agentMergeRequests,
+      orchestrator.streamDomainEvents,
+    ).pipe(Effect.ignoreCause({ log: true }), Effect.forkIn(runtimeScope));
     const effectWorker: Fiber.Fiber<void, never> = yield* EffectWorker.runDaemon.pipe(
       Effect.provide(effectWorkerContext),
       Effect.forkIn(runtimeScope),

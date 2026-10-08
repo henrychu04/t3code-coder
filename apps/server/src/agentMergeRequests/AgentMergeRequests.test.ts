@@ -7,11 +7,13 @@ import {
   ThreadId,
   type OrchestrationProjectShell,
   type OrchestrationV2Command,
+  type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Stream from "effect/Stream";
 import { describe, expect, it } from "vite-plus/test";
-import { make } from "./AgentMergeRequests.ts";
+import { make, releaseEndedRuns } from "./AgentMergeRequests.ts";
 
 const exec = promisify(execFile);
 const threadId = ThreadId.make("thread-one");
@@ -171,3 +173,23 @@ it("checks persisted plan mode even when the caller omits it", () =>
     await expect(call(script, "link", url)).rejects.toThrow();
     expect(commands).toHaveLength(0);
   }));
+
+const runUpdated = (status: string, id = runId) =>
+  ({
+    type: "run.updated",
+    threadId,
+    runId: id,
+    payload: { id, status },
+  }) as unknown as OrchestrationV2DomainEvent;
+
+it.each(["waiting", "failed"])("revokes commands when the run ends as %s", (status) =>
+  fixture(async (tools) => {
+    const script = scriptOf(await prepare(tools));
+    const releaseAfter = (events: OrchestrationV2DomainEvent[]) =>
+      Effect.runPromise(releaseEndedRuns(tools, Stream.fromIterable(events)));
+    await releaseAfter([runUpdated("running"), runUpdated(status, RunId.make("older"))]);
+    await access(script);
+    await releaseAfter([runUpdated(status)]);
+    await expect(access(script)).rejects.toThrow();
+  }),
+);

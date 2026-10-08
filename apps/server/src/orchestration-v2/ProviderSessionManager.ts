@@ -27,6 +27,7 @@ import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
+import * as AgentMergeRequests from "../agentMergeRequests/AgentMergeRequests.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
@@ -321,6 +322,7 @@ export const layerWithOptions = (
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId) {
           if (Option.isNone(serverSettings)) return { browser: true, device: false };
@@ -843,6 +845,25 @@ export const layerWithOptions = (
                           : clearMcpSession(threadId, mcpCredentialId);
                       },
                       { discard: true },
+                    ).pipe(
+                      // Coder: the workspace MR commands of this process's threads end with it,
+                      // unless a live replacement session took the thread over.
+                      Effect.andThen(
+                        Effect.forEach(
+                          entry.attachedThreadIds,
+                          (threadId) =>
+                            Array.from(current.values()).some(
+                              (other) => other !== entry && other.attachedThreadIds.has(threadId),
+                            )
+                              ? Effect.void
+                              : agentMergeRequests.release(
+                                  threadId,
+                                  undefined,
+                                  entry.runtime.instanceId,
+                                ),
+                          { discard: true },
+                        ),
+                      ),
                     ),
                   ),
                 ),

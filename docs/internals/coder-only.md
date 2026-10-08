@@ -144,9 +144,10 @@ The helper captures the thread identity, validates GitLab URLs, and dispatches n
 commands rather than writing SQLite directly. Plan-mode invocations are read-only. Requests are
 limited to 16 KiB, responses to 256 KiB, and execution to 10 seconds; the CLI waits at most 15 seconds.
 At most 64 tool sessions exist at once; if tool setup is unavailable, ordinary provider turns still
-run without these commands. Turn completion, abortion, session exit/stop, and helper
-shutdown revoke the commands and remove their temporary files. Workspace processes run as the same
-OS user; these directories are not an isolation boundary between mutually untrusted agents.
+run without these commands. The end of the run (however it ends), a failed send, provider session
+exit/stop, and helper shutdown revoke the commands and remove their temporary files. Workspace
+processes run as the same OS user; these directories are not an isolation boundary between mutually
+untrusted agents.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -573,9 +574,12 @@ listed here is drift to remove rather than fork behavior to keep.
     exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
     so upstream's attachment-cleanup side effects are absent.
   - `ProviderTurnStartService` prepends the agent MR command instructions to ordinary turns. A
-    failed send revokes them, as does run finalization (`server.ts` wraps the run-finalization
-    observer), the thread's next turn, and helper shutdown. V2 has no session-exit or stop-all
-    hook, so a stopped session's commands stay open until one of those.
+    failed send revokes them, as do the thread's next turn and helper shutdown. `server.ts` runs
+    `releaseEndedRuns` over the domain events, revoking a run's commands once its `run.updated`
+    status is `waiting` or terminal, so a failed checkpoint capture or a failed run (which
+    captures nothing) also revokes them. `ProviderSessionManager` releases them beside upstream's
+    MCP credential revocation when a provider session is released (stop, stop-all, provider
+    exit, runtime failure, idle, or shutdown), skipping threads a live replacement session holds.
   - Only the Codex and Claude adapters are registered
     (`ProviderOrchestrationAdapterInfrastructure.ts`), and only shipped providers have replay
     harnesses. Pi (`PiDriver.ts`, `PiAdapterV2.ts`, `PiProvider.ts`, `PiTextGeneration.ts`) stays

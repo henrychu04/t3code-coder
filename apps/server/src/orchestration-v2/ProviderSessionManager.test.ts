@@ -26,6 +26,7 @@ import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 
+import * as AgentMergeRequests from "../agentMergeRequests/AgentMergeRequests.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "../mcp/McpProviderSession.ts";
@@ -358,6 +359,7 @@ function makeTestLayer(input: {
   readonly beforeUnload?: Effect.Effect<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
+  readonly agentMergeRequests?: AgentMergeRequests.AgentMergeRequestsShape;
 }) {
   const configuredEventSinkLayer = input.failReleaseEventWrites
     ? FailingReleaseEventSinkLayer
@@ -400,6 +402,9 @@ function makeTestLayer(input: {
           TestStoresLayer,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
+          ...(input.agentMergeRequests === undefined
+            ? []
+            : [Layer.succeed(AgentMergeRequests.AgentMergeRequests, input.agentMergeRequests)]),
         ),
       ),
     ),
@@ -878,6 +883,63 @@ it.effect("ProviderSessionManagerV2 drains subscribers when the provider stops",
     });
 
     yield* effect.pipe(Effect.provide(makeTestLayer({ state, idleTimeoutMs: 60_000 })));
+  }),
+);
+
+// Coder: a released provider process takes its threads' workspace MR commands with it.
+it.effect("ProviderSessionManagerV2 revokes MR commands when a session stops", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const released: Array<readonly [ThreadId, unknown, unknown]> = [];
+    const agentMergeRequests: AgentMergeRequests.AgentMergeRequestsShape = {
+      prepare: () => Effect.undefined,
+      release: (threadId, runId, instanceId) =>
+        Effect.sync(() => void released.push([threadId, runId, instanceId])),
+      bind: () => Effect.void,
+    };
+    const effect = Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const now = yield* DateTime.now;
+      const stoppedThreadId = ThreadId.make("thread-provider-session-manager-mr-stopped");
+      const handedOffThreadId = ThreadId.make("thread-provider-session-manager-mr-handoff");
+      yield* eventSink.write({
+        events: [
+          yield* makeThreadCreatedEvent({ idAllocator, threadId: stoppedThreadId, now }),
+          yield* makeThreadCreatedEvent({ idAllocator, threadId: handedOffThreadId, now }),
+        ],
+      });
+      const openSession = (threadId: ThreadId) =>
+        Effect.gen(function* () {
+          const providerSessionId = yield* idAllocator.allocate.providerSession({
+            providerInstanceId: modelSelection.instanceId,
+            threadId,
+          });
+          yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+          return providerSessionId;
+        });
+      const stoppedSessionId = yield* openSession(stoppedThreadId);
+      const supersededSessionId = yield* openSession(handedOffThreadId);
+      yield* openSession(handedOffThreadId);
+
+      yield* manager.close(stoppedSessionId);
+      assert.deepEqual(released, [[stoppedThreadId, undefined, modelSelection.instanceId]]);
+
+      yield* manager.close(supersededSessionId);
+      assert.lengthOf(released, 1);
+
+      yield* manager.closeInstance(modelSelection.instanceId);
+      assert.deepEqual(released.at(-1), [
+        handedOffThreadId,
+        undefined,
+        modelSelection.instanceId,
+      ]);
+    });
+
+    yield* effect.pipe(
+      Effect.provide(makeTestLayer({ state, idleTimeoutMs: 60_000, agentMergeRequests })),
+    );
   }),
 );
 
