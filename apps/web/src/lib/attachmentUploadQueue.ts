@@ -21,7 +21,7 @@ import {
 } from "../composerDraftStore";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentCatalog } from "../connection/catalog";
-import { uploadCoderClipboardImage } from "../coder/api";
+import { uploadCoderClipboardImage, uploadCoderComposerFile } from "../coder/api";
 import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
 import { projectEnvironment } from "../state/projects";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
@@ -253,16 +253,6 @@ async function runUpload(job: UploadJob): Promise<void> {
     return;
   }
 
-  // Coder stages only PNG, JPEG, and WebP images, over the gateway's SCP transport.
-  if (job.image.type === "file") {
-    setUploadState(job.image.id, {
-      status: "failed",
-      environmentId: job.environmentId,
-      reason: "Only PNG, JPEG, and WebP images can be attached.",
-      ...(job.previous ? { previous: job.previous } : {}),
-    });
-    return;
-  }
   const workspaceId = coderWorkspaceIdForEnvironment(job.environmentId);
   if (!workspaceId) {
     setUploadState(job.image.id, {
@@ -277,32 +267,41 @@ async function runUpload(job: UploadJob): Promise<void> {
   let lastStep = -1;
   const controller = new AbortController();
   job.abort = () => controller.abort();
+  const transferOptions = {
+    signal: controller.signal,
+    onProgress: (progress: number) => {
+      const step = Math.floor(progress * 20);
+      if (step === lastStep || job.cancelled) {
+        return;
+      }
+      lastStep = step;
+      setUploadState(job.image.id, {
+        status: "uploading",
+        environmentId: job.environmentId,
+        progress,
+        ...(job.previous ? { previous: job.previous } : {}),
+      });
+    },
+  };
   try {
-    const prepared = await compressImageToByteLimit(file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
-    if (!prepared.ok) {
-      throw new Error(
-        prepared.reason === "unreadable"
-          ? "This file could not be read as an image."
-          : "This image is too large to attach, even after resizing to the 10 MiB limit.",
-      );
+    // Coder: composer attachments stage through the gateway's SCP transport. Images are
+    // compressed to main's 10 MiB limit first; files go as-is up to main's 50 MiB limit.
+    let staged: { readonly id: string; readonly mimeType?: string; readonly sizeBytes?: number };
+    if (job.image.type === "file") {
+      staged = (await uploadCoderComposerFile(workspaceId, file, transferOptions)).attachment;
+    } else {
+      const prepared = await compressImageToByteLimit(file, PROVIDER_SEND_TURN_MAX_IMAGE_BYTES);
+      if (!prepared.ok) {
+        throw new Error(
+          prepared.reason === "unreadable"
+            ? "This file could not be read as an image."
+            : "This image is too large to attach, even after resizing to the 10 MiB limit.",
+        );
+      }
+      controller.signal.throwIfAborted();
+      staged = (await uploadCoderClipboardImage(workspaceId, prepared.file, transferOptions))
+        .attachment;
     }
-    controller.signal.throwIfAborted();
-    const staged = await uploadCoderClipboardImage(workspaceId, prepared.file, {
-      signal: controller.signal,
-      onProgress: (progress) => {
-        const step = Math.floor(progress * 20);
-        if (step === lastStep || job.cancelled) {
-          return;
-        }
-        lastStep = step;
-        setUploadState(job.image.id, {
-          status: "uploading",
-          environmentId: job.environmentId,
-          progress,
-          ...(job.previous ? { previous: job.previous } : {}),
-        });
-      },
-    });
     job.abort = null;
     if (job.cancelled) {
       return;
@@ -310,11 +309,11 @@ async function runUpload(job: UploadJob): Promise<void> {
     setUploadState(job.image.id, {
       status: "ready",
       environmentId: job.environmentId,
-      attachmentId: staged.attachment.id,
-      mimeType: staged.attachment.mimeType,
-      sizeBytes: staged.attachment.sizeBytes,
+      attachmentId: staged.id,
+      ...(staged.mimeType === undefined ? {} : { mimeType: staged.mimeType }),
+      ...(staged.sizeBytes === undefined ? {} : { sizeBytes: staged.sizeBytes }),
     });
-    stampDraftFileUpload(job, staged.attachment.id);
+    stampDraftFileUpload(job, staged.id);
     if (job.previous) {
       deletePendingUpload(job.previous.environmentId, job.previous.attachmentId);
     }

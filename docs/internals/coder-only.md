@@ -287,33 +287,39 @@ installer inside the workspace. Versions marked broken or unsupported by the bun
 policy are not offered. The model manifest and compatibility policy remain bundled-only and are
 never refreshed over HTTP.
 
-General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
-message composer. The browser sends the image only to the loopback gateway. The gateway accepts
-signature-validated PNG, JPEG, or WebP content up to 10 MiB, stages it in an OS temporary directory,
-and copies it through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as upstream's
-pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and returns
-the workspace path plus the pending attachment's id, media type, and byte size to the draft's
-in-memory attachment state. The browser uses upstream's attachment upload queue with the Coder
+General user-facing file transfer remains disabled. The exception is a composer attachment: an
+image or file pasted, picked, or dropped into the message composer or a question answer. The
+browser sends it only to the loopback gateway. The gateway's `clipboard-image` route accepts
+signature-validated PNG, JPEG, or WebP content up to 10 MiB; its `attachment-file` route accepts
+any non-empty file up to 50 MiB, using the file name only to derive the stored extension
+(`[a-z0-9]{1,10}`, otherwise `bin`, by the helper's `attachmentFileExtension` rule, shared as
+`@t3tools/shared/attachmentFileExtension`). The gateway stages the bytes in an OS temporary
+directory and copies them through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as
+upstream's pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and
+returns the workspace path plus the pending attachment's id, byte size, and (for images) media type
+to the draft's in-memory attachment state. The helper advertises upstream's `attachmentUploads`,
+`questionAttachments`, and `fileAttachments` capabilities, which the composer gates on. The browser uses upstream's attachment upload queue with the Coder
 gateway as its transport: at most three concurrent transfers per workspace, matching upstream's
 per-environment limit. Source images up to 50 MiB are prepared with main's byte-limit compression
 algorithm inside the queue slot: images at or below 10 MiB pass through unchanged, and larger images
 are resized and re-encoded to fit. The draft keeps the source bytes in memory, so a retry prepares
 them again. The browser upload API, gateway, and workspace provider-input reader all enforce the
-same 10 MiB attachment constant. Composer files other than PNG, JPEG, and WebP images are rejected
-before queueing, and pending uploads are never deleted from the browser; the helper's pending
-sweep removes unsent ones. Completed images retain their workspace identity. Moving or restoring
+same 10 MiB image constant; files upload unchanged under main's 50 MiB file constant. Images in
+other formats are rejected before queueing, and pending uploads are never deleted from the
+browser; the helper's pending sweep removes unsent ones. Completed images retain their workspace identity. Moving or restoring
 images into another workspace queues them for that destination and cancels any old transfer. The
 browser retains failed images for explicit retry, requeues them when their workspace reconnects,
 and aborts a transfer when its draft attachment is removed. Persisted drafts and stashed prompts
 never store image bytes or image upload ids; a stashed prompt records only the names of images it dropped. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
-workspace copy remains pending until SCP and finalization complete. A sent message carries
-upstream's image attachments—at most 100, never a caller-supplied path or inline data URL, and
-never a file attachment. As upstream does, the helper claims each pending upload into a
-thread-scoped copy when it accepts the message; Coder reads the staged file once through a
-no-follow handle, requires its exact declared size and a PNG, JPEG, or WebP signature matching the
-declared type, and writes those bytes exclusively to the claimed path. A failed dispatch removes
+workspace copy remains pending until SCP and finalization complete. A sent message or question
+answer carries upstream's attachments—at most 100, never a caller-supplied path or inline data
+URL. As upstream does, the helper claims each pending upload into a thread-scoped copy when it
+accepts the message; Coder reads the staged file once through a no-follow handle, requires its
+exact declared size (and, for images, a PNG, JPEG, or WebP signature matching the declared type),
+and writes those bytes exclusively to the claimed path. Files reach the provider as workspace
+paths, as on main. A failed dispatch removes
 its claimed copies; unsent pending uploads expire after a day. Provider input resolves attachments
 only beneath the attachment directory, rejects symlinks, size violations, and signature
 mismatches, bounds one message's images to 80 MiB in total, and sends the validated bytes to Codex
@@ -328,7 +334,7 @@ The composer uses upstream's structured context records. Mentions, terminal cont
 comments, and images travel as `t3-context://v1/<kind>/<id>` links in the message text plus
 `message.context` records, which the helper persists with the message and renders for the provider
 through upstream's projection. Coder omits upstream's preview annotations, element captures,
-SnapShot frames, video attachments, and non-image file attachments. Rewinding and restoring queued
+and SnapShot frames. Rewinding and restoring queued
 messages read images back through the bounded chunk read. The composer's provider refresh action
 uses upstream's `server.refreshProviders` RPC over the existing stdio stream, without upstream's
 remote model-manifest or usage-limit refreshes. The timeline renders sent context as upstream's inline chips; messages sent
@@ -592,7 +598,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
     provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
-    sources, data-URL and non-image file uploads, attachments on question answers, MCP tool
+    sources, data-URL uploads, MCP tool
     presentation, preview-tool metadata, and the agent device shim.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
@@ -625,10 +631,10 @@ listed here is drift to remove rather than fork behavior to keep.
   reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
-  element captures, SnapShot, video, non-image files, and remote icons. Images move through the
-  gateway and SCP (see [Network and transfer constraints](#network-and-transfer-constraints)):
-  `ChatView` treats attachment uploads as always available and question and file attachments
-  as unavailable. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
+  element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Images
+  and files move through the gateway and SCP (see
+  [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
+  the helper's advertised attachment capabilities, as upstream does. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
   submitted images by id through the helper (`AttachmentImageResource` carries the media type
   and size the read verifies). Reads start only once the workspace is connected, because cached
   threads render before the helper is reachable. Rewind re-stages a message's images through the

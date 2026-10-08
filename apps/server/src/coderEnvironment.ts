@@ -1,5 +1,9 @@
 // @effect-diagnostics globalProcess:off -- The helper runs only inside a Linux Coder workspace.
-import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type ExecutionEnvironmentDescriptor,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
@@ -47,6 +51,10 @@ export const layer = Layer.effect(
         platform: { os: "linux", arch: platformArch() },
         serverVersion: process.env.T3_CODER_BUILD_VERSION?.trim() || packageJson.version,
         capabilities: {
+          // Composer images and files stage through the gateway's SCP path.
+          attachmentUploads: true,
+          questionAttachments: true,
+          fileAttachments: { maxUploadBytes: PROVIDER_SEND_TURN_MAX_FILE_BYTES },
           environmentThemes: true,
           repositoryIdentity: true,
           requiredWorktreeBootstrap: true,
