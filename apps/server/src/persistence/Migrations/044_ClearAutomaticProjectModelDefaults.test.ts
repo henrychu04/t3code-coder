@@ -4,17 +4,17 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
 import { runMigrations } from "../Migrations.ts";
-import clearAutomaticDefaults from "./058_ClearAutomaticProjectModelDefaults.ts";
+import clearAutomaticDefaults from "./044_ClearAutomaticProjectModelDefaults.ts";
 
 it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
-  "058_ClearAutomaticProjectModelDefaults",
+  "044_ClearAutomaticProjectModelDefaults",
   (it) => {
     it.effect(
       "clears automatic seeds in projections and events and preserves explicit defaults",
       () =>
         Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
-          yield* runMigrations({ toMigrationInclusive: 57 });
+          yield* runMigrations({ toMigrationInclusive: 43 });
           const now = "2026-01-01T00:00:00.000Z";
           const selection = { instanceId: "codex", model: "gpt-5.4" };
           const cases = ["automatic", "explicit", "reset", "unrelated-meta", "null", "absent"];
@@ -51,8 +51,8 @@ it.layer(NodeSqliteClient.layer({ filename: ":memory:" }))(
             }
           }
           const before = yield* sql`SELECT * FROM orchestration_events ORDER BY sequence`;
-          assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 58 }), [
-            [58, "ClearAutomaticProjectModelDefaults"],
+          assert.deepEqual(yield* runMigrations({ toMigrationInclusive: 44 }), [
+            [44, "ClearAutomaticProjectModelDefaults"],
           ]);
           const rows = yield* sql<{
             project_id: string;

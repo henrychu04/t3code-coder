@@ -127,8 +127,8 @@ Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLa
 startup, after relevant thread changes, and periodically without an open browser. It uses the
 existing repository-scoped GitManager cache and glab-backed MR service, verifies both the
 branch and project repository identity before saving, and rejects updates after the lookup inputs
-change. Migration 048 adds the branch MR projection independently of explicit links. Migration 051 adds
-multiple explicit MR links, preserving migration 050 for pending-input repair. Link commands validate
+change. Migration 048 adds the branch MR projection independently of explicit links. Migration 050 adds
+multiple explicit MR links. Link commands validate
 the URL and its host against workspace GitLab metadata at the helper RPC boundary. The helper
 refreshes link snapshots and serves linked-thread lookups over the existing stdio connection.
 Recent MR summaries are cached beneath the workspace provider-status cache directory. Background summary reads
@@ -474,7 +474,7 @@ the page session rather than in browser storage.
 
 Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
 of emoji text. Choices persist on workspace-owned project records and travel through the existing
-project metadata command/event stream over helper stdio. SQLite migration 052 adds the nullable
+project metadata command/event stream over helper stdio. SQLite migration 047 adds the nullable
 `project_icon_json` projection column; resetting a choice stores null. The browser renders bundled
 vectors, emoji, or upstream's name-based monograms. No image-path lookup, transfer, or external fetch
 is introduced.
@@ -607,6 +607,13 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, external agent-session imports, or `keybindings.json` editor.
+- **Migrations.** `persistence/Migrations.ts` is upstream's registry with the same IDs. Upstream's
+  auth migrations (20–22, 31, 32, and 41) keep their IDs but create nothing. Databases created
+  before the fork adopted upstream's IDs recorded a renumbered registry (IDs 41–58, with the
+  Coder-only `CoderLegacy/` migrations 050 and 055). `CoderMigrationHistory.ts` finishes that
+  registry, whose final schema matches upstream ID 54, and rewrites the history to upstream's IDs
+  before upstream's migrator runs. New migrations take upstream's next ID; never add a Coder-only
+  migration ID.
 - **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last
   project grouping mode stay in memory where upstream uses browser storage. `storage.ts` keeps
   upstream's IndexedDB environment cache without the connection catalog, credentials, GitHub
