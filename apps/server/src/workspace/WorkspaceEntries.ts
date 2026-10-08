@@ -5,6 +5,8 @@ import * as NodeFS from "node:fs/promises";
 import * as NodeOS from "node:os";
 
 import type {
+  FilesystemBrowseInput,
+  FilesystemBrowseResult,
   ProjectListEntriesInput,
   ProjectListEntriesResult,
   ProjectSearchEntriesInput,
@@ -20,7 +22,11 @@ import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as RcMap from "effect/RcMap";
 import * as Schema from "effect/Schema";
+import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import { isExplicitRelativePath, isWindowsAbsolutePath } from "@t3tools/shared/path";
 import { normalizeSearchQuery } from "@t3tools/shared/searchRanking";
+
+import { expandHomePathWith } from "../pathExpansion.ts";
 
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
@@ -28,6 +34,53 @@ import * as WorkspaceSearchIndex from "./WorkspaceSearchIndex.ts";
 const MAX_LISTED_DIRECTORIES = 500;
 type WorkspaceListEntriesInput = Pick<ProjectListEntriesInput, "cwd" | "directoryPath">;
 export const MAX_PROJECT_DIRECTORY_ENTRIES = 1000;
+
+export class WorkspaceEntriesWindowsPathUnsupportedError extends Schema.TaggedError<WorkspaceEntriesWindowsPathUnsupportedError>()(
+  "WorkspaceEntriesWindowsPathUnsupportedError",
+  {
+    cwd: Schema.optional(Schema.String),
+    partialPath: Schema.String,
+    platform: Schema.String,
+  },
+) {
+  override get message(): string {
+    const cwd = this.cwd ? ` from '${this.cwd}'` : "";
+    return `Windows-style workspace path '${this.partialPath}' is not supported on '${this.platform}'${cwd}.`;
+  }
+}
+
+export class WorkspaceEntriesCurrentProjectRequiredError extends Schema.TaggedError<WorkspaceEntriesCurrentProjectRequiredError>()(
+  "WorkspaceEntriesCurrentProjectRequiredError",
+  {
+    partialPath: Schema.String,
+  },
+) {
+  override get message(): string {
+    return `A current project is required to browse relative workspace path '${this.partialPath}'.`;
+  }
+}
+
+export class WorkspaceEntriesReadDirectoryError extends Schema.TaggedError<WorkspaceEntriesReadDirectoryError>()(
+  "WorkspaceEntriesReadDirectoryError",
+  {
+    cwd: Schema.optional(Schema.String),
+    partialPath: Schema.String,
+    parentPath: Schema.String,
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    const cwd = this.cwd ? ` from '${this.cwd}'` : "";
+    return `Failed to read workspace directory '${this.parentPath}' while browsing '${this.partialPath}'${cwd}.`;
+  }
+}
+
+export const WorkspaceEntriesBrowseError = Schema.Union([
+  WorkspaceEntriesWindowsPathUnsupportedError,
+  WorkspaceEntriesCurrentProjectRequiredError,
+  WorkspaceEntriesReadDirectoryError,
+]);
+export type WorkspaceEntriesBrowseError = typeof WorkspaceEntriesBrowseError.Type;
 
 export const WorkspaceEntriesError = Schema.Union([
   WorkspacePaths.WorkspaceRootNotExistsError,
@@ -43,6 +96,9 @@ export type WorkspaceEntriesError = typeof WorkspaceEntriesError.Type;
 export class WorkspaceEntries extends Context.Service<
   WorkspaceEntries,
   {
+    readonly browse: (
+      input: FilesystemBrowseInput,
+    ) => Effect.Effect<FilesystemBrowseResult, WorkspaceEntriesBrowseError>;
     readonly search: (
       input: ProjectSearchEntriesInput,
     ) => Effect.Effect<ProjectSearchEntriesResult, WorkspaceEntriesError>;
@@ -71,6 +127,31 @@ export class WorkspaceDirectoryListFailed extends Schema.TaggedError<WorkspaceDi
   }
 }
 
+const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(function* (
+  input: FilesystemBrowseInput,
+  path: Path.Path,
+): Effect.fn.Return<string, WorkspaceEntriesBrowseError> {
+  const platform = yield* HostProcessPlatform;
+  if (platform !== "win32" && isWindowsAbsolutePath(input.partialPath)) {
+    return yield* new WorkspaceEntriesWindowsPathUnsupportedError({
+      cwd: input.cwd,
+      partialPath: input.partialPath,
+      platform,
+    });
+  }
+
+  if (!isExplicitRelativePath(input.partialPath)) {
+    return path.resolve(expandHomePathWith(input.partialPath, path));
+  }
+
+  if (!input.cwd) {
+    return yield* new WorkspaceEntriesCurrentProjectRequiredError({
+      partialPath: input.partialPath,
+    });
+  }
+  return path.resolve(expandHomePathWith(input.cwd, path), input.partialPath);
+});
+
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const vcsProcess = yield* VcsProcess.VcsProcess;
@@ -88,6 +169,55 @@ export const make = Effect.gen(function* () {
             reason: "Failed to resolve the verified project root.",
           }),
       });
+    },
+  );
+
+  const browse: WorkspaceEntries["Service"]["browse"] = Effect.fn("WorkspaceEntries.browse")(
+    function* (input) {
+      const resolvedInputPath = yield* resolveBrowseTarget(input, path);
+      const endsWithSeparator = /[\\/]$/.test(input.partialPath) || input.partialPath === "~";
+      const parentPath = endsWithSeparator ? resolvedInputPath : path.dirname(resolvedInputPath);
+      const prefix = endsWithSeparator ? "" : path.basename(resolvedInputPath);
+
+      const dirents = yield* Effect.tryPromise({
+        try: () => NodeFS.readdir(parentPath, { withFileTypes: true }),
+        catch: (cause) =>
+          new WorkspaceEntriesReadDirectoryError({
+            cwd: input.cwd,
+            partialPath: input.partialPath,
+            parentPath,
+            cause,
+          }),
+      }).pipe(
+        Effect.catchIf(
+          (error) => {
+            const code = (error.cause as NodeJS.ErrnoException | undefined)?.code;
+            return code === "EACCES" || code === "EPERM";
+          },
+          () => Effect.succeed([]),
+        ),
+      );
+
+      const showHidden = endsWithSeparator || prefix.startsWith(".");
+      const lowerPrefix = prefix.toLowerCase();
+      const entries: Array<{ readonly name: string; readonly fullPath: string }> = [];
+      for (const dirent of dirents) {
+        if (
+          dirent.isDirectory() &&
+          dirent.name.toLowerCase().startsWith(lowerPrefix) &&
+          (showHidden || !dirent.name.startsWith("."))
+        ) {
+          entries.push({
+            name: dirent.name,
+            fullPath: path.join(parentPath, dirent.name),
+          });
+        }
+      }
+
+      return {
+        parentPath,
+        entries: entries.toSorted((left, right) => left.name.localeCompare(right.name)),
+      };
     },
   );
 
@@ -291,7 +421,7 @@ export const make = Effect.gen(function* () {
     };
   });
 
-  return WorkspaceEntries.of({ search, searchText, list, listDirectories, refresh });
+  return WorkspaceEntries.of({ browse, search, searchText, list, listDirectories, refresh });
 });
 
 export const layer = Layer.effect(WorkspaceEntries, make).pipe(

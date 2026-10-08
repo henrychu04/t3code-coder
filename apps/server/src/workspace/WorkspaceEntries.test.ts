@@ -319,4 +319,68 @@ it.layer(TestLayer)("WorkspaceEntries", (it) => {
       }),
     );
   });
+
+  describe("browse", () => {
+    const makeTree = (prefix: string, files: ReadonlyArray<string>) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const cwd = yield* fs.makeTempDirectoryScoped({ prefix });
+        for (const file of files) {
+          yield* fs.makeDirectory(path.dirname(path.join(cwd, file)), { recursive: true });
+          yield* fs.writeFileString(path.join(cwd, file), "x");
+        }
+        return cwd;
+      });
+
+    it.effect("returns matching directories and excludes files", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTree("t3-coder-browse-prefix-", [
+          "alphabet.txt",
+          "alpha/index.ts",
+          "alpine/index.ts",
+        ]);
+        expect(yield* entries.browse({ partialPath: path.join(cwd, "alp") })).toEqual({
+          parentPath: cwd,
+          entries: [
+            { name: "alpha", fullPath: path.join(cwd, "alpha") },
+            { name: "alpine", fullPath: path.join(cwd, "alpine") },
+          ],
+        });
+      }),
+    );
+
+    it.effect("shows dot directories in directory mode and hidden-prefix mode", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTree("t3-coder-browse-hidden-", [
+          ".config/settings.json",
+          "config/settings.json",
+        ]);
+        const directory = yield* entries.browse({ partialPath: `${cwd}/` });
+        expect(directory.entries.map((entry) => entry.name)).toEqual([".config", "config"]);
+        expect(yield* entries.browse({ partialPath: `${cwd}/.c` })).toEqual({
+          parentPath: cwd,
+          entries: [{ name: ".config", fullPath: path.join(cwd, ".config") }],
+        });
+      }),
+    );
+
+    it.effect("supports relative paths only with a current project", () =>
+      Effect.gen(function* () {
+        const entries = yield* WorkspaceEntries.WorkspaceEntries;
+        const path = yield* Path.Path;
+        const cwd = yield* makeTree("t3-coder-browse-relative-", ["packages/pkg.json"]);
+        expect(yield* entries.browse({ cwd, partialPath: "./pack" })).toEqual({
+          parentPath: cwd,
+          entries: [{ name: "packages", fullPath: path.join(cwd, "packages") }],
+        });
+        const error = yield* entries.browse({ partialPath: "./src" }).pipe(Effect.flip);
+        expect(error._tag).toBe("WorkspaceEntriesCurrentProjectRequiredError");
+      }),
+    );
+  });
 });

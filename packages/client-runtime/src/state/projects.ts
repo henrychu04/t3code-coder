@@ -9,7 +9,7 @@ import {
 
 export { normalizeProjectPathForComparison, normalizeProjectPathForDispatch };
 
-const isWindowsPlatform = (platform: string): boolean => {
+export const isWindowsPlatform = (platform: string): boolean => {
   return /^win(dows)?/i.test(platform);
 };
 
@@ -173,7 +173,7 @@ export function getBrowseDirectoryPath(currentPath: string): string {
   return lastSeparatorIndex < 0 ? currentPath : currentPath.slice(0, lastSeparatorIndex + 1);
 }
 
-function ensureBrowseDirectoryPath(currentPath: string): string {
+export function ensureBrowseDirectoryPath(currentPath: string): string {
   const trimmed = currentPath.trim();
   if (trimmed.length === 0 || hasTrailingPathSeparator(trimmed)) {
     return trimmed;

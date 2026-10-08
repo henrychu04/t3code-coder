@@ -20,7 +20,11 @@ type CommandPaletteContentProps = Omit<ComponentProps<typeof Command>, "children
   readonly testId?: string;
 };
 
-/** Shared command palette chrome for every overlay mode and nested view. */
+/**
+ * Shared command palette chrome. Palette modes provide their query behavior,
+ * results, and optional input accessory while retaining one input, panel, and
+ * keyboard-hint gutter.
+ */
 export function CommandPaletteContent({
   children,
   escapeLabel = "Close",

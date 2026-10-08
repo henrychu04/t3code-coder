@@ -5,8 +5,10 @@ Codex or Claude about that project's work.
 
 ## Projects
 
-Choose **Add project** in the sidebar, pick a domain and workspace, and select a folder in the
-remote folder picker. The project appears in the sidebar with a built-in icon chosen automatically
+Choose **Add project** in the sidebar or the command palette (`Cmd/Ctrl+K`), pick a workspace, and
+type or browse to a folder on it. To clone instead, choose GitLab or paste a Git URL, then choose
+where to save it in the workspace; the project opens while the clone runs in the background. The
+project appears in the sidebar with a built-in icon chosen automatically
 from its name, or its folder name when the project name is blank. Project images are not fetched.
 
 When more than one workspace is connected, the sidebar groups projects and threads by workspace so
@@ -16,7 +18,7 @@ you always know where work is running.
 
 Choose **New project** in the command palette, select a Coder workspace, and enter a name.
 T3 Coder creates a folder under that workspace's `~/.t3-coder/projects`, with a README, an icon,
-and a first Git commit. The dialog previews the destination; an existing folder adds a numeric suffix.
+and a first Git commit. The palette previews the destination; an existing folder adds a numeric suffix.
 If Git cannot make the commit, the project still opens and reports why.
 You may also publish it as a private GitLab repository using the workspace's existing GitLab login.
 The publish option appears only when workspace discovery reports authenticated, writable GitLab access.

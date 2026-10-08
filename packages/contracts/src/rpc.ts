@@ -1567,6 +1567,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsProjectsReadFileRpc,
   WsProjectsReadImageRpc,
   WsProjectsWriteFileRpc,
+  WsFilesystemBrowseRpc,
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsProviderListSlashCommandsRpc,

@@ -14,6 +14,8 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import {
   DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL,
+  FilesystemBrowseError,
+  type FilesystemBrowseFailure,
   CommandId,
   EventId,
   type OrchestrationCommand,
@@ -181,6 +183,23 @@ function projectEntriesFailureContext(error: WorkspaceEntries.WorkspaceEntriesEr
         failure: "search_index_search_failed",
         detail: error.reason,
       };
+    default:
+      return unexpectedCompatibilityError(error);
+  }
+}
+
+function filesystemBrowseFailureContext(error: WorkspaceEntries.WorkspaceEntriesBrowseError): {
+  readonly failure: FilesystemBrowseFailure;
+  readonly parentPath?: string;
+  readonly platform?: string;
+} {
+  switch (error._tag) {
+    case "WorkspaceEntriesWindowsPathUnsupportedError":
+      return { failure: "windows_path_unsupported", platform: error.platform };
+    case "WorkspaceEntriesCurrentProjectRequiredError":
+      return { failure: "current_project_required" };
+    case "WorkspaceEntriesReadDirectoryError":
+      return { failure: "read_directory_failed", parentPath: error.parentPath };
     default:
       return unexpectedCompatibilityError(error);
   }
@@ -2846,6 +2865,17 @@ export const layer = CoderWsRpcGroup.toLayer(
           );
         }),
       // Coder: list directories in the Linux workspace through stdio.
+      [WS_METHODS.filesystemBrowse]: (input) =>
+        workspaceEntries.browse(input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new FilesystemBrowseError({
+                ...input,
+                ...filesystemBrowseFailureContext(cause),
+                cause,
+              }),
+          ),
+        ),
       [WS_METHODS.workspaceListDirectories]: (input) =>
         workspaceEntries.listDirectories(input).pipe(
           Effect.mapError(

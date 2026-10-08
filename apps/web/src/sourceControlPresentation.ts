@@ -33,6 +33,12 @@ export function getSourceControlPresentation(
         terminology: getChangeRequestTerminology(provider),
         Icon: GitPullRequestIcon,
       };
+    case "forgejo":
+      return {
+        providerName: provider?.name || presentation.providerName,
+        terminology: getChangeRequestTerminology(provider),
+        Icon: GitPullRequestIcon,
+      };
     case "gitlab":
       return {
         providerName: provider?.name || presentation.providerName,
