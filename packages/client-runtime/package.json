@@ -181,6 +181,14 @@
     "./delayed-status": {
       "types": "./src/delayedStatus.ts",
       "default": "./src/delayedStatus.ts"
+    },
+    "./operations/projects": {
+      "types": "./src/operations/projects.ts",
+      "default": "./src/operations/projects.ts"
+    },
+    "./state/filesystem": {
+      "types": "./src/state/filesystem.ts",
+      "default": "./src/state/filesystem.ts"
     }
   },
   "scripts": {
