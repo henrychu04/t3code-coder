@@ -48,7 +48,7 @@ claim: shared provider protocols may still report subscription metadata.
   application authentication token. It reuses its last port when that port is free, so browser
   storage keeps one origin across restarts, and otherwise binds an ephemeral port.
 - The installed Coder CLI is the only process allowed to make a non-loopback workspace connection.
-  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated composer-image
+  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated composer-attachment
   uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
   to a workspace. Use argument-array spawning with `shell: false` and include
   `--no-version-warning` in every underlying Coder invocation. Network telemetry and direct
@@ -66,14 +66,14 @@ claim: shared provider protocols may still report subscription metadata.
   provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
   non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
-  rules, the last gateway port, and ephemeral staging of validated composer images in an OS
-  temporary directory. Delete staged images immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
+  rules, the last gateway port, and ephemeral staging of validated composer attachments in an OS
+  temporary directory. Delete staged attachments immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Browser storage may additionally keep UI preferences and, as on main, the text of unsent composer
   drafts and stashed prompts, including their terminal excerpts, and main's IndexedDB caches of
   environment shells, thread snapshots, server config, and branch lists. These caches are keyed by
   environment and cleared when a workspace is removed from the Coder config; the workspace stays
-  the source of truth. Never store image bytes, upload IDs, credentials, or other application data
+  the source of truth. Never store image or file bytes, upload IDs, credentials, or other application data
   there.
 - Do not add arbitrary file uploads, downloads, exports, drag-and-drop transfer, clipboard text
   transfer, or background file synchronization. The only exceptions are listed below; each is
@@ -107,19 +107,22 @@ claim: shared provider protocols may still report subscription metadata.
       files, oversized files, regex failures, cancellation, and time budgets.
     - This search exception does not authorize uploads, downloads, synchronization, arbitrary file
       reads, or non-Coder workspace connections.
-  - **Media: composer attachments and on-demand environment previews.** Composer attachments
-    accept PNG, JPEG, and WebP images only and validate their signatures rather than trusting
-    metadata. Composer source files may be up to 50 MiB; use main's compression algorithm to prepare
-    images at or below 10 MiB. The browser upload API, gateway body/signature validation, and
-    provider-input reader must share main's 10 MiB attachment limit. Environment previews accept
+  - **Media: composer attachments and on-demand environment previews.** Composer image
+    attachments accept PNG, JPEG, and WebP and validate their signatures rather than trusting
+    metadata. Composer source images may be up to 50 MiB; use main's compression algorithm to
+    prepare images at or below 10 MiB. The browser upload API, gateway body/signature validation,
+    and provider-input reader must share main's 10 MiB image attachment limit. Composer file
+    attachments, including attachments on question answers, follow main: any non-image file up to
+    main's 50 MiB file limit, passed to the provider as a workspace path rather than inline bytes. Environment previews accept
     main's browser media formats — PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and ICO images; MP4,
     M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and AIFF audio —
     each signature-checked against its extension. Image previews retain their separate 20 MiB read
     bound. Video and audio previews are bounded at 256 MiB and read only after the user presses
     play or opens the file.
-    - Images pasted, selected, or dropped into the composer: generate filenames internally and copy
-      only into `$HOME/.t3-coder/attachments`; never accept a user-controlled local or remote path.
-      Submitted image references may read these validated workspace copies by opaque generated ID
+    - Images and files pasted, selected, or dropped into the composer: generate filenames internally
+      and copy only into `$HOME/.t3-coder/attachments` through the same gateway upload and
+      helper-scoped SCP path; never accept a user-controlled local or remote path. Submitted
+      attachment references may read these validated workspace copies by opaque generated ID
       through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
     - Media previews follow main's file-based flow. Markdown image and video references, media
       links, and expanded image-view activities may read the current file without a preceding
@@ -153,9 +156,10 @@ claim: shared provider protocols may still report subscription metadata.
   another hosted provider, and do not move Git or `glab` execution into the local gateway.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
   OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
-  forwarding, arbitrary tunnels, or providers other than Codex and Claude. OpenSSH use is limited
-  to helper bootstrap and validated composer-image uploads through a `coder ssh --stdio`
-  ProxyCommand.
+  forwarding, or arbitrary tunnels. Do not register or enable providers other than Codex and
+  Claude; upstream's other provider drivers may remain in the source as unregistered, disabled
+  code so they can be added back. OpenSSH use is limited to helper bootstrap and validated
+  composer-attachment uploads through a `coder ssh --stdio` ProxyCommand.
 - Markdown HTTP(S) links follow main: they open in a new tab with `noopener noreferrer`, show
   main's favicon, and preview media links in the gallery. Relative and non-web links stay inert.
   Known merge requests keep their internal navigation. External images, videos, and GitLab actor
