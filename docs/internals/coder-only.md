@@ -595,9 +595,9 @@ listed here is drift to remove rather than fork behavior to keep.
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
   keybindings; every workspace is remote; there is no desktop or WSL folder picker, browser
-  preview, or usage page; non-GitLab hosts use a generic icon; and new projects publish only to
-  GitLab, when discovery reports authenticated, writable access. Clone URLs are validated by the
-  helper.
+  preview, or usage page; GitLab is the only hosted clone source; non-GitLab hosts use a generic
+  icon; review actions say merge request; and new projects publish only to GitLab, when discovery
+  reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
   and remote icons. Images move through the gateway and SCP (see
