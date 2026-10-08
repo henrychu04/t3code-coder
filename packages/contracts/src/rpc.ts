@@ -337,6 +337,7 @@ const WsProjectsSearchTextRpc = Rpc.make(WS_METHODS.projectsSearchText, {
 });
 
 const WsProjectsListEntriesRpc = Rpc.make(WS_METHODS.projectsListEntries, {
+  // Git workflow methods
   payload: ProjectListEntriesInput,
   success: ProjectListEntriesResult,
   error: ProjectListEntriesError,
@@ -743,6 +744,12 @@ const WsSubscribeTerminalEventsRpc = Rpc.make(WS_METHODS.subscribeTerminalEvents
   payload: Schema.Struct({}),
   success: TerminalEvent,
   stream: true,
+
+  /**
+   * The line counts for rows already on the page. Its own call because on GitHub the pair costs
+   * 40-60% of the listing read that answers everything else on the row, so the rows arrive first
+   * and their stats a moment later.
+   */
 });
 
 const WsSubscribeTerminalMetadataRpc = Rpc.make(WS_METHODS.subscribeTerminalMetadata, {
@@ -931,3 +938,8 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );
+/**
+ * Ephemeral live diff preview for compact/mobile surfaces.
+ * Not the persisted T3 Review model. Future review sessions should use
+ * review.open* + review.getSnapshot.
+ */

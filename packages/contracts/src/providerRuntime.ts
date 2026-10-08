@@ -564,7 +564,7 @@ const taskAgentLinkageFields = {
   attempt: Schema.optional(NonNegativeInt),
   runHandles: Schema.optional(TaskRunHandles),
   outputFile: Schema.optional(TrimmedNonEmptyStringSchema),
-  /** Provider-reported agent hierarchy path, e.g. "/root/marlow". */
+  /** Codex agent hierarchy path, e.g. "/root/marlow". */
   agentPath: Schema.optional(TrimmedNonEmptyStringSchema),
   /**
    * Set on provider-synthesized child-agent events whose activity
@@ -733,6 +733,10 @@ const FilesPersistedPayload = Schema.Struct({
       filename: TrimmedNonEmptyStringSchema,
       fileId: TrimmedNonEmptyStringSchema,
     }),
+    /**
+     * Adapters normalise their native rate-limit payload at the boundary so the
+     * consumer that folds it into the provider snapshot never sees driver shapes.
+     */
   ),
   failed: Schema.optional(
     Schema.Array(

@@ -347,6 +347,7 @@ function FileFindBar(props: {
   const resolvedIndex = matches.length === 0 ? 0 : Math.min(selectedIndex, matches.length - 1);
 
   useEffect(() => setSelectedIndex(0), [caseSensitive, query, useRegex, wholeWord]);
+
   useEffect(() => {
     if (!props.open || !findBarRef.current) return;
     return retainFileFindFocus(findBarRef.current);
@@ -408,6 +409,7 @@ function FileFindBar(props: {
           >
             <CaseSensitive className="size-3.5" />
           </Toggle>
+
           <Toggle
             pressed={wholeWord}
             onPressedChange={setWholeWord}
@@ -1566,7 +1568,10 @@ function EditableFileSurface(props: {
       <div ref={surfaceRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <Virtualizer
           className="file-preview-virtualizer min-h-0 flex-1 overflow-auto"
-          config={{ overscrollSize: 600, intersectionObserverMargin: 1200 }}
+          config={{
+            overscrollSize: 600,
+            intersectionObserverMargin: 1200,
+          }}
         >
           <File<FileCommentAnnotationGroup>
             file={{
@@ -1684,8 +1689,6 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
         }
       : null;
   useWorkspaceMutationRefresh({
-    // Media never shows its contents as text, so re-reading it on every mutation is waste. A folder
-    // named like one still re-reads, so it notices when the path becomes a file.
     enabled:
       props.relativePath !== null && (file.isNotFile || !isMedia) && !props.selectedFilePending,
     mutationId: props.workspaceMutationId,

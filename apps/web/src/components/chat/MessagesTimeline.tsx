@@ -370,7 +370,6 @@ const TIMELINE_MAINTAIN_SCROLL_AT_END_SMOOTH = {
 // ---------------------------------------------------------------------------
 // Props (public API)
 // ---------------------------------------------------------------------------
-
 interface MessagesTimelineProps {
   citationRequest?: AssistantCitationRequest | null;
   citationHistoryLoading?: boolean;
@@ -378,7 +377,9 @@ interface MessagesTimelineProps {
     citation: AssistantCitation,
     sourceAnchor: AssistantCitationSourceAnchor,
   ) => boolean;
-
+  // Streamed text lands a paragraph at a time. A smooth scroll to the end
+  // turns each landing into a short glide instead of a jump. Thread switches
+  // and layout settles keep the instant variant so nothing visibly travels.
   agentPanelModel?: AgentPanelModel;
   onOpenAgents?: () => void;
   onRunShellCommand?: ((command: string) => void) | undefined;
@@ -714,10 +715,8 @@ export const MessagesTimeline = memo(function MessagesTimeline({
     workspaceRoot: string | undefined;
     projection: MessagesTimelineRowsProjection;
   } | null>(null);
-  // Subagents still working keep their spawn row outside the turn fold. Same
-  // liveness rule as the row header (deriveAgentSpawnSummary): members while
-  // active, workflow coordinators until terminal. Keyed by content so the
-  // projection input keeps its identity across unrelated panel updates.
+  // Match the row header's liveness, retaining projection input identity
+  // across unrelated panel updates.
   const liveAgentTaskKey = useMemo(() => {
     if (agentPanelModel === undefined) return undefined;
     const ids: string[] = [];
@@ -1903,10 +1902,6 @@ function QueuedMessageTimelineRow({
   );
 }
 
-// Screen readers skim a transcript by heading, so every message announces its
-// author as one. The thread title in ChatHeader is an <h2>; headings written
-// inside a message are exposed below this level. Visually hidden and excluded
-// from selection so sighted users and copied text are unaffected.
 function ContextCompactionTimelineRow({
   row,
 }: {
@@ -2713,7 +2708,7 @@ function CompactingLabel() {
 // does not create a React commit every second while a response is streaming.
 // ---------------------------------------------------------------------------
 
-/** Live "Working for Xs" label. */
+/** Live elapsed time for the "Working for" label. */
 function WorkingTimer({ createdAt }: { createdAt: string }) {
   const textRef = useRef<HTMLSpanElement>(null);
   const initialText = formatWorkingTimerNow(createdAt);
@@ -2739,6 +2734,11 @@ function WorkingTimer({ createdAt }: { createdAt: string }) {
 // ---------------------------------------------------------------------------
 // Extracted row sections — own their state / store subscriptions so changes
 // re-render only the affected row, not the entire list.
+
+/**
+ * Thinking inside a tool group has its own disclosure, preserved across recycling.
+ * A group whose row already reads "Thought" (no visible tool) skips the header.
+ */
 // ---------------------------------------------------------------------------
 
 /** Renders standalone activity or one bounded, virtualized expanded tool group. */
@@ -4270,7 +4270,6 @@ const PlainWorkEntryRow = memo(function PlainWorkEntryRow(props: {
     ? getQuestionAnswerPreview(workEntry.questionAnswer)
     : null;
   const viewedImagePath = workEntryViewedImagePath(workEntry);
-  // Viewed images read through the helper's bounded project image RPC.
   const viewedImage =
     viewedImagePath && threadRef
       ? resolveMarkdownFileLinkMeta(viewedImagePath, workspaceRoot)

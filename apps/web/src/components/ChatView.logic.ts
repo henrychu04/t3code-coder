@@ -677,7 +677,7 @@ export function threadShellHasStarted(
 }
 
 // Imported history has no session until its first prompt. Resolve its instance
-// through the workspace provider catalog before locking to a driver.
+// through the environment's provider catalog before locking to a driver.
 export function deriveLockedProvider(input: {
   thread: Thread | null | undefined;
   selectedProvider: string | null;

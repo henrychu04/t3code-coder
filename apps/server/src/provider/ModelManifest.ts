@@ -223,3 +223,11 @@ export const layer = Layer.succeed(ModelManifest, {
   forceRefresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refreshInBackground: Effect.void,
 });
+/** Model-level half of `applyModelManifest`, exported for focused tests. */
+/** Manifest already in memory (disk cache or bundle); never fetches.
+ * Snapshot classification reads this, so it never waits on the network. */
+/** Manifest after a TTL-gated remote refresh; never fails. */
+/** Explicit refresh bypasses freshness and retry timers, retaining last-good data. */
+/** Forks `refresh` into the service's own scope. Drivers call this from
+ * provider checks: the fetch is process-shared state, so it must survive
+ * the teardown of whichever instance happened to trigger it. */

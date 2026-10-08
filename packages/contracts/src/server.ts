@@ -42,13 +42,14 @@ export const ServerProviderState = Schema.Literals(["ready", "warning", "error",
 export type ServerProviderState = typeof ServerProviderState.Type;
 export const ServerProviderAuthStatus = Schema.Literals([
   "authenticated",
+
+  // Issue kinds grow over time; older clients must not fail the whole config
+  // decode over a kind they cannot render.
   "unauthenticated",
   "unknown",
 ]);
 export type ServerProviderAuthStatus = typeof ServerProviderAuthStatus.Type;
 
-// This is Claude Code authentication inside the remote workspace, not local
-// browser authentication.
 export const ServerProviderAuth = Schema.Struct({
   status: ServerProviderAuthStatus,
   type: Schema.optional(TrimmedNonEmptyString),
@@ -72,7 +73,10 @@ export const ServerProviderModel = Schema.Struct({
   capabilities: Schema.NullOr(ModelCapabilities),
 });
 export type ServerProviderModel = typeof ServerProviderModel.Type;
-export const ServerProviderSlashCommandInput = Schema.Struct({ hint: TrimmedNonEmptyString });
+
+export const ServerProviderSlashCommandInput = Schema.Struct({
+  hint: TrimmedNonEmptyString,
+});
 export type ServerProviderSlashCommandInput = typeof ServerProviderSlashCommandInput.Type;
 export const ServerProviderSlashCommand = Schema.Struct({
   name: TrimmedNonEmptyString,
@@ -80,6 +84,7 @@ export const ServerProviderSlashCommand = Schema.Struct({
   input: Schema.optional(ServerProviderSlashCommandInput),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
+
 export const ServerProviderSlashCommandsInput = Schema.Struct({
   instanceId: ProviderInstanceId,
   cwd: TrimmedNonEmptyString,
@@ -118,9 +123,29 @@ export const ServerProviderWorkspaceSnapshot = Schema.Struct({
 });
 export type ServerProviderWorkspaceSnapshot = typeof ServerProviderWorkspaceSnapshot.Type;
 
+/**
+ * Availability of a configured provider instance from the runtime's POV.
+ *
+ *  - `available` — the build ships this driver and an instance is wired
+ *    up. Default for legacy snapshots produced from the closed
+ *    `ServerSettings.providers` map.
+ *  - `unavailable` — the user's `ServerSettings.providerInstances` (or a
+ *    persisted thread / session binding) references a driver this build
+ *    doesn't ship. Common after rolling back from a fork or PR branch
+ *    that introduced a new driver. The snapshot is preserved so the UI
+ *    can render "missing driver" affordances and so the data round-trips
+ *    when the user moves back to the fork.
+ *
+ * Snapshots with `availability: "unavailable"` MUST set
+ * `installed: false` and `enabled: false`; the runtime refuses turn
+ * starts against them with a structured error.
+ */
 export const ServerProviderAvailability = Schema.Literals(["available", "unavailable"]);
 export type ServerProviderAvailability = typeof ServerProviderAvailability.Type;
-export const ServerProviderContinuation = Schema.Struct({ groupKey: TrimmedNonEmptyString });
+
+export const ServerProviderContinuation = Schema.Struct({
+  groupKey: TrimmedNonEmptyString,
+});
 export type ServerProviderContinuation = typeof ServerProviderContinuation.Type;
 
 export const ServerProviderCompatibilityStatus = Schema.Literals([
@@ -144,7 +169,6 @@ export const ServerProviderVersionAdvisoryStatus = Schema.Literals([
   "current",
   "behind_latest",
 ]);
-
 export type ServerProviderVersionAdvisoryStatus = typeof ServerProviderVersionAdvisoryStatus.Type;
 
 export const ServerProviderVersionAdvisory = Schema.Struct({
@@ -157,7 +181,6 @@ export const ServerProviderVersionAdvisory = Schema.Struct({
   checkedAt: Schema.NullOr(IsoDateTime),
   message: Schema.NullOr(TrimmedNonEmptyString),
 });
-
 export type ServerProviderVersionAdvisory = typeof ServerProviderVersionAdvisory.Type;
 
 export const ServerProviderUpdateStatus = Schema.Literals([
@@ -168,7 +191,6 @@ export const ServerProviderUpdateStatus = Schema.Literals([
   "failed",
   "unchanged",
 ]);
-
 export type ServerProviderUpdateStatus = typeof ServerProviderUpdateStatus.Type;
 
 export const ServerProviderUpdateState = Schema.Struct({
@@ -178,13 +200,14 @@ export const ServerProviderUpdateState = Schema.Struct({
   message: Schema.NullOr(TrimmedNonEmptyString),
   output: Schema.NullOr(Schema.String.check(Schema.isMaxLength(10_000))),
 });
-
 export type ServerProviderUpdateState = typeof ServerProviderUpdateState.Type;
 
 export const ServerProviderUpdateInput = Schema.Struct({
   provider: ProviderDriverKind,
   targetVersion: Schema.optionalKey(TrimmedNonEmptyString),
   instanceId: Schema.optionalKey(ProviderInstanceId),
+  // Open driver kind slug that selects the implementation handling this
+  // instance. It is metadata/capability context, not a routing key.
 });
 
 export type ServerProviderUpdateInput = typeof ServerProviderUpdateInput.Type;
@@ -216,7 +239,14 @@ export const ServerProvider = Schema.Struct({
   // The driver streams context window usage, so a started thread will have a
   // meter once its activities load. Clients reserve the meter's space on it.
   reportsContextWindow: Schema.optional(Schema.Boolean),
+  // Optional for back-compat: every legacy producer omits this field and
+  // an absent value is interpreted as `"available"` by consumers (see
+  // `isProviderAvailable`). New `ProviderInstanceRegistry` outputs set it
+  // explicitly so the UI can render unavailable shadows from
+  // `ServerSettings.providerInstances`.
   requiresNewThreadForModelChange: Schema.optional(Schema.Boolean),
+  // Human-readable reason populated when `availability === "unavailable"`.
+  // Surfaces in the UI alongside the missing-driver affordance.
   supportsTextGeneration: Schema.optional(Schema.Boolean),
   enabled: Schema.Boolean,
   installed: Schema.Boolean,
@@ -231,6 +261,11 @@ export const ServerProvider = Schema.Struct({
   slashCommands: Schema.Array(ServerProviderSlashCommand).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
+
+  // Provider status kinds grow over time (ServerProviderState,
+  // ServerProviderAuthStatus, ServerProviderVersionAdvisoryStatus,
+  // ServerProviderUpdateStatus); an older client must not fail the whole config
+  // decode over one provider it cannot render.
   workspaceSnapshots: Schema.optionalKey(Schema.Array(ServerProviderWorkspaceSnapshot)),
   skills: Schema.Array(ServerProviderSkill).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
   compatibilityAdvisory: Schema.optionalKey(ServerProviderCompatibilityAdvisory),
@@ -397,7 +432,9 @@ export const ServerConfigProviderStatusesPayload = Schema.Struct({
 });
 export type ServerConfigProviderStatusesPayload = typeof ServerConfigProviderStatusesPayload.Type;
 
-export const ServerConfigSettingsUpdatedPayload = Schema.Struct({ settings: ServerSettings });
+export const ServerConfigSettingsUpdatedPayload = Schema.Struct({
+  settings: ServerSettings,
+});
 export type ServerConfigSettingsUpdatedPayload = typeof ServerConfigSettingsUpdatedPayload.Type;
 
 export const ServerConfigStreamSnapshotEvent = Schema.Struct({
@@ -474,3 +511,4 @@ export const ServerLifecycleStreamEvent = Schema.Union([
   ServerLifecycleStreamReadyEvent,
 ]);
 export type ServerLifecycleStreamEvent = typeof ServerLifecycleStreamEvent.Type;
+/** Whether thread reads accept the reasoningMessages opt-in. */

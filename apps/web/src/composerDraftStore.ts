@@ -3660,7 +3660,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           const shouldPlaceReference =
             options?.appendReference !== false &&
             (!alreadyPresent || options?.allowDuplicateReference === true);
-          // Editor insertion writes the prompt through this store and
+          // See addPreviewAnnotation: editor insertion writes the prompt through this store and
           // must complete before the record update reads the draft it is extending.
           const placedAtCaret =
             shouldPlaceReference &&

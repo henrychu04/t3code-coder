@@ -531,6 +531,8 @@ function CoderCommandPaletteDialog(props: {
       searchTerms: ["scratch", "chat", "no project"],
       shortcutCommand: "chat.newWithoutProject",
       icon: <SquarePenIcon className="size-4 text-icon-muted" />,
+      // Resolve with the complete shortcut context so customized bindings
+      // using any documented `when` condition (e.g. previewFocus) work.
       run: () => startScratchThread(scratchTarget),
     });
   actionItems.push({
@@ -960,3 +962,5 @@ function CoderCommandPaletteDialog(props: {
     </CommandPaletteContent>
   );
 }
+// The server stops the process after accepting the command. A failed
+// stop shows in the thread.

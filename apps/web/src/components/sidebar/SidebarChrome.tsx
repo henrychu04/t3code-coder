@@ -134,6 +134,8 @@ function SidebarUtilityItem({
 
 export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
   const navigate = useNavigate();
+  // The page reads every connected server, so one of them offering pull requests is enough for
+  // the link to lead somewhere.
   const navigateToMainApp = useNavigateToMainApp();
   const { isMobile, setOpenMobile } = useSidebar();
   const currentFooterPage = useLocation({

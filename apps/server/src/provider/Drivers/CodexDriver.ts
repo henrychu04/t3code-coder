@@ -70,7 +70,8 @@ export type CodexDriverEnv =
   | Path.Path
   | ServerConfig
   | ServerSettingsService;
-
+// The standalone installer lays out `<CODEX_HOME>/packages/standalone/…`;
+// CODEX_HOME is not always `~/.codex`.
 const withInstanceIdentity =
   (input: {
     readonly instanceId: ProviderInstance["instanceId"];
@@ -89,7 +90,10 @@ const withInstanceIdentity =
 
 export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
   driverKind: DRIVER_KIND,
-  metadata: { displayName: "Codex", supportsMultipleInstances: true },
+  metadata: {
+    displayName: "Codex",
+    supportsMultipleInstances: true,
+  },
   configSchema: CodexSettings,
   defaultConfig: (): CodexSettings => decodeCodexSettings({}),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
@@ -98,6 +102,11 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const serverSettings = yield* ServerSettingsService;
       const { attachmentsDir, cwd } = yield* ServerConfig;
       const processEnv = mergeProviderInstanceEnvironment(environment);
+      /**
+       * Services the driver needs to materialize an instance. Surfaced as the
+       * driver's `R` so the registry layer aggregates these across every
+       * registered driver and the runtime satisfies them once.
+       */
       const homeLayout = yield* resolveCodexHomeLayout(config);
       const continuationIdentity = codexContinuationIdentity(homeLayout);
       const stampIdentity = withInstanceIdentity({
@@ -180,7 +189,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
-
       const adapter = yield* makeCodexAdapter(effectiveConfig, {
         instanceId,
         environment: processEnv,

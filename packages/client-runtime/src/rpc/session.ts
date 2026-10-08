@@ -322,7 +322,6 @@ const make = Effect.gen(function* () {
       Effect.asVoid,
       Effect.withSpan("clientRuntime.connection.rpcSession.probe"),
     );
-
     return {
       client: protocolClient,
       initialConfig,
@@ -332,6 +331,8 @@ const make = Effect.gen(function* () {
         Effect.asVoid,
         Effect.raceFirst(Deferred.await(disconnected)),
       ),
+      // The supervisor keeps the original cause. Shared durable consumers
+      // need a transport-shaped failure so they wait for its replacement.
       probe,
       closed: Effect.raceFirst(
         Deferred.await(disconnected),

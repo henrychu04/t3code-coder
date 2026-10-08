@@ -7,7 +7,12 @@ type ProviderSettingsSchema = {
   readonly fields: Readonly<Record<string, Schema.Top>>;
 } & Schema.Top;
 
-/** Browser-safe metadata for the two workspace provider drivers. */
+/**
+ * Browser-safe provider definition. This is deliberately shaped like the
+ * future provider package client export: the core web app gets a schema with
+ * field annotations plus provider-level presentation metadata, then renders
+ * settings generically.
+ */
 export interface ProviderClientDefinition {
   readonly value: ProviderDriverKind;
   readonly label: string;

@@ -186,7 +186,6 @@ function shortcutConflictKey(shortcut: KeybindingShortcut, platform = navigator.
     shortcut.altKey ? "alt" : "",
   ].join("|");
 }
-
 function findEffectiveShortcutForCommand(
   keybindings: ResolvedKeybindingsConfig,
   command: KeybindingCommand,
