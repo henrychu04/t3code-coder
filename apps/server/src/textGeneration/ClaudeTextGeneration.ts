@@ -331,6 +331,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         outputSchemaJson: outputSchema,
         modelSelection: input.modelSelection,
       });
+
       return {
         subject: sanitizeCommitSubject(generated.subject),
         body: generated.body.trim(),

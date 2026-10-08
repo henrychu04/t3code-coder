@@ -78,7 +78,10 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
         Effect.as(true),
         Effect.catch((error) =>
           Effect.logWarning("Could not persist cached server configuration.").pipe(
-            Effect.annotateLogs({ environmentId, ...safeErrorLogAttributes(error) }),
+            Effect.annotateLogs({
+              environmentId,
+              ...safeErrorLogAttributes(error),
+            }),
             Effect.as(false),
           ),
         ),

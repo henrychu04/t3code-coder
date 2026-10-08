@@ -150,6 +150,12 @@ export const CustomModelSetting = Schema.Union([Schema.String, CustomModelEntry]
 export type CustomModelSetting = typeof CustomModelSetting.Type;
 
 const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+/**
+ * Codex default-model preference, most preferred first. The provider snapshot
+ * marks the first of these present in the live `model/list` response as
+ * default; when none are available, Codex's own `isDefault` flag wins.
+ */
 const CLAUDE_DRIVER_KIND = ProviderDriverKind.make("claudeAgent");
 
 export const DEFAULT_MODEL = "gpt-6-astra";

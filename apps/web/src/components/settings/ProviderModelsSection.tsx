@@ -132,7 +132,9 @@ export function ProviderModelsSection({
               <Button
                 size="xs"
                 variant="ghost"
+                /** Model slugs favorited for this provider instance. */
                 onClick={() =>
+                  /** Explicit user-authored model ordering for this provider instance. */
                   onCustomModelsChange(
                     customEntries
                       .filter((item) => item.slug !== entry.slug)
@@ -145,6 +147,17 @@ export function ProviderModelsSection({
             </div>
           ))}
           {editing ? (
+            /**
+             * Shared "Models" section rendered on both the built-in default and custom
+             * provider-instance cards. Owns its own input + error local state so two
+             * cards on screen don't fight over the input value.
+             *
+             * Validation mirrors the pre-consolidation logic in `SettingsPanels`:
+             *   - empty / whitespace → "Enter a model slug."
+             *   - duplicate of a non-custom (probe-reported) slug → "already built in"
+             *   - exceeds `MAX_CUSTOM_MODEL_LENGTH` → length error
+             *   - duplicate of an already-saved custom slug → already-saved error
+             */
             <CustomModelEditor
               key={editing.slug}
               instanceId={instanceId}

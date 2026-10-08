@@ -58,6 +58,9 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
 export const ensureServerDirectories = Effect.fn(function* (paths: ServerDerivedPaths) {
   const fileSystem = yield* FileSystem.FileSystem;
   yield* Effect.all(
+    /**
+     * ServerConfig - Service tag for server runtime configuration.
+     */
     [
       paths.stateDir,
       paths.logsDir,
@@ -96,3 +99,4 @@ const makeTest = Effect.fn(function* (
 
 export const layerTest = (cwd: string, baseDirOrPrefix: string | { readonly prefix: string }) =>
   Layer.effect(ServerConfig, makeTest(cwd, baseDirOrPrefix));
+/** @deprecated Import and use `layerTest` from this module. */

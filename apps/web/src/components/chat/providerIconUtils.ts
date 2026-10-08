@@ -24,7 +24,6 @@ export type ModelEsque = {
   shortName?: string | undefined;
   subProvider?: string | undefined;
   isLegacy?: boolean | undefined;
-  /** A stored selection the provider no longer offers. */
   isUnavailable?: boolean | undefined;
 };
 

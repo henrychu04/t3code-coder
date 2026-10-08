@@ -778,9 +778,6 @@ const windowsProcessTableSnapshot = Effect.fn("terminal.windowsProcessTableSnaps
     const processRunner = yield* ProcessRunner.ProcessRunner;
     const result = yield* processRunner
       .run({
-        // powershell.exe is a real executable — never spawn it through cmd.exe
-        // shell mode, which would re-tokenize the `-Command` payload (pipes,
-        // semicolons) before PowerShell ever sees it.
         command: "powershell.exe",
         args: ["-NoProfile", "-NonInteractive", "-Command", command],
         timeout: "1500 millis",
@@ -790,16 +787,10 @@ const windowsProcessTableSnapshot = Effect.fn("terminal.windowsProcessTableSnaps
       })
       .pipe(
         Effect.mapError(
-          (cause) =>
-            new TerminalSubprocessCheckError({
-              cause,
-              command: "powershell",
-            }),
+          (cause) => new TerminalSubprocessCheckError({ cause, command: "powershell" }),
         ),
       );
     if (result.code !== 0 || result.timedOut || result.stdoutTruncated) {
-      // Not authoritative: an empty or partial table would mark every terminal
-      // idle and clear its registered process ids. Failing skips the tick.
       return yield* new TerminalSubprocessCheckError({
         command: "powershell",
         exitCode: result.code,
@@ -834,7 +825,6 @@ function capHistory(
   return truncated.startsAtLineBoundary ? truncated.buffer : `${prefix}${truncated.buffer}`;
 }
 
-/** Append cheaply; only snapshots, coalesced writes, or overflow materialize history. */
 export class BoundedTerminalHistory {
   private chunks: string[] = [];
   private bytes = 0;

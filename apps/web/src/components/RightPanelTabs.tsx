@@ -176,6 +176,7 @@ export function rightPanelTabContextMenuItems(
   if (surfaceIndex < 0) return [];
 
   return [
+    /** One-line unavailability hints for the empty-state rows. */
     ...(surface.kind === "file" ? [{ id: "copy-path" as const, label: "Copy path" }] : []),
     { id: "close", label: "Close" },
     {
@@ -259,6 +260,14 @@ function RightPanelEmptyState(props: {
       description: "Browse and read workspace files.",
       icon: Files,
       shortcut: "F",
+      /**
+       * A focused editable is a typing context whether or not it has text yet: an
+       * empty chat composer at rest is still where the user's next keystrokes are
+       * meant to land, and claiming launcher letters from it would redirect prompts
+       * into whatever surface opens. The `:not` clause lets `closest` see past
+       * non-editable islands (`contenteditable="false"`) to an editable host around
+       * them, matching ComposerPendingUserInputPanel's typing guard.
+       */
       available: props.filesAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
       onClick: props.onAddFiles,
@@ -299,6 +308,13 @@ function RightPanelEmptyState(props: {
   type SurfaceAction = (typeof actions)[number];
 
   const availableActions = actions.filter((action) => action.available);
+  /**
+   * List launcher shown when the right panel has no surfaces. Keyboard-first
+   * without palette chrome: a surface's letter opens it directly from anywhere
+   * outside a typing context, and arrows plus Enter work while the launcher is
+   * focused. The highlight only appears on hover or arrow use. Unavailable
+   * surfaces stay visible with a one-line reason.
+   */
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
@@ -320,6 +336,7 @@ function RightPanelEmptyState(props: {
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, []);
+  // -1 means no highlight: it only appears on hover or arrow use.
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -404,6 +421,10 @@ function RightPanelEmptyState(props: {
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium">{action.label}</span>
                 {!action.available ? (
+                  // Letter shortcuts work while the launcher is visible, not only while it
+                  // is focused; focus moves around too easily (stray clicks) to carry them.
+                  // Capture phase so app-level key handlers cannot swallow the event first;
+                  // typing contexts and already-handled events are left alone.
                   <span className="block text-xs text-muted-foreground">
                     {action.disabledReason}
                   </span>
@@ -450,6 +471,8 @@ function SurfaceIcon({
     return (
       <PierreEntryIcon
         pathValue={surface.relativePath}
+        // Stable identity so React only runs this callback ref on mount/unmount;
+        // an inline arrow would re-attach and re-focus on every render.
         kind="file"
         theme={theme}
         className="size-3.5"

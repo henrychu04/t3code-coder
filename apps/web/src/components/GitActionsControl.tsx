@@ -588,6 +588,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                               size="micro"
                               onClick={(event) => {
                                 event.preventDefault();
+
                                 event.stopPropagation();
                                 openSourceControlSettings();
                               }}
@@ -2003,7 +2004,7 @@ export default function GitActionsControl({
               size="sm-multiline"
               onClick={checkoutFeatureBranchAndContinuePendingAction}
             >
-              Checkout feature branch & continue
+              Check out feature branch & continue
             </Button>
           </DialogFooter>
         </DialogPopup>

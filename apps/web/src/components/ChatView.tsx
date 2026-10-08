@@ -674,6 +674,11 @@ function useLocalDispatchState(input: {
       input.phase,
       input.threadError,
       latestUserMessageId,
+      /**
+       * Whether input that landed outside any editable or interactive element
+       * should be redirected into the composer. Shared by type-to-focus and
+       * paste-to-focus so both honour the same surfaces.
+       */
       currentTurnStartFailureId,
       localDispatch,
     ],
@@ -699,6 +704,10 @@ function useLocalDispatchState(input: {
 
   return {
     beginLocalDispatch,
+    /**
+     * Plain text pasted with nothing editable focused, such as after the resting
+     * composer blurred. Files are left to the composer's own paste handler.
+     */
     resetLocalDispatch,
     localDispatchStartedAt: activeLocalDispatch?.startedAt ?? null,
     latestUserMessageAt: latestUserMessage?.createdAt ?? null,
@@ -1616,7 +1625,6 @@ export default function ChatView(props: ChatViewProps) {
   const uncertainMultipleSubmissionsRef = fanoutState.uncertainSubmissions;
   const environmentUnavailableSendToastSlotRef = useRef(0);
   const terminalUiOpenByThreadRef = useRef<Record<string, boolean>>({});
-
   const publishScrollToEndClearance = useCallback(
     (overlayHeight: number) => {
       const mainSurface = composerOverlayElement?.querySelector<HTMLElement>(
@@ -1670,7 +1678,6 @@ export default function ChatView(props: ChatViewProps) {
   const onComposerRestingChange = useCallback((resting: boolean) => {
     composerRestingRef.current = resting;
   }, []);
-
   useLayoutEffect(() => {
     if (!composerOverlayElement) return;
 
@@ -1779,6 +1786,9 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeServerThread, draftId, localDraftErrorsByDraftId, routeThreadKey]);
   const localDraftThread = useMemo(
     () =>
+      // Space the timeline keeps clear above its end. Tracks the overlay while the
+      // composer is expanded and holds that height while it rests, so the resting
+      // composer never exposes rows that its expansion will cover.
       draftThread
         ? buildLocalDraftThread(
             threadId,
@@ -4328,8 +4338,7 @@ export default function ChatView(props: ChatViewProps) {
     if (activeThreadRef === null || activeThreadWokeAt === null) return;
     markThreadVisited(scopedThreadKey(activeThreadRef), activeThreadWokeAt);
   }, [activeThreadRef, activeThreadWokeAt, markThreadVisited]);
-  // Mirror of the sidebar's Woke pill for the open thread. It uses the same
-  // visit comparison and change request settle rule.
+  // Mirror of the sidebar's Woke pill for the open thread.
   const activeThreadLastVisitedAt = useUiStateStore((store) =>
     activeThreadKey === null ? undefined : store.threadLastVisitedAtById[activeThreadKey],
   );
@@ -5128,7 +5137,7 @@ export default function ChatView(props: ChatViewProps) {
 
       if (command === "rightPanel.close") {
         // Nothing open: leave the event alone so the shortcut keeps its
-        // native meaning (close the browser tab).
+        // native meaning (close window on desktop, close tab in a browser).
         if (!activeRightPanelSurface) return;
         event.preventDefault();
         event.stopPropagation();
@@ -5282,8 +5291,9 @@ export default function ChatView(props: ChatViewProps) {
     composerRef,
   ]);
 
-  // A paste after clicking the timeline has no editable target when the
-  // composer is resting. Route plain text through the same composer focus path.
+  // Paste-to-focus: the resting composer blurs on a click into the timeline,
+  // so a paste that follows has no editable target and would be dropped.
+  // Route it to the composer like a typed key, which also expands it.
   useEffect(() => {
     const handler = (event: ClipboardEvent) => {
       if (!activeThreadId || isCommandPaletteOpen()) return;
@@ -5705,8 +5715,7 @@ export default function ChatView(props: ChatViewProps) {
       });
       return;
     }
-    // Legacy plan mode: /plan and /default only act when the beta flag is on;
-    // otherwise they send as plain text like any other message.
+    // Providers without the legacy toggle receive their native commands unchanged.
     const standaloneSlashCommand =
       settings.planModeEnabled &&
       sendableComposerTerminalContexts.length === 0 &&
@@ -5821,7 +5830,8 @@ export default function ChatView(props: ChatViewProps) {
       )
       .trim();
     // Records bind attachments by the id each side knows: the local id for the optimistic
-    // row, the staged upload id on the wire; the server rebinds them to the persisted id.
+    // row, the upload id (or local id on the data-URL path) on the wire; the server
+    // rebinds them to the persisted id.
     const buildOutgoingMessageContext = (attachmentIds: ReadonlyArray<string>) =>
       buildMessageContext({
         terminalContexts: composerTerminalContextsSnapshot,
@@ -7911,7 +7921,6 @@ export default function ChatView(props: ChatViewProps) {
           />
         </Suspense>
       ) : null}
-
       <AlertDialog
         open={pendingRevert !== null && pendingRevert.routeThreadKey === routeThreadKey}
         onOpenChange={(open) => {
@@ -8055,3 +8064,5 @@ export default function ChatView(props: ChatViewProps) {
     </div>
   );
 }
+// The revert handler is read from a ref at call-time so the callback
+// reference is fully stable and never busts TimelineRowCtx identity.

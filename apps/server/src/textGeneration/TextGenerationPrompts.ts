@@ -60,13 +60,17 @@ export function buildCommitMessagePrompt(input: {
   }
   return {
     prompt,
-    outputSchema: Schema.Struct({ subject: Schema.String, body: Schema.String }),
+    outputSchema: Schema.Struct({
+      subject: Schema.String,
+      body: Schema.String,
+    }),
   };
 }
 
 export function buildPrContentPrompt(input: {
   readonly baseBranch: string;
   readonly headBranch: string;
+
   readonly commitSummary: string;
   readonly diffSummary: string;
   readonly diffPatch: string;

@@ -58,6 +58,8 @@ export const MIN_SIDEBAR_THREAD_PREVIEW_COUNT = 1;
 export const MAX_SIDEBAR_THREAD_PREVIEW_COUNT = 15;
 export const SidebarThreadPreviewCount = Schema.Int.check(
   Schema.isBetween({
+    // Not exported: mobile was the last consumer of the value itself; the
+    // wire field keeps its decoding default below.
     minimum: MIN_SIDEBAR_THREAD_PREVIEW_COUNT,
     maximum: MAX_SIDEBAR_THREAD_PREVIEW_COUNT,
   }),
@@ -238,8 +240,8 @@ export const ClientSettingsSchema = Schema.Struct({
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   // Model favorites. Historically keyed by provider kind, now
   // widened to `ProviderInstanceId` so users can favorite a specific model
-  // on a custom provider instance (e.g. "Claude Personal · Sonnet") without
-  // the UI collapsing it into the same bucket as the default Claude instance. The
+  // on a custom provider instance (e.g. "Codex Personal · gpt-5") without
+  // the UI collapsing it into the same bucket as the default Codex. The
   // widening is backward-compatible by construction: prior provider-kind
   // strings satisfy the `ProviderInstanceId` slug schema, so previously
   // persisted favorites decode unchanged and continue to point at the
@@ -412,12 +414,15 @@ export const CodexSettings = makeProviderSettingsSchema(
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
-  { order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"] },
+  {
+    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+  },
 );
 export type CodexSettings = typeof CodexSettings.Type;
 
-// Empty, or an integer from 100,000 to 1,000,000. Reuse this at the patch
-// boundary so an invalid value fails on the update that introduced it.
+// Empty, or an integer from 100,000 to 1,000,000. Shared by the full
+// Claude settings schema and its patch so an out-of-range value fails at
+// the update that introduced it.
 const CLAUDE_AUTO_COMPACT_WINDOW_PATTERN = /^(?:|[1-9]\d{5}|1000000)$/;
 
 export const ClaudeSettings = makeProviderSettingsSchema(
@@ -880,7 +885,6 @@ export const ServerSettingsPatch = Schema.Struct({
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;
-
 export const ClientSettingsPatch = Schema.Struct({
   notificationMode: Schema.optionalKey(NotificationMode),
   inAppNotificationsEnabled: Schema.optionalKey(Schema.Boolean),
@@ -931,3 +935,23 @@ export const ClientSettingsPatch = Schema.Struct({
   wordWrap: Schema.optionalKey(Schema.Boolean),
 });
 export type ClientSettingsPatch = typeof ClientSettingsPatch.Type;
+/**
+ * Per-project overrides of the keys in `PROJECT_SCOPED_SERVER_SETTING_KEYS`.
+ * The source of truth for project settings; `projectAgentBrowserAccessOverrides`,
+ * `projectAutoPullOverrides` and `projectScriptOverrides` are derived views
+ * kept for one release so older clients keep reading them.
+ */
+/**
+ * Whether the legacy per-project fields have been folded into
+ * `projectSettingsOverrides`. The fold runs once so a later reset in the
+ * settings UI is not undone by the next server start.
+ */
+// New driver-agnostic instance map. Keyed by `ProviderInstanceId`; values
+// are `ProviderInstanceConfig` envelopes. The driver-specific config blob
+// is `Schema.Unknown` at this layer so envelopes with unknown drivers
+// (forks, downgrades, in-flight PR branches) round-trip without loss.
+// See providerInstance.ts for the forward/backward compatibility invariant.
+// Whole-map replacement for the new instance config. Patching individual
+// entries is intentionally out of scope: the map is small, and partial
+// patches risk leaving driver-specific config in a half-merged state.
+// The web UI sends a fully-formed map every time it edits this field.

@@ -330,7 +330,7 @@ export const ProviderRegistryLive = Layer.effect(
     const persistProvider = (provider: ServerProvider) =>
       Effect.gen(function* () {
         // Persist every instance — the file name is the instance id, so
-        // multi-instance setups (e.g. `claude_personal`, `claude_work`) each
+        // multi-instance setups (e.g. `codex_personal`, `codex_work`) each
         // get their own cache. We resolve the path fresh so snapshots
         // produced by newly-added instances post-boot still land on disk
         // without the aggregator holding a stale `cachePathByInstance`

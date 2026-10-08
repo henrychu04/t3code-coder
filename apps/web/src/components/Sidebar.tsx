@@ -262,7 +262,7 @@ function threadTimeLabel(thread: SidebarThreadSummary): string {
 }
 
 // Settled rows read "how long ago did this wrap up", matching their sort
-// key: both go through resolveSettledTimestamp so label and order can't
+// key: both go through resolveSettledThreadTimestamp so label and order can't
 // disagree.
 function settledTimeLabel(thread: SidebarThreadSummary): string {
   const timestamp = resolveSettledTimestamp(thread);
@@ -1338,7 +1338,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     [onSnooze, threadRef],
   );
   // While the snooze popover is open the pointer leaves the row, which
-  // would fade the hover actions out from under the open menu; pin them.
+  // would fade the hover actions out from under the open menu. Pin them and
+  // suppress the row tooltip so its portal cannot overlap the popover.
   const [snoozeMenuOpenRaw, setSnoozeMenuOpen] = useState(false);
   // Snooze is offered only where it can succeed: capability-gated and never
   // on blocked-on-you work or queued turns (the server rejects both).
@@ -1369,7 +1370,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
           : shouldRecede
             ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
             : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
-    // Background work fades as a whole row, including its status label.
+    // Background work fades as a whole row, status label included, so it
+    // takes less attention than rows that need a human (input, approval).
     shouldRecede &&
       (status === "working" || status === "monitoring") &&
       "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",
@@ -1588,6 +1590,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                     "inline-flex justify-end tabular-nums text-secondary-label transition-opacity",
                     !isWoke && "group-hover/sidebar-row:opacity-0",
                   )}
+                  // Same pen the new-thread draft rows lead with, so both kinds of unsent
+                  // work read the same way in the list.
                 >
                   {variantAction === "unsnooze" && props.snoozeWakeLabelText !== null ? (
                     // Snoozed rows show when they come BACK, not when they were
@@ -2255,8 +2259,9 @@ export default function Sidebar() {
     [sidebarProjectSortOrder, threads, unsortedProjectGroups],
   );
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
-  // Each thread resolves its provider entry from its own environment's config:
-  // default instance ids are driver slugs, so a flat map would collide across environments.
+  // Threads on non-primary environments (T3 Connect, hosted) resolve their
+  // provider entry from their own environment's config: default instance ids
+  // are driver slugs, so a flat map would collide across environments.
   const providerEntriesByEnvironment = useMemo(
     () =>
       deriveProviderEntriesByEnvironment(
@@ -2430,8 +2435,13 @@ export default function Sidebar() {
     snoozedThreads,
     settledThreads,
     snoozeNow,
+    // The selection lives in the persisted UI store next to the other sidebar
+    // project preferences, so routes that unmount the sidebar (Settings) and
+    // app restarts keep it.
   } = useMemo(() => {
     // Snooze classification uses a REAL clock, not the quantized minute:
+    // {value, label} items let Base UI drive the combobox selection contract
+    // while the popup search filters the same collection.
     // wake times are second-precise and a woken thread must not linger on
     // the shelf for the rest of the minute. snoozeWakeTick re-runs this
     // memo exactly at the next wake boundary.
@@ -3959,9 +3969,8 @@ export default function Sidebar() {
           thread.worktreePath ??
           projectCwdByKey.get(`${thread.environmentId}:${thread.projectId}`) ??
           null;
-        // Un-settle works on every settled row: for explicit settles it
-        // clears the override, for auto-settled rows it pins the thread
-        // active until real activity clears the pin. Environments without
+        // Un-settle pins the thread active until real activity clears the pin.
+        // Environments without
         // the settlement capability get no lifecycle items at all.
         const supportsSettlement =
           serverConfigs.get(thread.environmentId)?.environment.capabilities.threadSettlement ===

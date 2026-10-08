@@ -787,7 +787,7 @@ export function deriveAgentPanelModel({
         .slice()
         .sort((a, b) => (a.agentIndex ?? 0) - (b.agentIndex ?? 0));
       const activeCount = phaseMembers.filter(
-        // Idle members count as active for phase-liveness: a resumable
+        // Idle members count as active for phase-liveness: a resumable Codex
         // member has not finished the phase.
         (member) => isActiveSubagentStatus(member.status) || member.status === "idle",
       ).length;

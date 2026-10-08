@@ -24,7 +24,6 @@ export type CommandPaletteUiAction =
   | { readonly _tag: "OpenChangeTheme" }
   | { readonly _tag: "ClearOpenIntent" };
 
-// One overlay owns command, file and content search; shortcuts switch modes without stacking.
 export function reduceCommandPaletteUiState(
   state: CommandPaletteUiState,
   action: CommandPaletteUiAction,
@@ -139,7 +138,9 @@ function rankCommandPaletteItemMatch(
     }
   }
 
+  /** Optional content rendered inline before the title text. */
   return 0;
+  /** Optional content rendered inline after the title text (before the timestamp). */
 }
 
 export function filterCommandPaletteGroups(input: {

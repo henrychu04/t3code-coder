@@ -27,6 +27,7 @@ function displayOptionAnswer(value: unknown, labels: ReadonlyMap<string, string>
     ? { ...nested, answers: displayOptionAnswer(nested.answers, labels) }
     : value;
 }
+// Sort the fresh array in place because Hermes does not provide toSorted.
 
 function questionFingerprint(
   turnId: string,

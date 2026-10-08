@@ -80,7 +80,13 @@ export interface OrchestrationEventStoreShape {
    */
   readonly readAll: () => Stream.Stream<OrchestrationEvent, OrchestrationEventStoreError>;
 
-  /** Check whether an aggregate changed after a snapshot sequence. */
+  /**
+   * Check whether an aggregate has an event after a sequence, optionally
+   * restricted to one event type.
+   *
+   * Used during replay to tell whether a later event supersedes the one being
+   * applied, without streaming the rest of the log.
+   */
   readonly hasEventAfter: (input: {
     readonly aggregateKind: OrchestrationEvent["aggregateKind"];
     readonly aggregateId: string;

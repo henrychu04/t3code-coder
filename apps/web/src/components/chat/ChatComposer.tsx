@@ -2028,8 +2028,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   useEffect(() => {
     const armPasteAsTextShortcut = () => {
-      // Browsers deliver keydown before paste. A short deadline covers that
-      // gap without leaving later pastes in bypass mode.
+      // Electron can deliver its native menu action just before the paste
+      // event, while browsers normally deliver keydown first. A short deadline
+      // bridges both event paths without leaving later pastes in bypass mode.
       pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
     };
     const onKeyDown = (event: KeyboardEvent) => {

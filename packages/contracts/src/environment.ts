@@ -24,6 +24,11 @@ export const ENVIRONMENT_MACHINE_KINDS = [
   "cloud",
   "linux",
   "desktop",
+  /**
+   * The curated set of machine shapes and OS identities an environment can wear as its icon.
+   * Servers detect one from the hardware they run on (`platform.machine`), and
+   * the `environmentIcon` server setting lets a user pick one instead.
+   */
   "laptop",
   "mac-mini",
   "mac-studio",

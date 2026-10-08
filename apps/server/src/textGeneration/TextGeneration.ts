@@ -81,12 +81,19 @@ export interface TextGenerationService {
   ): Promise<CommitMessageGenerationResult>;
   generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
   generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
+  /**
+   * Generate a commit message from staged change context.
+   */
   generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
 }
 
 /**
+ * Generate change request title/body from branch and diff context.
+ */
+/**
  * TextGeneration - Service tag for local branch and thread labels.
  */
+
 export class TextGeneration extends Context.Service<
   TextGeneration,
   {
