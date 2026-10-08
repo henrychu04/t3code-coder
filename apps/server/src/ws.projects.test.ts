@@ -784,6 +784,7 @@ describe("upstream helper RPC behavior", () => {
       const error = yield* h.client[ORCHESTRATION_WS_METHODS.dispatchCommand](
         bootstrapCommand(h.config.cwd),
       ).pipe(Effect.flip);
+      if (error._tag !== "OrchestrationDispatchCommandError") return assert.fail(error._tag);
       assert.equal(error.message, "turn start failed");
       assert.equal(error.bootstrapThreadDisposition, "deleted");
       assert.equal(commands.at(-1)?.type, "thread.delete");
@@ -868,6 +869,7 @@ describe("upstream helper RPC behavior", () => {
           );
           if (requireWorktree) {
             const error = yield* request.pipe(Effect.flip);
+            if (error._tag !== "OrchestrationDispatchCommandError") return assert.fail(error._tag);
             assert.equal(
               error.message,
               "A separate worktree requires a Git repository and a base branch with a commit.",
@@ -911,9 +913,9 @@ describe("Coder RPC seams", () => {
         contents: "hello",
         expectedRevision: "revision",
       }).pipe(Effect.flip);
-      assert.equal(list.failure, "workspace_not_owned_by_thread");
-      assert.equal(read.failure, "workspace_not_owned_by_thread");
-      assert.equal(write.failure, "workspace_not_owned_by_thread");
+      assert.equal("failure" in list && list.failure, "workspace_not_owned_by_thread");
+      assert.equal("failure" in read && read.failure, "workspace_not_owned_by_thread");
+      assert.equal("failure" in write && write.failure, "workspace_not_owned_by_thread");
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 

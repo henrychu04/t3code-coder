@@ -463,7 +463,7 @@ export function SourceControlSettingsPanel() {
       ? null
       : sourceControlEnvironment.discovery({
           environmentId,
-          input: undefined,
+          input: {},
         }),
   );
   const result = discovery.data ?? EMPTY_DISCOVERY_RESULT;

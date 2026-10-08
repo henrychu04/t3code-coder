@@ -373,7 +373,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
       ? null
       : sourceControlEnvironment.discovery({
           environmentId: props.environmentId,
-          input: undefined,
+          input: {},
         }),
   );
   const [selectedPublishProvider, setSelectedPublishProvider] =
@@ -1003,7 +1003,7 @@ export default function GitActionsControl({
       ? null
       : sourceControlEnvironment.discovery({
           environmentId: activeEnvironmentId,
-          input: undefined,
+          input: {},
         }),
   );
   const refreshVcsStatus = useAtomCommand(vcsEnvironment.refreshStatus, {

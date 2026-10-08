@@ -69,7 +69,7 @@ export function CoderAddProjectDialog({
   const sourceControl = useEnvironmentQuery(
     environmentId === null
       ? null
-      : sourceControlEnvironment.discovery({ environmentId, input: undefined }),
+      : sourceControlEnvironment.discovery({ environmentId, input: {} }),
   );
   const canPublishToGitLab =
     sourceControl.data?.sourceControlProviders.some(
