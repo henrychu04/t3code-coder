@@ -27,6 +27,7 @@ import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
 import { SidebarChromeHeader } from "./sidebar/SidebarChrome";
@@ -203,6 +204,8 @@ function ProjectProjectionRetention() {
 }
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
+  // Seeds server-side visited tracking from this browser's local visit markers.
+  useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
   const suppressed = usePanelNavigationSuppression(pathname);

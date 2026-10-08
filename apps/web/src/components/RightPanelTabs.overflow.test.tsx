@@ -47,13 +47,10 @@ it("updates scroll controls when a terminal rename changes content width without
           onAddDiff={noop}
           onAddFiles={noop}
           onAddPullRequest={noop}
-          onAddAgents={noop}
           terminalAvailable
           diffAvailable
           filesAvailable
           pullRequestAvailable
-          agentsAvailable
-          liveAgentCount={0}
         >
           {null}
         </RightPanelTabs>,

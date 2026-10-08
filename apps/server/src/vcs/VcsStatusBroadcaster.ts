@@ -31,7 +31,7 @@ import { resolveProjectAutoPull } from "@t3tools/shared/serverSettings";
 
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 const DEFAULT_VCS_STATUS_REFRESH_INTERVAL = Duration.seconds(30);
@@ -157,16 +157,16 @@ export class VcsAutoPullPolicy extends Context.Reference<{
 export const autoPullPolicyLayer = Layer.effect(
   VcsAutoPullPolicy,
   Effect.gen(function* () {
-    const snapshots = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const projects = yield* ProjectStore.ProjectStoreV2;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     return {
       isEnabled: Effect.fn("VcsAutoPullPolicy.isEnabled")(
         function* (cwd: string) {
-          const project = yield* snapshots.getActiveProjectByWorkspaceRoot(cwd);
+          const project = yield* projects.findActiveByWorkspaceRoot(cwd);
           if (project._tag === "None") return false;
           const settings = yield* serverSettings.getSettings;
           // Coder: resolve enablement exactly as startup auto-pull does.
-          return resolveProjectAutoPull(settings, project.value.id, project.value.autoPull);
+          return resolveProjectAutoPull(settings, project.value.projectId, project.value.autoPull);
         },
         Effect.orElseSucceed(() => false),
       ),

@@ -1,16 +1,34 @@
 import { type CSSProperties, memo } from "react";
-import { type ProviderDriverKind } from "@t3tools/contracts";
+
 import { providerInstanceInitials } from "@t3tools/client-runtime/state/provider-instance-display";
 
-import { PROVIDER_ICON_BY_PROVIDER } from "./providerIconUtils";
+import { ProviderDriverKind } from "@t3tools/contracts";
+import { ClaudeAI, Icon, OpenAI } from "../Icons";
+
 import { cn } from "~/lib/utils";
 
-export { providerInstanceInitials };
+// Coder: only Codex and Claude are shipped; other drivers fall back to initials.
+const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
+  [ProviderDriverKind.make("codex")]: OpenAI,
+  [ProviderDriverKind.make("claudeAgent")]: ClaudeAI,
+};
+
+const PROVIDER_TEXT_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string>> = {
+  [ProviderDriverKind.make("codex")]: "text-black dark:text-white",
+  [ProviderDriverKind.make("claudeAgent")]: "text-[#d97757]",
+};
+
+export function providerTextColorClassName(driverKind: ProviderDriverKind): string | undefined {
+  return PROVIDER_TEXT_COLOR_BY_PROVIDER[driverKind];
+}
 
 export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   driverKind: ProviderDriverKind;
   displayName: string;
   accentColor?: string | undefined;
+  // Coder: accepted from upstream callers; ACP registry providers are not shipped.
+  acpRegistryAgentId?: string | undefined;
+  acpRegistryIconUrl?: string | undefined;
   showBadge?: boolean;
   badgeContent?: "initials" | "none";
   className?: string;

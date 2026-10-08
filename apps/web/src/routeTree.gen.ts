@@ -14,6 +14,7 @@ import { Route as ChatRouteImport } from './routes/_chat'
 import { Route as ChatIndexRouteImport } from './routes/_chat.index'
 import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsSourceControlRouteImport } from './routes/settings.source-control'
+import { Route as SettingsScheduledTasksRouteImport } from './routes/settings.scheduled-tasks'
 import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'
 import { Route as SettingsProjectsRouteImport } from './routes/settings.projects'
 import { Route as SettingsOpenSourceLicensesRouteImport } from './routes/settings.open-source-licenses'
@@ -49,6 +50,11 @@ const SettingsStorageRoute = SettingsStorageRouteImport.update({
 const SettingsSourceControlRoute = SettingsSourceControlRouteImport.update({
   id: '/source-control',
   path: '/source-control',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsScheduledTasksRoute = SettingsScheduledTasksRouteImport.update({
+  id: '/scheduled-tasks',
+  path: '/scheduled-tasks',
   getParentRoute: () => SettingsRoute,
 } as any)
 const SettingsProvidersRoute = SettingsProvidersRouteImport.update({
@@ -127,6 +133,7 @@ export interface FileRoutesByFullPath {
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
@@ -144,6 +151,7 @@ export interface FileRoutesByTo {
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/': typeof ChatIndexRoute
@@ -164,6 +172,7 @@ export interface FileRoutesById {
   '/settings/open-source-licenses': typeof SettingsOpenSourceLicensesRoute
   '/settings/projects': typeof SettingsProjectsRoute
   '/settings/providers': typeof SettingsProvidersRoute
+  '/settings/scheduled-tasks': typeof SettingsScheduledTasksRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/_chat/': typeof ChatIndexRoute
@@ -185,6 +194,7 @@ export interface FileRouteTypes {
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/scheduled-tasks'
     | '/settings/source-control'
     | '/settings/storage'
     | '/$environmentId/$threadId'
@@ -202,6 +212,7 @@ export interface FileRouteTypes {
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/scheduled-tasks'
     | '/settings/source-control'
     | '/settings/storage'
     | '/'
@@ -221,6 +232,7 @@ export interface FileRouteTypes {
     | '/settings/open-source-licenses'
     | '/settings/projects'
     | '/settings/providers'
+    | '/settings/scheduled-tasks'
     | '/settings/source-control'
     | '/settings/storage'
     | '/_chat/'
@@ -269,6 +281,13 @@ declare module '@tanstack/react-router' {
       path: '/source-control'
       fullPath: '/settings/source-control'
       preLoaderRoute: typeof SettingsSourceControlRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/scheduled-tasks': {
+      id: '/settings/scheduled-tasks'
+      path: '/scheduled-tasks'
+      fullPath: '/settings/scheduled-tasks'
+      preLoaderRoute: typeof SettingsScheduledTasksRouteImport
       parentRoute: typeof SettingsRoute
     }
     '/settings/providers': {
@@ -383,6 +402,7 @@ interface SettingsRouteChildren {
   SettingsOpenSourceLicensesRoute: typeof SettingsOpenSourceLicensesRoute
   SettingsProjectsRoute: typeof SettingsProjectsRoute
   SettingsProvidersRoute: typeof SettingsProvidersRoute
+  SettingsScheduledTasksRoute: typeof SettingsScheduledTasksRoute
   SettingsSourceControlRoute: typeof SettingsSourceControlRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
 }
@@ -396,6 +416,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsOpenSourceLicensesRoute: SettingsOpenSourceLicensesRoute,
   SettingsProjectsRoute: SettingsProjectsRoute,
   SettingsProvidersRoute: SettingsProvidersRoute,
+  SettingsScheduledTasksRoute: SettingsScheduledTasksRoute,
   SettingsSourceControlRoute: SettingsSourceControlRoute,
   SettingsStorageRoute: SettingsStorageRoute,
 }

@@ -1,4 +1,3 @@
-import { ModelSelection, ProjectScript, type ProjectSettingsOverrides } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
 /**
@@ -15,9 +14,15 @@ import * as SqlClient from "effect/unstable/sql/SqlClient";
  */
 import {
   DEFAULT_SERVER_SETTINGS,
+  ModelSelection,
+  ProjectId,
+  ProjectScript,
+  ProjectSettingsOverrides,
   type ProviderInstanceConfig,
   type ProviderInstanceEnvironmentVariable,
+  type ProviderInstanceMutation,
   type ProviderInstanceId,
+  ResponseStreamingMode,
   ServerSettings,
   ServerSettingsError,
   type ServerSettingsPatch,
@@ -36,6 +41,7 @@ import * as Path from "effect/Path";
 import * as PubSub from "effect/PubSub";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
+import * as SchemaTransformation from "effect/SchemaTransformation";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
@@ -183,6 +189,51 @@ export function restoreRedactedProviderEnvironmentValues(
   return { ...patch, providerInstances: providerInstances as ServerSettings["providerInstances"] };
 }
 
+/** Coder: provider-instance mutations keep stored sensitive values the client saw redacted. */
+function restoreRedactedProviderInstanceMutation(
+  current: ServerSettings,
+  mutation: ProviderInstanceMutation,
+): ProviderInstanceMutation {
+  if (mutation.operation === "remove") return mutation;
+  const restored = restoreRedactedProviderEnvironmentValues(current, {
+    providerInstances: { [mutation.instanceId]: mutation.instance },
+  }).providerInstances?.[mutation.instanceId];
+  return restored === undefined ? mutation : { ...mutation, instance: restored };
+}
+
+export function applyProviderInstanceMutation(
+  settings: ServerSettings,
+  mutation: ProviderInstanceMutation,
+): ServerSettings {
+  const providerInstances = { ...settings.providerInstances };
+  if (mutation.operation === "upsert" || mutation.operation === "create") {
+    providerInstances[mutation.instanceId] = mutation.instance;
+  } else {
+    delete providerInstances[mutation.instanceId];
+  }
+  return { ...settings, providerInstances };
+}
+
+function ensureProviderInstanceMutationAllowed(
+  settings: ServerSettings,
+  mutation: ProviderInstanceMutation,
+  settingsPath: string,
+): Effect.Effect<void, ServerSettingsError> {
+  if (
+    mutation.operation === "create" &&
+    settings.providerInstances[mutation.instanceId] !== undefined
+  ) {
+    return Effect.fail(
+      new ServerSettingsError({
+        settingsPath,
+        operation: "create-provider-instance",
+        providerInstanceId: mutation.instanceId,
+      }),
+    );
+  }
+  return Effect.void;
+}
+
 export class ServerSettingsService extends Context.Service<
   ServerSettingsService,
   {
@@ -199,6 +250,17 @@ export class ServerSettingsService extends Context.Service<
     readonly updateSettings: (
       patch: ServerSettingsPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
+
+    /** Apply a patch and one provider-instance mutation against the same latest settings snapshot. */
+    readonly updateProviderInstance: (
+      mutation: ProviderInstanceMutation,
+      patch?: ServerSettingsPatch,
+    ) => Effect.Effect<ServerSettings, ServerSettingsError>;
+
+    /** Run an effect against a settings snapshot while settings writes are paused. */
+    readonly withSettingsSnapshot: <A, E, R>(
+      use: (settings: ServerSettings) => Effect.Effect<A, E, R>,
+    ) => Effect.Effect<A, E | ServerSettingsError, R>;
 
     /** Stream of settings change events. */
     readonly streamChanges: Stream.Stream<ServerSettings>;
@@ -220,23 +282,48 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
     const merged = deepMerge(DEFAULT_SERVER_SETTINGS, overrides);
     const initialSettings = yield* normalizeServerSettings(merged);
     const currentSettingsRef = yield* Ref.make<ServerSettings>(initialSettings);
+    const writeSemaphore = yield* Semaphore.make(1);
+    const getSettings = Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider));
+
+    const updateTestSettings = (
+      update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+    ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+      writeSemaphore.withPermits(1)(
+        Ref.get(currentSettingsRef).pipe(
+          Effect.flatMap(update),
+          Effect.flatMap(normalizeServerSettings),
+          Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
+          Effect.map(resolveTextGenerationProvider),
+        ),
+      );
 
     return {
       start: Effect.void,
       ready: Effect.void,
-      getSettings: Ref.get(currentSettingsRef).pipe(Effect.map(resolveTextGenerationProvider)),
+      getSettings,
       updateSettings: (patch) =>
-        Ref.get(currentSettingsRef).pipe(
-          Effect.map((currentSettings) =>
+        updateTestSettings((currentSettings) =>
+          Effect.succeed(
             applyServerSettingsPatch(
               currentSettings,
               restoreRedactedProviderEnvironmentValues(currentSettings, patch),
             ),
           ),
-          Effect.flatMap(normalizeServerSettings),
-          Effect.tap((nextSettings) => Ref.set(currentSettingsRef, nextSettings)),
-          Effect.map(resolveTextGenerationProvider),
         ),
+      updateProviderInstance: (mutation, patch = {}) =>
+        updateTestSettings((currentSettings) =>
+          Effect.gen(function* () {
+            yield* ensureProviderInstanceMutationAllowed(
+              currentSettings,
+              mutation,
+              "test settings",
+            );
+            const patched = applyServerSettingsPatch(currentSettings, patch);
+            return applyProviderInstanceMutation(patched, mutation);
+          }),
+        ),
+      withSettingsSnapshot: (use) =>
+        writeSemaphore.withPermits(1)(getSettings.pipe(Effect.flatMap(use))),
       streamChanges: Stream.empty,
       subscribeChanges: Effect.succeed(Stream.empty),
     } satisfies ServerSettingsService["Service"];
@@ -245,7 +332,35 @@ const makeTest = (overrides: DeepPartial<ServerSettings> = {}) =>
 export const layerTest = (overrides: DeepPartial<ServerSettings> = {}) =>
   Layer.effect(ServerSettingsService, makeTest(overrides));
 
-const ServerSettingsJson = fromLenientJson(ServerSettings);
+// Migrate saved token delivery without accepting it in settings writes or
+// letting one retired value reset the rest of the environment's settings.
+const PersistedResponseStreamingMode = Schema.Union([
+  ResponseStreamingMode,
+  Schema.Literal("token"),
+]).pipe(
+  Schema.decodeTo(
+    ResponseStreamingMode,
+    SchemaTransformation.transform({
+      decode: (mode) => (mode === "token" ? "paragraph" : mode),
+      encode: (mode) => mode,
+    }),
+  ),
+);
+const ServerSettingsJson = fromLenientJson(
+  Schema.Struct({
+    ...ServerSettings.fields,
+    responseStreamingMode: PersistedResponseStreamingMode.pipe(
+      Schema.withDecodingDefault(Effect.succeed("paragraph" as const)),
+    ),
+    projectSettingsOverrides: Schema.Record(
+      ProjectId,
+      Schema.Struct({
+        ...ProjectSettingsOverrides.fields,
+        responseStreamingMode: Schema.optionalKey(PersistedResponseStreamingMode),
+      }),
+    ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  }),
+);
 const decodeServerSettingsJsonExit = Schema.decodeUnknownExit(ServerSettingsJson);
 
 const resolveTextGenerationProvider = (settings: ServerSettings): ServerSettings => settings;
@@ -546,26 +661,53 @@ const make = Effect.gen(function* () {
     yield* Deferred.succeed(startedDeferred, undefined).pipe(Effect.orDie);
   });
 
+  const updateAndPersistSettings = (
+    update: (current: ServerSettings) => Effect.Effect<ServerSettings, ServerSettingsError>,
+  ): Effect.Effect<ServerSettings, ServerSettingsError> =>
+    writeSemaphore.withPermits(1)(
+      Effect.gen(function* () {
+        const current = yield* getSettingsFromCache;
+        const next = yield* normalizeServerSettings(yield* update(current));
+        yield* writeSettingsAtomically(next);
+        yield* Cache.set(settingsCache, cacheKey, next);
+        yield* emitChange(next);
+        return resolveTextGenerationProvider(next);
+      }),
+    );
+
+  const withSettingsSnapshot: ServerSettingsService["Service"]["withSettingsSnapshot"] = (use) =>
+    writeSemaphore.withPermits(1)(
+      getSettingsFromCache.pipe(Effect.map(resolveTextGenerationProvider), Effect.flatMap(use)),
+    );
+
   return {
     start,
     ready: Deferred.await(startedDeferred),
     getSettings: getSettingsFromCache.pipe(Effect.map(resolveTextGenerationProvider)),
     updateSettings: (patch) =>
-      writeSemaphore.withPermits(1)(
+      updateAndPersistSettings((current) =>
+        Effect.succeed(
+          applyServerSettingsPatch(
+            current,
+            restoreRedactedProviderEnvironmentValues(current, patch),
+          ),
+        ),
+      ),
+    updateProviderInstance: (mutation, patch = {}) =>
+      updateAndPersistSettings((current) =>
         Effect.gen(function* () {
-          const current = yield* getSettingsFromCache;
-          const next = yield* normalizeServerSettings(
-            applyServerSettingsPatch(
-              current,
-              restoreRedactedProviderEnvironmentValues(current, patch),
-            ),
+          yield* ensureProviderInstanceMutationAllowed(current, mutation, settingsPath);
+          const patched = applyServerSettingsPatch(
+            current,
+            restoreRedactedProviderEnvironmentValues(current, patch),
           );
-          yield* writeSettingsAtomically(next);
-          yield* Cache.set(settingsCache, cacheKey, next);
-          yield* emitChange(next);
-          return resolveTextGenerationProvider(next);
+          return applyProviderInstanceMutation(
+            patched,
+            restoreRedactedProviderInstanceMutation(current, mutation),
+          );
         }),
       ),
+    withSettingsSnapshot,
     get streamChanges() {
       return Stream.fromPubSub(changesPubSub).pipe(Stream.map(resolveTextGenerationProvider));
     },

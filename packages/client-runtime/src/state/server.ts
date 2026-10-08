@@ -14,12 +14,14 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
-import { EnvironmentRegistry } from "../connection/registry.ts";
-import { EnvironmentSupervisor } from "../connection/supervisor.ts";
+import * as EnvironmentRegistry from "../connection/registry.ts";
+import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
-import { EnvironmentCacheStore } from "../platform/persistence.ts";
+import * as Persistence from "../platform/persistence.ts";
 import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
+import { runCachePersistence } from "./cachePersistence.ts";
 import {
+  createAtomCommandScheduler,
   createEnvironmentRpcCommand,
   createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
@@ -49,8 +51,8 @@ const cachedConfigSnapshotEvent = (config: ServerConfig): ServerConfigStreamEven
 
 const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState.make")(
   function* () {
-    const supervisor = yield* EnvironmentSupervisor;
-    const cache = yield* EnvironmentCacheStore;
+    const supervisor = yield* EnvironmentSupervisor.EnvironmentSupervisor;
+    const cache = yield* Persistence.EnvironmentCacheStore;
     const environmentId = supervisor.target.environmentId;
     const cachedConfig = yield* cache
       .loadServerConfig(environmentId)
@@ -87,21 +89,29 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
         ),
       );
 
-    yield* Stream.fromQueue(persistence).pipe(
-      Stream.debounce("500 millis"),
-      Stream.runForEach((config) =>
-        persist(config).pipe(
-          Effect.tap((saved) =>
-            saved
-              ? Ref.update(pendingPersistence, (pending) =>
-                  Option.isSome(pending) && pending.value === config ? Option.none() : pending,
-                )
-              : Effect.void,
-          ),
+    const persistPending = Effect.fn("EnvironmentServerConfigState.persistPending")(function* (
+      config: ServerConfig,
+    ) {
+      if (!(yield* persist(config))) {
+        return;
+      }
+      yield* Ref.update(pendingPersistence, (pending) =>
+        Option.isSome(pending) && pending.value === config ? Option.none() : pending,
+      );
+    });
+
+    yield* Effect.addFinalizer(() =>
+      Ref.get(pendingPersistence).pipe(
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.void,
+            onSome: (config) => persist(config).pipe(Effect.asVoid),
+          }),
         ),
       ),
-      Effect.forkScoped,
     );
+
+    yield* runCachePersistence(persistence, persistPending).pipe(Effect.forkScoped);
 
     yield* subscribe(WS_METHODS.subscribeServerConfig, { environmentThemes: true }).pipe(
       Stream.runForEach((event) =>
@@ -116,16 +126,6 @@ const makeEnvironmentServerConfigState = Effect.fn("EnvironmentServerConfigState
       Effect.forkScoped,
     );
 
-    yield* Effect.addFinalizer(() =>
-      Ref.get(pendingPersistence).pipe(
-        Effect.flatMap(
-          Option.match({
-            onNone: () => Effect.void,
-            onSome: (config) => persist(config).pipe(Effect.asVoid),
-          }),
-        ),
-      ),
-    );
     return state;
   },
 );
@@ -152,7 +152,10 @@ function serverConfigStateChanges(environmentId: EnvironmentId) {
 
 function projectServerWelcome(
   current: Option.Option<ServerLifecycleWelcomePayload>,
-  event: { readonly type: "welcome" | "ready"; readonly payload: unknown },
+  event: {
+    readonly type: "welcome" | "ready" | "legacyThreadMigration";
+    readonly payload: unknown;
+  },
 ): readonly [
   Option.Option<ServerLifecycleWelcomePayload>,
   ReadonlyArray<ServerLifecycleWelcomePayload>,
@@ -177,13 +180,21 @@ function resolveServerConfigValue(
 }
 
 export function createServerEnvironmentAtoms<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | EnvironmentCacheStore | R, E>,
+  runtime: Atom.AtomRuntime<
+    EnvironmentRegistry.EnvironmentRegistry | Persistence.EnvironmentCacheStore | R,
+    E
+  >,
   options: {
     readonly initialConfigValueAtom: (
       environmentId: EnvironmentId,
     ) => Atom.Atom<ServerConfig | null>;
   },
 ) {
+  const configScheduler = createAtomCommandScheduler();
+  const configConcurrency = {
+    mode: "serial" as const,
+    key: ({ environmentId }: { readonly environmentId: string }) => environmentId,
+  };
   const configProjectionFamily = Atom.family((environmentId: EnvironmentId) =>
     runtime
       .atom(serverConfigStateChanges(environmentId))
@@ -222,6 +233,13 @@ export function createServerEnvironmentAtoms<R, E>(
     ),
   );
 
+  const updateSettings = createEnvironmentRpcCommand(runtime, {
+    label: "environment-data:server:update-settings",
+    tag: WS_METHODS.serverUpdateSettings,
+    scheduler: configScheduler,
+    concurrency: configConcurrency,
+  });
+
   return {
     configValueAtom,
     settingsValueAtom,
@@ -254,6 +272,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.providerListSlashCommands,
       staleTimeMs: 5 * 60_000,
     }),
+    /** Live scheduled-task list: snapshot on subscribe, fresh list after every server-side change. */
+    scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:scheduled-tasks:live",
+      tag: WS_METHODS.scheduledTasksSubscribe,
+    }),
     configProjection,
     welcome: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:welcome",
@@ -263,29 +286,59 @@ export function createServerEnvironmentAtoms<R, E>(
           Stream.mapAccum(Option.none<ServerLifecycleWelcomePayload>, projectServerWelcome),
         ),
     }),
-    updateSettings: createEnvironmentRpcCommand(runtime, {
-      label: "environment-data:server:update-settings",
-      tag: WS_METHODS.serverUpdateSettings,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId }) => environmentId,
-      },
+    legacyThreadMigration: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:legacy-thread-migration",
+      tag: WS_METHODS.subscribeServerLifecycle,
+      transform: (stream) =>
+        stream.pipe(
+          Stream.filterMap((event) =>
+            event.type === "legacyThreadMigration"
+              ? Result.succeed(event.payload)
+              : Result.failVoid,
+          ),
+        ),
     }),
+    updateSettings,
+    // Provider-instance mutations share the settings command and its
+    // environment-serial scheduler. The named boundary keeps clients on the
+    // atomic map-entry payload instead of rebuilding a stale whole map.
+    mutateProviderInstance: updateSettings,
     upsertKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:upsert-keybinding",
       tag: WS_METHODS.serverUpsertKeybinding,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId }) => environmentId,
-      },
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
     }),
     removeKeybinding: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:remove-keybinding",
       tag: WS_METHODS.serverRemoveKeybinding,
-      concurrency: {
-        mode: "serial",
-        key: ({ environmentId }) => environmentId,
-      },
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    upsertScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:scheduled-task:upsert",
+      tag: WS_METHODS.scheduledTasksUpsert,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    setScheduledTaskEnabled: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:scheduled-task:set-enabled",
+      tag: WS_METHODS.scheduledTasksSetEnabled,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    deleteScheduledTask: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:scheduled-task:delete",
+      tag: WS_METHODS.scheduledTasksDelete,
+      scheduler: configScheduler,
+      concurrency: configConcurrency,
+    }),
+    // Deliberately not on the config lane: run-now blocks until the run is
+    // dispatched, and a slow run must not stall settings/keybinding/provider
+    // mutations (or other scheduled-task edits) queued behind it.
+    runScheduledTaskNow: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:scheduled-task:run-now",
+      tag: WS_METHODS.scheduledTasksRunNow,
     }),
   };
 }

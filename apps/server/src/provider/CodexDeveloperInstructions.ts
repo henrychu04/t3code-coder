@@ -1,7 +1,44 @@
 import type { ProviderInteractionMode } from "@t3tools/contracts";
+import type { V2TurnStartParams__AdditionalContextEntry } from "effect-codex-app-server/schema";
+import { buildRuntimeInstructions } from "./RuntimeInstructions.ts";
 
-export const codexPlanModeDeveloperInstructions =
-  (): string => `<collaboration_mode># Plan Mode (Conversational)
+import {
+  T3_CODE_BROWSER_TOOL_INSTRUCTIONS,
+  T3_CODE_ORCHESTRATION_INSTRUCTIONS,
+} from "./T3OrchestrationInstructions.ts";
+
+const T3_CODE_DEVICE_TOOL_INSTRUCTIONS = `## T3 Code devices
+
+The \`t3-code\` MCP server also exposes \`device_*\` tools for iOS Simulators and Android Emulators on this environment. For mobile verification, call \`device_list\`, then \`device_open\` so the user can watch the device in their Device panel; its result explains how to drive the device. Driving happens through the \`agent-device\` CLI, using the exact launcher path returned by \`device_open\`. Keep the host config and session flags returned by \`device_open\` on every command so concurrent devices stay independent: prefer \`agent-device snapshot -i\` refs over coordinates, and use \`device_screenshot\` when you need to see the screen. Prefer these tools and \`agent-device\` for opening and driving devices. Platform tools such as \`xcrun simctl\` and \`adb\` remain available for anything they do not cover, such as builds, logs, or port forwarding. If \`device_list\` reports a platform as unavailable, say so.`;
+
+export interface T3CodeToolAvailability {
+  readonly browser: boolean;
+  readonly device: boolean;
+}
+
+const normalizeAvailability = (
+  availability: boolean | T3CodeToolAvailability,
+): T3CodeToolAvailability =>
+  typeof availability === "boolean" ? { browser: availability, device: false } : availability;
+
+/**
+ * Each block is omitted entirely when its tools aren't attached. Describing
+ * `preview_*` or `device_*` tools that aren't in the turn's tool list would be
+ * worse than saying nothing: the instructions actively steer the model away
+ * from Playwright, agent-browser, and raw simctl/adb, so leaving them in would
+ * talk it out of the only automation it still has.
+ */
+const toolInstructions = (availability: boolean | T3CodeToolAvailability): string => {
+  const tools = normalizeAvailability(availability);
+  return [
+    tools.browser ? T3_CODE_BROWSER_TOOL_INSTRUCTIONS : "",
+    tools.device ? T3_CODE_DEVICE_TOOL_INSTRUCTIONS : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+};
+
+const CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Plan Mode (Conversational)
 
 You work in 3 phases, and you should *chat your way* to a great plan before finalizing it. A great plan is very detailed-intent- and implementation-wise-so that it can be handed to another engineer or agent to be implemented right away. It must be **decision complete**, where the implementer does not need to make any decisions.
 
@@ -131,8 +168,7 @@ Only produce at most one \`<proposed_plan>\` block per turn, and only when you a
 If the user stays in Plan mode and asks for revisions after a prior \`<proposed_plan>\`, any new \`<proposed_plan>\` must be a complete replacement. If the user indicates that the prior plan is not acceptable but does not provide enough information to produce a complete replacement, address the concern and continue planning without producing a \`<proposed_plan>\` block. If the follow-up neither requires changes nor calls the plan into question (e.g. clarifying question), answer it before the block, then reproduce the prior \`<proposed_plan>\` unchanged.
 </collaboration_mode>`;
 
-export const codexDefaultModeDeveloperInstructions =
-  (): string => `<collaboration_mode># Collaboration Mode: Default
+const CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS = `<collaboration_mode># Collaboration Mode: Default
 
 You are now in Default mode. Any previous instructions for other modes (e.g. Plan mode) are no longer active.
 
@@ -151,30 +187,13 @@ export interface CodexRuntimeInfo {
   readonly reasoningEffort: string;
 }
 
-// Values come from trusted config, but keep the block single-line regardless.
-function toSingleLine(value: string): string {
-  return value.replaceAll(/\s+/g, " ").trim();
-}
-
+/** Mode prompt for `turn/start.collaborationMode.settings.developer_instructions`. */
 export function buildCodexDeveloperInstructions(interactionMode: ProviderInteractionMode): string {
   return interactionMode === "plan"
-    ? codexPlanModeDeveloperInstructions()
-    : codexDefaultModeDeveloperInstructions();
+    ? CODEX_PLAN_MODE_DEVELOPER_INSTRUCTIONS
+    : CODEX_DEFAULT_MODE_DEVELOPER_INSTRUCTIONS;
 }
 
-export function buildCodexAdditionalContext(
-  runtime: CodexRuntimeInfo,
-): Record<string, { kind: "application"; value: string }> {
-  const model = toSingleLine(runtime.model);
-  const name = toSingleLine(runtime.modelName ?? "");
-  const modelLabel = name && name !== model ? `${name} (model slug: ${model})` : model;
-  return {
-    t3_code_runtime: {
-      kind: "application",
-      value: `<runtime_info>In case you're asked: you are running in T3 Code through the Codex harness, as ${modelLabel} with ${toSingleLine(runtime.reasoningEffort)} reasoning effort. No need to mention this otherwise. You can embed images and videos in your response using Markdown with absolute file paths.</runtime_info>`,
-    },
-  };
-}
 /**
  * T3 Code context for `turn/start.additionalContext`. Codex renders each entry
  * as a `<key>value</key>` developer message and resends it only when the value
@@ -184,3 +203,23 @@ export function buildCodexAdditionalContext(
  * its own text for a mode, as newer models do, Codex uses that text and drops
  * the client's `developer_instructions` entirely.
  */
+export function buildCodexAdditionalContext(
+  runtime: CodexRuntimeInfo,
+  /**
+   * Whether the `t3-code` MCP server is attached to this turn. Callers derive
+   * it from the session's actual MCP configuration rather than re-reading the
+   * setting, so the prompt cannot claim tools the turn doesn't have.
+   */
+  toolsAvailable: boolean | T3CodeToolAvailability = true,
+): Record<string, V2TurnStartParams__AdditionalContextEntry> {
+  const tools = toolInstructions(toolsAvailable);
+  // Separate keys keep each value under Codex's per-entry token cap.
+  return {
+    t3_code_orchestration: { kind: "application", value: T3_CODE_ORCHESTRATION_INSTRUCTIONS },
+    t3_code_runtime: {
+      kind: "application",
+      value: buildRuntimeInstructions({ harness: "Codex", ...runtime }),
+    },
+    ...(tools ? { t3_code_tools: { kind: "application", value: tools } } : {}),
+  };
+}

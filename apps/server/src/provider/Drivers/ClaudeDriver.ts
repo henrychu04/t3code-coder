@@ -11,7 +11,7 @@ import { discoverClaudeSkills } from "./ClaudeSkills.ts";
  * ClaudeDriver — `ProviderDriver` for the workspace Claude Code CLI runtime.
  *
  * A plain value whose `create()` returns one `ProviderInstance` bundling
- * `snapshot` / `adapter` / `textGeneration`
+ * `snapshot` / `orchestrationAdapter` / `textGeneration`
  * closures captured over the per-instance `ClaudeSettings`.
  *
  * The Claude snapshot probe may invoke a secondary probe
@@ -35,12 +35,15 @@ import { makeClaudeTextGeneration } from "../../textGeneration/ClaudeTextGenerat
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
+  createClaudeAdapterV2,
+  type ClaudeAdapterV2DriverEnv,
+} from "../../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "../providerUpdateSettings.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeClaudeAdapter } from "../Layers/ClaudeAdapter.ts";
 import {
   checkClaudeProviderStatus,
   makePendingClaudeProvider,
@@ -82,6 +85,7 @@ const UPDATE = makePackageManagedProviderMaintenanceResolver({
 });
 
 export type ClaudeDriverEnv =
+  | ClaudeAdapterV2DriverEnv
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
   | FileSystem.FileSystem
@@ -142,12 +146,28 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
       const classifyAndStamp = (draft: ServerProviderDraft): ServerProvider =>
         stampIdentity(applyBundledModelManifest(draft, DRIVER_KIND));
 
-      const adapterOptions = {
-        instanceId,
-        environment: processEnv,
-        modelCatalog,
-      };
-      const adapter = yield* makeClaudeAdapter(effectiveConfig, adapterOptions);
+      // Coder: there are no subscription usage-limit snapshots to update.
+      const orchestrationAdapter = yield* createClaudeAdapterV2(
+        {
+          instanceId,
+          displayName,
+          accentColor,
+          environment,
+          enabled,
+          config,
+        },
+        {},
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to build Claude orchestration adapter.",
+              cause,
+            }),
+        ),
+      );
       const textGeneration = yield* makeClaudeTextGeneration(
         effectiveConfig,
         processEnv,
@@ -266,7 +286,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv> = {
             })),
           ),
         listSlashCommands: (commandCwd) => Cache.get(slashCommandsByCwd, commandCwd),
-        adapter,
+        orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;
     }),

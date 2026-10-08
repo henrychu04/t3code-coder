@@ -7,12 +7,9 @@ import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
 export async function readAttachmentBytes(
   handle: Pick<FileHandle, "read">,
   sizeBytes: number,
+  maxBytes: number = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
 ): Promise<Buffer> {
-  if (
-    !Number.isSafeInteger(sizeBytes) ||
-    sizeBytes <= 0 ||
-    sizeBytes > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES
-  ) {
+  if (!Number.isSafeInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > maxBytes) {
     throw new Error("Attachment size is invalid.");
   }
   const bytes = Buffer.alloc(sizeBytes + 1);

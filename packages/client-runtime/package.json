@@ -7,13 +7,13 @@
       "types": "./src/work-log/presentation.ts",
       "default": "./src/work-log/presentation.ts"
     },
+    "./work-log/tool-presentation": {
+      "types": "./src/work-log/toolPresentation.ts",
+      "default": "./src/work-log/toolPresentation.ts"
+    },
     "./work-log/command-label": {
       "types": "./src/work-log/commandLabel.ts",
       "default": "./src/work-log/commandLabel.ts"
-    },
-    "./pending-requests": {
-      "types": "./src/pendingRequests.ts",
-      "default": "./src/pendingRequests.ts"
     },
     "./connection": {
       "types": "./src/connection/index.ts",
@@ -189,6 +189,66 @@
     "./state/filesystem": {
       "types": "./src/state/filesystem.ts",
       "default": "./src/state/filesystem.ts"
+    },
+    "./composerThreadItems": {
+      "types": "./src/composerThreadItems.ts",
+      "default": "./src/composerThreadItems.ts"
+    },
+    "./handoff": {
+      "types": "./src/handoff.ts",
+      "default": "./src/handoff.ts"
+    },
+    "./user-message": {
+      "types": "./src/userMessage.ts",
+      "default": "./src/userMessage.ts"
+    },
+    "./t3ToolSummary": {
+      "types": "./src/t3ToolSummary.ts",
+      "default": "./src/t3ToolSummary.ts"
+    },
+    "./state/item-support": {
+      "types": "./src/state/itemSupport.ts",
+      "default": "./src/state/itemSupport.ts"
+    },
+    "./state/orchestration-v2-projection": {
+      "types": "./src/state/orchestrationV2Projection.ts",
+      "default": "./src/state/orchestrationV2Projection.ts"
+    },
+    "./state/subagent-display": {
+      "types": "./src/state/subagentDisplay.ts",
+      "default": "./src/state/subagentDisplay.ts"
+    },
+    "./state/thread-relationships": {
+      "types": "./src/state/threadRelationships.ts",
+      "default": "./src/state/threadRelationships.ts"
+    },
+    "./state/thread-checkpoints": {
+      "types": "./src/state/threadCheckpoints.ts",
+      "default": "./src/state/threadCheckpoints.ts"
+    },
+    "./state/thread-execution": {
+      "types": "./src/state/threadExecution.ts",
+      "default": "./src/state/threadExecution.ts"
+    },
+    "./state/thread-requests": {
+      "types": "./src/state/threadRequests.ts",
+      "default": "./src/state/threadRequests.ts"
+    },
+    "./state/thread-workflows": {
+      "types": "./src/state/threadWorkflows.ts",
+      "default": "./src/state/threadWorkflows.ts"
+    },
+    "./state/composer-dispatch": {
+      "types": "./src/state/composerDispatch.ts",
+      "default": "./src/state/composerDispatch.ts"
+    },
+    "./state/thread-subagents": {
+      "types": "./src/state/threadSubagents.ts",
+      "default": "./src/state/threadSubagents.ts"
+    },
+    "./state/turn-item-presentation": {
+      "types": "./src/state/turnItemPresentation.ts",
+      "default": "./src/state/turnItemPresentation.ts"
     }
   },
   "scripts": {

@@ -14,7 +14,7 @@ import {
   type ModelSelection,
   TextGenerationError,
 } from "@t3tools/contracts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
+import { formatGeneratedBranchName, sanitizeFeatureBranchName } from "@t3tools/shared/git";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
@@ -326,7 +326,10 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
 
   const generateBranchName: TextGeneration.TextGeneration["Service"]["generateBranchName"] =
     Effect.fn("CodexTextGeneration.generateBranchName")(function* (input) {
-      const { prompt, outputSchema } = buildBranchNamePrompt({ message: input.message });
+      const { prompt, outputSchema } = buildBranchNamePrompt({
+        message: input.message,
+        naming: input.naming,
+      });
       const imagePaths = yield* resolveImagePaths(input, "generateBranchName");
       const generated = yield* runCodexJson({
         operation: "generateBranchName",
@@ -336,7 +339,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         modelSelection: input.modelSelection,
         imagePaths,
       }).pipe(Effect.scoped);
-      return { branch: sanitizeBranchFragment(generated.branch) };
+      return { branch: formatGeneratedBranchName(generated.branch, input.naming) };
     });
 
   const generateThreadTitle: TextGeneration.TextGeneration["Service"]["generateThreadTitle"] =

@@ -7,7 +7,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 
 import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { useEnvironments } from "../../state/environments";
+import { usePullRequestsSupported } from "../../state/environments";
 import {
   resolveEnvironmentIdentificationPillLabel,
   resolveSidebarStageBackdropVariant,
@@ -148,10 +148,7 @@ export const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             ? "pull-requests"
             : null,
   });
-  const { environments } = useEnvironments();
-  const pullRequestsSupported = environments.some(
-    (environment) => environment.serverConfig?.environment.capabilities.pullRequests === true,
-  );
+  const pullRequestsSupported = usePullRequestsSupported();
   const closeMobileSidebar = useCallback(() => {
     if (isMobile) {
       setOpenMobile(false);

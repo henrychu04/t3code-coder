@@ -52,7 +52,7 @@ function session(client: WsRpcProtocolClient): RpcSession {
       [WS_METHODS.pullRequestsInvalidate]:
         client[WS_METHODS.pullRequestsInvalidate] ?? (() => Effect.void),
     },
-    initialConfig: Effect.never,
+    initialConfig: client[WS_METHODS.serverGetConfig]?.({}).pipe(Effect.orDie) ?? Effect.never,
     subscribeServerConfig: (input) => client.subscribeServerConfig(input),
     ready: Effect.void,
     probe: Effect.void,
@@ -402,6 +402,45 @@ it.effect("refreshes pull request activity after a comment is updated", () =>
         (yield* AtomRegistry.getResult(registry, activity, { suspendOnWaiting: true })).comments[0]
           ?.body,
       ).toBe("after turn");
+    }),
+  ),
+);
+
+it.effect("refreshes checks without refreshing full detail", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let detailReads = 0;
+      let checksReads = 0;
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.never,
+        [WS_METHODS.pullRequestsDetail]: () =>
+          Effect.sync(() => {
+            detailReads++;
+            return { title: "PR" };
+          }),
+        [WS_METHODS.pullRequestsChecks]: () =>
+          Effect.sync(() => {
+            checksReads++;
+            return { state: checksReads === 1 ? "open" : "merged", checks: [] };
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const target = {
+        environmentId: TARGET.environmentId,
+        input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
+      };
+      const detail = atoms.detail(target);
+      const checks = atoms.checks(target);
+      yield* AtomRegistry.mount(registry, detail);
+      yield* AtomRegistry.mount(registry, checks);
+      yield* AtomRegistry.getResult(registry, detail);
+      expect((yield* AtomRegistry.getResult(registry, checks))?.state).toBe("open");
+      registry.refresh(checks);
+      expect(
+        (yield* AtomRegistry.getResult(registry, checks, { suspendOnWaiting: true }))?.state,
+      ).toBe("merged");
+      expect(detailReads).toBe(1);
+      expect(checksReads).toBe(2);
     }),
   ),
 );

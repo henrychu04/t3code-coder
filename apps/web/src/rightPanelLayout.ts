@@ -38,3 +38,5 @@ export function resolveRightPanelWidths(
     maxWidth,
   };
 }
+
+export type ThreadPanelPresentation = "inline" | "popover";

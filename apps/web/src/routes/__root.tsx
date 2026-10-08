@@ -25,8 +25,8 @@ import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { ConfirmDialogHost } from "../components/ConfirmDialogHost";
+import { LegacyThreadMigrationToast } from "../components/LegacyThreadMigrationToast";
 import { ThreadNotificationCoordinator } from "../components/ThreadNotificationCoordinator";
-import { QueuedMessageSender } from "../components/QueuedMessageSender";
 import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoordinator";
 import { SlowRpcRequestToastCoordinator } from "../components/SlowRpcRequestToastCoordinator";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
@@ -113,8 +113,8 @@ function RootRouteView() {
         <CustomSnoozeDialogHost />
         <ProjectCloneToastCoordinator />
         <SlowRpcRequestToastCoordinator />
+        <LegacyThreadMigrationToast />
         <ThreadNotificationCoordinator />
-        <QueuedMessageSender />
         <EventRouter />
         {appShell}
         <ThemeEditorHost />

@@ -8,7 +8,11 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useMemo } from "react";
 
 import { environmentCatalog } from "../connection/catalog";
-import { environmentPresentations, useEnvironmentPresentation } from "./presentation";
+import {
+  environmentPresentations,
+  environmentSummaries,
+  useEnvironmentPresentation,
+} from "./presentation";
 
 export interface EnvironmentPresentation extends BaseEnvironmentPresentation {
   readonly environmentId: EnvironmentId;
@@ -65,4 +69,24 @@ export function useEnvironment(
 export function useEnvironmentKeybindings(environmentId: EnvironmentId | null) {
   const keybindings = useEnvironment(environmentId)?.serverConfig?.keybindings;
   return useMemo(() => mergeWithDefaultKeybindings(keybindings ?? []), [keybindings]);
+}
+
+export function useEnvironmentIds() {
+  return useAtomValue(environmentSummaries.environmentIdsAtom);
+}
+
+export function useEnvironmentIdentities() {
+  return useAtomValue(environmentSummaries.identitiesAtom);
+}
+
+export function usePullRequestsSupported() {
+  return useAtomValue(environmentSummaries.pullRequestsSupportedAtom);
+}
+
+export function useEnvironmentMachines() {
+  return useAtomValue(environmentSummaries.machineByIdAtom);
+}
+
+export function useConnectedEnvironmentIds() {
+  return useAtomValue(environmentSummaries.connectedEnvironmentIdsAtom);
 }

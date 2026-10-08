@@ -1,0 +1,207 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { type ProviderReplayTranscript } from "@t3tools/contracts";
+import * as CodexClient from "effect-codex-app-server/client";
+import * as CodexReplay from "effect-codex-app-server/replay";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as PlatformError from "effect/PlatformError";
+import * as Predicate from "effect/Predicate";
+import * as Schema from "effect/Schema";
+
+import * as ServerConfig from "../../config.ts";
+import * as IdAllocator from "../IdAllocator.ts";
+import { ProviderAdapterOpenSessionError } from "../ProviderAdapter.ts";
+import { ProviderAdapterDriverCreateError } from "../ProviderAdapterDriver.ts";
+import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
+import type { OrchestratorV2ProviderReplayHarness } from "../testkit/ProviderReplayHarness.ts";
+import type { ProviderReplayGate } from "../testkit/ProviderReplayGate.testkit.ts";
+import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
+
+export class CodexReplayTranscriptDecodeError extends Schema.TaggedError<CodexReplayTranscriptDecodeError>()(
+  "CodexReplayTranscriptDecodeError",
+  {
+    driver: Schema.optional(Schema.String),
+    protocol: Schema.optional(Schema.String),
+    scenario: Schema.optional(Schema.String),
+    cause: Schema.Defect(),
+  },
+) {
+  override get message(): string {
+    return `Failed to decode Codex app-server replay transcript for scenario ${this.scenario ?? "<unknown>"}.`;
+  }
+}
+
+export const CodexOrchestratorReplayHarnessError = Schema.Union([
+  CodexReplayTranscriptDecodeError,
+  CodexReplay.CodexAppServerReplayError,
+  ProviderAdapterDriverCreateError,
+]);
+export type CodexOrchestratorReplayHarnessError = typeof CodexOrchestratorReplayHarnessError.Type;
+
+export function withCodexReplayChildMetadata(
+  client: CodexClient.CodexAppServerClient["Service"],
+  transcript: CodexReplay.CodexAppServerReplayTranscript,
+  readMetadata: (threadId: string) => Effect.Effect<unknown> = (threadId) =>
+    Effect.succeed({ thread: { id: threadId }, model: null }),
+): CodexClient.CodexAppServerClient["Service"] {
+  const childThreadIds = new Set(
+    transcript.entries.flatMap((entry) => {
+      if (entry.type !== "emit_inbound" || !Predicate.isObject(entry.frame)) return [];
+      const params = entry.frame.params;
+      if (!Predicate.isObject(params) || !Predicate.isObject(params.item)) return [];
+      const item = params.item;
+      if (item.type === "subAgentActivity" && typeof item.agentThreadId === "string") {
+        return [item.agentThreadId];
+      }
+      return item.type === "collabAgentToolCall" && Array.isArray(item.receiverThreadIds)
+        ? item.receiverThreadIds.filter(Predicate.isString)
+        : [];
+    }),
+  );
+  return {
+    ...client,
+    raw: {
+      ...client.raw,
+      request: (method, params) =>
+        method === "thread/resume" &&
+        Predicate.isObject(params) &&
+        params.excludeTurns === true &&
+        typeof params.threadId === "string" &&
+        childThreadIds.has(params.threadId)
+          ? readMetadata(params.threadId)
+          : client.raw.request(method, params),
+    },
+  };
+}
+
+function metadataFromTranscript(transcript: ProviderReplayTranscript): {
+  readonly provider?: string;
+  readonly protocol?: string;
+  readonly scenario?: string;
+} {
+  return {
+    provider: transcript.provider,
+    protocol: transcript.protocol,
+    scenario: transcript.scenario,
+  };
+}
+
+export function makeReplayServerConfig(
+  scenario: string,
+): Effect.Effect<
+  ServerConfig.ServerConfig["Service"],
+  PlatformError.PlatformError,
+  FileSystem.FileSystem | Path.Path
+> {
+  const safeScenario = scenario.replace(/[^a-z0-9_-]+/gi, "-");
+  // Coder: the trimmed workspace config has no tracing, OTLP, listener, or browser fields.
+  return Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const baseDir = yield* fs.makeTempDirectory({
+      prefix: `t3-orchestration-v2-codex-${safeScenario}-`,
+    });
+    const paths = yield* ServerConfig.deriveServerPaths(baseDir);
+    yield* ServerConfig.ensureServerDirectories(paths);
+    return { cwd: process.cwd(), baseDir, ...paths };
+  });
+}
+
+export function makeCodexProviderAdapterRegistryReplayLayer(input: {
+  readonly transcript: CodexReplay.CodexAppServerReplayTranscript;
+  readonly driver?: CodexReplay.CodexAppServerReplayDriver;
+}) {
+  const replayLayer =
+    input.driver === undefined
+      ? CodexReplay.layerReplay(input.transcript)
+      : CodexReplay.layerReplayWithDriver(input.driver);
+  const replayClientFactoryLayer = Layer.succeed(CodexAdapterV2.CodexAppServerClientFactory, {
+    open: (openInput) =>
+      Effect.gen(function* () {
+        const context = yield* Layer.build(replayLayer).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterOpenSessionError({
+                driver: CodexAdapterV2.CODEX_DRIVER_KIND,
+                providerSessionId: openInput.providerSessionId,
+                cause,
+              }),
+          ),
+        );
+        return yield* Effect.service(CodexClient.CodexAppServerClient).pipe(
+          Effect.map((client) => withCodexReplayChildMetadata(client, input.transcript)),
+          Effect.provide(context),
+        );
+      }),
+  });
+  const serverConfigLayer = Layer.effect(
+    ServerConfig.ServerConfig,
+    makeReplayServerConfig(input.transcript.scenario).pipe(Effect.orDie),
+  ).pipe(Layer.provide(NodeServices.layer));
+  const registryLayer = ProviderAdapterRegistry.makeDriverLayer({
+    drivers: [CodexAdapterV2.CodexAdapterV2Driver],
+    configMap: {
+      [CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID]: {
+        driver: CodexAdapterV2.CODEX_DRIVER_KIND,
+      },
+    },
+  }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        replayClientFactoryLayer,
+        serverConfigLayer,
+        NodeServices.layer,
+        IdAllocator.layer,
+      ),
+    ),
+  );
+
+  return registryLayer;
+}
+
+const decodeCodexAppServerReplayTranscript = Schema.decodeUnknownEffect(
+  CodexReplay.CodexAppServerReplayTranscript,
+);
+
+export const CodexOrchestratorReplayHarness: OrchestratorV2ProviderReplayHarness<
+  CodexReplay.CodexAppServerReplayTranscript,
+  CodexOrchestratorReplayHarnessError
+> = {
+  driver: CodexAdapterV2.CODEX_DRIVER_KIND,
+  decodeTranscript: (transcript) =>
+    decodeCodexAppServerReplayTranscript(transcript).pipe(
+      Effect.mapError(
+        (cause) =>
+          new CodexReplayTranscriptDecodeError({
+            ...metadataFromTranscript(transcript),
+            cause,
+          }),
+      ),
+    ),
+  makeProviderAdapterRegistryLayer: (
+    transcript,
+    options: { readonly replayGate?: ProviderReplayGate } = {},
+  ) => {
+    return Layer.effectContext(
+      Effect.gen(function* () {
+        const replayGate = options.replayGate;
+        if (replayGate !== undefined) {
+          yield* Effect.addFinalizer(() => Effect.sync(() => replayGate.releaseAll()));
+        }
+        const driver = yield* CodexReplay.makeReplayDriver(
+          transcript,
+          replayGate === undefined
+            ? {}
+            : {
+                beforeEmitInbound: (entry) =>
+                  Effect.promise((signal) => replayGate.beforeEmit(entry.label, signal)),
+              },
+        );
+        return yield* Layer.build(
+          makeCodexProviderAdapterRegistryReplayLayer({ transcript, driver }),
+        );
+      }),
+    );
+  },
+};

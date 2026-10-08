@@ -35,6 +35,7 @@ import {
 } from "@t3tools/contracts";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import { truncateTerminalBufferToBytes } from "@t3tools/shared/terminalBuffer";
 import * as DateTime from "effect/DateTime";
@@ -54,6 +55,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "../config.ts";
+import { expandHomePath } from "../pathExpansion.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as PtyAdapter from "./PtyAdapter.ts";
 
@@ -1183,7 +1185,8 @@ function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 function createTerminalSpawnEnv(
   baseEnv: NodeJS.ProcessEnv,
-  runtimeEnv?: Record<string, string> | null,
+  runtimeEnv: Record<string, string> | null | undefined,
+  platform: NodeJS.Platform,
 ): NodeJS.ProcessEnv {
   const spawnEnv: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(baseEnv)) {
@@ -1193,8 +1196,18 @@ function createTerminalSpawnEnv(
   }
   if (runtimeEnv) {
     for (const [key, value] of Object.entries(runtimeEnv)) {
-      spawnEnv[key] = value;
+      const existingKey =
+        platform === "win32"
+          ? Object.keys(spawnEnv).find((candidate) => candidate.toLowerCase() === key.toLowerCase())
+          : undefined;
+      spawnEnv[existingKey ?? key] =
+        key === "CODEX_HOME" || key === "CLAUDE_CONFIG_DIR" ? expandHomePath(value) : value;
     }
+  }
+  // An explicit empty override opts out for terminals started without a client.
+  // Otherwise both PTY backends feed truecolor-capable terminal clients.
+  if (!spawnEnv.COLORTERM && runtimeEnv?.COLORTERM === undefined) {
+    spawnEnv.COLORTERM = "truecolor";
   }
   return stripAppImageRuntimeEnv(spawnEnv);
 }
@@ -1232,7 +1245,7 @@ interface TerminalManagerOptions {
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.fn("TerminalManager.make")(function* () {
-  const { terminalLogsDir } = yield* ServerConfig.ServerConfig;
+  const { terminalLogsDir, providerStatusCacheDir, baseDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
@@ -2009,7 +2022,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const startResult = yield* Effect.result(
       Effect.gen(function* () {
         const shellCandidates = resolveShellCandidates(shellResolver, platform, baseEnv);
-        const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv);
+        const terminalEnv = createTerminalSpawnEnv(baseEnv, session.runtimeEnv, platform);
         const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
         ptyProcess = spawnResult.process;
         startedShell = spawnResult.shellLabel;

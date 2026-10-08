@@ -8,7 +8,7 @@ import * as NodeZlib from "node:zlib";
 
 import { MAX_REVIEW_DIFF_FILE_BYTES } from "@t3tools/contracts";
 
-import { ServerConfig } from "../config.ts";
+import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";

@@ -4,14 +4,13 @@ import { FetchHttpClient } from "effect/unstable/http";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
-import { reconcileProviderSessions } from "./coderRestartRecovery.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
-import * as AgentMergeRequests from "./agentMergeRequests/AgentMergeRequests.ts";
 import * as PullRequestReadCache from "./pullRequest/PullRequestReadCache.ts";
-import * as PullRequestSyncReactor from "./orchestration/PullRequestSyncReactor.ts";
+import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Scope from "effect/Scope";
 
@@ -31,33 +30,16 @@ import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as Keybindings from "./keybindings.ts";
-import { RuntimeReceiptBusLive } from "./orchestration/Layers/RuntimeReceiptBus.ts";
-import { ProviderRuntimeIngestionLive } from "./orchestration/Layers/ProviderRuntimeIngestion.ts";
-import { ProviderCommandReactorLive } from "./orchestration/Layers/ProviderCommandReactor.ts";
-import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor.ts";
-import { ThreadDeletionReactorLive } from "./orchestration/Layers/ThreadDeletionReactor.ts";
-import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";
-import * as ThreadSettlementReactor from "./orchestration/ThreadSettlementReactor.ts";
-import * as ThreadPullRequestReactor from "./orchestration/ThreadPullRequestReactor.ts";
-import { OrchestrationLayerLive } from "./orchestration/runtimeLayer.ts";
-import * as OrchestrationReactor from "./orchestration/Services/OrchestrationReactor.ts";
-import { CheckpointReactor } from "./orchestration/Services/CheckpointReactor.ts";
-import { ProviderCommandReactor } from "./orchestration/Services/ProviderCommandReactor.ts";
-import { ProviderRuntimeIngestionService } from "./orchestration/Services/ProviderRuntimeIngestion.ts";
-import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
-import * as ProviderSessionRuntime from "./persistence/ProviderSessionRuntime.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
-import * as ProjectSetupScriptRunner from "./project/ProjectSetupScriptRunner.ts";
-import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry.ts";
+import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
+import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
 import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
-import { ProviderServiceLive } from "./provider/Layers/ProviderService.ts";
-import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory.ts";
-import * as ProviderSessionReaper from "./provider/Services/ProviderSessionReaper.ts";
-import { ProviderSessionReaperLive } from "./provider/Layers/ProviderSessionReaper.ts";
+import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as TextGeneration from "./textGeneration/TextGeneration.ts";
@@ -74,34 +56,36 @@ import * as ProcessRunner from "./processRunner.ts";
 import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as CoderWs from "./ws.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
+import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
+import * as AgentMergeRequests from "./agentMergeRequests/AgentMergeRequests.ts";
+import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
+import {
+  OrchestrationEventInfrastructureLayerLive,
+  OrchestrationV2ProductionLayerLive,
+  ProjectServiceLayerLive,
+  ProjectSetupScriptRunnerLayerLive,
+} from "./orchestration-v2/runtimeLayer.ts";
+import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
+import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
+import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
+import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
+import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
+import * as ProviderRuntimeRecovery from "./orchestration-v2/ProviderRuntimeRecoveryService.ts";
+import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
+import * as ResourceCleanupService from "./orchestration-v2/ResourceCleanupService.ts";
+import * as RunFinalizationService from "./orchestration-v2/RunFinalizationService.ts";
+import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestService.ts";
+import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
+import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
 
-const CoderOrchestrationLayerLive = OrchestrationLayerLive.pipe(
-  Layer.provideMerge(SqlitePersistenceLayerLive),
-  Layer.provideMerge(RepositoryIdentityResolver.layer),
-);
-
-const CoderSettingsLive = ServerSettings.layer.pipe(Layer.provide(SqlitePersistenceLayerLive));
-
-const CoderProviderSessionDirectoryLive = ProviderSessionDirectoryLive.pipe(
-  Layer.provide(ProviderSessionRuntime.layer),
-);
+const CoderSettingsLive = ServerSettings.layer.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
 
 const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
   Layer.provide(ModelManifest.layer),
+  // Coder: no diagnostic provider event log files.
+  Layer.provide(ProviderEventLoggers.layer),
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(ScreenshotArtifacts.layer),
-);
-
-const CoderProviderLive = ProviderServiceLive.pipe(
-  Layer.provide(AgentMergeRequests.layer.pipe(Layer.provide(CoderOrchestrationLayerLive))),
-  Layer.provide(ProviderAdapterRegistryLive),
-  Layer.provideMerge(CoderProviderSessionDirectoryLive),
-  Layer.provideMerge(CoderProviderInstancesLive),
-);
-
-const CoderProviderRuntimeLive = ProviderSessionReaperLive.pipe(
-  Layer.provideMerge(CoderProviderLive),
-  Layer.provideMerge(CoderOrchestrationLayerLive),
 );
 
 const CoderVcsDriverRegistryLive = VcsDriverRegistry.layer.pipe(
@@ -110,6 +94,7 @@ const CoderVcsDriverRegistryLive = VcsDriverRegistry.layer.pipe(
 
 const CoderSourceControlLive = SourceControlProviderRegistry.layer.pipe(
   Layer.provideMerge(GitLabCli.layer),
+  Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderVcsDriverRegistryLive),
 );
 
@@ -127,25 +112,27 @@ const CoderTerminalLive = TerminalManager.layer.pipe(
   Layer.provideMerge(ProcessRunner.layer),
 );
 
-const CoderProjectSetupScriptRunnerLive = ProjectSetupScriptRunner.layer.pipe(
-  Layer.provideMerge(CoderOrchestrationLayerLive),
-  Layer.provideMerge(CoderTerminalLive),
+const CoderPullRequestsLive = PullRequestService.layer.pipe(
+  Layer.provide(PullRequestFilesViewed.layer),
+  Layer.provide(PullRequestReadCache.layer),
+  Layer.provide(PullRequestProviderRegistry.layer),
+  Layer.provide(CoderSourceControlLive),
+  Layer.provide(SourceControlRateLimit.layer),
 );
 
 const CoderGitManagerLive = GitManager.layer.pipe(
-  Layer.provide(SqlitePersistenceLayerLive),
+  // Per-project git settings resolve the acting thread's project.
+  Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
+  Layer.provideMerge(ProjectSetupScriptRunnerLayerLive),
+  Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderSourceControlLive),
   Layer.provideMerge(CoderTextGenerationLive),
-  Layer.provideMerge(CoderSettingsLive),
-  Layer.provideMerge(CoderProjectSetupScriptRunnerLive),
-  Layer.provideMerge(CoderProviderInstancesLive),
 );
 
 const CoderGitWorkflowLive = GitWorkflowService.layer.pipe(
-  Layer.provideMerge(CoderGitManagerLive),
-  Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderVcsDriverRegistryLive),
+  Layer.provideMerge(CoderGitManagerLive),
 );
 
 const CoderSourceControlRepositoriesLive = SourceControlRepositoryService.layer.pipe(
@@ -153,46 +140,120 @@ const CoderSourceControlRepositoriesLive = SourceControlRepositoryService.layer.
   Layer.provideMerge(CoderSourceControlLive),
 );
 
-const CoderVcsLive = Layer.mergeAll(
-  GitVcsDriver.layer,
-  CoderVcsDriverRegistryLive,
-  VcsProvisioningService.layer.pipe(Layer.provide(CoderVcsDriverRegistryLive)),
-  WorktreeSetupTracker.layer,
-  CoderGitWorkflowLive,
-  CoderSourceControlRepositoriesLive,
-  ProjectCloneTracker.layer.pipe(Layer.provide(CoderSourceControlRepositoriesLive)),
+const CoderVcsLive = Layer.empty.pipe(
+  Layer.provideMerge(VcsProjectConfig.layer),
+  Layer.provideMerge(CoderVcsDriverRegistryLive),
+  Layer.provideMerge(VcsProvisioningService.layer.pipe(Layer.provide(CoderVcsDriverRegistryLive))),
+  Layer.provideMerge(CoderGitWorkflowLive),
+  Layer.provideMerge(
+    ReviewService.layer.pipe(
+      Layer.provideMerge(GitVcsDriver.layer),
+      Layer.provideMerge(CoderVcsDriverRegistryLive),
+    ),
+  ),
+  Layer.provideMerge(CoderSourceControlRepositoriesLive),
+  Layer.provideMerge(
+    ProjectCloneTracker.layer.pipe(Layer.provide(CoderSourceControlRepositoriesLive)),
+  ),
   // Coder: provide the demand-only background policy and fork settings resolution.
-  VcsStatusBroadcaster.layer.pipe(
-    Layer.provide(CoderGitWorkflowLive),
-    Layer.provide(BackgroundPolicy.layer),
-    Layer.provide(
-      VcsStatusBroadcaster.autoPullPolicyLayer.pipe(
-        Layer.provide(CoderOrchestrationLayerLive),
-        Layer.provide(CoderSettingsLive),
+  Layer.provideMerge(
+    VcsStatusBroadcaster.layer.pipe(
+      Layer.provide(CoderGitWorkflowLive),
+      Layer.provide(BackgroundPolicy.layer),
+      Layer.provide(
+        VcsStatusBroadcaster.autoPullPolicyLayer.pipe(Layer.provide(ProjectStore.layer)),
       ),
     ),
   ),
-  ReviewService.layer.pipe(
-    Layer.provideMerge(GitVcsDriver.layer),
-    Layer.provideMerge(CoderVcsDriverRegistryLive),
-  ),
-);
-
-const CoderPullRequestsLive = PullRequestService.layer.pipe(
-  Layer.provide(PullRequestFilesViewed.layer.pipe(Layer.provide(SqlitePersistenceLayerLive))),
-  Layer.provide(PullRequestReadCache.layer),
-  Layer.provideMerge(PullRequestProviderRegistry.layer),
-  Layer.provideMerge(CoderSourceControlLive),
-  Layer.provideMerge(SourceControlRateLimit.layer),
-  Layer.provideMerge(CoderOrchestrationLayerLive),
 );
 
 const CoderCheckpointStoreLive = CheckpointStore.layer.pipe(
   Layer.provide(CoderVcsDriverRegistryLive),
 );
 
-const CoderCheckpointingLive = CheckpointDiffQuery.layer.pipe(
+// Coder: thread deletion closes terminals but never deletes attachments.
+const CoderResourceCleanupLive = Layer.effect(
+  ResourceCleanupService.ResourceCleanupService,
+  Effect.gen(function* () {
+    const terminals = yield* TerminalManager.TerminalManager;
+    return {
+      cleanupTerminals: (threadId: string) =>
+        terminals.close({ threadId, deleteHistory: true }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new ResourceCleanupService.ResourceCleanupError({
+                operation: "terminal",
+                threadId,
+                cause,
+              }),
+          ),
+        ),
+      cleanupAttachments: () => Effect.void,
+    };
+  }),
+);
+
+// Coder: one instance serves turn start, run finalization, and the startup binding.
+const CoderAgentMergeRequestsLive = AgentMergeRequests.layer;
+
+// Coder: run finalization also revokes the turn's workspace MR commands.
+const CoderRunFinalizationObserverLive = Layer.effect(
+  RunFinalizationService.RunFinalizationObserver,
+  Effect.gen(function* () {
+    const upstream = yield* RunFinalizationService.RunFinalizationObserver;
+    const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
+    return {
+      refreshAfterTurn: upstream.refreshAfterTurn,
+      refresh: (input) =>
+        upstream
+          .refresh(input)
+          .pipe(Effect.ensuring(agentMergeRequests.release(input.threadId, input.runId))),
+    };
+  }),
+).pipe(
+  Layer.provide(
+    RunFinalizationService.observerLive.pipe(
+      Layer.provide(ProjectionStoreV2.layer),
+      Layer.provide(CoderPullRequestsLive),
+      Layer.provide(ProjectServiceLayerLive),
+    ),
+  ),
+  Layer.provide(CoderAgentMergeRequestsLive),
+);
+
+// Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
+const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
+  Layer.provide(CoderCheckpointStoreLive),
+  Layer.provide(CoderGitWorkflowLive),
+  Layer.provide(CoderResourceCleanupLive),
+  Layer.provide(CoderRunFinalizationObserverLive),
+  Layer.provide(CoderAgentMergeRequestsLive),
+);
+
+const CoderOrchestrationApplicationLive = CheckpointDiffQuery.layer.pipe(
   Layer.provideMerge(CoderCheckpointStoreLive),
+  Layer.provideMerge(CoderOrchestrationRuntimeLive),
+);
+
+// Automatic thread settlement: a server-owned sweep evaluates inactivity and
+// merged pull requests, then settles through the orchestrator.
+const ThreadSettlementWorkerLive = Layer.effectDiscard(
+  ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
+).pipe(Layer.provide(CoderPullRequestsLive), Layer.provide(ProjectionStoreV2.layer));
+
+const ThreadPullRequestWorkerLive = Layer.effectDiscard(
+  ThreadPullRequestService.make.pipe(Effect.flatMap((service) => service.start())),
+).pipe(Layer.provide(CoderPullRequestsLive));
+
+const PullRequestSyncWorkerLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;
+    yield* service.start();
+  }),
+).pipe(
+  Layer.provideMerge(PullRequestSyncReactor.layer),
+  Layer.provide(CoderPullRequestsLive),
+  Layer.provide(ProjectionStoreV2.layer),
 );
 
 const CoderWorkspaceEntriesLive = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
@@ -201,23 +262,37 @@ const CoderWorkspaceFileSystemLive = WorkspaceFileSystem.layer.pipe(
   Layer.provide(CoderWorkspaceEntriesLive),
 );
 
-const CoderRuntimeCoreLive = Layer.empty.pipe(
-  Layer.provideMerge(SqlitePersistenceLayerLive),
-  Layer.provideMerge(CoderOrchestrationLayerLive),
+const CoderRuntimeCoreLive = Layer.mergeAll(
+  ThreadSettlementWorkerLive,
+  ThreadPullRequestWorkerLive,
+  PullRequestSyncWorkerLive,
+  CoderPullRequestsLive,
+).pipe(
+  Layer.provideMerge(CoderOrchestrationApplicationLive),
+  Layer.provideMerge(OrchestrationEventInfrastructureLayerLive),
+  Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(Keybindings.layer),
   Layer.provideMerge(CoderVcsLive),
-  Layer.provideMerge(CoderPullRequestsLive),
   Layer.provideMerge(CoderSourceControlDiscoveryLive),
-  Layer.provideMerge(CoderCheckpointingLive),
   Layer.provideMerge(CoderTerminalLive),
   Layer.provideMerge(WorkspacePaths.layer),
   Layer.provideMerge(CoderWorkspaceEntriesLive),
   Layer.provideMerge(CoderWorkspaceFileSystemLive),
+);
+
+const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   Layer.provideMerge(ScreenshotArtifacts.layer),
+  Layer.provideMerge(CoderAgentMergeRequestsLive),
+  Layer.provideMerge(
+    ProjectEnrichmentService.layer.pipe(Layer.provide(ProjectFaviconResolver.layer)),
+  ),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(CoderEnvironment.layer),
-  Layer.provideMerge(CoderProviderRuntimeLive),
+  Layer.provideMerge(ServerLifecycleEvents.layer),
+  // Coder: MCP is disabled; the registry never issues credentials.
+  Layer.provideMerge(McpSessionRegistry.layer),
+  Layer.provideMerge(ProviderEventLoggers.layer),
   Layer.provideMerge(
     ProviderMaintenanceRunner.layer.pipe(
       Layer.provide(ModelManifest.layer),
@@ -227,94 +302,97 @@ const CoderRuntimeCoreLive = Layer.empty.pipe(
   ),
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
+  Layer.provideMerge(ModelManifest.layer),
+  Layer.provideMerge(SqlitePersistenceLayerLive),
 );
 
-const CoderRuntimeFeaturesLive = Layer.mergeAll(
-  ProviderRuntimeIngestionLive,
-  ProviderCommandReactorLive,
-  CheckpointReactorLive,
-  ThreadDeletionReactorLive,
-  ThreadSettlementReactor.layer,
-  ThreadPullRequestReactor.layer,
-  PullRequestSyncReactor.layer,
-).pipe(
-  Layer.provideMerge(TextGeneration.layer),
-  Layer.provideMerge(RuntimeReceiptBusLive),
-  Layer.provideMerge(CoderCheckpointingLive),
-);
-
-const CoderRuntimeDependenciesLive = CoderRuntimeFeaturesLive.pipe(
-  Layer.provideMerge(CoderRuntimeCoreLive),
-);
-
+// Coder: workspace startup completes before the RPC layer is built, replacing upstream's
+// startup command queue and its HTTP listener, browser, relay, and heartbeat phases.
 const CoderRuntimeStartupLive = Layer.effect(
   CoderRuntimeStartup.CoderRuntimeStartup,
   Effect.gen(function* () {
-    const storageCleanup = yield* StorageCleanup.StorageCleanup;
+    const storageCleanup = yield* StorageCleanup.make;
     const keybindings = yield* Keybindings.Keybindings;
     const settings = yield* ServerSettings.ServerSettingsService;
-    const orchestrationReactor = yield* OrchestrationReactor.OrchestrationReactor;
-    const providerSessionReaper = yield* ProviderSessionReaper.ProviderSessionReaper;
-    const projectionSnapshotQuery = yield* ProjectionSnapshotQuery.ProjectionSnapshotQuery;
+    const legacyV1ThreadImporter = yield* LegacyV1ThreadImporter.LegacyV1ThreadImporter;
+    const providerRuntimeRecovery = yield* ProviderRuntimeRecovery.ProviderRuntimeRecoveryService;
+    const providerSessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
+    const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
+    const projectStore = yield* ProjectStore.ProjectStoreV2;
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const config = yield* ServerConfig.ServerConfig;
-    const reactorScope = yield* Scope.make("sequential");
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
+    const runtimeScope = yield* Scope.make("sequential");
+    const effectWorkerContext =
+      yield* Effect.context<Effect.Services<typeof EffectWorker.runDaemon>>();
 
-    yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        yield* Scope.close(runtimeScope, Exit.void);
+        yield* providerRuntimeRecovery.prepareForShutdown.pipe(
+          Effect.ensuring(providerSessions.shutdown),
+        );
+        yield* providerRuntimeRecovery.reconcile("shutdown");
+      }).pipe(Effect.ignoreCause({ log: true })),
+    );
     yield* keybindings.start.pipe(Effect.ignoreCause({ log: true }));
     yield* settings.start.pipe(Effect.ignoreCause({ log: true }));
-    yield* orchestrationReactor.start().pipe(Scope.provide(reactorScope));
-    yield* reconcileProviderSessions.pipe(Scope.provide(reactorScope));
-    yield* storageCleanup.start().pipe(Scope.provide(reactorScope));
-    yield* providerSessionReaper.start().pipe(Scope.provide(reactorScope));
-    yield* projectionSnapshotQuery.getShellSnapshot().pipe(
-      Effect.flatMap((snapshot) =>
+
+    const legacyMigrationThreadCount = yield* legacyV1ThreadImporter.pendingThreadCount;
+    if (legacyMigrationThreadCount > 0) {
+      yield* lifecycleEvents.publish({
+        version: 1,
+        type: "legacyThreadMigration",
+        payload: { status: "running", totalThreadCount: legacyMigrationThreadCount },
+      });
+    }
+    yield* legacyV1ThreadImporter.reconcileShells;
+    yield* providerRuntimeRecovery.recover;
+    const effectWorker: Fiber.Fiber<void, never> = yield* EffectWorker.runDaemon.pipe(
+      Effect.provide(effectWorkerContext),
+      Effect.forkIn(runtimeScope),
+    );
+    yield* Effect.addFinalizer(() => Fiber.interrupt(effectWorker).pipe(Effect.ignore));
+    yield* storageCleanup.start().pipe(Scope.provide(runtimeScope));
+    yield* projectStore.listShells().pipe(
+      Effect.flatMap((projects) =>
         settings.getSettings.pipe(
-          Effect.flatMap((value) => ProjectAutoPull.autoPullProjects(snapshot.projects, value)),
+          Effect.flatMap((value) => ProjectAutoPull.autoPullProjects(projects, value)),
         ),
       ),
       Effect.catch((cause) =>
         Effect.logWarning("Failed to load projects for automatic pull", { cause }),
       ),
     );
+    yield* legacyV1ThreadImporter.importPendingTranscripts.pipe(
+      Effect.andThen(
+        legacyMigrationThreadCount > 0
+          ? lifecycleEvents.publish({
+              version: 1,
+              type: "legacyThreadMigration",
+              payload: { status: "complete", totalThreadCount: legacyMigrationThreadCount },
+            })
+          : Effect.void,
+      ),
+      Effect.ignoreCause({ log: true }),
+      Effect.forkIn(runtimeScope),
+    );
+    // Coder: workspace MR commands act through the orchestrator once it is running.
+    yield* agentMergeRequests.bind({
+      getThreadShell: orchestrator.getThreadShell,
+      listProjects: projectStore.listShells(),
+      dispatch: orchestrator.dispatch,
+    });
     yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
 
     return CoderRuntimeStartup.CoderRuntimeStartup.of({});
   }),
 );
 
-const CoderOrchestrationReactorLive = Layer.effect(
-  OrchestrationReactor.OrchestrationReactor,
-  Effect.gen(function* () {
-    const providerRuntimeIngestion = yield* ProviderRuntimeIngestionService;
-    const providerCommandReactor = yield* ProviderCommandReactor;
-    const checkpointReactor = yield* CheckpointReactor;
-    const threadDeletionReactor = yield* ThreadDeletionReactor;
-    const threadSettlementReactor = yield* ThreadSettlementReactor.ThreadSettlementReactor;
-    const pullRequestSyncReactor = yield* PullRequestSyncReactor.PullRequestSyncReactor;
-    const threadPullRequestReactor = yield* ThreadPullRequestReactor.ThreadPullRequestReactor;
-
-    return OrchestrationReactor.OrchestrationReactor.of({
-      start: Effect.fn("coderOrchestrationReactor.start")(function* () {
-        yield* providerRuntimeIngestion.start();
-        yield* providerCommandReactor.start();
-        yield* checkpointReactor.start();
-        yield* threadDeletionReactor.start();
-        yield* threadSettlementReactor.start();
-        yield* threadPullRequestReactor.start();
-        yield* pullRequestSyncReactor.start();
-      }),
-    });
-  }),
-);
-
 export const makeCoderRuntimeLayer = () => {
-  const coderReactor = CoderOrchestrationReactorLive.pipe(
-    Layer.provide(CoderRuntimeDependenciesLive),
-  );
   const runtimeStartup = CoderRuntimeStartupLive.pipe(
-    Layer.provideMerge(StorageCleanup.layer.pipe(Layer.provide(CoderRuntimeDependenciesLive))),
-    Layer.provideMerge(coderReactor),
+    Layer.provide(ProjectionStoreV2.layer),
     Layer.provideMerge(CoderRuntimeDependenciesLive),
   );
   const services = Layer.mergeAll(
@@ -322,6 +400,9 @@ export const makeCoderRuntimeLayer = () => {
     CoderRuntimeDependenciesLive,
     EnvironmentTheme.layer,
   ).pipe(Layer.provideMerge(VcsProcess.layer));
+  // Upstream provides the agent-session scanner beside its WS layer; the helper RPC layer
+  // takes it here.
+  const rpcServices = AgentSessionScanner.layer.pipe(Layer.provideMerge(services));
 
-  return CoderWs.layer.pipe(Layer.provide(services));
+  return CoderWs.layer.pipe(Layer.provide(rpcServices));
 };

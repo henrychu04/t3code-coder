@@ -1,5 +1,5 @@
 // @effect-diagnostics globalDate:off -- Tests exercise local calendar snooze boundaries.
-import { ThreadId, type OrchestrationThreadShell } from "@t3tools/contracts";
+import { ThreadId } from "@t3tools/contracts";
 import { TurnId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -62,10 +62,7 @@ function makeShell(input: {
   };
 }
 
-type QueuedTurnShell = Pick<
-  OrchestrationThreadShell,
-  "latestUserMessageAt" | "latestTurn" | "session"
->;
+type QueuedTurnShell = Parameters<typeof hasQueuedTurnStart>[0];
 
 function makeQueuedTurnShell(overrides: Partial<QueuedTurnShell> = {}): QueuedTurnShell {
   return { latestUserMessageAt: null, latestTurn: null, session: null, ...overrides };
@@ -238,7 +235,7 @@ describe("hasQueuedTurnStart", () => {
       session: {
         threadId: ThreadId.make("thread-failed"),
         status: "error",
-        providerName: "Claude",
+        providerName: "Codex",
         runtimeMode: "full-access",
         activeTurnId: null,
         lastError: "failed",
