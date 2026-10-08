@@ -43,8 +43,8 @@ in browser memory and are not saved locally.
 Threads move through four states in the sidebar:
 
 - **Pinned** — kept above your active work, independent of project grouping. Pin or unpin from the
-  thread's context menu, or press `mod+shift+p`. Drag to reorder. Enable **Settings → Preferences
-  → Confirm before unpinning** to confirm menu and keyboard unpin actions. Dragging out of the
+  thread's context menu, or press `mod+shift+p`. Drag to reorder. Enable **Settings → General
+  → Confirmations → Unpin confirmation** to confirm menu and keyboard unpin actions. Dragging out of the
   pinned section does not ask for confirmation.
 - **Active** — everything you are working on now.
 - **Snoozed** — out of the way until a wake time you pick from the thread's menu (later today,
@@ -60,7 +60,7 @@ closes, while an open merge request blocks inactivity settlement. Active work, p
 live background work keep the thread active. A closed or merged merge request triggers immediate
 settlement only when its update timestamp is not older than the user's latest activity; otherwise
 the inactivity rule can still apply. Manually un-settling a thread keeps it active until new work
-clears that choice. Change these rules in **Settings → Preferences**. A settings change affects
+clears that choice. Change these rules in **Settings → General → Organization**. A settings change affects
 future settlement and does not reopen an already settled thread.
 
 ## Drag and reorder
@@ -80,7 +80,7 @@ an answer to the provider. Approvals, blocking questions, and live work still pr
 ## Archiving
 
 Archive a thread from its menu to retire it without deleting it. Archived threads live in
-**Settings → Archived threads**, where you can review or unarchive them.
+**Settings → Archive**, where you can review or unarchive them.
 
 ## Thread titles
 
@@ -119,7 +119,7 @@ branch toolbar, not from whichever thread you were last reading.
 
 ## Automatic review panels
 
-Enable **Proactive panels** in **Settings → Preferences → Editor and history** to automatically
+Enable **Proactive panels** in **Settings → General → Behavior** to automatically
 open a linked GitLab merge request or a completed turn's changed-file diff when entering a thread
 or when new results arrive. This preference is off by default and does not open the narrow-screen
 panel sheet automatically. Merge requests take priority over diffs. Closing or selecting a panel
@@ -132,7 +132,7 @@ play inline, and other attachments open on their GitLab host.
 
 ## Thread notifications
 
-Under **Settings → Preferences → Notifications**, enable thread alerts, sounds, or both. Alerts
+Under **Settings → General → Behavior → Thread notifications**, enable thread alerts, sounds, or both. Alerts
 cover completed turns, requests for input or approval, and failures. While you are using another
 thread, an in-app alert can take you to the thread that needs attention. In the background, the
 browser tab shows a badge that clears when you return. Sounds become available after your first
@@ -149,7 +149,7 @@ You can snooze selected threads together. Choose **Wake thread** to bring a thre
 
 ## Fold working threads (beta)
 
-Enable **Working section (beta)** in Preferences to move working or monitoring threads into a
+Enable **Working section (beta)** in **Settings → General → Organization** to move working or monitoring threads into a
 collapsed **Working** shelf. They return to the top of the active list when they finish, fail,
 or need an approval or answer. Pinned threads stay pinned. While enabled, the active list uses
 return time rather than manual order; disabling it restores the saved order.

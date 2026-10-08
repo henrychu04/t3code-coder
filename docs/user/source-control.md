@@ -139,7 +139,7 @@ submodules produce a warning.
 
 ## Diff display and comments
 
-**Settings → Preferences → Default diff file state** chooses whether files start expanded or
+**Settings → General → Behavior → Default diff file state** chooses whether files start expanded or
 collapsed in review diffs and a merge request's Code tab. Files start expanded by default; you can
 still toggle individual files or all files in the toolbar.
 
