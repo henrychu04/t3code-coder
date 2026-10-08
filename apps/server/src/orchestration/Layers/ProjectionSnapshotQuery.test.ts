@@ -2206,8 +2206,9 @@ it.effect(
               return {
                 canonicalKey: `workspace:${cwd}`,
                 locator: {
-                  source: "workspace-path" as const,
-                  path: cwd,
+                  source: "git-remote" as const,
+                  remoteName: "origin",
+                  remoteUrl: `file://${cwd}`,
                 },
                 rootPath: cwd,
               };

@@ -12,8 +12,9 @@ const environmentId = EnvironmentId.make("environment");
 const repositoryIdentity = {
   canonicalKey: "workspace:/work/t3code",
   locator: {
-    source: "workspace-path" as const,
-    path: "/work/t3code",
+    source: "git-remote" as const,
+    remoteName: "origin",
+    remoteUrl: "file:///work/t3code",
   },
   name: "t3code",
   displayName: "T3 Code",
