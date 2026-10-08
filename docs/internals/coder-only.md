@@ -635,6 +635,14 @@ listed here is drift to remove rather than fork behavior to keep.
   same reads.
   Sent file attachments render as static rows without preview, download, or open actions, and
   native app icons fall back to the tool glyph.
+  Upstream's v1 importer carries only messages, so screenshots that pre-v2 conversations saved
+  as `artifacts` on v1 tool activities have no v2 item. The v2 database starts as a copy of the
+  v1 one, so `orchestration-v2/legacy/LegacyScreenshotArtifacts.ts` reads them from the kept v1
+  `projection_thread_activities` rows, only for imported threads, and returns those recorded
+  between an imported message and the next (`workspace.listLegacyScreenshotArtifacts`, at most
+  100). The timeline's `LegacyScreenshotArtifactsTimelineRow` renders them after messages without
+  a run, through the bounded legacy chunk read. Nothing is written, so already-migrated
+  workspaces need no backfill.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), project-script

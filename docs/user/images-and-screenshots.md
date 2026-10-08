@@ -74,7 +74,8 @@ There is no per-turn preview count limit, total storage quota, or automatic purg
 where you placed them and workspace cleanup is user-controlled. Submitted image attachments use their
 workspace copies and survive reload while those copies exist; unsent drafts disappear on reload.
 
-Older conversations can still display their previously saved artifacts. Those legacy copies live
+Conversations from before the current orchestration still show the screenshots they saved, below
+the message that preceded them. Those legacy copies live
 in `$HOME/.t3-coder/artifacts`, outside worktrees; deleting a worktree does not delete them.
 Opt-in saved-artifact retention under **Settings → Storage** can remove expired legacy copies.
 Their links then stop opening. Retention is off by default and excludes submitted attachments

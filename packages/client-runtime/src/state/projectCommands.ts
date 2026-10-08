@@ -100,6 +100,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.workspaceReadScreenshotArtifact,
       concurrency: { mode: "parallel" },
     }),
+    // Coder: v1 screenshots of an imported message; v1 rows never change after import.
+    listLegacyScreenshotArtifacts: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:workspace:list-legacy-screenshot-artifacts",
+      tag: WS_METHODS.workspaceListLegacyScreenshotArtifacts,
+      staleTimeMs: Number.POSITIVE_INFINITY,
+    }),
     create: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:create",
       execute: (input: CreateProjectInput) => createProject(input),
