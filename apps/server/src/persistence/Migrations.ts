@@ -1,19 +1,15 @@
-import Migration0058 from "./Migrations/058_ClearAutomaticProjectModelDefaults.ts";
-import Migration0057 from "./Migrations/057_ProjectionThreadsAutoSettleDisabledAt.ts";
-import Migration0052 from "./Migrations/052_ProjectionProjectIcon.ts";
 /**
- * MigrationsLive - Migration runner with inline loader
+ * Migration runner with an inline loader.
  *
  * Uses Migrator.make with fromRecord to define migrations inline.
  * All migrations are statically imported - no dynamic file system loading.
  *
- * Migrations run automatically when the MigrationLayer is provided,
- * ensuring the database schema is always up-to-date before the application starts.
+ * `runMigrations` is called by the SQLite persistence layer at startup, so the
+ * schema is always up to date before the application starts.
  */
 
 import * as Migrator from "effect/unstable/sql/Migrator";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 
 // Import all migrations statically
 import Migration0001 from "./Migrations/001_OrchestrationEvents.ts";
@@ -22,6 +18,7 @@ import Migration0003 from "./Migrations/003_CheckpointDiffBlobs.ts";
 import Migration0004 from "./Migrations/004_ProviderSessionRuntime.ts";
 import Migration0005 from "./Migrations/005_Projections.ts";
 import Migration0006 from "./Migrations/006_ProjectionThreadSessionRuntimeModeColumns.ts";
+import Migration0007 from "./Migrations/007_ProjectionThreadMessageAttachments.ts";
 import Migration0008 from "./Migrations/008_ProjectionThreadActivitySequence.ts";
 import Migration0009 from "./Migrations/009_ProviderSessionRuntimeMode.ts";
 import Migration0010 from "./Migrations/010_ProjectionThreadsRuntimeMode.ts";
@@ -50,18 +47,24 @@ import Migration0037 from "./Migrations/037_ProjectionTurnsKeysetIndex.ts";
 import Migration0038 from "./Migrations/038_ProjectionThreadsPinOrderKey.ts";
 import Migration0039 from "./Migrations/039_ProjectionProjectsDefaultThreadEnvMode.ts";
 import Migration0040 from "./Migrations/040_ProjectionProjectFaviconPath.ts";
-import Migration0041 from "./Migrations/041_ProjectionThreadsUnsettledAt.ts";
 import Migration0042 from "./Migrations/042_ProjectionThreadLinkedPullRequest.ts";
+import Migration0043 from "./Migrations/043_ProjectionThreadsUnsettledAt.ts";
+import Migration0044 from "./Migrations/044_ClearAutomaticProjectModelDefaults.ts";
+import Migration0045 from "./Migrations/045_ProjectionProjectsAutoPull.ts";
 import Migration0046 from "./Migrations/046_RepairAutomaticSettlementTimestamps.ts";
-import Migration0047 from "./Migrations/047_ProjectionProjectsAutoPull.ts";
+import Migration0047 from "./Migrations/047_ProjectionProjectIcon.ts";
 import Migration0048 from "./Migrations/048_ProjectionThreadBranchPullRequest.ts";
 import Migration0049 from "./Migrations/049_ProjectionThreadsActiveOrderKey.ts";
-import Migration0053 from "./Migrations/053_ProjectionThreadTitleState.ts";
-import Migration0055 from "./Migrations/055_ProjectionMessageAttachments.ts";
-import Migration0056 from "./Migrations/056_ProjectionThreadMessageContext.ts";
-import Migration0054 from "./Migrations/054_PullRequestFilesViewed.ts";
-import Migration0050 from "./Migrations/050_RepairPendingUserInputCounts.ts";
-import Migration0051 from "./Migrations/051_ProjectionThreadPullRequests.ts";
+import Migration0050 from "./Migrations/050_ProjectionThreadPullRequests.ts";
+import Migration0051 from "./Migrations/051_ProjectionThreadMessageContext.ts";
+import Migration0052 from "./Migrations/052_ProjectionThreadTitleState.ts";
+import Migration0053 from "./Migrations/053_PullRequestFilesViewed.ts";
+import Migration0054 from "./Migrations/054_ProjectionThreadsAutoSettleDisabledAt.ts";
+import { reconcileCoderMigrationHistory } from "./CoderMigrationHistory.ts";
+
+// Coder: T3 Coder has no auth sessions or pairing. Upstream's auth migrations keep
+// their IDs so later upstream migrations stay aligned, but they create nothing.
+const omittedAuthMigration = Effect.void;
 
 /**
  * Migration loader with all migrations defined inline.
@@ -73,13 +76,14 @@ import Migration0051 from "./Migrations/051_ProjectionThreadPullRequests.ts";
  * Uses Migrator.fromRecord which parses the key format and
  * returns migrations sorted by ID.
  */
-const migrationEntries = [
+export const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
   [2, "OrchestrationCommandReceipts", Migration0002],
   [3, "CheckpointDiffBlobs", Migration0003],
   [4, "ProviderSessionRuntime", Migration0004],
   [5, "Projections", Migration0005],
   [6, "ProjectionThreadSessionRuntimeModeColumns", Migration0006],
+  [7, "ProjectionThreadMessageAttachments", Migration0007],
   [8, "ProjectionThreadActivitySequence", Migration0008],
   [9, "ProviderSessionRuntimeMode", Migration0009],
   [10, "ProjectionThreadsRuntimeMode", Migration0010],
@@ -92,6 +96,9 @@ const migrationEntries = [
   [17, "ProjectionThreadsArchivedAt", Migration0017],
   [18, "ProjectionThreadsArchivedAtIndex", Migration0018],
   [19, "ProjectionSnapshotLookupIndexes", Migration0019],
+  [20, "AuthAccessManagement", omittedAuthMigration],
+  [21, "AuthSessionClientMetadata", omittedAuthMigration],
+  [22, "AuthSessionLastConnectedAt", omittedAuthMigration],
   [23, "ProjectionThreadShellSummary", Migration0023],
   [24, "BackfillProjectionThreadShellSummary", Migration0024],
   [25, "CleanupInvalidProjectionPendingApprovals", Migration0025],
@@ -100,6 +107,8 @@ const migrationEntries = [
   [28, "ProjectionThreadSessionInstanceId", Migration0028],
   [29, "ProjectionThreadDetailOrderingIndexes", Migration0029],
   [30, "ProjectionThreadShellArchiveIndexes", Migration0030],
+  [31, "AuthAuthorizationScopes", omittedAuthMigration],
+  [32, "AuthPairingProofKeyThumbprint", omittedAuthMigration],
   [33, "ProjectionThreadsSettled", Migration0033],
   [34, "ProjectionThreadsSnoozed", Migration0034],
   [35, "ProjectionThreadTitleRegeneration", Migration0035],
@@ -108,24 +117,23 @@ const migrationEntries = [
   [38, "ProjectionThreadsPinOrderKey", Migration0038],
   [39, "ProjectionProjectsDefaultThreadEnvMode", Migration0039],
   [40, "ProjectionProjectFaviconPath", Migration0040],
-  [41, "ProjectionThreadsUnsettledAt", Migration0041],
+  [41, "AuthSessionClientConnection", omittedAuthMigration],
   [42, "ProjectionThreadLinkedPullRequest", Migration0042],
+  [43, "ProjectionThreadsUnsettledAt", Migration0043],
+  [44, "ClearAutomaticProjectModelDefaults", Migration0044],
+  [45, "ProjectionProjectsAutoPull", Migration0045],
   [46, "RepairAutomaticSettlementTimestamps", Migration0046],
-  [47, "ProjectionProjectsAutoPull", Migration0047],
+  [47, "ProjectionProjectIcon", Migration0047],
   [48, "ProjectionThreadBranchPullRequest", Migration0048],
   [49, "ProjectionThreadsActiveOrderKey", Migration0049],
-  [50, "RepairPendingUserInputCounts", Migration0050],
-  [51, "ProjectionThreadPullRequests", Migration0051],
-  [52, "ProjectionProjectIcon", Migration0052],
-  [53, "ProjectionThreadTitleState", Migration0053],
-  [54, "PullRequestFilesViewed", Migration0054],
-  [55, "ProjectionMessageAttachments", Migration0055],
-  [56, "ProjectionThreadMessageContext", Migration0056],
-  [57, "ProjectionThreadsAutoSettleDisabledAt", Migration0057],
-  [58, "ClearAutomaticProjectModelDefaults", Migration0058],
+  [50, "ProjectionThreadPullRequests", Migration0050],
+  [51, "ProjectionThreadMessageContext", Migration0051],
+  [52, "ProjectionThreadTitleState", Migration0052],
+  [53, "PullRequestFilesViewed", Migration0053],
+  [54, "ProjectionThreadsAutoSettleDisabledAt", Migration0054],
 ] as const;
 
-const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
+export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
 
 const makeMigrationLoader = (throughId?: number) =>
   Migrator.fromRecord(
@@ -159,6 +167,8 @@ export interface RunMigrationsOptions {
 export const runMigrations = Effect.fn("runMigrations")(function* ({
   toMigrationInclusive,
 }: RunMigrationsOptions = {}) {
+  // Coder: databases created before T3 Coder adopted upstream's migration IDs.
+  yield* reconcileCoderMigrationHistory(migrationEntries);
   const executedMigrations = yield* run({ loader: makeMigrationLoader(toMigrationInclusive) });
   const migrations = executedMigrations.map(([id, name]) => `${id}_${name}`);
   yield* migrations.length === 0
@@ -166,23 +176,3 @@ export const runMigrations = Effect.fn("runMigrations")(function* ({
     : Effect.log("Migrations ran successfully").pipe(Effect.annotateLogs({ migrations }));
   return executedMigrations;
 });
-
-/**
- * Layer that runs migrations when the layer is built.
- *
- * Use this to ensure migrations run before your application starts.
- * Migrations are run automatically - no separate script is needed.
- *
- * @example
- * ```typescript
- * import { MigrationsLive } from "@acme/db/Migrations"
- * import * as SqliteClient from "@acme/db/SqliteClient"
- *
- * // Migrations run automatically when SqliteClient is provided
- * const AppLayer = MigrationsLive.pipe(
- *   Layer.provideMerge(SqliteClient.layer({ filename: "database.sqlite" }))
- * )
- * ```
- */
-/** @public Service construction is part of the canonical Effect module API. */
-export const MigrationsLive = Layer.effectDiscard(runMigrations());

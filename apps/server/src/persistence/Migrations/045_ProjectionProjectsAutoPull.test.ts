@@ -8,18 +8,18 @@ import { runMigrations } from "../Migrations.ts";
 
 const layer = it.layer(Layer.mergeAll(NodeSqliteClient.layer({ filename: ":memory:" })));
 
-layer("047_ProjectionProjectsAutoPull", (it) => {
-  it.effect("adds auto_pull after the fork's existing migration 46", () =>
+layer("045_ProjectionProjectsAutoPull", (it) => {
+  it.effect("adds auto_pull to projection_projects", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
 
-      yield* runMigrations({ toMigrationInclusive: 46 });
+      yield* runMigrations({ toMigrationInclusive: 44 });
       const before = yield* sql<{ readonly name: string }>`
         PRAGMA table_info(projection_projects)
       `;
       assert.isFalse(before.some((column) => column.name === "auto_pull"));
 
-      yield* runMigrations({ toMigrationInclusive: 47 });
+      yield* runMigrations({ toMigrationInclusive: 45 });
       const after = yield* sql<{ readonly name: string; readonly notnull: number }>`
         PRAGMA table_info(projection_projects)
       `;

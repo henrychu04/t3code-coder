@@ -23,7 +23,7 @@ interface PullRequestRow {
   readonly stackJson: string | null;
 }
 
-layer("051_ProjectionThreadPullRequests", (it) => {
+layer("050_ProjectionThreadPullRequests", (it) => {
   it.effect("creates the link table and backfills legacy single links", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -100,7 +100,7 @@ layer("051_ProjectionThreadPullRequests", (it) => {
           )
       `;
 
-      yield* runMigrations({ toMigrationInclusive: 51 });
+      yield* runMigrations({ toMigrationInclusive: 50 });
 
       const rows = yield* sql<PullRequestRow>`
         SELECT
@@ -170,14 +170,15 @@ it.layer(Layer.fresh(NodeSqliteClient.layer({ filename: ":memory:" })))(
             ${encodeJson({ projectId: organization, repository: "web", number: 7, url: `https://dev.azure.com/${organization}/project/_git/web/pullrequest/7` })},
             '2026-03-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z')
         `;
-      }
-      yield* runMigrations({ toMigrationInclusive: 51 });
-      const rows =
-        yield* sql`SELECT host, repository, number FROM projection_thread_pull_requests ORDER BY repository`;
-      assert.deepStrictEqual(rows, [
-        { host: "dev.azure.com", repository: "org-a/project/_git/web", number: 7 },
-        { host: "dev.azure.com", repository: "org-b/project/_git/web", number: 7 },
-      ]);
-    }),
-  );
-});
+        }
+        yield* runMigrations({ toMigrationInclusive: 50 });
+        const rows =
+          yield* sql`SELECT host, repository, number FROM projection_thread_pull_requests ORDER BY repository`;
+        assert.deepStrictEqual(rows, [
+          { host: "dev.azure.com", repository: "org-a/project/_git/web", number: 7 },
+          { host: "dev.azure.com", repository: "org-b/project/_git/web", number: 7 },
+        ]);
+      }),
+    );
+  },
+);
