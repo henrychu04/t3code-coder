@@ -53,6 +53,7 @@ import {
   FolderPlusIcon,
   MessageSquareDashedIcon,
   LinkIcon,
+  LoaderCircleIcon,
   MessageSquareIcon,
   MonitorIcon,
   MoonIcon,
@@ -170,6 +171,12 @@ import { CommandPaletteContent } from "./CommandPaletteContent";
 import { CommandPaletteResults } from "./CommandPaletteResults";
 import { GitHubIcon, GitLabIcon } from "./Icons";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
+import { summarizeCoderWorkspaceError } from "./CoderWorkspaceIssues";
+import type { DiscoveredCoderWorkspace } from "../coder/api";
+import { useCoder } from "../coder/CoderBootstrap";
+import { coderWorkspaceIdForEnvironment } from "../coder/environmentStore";
+import { useConnectDiscoveredWorkspace } from "../coder/useConnectDiscoveredWorkspace";
+import { useCoderWorkspaceDiscovery } from "../coder/useCoderWorkspaceDiscovery";
 import { Checkbox } from "./ui/checkbox";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
@@ -1007,6 +1014,23 @@ function OpenCommandPaletteDialog(props: {
 
     return options;
   }, [environments]);
+  // Coder: Add project also lists each domain's workspaces that are not connected yet. Choosing
+  // one saves, starts, and connects it, then continues to its sources once it is connected.
+  const { config: coderConfig } = useCoder();
+  const connectedCoderWorkspaceIds = useMemo(
+    () =>
+      new Set(
+        addProjectEnvironmentOptions.flatMap(
+          (option) => coderWorkspaceIdForEnvironment(option.environmentId) ?? [],
+        ),
+      ),
+    [addProjectEnvironmentOptions],
+  );
+  const coderWorkspaceDiscovery = useCoderWorkspaceDiscovery(connectedCoderWorkspaceIds);
+  const connectDiscoveredWorkspace = useConnectDiscoveredWorkspace();
+  const [connectingCoderWorkspace, setConnectingCoderWorkspace] = useState<string | null>(null);
+  const [pendingAddProjectEnvironmentId, setPendingAddProjectEnvironmentId] =
+    useState<EnvironmentId | null>(null);
   const defaultAddProjectEnvironmentId =
     addProjectEnvironmentOptions.find((option) => option.isConnected)?.environmentId ?? null;
   const browseEnvironmentId = addProjectEnvironmentId ?? defaultAddProjectEnvironmentId;
@@ -1717,42 +1741,149 @@ function OpenCommandPaletteDialog(props: {
     (option) => option.isConnected && newProjectsRootFor(option.environmentId) !== null,
   );
 
-  const addProjectEnvironmentGroups = useMemo<CommandPaletteView["groups"]>(
-    () => [
-      {
-        value: "environments",
-        label: "Environments",
-        items: addProjectEnvironmentItems,
-      },
-    ],
-    [addProjectEnvironmentItems],
-  );
+  const connectCoderWorkspaceForAddProject = async (
+    deploymentId: string,
+    workspace: DiscoveredCoderWorkspace,
+  ): Promise<void> => {
+    if (connectingCoderWorkspace !== null) return;
+    setConnectingCoderWorkspace(`${deploymentId}:${workspace.target}`);
+    try {
+      const descriptor = await connectDiscoveredWorkspace(deploymentId, workspace);
+      setPendingAddProjectEnvironmentId(descriptor.environmentId);
+    } catch (cause) {
+      setConnectingCoderWorkspace(null);
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Could not connect workspace",
+          description: summarizeCoderWorkspaceError(errorMessage(cause)),
+        }),
+      );
+    }
+  };
+  const coderWorkspaceGroups: CommandPaletteView["groups"] =
+    coderWorkspaceDiscovery.deployments.map(({ deploymentId, deploymentName, discovery }) => {
+      const statusItem = (
+        suffix: string,
+        title: string,
+        description: string | undefined,
+        icon: ReactNode,
+      ): CommandPaletteActionItem => ({
+        kind: "action",
+        value: `action:add-project:coder-deployment:${deploymentId}:${suffix}`,
+        searchTerms: [deploymentName],
+        title,
+        ...(description ? { description } : {}),
+        disabled: true,
+        icon,
+        run: async () => {},
+      });
+      return {
+        value: `coder-workspaces:${deploymentId}`,
+        label: deploymentName,
+        items:
+          discovery.status === "loading"
+            ? [
+                statusItem(
+                  "loading",
+                  "Loading workspaces…",
+                  undefined,
+                  <LoaderCircleIcon className={`${ITEM_ICON_CLASS} animate-spin`} />,
+                ),
+              ]
+            : discovery.status === "error"
+              ? [
+                  statusItem(
+                    "error",
+                    "Could not list workspaces",
+                    summarizeCoderWorkspaceError(discovery.error),
+                    <EnvironmentMachineIcon kind="server" className={ITEM_ICON_CLASS} />,
+                  ),
+                ]
+              : discovery.workspaces.map((workspace): CommandPaletteActionItem => {
+                  const connecting =
+                    connectingCoderWorkspace === `${deploymentId}:${workspace.target}`;
+                  const status =
+                    workspace.status === "running"
+                      ? "Running"
+                      : workspace.status === "stopped"
+                        ? "Stopped · starts when chosen"
+                        : workspace.status === "starting"
+                          ? "Starting"
+                          : "Status unknown";
+                  return {
+                    kind: "action",
+                    value: `action:add-project:coder-workspace:${deploymentId}:${workspace.target}`,
+                    searchTerms: [workspace.name, workspace.target, deploymentName],
+                    title: workspace.name,
+                    description: connecting ? "Connecting…" : `${workspace.target} · ${status}`,
+                    disabled:
+                      connectingCoderWorkspace !== null ||
+                      (workspace.status !== "running" && workspace.status !== "stopped"),
+                    icon: connecting ? (
+                      <LoaderCircleIcon className={`${ITEM_ICON_CLASS} animate-spin`} />
+                    ) : (
+                      <EnvironmentMachineIcon kind="server" className={ITEM_ICON_CLASS} />
+                    ),
+                    keepOpen: true,
+                    run: () => connectCoderWorkspaceForAddProject(deploymentId, workspace),
+                  };
+                }),
+      };
+    });
+
+  const addProjectEnvironmentGroups: CommandPaletteView["groups"] = [
+    {
+      value: "environments",
+      // Coder: domain groups follow, so name the connected group explicitly.
+      label: "Connected workspaces",
+      items: addProjectEnvironmentItems,
+    },
+    ...coderWorkspaceGroups,
+  ].filter((group) => group.items.length > 0);
 
   const openAddProjectFlow = useCallback(() => {
-    // With no connected environment there is nothing to browse, so the only
-    // useful next step is connecting one.
-    if (addProjectEnvironmentOptions.length === 0) {
+    // With no Coder domain there is nothing to browse, so the only useful next
+    // step is adding one.
+    if (addProjectEnvironmentOptions.length === 0 && coderConfig.deployments.length === 0) {
       setOpen(false);
       void navigate({ to: "/settings/connections" });
       return;
     }
 
-    if (addProjectEnvironmentOptions.length > 1 || defaultAddProjectEnvironmentId === null) {
-      pushPaletteView({
-        addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
-        groups: addProjectEnvironmentGroups,
-      });
-      return;
-    }
-
-    void startAddProjectSourceSelection(defaultAddProjectEnvironmentId);
+    // Coder: a domain may hold workspaces that are not connected yet, so always offer the picker.
+    coderWorkspaceDiscovery.discover();
+    setPendingAddProjectEnvironmentId(null);
+    setConnectingCoderWorkspace(null);
+    pushPaletteView({
+      addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
+      groups: [{ value: "environments", label: "Connected workspaces", items: [] }],
+    });
   }, [
-    addProjectEnvironmentGroups,
     addProjectEnvironmentOptions.length,
-    defaultAddProjectEnvironmentId,
+    coderConfig.deployments.length,
+    coderWorkspaceDiscovery.discover,
     navigate,
     pushPaletteView,
     setOpen,
+  ]);
+
+  // Coder: continue a discovered workspace's Add project once its environment connects, unless
+  // the user has left the picker. Reopening Add project clears the pending connection.
+  const isAddProjectEnvironmentView = currentView?.groups[0]?.value === "environments";
+  useEffect(() => {
+    if (pendingAddProjectEnvironmentId === null || !isAddProjectEnvironmentView) return;
+    const environment = environments.find(
+      (candidate) => candidate.environmentId === pendingAddProjectEnvironmentId,
+    );
+    if (!canCreateProjectInEnvironment(environment?.connection.phase)) return;
+    setPendingAddProjectEnvironmentId(null);
+    setConnectingCoderWorkspace(null);
+    startAddProjectSourceSelection(pendingAddProjectEnvironmentId);
+  }, [
+    environments,
+    isAddProjectEnvironmentView,
+    pendingAddProjectEnvironmentId,
     startAddProjectSourceSelection,
   ]);
 
@@ -2244,11 +2375,14 @@ function OpenCommandPaletteDialog(props: {
           addProjectEnvironmentId,
           buildAddProjectRemoteSourceReadiness(sourceControlDiscovery.data),
         )
-      : currentView?.groups[0]?.value === "themes"
-        ? changeThemeItem.groups
-        : currentView?.groups[0]?.value === "appearance"
-          ? changeAppearanceItem.groups
-          : (currentView?.groups ?? rootGroups);
+      : // Coder: workspace discovery updates the Add project picker while it is open.
+        isAddProjectEnvironmentView
+        ? addProjectEnvironmentGroups
+        : currentView?.groups[0]?.value === "themes"
+          ? changeThemeItem.groups
+          : currentView?.groups[0]?.value === "appearance"
+            ? changeAppearanceItem.groups
+            : (currentView?.groups ?? rootGroups);
 
   const filteredGroups = filterCommandPaletteGroups({
     activeGroups,

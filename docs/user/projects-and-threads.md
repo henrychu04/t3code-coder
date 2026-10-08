@@ -6,7 +6,9 @@ Codex or Claude about that project's work.
 ## Projects
 
 Choose **Add project** in the sidebar or the command palette (`Cmd/Ctrl+K`), pick a workspace, and
-type or browse to a folder on it. To clone instead, choose GitLab or paste a Git URL, then choose
+type or browse to a folder on it. The picker lists connected workspaces first, then each domain's
+other workspaces; choosing one of those adds it to your workspace connections, starts it if it is
+stopped, and connects it. To clone instead, choose GitLab or paste a Git URL, then choose
 where to save it in the workspace; the project opens while the clone runs in the background. The
 project appears in the sidebar with a built-in icon chosen automatically
 from its name, or its folder name when the project name is blank. Project images are not fetched.
