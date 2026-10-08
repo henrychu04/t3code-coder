@@ -56,7 +56,10 @@ to Coder, the provider backends, and the configured GitLab host.
 ## Where data lives
 
 The T3-owned local profile is limited to non-secret Coder deployment URLs, optional Coder executable
-paths, workspace targets, and structured port-forward rules. UI preferences may use browser storage. Repositories, prompts,
+paths, workspace targets, structured port-forward rules, and the last gateway port. UI preferences,
+unsent composer text, and caches of workspace projections (environment shells, thread snapshots,
+server config, and branch lists) may use browser storage; the caches are cleared when a workspace is
+removed from the Coder config and never hold image bytes or credentials. Repositories, prompts,
 responses, provider sessions, terminals, checkpoints, project records, project roots, and SQLite state
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
 connection and loopback WebSocket but is not durably cached by the gateway. A validated pasted image
@@ -133,7 +136,8 @@ pnpm build
 npm start
 ```
 
-`npm start` prints an ephemeral loopback URL. Open it manually in an approved browser, or use the
-explicit `npm run start:open` opt-in to open that loopback URL. Dependency installation is the only
+`npm start` prints a loopback URL that keeps its port across restarts when the port is free. Open it
+manually in an approved browser, or use the explicit `npm run start:open` opt-in to open that
+loopback URL. Dependency installation is the only
 step that normally contacts a package registry; runtime startup does not install packages or check
 for updates. Registry URLs present in the SBOM are inventory metadata, not runtime endpoints.

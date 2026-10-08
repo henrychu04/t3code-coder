@@ -17,6 +17,7 @@ import {
   connectionRegistrationCatalogEntry,
 } from "./catalog.ts";
 import * as Connectivity from "./connectivity.ts";
+import * as Persistence from "../platform/persistence.ts";
 import type { NetworkStatus, SupervisorConnectionState } from "./model.ts";
 import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionDriver from "./driver.ts";
@@ -42,6 +43,7 @@ export class EnvironmentRegistry extends Context.Service<
     readonly reconcilePlatform: (
       registrations: ReadonlyArray<PlatformConnectionRegistration>,
     ) => Effect.Effect<void>;
+    readonly remove: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly retryNow: (environmentId: EnvironmentId) => Effect.Effect<void>;
     readonly state: (
       environmentId: EnvironmentId,
@@ -80,6 +82,8 @@ interface EnvironmentServiceScope {
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
+  const cache = yield* Persistence.EnvironmentCacheStore;
+  const ownedDataCleanup = yield* Persistence.EnvironmentOwnedDataCleanup;
   const connectivity = yield* Connectivity.Connectivity;
   const driver = yield* ConnectionDriver.ConnectionDriver;
   const wakeups = yield* ConnectionWakeups.ConnectionWakeups;
@@ -215,6 +219,36 @@ export const make = Effect.gen(function* () {
     );
   });
 
+  // Coder: the platform source reports removal from the Coder config, so there is no saved
+  // registration or credential to delete. Stopped workspaces keep their data.
+  const remove = Effect.fn("EnvironmentRegistry.remove")(function* (environmentId: EnvironmentId) {
+    yield* mutationLock.withPermits(1)(
+      Effect.gen(function* () {
+        yield* closeServiceScope(environmentId);
+        yield* SubscriptionRef.update(entries, (current) => {
+          if (!current.has(environmentId)) return current;
+          const next = new Map(current);
+          next.delete(environmentId);
+          return next;
+        });
+        yield* Effect.all(
+          [
+            cache.clear(environmentId).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Could not clear cached environment data after removal.", {
+                  environmentId,
+                  error,
+                }),
+              ),
+            ),
+            ownedDataCleanup.clear(environmentId),
+          ],
+          { concurrency: "unbounded", discard: true },
+        );
+      }),
+    );
+  });
+
   const retryNow = (environmentId: EnvironmentId) =>
     acquireSupervisor(environmentId).pipe(
       Effect.flatMap((supervisor) => supervisor.retryNow),
@@ -253,6 +287,7 @@ export const make = Effect.gen(function* () {
     networkStatus,
     start: Effect.void,
     reconcilePlatform,
+    remove,
     retryNow,
     state,
     stateChanges,

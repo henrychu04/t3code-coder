@@ -27,6 +27,10 @@ const connectionStartupLayer = Layer.effectDiscard(
       Stream.runForEach(registry.reconcilePlatform),
       Effect.forkScoped,
     );
+    yield* platformSource.removedEnvironmentIds.pipe(
+      Stream.runForEach(registry.remove),
+      Effect.forkScoped,
+    );
   }).pipe(Effect.withSpan("clientRuntime.connection.application.start")),
 );
 

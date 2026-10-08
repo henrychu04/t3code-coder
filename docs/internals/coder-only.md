@@ -38,15 +38,18 @@ behavior, notify the maintainer before making that removal.
 
 ## Runtime boundary
 
-The local process is a Node gateway that binds to an ephemeral IPv4 loopback port and serves the web
-client to a browser opened by the user. It stores only non-secret Coder deployment URLs, workspace
-targets, structured port-forward rules, and an optional Coder executable path. An attached image may
-be staged temporarily in an OS temporary directory while it is copied to the workspace; the local
-copy is deleted immediately after the transfer attempt. Browser UI preferences
+The local process is a Node gateway that binds to an IPv4 loopback port and serves the web client to
+a browser opened by the user. It reuses the port saved in `gateway-port` beside `config.json` when
+that port is free, so browser storage keeps one origin across restarts; otherwise it binds an
+ephemeral port and saves that. It stores only non-secret Coder deployment URLs, workspace targets,
+structured port-forward rules, an optional Coder executable path, and the last gateway port. An
+attached image may be staged temporarily in an OS temporary directory while it is copied to the
+workspace; the local copy is deleted immediately after the transfer attempt. Browser UI preferences
 such as theme and panel size may use browser storage. Composer drafts and prompt stashes retain
-text in browser storage, but never image bytes or upload IDs. Messages, active workspace
-projections, open Files tabs and editor state, provider sessions, and screenshot artifact object
-URLs are memory-only.
+text in browser storage, but never image bytes or upload IDs. As on main, IndexedDB caches each
+environment's shell, settled thread snapshots, server config, and full branch lists so a reload
+renders before the workspace answers; the workspace remains the source of truth. Open Files tabs and
+editor state, provider sessions, and screenshot artifact object URLs are memory-only.
 Each active workspace accepts one loopback WebSocket at a time. The workspace helper can outlive
 that browser connection, so the gateway treats every accepted WebSocket as a distinct RPC session:
 it translates browser-local request IDs to helper-lifetime unique IDs, restores the browser IDs on
@@ -99,10 +102,10 @@ threads and 64 MiB of conservatively estimated data per browser atom registry; l
 snapshots are removed when either limit is reached. Sizing uses string lengths without serializing
 or encoding message bodies, and stops after 8,192 values or 64 levels of nesting. Snapshots exceeding
 those limits are dropped. This can evict large or complex threads earlier than exact byte accounting,
-but avoids scanning large message bodies when navigating away. Settled snapshots also remain in the
-existing bounded memory-only cache.
+but avoids scanning large message bodies when navigating away. Settled snapshots also remain in
+main's IndexedDB thread cache.
 
-The browser keeps bounded in-memory thread and terminal caches. Terminal attach requests resume
+The browser keeps a bounded in-memory terminal cache. Terminal attach requests resume
 from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
 receive a complete capped snapshot. Shell subscriptions use upstream's per-aggregate coalescing
 window, projecting the latest project or thread state once per batch. Thread subscriptions use
@@ -605,10 +608,15 @@ listed here is drift to remove rather than fork behavior to keep.
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, external agent-session imports, or `keybindings.json` editor.
 - **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last
-  project grouping mode stay in memory where upstream uses browser storage. The upstream idle
-  thread-snapshot retention lifecycle keeps Coder's 24-thread / 64 MiB cap because projections
-  cannot fall back to durable browser storage. Composer drafts and the prompt stash keep text in
-  browser storage but never image bytes.
+  project grouping mode stay in memory where upstream uses browser storage. `storage.ts` keeps
+  upstream's IndexedDB environment cache without the connection catalog, credentials, GitHub
+  routing permissions, or project favicons. The upstream idle thread-snapshot retention lifecycle
+  keeps Coder's 24-thread / 64 MiB cap. Composer drafts and the prompt stash keep text in browser
+  storage but never image bytes. Upstream clears an environment's cached data and
+  composer drafts when it is removed; Coder does this only when a workspace leaves the Coder
+  config, because stopped and disconnected workspaces also leave the platform registrations.
+  The workspace-to-environment mapping that makes this possible is memory-only, so a workspace
+  removed before it reconnects after a reload keeps its drafts.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab.
 

@@ -11,7 +11,12 @@ export class ConnectionTarget extends Schema.TaggedClass<ConnectionTarget>()("Co
 export type ConnectionTargetKind = ConnectionTarget["_tag"];
 export type NetworkStatus = "unknown" | "offline" | "online";
 
-export const ConnectionTransientReason = Schema.Literals(["network", "timeout", "transport"]);
+export const ConnectionTransientReason = Schema.Literals([
+  "network",
+  "timeout",
+  "transport",
+  "remote-unavailable",
+]);
 export type ConnectionTransientReason = typeof ConnectionTransientReason.Type;
 export const ConnectionBlockedReason = Schema.Literals(["configuration", "unsupported"]);
 export type ConnectionBlockedReason = typeof ConnectionBlockedReason.Type;

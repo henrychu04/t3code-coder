@@ -236,6 +236,44 @@ describe("local Coder gateway", () => {
     strictEqual(JSON.parse(await NodeFS.readFile(configPath, "utf8")).version, 1);
   });
 
+  it("reuses the saved loopback port so the browser origin stays stable", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const portPath = NodePath.join(directory, "gateway-port");
+
+    const first = await startLocalCoderGateway({ portPath });
+    const firstPort = new URL(first.url).port;
+    strictEqual((await NodeFS.readFile(portPath, "utf8")).trim(), firstPort);
+    await first.close();
+
+    const second = await startLocalCoderGateway({ portPath });
+    closeGateway = second.close;
+    strictEqual(new URL(second.url).port, firstPort);
+    strictEqual((await request({ url: `${second.url}/healthz` })).statusCode, 200);
+  });
+
+  it("falls back to an ephemeral port when the saved port is taken", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const portPath = NodePath.join(directory, "gateway-port");
+    const occupant = NodeNet.createServer();
+    occupant.listen(0, CODER_GATEWAY_HOST);
+    await once(occupant, "listening");
+    try {
+      const takenPort = (occupant.address() as NodeNet.AddressInfo).port;
+      await NodeFS.writeFile(portPath, `${takenPort}\n`);
+
+      const gateway = await startLocalCoderGateway({ portPath });
+      closeGateway = gateway.close;
+      const port = new URL(gateway.url).port;
+      strictEqual(port === String(takenPort), false);
+      strictEqual((await NodeFS.readFile(portPath, "utf8")).trim(), port);
+      strictEqual((await request({ url: `${gateway.url}/healthz` })).statusCode, 200);
+    } finally {
+      occupant.close();
+    }
+  });
+
   it("auto-starts, reports, restarts, and removes configured port forwards", async () => {
     const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
     tempDirectories.push(directory);

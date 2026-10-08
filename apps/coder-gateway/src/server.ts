@@ -701,6 +701,8 @@ interface WorkspaceConnection {
 
 export interface LocalCoderGatewayEffectOptions {
   readonly configPath?: string;
+  /** Remembers the loopback port so browser storage keeps one origin across restarts. */
+  readonly portPath?: string;
   readonly connectHelper?: (
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderHelperConnection, unknown, Scope.Scope>;
@@ -732,6 +734,29 @@ export interface LocalCoderGatewayEffectOptions {
     invocation: CoderInvocation,
   ) => Effect.Effect<CoderWorkspaceResourceUsage, unknown>;
   readonly workspaceResourceUsageTimeoutMs?: number;
+}
+
+const MIN_SAVED_GATEWAY_PORT = 1024;
+const MAX_SAVED_GATEWAY_PORT = 65_535;
+
+async function readSavedGatewayPort(portPath: string): Promise<number | null> {
+  try {
+    const raw = (await NodeFS.readFile(portPath, "utf8")).trim();
+    if (!/^\d+$/.test(raw)) return null;
+    const port = Number(raw);
+    return port >= MIN_SAVED_GATEWAY_PORT && port <= MAX_SAVED_GATEWAY_PORT ? port : null;
+  } catch {
+    return null;
+  }
+}
+
+async function saveGatewayPort(portPath: string, port: number): Promise<void> {
+  try {
+    await NodeFS.mkdir(NodePath.dirname(portPath), { recursive: true });
+    await NodeFS.writeFile(portPath, `${port}\n`, "utf8");
+  } catch {
+    // The next start falls back to an ephemeral port.
+  }
 }
 
 export function makeLocalCoderGateway(
@@ -2478,19 +2503,28 @@ export function makeLocalCoderGateway(
       }),
     );
 
-    yield* Effect.callback<void, Error>((resume) => {
-      const onError = (cause: Error) => resume(Effect.fail(cause));
-      server.once("error", onError);
-      server.listen(0, CODER_GATEWAY_HOST, () => {
-        server.off("error", onError);
-        resume(Effect.void);
+    const listen = (port: number) =>
+      Effect.callback<void, Error>((resume) => {
+        const onError = (cause: Error) => resume(Effect.fail(cause));
+        server.once("error", onError);
+        server.listen(port, CODER_GATEWAY_HOST, () => {
+          server.off("error", onError);
+          resume(Effect.void);
+        });
+        return Effect.sync(() => server.off("error", onError));
       });
-      return Effect.sync(() => server.off("error", onError));
-    });
+    // Browser storage belongs to the gateway origin, so reuse the last port when it is free.
+    const savedPort = options?.portPath
+      ? yield* Effect.promise(() => readSavedGatewayPort(options.portPath!))
+      : null;
+    yield* savedPort === null ? listen(0) : listen(savedPort).pipe(Effect.catch(() => listen(0)));
 
     const address = server.address();
     if (address === null || typeof address === "string") {
       return yield* Effect.fail(new Error("Local gateway did not bind to a TCP port."));
+    }
+    if (options?.portPath && address.port !== savedPort) {
+      yield* Effect.promise(() => saveGatewayPort(options.portPath!, address.port));
     }
 
     yield* Effect.promise(startConfiguredPortForwards);

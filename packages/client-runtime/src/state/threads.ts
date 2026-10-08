@@ -203,7 +203,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const environmentId = supervisor.target.environmentId;
   const retained = resumeCache?.snapshot;
   const owner = {};
-  // Coder: memory-only idle retention must release active snapshots and charge them after stream cleanup.
+  // Coder: bounded idle retention must release active snapshots and charge them after stream cleanup.
   if (resumeCache) {
     resumeCache.owner = owner;
     resumeCache.onActive?.();
@@ -947,7 +947,7 @@ function threadStateChanges(
 export function createEnvironmentThreadStateAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | EnvironmentCacheStore | R, E>,
 ) {
-  // Coder: memory-only browser retention bounds idle snapshots by count and bytes. This
+  // Coder: bounded idle retention limits idle snapshots by count and bytes. This
   // budget belongs to the atom registry, just like upstream's resume snapshots.
   const retentionAtom = Atom.make(() => makeThreadSnapshotRetention<ThreadResumeSnapshot>());
   // Cache definitions must outlive collectible live-atom definitions. The

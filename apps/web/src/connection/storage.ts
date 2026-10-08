@@ -1,93 +1,433 @@
-import { EnvironmentCacheStore } from "@t3tools/client-runtime/platform";
+import { ConnectionTransientError } from "@t3tools/client-runtime/connection";
+import {
+  ConnectionPersistenceError,
+  EnvironmentCacheStore,
+  encodeShellSnapshotForCache,
+} from "@t3tools/client-runtime/platform";
+import {
+  EnvironmentId,
+  OrchestrationShellSnapshot,
+  OrchestrationThreadDetailSnapshot,
+  ServerConfig,
+  ThreadId,
+  VcsListRefsResult,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import type {
-  EnvironmentId,
-  OrchestrationThreadDetailSnapshot,
-  ThreadId,
-} from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 
-const noValue = Effect.succeed(Option.none());
-const THREAD_CACHE_MAX_BYTES = 64 * 1024 * 1024;
-const THREAD_CACHE_MAX_ENTRIES = 24;
-const textEncoder = new TextEncoder();
-const threadCache = new Map<
-  string,
-  {
-    readonly environmentId: EnvironmentId;
-    readonly snapshot: OrchestrationThreadDetailSnapshot;
-    readonly bytes: number;
-  }
->();
-let threadCacheBytes = 0;
+const DATABASE_NAME = "t3code:connection-runtime";
+const DATABASE_VERSION = 4;
+const CATALOG_STORE_NAME = "catalog";
+const SHELL_STORE_NAME = "shell";
+const THREAD_STORE_NAME = "thread";
+const SERVER_CONFIG_STORE_NAME = "server-config";
+const VCS_REFS_STORE_NAME = "vcs-refs";
+const SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION = 1;
 
-const threadCacheKey = (environmentId: EnvironmentId, threadId: ThreadId) =>
-  JSON.stringify([environmentId, threadId]);
-
-function removeThreadCacheEntry(key: string): void {
-  const existing = threadCache.get(key);
-  if (!existing) return;
-  threadCache.delete(key);
-  threadCacheBytes -= existing.bytes;
-}
-
-function saveThreadCache(
+const StoredShellSnapshot = Schema.Struct({
+  schemaVersion: Schema.Literal(SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION),
   environmentId: EnvironmentId,
+  snapshot: OrchestrationShellSnapshot,
+});
+const StoredShellSnapshotJson = Schema.fromJsonString(StoredShellSnapshot);
+// v2 stores the snapshot sequence alongside the thread so a warm cache can
+// resume via `afterSequence` instead of re-downloading the full thread body.
+// v3 adds windowed (paginated) snapshots carrying `page` metadata. The bump
+// exists for rollback safety: a pre-pagination client would decode a windowed
+// v2 record, silently drop the unknown `page` field, and treat the partial
+// thread as complete forever. Older entries fail to decode → cold cache.
+// v4 reloads pre-thinking caches: their fallback system roles cannot recover
+// settled reasoning messages by resuming afterSequence.
+const StoredThreadSnapshot = Schema.Struct({
+  schemaVersion: Schema.Literal(4),
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
   snapshot: OrchestrationThreadDetailSnapshot,
-): void {
-  const key = threadCacheKey(environmentId, snapshot.thread.id);
-  const bytes = textEncoder.encode(JSON.stringify(snapshot)).byteLength;
-  if (bytes > THREAD_CACHE_MAX_BYTES) return;
-  removeThreadCacheEntry(key);
-  while (
-    threadCache.size > 0 &&
-    (threadCache.size >= THREAD_CACHE_MAX_ENTRIES ||
-      threadCacheBytes + bytes > THREAD_CACHE_MAX_BYTES)
-  ) {
-    const oldestKey = threadCache.keys().next().value as string | undefined;
-    if (oldestKey === undefined) break;
-    removeThreadCacheEntry(oldestKey);
-  }
-  threadCache.set(key, { environmentId, snapshot, bytes });
-  threadCacheBytes += bytes;
+});
+const StoredThreadSnapshotJson = Schema.fromJsonString(StoredThreadSnapshot);
+const StoredServerConfig = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  environmentId: EnvironmentId,
+  config: ServerConfig,
+});
+const StoredServerConfigJson = Schema.fromJsonString(StoredServerConfig);
+const StoredVcsRefs = Schema.Struct({
+  schemaVersion: Schema.Literal(1),
+  environmentId: EnvironmentId,
+  cwd: Schema.String,
+  refs: VcsListRefsResult,
+});
+const StoredVcsRefsJson = Schema.fromJsonString(StoredVcsRefs);
+const decodeStoredShellSnapshot = Schema.decodeUnknownEffect(StoredShellSnapshotJson);
+const decodeStoredThreadSnapshot = Schema.decodeUnknownEffect(StoredThreadSnapshotJson);
+const encodeStoredThreadSnapshot = Schema.encodeEffect(StoredThreadSnapshotJson);
+const decodeStoredServerConfig = Schema.decodeUnknownEffect(StoredServerConfigJson);
+const encodeStoredServerConfig = Schema.encodeEffect(StoredServerConfigJson);
+const decodeStoredVcsRefs = Schema.decodeUnknownEffect(StoredVcsRefsJson);
+const encodeStoredVcsRefs = Schema.encodeEffect(StoredVcsRefsJson);
+
+function catalogError(operation: string, cause: unknown) {
+  return new ConnectionTransientError({
+    reason: "remote-unavailable",
+    detail: `Could not ${operation} the local connection catalog: ${String(cause)}`,
+  });
 }
 
-// The browser is a stateless view of the selected Coder workspace. A bounded
-// memory-only thread LRU bridges atom eviction and short route gaps; durable
-// projects, threads, messages, credentials, and caches stay in that workspace.
-export const connectionStorageLayer = Layer.succeedContext(
-  Context.make(
-    EnvironmentCacheStore,
-    EnvironmentCacheStore.of({
-      loadShell: () => noValue,
-      saveShell: () => Effect.void,
+function persistenceError(
+  operation:
+    | "load-shell"
+    | "save-shell"
+    | "load-thread"
+    | "save-thread"
+    | "remove-thread"
+    | "load-server-config"
+    | "save-server-config"
+    | "load-vcs-refs"
+    | "save-vcs-refs"
+    | "remove-vcs-refs"
+    | "clear-vcs-refs"
+    | "clear-environment",
+  cause: unknown,
+) {
+  return new ConnectionPersistenceError({
+    operation,
+    message: `Could not ${operation.replaceAll("-", " ")}: ${String(cause)}`,
+  });
+}
+
+const openDatabase = Effect.fn("web.connectionStorage.openDatabase")(function* () {
+  return yield* Effect.callback<IDBDatabase, ConnectionTransientError>((resume) => {
+    if (typeof indexedDB === "undefined") {
+      resume(
+        Effect.fail(catalogError("open", "IndexedDB is unavailable in this browser context.")),
+      );
+      return;
+    }
+    const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
+    request.addEventListener("upgradeneeded", () => {
+      if (!request.result.objectStoreNames.contains(CATALOG_STORE_NAME)) {
+        request.result.createObjectStore(CATALOG_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(SHELL_STORE_NAME)) {
+        request.result.createObjectStore(SHELL_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(THREAD_STORE_NAME)) {
+        request.result.createObjectStore(THREAD_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(SERVER_CONFIG_STORE_NAME)) {
+        request.result.createObjectStore(SERVER_CONFIG_STORE_NAME);
+      }
+      if (!request.result.objectStoreNames.contains(VCS_REFS_STORE_NAME)) {
+        request.result.createObjectStore(VCS_REFS_STORE_NAME);
+      }
+    });
+    request.addEventListener("error", () => {
+      resume(Effect.fail(catalogError("open", request.error ?? "Unknown IndexedDB error")));
+    });
+    request.addEventListener("success", () => {
+      resume(Effect.succeed(request.result));
+    });
+  });
+});
+
+function readDatabaseValue(database: IDBDatabase, storeName: string, key: IDBValidKey) {
+  return Effect.callback<unknown, ConnectionTransientError>((resume) => {
+    const request = database.transaction(storeName, "readonly").objectStore(storeName).get(key);
+    request.addEventListener("error", () => {
+      resume(Effect.fail(catalogError("read", request.error ?? "Unknown IndexedDB read error")));
+    });
+    request.addEventListener("success", () => {
+      resume(Effect.succeed(request.result));
+    });
+  }).pipe(Effect.withSpan("web.connectionStorage.readDatabaseValue"));
+}
+
+function writeDatabaseValue(
+  database: IDBDatabase,
+  storeName: string,
+  key: IDBValidKey,
+  value: unknown,
+) {
+  return Effect.callback<void, ConnectionTransientError>((resume) => {
+    const transaction = database.transaction(storeName, "readwrite");
+    // Every failed write fires "abort". A failed commit, such as
+    // QuotaExceededError, fires only "abort" and no "error".
+    transaction.addEventListener("abort", () => {
+      resume(
+        Effect.fail(catalogError("write", transaction.error ?? "Unknown IndexedDB write error")),
+      );
+    });
+    transaction.addEventListener("complete", () => {
+      resume(Effect.void);
+    });
+    transaction.objectStore(storeName).put(value, key);
+  }).pipe(Effect.withSpan("web.connectionStorage.writeDatabaseValue"));
+}
+
+function removeDatabaseValue(database: IDBDatabase, storeName: string, key: IDBValidKey) {
+  return Effect.callback<void, ConnectionTransientError>((resume) => {
+    const transaction = database.transaction(storeName, "readwrite");
+    transaction.addEventListener("error", () => {
+      resume(
+        Effect.fail(catalogError("remove", transaction.error ?? "Unknown IndexedDB remove error")),
+      );
+    });
+    transaction.addEventListener("complete", () => {
+      resume(Effect.void);
+    });
+    transaction.objectStore(storeName).delete(key);
+  }).pipe(Effect.withSpan("web.connectionStorage.removeDatabaseValue"));
+}
+
+function removeDatabaseValuesInRange(database: IDBDatabase, storeName: string, range: IDBKeyRange) {
+  return Effect.callback<void, ConnectionTransientError>((resume) => {
+    const transaction = database.transaction(storeName, "readwrite");
+    transaction.addEventListener("error", () => {
+      resume(
+        Effect.fail(catalogError("remove", transaction.error ?? "Unknown IndexedDB cursor error")),
+      );
+    });
+    transaction.addEventListener("complete", () => {
+      resume(Effect.void);
+    });
+    const request = transaction.objectStore(storeName).openCursor(range);
+    request.addEventListener("error", () => {
+      resume(
+        Effect.fail(catalogError("remove", request.error ?? "Unknown IndexedDB cursor error")),
+      );
+    });
+    request.addEventListener("success", () => {
+      const cursor = request.result;
+      if (cursor === null) {
+        return;
+      }
+      cursor.delete();
+      cursor.continue();
+    });
+  }).pipe(Effect.withSpan("web.connectionStorage.removeDatabaseValuesInRange"));
+}
+
+function threadCacheKey(environmentId: EnvironmentId, threadId: ThreadId) {
+  return `${environmentId}:${threadId}`;
+}
+
+function vcsRefsCacheKey(environmentId: EnvironmentId, cwd: string) {
+  return `${environmentId}:${cwd}`;
+}
+
+// Coder: the connection catalog, credentials, and GitHub routing permissions are omitted; Coder
+// owns authentication and the gateway owns workspace targets. Project favicons are not cached.
+export const connectionStorageLayer = Layer.effectContext(
+  Effect.gen(function* () {
+    const database = yield* Effect.acquireRelease(openDatabase(), (database) =>
+      Effect.sync(() => database.close()),
+    );
+    const cacheStore = EnvironmentCacheStore.of({
+      loadShell: (environmentId) =>
+        readDatabaseValue(database, SHELL_STORE_NAME, environmentId).pipe(
+          Effect.flatMap((raw) => {
+            if (typeof raw !== "string") {
+              return Effect.succeedNone;
+            }
+            return decodeStoredShellSnapshot(raw).pipe(
+              Effect.mapError((cause) => persistenceError("load-shell", cause)),
+              Effect.map((stored) =>
+                stored.environmentId === environmentId
+                  ? Option.some(stored.snapshot)
+                  : Option.none(),
+              ),
+            );
+          }),
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("load-shell", cause),
+          ),
+        ),
+      saveShell: (environmentId, snapshot) =>
+        Effect.gen(function* () {
+          const encodedSnapshot = yield* encodeShellSnapshotForCache(snapshot);
+          const encoded = yield* Effect.try({
+            try: () =>
+              // @effect-diagnostics-next-line preferSchemaOverJson:off - the snapshot is already encoded.
+              JSON.stringify({
+                schemaVersion: SHELL_SNAPSHOT_CACHE_SCHEMA_VERSION,
+                environmentId,
+                snapshot: encodedSnapshot,
+              } satisfies typeof StoredShellSnapshot.Encoded),
+            catch: (cause) => persistenceError("save-shell", cause),
+          });
+          yield* writeDatabaseValue(database, SHELL_STORE_NAME, environmentId, encoded);
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("save-shell", cause),
+          ),
+        ),
+      loadServerConfig: (environmentId) =>
+        readDatabaseValue(database, SERVER_CONFIG_STORE_NAME, environmentId).pipe(
+          Effect.flatMap((raw) => {
+            if (typeof raw !== "string") {
+              return Effect.succeedNone;
+            }
+            return decodeStoredServerConfig(raw).pipe(
+              Effect.mapError((cause) => persistenceError("load-server-config", cause)),
+              Effect.map((stored) =>
+                stored.environmentId === environmentId ? Option.some(stored.config) : Option.none(),
+              ),
+            );
+          }),
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("load-server-config", cause),
+          ),
+        ),
+      saveServerConfig: (environmentId, config) =>
+        Effect.gen(function* () {
+          const encoded = yield* encodeStoredServerConfig({
+            schemaVersion: 1,
+            environmentId,
+            config,
+          }).pipe(Effect.mapError((cause) => persistenceError("save-server-config", cause)));
+          yield* writeDatabaseValue(database, SERVER_CONFIG_STORE_NAME, environmentId, encoded);
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("save-server-config", cause),
+          ),
+        ),
       loadThread: (environmentId, threadId) =>
-        Effect.sync(() => {
-          const key = threadCacheKey(environmentId, threadId);
-          const cached = threadCache.get(key);
-          if (!cached) return Option.none<OrchestrationThreadDetailSnapshot>();
-          threadCache.delete(key);
-          threadCache.set(key, cached);
-          return Option.some(cached.snapshot);
-        }),
+        readDatabaseValue(
+          database,
+          THREAD_STORE_NAME,
+          threadCacheKey(environmentId, threadId),
+        ).pipe(
+          Effect.flatMap((raw) => {
+            if (typeof raw !== "string") {
+              return Effect.succeedNone;
+            }
+            return decodeStoredThreadSnapshot(raw).pipe(
+              Effect.mapError((cause) => persistenceError("load-thread", cause)),
+              Effect.map((stored) =>
+                stored.environmentId === environmentId && stored.threadId === threadId
+                  ? Option.some(stored.snapshot)
+                  : Option.none(),
+              ),
+            );
+          }),
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("load-thread", cause),
+          ),
+        ),
       saveThread: (environmentId, snapshot) =>
-        Effect.sync(() => saveThreadCache(environmentId, snapshot)),
+        Effect.gen(function* () {
+          const encoded = yield* encodeStoredThreadSnapshot({
+            schemaVersion: 4,
+            environmentId,
+            threadId: snapshot.thread.id,
+            snapshot,
+          }).pipe(Effect.mapError((cause) => persistenceError("save-thread", cause)));
+          yield* writeDatabaseValue(
+            database,
+            THREAD_STORE_NAME,
+            threadCacheKey(environmentId, snapshot.thread.id),
+            encoded,
+          );
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("save-thread", cause),
+          ),
+        ),
+      loadVcsRefs: (environmentId, cwd) =>
+        readDatabaseValue(database, VCS_REFS_STORE_NAME, vcsRefsCacheKey(environmentId, cwd)).pipe(
+          Effect.flatMap((raw) => {
+            if (typeof raw !== "string") {
+              return Effect.succeedNone;
+            }
+            return decodeStoredVcsRefs(raw).pipe(
+              Effect.mapError((cause) => persistenceError("load-vcs-refs", cause)),
+              Effect.map((stored) =>
+                stored.environmentId === environmentId && stored.cwd === cwd
+                  ? Option.some(stored.refs)
+                  : Option.none(),
+              ),
+            );
+          }),
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("load-vcs-refs", cause),
+          ),
+        ),
+      saveVcsRefs: (environmentId, cwd, refs) =>
+        Effect.gen(function* () {
+          const encoded = yield* encodeStoredVcsRefs({
+            schemaVersion: 1,
+            environmentId,
+            cwd,
+            refs,
+          }).pipe(Effect.mapError((cause) => persistenceError("save-vcs-refs", cause)));
+          yield* writeDatabaseValue(
+            database,
+            VCS_REFS_STORE_NAME,
+            vcsRefsCacheKey(environmentId, cwd),
+            encoded,
+          );
+        }).pipe(
+          Effect.mapError((cause) =>
+            cause._tag === "ConnectionPersistenceError"
+              ? cause
+              : persistenceError("save-vcs-refs", cause),
+          ),
+        ),
+      removeVcsRefs: (environmentId, cwd) =>
+        removeDatabaseValue(
+          database,
+          VCS_REFS_STORE_NAME,
+          vcsRefsCacheKey(environmentId, cwd),
+        ).pipe(Effect.mapError((cause) => persistenceError("remove-vcs-refs", cause))),
+      clearVcsRefs: (environmentId) =>
+        removeDatabaseValuesInRange(
+          database,
+          VCS_REFS_STORE_NAME,
+          IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+        ).pipe(Effect.mapError((cause) => persistenceError("clear-vcs-refs", cause))),
       removeThread: (environmentId, threadId) =>
-        Effect.sync(() => removeThreadCacheEntry(threadCacheKey(environmentId, threadId))),
-      loadServerConfig: () => noValue,
-      saveServerConfig: () => Effect.void,
-      loadVcsRefs: () => noValue,
-      saveVcsRefs: () => Effect.void,
-      removeVcsRefs: () => Effect.void,
-      clearVcsRefs: () => Effect.void,
+        removeDatabaseValue(
+          database,
+          THREAD_STORE_NAME,
+          threadCacheKey(environmentId, threadId),
+        ).pipe(Effect.mapError((cause) => persistenceError("remove-thread", cause))),
       clear: (environmentId) =>
-        Effect.sync(() => {
-          for (const [key, cached] of threadCache) {
-            if (cached.environmentId === environmentId) removeThreadCacheEntry(key);
-          }
-        }),
-    }),
-  ),
+        Effect.all(
+          [
+            removeDatabaseValue(database, SHELL_STORE_NAME, environmentId),
+            removeDatabaseValuesInRange(
+              database,
+              THREAD_STORE_NAME,
+              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+            ),
+            removeDatabaseValue(database, SERVER_CONFIG_STORE_NAME, environmentId),
+            removeDatabaseValuesInRange(
+              database,
+              VCS_REFS_STORE_NAME,
+              IDBKeyRange.bound(`${environmentId}:`, `${environmentId}:\uffff`),
+            ),
+          ],
+          { concurrency: "unbounded", discard: true },
+        ).pipe(Effect.mapError((cause) => persistenceError("clear-environment", cause))),
+    });
+
+    return Context.make(EnvironmentCacheStore, cacheStore);
+  }),
 );
