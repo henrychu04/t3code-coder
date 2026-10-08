@@ -536,6 +536,31 @@ listed here is drift to remove rather than fork behavior to keep.
     bounded text/content/media and legacy-artifact reads, fixed project-config reads, workspace
     directory listing, workspace-provider slash commands, and merge-request diffs. The method
     set stays `CoderWsRpcGroup`; unsupported upstream methods stay omitted.
+- **Provider and orchestration.** The provider service, Codex and Claude adapters, provider
+  command, runtime-ingestion, and checkpoint reactors, projection pipeline and snapshot query,
+  decider, projector, and dispatch normalizer are upstream's with these Coder deltas. Reapply them
+  to whatever replaces those files:
+  - Claude runs through `Drivers/ClaudeCli.ts`, which implements the Agent SDK's `query()` and
+    `Query` surface over the workspace `claude` executable. Because there is no SDK, rewind uses
+    native `forkSession`/`resumeSessionAt` with turn boundaries kept in the resume cursor and
+    recovered from saved history by `ClaudeRewindHistory.ts`. MCP is disabled for both providers
+    and Codex declines MCP elicitations (see [Runtime boundary](#runtime-boundary)).
+  - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
+    paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
+    and WebP. Tool-result image bytes are omitted from persisted raw events
+    (`CodexScreenshotImages.ts` and Claude's sanitized tool-result blocks); legacy screenshot
+    `artifacts` still pass through tool activities.
+  - The dispatch normalizer claims staged images as described in
+    [Network and transfer constraints](#network-and-transfer-constraints). Deleting or reverting a
+    thread never deletes its attachments, so upstream's attachment-cleanup side effects are absent.
+  - The provider service prepends the agent MR command instructions to ordinary turns and revokes
+    them on turn end, session exit or stop, stop-all, and failed sends.
+  - Thread-title and branch-name generation use only Codex or Claude models.
+  - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
+    event logs, provider sign-in commands and credential-change guards, Codex feedback upload,
+    agent-session history import (`thread.history.import` and `import:` message IDs), SnapShot
+    sources, data-URL and file uploads, attachments on question answers, MCP tool presentation,
+    preview-tool metadata, and the agent device shim.
 - **Runtime modes.** New threads default to `approval-required` rather than upstream's
   `full-access`. Until a provider reports its supported modes, the composer and the Codex adapter
   offer only the safe modes.
