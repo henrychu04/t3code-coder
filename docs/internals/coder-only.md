@@ -618,7 +618,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
-  keybindings; every workspace is remote; there is no desktop or WSL folder picker, browser
+  keybindings; every workspace is remote; Add project always shows the workspace picker, which
+  also lists each domain's unconnected workspaces and connects the chosen one; there is no desktop or WSL folder picker, browser
   preview, or usage page; GitLab is the only hosted clone source; non-GitLab hosts use a generic
   icon; review actions say merge request; and new projects publish only to GitLab, when discovery
   reports authenticated, writable access. Clone URLs are validated by the helper.
