@@ -410,6 +410,8 @@ export type Options = {
   readonly sessionId?: string;
   readonly settingSources?: ReadonlyArray<SettingSource>;
   readonly settings?: Record<string, unknown>;
+  /** CLI flags from the workspace launch-args setting; `null` is a flag without a value. */
+  readonly extraArgs?: Readonly<Record<string, string | null>>;
   readonly supportedDialogKinds?: ReadonlyArray<string>;
   readonly systemPrompt?: { readonly type: "preset"; readonly preset: "claude_code" };
   readonly stderr?: (data: string) => void;
@@ -612,6 +614,16 @@ export interface Query extends AsyncIterable<SDKMessage> {
 }
 
 const CONTROL_REQUEST_TIMEOUT_MS = 60_000;
+// Coder: launch args may add CLI flags but never an MCP configuration or the
+// stream-json transport flags this driver depends on.
+const RESERVED_CLAUDE_CLI_FLAGS: ReadonlySet<string> = new Set([
+  "mcp-config",
+  "strict-mcp-config",
+  "output-format",
+  "input-format",
+  "print",
+  "permission-prompt-tool",
+]);
 const PROCESS_TERMINATION_GRACE_MS = 5_000;
 const MAX_CLAUDE_CLI_LINE_BYTES = 1024 * 1024;
 
@@ -651,6 +663,11 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
   if (options.sessionId) args.push("--session-id", options.sessionId);
   if (options.persistSession === false) args.push("--no-session-persistence");
   if (options.settings) args.push("--settings", JSON.stringify(options.settings));
+  for (const [flag, value] of Object.entries(options.extraArgs ?? {})) {
+    if (RESERVED_CLAUDE_CLI_FLAGS.has(flag)) continue;
+    if (flag === "thinking-display" && options.thinking) continue;
+    args.push(`--${flag}`, ...(value === null ? [] : [value]));
+  }
 
   return args;
 }

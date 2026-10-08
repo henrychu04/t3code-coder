@@ -103,6 +103,13 @@ function mapSessionRpcError(
   error: InitialConfigError | ProbeError | ServerConfigSubscriptionError,
 ): ConnectionAttemptError {
   switch (error._tag) {
+    // Coder: the helper has no authorization layer and never emits this error.
+    case "EnvironmentAuthorizationError":
+      return new ConnectionBlockedError({
+        reason: "configuration",
+        detail: error.message,
+      });
+    case "KeybindingsConfigParseError":
     case "ServerSettingsError":
       return new ConnectionTransientErrorClass({
         reason: "transport",

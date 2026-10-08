@@ -1,8 +1,6 @@
 import {
   type CustomModelSetting,
   CustomModelCapabilities,
-  DEFAULT_MODEL,
-  DEFAULT_MODEL_BY_PROVIDER,
   MODEL_SLUG_ALIASES_BY_PROVIDER,
   ModelCapabilities,
   type ModelSelection,
@@ -19,6 +17,7 @@ const DEFAULT_PROVIDER_DRIVER_KIND = ProviderDriverKind.make("codex");
 export interface SelectableModelOption {
   slug: string;
   name: string;
+  aliases?: ReadonlyArray<string> | undefined;
 }
 
 export function createModelCapabilities(input: {
@@ -58,13 +57,6 @@ export function getProviderOptionBooleanSelectionValue(
 ): boolean | undefined {
   const value = getProviderOptionSelectionValue(selections, id);
   return typeof value === "boolean" ? value : undefined;
-}
-
-function getModelSelectionOptionValue(
-  modelSelection: ModelSelection | null | undefined,
-  id: string,
-): string | boolean | undefined {
-  return getProviderOptionSelectionValue(modelSelection?.options, id);
 }
 
 export function getModelSelectionStringOptionValue(
@@ -230,22 +222,6 @@ export function buildExplicitProviderOptionSelectionsFromDescriptors(
   return normalized && normalized.length > 0 ? normalized : undefined;
 }
 
-function getModelSelectionOptionDescriptors(
-  modelSelection: ModelSelection | null | undefined,
-  caps?: ModelCapabilities | null | undefined,
-): ReadonlyArray<ProviderOptionDescriptor> {
-  if (!modelSelection) {
-    return [];
-  }
-  if (!caps) {
-    return [];
-  }
-  return getProviderOptionDescriptors({
-    caps,
-    selections: modelSelection.options,
-  });
-}
-
 export function isClaudeUltrathinkPrompt(text: string | null | undefined): boolean {
   return typeof text === "string" && /\bultrathink\b/i.test(text);
 }
@@ -287,6 +263,7 @@ export interface CustomModelDefinition {
   readonly capabilities: ModelCapabilities | null;
 }
 
+// Coder: custom models cannot declare runtime modes; those come from the provider snapshot.
 const decodeCustomModelCapabilities = Schema.decodeUnknownOption(CustomModelCapabilities);
 
 /**
@@ -369,6 +346,13 @@ export function resolveSelectableModel(
     return byName.slug;
   }
 
+  const byAlias = options.find((option) =>
+    option.aliases?.some((alias) => alias.toLowerCase() === trimmed.toLowerCase()),
+  );
+  if (byAlias) {
+    return byAlias.slug;
+  }
+
   const normalized = normalizeModelSlug(trimmed, provider);
   if (!normalized) {
     return null;
@@ -376,21 +360,6 @@ export function resolveSelectableModel(
 
   const resolved = options.find((option) => option.slug === normalized);
   return resolved ? resolved.slug : null;
-}
-
-function resolveModelSlug(model: string | null | undefined, provider: ProviderDriverKind): string {
-  const normalized = normalizeModelSlug(model, provider);
-  if (!normalized) {
-    return DEFAULT_MODEL_BY_PROVIDER[provider] ?? DEFAULT_MODEL;
-  }
-  return normalized;
-}
-
-function resolveModelSlugForProvider(
-  provider: ProviderDriverKind,
-  model: string | null | undefined,
-): string {
-  return resolveModelSlug(model, provider);
 }
 
 /** Trim a string, returning null for empty/missing values. */
@@ -450,9 +419,10 @@ export function applyClaudePromptEffortPrefix(
   if (!trimmed) {
     return trimmed;
   }
-  // Prefixing a slash command turns it into prose, so Claude never runs it.
-  // Command names may contain punctuation (for example `/plugin:skill`), but
-  // an absolute path still contains another slash and should keep the prefix.
+  // Prefixing a slash command turns it into plain prose, so Claude never
+  // runs it. Command names come from arbitrary file names ("/deploy.prod",
+  // "/plugin:skill"), so accept any first token without a second slash;
+  // absolute paths like "/home/theo/app.ts" keep the prefix.
   if (effort !== "ultrathink" || /^\/[^\s/]+(?:\s|$)/u.test(trimmed)) {
     return trimmed;
   }

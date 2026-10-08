@@ -1,31 +1,38 @@
-export * from "./assistantCitations.ts";
 export * from "./baseSchemas.ts";
+export * from "./assistantCitations.ts";
+export * from "./composerContext.ts";
+export * from "./composerContextClipboard.ts";
+export * from "./background.ts";
+export * from "./auth.ts";
 export * from "./environment.ts";
 export * from "./terminal.ts";
 export * from "./provider.ts";
 export * from "./providerInstance.ts";
+export * from "./providerSetup.ts";
 export * from "./providerRuntime.ts";
+export * from "./providerUsageLimits.ts";
+export * from "./usageLimitSourceId.ts";
 export * from "./model.ts";
 export * from "./keybindings.ts";
 export * from "./server.ts";
 export * from "./settings.ts";
 export * from "./git.ts";
+export * from "./vcs.ts";
 export * from "./sourceControl.ts";
 export * from "./projectClone.ts";
 export * from "./pullRequest.ts";
-export * from "./vcs.ts";
 export * from "./orchestration.ts";
+export * from "./t3ProjectFile.ts";
 export * from "./project.ts";
+export * from "./filesystem.ts";
+export * from "./agentSessions.ts";
 export * from "./review.ts";
-export * from "./screenshotArtifact.ts";
+export * from "./browserProfile.ts";
+export * from "./device.ts";
+export * from "./preview.ts";
 export * from "./rpc.ts";
-export * from "./providerUsageLimits.ts";
-
-export type * from "./coderGateway.ts";
-
 export * from "./worktreeSetup.ts";
 
-export * from "./t3ProjectFile.ts";
-
-export * from "./composerContext.ts";
-export * from "./composerContextClipboard.ts";
+// Coder: legacy screenshot artifacts and the local gateway wire.
+export * from "./screenshotArtifact.ts";
+export type * from "./coderGateway.ts";

@@ -1181,12 +1181,6 @@ describe("Coder auto-pull policy", () => {
       },
       enabled: true,
     },
-    {
-      name: "stops inheriting legacy opt-ins once settings are folded",
-      autoPull: true,
-      settings: { projectSettingsFolded: true },
-      enabled: false,
-    },
   ];
   for (const testCase of cases) {
     it.effect(testCase.name, () => {

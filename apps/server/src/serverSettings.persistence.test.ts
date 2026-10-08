@@ -28,20 +28,21 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
       const projectB = ProjectId.make("project-b");
       yield* settings.updateSettings({
         pullRequestMergeMethod: "squash",
-        pullRequestMergeMethodOverrides: { [projectA]: "rebase", [projectB]: "merge" },
-      });
-      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
-        pullRequestMergeMethod: "squash",
-        pullRequestMergeMethodOverrides: { [projectA]: "rebase", [projectB]: "merge" },
         projectSettingsOverrides: {
           [projectA]: { pullRequestMergeMethod: "rebase" },
           [projectB]: { pullRequestMergeMethod: "merge" },
         },
       });
-      yield* settings.updateSettings({ pullRequestMergeMethodOverrides: { [projectA]: null } });
       assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
         pullRequestMergeMethod: "squash",
-        pullRequestMergeMethodOverrides: { [projectB]: "merge" },
+        projectSettingsOverrides: {
+          [projectA]: { pullRequestMergeMethod: "rebase" },
+          [projectB]: { pullRequestMergeMethod: "merge" },
+        },
+      });
+      yield* settings.updateSettings({ projectSettingsOverrides: { [projectA]: null } });
+      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
+        pullRequestMergeMethod: "squash",
         projectSettingsOverrides: { [projectB]: { pullRequestMergeMethod: "merge" } },
       });
     }).pipe(Effect.provide(settingsLayer)),
@@ -55,12 +56,17 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
       yield* settings.start;
 
       const updated = yield* settings.updateSettings({
-        automaticGitFetchInterval: Duration.seconds(30),
+        automaticGitFetchInterval: Duration.seconds(45),
       });
 
-      assert.strictEqual(Duration.toMillis(updated.automaticGitFetchInterval), 30_000);
+      assert.strictEqual(Duration.toMillis(updated.automaticGitFetchInterval), 45_000);
       assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
-        automaticGitFetchInterval: 30_000,
+        automaticGitFetchInterval: 45_000,
+        backgroundActivity: {
+          baseProfile: "balanced",
+          overrides: { automaticGitFetchInterval: 45_000 },
+          profile: "custom",
+        },
       });
 
       const reset = yield* settings.updateSettings({

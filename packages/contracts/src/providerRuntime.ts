@@ -24,9 +24,12 @@ const RuntimeEventRawSource = Schema.Union([
   Schema.Literal("codex.app-server.notification"),
   Schema.Literal("codex.app-server.request"),
   Schema.Literal("codex.eventmsg"),
-  Schema.Literal("codex.sdk.thread-event"),
   Schema.Literal("claude.sdk.message"),
   Schema.Literal("claude.sdk.permission"),
+  Schema.Literal("codex.sdk.thread-event"),
+  Schema.Literal("opencode.sdk.event"),
+  Schema.Literal("acp.jsonrpc"),
+  Schema.TemplateLiteral(["acp.", Schema.String, ".extension"]),
 ]);
 export type RuntimeEventRawSource = typeof RuntimeEventRawSource.Type;
 
@@ -386,12 +389,56 @@ const TurnDiffUpdatedPayload = Schema.Struct({
 });
 export type TurnDiffUpdatedPayload = typeof TurnDiffUpdatedPayload.Type;
 
+export const ToolActivitySurface = Schema.Literals(["browser", "computer"]);
+export type ToolActivitySurface = typeof ToolActivitySurface.Type;
+
+export const ToolActivityNativeAppReference = Schema.Union([
+  Schema.TaggedStruct("app-id", {
+    appId: TrimmedNonEmptyStringSchema.check(
+      Schema.isMaxLength(512),
+      Schema.isPattern(/^[A-Za-z0-9._-]+$/u),
+    ),
+  }),
+  Schema.TaggedStruct("display-name", {
+    displayName: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(160)),
+  }),
+]);
+export type ToolActivityNativeAppReference = typeof ToolActivityNativeAppReference.Type;
+
+export const ToolActivityIcon = Schema.Union([
+  Schema.TaggedStruct("website", {
+    pageUrl: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(4096)),
+    faviconUrl: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(4096))),
+    faviconUrlDark: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(4096))),
+  }),
+  Schema.TaggedStruct("native-app", {
+    app: ToolActivityNativeAppReference,
+  }),
+  Schema.TaggedStruct("themed-logo", {
+    logoUrl: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(4096)),
+    logoUrlDark: Schema.optional(TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(4096))),
+  }),
+]);
+export type ToolActivityIcon = typeof ToolActivityIcon.Type;
+
+export const ToolActivitySource = Schema.Struct({
+  key: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(512)),
+  name: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(160)),
+  kind: Schema.Literals(["browser", "computer", "integration"]),
+  icon: Schema.optional(ToolActivityIcon),
+});
+export type ToolActivitySource = typeof ToolActivitySource.Type;
+
 export const ItemLifecyclePayload = Schema.Struct({
   itemType: CanonicalItemType,
   status: Schema.optional(RuntimeItemStatus),
   title: Schema.optional(TrimmedNonEmptyStringSchema),
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
+  toolSurface: Schema.optional(ToolActivitySurface),
+  toolIcon: Schema.optional(ToolActivityIcon),
+  toolSource: Schema.optional(ToolActivitySource),
   data: Schema.optional(Schema.Unknown),
+  // Coder: legacy screenshot artifacts on tool items.
   imageCaptureWarning: Schema.optional(TrimmedNonEmptyStringSchema),
   artifacts: Schema.optional(Schema.Array(ScreenshotArtifactReference)),
   /**
@@ -416,8 +463,8 @@ const RequestOpenedPayload = Schema.Struct({
   requestType: CanonicalRequestType,
   detail: Schema.optional(TrimmedNonEmptyStringSchema),
   appName: Schema.optional(TrimmedNonEmptyStringSchema),
-  args: Schema.optional(Schema.Unknown),
   options: Schema.optional(Schema.Array(ProviderApprovalOption)),
+  args: Schema.optional(Schema.Unknown),
 });
 export type RequestOpenedPayload = typeof RequestOpenedPayload.Type;
 
@@ -461,8 +508,8 @@ export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 /**
  * Typed per-task usage rollup. Field names match the orchestration-v2 subagent
  * usage vocabulary (#4779) so the eventual migration is a rename, not a remap.
- * Claude reports cumulative task totals; the merge strategy lives in
- * client-runtime.
+ * Claude reports per-activation deltas; Codex reports cumulative totals — the
+ * merge strategy is provider-specific and lives in client-runtime.
  */
 export const RuntimeTaskUsage = Schema.Struct({
   totalTokens: NonNegativeInt,
@@ -567,7 +614,7 @@ const taskAgentLinkageFields = {
   /** Codex agent hierarchy path, e.g. "/root/marlow". */
   agentPath: Schema.optional(TrimmedNonEmptyStringSchema),
   /**
-   * Set on provider-synthesized child-agent events whose activity
+   * Set on provider-synthesized child-agent events (Codex) whose activity
    * belongs in the Agents surface, never the parent timeline.
    */
   timelineBypass: Schema.optional(Schema.Boolean),
@@ -689,7 +736,12 @@ const AccountUpdatedPayload = Schema.Struct({
 });
 export type AccountUpdatedPayload = typeof AccountUpdatedPayload.Type;
 
+/**
+ * Adapters normalise their native rate-limit payload at the boundary so the
+ * consumer that folds it into the provider snapshot never sees driver shapes.
+ */
 const AccountRateLimitsUpdatedPayload = Schema.Struct({
+  // Coder: forwarded raw; Coder does not ingest upstream's usage-limit snapshots.
   rateLimits: Schema.Unknown,
 });
 export type AccountRateLimitsUpdatedPayload = typeof AccountRateLimitsUpdatedPayload.Type;
@@ -733,10 +785,6 @@ const FilesPersistedPayload = Schema.Struct({
       filename: TrimmedNonEmptyStringSchema,
       fileId: TrimmedNonEmptyStringSchema,
     }),
-    /**
-     * Adapters normalise their native rate-limit payload at the boundary so the
-     * consumer that folds it into the provider snapshot never sees driver shapes.
-     */
   ),
   failed: Schema.optional(
     Schema.Array(
@@ -1186,24 +1234,6 @@ export type ProviderRuntimeEventV2 = typeof ProviderRuntimeEventV2.Type;
 
 export const ProviderRuntimeEvent = ProviderRuntimeEventV2;
 export type ProviderRuntimeEvent = ProviderRuntimeEventV2;
-
-// Compatibility aliases for call sites still importing legacy names.
-const ProviderRuntimeMessageDeltaEvent = ProviderRuntimeContentDeltaEvent;
-export type ProviderRuntimeMessageDeltaEvent = ProviderRuntimeContentDeltaEvent;
-const ProviderRuntimeMessageCompletedEvent = ProviderRuntimeItemCompletedEvent;
-export type ProviderRuntimeMessageCompletedEvent = ProviderRuntimeItemCompletedEvent;
-const ProviderRuntimeToolStartedEvent = ProviderRuntimeItemStartedEvent;
-export type ProviderRuntimeToolStartedEvent = ProviderRuntimeItemStartedEvent;
-const ProviderRuntimeToolCompletedEvent = ProviderRuntimeItemCompletedEvent;
-export type ProviderRuntimeToolCompletedEvent = ProviderRuntimeItemCompletedEvent;
-const ProviderRuntimeApprovalRequestedEvent = ProviderRuntimeRequestOpenedEvent;
-export type ProviderRuntimeApprovalRequestedEvent = ProviderRuntimeRequestOpenedEvent;
-const ProviderRuntimeApprovalResolvedEvent = ProviderRuntimeRequestResolvedEvent;
-export type ProviderRuntimeApprovalResolvedEvent = ProviderRuntimeRequestResolvedEvent;
-
-// Legacy helper aliases retained for adapters/tests.
-const ProviderRuntimeToolKind = Schema.Literals(["command", "file-read", "file-change", "other"]);
-export type ProviderRuntimeToolKind = typeof ProviderRuntimeToolKind.Type;
 
 export const ProviderRuntimeTurnStatus = RuntimeTurnState;
 export type ProviderRuntimeTurnStatus = RuntimeTurnState;

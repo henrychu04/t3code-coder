@@ -563,9 +563,27 @@ listed here is drift to remove rather than fork behavior to keep.
     agent-session history import (`thread.history.import` and `import:` message IDs), SnapShot
     sources, data-URL and file uploads, attachments on question answers, MCP tool presentation,
     preview-tool metadata, and the agent device shim.
-- **Runtime modes.** New threads default to `approval-required` rather than upstream's
-  `full-access`. Until a provider reports its supported modes, the composer and the Codex adapter
-  offer only the safe modes.
+- **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
+  default), limited to the modes the workspace provider reports. Until a provider reports its
+  supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
+  selection falls back to the most permissive supported mode.
+- **Contracts.** `packages/contracts` follows upstream, including dormant schemas for surfaces Coder
+  does not serve (auth, provider setup, other providers' settings, browser, device, preview, usage
+  sources, agent sessions, filesystem browse, background policy). Coder deltas:
+  - `rpc.ts` omits RPCs whose schemas belong to excluded modules (assets, attachment upload URLs,
+    preview automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback
+    upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
+    only group the helper serves. Upstream's `EnvironmentAuthorizationError` stays in error
+    unions but is never emitted.
+  - `ServerConfig` omits auth, editors, remote open targets, and observability.
+  - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
+    `CustomModelCapabilities`, which cannot declare them.
+  - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
+  - Client settings add per-workspace `providerPreferencesByEnvironment`.
+  - `shared/serverSettings.ts` adds `resolveCoderTextGenerationModelSelection`. Claude launch args
+    reach the workspace CLI except MCP and stream-json transport flags.
+  - The web provider list and client-runtime `state/server.ts` stay limited to the methods and
+    providers the helper serves.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
   and remote icons. Images move through the gateway and SCP (see

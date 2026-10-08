@@ -23,8 +23,9 @@ const remoteEnvironmentId = EnvironmentId.make("env-remote");
 const repositoryIdentity = {
   canonicalKey: "workspace:/work/shared-repo",
   locator: {
-    source: "workspace-path" as const,
-    path: "/work/shared-repo",
+    source: "git-remote" as const,
+    remoteName: "origin",
+    remoteUrl: "file:///work/shared-repo",
   },
 };
 const defaultGroupingSettings = {
@@ -367,8 +368,9 @@ describe("environment grouping", () => {
     const destinationRepositoryIdentity = {
       canonicalKey: "workspace:/work/destination",
       locator: {
-        source: "workspace-path" as const,
-        path: "/work/destination",
+        source: "git-remote" as const,
+        remoteName: "origin",
+        remoteUrl: "file:///work/destination",
       },
     };
     const destinationPrimary = makeProject({

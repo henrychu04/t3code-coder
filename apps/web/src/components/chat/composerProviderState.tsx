@@ -72,13 +72,17 @@ export function getComposerPromptInjectionState(prompt: string): ComposerPromptI
   return isClaudeUltrathinkPrompt(prompt) ? "ultrathink" : "none";
 }
 
+/**
+ * Coder: keep the requested mode when the workspace provider supports it; otherwise use the
+ * most permissive supported mode. Supported modes are ordered from least to most permissive.
+ */
 export function resolveComposerRuntimeMode(
   runtimeMode: RuntimeMode,
   supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
 ): RuntimeMode {
   return supportedRuntimeModes.includes(runtimeMode)
     ? runtimeMode
-    : (supportedRuntimeModes[0] ?? "approval-required");
+    : (supportedRuntimeModes.at(-1) ?? "approval-required");
 }
 
 export function resolveAvailableRuntimeModes(

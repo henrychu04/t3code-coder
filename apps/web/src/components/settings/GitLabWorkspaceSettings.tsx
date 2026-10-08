@@ -41,7 +41,7 @@ export function EnvironmentSourceControlStatus({
   const query = useEnvironmentQuery(
     sourceControlEnvironment.discovery({
       environmentId: environment.environmentId,
-      input: undefined,
+      input: {},
     }),
   );
   const reprobeWriteAccess = useAtomCommand(sourceControlEnvironment.probeWriteAccess, {

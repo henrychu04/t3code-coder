@@ -69,9 +69,6 @@ describe("Coder project settings migration", () => {
     expect(folded.projectSettingsOverrides[id]?.defaultProjectScripts).toBeUndefined();
     expect(folded.projectSettingsOverrides[id]?.defaultThreadEnvMode).toBe("local");
   });
-  it("marks a fresh workspace folded before projects can acquire and reset overrides", () => {
-    expect(foldLegacyProjectSettings(DEFAULT_SERVER_SETTINGS, []).projectSettingsFolded).toBe(true);
-  });
   it("keeps retained project edits compatible without pinning unrelated settings", () => {
     const settings = {
       ...DEFAULT_SERVER_SETTINGS,

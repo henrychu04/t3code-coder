@@ -74,7 +74,7 @@ describe("getComposerProviderState", () => {
   it("falls back when the selected runtime mode is unsupported", () => {
     expect(
       resolveComposerRuntimeMode("full-access", ["approval-required", "auto-accept-edits"]),
-    ).toBe("approval-required");
+    ).toBe("auto-accept-edits");
     expect(
       resolveComposerRuntimeMode("auto-accept-edits", ["approval-required", "auto-accept-edits"]),
     ).toBe("auto-accept-edits");
@@ -252,11 +252,12 @@ describe("getComposerProviderState", () => {
   it("validates options for a known model selected through a legacy alias", () => {
     const state = getComposerProviderState({
       provider: ProviderDriverKind.make("claudeAgent"),
-      model: "opus",
+      model: "legacy-test-model",
       models: [
         {
-          slug: "claude-opus-5",
-          name: "Claude Opus 5",
+          slug: "test-model",
+          name: "Test Model",
+          aliases: ["legacy-test-model"],
           isCustom: false,
           capabilities: {
             optionDescriptors: [
