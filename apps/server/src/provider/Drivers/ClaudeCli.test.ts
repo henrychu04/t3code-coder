@@ -49,6 +49,31 @@ describe("ClaudeCli", () => {
     assert.equal(args[args.indexOf("--session-id") + 1], "new-session");
   });
 
+  it("passes launch args through without overriding the integration or transport flags", () => {
+    const args = buildClaudeCliArgs({
+      pathToClaudeCodeExecutable: "claude",
+      thinking: { type: "adaptive", display: "summarized" },
+      extraArgs: {
+        chrome: null,
+        "max-turns": "5",
+        "mcp-config": '{"mcpServers":{"x":{}}}',
+        "strict-mcp-config": null,
+        "output-format": "text",
+        "thinking-display": "summarized",
+      },
+    });
+
+    assert.ok(args.includes("--chrome"));
+    assert.equal(args[args.indexOf("--max-turns") + 1], "5");
+    assert.deepEqual(
+      args.filter((arg) => arg === "--mcp-config" || arg === "--strict-mcp-config"),
+      ["--strict-mcp-config", "--mcp-config"],
+    );
+    assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
+    assert.equal(args.filter((arg) => arg === "--output-format").length, 1);
+    assert.equal(args.filter((arg) => arg === "--thinking-display").length, 1);
+  });
+
   it("preserves bounded directories and emits settings exactly once", () => {
     const args = buildClaudeCliArgs({
       pathToClaudeCodeExecutable: "claude",

@@ -563,9 +563,15 @@ listed here is drift to remove rather than fork behavior to keep.
     agent-session history import (`thread.history.import` and `import:` message IDs), SnapShot
     sources, data-URL and file uploads, attachments on question answers, MCP tool presentation,
     preview-tool metadata, and the agent device shim.
-- **Runtime modes.** New threads default to `approval-required` rather than upstream's
-  `full-access`. Until a provider reports its supported modes, the composer and the Codex adapter
-  offer only the safe modes.
+- **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
+  default), limited to the modes the workspace provider reports. Until a provider reports its
+  supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
+  selection falls back to the most permissive supported mode.
+- **Settings schema.** `contracts/settings.ts` and `shared/serverSettings.ts` are upstream's, including
+  dormant schemas for surfaces Coder does not expose (other providers, browser, device, usage
+  sources), plus Coder's per-workspace `providerPreferencesByEnvironment` and
+  `resolveCoderTextGenerationModelSelection`. Claude launch args reach the workspace CLI except
+  MCP and stream-json transport flags.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
   and remote icons. Images move through the gateway and SCP (see

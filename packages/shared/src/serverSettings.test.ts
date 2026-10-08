@@ -1,216 +1,762 @@
-import { describe, expect, it } from "vite-plus/test";
-import * as Duration from "effect/Duration";
 import {
   DEFAULT_SERVER_SETTINGS,
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  UsageLimitSourceId,
   type ServerProvider,
 } from "@t3tools/contracts";
-
+import * as Duration from "effect/Duration";
+import { describe, expect, it } from "vite-plus/test";
+import { resolveServerBackgroundActivitySettings } from "./backgroundActivitySettings.ts";
 import { createModelSelection } from "./model.ts";
 import { resolveProjectScripts, projectScriptsInheritDefaults } from "./projectScripts.ts";
 import {
   applyServerSettingsPatch,
-  resolveCoderTextGenerationModelSelection,
+  isModelSelectionProviderEnabled,
+  parsePersistedServerObservabilitySettings,
   resolveSourceControlWriterModelSelection,
+  resolveProjectAgentBrowserAccess,
   resolveProjectAutoPull,
 } from "./serverSettings.ts";
 
-const providerSnapshot = (input: {
-  readonly instanceId: "codex" | "claudeAgent";
-  readonly status?: ServerProvider["status"];
-  readonly models: ReadonlyArray<{ readonly slug: string; readonly isDefault?: boolean }>;
-}): ServerProvider => ({
-  instanceId: ProviderInstanceId.make(input.instanceId),
-  driver: ProviderDriverKind.make(input.instanceId),
-  enabled: true,
-  installed: true,
-  version: "1.0.0",
-  status: input.status ?? "ready",
-  auth: { status: "authenticated" },
-  checkedAt: "2026-09-02T00:00:00.000Z",
-  models: input.models.map((model) => ({
-    slug: model.slug,
-    name: model.slug,
-    isCustom: false,
-    ...(model.isDefault ? { isDefault: true } : {}),
-    capabilities: null,
-  })),
-  slashCommands: [],
-  skills: [],
-});
+/** Settings after the server has folded legacy per-project fields into `projectSettingsOverrides`. */
+const FOLDED_SERVER_SETTINGS = { ...DEFAULT_SERVER_SETTINGS, projectSettingsFolded: true };
 
-describe("source control server settings", () => {
-  it("treats fetch durations as atomic values", () => {
-    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      automaticGitFetchInterval: Duration.seconds(45),
+describe("serverSettings helpers", () => {
+  it("changes a cleanup rule without replacing the machine's other rules", () => {
+    const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      storageCleanup: { worktreeAfterDays: 8, worktreeOnMerge: true, logsAfterDays: 30 },
     });
-    expect(Duration.toMillis(next.automaticGitFetchInterval)).toBe(45_000);
-  });
-
-  it("uses an enabled dedicated writer model and falls back when disabled", () => {
-    const writerId = ProviderInstanceId.make("writer");
-    const writerDriver = ProviderDriverKind.make("claudeAgent");
-    const selection = createModelSelection(writerId, "claude-opus-4-1");
-    const enabled = {
-      ...DEFAULT_SERVER_SETTINGS,
-      providerInstances: {
-        [writerId]: { driver: writerDriver, enabled: true, config: {} },
-      },
-      sourceControlWriterModelSelection: selection,
-    };
-    expect(resolveSourceControlWriterModelSelection(enabled)).toBe(selection);
     expect(
-      resolveSourceControlWriterModelSelection({
-        ...enabled,
-        providerInstances: {
-          [writerId]: { driver: writerDriver, enabled: false, config: {} },
-        },
-      }),
-    ).toBe(DEFAULT_SERVER_SETTINGS.textGenerationModelSelection);
-  });
-});
-
-describe("generated-name model selection", () => {
-  const codex = providerSnapshot({
-    instanceId: "codex",
-    models: [{ slug: "gpt-5.6-luna", isDefault: true }],
-  });
-  const claude = providerSnapshot({
-    instanceId: "claudeAgent",
-    models: [{ slug: "claude-sonnet-4-6", isDefault: true }],
-  });
-
-  it("keeps a selected live provider and model", () => {
-    const selection = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.6-luna", [
-      { id: "reasoningEffort", value: "high" },
-    ]);
-    expect(resolveCoderTextGenerationModelSelection(selection, [codex, claude])).toBe(selection);
-  });
-
-  it("falls back to the first ready provider and its default model", () => {
-    const unavailableClaude = { ...claude, status: "error" as const };
-    expect(
-      resolveCoderTextGenerationModelSelection(
-        createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-sonnet-4-6"),
-        [unavailableClaude, codex],
-      ),
-    ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.6-luna"));
-  });
-
-  it("falls back to the selected provider's default when its model is stale", () => {
-    expect(
-      resolveCoderTextGenerationModelSelection(
-        createModelSelection(ProviderInstanceId.make("codex"), "retired-model"),
-        [codex, claude],
-      ),
-    ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.6-luna"));
-  });
-});
-
-describe("workspace project defaults", () => {
-  const id = ProjectId.make("project-defaults");
-  const script = {
-    id: "setup",
-    name: "Setup",
-    command: "pnpm install",
-    icon: "play" as const,
-    runOnWorktreeCreate: true,
-  };
-  it("preserves explicit false and resets automatic pull to the workspace default", () => {
-    const defaults = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      defaultAutoPull: true,
-      projectAutoPullOverrides: { [id]: false },
-    });
-    expect(resolveProjectAutoPull(defaults, id, true)).toBe(false);
-    const reset = applyServerSettingsPatch(defaults, { projectAutoPullOverrides: { [id]: null } });
-    expect(reset.projectAutoPullOverrides[id]).toBeUndefined();
-    expect(resolveProjectAutoPull(reset, id, false)).toBe(true);
-  });
-  it("preserves existing scripts and distinguishes empty overrides from inheritance", () => {
-    const defaults = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      defaultProjectScripts: [script],
-    });
-    const existing = { id, scripts: [{ ...script, id: "existing", command: "custom" }] };
-    expect(resolveProjectScripts(defaults, existing)).toEqual(existing.scripts);
-    const cleared = applyServerSettingsPatch(defaults, { projectScriptOverrides: { [id]: [] } });
-    expect(resolveProjectScripts(cleared, existing)).toEqual([]);
-    expect(projectScriptsInheritDefaults(cleared, existing)).toBe(false);
-    const reset = applyServerSettingsPatch(cleared, { projectScriptOverrides: { [id]: null } });
-    expect(resolveProjectScripts(reset, existing)).toEqual([script]);
-    expect(projectScriptsInheritDefaults(reset, existing)).toBe(true);
-  });
-  it("replaces default model options and preserves unrelated project overrides", () => {
-    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      defaultModelSelection: createModelSelection(ProviderInstanceId.make("codex"), "first", [
-        { id: "reasoningEffort", value: "high" },
-      ]),
-      projectAutoPullOverrides: { [id]: false },
-    });
-    const next = applyServerSettingsPatch(initial, {
-      defaultModelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "second"),
-    });
-    expect(next.defaultModelSelection?.options).toBeUndefined();
-    expect(next.projectAutoPullOverrides[id]).toBe(false);
-  });
-});
-
-describe("workspace merge method defaults", () => {
-  it("preserves other projects and clears only the requested override", () => {
-    const a = ProjectId.make("project-a");
-    const b = ProjectId.make("project-b");
-    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-      pullRequestMergeMethod: "squash",
-      pullRequestMergeMethodOverrides: { [a]: "merge", [b]: "rebase" },
-    });
-    const next = applyServerSettingsPatch(initial, {
-      pullRequestMergeMethodOverrides: { [a]: null },
-    });
-    expect(next.pullRequestMergeMethodOverrides).toEqual({ [b]: "rebase" });
-    expect(next.pullRequestMergeMethod).toBe("squash");
-    expect(initial.pullRequestMergeMethodOverrides[a]).toBe("merge");
-  });
-});
-
-it("merges custom cleanup rules without losing inherited retention and replaces policy modes", () => {
-  const defaults = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-    storageCleanup: { worktreeAfterDays: 8, logsAfterDays: 30, browserArtifactsAfterDays: 14 },
-  });
-  const custom = applyServerSettingsPatch(defaults, {
-    worktreeCleanup: { mode: "custom", rules: { worktreeOnMerge: true } },
-  });
-  expect(custom.worktreeCleanup).toEqual({
-    mode: "custom",
-    rules: {
-      worktreeAfterDays: 8,
+      applyServerSettingsPatch(enabled, {
+        storageCleanup: { worktreeAfterDays: null },
+      }).storageCleanup,
+    ).toEqual({
+      worktreeAfterDays: null,
       worktreeOnMerge: true,
       worktreeOnDelete: false,
       worktreeUnchanged: false,
-    },
+      browserArtifactsAfterDays: null,
+      logsAfterDays: 30,
+    });
   });
-  const changed = applyServerSettingsPatch(custom, {
-    worktreeCleanup: { mode: "custom", rules: { worktreeAfterDays: null } },
+  it("replaces SSH host lists when saving, editing, and removing hosts", () => {
+    const host = { id: "mini", label: "Mac mini", target: "mini" };
+    const saved = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { deviceHosts: [host] });
+    expect(saved.deviceHosts).toEqual([host]);
+    const replacement = { ...host, target: "other-mini" };
+    const edited = applyServerSettingsPatch(saved, { deviceHosts: [replacement] });
+    expect(edited.deviceHosts).toEqual([replacement]);
+    expect(applyServerSettingsPatch(edited, { deviceHosts: [] }).deviceHosts).toEqual([]);
   });
-  expect(changed.worktreeCleanup).toMatchObject({
-    rules: { worktreeAfterDays: null, worktreeOnMerge: true },
-  });
-  expect(changed.storageCleanup.logsAfterDays).toBe(30);
-  expect(changed.storageCleanup.browserArtifactsAfterDays).toBe(14);
-  expect(
-    applyServerSettingsPatch(changed, { worktreeCleanup: { mode: "off" } }).worktreeCleanup,
-  ).toEqual({ mode: "off" });
-  expect(applyServerSettingsPatch(changed, { worktreeCleanup: null }).worktreeCleanup).toBeNull();
-});
 
-it("preserves a custom generated-name model and options from the live snapshot", () => {
-  const snapshot = providerSnapshot({ instanceId: "codex", models: [{ slug: "custom" }] });
-  const custom = {
-    ...snapshot,
-    models: snapshot.models.map((model) => ({ ...model, isCustom: true })),
-  };
-  const selection = createModelSelection(custom.instanceId, "custom", [
-    { id: "effort", value: "high" },
-  ]);
-  expect(resolveCoderTextGenerationModelSelection(selection, [custom])).toBe(selection);
+  it("inherits actions, preserves existing actions, and supports empty overrides and reset", () => {
+    const project = { id: ProjectId.make("project-actions"), scripts: [] };
+    const action = {
+      id: "check",
+      name: "Check",
+      command: "npm test",
+      icon: "play" as const,
+      runOnWorktreeCreate: false,
+    };
+    const existing = { ...project, scripts: [{ ...action, command: "npm run lint" }] };
+    // Before the one-time fold, scripts stored on the project aggregate still apply.
+    const unfolded = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      defaultProjectScripts: [action],
+    });
+    expect(resolveProjectScripts(unfolded, existing)).toEqual(existing.scripts);
+    expect(projectScriptsInheritDefaults(unfolded, existing)).toBe(false);
+    const defaults = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
+      defaultProjectScripts: [action],
+    });
+    expect(resolveProjectScripts(defaults, project)).toEqual([action]);
+    expect(projectScriptsInheritDefaults(defaults, project)).toBe(true);
+    expect(resolveProjectScripts(defaults, existing)).toEqual([action]);
+    const disabled = applyServerSettingsPatch(defaults, {
+      projectScriptOverrides: { [project.id]: [] },
+    });
+    expect(resolveProjectScripts(disabled, project)).toEqual([]);
+    expect(projectScriptsInheritDefaults(disabled, project)).toBe(false);
+    const changedDefault = applyServerSettingsPatch(disabled, {
+      defaultProjectScripts: [{ ...action, command: "npm run build" }],
+    });
+    expect(resolveProjectScripts(changedDefault, project)).toEqual([]);
+    const reset = applyServerSettingsPatch(changedDefault, {
+      projectScriptOverrides: { [project.id]: null },
+    });
+    expect(resolveProjectScripts(reset, existing)).toEqual(changedDefault.defaultProjectScripts);
+    expect(projectScriptsInheritDefaults(reset, existing)).toBe(true);
+    expect(
+      resolveProjectScripts(
+        applyServerSettingsPatch(reset, { defaultProjectScripts: [] }),
+        existing,
+      ),
+    ).toEqual([]);
+  });
+
+  it("preserves other projects' actions when overriding, clearing, or resetting one project", () => {
+    const firstProject = { id: ProjectId.make("first-project"), scripts: [] };
+    const secondProject = { id: ProjectId.make("second-project"), scripts: [] };
+    const defaultAction = {
+      id: "check",
+      name: "Check",
+      command: "npm test",
+      icon: "play" as const,
+      runOnWorktreeCreate: false,
+    };
+    const firstAction = { ...defaultAction, command: "npm run lint" };
+    const secondAction = { ...defaultAction, command: "npm run build" };
+    const firstUpdate = applyServerSettingsPatch(FOLDED_SERVER_SETTINGS, {
+      defaultProjectScripts: [defaultAction],
+      projectScriptOverrides: { [firstProject.id]: [firstAction] },
+    });
+    const secondUpdate = applyServerSettingsPatch(firstUpdate, {
+      projectScriptOverrides: { [secondProject.id]: [secondAction] },
+    });
+    expect(resolveProjectScripts(secondUpdate, firstProject)).toEqual([firstAction]);
+    expect(resolveProjectScripts(secondUpdate, secondProject)).toEqual([secondAction]);
+
+    const cleared = applyServerSettingsPatch(secondUpdate, {
+      projectScriptOverrides: { [firstProject.id]: [] },
+    });
+    expect(resolveProjectScripts(cleared, firstProject)).toEqual([]);
+    expect(resolveProjectScripts(cleared, secondProject)).toEqual([secondAction]);
+
+    const reset = applyServerSettingsPatch(cleared, {
+      projectScriptOverrides: { [firstProject.id]: null },
+    });
+    expect(resolveProjectScripts(reset, { ...firstProject, scripts: [firstAction] })).toEqual([
+      defaultAction,
+    ]);
+    expect(resolveProjectScripts(reset, secondProject)).toEqual([secondAction]);
+    expect(resolveProjectScripts(secondUpdate, firstProject)).toEqual([firstAction]);
+  });
+
+  it("inherits automatic pull while preserving legacy opt-ins and explicit overrides", () => {
+    const projectId = ProjectId.make("project-pull");
+    expect(resolveProjectAutoPull(DEFAULT_SERVER_SETTINGS, projectId, false)).toBe(false);
+    expect(resolveProjectAutoPull(DEFAULT_SERVER_SETTINGS, projectId, true)).toBe(true);
+    const enabled = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, { defaultAutoPull: true });
+    expect(resolveProjectAutoPull(enabled, projectId, false)).toBe(true);
+    const overridden = applyServerSettingsPatch(enabled, {
+      projectAutoPullOverrides: { [projectId]: false },
+    });
+    expect(resolveProjectAutoPull(overridden, projectId, true)).toBe(false);
+    const reset = applyServerSettingsPatch(overridden, {
+      projectAutoPullOverrides: { [projectId]: null },
+    });
+    expect(resolveProjectAutoPull(reset, projectId, false)).toBe(true);
+    const disabled = applyServerSettingsPatch(reset, {
+      defaultAutoPull: false,
+      projectAutoPullOverrides: { [projectId]: true },
+    });
+    expect(resolveProjectAutoPull(disabled, projectId, false)).toBe(true);
+    expect(resolveProjectAutoPull(disabled, ProjectId.make("other-project"), false)).toBe(false);
+  });
+
+  it("inherits browser access and restores inheritance when a project override is removed", () => {
+    const projectId = ProjectId.make("project-browser");
+    const otherProjectId = ProjectId.make("other-project");
+    const overridden = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      projectAgentBrowserAccessOverrides: { [projectId]: false },
+    });
+    expect(resolveProjectAgentBrowserAccess(overridden, projectId)).toBe(false);
+    expect(resolveProjectAgentBrowserAccess(overridden, otherProjectId)).toBe(true);
+    const reset = applyServerSettingsPatch(overridden, {
+      projectAgentBrowserAccessOverrides: { [projectId]: null },
+    });
+    expect(resolveProjectAgentBrowserAccess(reset, projectId)).toBe(true);
+    const enabled = applyServerSettingsPatch(reset, {
+      enableAgentBrowserAccess: false,
+      projectAgentBrowserAccessOverrides: { [projectId]: true },
+    });
+    expect(resolveProjectAgentBrowserAccess(enabled, projectId)).toBe(true);
+    expect(resolveProjectAgentBrowserAccess(enabled, otherProjectId)).toBe(false);
+  });
+
+  it("preserves other projects' boolean overrides across separate updates and resets", () => {
+    const firstProjectId = ProjectId.make("first-project");
+    const secondProjectId = ProjectId.make("second-project");
+    const firstUpdate = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      defaultAutoPull: true,
+      projectAutoPullOverrides: { [firstProjectId]: false },
+      projectAgentBrowserAccessOverrides: { [firstProjectId]: false },
+    });
+    const secondUpdate = applyServerSettingsPatch(firstUpdate, {
+      projectAutoPullOverrides: { [secondProjectId]: false },
+      projectAgentBrowserAccessOverrides: { [secondProjectId]: false },
+    });
+    for (const projectId of [firstProjectId, secondProjectId]) {
+      expect(resolveProjectAutoPull(secondUpdate, projectId, false)).toBe(false);
+      expect(resolveProjectAgentBrowserAccess(secondUpdate, projectId)).toBe(false);
+    }
+
+    const reset = applyServerSettingsPatch(secondUpdate, {
+      projectAutoPullOverrides: { [firstProjectId]: null },
+      projectAgentBrowserAccessOverrides: { [firstProjectId]: null },
+    });
+    expect(resolveProjectAutoPull(reset, firstProjectId, false)).toBe(true);
+    expect(resolveProjectAgentBrowserAccess(reset, firstProjectId)).toBe(true);
+    expect(resolveProjectAutoPull(reset, secondProjectId, false)).toBe(false);
+    expect(resolveProjectAgentBrowserAccess(reset, secondProjectId)).toBe(false);
+    expect(reset.projectAutoPullOverrides[firstProjectId]).toBeUndefined();
+    expect(reset.projectAgentBrowserAccessOverrides[firstProjectId]).toBeUndefined();
+    expect(resolveProjectAutoPull(secondUpdate, firstProjectId, false)).toBe(false);
+    expect(resolveProjectAgentBrowserAccess(secondUpdate, firstProjectId)).toBe(false);
+  });
+
+  it("replaces and clears conversation model defaults without retaining old options", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      defaultModelSelection: createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
+        { id: "reasoningEffort", value: "high" },
+      ]),
+    });
+    const selection = createModelSelection(ProviderInstanceId.make("claudeAgent"), "sonnet");
+    const updated = applyServerSettingsPatch(current, { defaultModelSelection: selection });
+    expect(updated.defaultModelSelection).toEqual(selection);
+    expect(
+      applyServerSettingsPatch(updated, { defaultModelSelection: null }).defaultModelSelection,
+    ).toBeNull();
+  });
+
+  it("ignores missing and blank persisted observability URLs", () => {
+    expect(parsePersistedServerObservabilitySettings("{}")).toEqual({
+      otlpTracesUrl: undefined,
+      otlpMetricsUrl: undefined,
+      otlpLogsUrl: undefined,
+    });
+    expect(
+      parsePersistedServerObservabilitySettings(
+        JSON.stringify({
+          observability: { otlpTracesUrl: "   ", otlpMetricsUrl: "", otlpLogsUrl: "   " },
+        }),
+      ),
+    ).toEqual({
+      otlpTracesUrl: undefined,
+      otlpMetricsUrl: undefined,
+      otlpLogsUrl: undefined,
+    });
+  });
+
+  it("parses lenient persisted settings JSON and trims observability URLs", () => {
+    expect(
+      parsePersistedServerObservabilitySettings(
+        JSON.stringify({
+          observability: {
+            otlpTracesUrl: "  http://localhost:4318/v1/traces  ",
+            otlpMetricsUrl: "  http://localhost:4318/v1/metrics  ",
+            otlpLogsUrl: "  http://localhost:4318/v1/logs  ",
+          },
+        }),
+      ),
+    ).toEqual({
+      otlpTracesUrl: "http://localhost:4318/v1/traces",
+      otlpMetricsUrl: "http://localhost:4318/v1/metrics",
+      otlpLogsUrl: "http://localhost:4318/v1/logs",
+    });
+  });
+
+  it("falls back cleanly when persisted settings are invalid", () => {
+    expect(parsePersistedServerObservabilitySettings("{")).toEqual({
+      otlpTracesUrl: undefined,
+      otlpMetricsUrl: undefined,
+      otlpLogsUrl: undefined,
+    });
+  });
+
+  it("replaces text generation selection when provider/model are provided", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      textGenerationModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.4-mini",
+        [
+          { id: "reasoningEffort", value: "high" },
+          { id: "fastMode", value: true },
+        ],
+      ),
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        textGenerationModelSelection: {
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-5.4-mini",
+        },
+      }).textGenerationModelSelection,
+    ).toEqual({
+      instanceId: "codex",
+      model: "gpt-5.4-mini",
+    });
+  });
+
+  it("still deep merges text generation selection when only options are provided", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      textGenerationModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.4-mini",
+        [
+          { id: "reasoningEffort", value: "high" },
+          { id: "fastMode", value: true },
+        ],
+      ),
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        textGenerationModelSelection: {
+          options: [{ id: "fastMode", value: false }],
+        },
+      }).textGenerationModelSelection,
+    ).toEqual({
+      instanceId: "codex",
+      model: "gpt-5.4-mini",
+      options: [
+        { id: "reasoningEffort", value: "high" },
+        { id: "fastMode", value: false },
+      ],
+    });
+  });
+
+  it("replaces text generation selection across providers without leaking stale options", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      textGenerationModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.4-mini",
+        [
+          { id: "reasoningEffort", value: "high" },
+          { id: "fastMode", value: true },
+        ],
+      ),
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        textGenerationModelSelection: {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "openai/gpt-5",
+        },
+      }).textGenerationModelSelection,
+    ).toEqual({
+      instanceId: "opencode",
+      model: "openai/gpt-5",
+    });
+  });
+
+  it("accepts array-based text generation selection patches", () => {
+    expect(
+      applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+        textGenerationModelSelection: {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "openai/gpt-5",
+          options: [
+            { id: "variant", value: "prod" },
+            { id: "agent", value: "build" },
+          ],
+        },
+      }).textGenerationModelSelection,
+    ).toEqual({
+      instanceId: "opencode",
+      model: "openai/gpt-5",
+      options: [
+        { id: "variant", value: "prod" },
+        { id: "agent", value: "build" },
+      ],
+    });
+  });
+
+  it("replaces source control writer selection without retaining stale options", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      sourceControlWriterModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.4-mini",
+        [{ id: "reasoningEffort", value: "high" }],
+      ),
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        sourceControlWriterModelSelection: {
+          instanceId: ProviderInstanceId.make("opencode"),
+          model: "openai/gpt-5",
+        },
+      }).sourceControlWriterModelSelection,
+    ).toEqual({
+      instanceId: "opencode",
+      model: "openai/gpt-5",
+    });
+  });
+
+  it("clears source control writer selection with null", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      sourceControlWriterModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.4-mini",
+      ),
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        sourceControlWriterModelSelection: null,
+      }).sourceControlWriterModelSelection,
+    ).toBeNull();
+  });
+
+  it("falls back from a disabled source control writer provider without clearing its selection", () => {
+    const instanceId = ProviderInstanceId.make("codex_writer");
+    const sourceControlWriterModelSelection = createModelSelection(instanceId, "gpt-5.4-mini");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: {
+          driver: ProviderDriverKind.make("codex"),
+          enabled: false,
+          config: {},
+        },
+      },
+      sourceControlWriterModelSelection,
+    };
+
+    expect(isModelSelectionProviderEnabled(settings, sourceControlWriterModelSelection)).toBe(
+      false,
+    );
+    expect(resolveSourceControlWriterModelSelection(settings)).toBe(
+      settings.textGenerationModelSelection,
+    );
+    expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
+  });
+
+  it("falls back from an unavailable source control writer provider", () => {
+    const instanceId = ProviderInstanceId.make("missing_writer");
+    const sourceControlWriterModelSelection = createModelSelection(instanceId, "missing-model");
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [instanceId]: {
+          driver: ProviderDriverKind.make("missing-driver"),
+          config: {},
+        },
+      },
+      sourceControlWriterModelSelection,
+    };
+    const unavailableProvider = {
+      instanceId,
+      driver: ProviderDriverKind.make("missing-driver"),
+      enabled: false,
+      installed: false,
+      version: null,
+      status: "disabled",
+      auth: { status: "unknown" },
+      checkedAt: "2026-07-27T00:00:00.000Z",
+      availability: "unavailable",
+      unavailableReason: "This provider driver is not available in this build.",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    } satisfies ServerProvider;
+
+    expect(resolveSourceControlWriterModelSelection(settings, [unavailableProvider])).toBe(
+      settings.textGenerationModelSelection,
+    );
+    expect(settings.sourceControlWriterModelSelection).toBe(sourceControlWriterModelSelection);
+  });
+
+  it("replaces providerInstances maps so omitted instance fields are cleared", () => {
+    const codexId = ProviderInstanceId.make("codex");
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [codexId]: {
+          driver: ProviderDriverKind.make("codex"),
+          displayName: "Codex Work",
+          accentColor: "#7c3aed",
+          enabled: true,
+          config: { homePath: "~/.codex" },
+        },
+      },
+    };
+
+    expect(
+      applyServerSettingsPatch(current, {
+        providerInstances: {
+          [codexId]: {
+            driver: ProviderDriverKind.make("codex"),
+            displayName: "Codex Work",
+            enabled: true,
+            config: { homePath: "~/.codex" },
+          },
+        },
+      }).providerInstances[codexId],
+    ).toEqual({
+      driver: ProviderDriverKind.make("codex"),
+      displayName: "Codex Work",
+      enabled: true,
+      config: { homePath: "~/.codex" },
+    });
+  });
+
+  it("upserts and removes usageLimitSources per entry so concurrent edits cannot clobber", () => {
+    const hubA = UsageLimitSourceId.make("cliproxy-a");
+    const hubB = UsageLimitSourceId.make("cliproxy-b");
+    const source = (url: string) => ({
+      kind: "cliproxy" as const,
+      url,
+      managementKey: "secret",
+      enabled: true,
+    });
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      usageLimitSources: { [hubA]: source("http://a:8318") },
+    };
+
+    const added = applyServerSettingsPatch(current, {
+      usageLimitSources: { [hubB]: source("http://b:8318") },
+    });
+    expect(Object.keys(added.usageLimitSources)).toEqual([hubA, hubB]);
+
+    const removed = applyServerSettingsPatch(added, { usageLimitSources: { [hubA]: null } });
+    expect(Object.keys(removed.usageLimitSources)).toEqual([hubB]);
+  });
+
+  it("replaces and removes individual usage prices without clobbering other models", () => {
+    const prices = { inputCostPerMillionTokens: 2, outputCostPerMillionTokens: 8 };
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      usagePriceOverrides: { "example-model": { ...prices, cacheReadCostPerMillionTokens: 0.5 } },
+    });
+    const added = applyServerSettingsPatch(current, {
+      usagePriceOverrides: { "other-model": prices },
+    });
+    const replaced = applyServerSettingsPatch(added, {
+      usagePriceOverrides: { "example-model": prices },
+    });
+    expect(replaced.usagePriceOverrides).toEqual({
+      "example-model": prices,
+      "other-model": prices,
+    });
+    const removed = applyServerSettingsPatch(replaced, {
+      usagePriceOverrides: { "example-model": null },
+    });
+    expect(removed.usagePriceOverrides).toEqual({ "other-model": prices });
+    expect(current.usagePriceOverrides["example-model"]?.cacheReadCostPerMillionTokens).toBe(0.5);
+  });
+
+  it("stores background activity profiles as a versioned object and syncs legacy aliases", () => {
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      backgroundActivity: {
+        schemaVersion: 1,
+        profile: "battery-saver",
+        overrides: {},
+      },
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "battery-saver",
+      overrides: {},
+    });
+    expect(next.backgroundActivityProfile).toBe("battery-saver");
+    expect(Duration.toMillis(next.automaticGitFetchInterval)).toBe(0);
+    expect(Duration.toMillis(next.providerHealthRefreshInterval)).toBe(
+      Duration.toMillis(Duration.minutes(15)),
+    );
+  });
+
+  it("turns legacy interval patches into custom background activity overrides", () => {
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      automaticGitFetchInterval: Duration.seconds(15),
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "custom",
+      baseProfile: "balanced",
+      overrides: {
+        automaticGitFetchInterval: Duration.seconds(15),
+      },
+    });
+    expect(resolveServerBackgroundActivitySettings(next).profile).toBe("balanced");
+    expect(
+      Duration.toMillis(resolveServerBackgroundActivitySettings(next).automaticGitFetchInterval),
+    ).toBe(15_000);
+  });
+
+  it("preserves legacy background activity settings when applying an unrelated patch", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      backgroundActivityProfile: "performance" as const,
+      automaticGitFetchInterval: Duration.seconds(7),
+      providerHealthRefreshInterval: Duration.minutes(4),
+    };
+
+    const next = applyServerSettingsPatch(current, {
+      sourceControlWriterModelSelection: createModelSelection(
+        ProviderInstanceId.make("codex"),
+        "gpt-5.4-mini",
+      ),
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "custom",
+      baseProfile: "performance",
+      overrides: {
+        automaticGitFetchInterval: Duration.seconds(7),
+        providerHealthRefreshInterval: Duration.minutes(4),
+      },
+    });
+    expect(next.backgroundActivityProfile).toBe("performance");
+    expect(Duration.toMillis(next.automaticGitFetchInterval)).toBe(7_000);
+    expect(Duration.toMillis(next.providerHealthRefreshInterval)).toBe(240_000);
+  });
+
+  it("does not reactivate dormant overrides from a concrete profile", () => {
+    const current = {
+      ...DEFAULT_SERVER_SETTINGS,
+      backgroundActivity: {
+        schemaVersion: 1 as const,
+        profile: "battery-saver" as const,
+        overrides: {
+          providerHealthRefreshInterval: Duration.seconds(5),
+        },
+      },
+    };
+
+    const next = applyServerSettingsPatch(current, {
+      automaticGitFetchInterval: Duration.seconds(15),
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "custom",
+      baseProfile: "battery-saver",
+      overrides: {
+        automaticGitFetchInterval: Duration.seconds(15),
+      },
+    });
+  });
+
+  it("prefers structured background activity settings over legacy aliases", () => {
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      backgroundActivity: {
+        schemaVersion: 1,
+        profile: "battery-saver",
+        overrides: {},
+      },
+      automaticGitFetchInterval: Duration.seconds(5),
+      backgroundActivityProfile: "performance",
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "battery-saver",
+      overrides: {},
+    });
+    expect(next.backgroundActivityProfile).toBe("battery-saver");
+    expect(Duration.toMillis(next.automaticGitFetchInterval)).toBe(0);
+  });
+
+  it("reconciles custom background activity back to a preset when overrides match the preset", () => {
+    const custom = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      automaticGitFetchInterval: Duration.seconds(15),
+    });
+    const next = applyServerSettingsPatch(custom, {
+      automaticGitFetchInterval: Duration.seconds(30),
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "balanced",
+      overrides: {},
+    });
+    expect(next.backgroundActivityProfile).toBe("balanced");
+    expect(Duration.toMillis(next.automaticGitFetchInterval)).toBe(30_000);
+  });
+
+  it("drops custom overrides that duplicate the base profile", () => {
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      backgroundActivity: {
+        schemaVersion: 1,
+        profile: "custom",
+        baseProfile: "balanced",
+        overrides: {
+          automaticGitFetchInterval: Duration.seconds(30),
+        },
+      },
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "balanced",
+      overrides: {},
+    });
+  });
+
+  it("replaces the complete background override record", () => {
+    const current = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      backgroundActivity: {
+        schemaVersion: 1,
+        profile: "custom",
+        baseProfile: "balanced",
+        overrides: {
+          automaticGitFetchInterval: Duration.seconds(15),
+          providerHealthRefreshInterval: Duration.minutes(3),
+        },
+      },
+    });
+
+    const next = applyServerSettingsPatch(current, {
+      backgroundActivity: {
+        overrides: {
+          automaticGitFetchInterval: Duration.seconds(10),
+        },
+      },
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "custom",
+      baseProfile: "balanced",
+      overrides: {
+        automaticGitFetchInterval: Duration.seconds(10),
+      },
+    });
+  });
+
+  it("keeps interval overrides supplied with a profile patch", () => {
+    const next = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      backgroundActivityProfile: "performance",
+      automaticGitFetchInterval: Duration.seconds(0),
+      providerHealthRefreshInterval: Duration.minutes(4),
+    });
+
+    expect(next.backgroundActivity).toEqual({
+      schemaVersion: 1,
+      profile: "custom",
+      baseProfile: "performance",
+      overrides: {
+        automaticGitFetchInterval: Duration.seconds(0),
+        providerHealthRefreshInterval: Duration.minutes(4),
+      },
+    });
+  });
+
+  it("ignores overrides attached to a concrete background profile", () => {
+    const resolved = resolveServerBackgroundActivitySettings({
+      ...DEFAULT_SERVER_SETTINGS,
+      backgroundActivity: {
+        schemaVersion: 1,
+        profile: "balanced",
+        overrides: {
+          pauseWhenOnBattery: true,
+        },
+      },
+    });
+
+    expect(resolved.pauseWhenOnBattery).toBe(false);
+  });
 });

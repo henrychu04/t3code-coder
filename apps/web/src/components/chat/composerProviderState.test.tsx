@@ -74,7 +74,7 @@ describe("getComposerProviderState", () => {
   it("falls back when the selected runtime mode is unsupported", () => {
     expect(
       resolveComposerRuntimeMode("full-access", ["approval-required", "auto-accept-edits"]),
-    ).toBe("approval-required");
+    ).toBe("auto-accept-edits");
     expect(
       resolveComposerRuntimeMode("auto-accept-edits", ["approval-required", "auto-accept-edits"]),
     ).toBe("auto-accept-edits");

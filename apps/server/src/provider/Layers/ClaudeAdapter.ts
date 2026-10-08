@@ -13,6 +13,7 @@ import {
 import { homedir } from "node:os";
 import { readClaudeRewindHistory } from "../Drivers/ClaudeRewindHistory.ts";
 import * as FileSystem from "effect/FileSystem";
+import { parseCliArgs } from "@t3tools/shared/cliArgs";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
 import { planClaudeSkillDispatch } from "../Drivers/ClaudeSkillDispatch.ts";
 import { resolvePastedImageAttachments } from "../PastedImageAttachments.ts";
@@ -4839,6 +4840,11 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       ) => runPromise(handleResumeDialog(request, callbackOptions));
 
       const claudeBinaryPath = claudeSettings.binaryPath;
+      const {
+        "permission-mode": launchArgPermissionMode,
+        "dangerously-skip-permissions": launchArgSkipPermissions,
+        ...extraArgs
+      } = parseCliArgs(claudeSettings.launchArgs).flags;
       const selectedModel =
         input.modelSelection?.instanceId === boundInstanceId ? input.modelSelection : undefined;
       const modelSelection = selectedModel
@@ -4868,9 +4874,10 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
       const thinking = thinkingSupported
         ? getModelSelectionBooleanOptionValue(modelSelection, "thinking")
         : undefined;
+      const thinkingDisplayArg = extraArgs["thinking-display"];
       const requestThinkingSummaries = shouldRequestClaudeThinkingSummaries({
         thinking,
-        thinkingDisplay: undefined,
+        thinkingDisplay: typeof thinkingDisplayArg === "string" ? thinkingDisplayArg : undefined,
       });
       const ultracode = isClaudeCatalogUltracodeEffort(effort);
       const effectiveEffort = getEffectiveClaudeAgentEffort(
@@ -4883,7 +4890,14 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
         auto: "auto",
         "full-access": "bypassPermissions",
       };
-      const permissionMode = runtimeModeToPermission[input.runtimeMode];
+      // A permission launch arg is folded into the mode T3 sends rather than
+      // passed through: the CLI resolves both inputs together, so argv order
+      // never let the user's flag win.
+      const permissionMode =
+        (launchArgPermissionMode as PermissionMode | null | undefined) ??
+        (launchArgSkipPermissions === null || launchArgSkipPermissions === "true"
+          ? "bypassPermissions"
+          : runtimeModeToPermission[input.runtimeMode]);
       const settings = {
         ...(typeof thinking === "boolean" ? { alwaysThinkingEnabled: thinking } : {}),
         ...(requestThinkingSummaries ? { showThinkingSummaries: true } : {}),
@@ -4923,6 +4937,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
           ? { allowDangerouslySkipPermissions: true }
           : {}),
         ...(Object.keys(settings).length > 0 ? { settings } : {}),
+        ...(Object.keys(extraArgs).length > 0 ? { extraArgs } : {}),
         ...(existingResumeSessionId ? { resume: existingResumeSessionId } : {}),
         ...(resumeState?.forkAt ? { resumeSessionAt: resumeState.forkAt, forkSession: true } : {}),
         ...(newSessionId ? { sessionId: newSessionId } : {}),

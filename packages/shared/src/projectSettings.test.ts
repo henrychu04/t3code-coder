@@ -216,16 +216,16 @@ describe("projectSettingsOverrides patches", () => {
   it("replaces a project's entry, removes it with null, and drops empty entries", () => {
     const first = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       projectSettingsOverrides: {
-        [projectId]: { defaultAutoPull: true, newWorktreesStartFromOrigin: false },
+        [projectId]: { defaultAutoPull: true, enableAgentBrowserAccess: false },
         [otherProjectId]: { defaultAutoPull: false },
       },
     });
     expect(hasProjectSettingsOverrides(first)).toBe(true);
     const replaced = applyServerSettingsPatch(first, {
-      projectSettingsOverrides: { [projectId]: { newWorktreesStartFromOrigin: false } },
+      projectSettingsOverrides: { [projectId]: { enableAgentBrowserAccess: false } },
     });
     expect(replaced.projectSettingsOverrides[projectId]).toEqual({
-      newWorktreesStartFromOrigin: false,
+      enableAgentBrowserAccess: false,
     });
     expect(replaced.projectSettingsOverrides[otherProjectId]).toEqual({ defaultAutoPull: false });
     const emptied = applyServerSettingsPatch(replaced, {
@@ -244,25 +244,26 @@ describe("projectSettingsOverrides patches", () => {
   it("derives the legacy per-key maps from the generic record", () => {
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       projectSettingsOverrides: {
-        [projectId]: { defaultAutoPull: true, newWorktreesStartFromOrigin: false },
+        [projectId]: { defaultAutoPull: true, enableAgentBrowserAccess: false },
         [otherProjectId]: { defaultProjectScripts: [] },
       },
     });
     expect(settings.projectAutoPullOverrides).toEqual({ [projectId]: true });
+    expect(settings.projectAgentBrowserAccessOverrides).toEqual({ [projectId]: false });
     expect(settings.projectScriptOverrides).toEqual({ [otherProjectId]: [] });
   });
 
   it("translates legacy per-key patches into the generic record", () => {
     const written = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       projectAutoPullOverrides: { [projectId]: true },
-      pullRequestMergeMethodOverrides: { [projectId]: "merge", [otherProjectId]: "squash" },
+      projectAgentBrowserAccessOverrides: { [projectId]: false, [otherProjectId]: true },
     });
     expect(written.projectSettingsOverrides).toEqual({
-      [projectId]: { defaultAutoPull: true, pullRequestMergeMethod: "merge" },
-      [otherProjectId]: { pullRequestMergeMethod: "squash" },
+      [projectId]: { defaultAutoPull: true, enableAgentBrowserAccess: false },
+      [otherProjectId]: { enableAgentBrowserAccess: true },
     });
     const cleared = applyServerSettingsPatch(written, {
-      pullRequestMergeMethodOverrides: { [projectId]: null, [otherProjectId]: null },
+      projectAgentBrowserAccessOverrides: { [projectId]: null, [otherProjectId]: null },
     });
     expect(cleared.projectSettingsOverrides).toEqual({ [projectId]: { defaultAutoPull: true } });
   });
@@ -286,16 +287,16 @@ describe("projectSettingsOverrides patches", () => {
   it("builds replacement entries and clears individual keys", () => {
     const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
       projectSettingsOverrides: {
-        [projectId]: { defaultAutoPull: true, newWorktreesStartFromOrigin: false },
+        [projectId]: { defaultAutoPull: true, enableAgentBrowserAccess: false },
       },
     });
     expect(clearProjectSettingsOverrides(settings, projectId, ["defaultAutoPull"])).toEqual({
-      newWorktreesStartFromOrigin: false,
+      enableAgentBrowserAccess: false,
     });
     expect(
       clearProjectSettingsOverrides(settings, projectId, [
         "defaultAutoPull",
-        "newWorktreesStartFromOrigin",
+        "enableAgentBrowserAccess",
       ]),
     ).toBeNull();
     expect(clearProjectSettingsOverrides(settings, otherProjectId, ["defaultAutoPull"])).toBeNull();
@@ -309,14 +310,59 @@ describe("projectSettingsOverrides patches", () => {
   });
 });
 
-it("lets projects disable or override worktree cleanup without changing artifact retention", () => {
-  const settings = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
-    storageCleanup: { worktreeAfterDays: 8, browserArtifactsAfterDays: 14 },
-    projectSettingsOverrides: { [projectId]: { worktreeCleanup: { mode: "off" } } },
+describe("resolveWorktreeCleanup", () => {
+  it("inherits machine rules, disables one project and keeps custom rules isolated", () => {
+    const machine = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      storageCleanup: { worktreeAfterDays: 8, worktreeOnDelete: true, logsAfterDays: 3 },
+    });
+    const inherited = resolveWorktreeCleanup(machine, projectId);
+    const off = applyServerSettingsPatch(machine, {
+      projectSettingsOverrides: {
+        [projectId]: { worktreeCleanup: { mode: "off" } },
+      },
+    });
+    expect(resolveWorktreeCleanup(off, projectId)).toEqual({
+      worktreeAfterDays: null,
+      worktreeOnDelete: false,
+      worktreeOnMerge: false,
+      worktreeUnchanged: false,
+    });
+    expect(resolveWorktreeCleanup(off, otherProjectId)).toEqual(inherited);
+    const custom = applyServerSettingsPatch(off, {
+      projectSettingsOverrides: {
+        [projectId]: {
+          worktreeCleanup: { mode: "custom", rules: { ...inherited, worktreeAfterDays: 15 } },
+        },
+      },
+    });
+    expect(resolveWorktreeCleanup(custom, projectId).worktreeAfterDays).toBe(15);
+    expect(custom.storageCleanup.logsAfterDays).toBe(3);
+    const reset = applyServerSettingsPatch(custom, {
+      projectSettingsOverrides: {
+        [projectId]: clearProjectSettingsOverrides(custom, projectId, ["worktreeCleanup"]),
+      },
+    });
+    expect(resolveWorktreeCleanup(reset, projectId)).toEqual(inherited);
   });
-  expect(resolveWorktreeCleanup(settings, projectId).worktreeAfterDays).toBeNull();
-  expect(resolveWorktreeCleanup(settings, otherProjectId).worktreeAfterDays).toBe(8);
-  expect(
-    resolveProjectSettings(settings, projectId).settings.storageCleanup.browserArtifactsAfterDays,
-  ).toBe(14);
+  it("completes partial machine custom rules and preserves them across edits", () => {
+    const initial = applyServerSettingsPatch(DEFAULT_SERVER_SETTINGS, {
+      storageCleanup: { worktreeAfterDays: 8, worktreeOnDelete: true },
+    });
+    const custom = applyServerSettingsPatch(initial, {
+      worktreeCleanup: { mode: "custom", rules: { worktreeOnMerge: true } },
+    });
+    const edited = applyServerSettingsPatch(custom, {
+      worktreeCleanup: { mode: "custom", rules: { worktreeAfterDays: 15 } },
+    });
+    expect(resolveWorktreeCleanup(edited, null)).toEqual({
+      worktreeAfterDays: 15,
+      worktreeOnDelete: true,
+      worktreeOnMerge: true,
+      worktreeUnchanged: false,
+    });
+    expect(
+      resolveWorktreeCleanup(applyServerSettingsPatch(edited, { worktreeCleanup: null }), null)
+        .worktreeAfterDays,
+    ).toBe(8);
+  });
 });
