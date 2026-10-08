@@ -9,6 +9,6 @@ export class ShellSnapshotLoader extends Context.Reference<{
   readonly load: (
     prepared: PreparedConnection,
   ) => Effect.Effect<Option.Option<OrchestrationShellSnapshot>>;
-}>("@t3tools/client-runtime/state/shellSnapshotRpc/ShellSnapshotLoader", {
+}>("@t3tools/client-runtime/state/shellSnapshotHttp/ShellSnapshotLoader", {
   defaultValue: () => ({ load: () => Effect.succeed(Option.none()) }),
 }) {}

@@ -25,7 +25,7 @@ export class ThreadSnapshotLoader extends Context.Service<
       reasoningMessages?: boolean,
     ) => Effect.Effect<Option.Option<OrchestrationThreadDetailSnapshot>>;
   }
->()("@t3tools/client-runtime/state/threadSnapshotRpc/ThreadSnapshotLoader") {}
+>()("@t3tools/client-runtime/state/threadSnapshotHttp/ThreadSnapshotLoader") {}
 
 // Coder: snapshots and older pages use the current helper stdio session. No HTTP or durable browser cache.
 export function makeThreadSnapshotLoader(

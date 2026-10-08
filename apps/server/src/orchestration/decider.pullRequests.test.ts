@@ -16,7 +16,7 @@ import * as Schema from "effect/Schema";
 
 import { decideOrchestrationCommand } from "./decider.ts";
 import { projectEvent } from "./projector.ts";
-import { isThreadDetailEvent } from "../coderWs.ts";
+import { isThreadDetailEvent } from "../ws.ts";
 
 const decodeCommand = Schema.decodeUnknownEffect(OrchestrationCommand);
 

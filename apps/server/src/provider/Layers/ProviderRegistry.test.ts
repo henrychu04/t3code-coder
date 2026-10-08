@@ -16,7 +16,7 @@ import { ServerConfig } from "../../config.ts";
 import { ProviderInstanceRegistry } from "../Services/ProviderInstanceRegistry.ts";
 import { ProviderRegistry } from "../Services/ProviderRegistry.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
-import { listProviderWorkspaceSlashCommands } from "../../coderWs.ts";
+import { listProviderWorkspaceSlashCommands } from "../../ws.ts";
 
 import {
   mergeProviderSnapshot,

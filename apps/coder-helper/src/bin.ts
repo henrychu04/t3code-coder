@@ -17,7 +17,7 @@ import {
 } from "@t3tools/coder-cli/rpc";
 import * as ServerConfig from "t3/src/config.ts";
 import { withTerminalOutputWindow } from "t3/src/terminal/OutputProtocol.ts";
-import { makeCoderRuntimeLayer } from "t3/src/coderRuntime.ts";
+import { makeCoderRuntimeLayer } from "t3/src/server.ts";
 
 export const coderHelperHandlers = CoderHelperRpcGroup.toLayer({
   [CODER_HELPER_INFO_METHOD]: ({ protocolVersion }) =>

@@ -41,7 +41,7 @@ import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import type { RpcSession } from "../rpc/session.ts";
 import { createEnvironmentThreadDetailAtoms } from "./threadDetail.ts";
 import { THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
-import type { ThreadSnapshotWindow } from "./threadSnapshotRpc.ts";
+import type { ThreadSnapshotWindow } from "./threadSnapshotHttp.ts";
 import {
   createEnvironmentThreadStateAtoms,
   makeEnvironmentThreadState,

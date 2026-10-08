@@ -10,7 +10,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import type { EnvironmentSupervisor } from "../connection/supervisor.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import type { RpcSession } from "../rpc/session.ts";
-import { makeThreadSnapshotLoader } from "./threadSnapshotRpc.ts";
+import { makeThreadSnapshotLoader } from "./threadSnapshotHttp.ts";
 
 describe("Coder thread snapshot loader", () => {
   it.effect(

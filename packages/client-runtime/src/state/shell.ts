@@ -23,7 +23,7 @@ import { EnvironmentCacheStore } from "../platform/persistence.ts";
 import { subscribeDynamic } from "../rpc/client.ts";
 import type { RpcSession } from "../rpc/session.ts";
 // Coder: the loader uses the helper stream fallback instead of an environment HTTP endpoint.
-import { ShellSnapshotLoader } from "./shellSnapshotRpc.ts";
+import { ShellSnapshotLoader } from "./shellSnapshotHttp.ts";
 import { applyShellStreamEvent } from "./shellReducer.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
@@ -422,5 +422,5 @@ export function createEnvironmentShellAtoms<R, E>(
 
 export * from "./models.ts";
 export * from "./shellReducer.ts";
-export * from "./shellSnapshotRpc.ts";
+export * from "./shellSnapshotHttp.ts";
 export * from "./snapshots.ts";

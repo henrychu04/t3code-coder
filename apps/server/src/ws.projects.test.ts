@@ -41,10 +41,10 @@ import {
 } from "@t3tools/contracts";
 import * as ServerConfig from "./config.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
-import * as CoderWs from "./coderWs.ts";
+import * as CoderWs from "./ws.ts";
 import { EnvironmentThemeService } from "./environmentTheme.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
-import * as CoderRuntimeStartup from "./coderRuntimeStartup.ts";
+import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as OrchestrationEngine from "./orchestration/Services/OrchestrationEngine.ts";
 import { ThreadDeletionReactor } from "./orchestration/Services/ThreadDeletionReactor.ts";
 import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";

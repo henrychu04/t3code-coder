@@ -3,7 +3,7 @@ import { ThreadId, type OrchestrationThreadDetailSnapshot } from "@t3tools/contr
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 
-import { getProjectedThreadSnapshotWithinBudget } from "./coderWs.ts";
+import { getProjectedThreadSnapshotWithinBudget } from "./ws.ts";
 
 describe("Coder WebSocket boundary", () => {
   it.effect("selects the largest recent-turn window within the snapshot byte target", () =>
