@@ -451,6 +451,9 @@ function surfaceLabel(
   if (surface.kind === "pull-request")
     return "number" in surface ? `MR !${surface.number}` : "GitLab MR";
   if (surface.kind === "agents") return "Agents";
+  // Coder: preview and device surfaces are never opened.
+  if (surface.kind === "preview") return "Browser";
+  if (surface.kind === "device") return surface.title ?? "Device";
   return terminalLabels.get(surface.activeTerminalId) ?? "Terminal";
 }
 
