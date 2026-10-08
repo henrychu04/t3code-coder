@@ -205,7 +205,9 @@ the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts workspace-installed provider executables directly with argument-array spawning.
 Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout.
-No provider executable or Anthropic Agent SDK package is bundled. T3 does not inject its removed
+No provider executable or Anthropic Agent SDK runtime is bundled. The Agent SDK is a type-only
+development dependency; pnpm's `ignoredOptionalDependencies` keeps its bundled Claude Code
+binaries from ever installing. T3 does not inject its removed
 preview MCP server or a local-host transport into Codex. Codex authentication and other
 configuration remain workspace-owned and subject to workspace policy. Before every managed Codex
 process, T3 enumerates configured MCP names without starting the servers, appends a final
@@ -518,8 +520,7 @@ listed here is drift to remove rather than fork behavior to keep.
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
     remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
-    keybinding-config load falls back to defaults because the trimmed config RPC has no error
-    channel for it. Config updates use upstream's full `providerStatuses` events and gated
+    keybinding-config load falls back to defaults instead of failing the config read. Config updates use upstream's full `providerStatuses` events and gated
     environment themes; subscriptions do not force a provider refresh.
   - Shell/thread streams, replay validation, live-event budgets and coalescing, completion-marker
     negotiation, and capability flags follow upstream. Coder replaces HTTP thread snapshot
@@ -547,6 +548,12 @@ listed here is drift to remove rather than fork behavior to keep.
     native `forkSession`/`resumeSessionAt` with turn boundaries kept in the resume cursor and
     recovered from saved history by `ClaudeRewindHistory.ts`. MCP is disabled for both providers
     and Codex declines MCP elicitations (see [Runtime boundary](#runtime-boundary)).
+  - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
+    so upstream code that calls the SDK changes only its import source. Options the CLI transport
+    cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
+    the empty strict configuration. It has no `forkSession`: a forked Claude session starts with
+    `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` on its
+    first turn rather than copying transcript files.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
     and WebP. Tool-result image bytes are omitted from persisted raw events
@@ -588,9 +595,9 @@ listed here is drift to remove rather than fork behavior to keep.
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
   keybindings; every workspace is remote; there is no desktop or WSL folder picker, browser
-  preview, or usage page; non-GitLab hosts use a generic icon; and new projects publish only to
-  GitLab, when discovery reports authenticated, writable access. Clone URLs are validated by the
-  helper.
+  preview, or usage page; GitLab is the only hosted clone source; non-GitLab hosts use a generic
+  icon; review actions say merge request; and new projects publish only to GitLab, when discovery
+  reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
   and remote icons. Images move through the gateway and SCP (see

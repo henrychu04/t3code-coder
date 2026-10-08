@@ -139,7 +139,7 @@ describe("Coder foreground helper", () => {
           _tag: "Request",
           id: "shell-snapshot",
           tag: ORCHESTRATION_WS_METHODS.subscribeShell,
-          payload: {},
+          payload: { requestCompletionMarker: true },
           headers: [],
         })}\n`,
       );
