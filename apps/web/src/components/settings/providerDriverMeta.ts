@@ -16,6 +16,7 @@ type ProviderSettingsSchema = {
 export interface ProviderClientDefinition {
   readonly value: ProviderDriverKind;
   readonly label: string;
+  /** Coder: the workspace provider settings list shows each provider's mark. */
   readonly icon: Icon;
   readonly settingsSchema: ProviderSettingsSchema;
 }

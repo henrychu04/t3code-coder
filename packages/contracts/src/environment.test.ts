@@ -17,4 +17,20 @@ describe("ExecutionEnvironmentDescriptor", () => {
   it("decodes the Coder workspace capabilities", () => {
     expect(decodeDescriptor(descriptor).capabilities.repositoryIdentity).toBe(true);
   });
+
+  it("treats missing server-resolved command context as unsupported", () => {
+    expect(decodeDescriptor(descriptor).capabilities.serverResolvedCommandContext).toBeUndefined();
+  });
+
+  it("preserves advertised server-resolved command context", () => {
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: {
+          ...descriptor.capabilities,
+          serverResolvedCommandContext: true,
+        },
+      }).capabilities.serverResolvedCommandContext,
+    ).toBe(true);
+  });
 });

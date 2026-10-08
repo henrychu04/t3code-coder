@@ -39,13 +39,10 @@ const sharedProps = {
   onAddDiff: () => {},
   onAddFiles: () => {},
   onAddPullRequest: () => {},
-  onAddAgents: () => {},
   terminalAvailable: true,
   diffAvailable: true,
   filesAvailable: true,
   pullRequestAvailable: true,
-  agentsAvailable: true,
-  liveAgentCount: 0,
   children: null,
 } as const;
 
@@ -95,9 +92,9 @@ describe("RightPanelTabs", () => {
   it("renders the compact launcher and its retained shortcuts", () => {
     const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
 
-    expect(markup).toContain('data-surface-launcher-keys="TFDPA"');
+    expect(markup).toContain('data-surface-launcher-keys="TFDP"');
     expect(markup).toContain("flex flex-col gap-0.5");
-    expect(markup.match(/disabled:opacity-40/g)).toHaveLength(5);
+    expect(markup.match(/disabled:opacity-40/g)).toHaveLength(4);
   });
 
   it("colors a merge-request tab from its list seed", () => {
@@ -202,7 +199,9 @@ describe("right-panel tab context menu", () => {
   });
 
   it("returns no actions for a stale surface", () => {
-    expect(rightPanelTabContextMenuItems(surfaces, { id: "agents", kind: "agents" })).toEqual([]);
+    expect(
+      rightPanelTabContextMenuItems(surfaces.slice(0, 2), { id: "diff", kind: "diff" }),
+    ).toEqual([]);
   });
 });
 

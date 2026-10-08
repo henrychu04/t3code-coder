@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, ThreadId, TurnId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 import {
@@ -19,7 +19,7 @@ beforeEach(() =>
 describe("proactive panels", () => {
   it("rejects a deferred opening after a manual choice, but allows the next turn", () => {
     const panels = useRightPanelStore.getState();
-    const first = TurnId.make("first");
+    const first = RunId.make("first");
     const observed = observeProactivePanelUserChoice(null, {
       threadKey: "thread",
       runningTurnId: first,
@@ -31,7 +31,7 @@ describe("proactive panels", () => {
     ).toBe(false);
     const next = observeProactivePanelUserChoice(observed, {
       threadKey: "thread",
-      runningTurnId: TurnId.make("next"),
+      runningTurnId: RunId.make("next"),
       userActionRevision: panels.getUserActionRevision(ref),
     });
     expect(panels.openProactive(ref, { id: "diff", kind: "diff" }, next.userActionRevision)).toBe(
@@ -53,28 +53,33 @@ describe("proactive panels", () => {
     expect(panels.openProactive(ref, { id: "diff", kind: "diff" }, revision)).toBe(false);
   });
   it("waits for metadata, ignores empty diffs, and only opens completed turns", () => {
-    expect(resolveProactiveTurnDiffAction({ checkpoint: undefined, isGitRepo: true })).toBe(
-      "defer",
-    );
+    expect(
+      resolveProactiveTurnDiffAction({
+        checkpoint: undefined,
+        isGitRepo: true,
+        activeSurfaceKind: null,
+      }),
+    ).toBe("defer");
     expect(
       resolveProactiveTurnDiffAction({
         checkpoint: { status: "ready", files: [] },
         isGitRepo: true,
+        activeSurfaceKind: null,
       }),
     ).toBe("ignore");
     expect(
       shouldOpenProactiveTurnDiff({
-        previousRunningTurnId: TurnId.make("old"),
+        previousRunningTurnId: RunId.make("old"),
         runningTurnId: null,
-        settledTurnId: TurnId.make("other"),
+        settledTurnId: RunId.make("other"),
         turnCompleted: true,
       }),
     ).toBe(false);
     expect(
       shouldOpenProactiveTurnDiff({
-        previousRunningTurnId: TurnId.make("old"),
+        previousRunningTurnId: RunId.make("old"),
         runningTurnId: null,
-        settledTurnId: TurnId.make("old"),
+        settledTurnId: RunId.make("old"),
         turnCompleted: true,
       }),
     ).toBe(true);

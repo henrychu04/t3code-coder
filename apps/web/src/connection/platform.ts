@@ -1,7 +1,4 @@
-import {
-  EnvironmentOwnedDataCleanup,
-  PlatformConnectionSource,
-} from "@t3tools/client-runtime/platform";
+import { PlatformConnectionSource, Persistence } from "@t3tools/client-runtime/platform";
 import {
   ConnectionRegistration,
   ConnectionTarget,
@@ -52,7 +49,7 @@ const wakeupsLayer = Wakeups.layer({
 });
 
 const platformConnectionSourceLayer = Layer.effect(
-  PlatformConnectionSource,
+  PlatformConnectionSource.PlatformConnectionSource,
   Effect.sync(() => {
     const registrations = () =>
       readCoderWorkspaceEnvironments().map(({ workspaceId, descriptor }) => {
@@ -68,7 +65,7 @@ const platformConnectionSourceLayer = Layer.effect(
           }),
         });
       });
-    return PlatformConnectionSource.of({
+    return PlatformConnectionSource.PlatformConnectionSource.of({
       registrations: Stream.callback<ReadonlyArray<ConnectionRegistration>>((queue) =>
         Effect.acquireRelease(
           Effect.sync(() => {
@@ -95,8 +92,8 @@ const platformConnectionSourceLayer = Layer.effect(
 );
 
 const environmentOwnedDataCleanupLayer = Layer.succeed(
-  EnvironmentOwnedDataCleanup,
-  EnvironmentOwnedDataCleanup.of({
+  Persistence.EnvironmentOwnedDataCleanup,
+  Persistence.EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) => Effect.sync(() => clearComposerDraftsEnvironment(environmentId)),
   }),
 );

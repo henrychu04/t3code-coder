@@ -52,14 +52,8 @@ import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
 import { buildUnavailableProviderSnapshot } from "../unavailableProviderSnapshot.ts";
-import {
-  ProviderInstanceRegistry,
-  type ProviderInstanceRegistryShape,
-} from "../Services/ProviderInstanceRegistry.ts";
-import {
-  ProviderInstanceRegistryMutator,
-  type ProviderInstanceRegistryMutatorShape,
-} from "../Services/ProviderInstanceRegistryMutator.ts";
+import * as ProviderInstanceRegistry from "../Services/ProviderInstanceRegistry.ts";
+import * as ProviderInstanceRegistryMutator from "../Services/ProviderInstanceRegistryMutator.ts";
 import type { AnyProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
 
 /**
@@ -341,8 +335,8 @@ export const makeProviderInstanceRegistry = <R>(input: {
   readonly configMap: ProviderInstanceConfigMap;
 }): Effect.Effect<
   {
-    readonly registry: ProviderInstanceRegistryShape;
-    readonly mutator: ProviderInstanceRegistryMutatorShape;
+    readonly registry: ProviderInstanceRegistry.ProviderInstanceRegistryShape;
+    readonly mutator: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape;
   },
   never,
   R | Scope.Scope
@@ -371,14 +365,14 @@ export const makeProviderInstanceRegistry = <R>(input: {
 
     const state: RegistryState = { entries, unavailable, changes };
     const reconcileWithR = makeReconcile({ state, driversById, parentScope });
-    const reconcile: ProviderInstanceRegistryMutatorShape["reconcile"] = (configMap) =>
-      reconcileWithR(configMap).pipe(Effect.provideContext(driverContext));
+    const reconcile: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["reconcile"] =
+      (configMap) => reconcileWithR(configMap).pipe(Effect.provideContext(driverContext));
 
     // Hydrate the initial configMap synchronously so callers can read
     // `listInstances` immediately after this effect completes.
     yield* reconcile(input.configMap);
 
-    const registry: ProviderInstanceRegistryShape = {
+    const registry: ProviderInstanceRegistry.ProviderInstanceRegistryShape = {
       getInstance: (id) => Ref.get(entries).pipe(Effect.map((map) => map.get(id)?.instance)),
       listInstances: Ref.get(entries).pipe(
         Effect.map(
@@ -406,7 +400,9 @@ export const makeProviderInstanceRegistry = <R>(input: {
       },
     };
 
-    const mutator: ProviderInstanceRegistryMutatorShape = { reconcile };
+    const mutator: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape = {
+      reconcile,
+    };
 
     return { registry, mutator };
   });
@@ -424,11 +420,11 @@ export const makeProviderInstanceRegistry = <R>(input: {
 export const ProviderInstanceRegistryLayer = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
   readonly configMap: ProviderInstanceConfigMap;
-}): Layer.Layer<ProviderInstanceRegistry, never, R> =>
+}): Layer.Layer<ProviderInstanceRegistry.ProviderInstanceRegistry, never, R> =>
   Layer.effect(
-    ProviderInstanceRegistry,
+    ProviderInstanceRegistry.ProviderInstanceRegistry,
     makeProviderInstanceRegistry(input).pipe(Effect.map((built) => built.registry)),
-  ) as Layer.Layer<ProviderInstanceRegistry, never, R>;
+  ) as Layer.Layer<ProviderInstanceRegistry.ProviderInstanceRegistry, never, R>;
 
 /**
  * Layer variant that also exposes the mutator tag. Consumed by
@@ -439,13 +435,23 @@ export const ProviderInstanceRegistryLayer = <R>(input: {
 export const ProviderInstanceRegistryMutableLayer = <R>(input: {
   readonly drivers: ReadonlyArray<AnyProviderDriver<R>>;
   readonly configMap: ProviderInstanceConfigMap;
-}): Layer.Layer<ProviderInstanceRegistry | ProviderInstanceRegistryMutator, never, R> =>
+}): Layer.Layer<
+  | ProviderInstanceRegistry.ProviderInstanceRegistry
+  | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
+  never,
+  R
+> =>
   Layer.effectContext(
     makeProviderInstanceRegistry(input).pipe(
       Effect.map(({ registry, mutator }) =>
-        Context.make(ProviderInstanceRegistry, registry).pipe(
-          Context.add(ProviderInstanceRegistryMutator, mutator),
+        Context.make(ProviderInstanceRegistry.ProviderInstanceRegistry, registry).pipe(
+          Context.add(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator, mutator),
         ),
       ),
     ),
-  ) as Layer.Layer<ProviderInstanceRegistry | ProviderInstanceRegistryMutator, never, R>;
+  ) as Layer.Layer<
+    | ProviderInstanceRegistry.ProviderInstanceRegistry
+    | ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
+    never,
+    R
+  >;

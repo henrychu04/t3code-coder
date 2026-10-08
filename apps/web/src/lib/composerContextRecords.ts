@@ -12,7 +12,9 @@ import type {
   MessageId,
   OrchestrationMessageContext,
   ReviewCommentContextRecord,
+  ScopedThreadRef,
   TerminalContextRecord,
+  ThreadContextRecord,
   ThreadId,
 } from "@t3tools/contracts";
 import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
@@ -125,6 +127,28 @@ export function reviewCommentContextReference(
   };
 }
 
+/** One record per thread: attaching the same thread twice reuses the chip. */
+function threadContextId(threadId: ThreadId): ComposerContextId {
+  return toKindScopedComposerContextId("thread", threadId);
+}
+
+export function threadContextReference(record: ThreadContextRecord): ComposerContextReference {
+  return { kind: "thread", contextId: record.contextId, label: record.label };
+}
+
+export function threadContextRecord(ref: ScopedThreadRef, title: string): ThreadContextRecord {
+  const label = sanitizeComposerContextLabel(title, "thread");
+  return {
+    version: 1,
+    kind: "thread",
+    contextId: threadContextId(ref.threadId),
+    label,
+    environmentId: ref.environmentId,
+    threadId: ref.threadId,
+    title: label,
+  };
+}
+
 export function terminalContextRecord(context: TerminalContextDraft): TerminalContextRecord {
   return {
     version: 1,
@@ -215,11 +239,13 @@ export function attachmentContextRecord(
 export function buildMessageContext(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments: ReadonlyArray<ReviewCommentContext>;
+  threadContexts?: ReadonlyArray<ThreadContextRecord>;
   attachments?: ReadonlyArray<BoundComposerAttachment>;
 }): OrchestrationMessageContext | undefined {
   const records: ComposerContextRecord[] = [
     ...input.terminalContexts.map(terminalContextRecord),
     ...input.reviewComments.map(reviewCommentContextRecord),
+    ...(input.threadContexts ?? []),
     ...(input.attachments ?? []).map(attachmentContextRecord),
   ];
   return records.length === 0 ? undefined : { version: 1, records };

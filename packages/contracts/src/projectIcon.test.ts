@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import * as Schema from "effect/Schema";
-import { ProjectIconOverride } from "./orchestration.ts";
+import { ProjectIconOverride } from "./project.ts";
 const decode = Schema.decodeUnknownSync(ProjectIconOverride);
 it("accepts upstream Lucide names, expanded colors and emoji", () => {
   expect(decode({ kind: "lucide", name: "rocket", color: "fuchsia" })).toEqual({

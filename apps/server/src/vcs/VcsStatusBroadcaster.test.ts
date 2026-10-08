@@ -25,11 +25,10 @@ import {
   DEFAULT_SERVER_SETTINGS,
   GitManagerError,
   ProjectId,
-  type OrchestrationProject,
   type ServerSettings as ServerSettingsValue,
   type VcsRefStatusStreamEvent,
 } from "@t3tools/contracts";
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ServerSettings from "../serverSettings.ts";
 
 import * as VcsStatusBroadcaster from "./VcsStatusBroadcaster.ts";
@@ -1192,13 +1191,13 @@ describe("Coder auto-pull policy", () => {
         Layer.provide(
           VcsStatusBroadcaster.autoPullPolicyLayer.pipe(
             Layer.provide(
-              Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
-                getActiveProjectByWorkspaceRoot: () =>
+              Layer.mock(ProjectStore.ProjectStoreV2)({
+                findActiveByWorkspaceRoot: () =>
                   Effect.succeed(
                     Option.some({
-                      id: projectId,
+                      projectId,
                       autoPull: testCase.autoPull,
-                    } as OrchestrationProject),
+                    } as ProjectStore.ProjectRow),
                   ),
               }),
             ),

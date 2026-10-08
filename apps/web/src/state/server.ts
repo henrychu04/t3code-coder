@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type ServerConfig,
   type ServerConfigStreamEvent,
+  type ServerLifecycleLegacyThreadMigrationPayload,
   type ServerLifecycleWelcomePayload,
 } from "@t3tools/contracts";
 import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
@@ -51,3 +52,21 @@ export const environmentServerStatesAtom = Atom.make(
     return states;
   },
 ).pipe(Atom.withLabel("web-environment-server-states"));
+
+/**
+ * Coder: there is no primary environment, so the legacy-thread migration toast reports the first
+ * workspace still migrating.
+ */
+export const legacyThreadMigrationAtom = Atom.make(
+  (get): ServerLifecycleLegacyThreadMigrationPayload | null => {
+    for (const [environmentId] of get(environmentCatalog.catalogValueAtom).entries) {
+      const migration = Option.getOrNull(
+        AsyncResult.value(
+          get(serverEnvironment.legacyThreadMigration({ environmentId, input: {} })),
+        ),
+      );
+      if (migration?.status === "running") return migration;
+    }
+    return null;
+  },
+).pipe(Atom.withLabel("web-legacy-thread-migration"));

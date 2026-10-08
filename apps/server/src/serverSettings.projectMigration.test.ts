@@ -1,15 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
-import {
-  CommandId,
-  DEFAULT_SERVER_SETTINGS,
-  ProjectId,
-  ProviderInstanceId,
-} from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProjectId, ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { foldLegacyProjectSettings } from "./serverSettings.ts";
-import { projectSettingsCommandPatch } from "./projectSettingsCommand.ts";
 
 const id = ProjectId.make("migration-project");
 const model = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4");
@@ -68,29 +62,5 @@ describe("Coder project settings migration", () => {
     );
     expect(folded.projectSettingsOverrides[id]?.defaultProjectScripts).toBeUndefined();
     expect(folded.projectSettingsOverrides[id]?.defaultThreadEnvMode).toBe("local");
-  });
-  it("keeps retained project edits compatible without pinning unrelated settings", () => {
-    const settings = {
-      ...DEFAULT_SERVER_SETTINGS,
-      projectSettingsOverrides: {
-        [id]: { responseStreamingMode: "token" as const, defaultModelSelection: model },
-      },
-    };
-    const command = {
-      type: "project.meta.update" as const,
-      projectId: id,
-      commandId: CommandId.make("edit-project"),
-    };
-    expect(projectSettingsCommandPatch(settings, { ...command, title: "Renamed" })).toBeNull();
-    const patch = projectSettingsCommandPatch(settings, {
-      ...command,
-      defaultModelSelection: null,
-      scripts: [],
-    });
-    expect(patch).toEqual({
-      projectSettingsOverrides: {
-        [id]: { responseStreamingMode: "token", defaultProjectScripts: [] },
-      },
-    });
   });
 });

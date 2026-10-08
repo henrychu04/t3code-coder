@@ -88,10 +88,12 @@ export function matchesLinkedPullRequestUrl(
   );
 }
 
-export function findProjectForGitLabMergeRequest(
-  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
+type ProjectIdentity = Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">;
+
+export function findProjectForGitLabMergeRequest<P extends ProjectIdentity>(
+  projects: ReadonlyArray<P>,
   link: GitLabMergeRequestLink,
-): Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity"> | undefined {
+): P | undefined {
   return projects.find((project) => {
     const identity = project.repositoryIdentity;
     if (!identity || (identity.provider !== "gitlab" && identity.provider !== "unknown")) {
@@ -238,10 +240,10 @@ export function changeRequestRepositoryUrl(targetUrl: string): string | null {
   return url.toString();
 }
 
-export function findProjectOnChangeRequestHost(
-  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>,
+export function findProjectOnChangeRequestHost<P extends ProjectIdentity>(
+  projects: ReadonlyArray<P>,
   link: ChangeRequestLink,
-) {
+): P | undefined {
   return (
     findProjectForChangeRequest(projects, link) ??
     projects.find(

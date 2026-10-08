@@ -529,8 +529,7 @@ listed here is drift to remove rather than fork behavior to keep.
     that exceed the stdio frame bound fail before transport encoding. Shell snapshot loading
     uses upstream's socket fallback because no HTTP shell loader exists.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials.
-    Thread MR links must belong to a known GitLab host. Project-settings migration retains its
-    accepted-command receipt check so retries cannot overwrite settings.
+    Thread MR links must belong to a known GitLab host.
   - Files listings, reads, writes, content search, and media reads verify the requesting thread's
     project root. Path-only FFF errors and stale-write errors retain the fork's bounded-service
     error mapping.
@@ -539,37 +538,62 @@ listed here is drift to remove rather than fork behavior to keep.
     bounded text/content/media and legacy-artifact reads, fixed project-config reads, workspace
     directory listing, workspace-provider slash commands, and merge-request diffs. The method
     set stays `CoderWsRpcGroup`; unsupported upstream methods stay omitted.
-- **Provider and orchestration.** The provider service, Codex and Claude adapters, provider
-  command, runtime-ingestion, and checkpoint reactors, projection pipeline and snapshot query,
-  decider, projector, and dispatch normalizer are upstream's with these Coder deltas. Reapply them
-  to whatever replaces those files:
+- **Provider and orchestration.** Upstream's orchestrator (`orchestration-v2/`: the orchestrator,
+  effect worker, projection store, provider session manager, `ClaudeAdapterV2.ts`,
+  `CodexAdapterV2.ts`, thread intake and launch, and attachment claims) runs in the helper with
+  its `statev2.sqlite` database, with these Coder deltas. Reapply them to whatever replaces those
+  files:
   - Claude runs through `Drivers/ClaudeCli.ts`, which implements the Agent SDK's `query()` and
-    `Query` surface over the workspace `claude` executable. Because there is no SDK, rewind uses
-    native `forkSession`/`resumeSessionAt` with turn boundaries kept in the resume cursor and
-    recovered from saved history by `ClaudeRewindHistory.ts`. MCP is disabled for both providers
-    and Codex declines MCP elicitations (see [Runtime boundary](#runtime-boundary)).
+    `Query` surface over the workspace `claude` executable. Rollback and resume use upstream's
+    native `resumeSessionAt` from the conversation head, which the CLI accepts directly.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
-    the empty strict configuration. It has no `forkSession`: a forked Claude session starts with
-    `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` on its
-    first turn rather than copying transcript files.
+    the empty strict configuration. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
+    allocates the fork's session id and stores the source session and message boundary as the
+    provider thread's `claudeFork` native metadata. The fork's first query then runs
+    `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
+    than copying transcript files.
+  - MCP is disabled for both providers: `McpSessionRegistry` never issues or resolves a
+    credential, the provider session manager runs with `configureMcp: false`, Codex app-server
+    launches pass `features.apps=false` and disable every workspace MCP server for the session
+    cwd, and `declineCodexMcpElicitation` declines every elicitation. `RuntimeInstructions.ts`
+    omits upstream's `link_pull_request` block; agents link merge requests through the workspace
+    MR command. Bridging upstream's T3 tools to the helper (for example through an async file
+    channel) is follow-up work.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
     and WebP. Tool-result image bytes are omitted from persisted raw events
-    (`CodexScreenshotImages.ts` and Claude's sanitized tool-result blocks); legacy screenshot
-    `artifacts` still pass through tool activities.
-  - The dispatch normalizer claims staged images as described in
-    [Network and transfer constraints](#network-and-transfer-constraints). Deleting or reverting a
-    thread never deletes its attachments, so upstream's attachment-cleanup side effects are absent.
-  - The provider service prepends the agent MR command instructions to ordinary turns and revokes
-    them on turn end, session exit or stop, stop-all, and failed sends.
+    (`sanitizeCodexScreenshotImages` on Codex dynamic and MCP tool output, and
+    `omitClaudeToolResultBytes` in `ClaudeAdapterV2.ts`).
+  - `AttachmentClaims.ts` claims staged uploads as described in
+    [Network and transfer constraints](#network-and-transfer-constraints): it reads each staged
+    file once through a no-follow handle at exactly its declared size and type limit, rejects
+    images whose signature does not match their media type, and writes the validated bytes
+    exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
+    so upstream's attachment-cleanup side effects are absent.
+  - `ProviderTurnStartService` prepends the agent MR command instructions to ordinary turns. A
+    failed send revokes them, as does run finalization (`server.ts` wraps the run-finalization
+    observer), the thread's next turn, and helper shutdown. V2 has no session-exit or stop-all
+    hook, so a stopped session's commands stay open until one of those.
+  - Only the Codex and Claude adapters are registered
+    (`ProviderOrchestrationAdapterInfrastructure.ts`), and only shipped providers have replay
+    harnesses. Pi (`PiDriver.ts`, `PiAdapterV2.ts`, `PiProvider.ts`, `PiTextGeneration.ts`) stays
+    in the source as unregistered, disabled code so it can be added back; `knip.jsonc` lists its
+    driver as an entry. Upstream's other drivers (Cursor, OpenCode, ACP, Antigravity, Grok) are
+    not carried.
   - Thread-title and branch-name generation use only Codex or Claude models.
+  - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
+    session stores through the helper. `server.ts` provides the scanner beside the helper RPC
+    layer, as upstream does beside its WebSocket layer.
+  - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
+    unavailable; providers authenticate through the workspace's API configuration.
+    `CodexManagedRuntime` keeps only upstream's resolution contract.
   - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
-    event logs, provider sign-in commands and credential-change guards, Codex feedback upload,
-    agent-session history import (`thread.history.import` and `import:` message IDs), SnapShot
-    sources, data-URL and file uploads, attachments on question answers, MCP tool presentation,
-    preview-tool metadata, and the agent device shim.
+    event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
+    provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
+    sources, data-URL and non-image file uploads, attachments on question answers, MCP tool
+    presentation, preview-tool metadata, and the agent device shim.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
@@ -600,9 +624,27 @@ listed here is drift to remove rather than fork behavior to keep.
   icon; review actions say merge request; and new projects publish only to GitLab, when discovery
   reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
-  work-log module, minus preview annotations, element captures, SnapShot, video, non-image files,
-  and remote icons. Images move through the gateway and SCP (see
-  [Network and transfer constraints](#network-and-transfer-constraints)).
+  work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
+  element captures, SnapShot, video, non-image files, and remote icons. Images move through the
+  gateway and SCP (see [Network and transfer constraints](#network-and-transfer-constraints)):
+  `ChatView` treats attachment uploads as always available and question and file attachments
+  as unavailable. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
+  submitted images by id through the helper (`AttachmentImageResource` carries the media type
+  and size the read verifies). Reads start only once the workspace is connected, because cached
+  threads render before the helper is reachable. Rewind re-stages a message's images through the
+  same reads.
+  Sent file attachments render as static rows without preview, download, or open actions, and
+  native app icons fall back to the tool glyph.
+- **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
+  mini-player, automatic machine placement, server self-update and version-skew banners,
+  usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), project-script
+  editing (run from keybindings and settings only), sidebar file drops, and the favicon store.
+  The active workspace stands in for upstream's primary environment, and drafts read their
+  route workspace's config. The Files surface requires a persisted thread whose project root
+  the helper verifies (`canUseOwnedFilesSurface`). The checkout branch notice also covers a
+  worktree whose branch moved, but only a local checkout can be restored or follow the current
+  branch on send. `chatCanvasLayout.ts` has no preview obstacles, and the right panel keeps
+  Coder's per-thread width storage instead of upstream's preview inline size.
 - **Markdown.** `ChatMarkdown.tsx` is upstream's, with these differences (each marked `Coder:` in
   the file):
   - Workspace media has no signed asset URL. `ChatMarkdownAssetImage` keeps upstream's props
@@ -672,7 +714,8 @@ listed here is drift to remove rather than fork behavior to keep.
   before the fork adopted upstream's IDs recorded a renumbered registry (IDs 41–58, with the
   Coder-only `CoderLegacy/` migrations 050 and 055). `CoderMigrationHistory.ts` finishes that
   registry, whose final schema matches upstream ID 54, and rewrites the history to upstream's IDs
-  before upstream's migrator runs. New migrations take upstream's next ID; never add a Coder-only
+  before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
+  the Coder legacy registry never recorded `OrchestrationV2`. New migrations take upstream's next ID; never add a Coder-only
   migration ID.
 - **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last
   project grouping mode stay in memory where upstream uses browser storage. `storage.ts` keeps

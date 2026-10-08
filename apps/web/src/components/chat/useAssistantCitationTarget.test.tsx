@@ -2,7 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { LegendListRef } from "@legendapp/list/react";
-import { EnvironmentId, MessageId, ThreadId, TurnId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, RunId, ThreadId } from "@t3tools/contracts";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { useAssistantCitationTarget } from "./useAssistantCitationTarget";
 
@@ -13,7 +13,7 @@ const message = {
   id: MessageId.make("source"),
   role: "assistant" as const,
   text: "quote",
-  turnId: TurnId.make("turn"),
+  runId: RunId.make("turn"),
   createdAt: "2026-09-08T12:00:00Z",
   updatedAt: "2026-09-08T12:00:00Z",
   streaming: false,
@@ -84,7 +84,7 @@ it("loads earlier history, unfolds the cited turn, and waits for the list before
   await render({ loadEarlier: { loading: true, cursor: "page-1", onLoadEarlier } });
   expect(onLoadEarlier).toHaveBeenCalledTimes(1);
   await render({ entries: [entry], loadEarlier: null });
-  expect(input.onExpandTurn).toHaveBeenCalledWith(message.turnId);
+  expect(input.onExpandTurn).toHaveBeenCalledWith(message.runId);
   await render({ rows: [row] });
   expect(value.target).toBeNull();
   await act(() => value.onListLoad());

@@ -183,6 +183,12 @@ export const make = Effect.gen(function* () {
     getChangeRequestSummary: (input) =>
       cli.getMergeRequestSummary(input).pipe(Effect.mapError(fail("getChangeRequestSummary"))),
 
+    getChangeRequestChecks: (input) =>
+      cli.getMergeRequestDetail(input).pipe(
+        Effect.map(({ state, checks }) => ({ state, checks })),
+        Effect.mapError(fail("getChangeRequestChecks")),
+      ),
+
     getChangeRequest: (input) =>
       Effect.all(
         [

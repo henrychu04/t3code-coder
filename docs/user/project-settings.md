@@ -84,6 +84,18 @@ button clears the choice. Automatic icons use upstream’s name-based monograms,
 `Silver Orchard`. Choices are saved on workspace project records and appear on connected clients. Desktop file picking and project-image selection are not included. Deployment-wide
 authentication and GitLab preferences remain under global settings.
 
+## Worktree branch names
+
+In **Settings → Source Control → Worktree branch naming**, choose a static prefix, a model-selected semantic prefix such as
+`feat/` or `fix/`, or custom instructions for the complete name. The static prefix defaults to
+`t3code/`; a trailing slash is optional, and an empty prefix adds nothing. Invalid characters in a
+static prefix are replaced with hyphens. Custom instructions are appended to the naming prompt and
+can specify issue IDs, namespaces, and casing.
+
+These settings apply to automatically named new worktree branches. Select a project to override its
+workspace defaults. Worktree directories keep their original names. If generation fails, or a
+custom name is invalid or already taken, the temporary branch name remains.
+
 ## Workspace defaults
 
 Open **Settings → General → New threads** to choose the default model and checkout mode.

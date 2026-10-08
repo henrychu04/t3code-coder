@@ -12,7 +12,8 @@ import type {
   PullRequestCapabilities,
 } from "@t3tools/contracts";
 
-import * as ProjectionSnapshotQuery from "../orchestration/Services/ProjectionSnapshotQuery.ts";
+import * as ProjectService from "../project/ProjectService.ts";
+import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import type { PullRequestProviderApi } from "./PullRequestProvider.ts";
@@ -154,13 +155,18 @@ const service = PullRequestService.make.pipe(
         resolveLink: () => undefined,
         resolveHandle: () => Effect.die("Unexpected provider refinement"),
       }),
-      Layer.mock(ProjectionSnapshotQuery.ProjectionSnapshotQuery)({
-        getProjectShells: (projectIds) =>
+      Layer.mock(ProjectService.ProjectService)({
+        listShells: (options) =>
           Effect.succeed(
-            projectIds === undefined || projectIds.includes(project.id) ? [project] : [],
+            options?.projectIds === undefined || options.projectIds.includes(project.id)
+              ? [project]
+              : [],
           ),
-        getProjectShellById: (projectId) =>
+        getShell: (projectId) =>
           Effect.succeed(projectId === project.id ? Option.some(project) : Option.none()),
+      }),
+      Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({
+        resolve: () => Effect.succeed(null),
       }),
       Layer.mock(PullRequestFilesViewedRepository)({}),
       SourceControlRateLimit.layer,

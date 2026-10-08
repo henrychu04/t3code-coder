@@ -42,7 +42,7 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
   return {
     stateDir,
     environmentThemesDir: path.join(stateDir, "themes"),
-    dbPath: path.join(stateDir, "state.sqlite"),
+    dbPath: path.join(stateDir, "statev2.sqlite"),
     keybindingsConfigPath: path.join(stateDir, "keybindings.json"),
     settingsPath: path.join(stateDir, "settings.json"),
     providerStatusCacheDir: path.join(baseDir, "caches"),

@@ -1,5 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-import { deepStrictEqual, match, strictEqual } from "node:assert";
+import { deepStrictEqual, doesNotMatch, match, strictEqual } from "node:assert";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import * as NodeFS from "node:fs/promises";
@@ -76,6 +76,11 @@ it("runs the bundled ESM helper under Node", async () => {
   const testRoot = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-bundle-"));
   const outputDirectory = NodePath.join(testRoot, "workspace-helper");
   await buildCoderHelper(outputDirectory, currentHelperNativeTarget());
+  // Claude runs through the workspace CLI; the Agent SDK is type-only and must not be bundled.
+  doesNotMatch(
+    await NodeFS.readFile(NodePath.join(outputDirectory, "index.mjs"), "utf8"),
+    /node_modules\/@anthropic-ai\/claude-agent-sdk\//u,
+  );
 
   const expectedNodePtyPrebuild = `${process.platform}-${process.arch}`;
   deepStrictEqual(

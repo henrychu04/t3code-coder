@@ -1,9 +1,17 @@
 import ChatMarkdown from "./ChatMarkdown";
-import ReadOnlySourcePreview from "./files/ReadOnlySourcePreview";
+import type { ThreadContextRecord } from "@t3tools/contracts";
 import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { videoMimeType } from "@t3tools/shared/video";
 import { MessageCircleIcon } from "lucide-react";
-import { createContext, type MouseEvent, type ReactElement, type ReactNode, use } from "react";
+import {
+  createContext,
+  lazy,
+  type MouseEvent,
+  type ReactElement,
+  type ReactNode,
+  Suspense,
+  use,
+} from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "~/composerDraftStore";
@@ -28,6 +36,7 @@ import {
 import type { TerminalContextDraft } from "~/lib/terminalContext";
 import type { ReviewCommentContext } from "~/reviewCommentContext";
 import { ComposerPendingTerminalContextChip } from "./chat/ComposerPendingTerminalContexts";
+import { ThreadContextChip } from "./ThreadContextChip";
 import {
   createContextPresentationRegistry,
   type ContextPresentationCapability,
@@ -52,7 +61,8 @@ export type ComposerDraftContextRecord =
   | { kind: "terminal"; record: TerminalContextDraft }
   | { kind: "review-comment"; record: ReviewCommentContext }
   | { kind: "image"; record: ComposerImageAttachment; upload?: AttachmentUploadState | undefined }
-  | { kind: "file"; record: ComposerFileAttachment; upload?: AttachmentUploadState | undefined };
+  | { kind: "file"; record: ComposerFileAttachment; upload?: AttachmentUploadState | undefined }
+  | { kind: "thread"; record: ThreadContextRecord };
 
 /** What a chip can do beyond showing itself; the composer supplies the handlers. */
 export interface ComposerContextActions {
@@ -63,6 +73,9 @@ export interface ComposerContextActions {
   openMention: (path: string) => void;
   openPullRequest: (event: MouseEvent<HTMLElement>, url: string) => void;
 }
+
+// Highlighted source loads on demand, as on main, so importers never load the diff workers.
+const ReadOnlySourcePreview = lazy(() => import("./files/ReadOnlySourcePreview"));
 
 export const ComposerContextActionsContext = createContext<ComposerContextActions>({
   environmentId: null,
@@ -89,6 +102,7 @@ export const ComposerContextRecordsContext = createContext<ComposerDraftContextR
 export function composerContextRecordsFromDraft(input: {
   terminalContexts: ReadonlyArray<TerminalContextDraft>;
   reviewComments?: ReadonlyArray<ReviewCommentContext>;
+  threadContexts?: ReadonlyArray<ThreadContextRecord>;
   images?: ReadonlyArray<ComposerImageAttachment>;
   files?: ReadonlyArray<ComposerFileAttachment>;
   uploadsByImageId?: Readonly<Record<string, AttachmentUploadState>>;
@@ -113,6 +127,9 @@ export function composerContextRecordsFromDraft(input: {
   }
   for (const record of input.reviewComments ?? []) {
     records.set(reviewCommentContextId(record.id), { kind: "review-comment", record });
+  }
+  for (const record of input.threadContexts ?? []) {
+    records.set(record.contextId, { kind: "thread", record });
   }
   return records;
 }
@@ -253,7 +270,9 @@ function ComposerReviewCommentDetails({ comment }: { comment: ReviewCommentConte
       {comment.text.trim() ? <ChatMarkdown text={comment.text.trim()} cwd={undefined} /> : null}
       {comment.diff.trim() ? (
         <div className="flex h-64 min-h-0 flex-col overflow-hidden rounded-md border border-border">
-          <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
+          <Suspense fallback={null}>
+            <ReadOnlySourcePreview name="review.diff" text={comment.diff} />
+          </Suspense>
         </div>
       ) : null}
     </div>
@@ -278,7 +297,7 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
   ComposerContextRenderContext,
   ReactElement
 >({
-  requiredKinds: ["image", "file", "terminal", "review-comment"],
+  requiredKinds: ["image", "file", "terminal", "review-comment", "thread"],
   handlers: [
     {
       kind: "terminal",
@@ -341,6 +360,16 @@ const composerContextPresentationRegistry = createContextPresentationRegistry<
           />
         );
       },
+    },
+    {
+      kind: "thread",
+      canRender: (entry) => entry.kind === "thread",
+      render: (entry, context) =>
+        entry.kind === "thread" ? (
+          <ThreadContextChip record={entry.record} />
+        ) : (
+          <UnresolvedContextChip label={context.label} />
+        ),
     },
   ],
   fallback: (_kind, _entry, context) => <UnresolvedContextChip label={context.label} />,

@@ -54,7 +54,11 @@ for (const throughId of [undefined, 49, 40]) {
       yield* inFreshDatabase(
         Effect.gen(function* () {
           yield* runLegacyMigrations(migrationEntries, throughId);
-          assert.deepStrictEqual(yield* runMigrations(), []);
+          // The completed legacy registry equals upstream through 54; later upstream IDs run.
+          assert.deepStrictEqual(
+            yield* runMigrations(),
+            migrationManifest.filter(([id]) => id > 54),
+          );
           assert.deepStrictEqual(yield* history, migrationManifest);
           assert.deepStrictEqual(yield* schema, expected);
           assert.deepStrictEqual(yield* runMigrations(), []);

@@ -17,13 +17,16 @@ import { ChildProcessSpawner } from "effect/unstable/process";
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
 import {
+  createCodexAdapterV2,
+  type CodexAdapterV2DriverEnv,
+} from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
+import {
   haveProviderSnapshotSettingsChanged,
   makeProviderSnapshotSettingsSource,
   type ProviderSnapshotSettings,
 } from "../providerUpdateSettings.ts";
 import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeCodexAdapter } from "../Layers/CodexAdapter.ts";
 import { makeCodexMcpServerNameResolver } from "../Layers/CodexIntegrationPolicy.ts";
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
 import { resolveCodexLaunchArgs } from "../Layers/codexLaunchArgs.ts";
@@ -64,6 +67,7 @@ function makeCodexMaintenanceResolver(sharedHomePath: string) {
 }
 
 export type CodexDriverEnv =
+  | CodexAdapterV2DriverEnv
   | ChildProcessSpawner.ChildProcessSpawner
   | Crypto.Crypto
   | FileSystem.FileSystem
@@ -189,13 +193,22 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
-      const adapter = yield* makeCodexAdapter(effectiveConfig, {
-        instanceId,
-        environment: processEnv,
-        attachmentsDir,
-        resolveMcpServerNames,
-        models: snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
-      });
+      // Coder: the adapter disables every workspace MCP server it discovers for the session cwd.
+      // There are no subscription usage-limit snapshots to update.
+      const orchestrationAdapter = yield* createCodexAdapterV2(
+        { instanceId, displayName, accentColor, environment, enabled, config },
+        { resolveMcpServerNames },
+      ).pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: "Failed to build Codex orchestration adapter.",
+              cause,
+            }),
+        ),
+      );
       const textGeneration = yield* makeCodexTextGeneration(
         effectiveConfig,
         processEnv,
@@ -217,7 +230,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             Effect.map(classifyAndStamp),
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
           ),
-        adapter,
+        orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;
     }),

@@ -25,6 +25,7 @@ function renderBadge(badge: Parameters<typeof ThreadPullRequestBadgeControl>[0][
       <ThreadPullRequestBadgeControl
         render={<InlineButton />}
         badge={badge}
+        pullRequests={[]}
         number={7}
         url="https://gitlab.example/group/repo/-/merge_requests/7"
         status={null}

@@ -20,15 +20,7 @@ import {
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
 import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
-import {
-  Bot,
-  ChevronLeft,
-  ChevronRight,
-  FileDiff,
-  Files,
-  Plus,
-  TerminalSquare,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDiff, Files, Plus, TerminalSquare } from "lucide-react";
 import {
   type ReactElement,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -83,12 +75,10 @@ interface RightPanelTabsProps {
   readonly onAddFiles: () => void;
   readonly onAddPullRequests?: (() => void) | undefined;
   readonly onAddPullRequest: () => void;
-  readonly onAddAgents: () => void;
   readonly terminalAvailable: boolean;
   readonly diffAvailable: boolean;
   readonly filesAvailable: boolean;
   readonly pullRequestAvailable: boolean;
-  readonly agentsAvailable: boolean;
   readonly browserAvailable?: boolean;
   readonly previewSessions?: Readonly<Record<string, unknown>>;
   readonly desktopByTabId?: Readonly<Record<string, unknown>>;
@@ -96,7 +86,6 @@ interface RightPanelTabsProps {
   readonly environmentId?: EnvironmentId | null;
   /** List rows already loaded by the pull-request page, shown while a tab's own read arrives. */
   readonly pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
-  readonly liveAgentCount: number;
   readonly children: ReactNode;
 }
 
@@ -105,7 +94,6 @@ const SURFACE_DISABLED_REASONS = {
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
   pullRequest: "GitLab merge requests are only available from GitLab project threads.",
-  agents: "Agents are only available from a thread.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -125,7 +113,6 @@ const SURFACE_UNAVAILABLE_HINTS = {
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
   pullRequest: "Available for GitLab project threads.",
-  agents: "Available from a thread.",
 } as const;
 
 export interface PullRequestTabStatus {
@@ -234,13 +221,10 @@ function RightPanelEmptyState(props: {
   onAddFiles: () => void;
   onAddPullRequests?: (() => void) | undefined;
   onAddPullRequest: () => void;
-  onAddAgents: () => void;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
-  agentsAvailable: boolean;
-  liveAgentCount: number;
 }) {
   const [highlight, setHighlight] = useState(-1);
 
@@ -253,7 +237,6 @@ function RightPanelEmptyState(props: {
       available: props.terminalAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.terminal,
       onClick: props.onAddTerminal,
-      badgeCount: 0,
     },
     {
       label: "Files",
@@ -271,7 +254,6 @@ function RightPanelEmptyState(props: {
       available: props.filesAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
       onClick: props.onAddFiles,
-      badgeCount: 0,
     },
     {
       label: "Diff",
@@ -281,7 +263,6 @@ function RightPanelEmptyState(props: {
       available: props.diffAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,
       onClick: props.onAddDiff,
-      badgeCount: 0,
     },
     {
       label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
@@ -291,17 +272,6 @@ function RightPanelEmptyState(props: {
       available: props.onAddPullRequests !== undefined || props.pullRequestAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
       onClick: props.onAddPullRequests ?? props.onAddPullRequest,
-      badgeCount: 0,
-    },
-    {
-      label: "Agents",
-      description: "Follow subagents and workflows.",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_UNAVAILABLE_HINTS.agents,
-      onClick: props.onAddAgents,
-      badgeCount: props.liveAgentCount,
     },
   ] as const;
 
@@ -376,14 +346,6 @@ function RightPanelEmptyState(props: {
     return (
       <span className="relative inline-flex shrink-0">
         <Icon className="size-4" />
-        {action.badgeCount > 0 ? (
-          <span
-            aria-hidden
-            className="absolute -top-1.5 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-info px-1 text-3xs font-semibold tabular-nums text-white"
-          >
-            {action.badgeCount}
-          </span>
-        ) : null}
       </span>
     );
   };
@@ -450,7 +412,6 @@ function surfaceLabel(
   if (surface.kind === "pull-requests") return "Linked MRs";
   if (surface.kind === "pull-request")
     return "number" in surface ? `MR !${surface.number}` : "GitLab MR";
-  if (surface.kind === "agents") return "Agents";
   // Coder: preview and device surfaces are never opened.
   if (surface.kind === "preview") return "Browser";
   if (surface.kind === "device") return surface.title ?? "Device";
@@ -493,7 +454,6 @@ function SurfaceIcon({
   }
   if (surface.kind === "pull-requests")
     return <PullRequestGlyph.pullRequest className="size-3.5" />;
-  if (surface.kind === "agents") return <Bot className="size-3.5" />;
   return <TerminalSquare className="size-3.5" />;
 }
 
@@ -712,14 +672,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       available: props.onAddPullRequests !== undefined || props.pullRequestAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
       onClick: props.onAddPullRequests ?? props.onAddPullRequest,
-    },
-    {
-      label: "Agents",
-      icon: Bot,
-      shortcut: "A",
-      available: props.agentsAvailable,
-      disabledReason: SURFACE_DISABLED_REASONS.agents,
-      onClick: props.onAddAgents,
     },
   ] as const;
 
@@ -1014,13 +966,10 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           onAddFiles={props.onAddFiles}
           onAddPullRequests={props.onAddPullRequests}
           onAddPullRequest={props.onAddPullRequest}
-          onAddAgents={props.onAddAgents}
           terminalAvailable={props.terminalAvailable}
           diffAvailable={props.diffAvailable}
           filesAvailable={props.filesAvailable}
           pullRequestAvailable={props.pullRequestAvailable}
-          agentsAvailable={props.agentsAvailable}
-          liveAgentCount={props.liveAgentCount}
         />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{props.children}</div>

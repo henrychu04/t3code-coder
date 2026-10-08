@@ -15,6 +15,7 @@ function provider(input: {
   models?: ReadonlyArray<string>;
   installed?: boolean;
   status?: ServerProvider["status"];
+  supportsTextGeneration?: boolean;
 }): ServerProvider {
   const driver =
     input.provider ??
@@ -24,6 +25,9 @@ function provider(input: {
   return {
     instanceId: ProviderInstanceId.make(input.instanceId),
     driver,
+    ...(input.supportsTextGeneration === undefined
+      ? {}
+      : { supportsTextGeneration: input.supportsTextGeneration }),
     enabled: true,
     installed: input.installed ?? true,
     version: null,

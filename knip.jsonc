@@ -12,7 +12,13 @@
     "apps/coder-helper": { "entry": ["src/bin.ts!", "src/build.ts", "src/*.test.ts"] },
     "apps/server": {
       // The helper imports these source modules directly during bundling.
-      "entry": ["src/coder*.ts!", "src/provider/testFixtures/*.mjs"],
+      "entry": [
+        "src/coder*.ts!",
+        "src/provider/testFixtures/*.mjs",
+        // Pi stays in the source as an unregistered, disabled provider so it can be added back.
+        "src/provider/Drivers/PiDriver.ts",
+        "src/orchestration-v2/Adapters/PiAdapterV2.testkit.ts",
+      ],
     },
     "apps/web": { "entry": ["src/main.tsx!", "src/routes/**/*.tsx!"] },
     "packages/*": { "includeEntryExports": true },
