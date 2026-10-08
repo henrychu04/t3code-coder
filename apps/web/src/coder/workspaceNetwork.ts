@@ -4,6 +4,7 @@ import { AsyncResult } from "effect/unstable/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { environmentSummaries } from "../state/presentation";
 import {
   readCoderWorkspaceEnvironments,
   subscribeCoderWorkspaceEnvironments,
@@ -48,6 +49,13 @@ const probeCommand = createEnvironmentRpcCommand(connectionAtomRuntime, {
 type WorkspaceNetworkProbe = (environmentId: EnvironmentId) => Promise<number | null>;
 
 const defaultProbe: WorkspaceNetworkProbe = async (environmentId) => {
+  // The workspace store learns an environment before the connection registry does. Probing an
+  // unregistered or disconnected environment only fails, so report no sample until it connects.
+  if (
+    !appAtomRegistry.get(environmentSummaries.connectedEnvironmentIdsAtom).includes(environmentId)
+  ) {
+    return null;
+  }
   const startedAt = performance.now();
   try {
     const result = await probeCommand.run(appAtomRegistry, { environmentId, input: {} });
@@ -207,9 +215,9 @@ function onVisibilityChange(): void {
   for (const sampler of samplers.values()) void runProbe(sampler);
 }
 
-export function startCoderWorkspaceNetworkSampler(
-  options?: { readonly probe?: WorkspaceNetworkProbe },
-): void {
+export function startCoderWorkspaceNetworkSampler(options?: {
+  readonly probe?: WorkspaceNetworkProbe;
+}): void {
   if (started) return;
   started = true;
   if (options?.probe !== undefined) probe = options.probe;

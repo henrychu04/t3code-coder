@@ -37,16 +37,43 @@ When delivery is uncertain, open the reported thread before explicitly allowing 
 
 ## Send while the agent is working
 
-With **Follow-up behavior → Queue** in **Settings → Preferences**, a message sent during a running
-turn waits at the end of the conversation. It sends after the next completed tool call or when
-the turn ends, even while another thread is open. Use its arrow to send now, or its X to return it to the composer. Choose **Steer**
-to send follow-ups immediately instead. Already queued messages keep their place.
+Choose **Settings → General → Follow-up behavior** to queue new messages for a later turn or
+steer the running turn immediately. The setting applies to this browser; already queued messages
+keep their place. Queued messages are saved in the workspace and can be edited, reordered, or
+removed above the composer. `Cmd+Enter` on macOS or `Ctrl+Enter` on Windows and Linux uses the
+opposite action: it steers when your default is Queue and queues when your default is Steer.
 
-Stop returns queued messages to the composer. If their combined images exceed the per-message
-limit, the remaining messages stay intact in the queue, held until you act. Queued messages
-stay in browser memory; unsent draft text is kept in this browser’s storage so it survives a reload.
-A queued send waits while the agent needs approval or an answer.
-Use `mod+shift+Enter` to send the oldest queued message now without replacing your current draft.
+Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send the oldest queued
+message as a steer. This leaves the current draft intact and requires an active turn that supports
+steering. Change `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
+
+Press `Option+Up` on macOS or `Alt+Up` on Windows and Linux with the cursor at the start of the
+composer to edit the most recently queued message. Change `thread.editQueuedMessage` to use another
+shortcut.
+
+## Queued messages
+
+The composer shows **Interrupt** while the agent is working and the draft is empty. Adding text or
+images replaces it with a steer arrow. Click it to send a message into the active turn, or press
+`Enter`. Hold `Cmd` on macOS or `Ctrl` on Windows and Linux to switch the button to a queue icon.
+Click while holding that key, or press `Cmd+Enter` or `Ctrl+Enter`, to queue the message for after
+the active turn.
+
+Queued messages appear above the composer. Rows show a thumbnail of any attached image alongside
+the text. Drag a row by its handle to reorder it, use the handle's arrow keys, promote the message
+to a steer, or remove it.
+
+If the workspace helper restarts, saved queued messages keep their order and are held. Press
+**Resume** in an empty composer to continue. You can edit, reorder, or remove held messages without
+starting them.
+
+The pencil on a queued row opens that message in the composer for editing. The original message
+stays in the queue until you save, and its row is highlighted while you edit. The message's images
+appear above the text with a remove control, and new images can be added the usual way. The
+checkmark saves the queued message in place; **Cancel** on its row leaves it unchanged. Whatever you
+had typed in the composer before starting the edit is restored afterwards. If the queued message
+starts or is removed while you are editing, the edit ends: changed content moves into the composer
+when it is empty, and is discarded otherwise.
 
 ## Inline context
 
@@ -118,15 +145,15 @@ messages; it does not keep a separate prompt-history store in the browser.
 
 Choose **Edit from here** beneath a sent message to rewind to before that message. Choose
 **Revert and keep changes** to leave workspace files as they are, or **Revert files too** to
-restore the checkpoint as well. File restore requires a worktree that is not shared with another
-thread or agent session; project-directory threads rewind conversation history only. The selected prompt and its pasted images return to the composer
-for editing and resending, below any unsent draft. Restoration waits for the rewind to finish.
+restore the checkpoint as well. File restore is only offered for threads running in a worktree, and
+it is refused when another thread or agent session also uses that directory, a folder inside it,
+or a folder that contains it, since restoring would erase their changes. Project-directory threads
+rewind conversation history only. The selected prompt and its pasted images return to the composer
+for editing and resending, below any unsent draft.
 
 Rewind removes the selected message and later conversation from the active thread and provider
-history. It does not undo external actions or separate provider memory. For older Claude sessions without recorded message boundaries, T3 Coder can recover them from
-the workspace's session transcript when its complete, linear history matches the saved turn count
-and any known boundaries. Compacted, branched, incomplete, or mismatched histories remain
-unavailable for rewind. The action reports that limitation before changing the conversation or files.
+history. It does not undo external actions or separate provider memory. The action is available
+only when the provider supports rewind.
 
 ## Prompt stash
 
@@ -165,9 +192,8 @@ compaction yourself from the meter. Compaction runs through the workspace provid
 summarizes history without changing the model's context window, and remains visible in the
 conversation even when it is the only activity in that turn.
 
-Compacting from the context meter preserves the current draft and its images. Messages submitted
-while compaction runs wait until it finishes. If compaction fails or is stopped, queued messages
-are canceled and can be sent again.
+Compacting from the context meter preserves the current draft and its images. You can also send
+`/compact` in an existing conversation when the provider supports it.
 
 ## Response streaming
 
@@ -178,8 +204,7 @@ switch is replaced by this setting; upgrading starts in paragraph mode unless th
 has already been chosen.
 
 Questions and text answers appear together in the work log, at the question's original position.
-Expand the row to read the full question and answer. These rows stay visible outside collapsed
-turn summaries; unanswered questions are marked accordingly.
+Expand the row to read the full question and answer; unanswered questions are marked accordingly.
 
 ## Inline context and merge requests
 
@@ -197,6 +222,13 @@ to search by text.
 A merge-request chip shows its number and the state captured when you attached it: open, draft,
 merged, or closed. Hover to inspect the captured title and branches. Select it to open the
 merge request in T3 Coder. The captured details remain part of the message after sending.
+
+Another thread can be context too. Type `@` followed by part of its title to pick one from the same
+workspace, or drag a thread out of the sidebar and drop it on the composer; a multi-selection drops
+together. The chip shows the thread's current title and opens it when selected. Your prompt only
+carries a reference: the agent reads the thread's history on demand, so attaching a long thread
+costs nothing until the agent looks. Attaching a thread does not change it, and the agent cannot
+send messages to it unless you ask.
 
 ## Run shell code blocks
 

@@ -6,6 +6,7 @@
 import { type EnvironmentId, ScreenshotArtifactId } from "@t3tools/contracts";
 
 import { useScreenshotArtifacts } from "../components/chat/useScreenshotArtifacts";
+import { useConnectedEnvironmentIds } from "../state/environments";
 import type { AttachmentImageResource } from "./attachmentImageResource";
 
 export { type AttachmentImageResource, isAttachmentImageMimeType } from "./attachmentImageResource";
@@ -14,6 +15,9 @@ export function useAssetUrls(
   environmentId: EnvironmentId,
   resources: ReadonlyArray<AttachmentImageResource>,
 ): ReadonlyArray<string | null> {
+  // Cached threads render before the workspace connects. Reads start once it is connected, and a
+  // disconnect releases them so the next connection reads again instead of keeping a failure.
+  const connected = useConnectedEnvironmentIds().includes(environmentId);
   const images = useScreenshotArtifacts(
     environmentId,
     resources.map((resource) => ({
@@ -22,7 +26,7 @@ export function useAssetUrls(
       mimeType: resource.mimeType,
       ...(resource.sizeBytes === undefined ? {} : { sizeBytes: resource.sizeBytes }),
     })),
-    resources.length > 0,
+    connected && resources.length > 0,
     "attachment",
   );
   return resources.map((resource) => {

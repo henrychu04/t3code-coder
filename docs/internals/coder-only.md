@@ -577,8 +577,11 @@ listed here is drift to remove rather than fork behavior to keep.
     observer), the thread's next turn, and helper shutdown. V2 has no session-exit or stop-all
     hook, so a stopped session's commands stay open until one of those.
   - Only the Codex and Claude adapters are registered
-    (`ProviderOrchestrationAdapterInfrastructure.ts`); upstream's other drivers stay in the source
-    unregistered, and only shipped providers have replay harnesses.
+    (`ProviderOrchestrationAdapterInfrastructure.ts`), and only shipped providers have replay
+    harnesses. Pi (`PiDriver.ts`, `PiAdapterV2.ts`, `PiProvider.ts`, `PiTextGeneration.ts`) stays
+    in the source as unregistered, disabled code so it can be added back; `knip.jsonc` lists its
+    driver as an entry. Upstream's other drivers (Cursor, OpenCode, ACP, Antigravity, Grok) are
+    not carried.
   - Thread-title and branch-name generation use only Codex or Claude models.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `server.ts` provides the scanner beside the helper RPC
@@ -626,7 +629,9 @@ listed here is drift to remove rather than fork behavior to keep.
   `ChatView` treats attachment uploads as always available and question and file attachments
   as unavailable. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
   submitted images by id through the helper (`AttachmentImageResource` carries the media type
-  and size the read verifies), and rewind re-stages a message's images through the same reads.
+  and size the read verifies). Reads start only once the workspace is connected, because cached
+  threads render before the helper is reachable. Rewind re-stages a message's images through the
+  same reads.
   Sent file attachments render as static rows without preview, download, or open actions, and
   native app icons fall back to the tool glyph.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and

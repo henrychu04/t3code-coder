@@ -85,6 +85,29 @@ Archive a thread from its menu to retire it without deleting it. Archived thread
 New threads are named for you. To rename from the conversation instead, open the thread's context
 menu and choose **Regenerate title**; while it is generating, the action is disabled.
 
+## Limited threads
+
+**Limited** means the provider stopped on a rate limit or another usage limit of its API account.
+The conversation keeps the provider's explanation. Retry after the limit resets, or switch to
+another provider instance. Press **Resume** in an empty composer to continue a limited or
+interrupted turn manually. Queued messages stay saved while the limit blocks the thread and run
+after the continuation finishes. If the queue was held by a restart, resume it then.
+
+When the provider reports a reset time, choose **Resume at reset** to schedule a continuation. You
+can cancel it from the thread. Enable **Auto-resume limited threads** in **Settings → General** to
+schedule limit stops by default. The workspace helper must be running when the reset arrives; it
+resumes overdue continuations after a restart. Sending a new message, archiving, or settling the
+thread prevents a pending continuation from starting.
+
+Choose **Snooze until reset** to hide the thread until its allowance returns. Snooze and
+auto-resume are independent: snooze alone wakes the thread without sending a message; enabling both
+wakes and continues it. **Wake now** cancels the snooze. Enable **Snooze limited threads** to snooze
+limit stops by default. Providers without a reset time offer manual retry and the normal snooze
+choices.
+
+Subagent threads started by the agent can't take messages; message the parent thread instead. When
+such a subagent needs an approval or an answer, the parent thread asks for it.
+
 ## New threads
 
 `mod+n` starts a thread; with more than one project it asks which one. `mod+shift+n` starts a

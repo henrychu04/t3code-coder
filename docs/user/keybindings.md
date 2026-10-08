@@ -43,6 +43,19 @@ thread.
 `thread.stop` interrupts the running turn in the focused thread. It has no default shortcut;
 assign one in **Settings → Keyboard shortcuts**.
 
+## Queue and steer
+
+**Follow-up behavior** in **Settings → General** chooses Queue or Steer while the agent runs.
+Use `mod+Enter` to do the opposite for one message, even when the send shortcut requires a
+modifier. In a new thread, `mod+alt+Enter` starts the thread in the background and opens a fresh
+composer. Change either shortcut under **Composer: Opposite Queue or Steer Action** or
+**Composer: Start in Background**. These bindings take priority over the send shortcut. Click the
+send button to use the configured follow-up behavior.
+
+When an active turn has queued messages, `mod+shift+Enter` sends the first as a steer. Change it
+under **Queue: Send First Queued Message as Steer**. `alt+Up` at the start of the composer edits
+the most recently queued message.
+
 ## How rules work
 
 A shortcut is a rule with three parts:
@@ -54,8 +67,8 @@ A shortcut is a rule with three parts:
 ### `when` conditions
 
 `when` is an expression evaluated against the current UI state. Available keys include
-`terminalFocus`, `terminalOpen`, `fileOpen`, `fileViewerFocus`, `projectOpen`, and
-`modelPickerOpen`. Combine them with `!`, `&&`, `||`, and parentheses:
+`terminalFocus`, `terminalOpen`, `fileOpen`, `fileViewerFocus`, `projectOpen`,
+`modelPickerOpen`, `composerFocus`, `draftThreadRoute`, and `turnRunning`. Combine them with `!`, `&&`, `||`, and parentheses:
 
 - `terminalFocus` — only while the terminal has focus
 - `!terminalFocus` — everywhere except the terminal

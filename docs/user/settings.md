@@ -10,6 +10,10 @@ workspace; browser preferences follow the browser's existing preference storage.
 **Context window indicator** controls the token-usage meter. It remains enabled by default in
 T3 Coder, preserving the fork's existing behavior.
 
+Git-backed projects show branch and worktree controls below the composer while you create a
+thread. The controls retreat as the composer docks after you send the first message. Turn on
+**Settings → Appearance → Composer context** to keep them visible after the thread starts.
+
 ## Starting folder and workspace identity
 
 **General → Add project starts in** sets the folder initially shown by Add Project. Leave it empty
