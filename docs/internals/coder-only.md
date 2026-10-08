@@ -205,7 +205,9 @@ the local gateway does not open or mirror its SQLite file or artifact directory.
 
 The helper starts workspace-installed provider executables directly with argument-array spawning.
 Codex uses its app-server protocol over stdin/stdout; Claude uses streaming JSON over stdin/stdout.
-No provider executable or Anthropic Agent SDK package is bundled. T3 does not inject its removed
+No provider executable or Anthropic Agent SDK runtime is bundled. The Agent SDK is a type-only
+development dependency; pnpm's `ignoredOptionalDependencies` keeps its bundled Claude Code
+binaries from ever installing. T3 does not inject its removed
 preview MCP server or a local-host transport into Codex. Codex authentication and other
 configuration remain workspace-owned and subject to workspace policy. Before every managed Codex
 process, T3 enumerates configured MCP names without starting the servers, appends a final
@@ -547,6 +549,12 @@ listed here is drift to remove rather than fork behavior to keep.
     native `forkSession`/`resumeSessionAt` with turn boundaries kept in the resume cursor and
     recovered from saved history by `ClaudeRewindHistory.ts`. MCP is disabled for both providers
     and Codex declines MCP elicitations (see [Runtime boundary](#runtime-boundary)).
+  - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
+    so upstream code that calls the SDK changes only its import source. Options the CLI transport
+    cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
+    the empty strict configuration. It has no `forkSession`: a forked Claude session starts with
+    `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` on its
+    first turn rather than copying transcript files.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
     and WebP. Tool-result image bytes are omitted from persisted raw events

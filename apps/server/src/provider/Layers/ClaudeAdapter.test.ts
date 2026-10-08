@@ -407,7 +407,10 @@ describe("ClaudeAdapterLive", () => {
       });
       const input = harness.getLastCreateQueryInput();
       assert.equal(input?.options.effort, "high");
-      assert.equal(input?.options.settings?.fastMode, true);
+      assert.equal(
+        (input?.options.settings as Record<string, unknown> | undefined)?.fastMode,
+        true,
+      );
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
       Effect.provide(harness.layer),
@@ -461,10 +464,15 @@ describe("ClaudeAdapterLive", () => {
       assert.equal(harness.getLastCreateQueryInput()?.options.model, "opus-4.6");
       assert.equal(harness.getLastCreateQueryInput()?.options.effort, "medium");
       assert.equal(
-        harness.getLastCreateQueryInput()?.options.settings?.alwaysThinkingEnabled,
+        (harness.getLastCreateQueryInput()?.options.settings as Record<string, unknown> | undefined)
+          ?.alwaysThinkingEnabled,
         false,
       );
-      assert.equal(harness.getLastCreateQueryInput()?.options.settings?.fastMode, true);
+      assert.equal(
+        (harness.getLastCreateQueryInput()?.options.settings as Record<string, unknown> | undefined)
+          ?.fastMode,
+        true,
+      );
     }).pipe(Effect.provide(harness.layer));
   });
 

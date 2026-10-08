@@ -409,11 +409,21 @@ export type Options = {
   readonly forkSession?: boolean;
   readonly sessionId?: string;
   readonly settingSources?: ReadonlyArray<SettingSource>;
-  readonly settings?: Record<string, unknown>;
+  /** Settings object, or a settings file path passed through as the SDK does. */
+  readonly settings?: Record<string, unknown> | string;
+  readonly disallowedTools?: ReadonlyArray<string>;
+  /** Tool availability: explicit tool names, or Claude Code's default preset. */
+  readonly tools?:
+    | ReadonlyArray<string>
+    | { readonly type: "preset"; readonly preset: "claude_code" };
   /** CLI flags from the workspace launch-args setting; `null` is a flag without a value. */
   readonly extraArgs?: Readonly<Record<string, string | null>>;
   readonly supportedDialogKinds?: ReadonlyArray<string>;
-  readonly systemPrompt?: { readonly type: "preset"; readonly preset: "claude_code" };
+  readonly systemPrompt?: {
+    readonly type: "preset";
+    readonly preset: "claude_code";
+    readonly append?: string;
+  };
   readonly stderr?: (data: string) => void;
 };
 
@@ -647,6 +657,15 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
   if (options.allowedTools && options.allowedTools.length > 0) {
     args.push("--allowedTools", options.allowedTools.join(","));
   }
+  if (options.disallowedTools && options.disallowedTools.length > 0) {
+    args.push("--disallowedTools", options.disallowedTools.join(","));
+  }
+  if (options.tools !== undefined) {
+    args.push(
+      "--tools",
+      "type" in options.tools ? "default" : (options.tools as ReadonlyArray<string>).join(","),
+    );
+  }
   if (options.settingSources) args.push(`--setting-sources=${options.settingSources.join(",")}`);
   // This transport never accepts an integration configuration from callers.
   args.push("--strict-mcp-config", "--mcp-config", JSON.stringify({ mcpServers: {} }));
@@ -662,7 +681,12 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
   if (options.resumeSessionAt) args.push("--resume-session-at", options.resumeSessionAt);
   if (options.sessionId) args.push("--session-id", options.sessionId);
   if (options.persistSession === false) args.push("--no-session-persistence");
-  if (options.settings) args.push("--settings", JSON.stringify(options.settings));
+  if (options.settings) {
+    args.push(
+      "--settings",
+      typeof options.settings === "string" ? options.settings : JSON.stringify(options.settings),
+    );
+  }
   for (const [flag, value] of Object.entries(options.extraArgs ?? {})) {
     if (RESERVED_CLAUDE_CLI_FLAGS.has(flag)) continue;
     if (flag === "thinking-display" && options.thinking) continue;
@@ -742,6 +766,7 @@ class ClaudeCliQuery implements Query {
     this.initialization = this.request({
       subtype: "initialize",
       hooks: {},
+      ...(options.systemPrompt?.append ? { appendSystemPrompt: options.systemPrompt.append } : {}),
       ...(options.supportedDialogKinds
         ? { supportedDialogKinds: options.supportedDialogKinds }
         : {}),
