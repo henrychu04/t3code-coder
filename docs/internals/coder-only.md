@@ -520,8 +520,7 @@ listed here is drift to remove rather than fork behavior to keep.
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
     remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
-    keybinding-config load falls back to defaults because the trimmed config RPC has no error
-    channel for it. Config updates use upstream's full `providerStatuses` events and gated
+    keybinding-config load falls back to defaults instead of failing the config read. Config updates use upstream's full `providerStatuses` events and gated
     environment themes; subscriptions do not force a provider refresh.
   - Shell/thread streams, replay validation, live-event budgets and coalescing, completion-marker
     negotiation, and capability flags follow upstream. Coder replaces HTTP thread snapshot
