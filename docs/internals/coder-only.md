@@ -661,7 +661,11 @@ listed here is drift to remove rather than fork behavior to keep.
   attach with `afterSequence` by replaying the missed events and a `resumed` event instead of a
   snapshot when the window still covers the gap. Terminals poll the process table themselves
   (no resource telemetry), register no ports for preview discovery, record no metrics, and get
-  no managed ACP install directories on `PATH`.
+  no managed ACP install directories on `PATH`. In the browser, the terminal session state, output model,
+  drawer, and UI state store are upstream's; client-runtime adds `TerminalBufferCache`, a bounded
+  in-memory cache that seeds a reattach and supplies its `afterSequence`, and tracks the last
+  applied sequence. `ThreadTerminalDrawer` never opens terminal links (there is no editor or
+  preview surface).
 - **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies

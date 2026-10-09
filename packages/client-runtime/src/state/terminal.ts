@@ -14,9 +14,12 @@ import { subscribe, type EnvironmentRpcInput } from "../rpc/client.ts";
 import {
   applyTerminalAttachStreamEvent,
   applyTerminalMetadataStreamEvent,
+  nextTerminalAttachSeedState,
 } from "./terminalSession.ts";
 import { TerminalBufferCache } from "./terminalBufferCache.ts";
 
+// Coder: attach resumes from the cached output and its last sequence when the helper's replay
+// window still covers the gap.
 const terminalBufferCache = new TerminalBufferCache();
 
 export function createTerminalEnvironmentAtoms<R, E>(
@@ -39,26 +42,29 @@ export function createTerminalEnvironmentAtoms<R, E>(
     readonly input: { readonly threadId: string; readonly terminalId?: string | undefined };
   }) => JSON.stringify([environmentId, input.threadId, input.terminalId ?? null]);
   const lifecycleConcurrency = { mode: "serial" as const, key: terminalThreadKey };
-  const attach = createEnvironmentSubscriptionAtomFamily(runtime, {
-    label: "environment-data:terminal:attach",
-    subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>, environmentId) =>
-      Stream.suspend(() => {
-        const cached = terminalBufferCache.read(environmentId, input);
-        return subscribe(WS_METHODS.terminalAttach, {
-          ...input,
-          ...(cached.sequence === null ? {} : { afterSequence: cached.sequence }),
-        }).pipe(
-          Stream.scan(cached, applyTerminalAttachStreamEvent),
-          Stream.tap((state) =>
-            Effect.sync(() => {
-              terminalBufferCache.write(environmentId, input, state);
-            }),
-          ),
-        );
-      }),
-  });
   return {
-    attach,
+    attach: createEnvironmentSubscriptionAtomFamily(runtime, {
+      label: "environment-data:terminal:attach",
+      subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.terminalAttach>, environmentId) =>
+        Stream.suspend(() => {
+          const seed = nextTerminalAttachSeedState();
+          const cached = terminalBufferCache.read(environmentId, input);
+          const initial =
+            cached.version === 0
+              ? seed
+              : { ...cached, output: { ...cached.output, generation: seed.output.generation } };
+          const afterSequence = cached.version === 0 ? null : (cached.sequence ?? null);
+          return subscribe(WS_METHODS.terminalAttach, {
+            ...input,
+            ...(afterSequence === null ? {} : { afterSequence }),
+          }).pipe(
+            Stream.scan(initial, applyTerminalAttachStreamEvent),
+            Stream.tap((state) =>
+              Effect.sync(() => terminalBufferCache.write(environmentId, input, state)),
+            ),
+          );
+        }),
+    }),
     events: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:terminal:events",
       tag: WS_METHODS.subscribeTerminalEvents,

@@ -1,3 +1,5 @@
+// Coder: a bounded in-memory cache of attached terminal output, so reattaching can resume from the
+// last applied sequence instead of a full snapshot.
 import type { TerminalAttachInput } from "@t3tools/contracts";
 
 import { EMPTY_TERMINAL_BUFFER_STATE, type TerminalBufferState } from "./terminalSession.ts";
@@ -12,7 +14,6 @@ export class TerminalBufferCache {
   >();
   readonly #maxBytes: number;
   readonly #maxEntries: number;
-  readonly #textEncoder = new TextEncoder();
   #bytes = 0;
 
   constructor(maxBytes = DEFAULT_MAX_BYTES, maxEntries = DEFAULT_MAX_ENTRIES) {
@@ -35,7 +36,7 @@ export class TerminalBufferCache {
 
   write(environmentId: string, input: TerminalAttachInput, state: TerminalBufferState): void {
     const key = this.#key(environmentId, input);
-    const bytes = this.#textEncoder.encode(state.buffer).byteLength;
+    const bytes = state.output.retainedBytes;
     if (bytes > this.#maxBytes || this.#maxEntries <= 0) return;
     const existing = this.#entries.get(key);
     if (existing) {
