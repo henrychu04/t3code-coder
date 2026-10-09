@@ -355,7 +355,6 @@ import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/c
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   resolveThreadDetailRef,
-  useEnvironmentSupportsServerBrowser,
   useProject,
   useProjects,
   useThreadProjection,
@@ -520,12 +519,13 @@ import {
 
 const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
-import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
+import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
 
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { readEnvironmentScope } from "../state/session";
 import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.logic";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
+import { useScratchProject } from "../hooks/useScratchProject";
 const TIMELINE_SCROLL_CANCEL_SENTINEL = Object.freeze({});
 const EMPTY_ANCHORED_TIMELINE_MESSAGES: ReadonlyArray<ChatMessage> = [];
 // During an active turn the thread's updatedAt advances several times per
@@ -2128,11 +2128,6 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeThreadKnownSessions]);
   const activeThreadRef = useActiveThreadRef(activeThread);
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
-  const activeEnvironmentServerBrowser = useEnvironmentSupportsServerBrowser(
-    activeThreadRef?.environmentId ?? null,
-  );
-  // Electron hosts its own browser tabs; other clients need the environment to host them.
-  const browserAvailable = isPreviewSupportedInRuntime() || activeEnvironmentServerBrowser;
   const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
     containerWidth: workspaceLayoutWidth ?? undefined,
     widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
@@ -2528,8 +2523,6 @@ export default function ChatView(props: ChatViewProps) {
       connection: activeEnvironment.connection,
     };
   }, [activeEnvironment, activeEnvironmentUnavailable, activeEnvironmentUnavailableLabel]);
-  const handleReconnectActiveEnvironment = useCallback(
-    async (environmentId: EnvironmentId) => {
   const { scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
   const activeProjectIsScratch =
     activeProject !== null &&
@@ -2537,6 +2530,8 @@ export default function ChatView(props: ChatViewProps) {
       activeProject,
       environmentById.get(activeProject.environmentId)?.serverConfig?.scratchWorkspaceRoot ?? null,
     );
+  const handleReconnectActiveEnvironment = useCallback(
+    async (environmentId: EnvironmentId) => {
       const result = await retryEnvironment(environmentId);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -4430,23 +4425,7 @@ export default function ChatView(props: ChatViewProps) {
         }
         return;
       }
-      if (script.autoOpenPreview && script.previewUrl && isPreviewSupportedInRuntime()) {
-        const previewResult = await openUrlInPreview({
-          threadRef: activeThreadRef,
-          url: resolveDiscoveredServerUrl(activeThreadRef.environmentId, script.previewUrl),
-          openPreview,
-        });
-        if (previewResult._tag === "Failure" && !isAtomCommandInterrupted(previewResult)) {
-          const error = squashAtomCommandFailure(previewResult);
-          toastManager.add(
-            stackedThreadToast({
-              type: "error",
-              title: "Could not open preview",
-              description: error instanceof Error ? error.message : "An unexpected error occurred.",
-            }),
-          );
-        }
-      }
+      // Coder: there is no browser preview to open a script's server in.
     },
     [
       activeProject,
@@ -4461,7 +4440,6 @@ export default function ChatView(props: ChatViewProps) {
       setLastInvokedScriptByProjectId,
       environmentId,
       openTerminal,
-      openPreview,
       hasTerminalWriteAccess,
       activeKnownTerminalIds,
       canReuseTerminal,
@@ -6578,8 +6556,6 @@ export default function ChatView(props: ChatViewProps) {
             const error = squashAtomCommandFailure(result);
             setThreadError(threadId, error instanceof Error ? error.message : failureMessage);
           }
-        } else {
-          clearUsageLimitsFor(routeThreadKey);
         }
       } finally {
         sendInFlightRef.current = false;
@@ -6933,7 +6909,6 @@ export default function ChatView(props: ChatViewProps) {
     projectCloneBannerItem,
     showBranchMismatchBanner,
     systemComposerBannerItems,
-    wokeThreadBannerItem,
   ]);
 
   useEffect(() => {
@@ -7413,14 +7388,6 @@ export default function ChatView(props: ChatViewProps) {
     logicalProjectEnvironments,
     onEnvironmentChange,
   ]);
-
-  // A focused desktop browser page forwards these chords as menu actions.
-  useEffect(() => {
-    return window.desktopBridge?.onMenuAction((action) => {
-      if (action === "rightPanel.toggle") toggleRightPanel();
-      else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximized();
-    });
-  }, [toggleRightPanel, toggleRightPanelMaximized]);
 
   // Paste-to-focus: the resting composer blurs on a click into the timeline,
   // so a paste that follows has no editable target and would be dropped.
@@ -10065,7 +10032,6 @@ export default function ChatView(props: ChatViewProps) {
     threadPanelPresentation,
     threadPanelPopoverHandle,
     threadPanelShortcutLabel: shortcutLabelForCommand(keybindings, "threadPanel.toggle"),
-    threadPanelHasAttention: activeEnvironmentUnavailableState !== null,
     rightPanelAvailable: activeProject !== null,
     rightPanelOpen,
     rightPanelShortcutLabel: shortcutLabelForCommand(keybindings, "rightPanel.toggle"),
@@ -10504,6 +10470,9 @@ export default function ChatView(props: ChatViewProps) {
                                 ) : null
                               }
                               bannerItems={composerBannerItems}
+                              resumeCompactionTokens={resumeCompactionTokens}
+                              keepFullHistory={keepFullHistory}
+                              onToggleKeepFullHistory={toggleKeepFullHistory}
                               environmentUnavailable={activeEnvironmentUnavailableState}
                               activePendingApproval={activePendingApproval}
                               pendingApprovals={pendingApprovals}
@@ -10867,8 +10836,3 @@ export default function ChatView(props: ChatViewProps) {
   );
 }
 
-/** Keeps the thread's preview tabs synced while no browser panel is mounted. */
-function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {
-  usePreviewSession(props.threadRef);
-  return null;
-}

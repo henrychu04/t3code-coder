@@ -96,6 +96,21 @@ export function getOptimisticProjectFileQueryData(
   return appAtomRegistry.get(optimisticFileAtom(environmentId, cwd, relativePath))?.data ?? null;
 }
 
+/** The contents the Files panel shows, read outside React so it is current within a frame. */
+export function getProjectFileContents(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  cwd: string,
+  relativePath: string,
+): string | undefined {
+  const optimistic = getOptimisticProjectFileQueryData(environmentId, cwd, relativePath);
+  if (optimistic) return optimistic.contents;
+  const result = appAtomRegistry.get(
+    getProjectFileQueryAtom(environmentId, threadId, cwd, relativePath),
+  );
+  return Option.getOrUndefined(AsyncResult.value(result))?.contents;
+}
+
 export function confirmProjectFileQueryData(
   environmentId: EnvironmentId,
   threadId: ThreadId,
