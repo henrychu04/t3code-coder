@@ -4,6 +4,7 @@ import * as Duration from "effect/Duration";
 import * as Option from "effect/Option";
 import { useEffect, useState, type ReactNode } from "react";
 import type {
+  BackgroundActivitySettings,
   SourceControlProviderKind,
   SourceControlDiscoveryResult,
   SourceControlProviderAuth,
@@ -11,7 +12,11 @@ import type {
   VcsDriverKind,
   VcsDiscoveryItem,
 } from "@t3tools/contracts";
-import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
+import {
+  getBackgroundActivityBaseProfile,
+  getBackgroundActivityPresetSettings,
+  resolveServerBackgroundActivitySettings,
+} from "@t3tools/shared/backgroundActivitySettings";
 
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { useSettingsScope } from "./SettingsScopeContext";
@@ -42,9 +47,9 @@ import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 import { GitHubIcon, GitIcon, GitLabIcon, type Icon } from "../Icons";
+import { GitLabWorkspaceSettings } from "./GitLabWorkspaceSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
-import { GitLabWorkspaceSettings } from "./GitLabWorkspaceSettings";
 import {
   PolicyTooltip,
   SettingResetButton,
@@ -72,6 +77,12 @@ const VCS_ICONS: Partial<Record<VcsDriverKind, Icon>> = {
 
 const SOURCE_CONTROL_SKELETON_ROWS = ["primary", "secondary"] as const;
 const GIT_FETCH_INTERVAL_STEP_SECONDS = 5;
+type BackgroundActivityOverridePatch = Partial<{
+  [K in keyof BackgroundActivitySettings["overrides"]]:
+    | BackgroundActivitySettings["overrides"][K]
+    | undefined;
+}>;
+
 function durationToSeconds(duration: Duration.Duration): number {
   return Math.round(Duration.toMillis(duration) / 1_000);
 }
@@ -81,6 +92,29 @@ function normalizeFetchIntervalSeconds(value: number | null): number {
     return 0;
   }
   return Math.max(0, Math.round(value));
+}
+
+function backgroundActivityOverrideSettings(
+  current: BackgroundActivitySettings,
+  overrides: BackgroundActivityOverridePatch,
+) {
+  const nextOverrides: BackgroundActivityOverridePatch = {
+    ...current.overrides,
+    ...overrides,
+  };
+  for (const [key, value] of Object.entries(nextOverrides)) {
+    if (value === undefined) {
+      delete nextOverrides[key as keyof typeof nextOverrides];
+    }
+  }
+  return {
+    backgroundActivity: {
+      schemaVersion: 1 as const,
+      profile: "custom" as const,
+      baseProfile: getBackgroundActivityBaseProfile(current),
+      overrides: nextOverrides as BackgroundActivitySettings["overrides"],
+    },
+  };
 }
 
 function optionLabel(value: Option.Option<string>): string | null {
@@ -306,9 +340,14 @@ function DiscoveryItemRow({
 function GitFetchIntervalSettings() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const automaticGitFetchIntervalSeconds = durationToSeconds(settings.automaticGitFetchInterval);
+  const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
+  const automaticGitFetchIntervalSeconds = durationToSeconds(
+    resolvedBackgroundActivity.automaticGitFetchInterval,
+  );
   const defaultAutomaticGitFetchIntervalSeconds = durationToSeconds(
-    DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
+    getBackgroundActivityPresetSettings(
+      getBackgroundActivityBaseProfile(settings.backgroundActivity),
+    ).automaticGitFetchInterval,
   );
   const canResetFetchInterval =
     automaticGitFetchIntervalSeconds !== defaultAutomaticGitFetchIntervalSeconds;
@@ -321,8 +360,9 @@ function GitFetchIntervalSettings() {
           <div className="flex min-w-0 items-center gap-1">
             <span className="text-xs font-medium text-foreground">{setting.title}</span>
             <PolicyTooltip>
-              This interval is configured for Git only. The Background activity schedule in General
-              settings sets it together with the provider health interval.
+              This interval is configured for Git only. The shared Background activity policy still
+              decides whether Git refreshes may run when the timer fires. Custom intervals appear as
+              Advanced in General settings.
             </PolicyTooltip>
             <span
               className={cn(
@@ -335,9 +375,11 @@ function GitFetchIntervalSettings() {
                 <SettingResetButton
                   label="fetch interval"
                   onClick={() =>
-                    updateSettings({
-                      automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
-                    })
+                    updateSettings(
+                      backgroundActivityOverrideSettings(settings.backgroundActivity, {
+                        automaticGitFetchInterval: undefined,
+                      }),
+                    )
                   }
                 />
               ) : null}
@@ -355,9 +397,11 @@ function GitFetchIntervalSettings() {
             size="sm"
             className="w-32"
             onValueChange={(value) =>
-              updateSettings({
-                automaticGitFetchInterval: Duration.seconds(normalizeFetchIntervalSeconds(value)),
-              })
+              updateSettings(
+                backgroundActivityOverrideSettings(settings.backgroundActivity, {
+                  automaticGitFetchInterval: Duration.seconds(normalizeFetchIntervalSeconds(value)),
+                }),
+              )
             }
           >
             <NumberFieldGroup>
@@ -536,6 +580,7 @@ export function SourceControlSettingsPanel() {
               headerAction={hasVersionControlSystems ? null : scanButton}
             >
               {result.sourceControlProviders.map((item) => (
+                // Coder: GitLab is the only hosted provider; its CLI owns authentication.
                 <DiscoveryItemRow key={`provider:${item.kind}`} item={item}></DiscoveryItemRow>
               ))}
             </SettingsSection>
@@ -550,6 +595,7 @@ export function SourceControlSettingsPanel() {
       )}
 
       <SourceControlWritingSettingsSection />
+      {/* Coder: GitLab workspace status and the write-policy probe. */}
       <GitLabWorkspaceSettings />
     </SettingsPageContainer>
   );

@@ -8,7 +8,7 @@ import { useCallback, useMemo } from "react";
 
 import {
   mergeEnvironmentSettings,
-  useUpdateClientSettings,
+  persistClientSettingsPatch,
   useClientSettings,
 } from "../../hooks/useSettings";
 import { serverEnvironment } from "../../state/server";
@@ -34,8 +34,8 @@ export function useScopedSettings<T = UnifiedSettings>(
   const clientSettings = useClientSettings();
   const serverSettings = target?.settings ?? DEFAULT_SERVER_SETTINGS;
   const settings = useMemo(
-    () => mergeEnvironmentSettings(serverSettings, clientSettings, target?.environmentId ?? null),
-    [clientSettings, serverSettings, target?.environmentId],
+    () => mergeEnvironmentSettings(serverSettings, clientSettings),
+    [clientSettings, serverSettings],
   );
   return useMemo(() => (selector ? selector(settings) : (settings as T)), [selector, settings]);
 }
@@ -52,7 +52,6 @@ export function useScopedSettingSource(keys: readonly (keyof ServerSettings)[]) 
 }
 
 function useRunScopedPlan() {
-  const persistClientSettingsPatch = useUpdateClientSettings();
   const persistServer = useAtomCommand(serverEnvironment.updateSettings, { reportFailure: false });
   return useCallback(
     (plan: ReturnType<typeof planScopedSettingsPatch>) => {
@@ -62,11 +61,11 @@ function useRunScopedPlan() {
           title: "Setting not saved",
           description: plan.unavailableReason,
         });
-        return Promise.resolve(false);
+        return;
       }
-      return persistScopedSettingsPatch(plan, persistServer, persistClientSettingsPatch).then(
+      void persistScopedSettingsPatch(plan, persistServer, persistClientSettingsPatch).then(
         ({ failedEnvironments, savedEnvironmentCount }) => {
-          if (failedEnvironments.length === 0) return true;
+          if (failedEnvironments.length === 0) return;
           toastManager.add({
             type: "error",
             title:
@@ -75,53 +74,19 @@ function useRunScopedPlan() {
                 : "Setting not saved",
             description: `Could not update ${failedEnvironments.map((environment) => environment.label).join(", ")}.${savedEnvironmentCount > 0 ? " The other selected environments saved the change." : ""}`,
           });
-          return false;
         },
       );
     },
-    [persistServer, persistClientSettingsPatch],
+    [persistServer],
   );
 }
 
 export function useUpdateScopedSettings() {
-  const { scope, environments, targets } = useSettingsScope();
+  const { scope, environments } = useSettingsScope();
   const run = useRunScopedPlan();
   return useCallback(
-    (patch: ScopedSettingsPatch) => {
-      for (const key of [
-        "defaultModelSelection",
-        "textGenerationModelSelection",
-        "sourceControlWriterModelSelection",
-      ] as const) {
-        const selection = patch[key];
-        if (!selection) continue;
-        const sourceDriver = environments
-          .flatMap((environment) => environment.serverConfig?.providers ?? [])
-          .find((provider) => provider.instanceId === selection.instanceId)?.driver;
-        const unavailable = targets.find((target) => {
-          const provider = environments
-            .find((environment) => environment.environmentId === target.environmentId)
-            ?.serverConfig?.providers.find(
-              (provider) => provider.instanceId === selection.instanceId,
-            );
-          return (
-            !provider?.enabled ||
-            provider.driver !== sourceDriver ||
-            !provider.models.some((model) => model.slug === selection.model)
-          );
-        });
-        if (unavailable) {
-          toastManager.add({
-            type: "warning",
-            title: "Model unavailable",
-            description: `Choose a model available on ${unavailable.label}, or select that workspace separately.`,
-          });
-          return Promise.resolve(false);
-        }
-      }
-      return run(planScopedSettingsPatch(scope, environments, patch));
-    },
-    [environments, run, scope, targets],
+    (patch: ScopedSettingsPatch) => run(planScopedSettingsPatch(scope, environments, patch)),
+    [environments, run, scope],
   );
 }
 
@@ -153,9 +118,4 @@ export function useClearProjectOverrides() {
     },
     [context, run],
   );
-}
-
-export function useOptionalScopedSettingsMixed(keys: readonly (keyof ServerSettings)[]): boolean {
-  const context = useOptionalSettingsScope();
-  return context ? scopedSettingsAreMixed(context.targets, keys) : false;
 }

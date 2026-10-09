@@ -96,7 +96,7 @@ any time. A stopped or unavailable workspace remains selected and must be starte
 connections before its provider settings can be read or changed.
 
 Provider configuration and text-generation defaults are stored in the selected workspace. Model
-favorites, hidden models, and model ordering are also kept separately for each workspace.
+favorites, hidden models, and model ordering are browser preferences shared by every workspace.
 
 The default Codex and Claude settings use the workspace's standard executables, provider homes,
 and existing API authentication. Most users should leave them unchanged. Each provider can be enabled or

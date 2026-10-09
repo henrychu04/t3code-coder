@@ -27,8 +27,8 @@ import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
-  /** Coder: favorites, model preferences, and keybindings belong to this workspace. */
-  environmentId: EnvironmentId;
+  /** Coder: there is no primary server; this workspace supplies the default keybindings. */
+  environmentId: EnvironmentId | null;
   /**
    * The instance currently selected in the composer. Drives the trigger
    * icon, label and the default-highlighted combobox row.

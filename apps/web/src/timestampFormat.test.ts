@@ -45,7 +45,7 @@ describe("formatShortTimestamp", () => {
     ["en-GB", "15:44"],
     ["en-US", "3:44 PM"],
   ])("honors %s and the explicit hour-cycle settings", async (locale, localTime) => {
-    vi.stubGlobal("navigator", { language: locale });
+    vi.stubGlobal("window", { desktopBridge: { getSystemLocale: () => locale } });
     vi.resetModules();
     const { formatShortTimestamp: format } = await import("./timestampFormat");
     const date = new Date(2026, 3, 7, 15, 44).toISOString();
@@ -70,6 +70,15 @@ describe("resolveWeekStartsOn", () => {
   it("leaves the default to the caller for a malformed locale", async () => {
     const { resolveWeekStartsOn } = await import("./timestampFormat");
     expect(resolveWeekStartsOn("not a locale")).toBeUndefined();
+  });
+
+  it("follows the locale the desktop host reports", async () => {
+    vi.stubGlobal("window", { desktopBridge: { getSystemLocale: () => "en-GB" } });
+    vi.resetModules();
+    const { weekStartsOn } = await import("./timestampFormat");
+    expect(weekStartsOn).toBe(1);
+    vi.unstubAllGlobals();
+    vi.resetModules();
   });
 });
 
@@ -192,14 +201,16 @@ describe("formatDayAwareTimestamp", () => {
     );
   });
 
-  it("uses the browser locale for both the numeric date and wall-clock time", async () => {
-    vi.stubGlobal("navigator", { language: "en-GB" });
+  it("uses the host locale for both the numeric date and wall-clock time", async () => {
+    vi.stubGlobal("window", {
+      desktopBridge: { getSystemLocale: () => "en-GB" },
+    });
     vi.resetModules();
 
-    const { formatDayAwareTimestamp: formatWithBrowserLocale } = await import("./timestampFormat");
+    const { formatDayAwareTimestamp: formatWithHostLocale } = await import("./timestampFormat");
     const messageAt = iso(2026, 7, 12, 15, 44);
 
-    expect(formatWithBrowserLocale(messageAt, "locale", now)).toBe("12/08 15:44");
+    expect(formatWithHostLocale(messageAt, "locale", now)).toBe("12/08 15:44");
 
     vi.unstubAllGlobals();
   });
