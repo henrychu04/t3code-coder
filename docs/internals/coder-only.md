@@ -706,9 +706,9 @@ listed here is drift to remove rather than fork behavior to keep.
   status icons. The branch toolbar is upstream's; workspace options are never primary and use
   the server's machine kind, and the branch notice also covers a managed worktree whose branch
   moved (`resolveCheckoutBranchMismatch`). Proposed-plan cards offer Copy but no Download or Save
-  to workspace (no exports, and Files edits only existing files). The root route has no
-  provider-update launch notification (updates stay in the sidebar action) and no default-theme
-  adoption, which follows upstream's `t3 theme set` CLI.
+  to workspace (no exports, and Files edits only existing files). The provider-update launch notification uses the active workspace as upstream's primary
+  environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
+  upstream's `t3 theme set` CLI.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), sidebar file drops, and the favicon store.
