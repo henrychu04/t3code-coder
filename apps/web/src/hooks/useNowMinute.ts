@@ -1,9 +1,7 @@
 import { useSyncExternalStore } from "react";
 
-/** Minute-quantized clock ("YYYY-MM-DDTHH:MM") for snooze resolution.
-    One module-level timer feeds every consumer through useSyncExternalStore,
-    so the sidebar and composer share one value and tick on UTC minute
-    boundaries together. */
+/** Minute-quantized UI clock ("YYYY-MM-DDTHH:MM"). One module-level timer
+    feeds every consumer through useSyncExternalStore. */
 
 function currentMinute(): string {
   return new Date().toISOString().slice(0, 16);

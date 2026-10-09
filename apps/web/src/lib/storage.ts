@@ -72,10 +72,3 @@ export function createDeferredStorage<TValue>(
     },
   };
 }
-
-export function createDebouncedStorage(
-  baseStorage: Partial<StateStorage> | null | undefined,
-  debounceMs = 300,
-) {
-  return createDeferredStorage<string>(baseStorage, (value) => value, debounceMs);
-}

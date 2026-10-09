@@ -83,10 +83,10 @@ export function PullRequestComposer({
         // the icon is decorative and a reader who cannot see it still needs the number.
         aria-label={
           pendingComments.length > 0
-            ? `Review merge request, ${pendingComments.length} ${pendingComments.length === 1 ? "comment" : "comments"} pending`
+            ? `Review pull request, ${pendingComments.length} ${pendingComments.length === 1 ? "comment" : "comments"} pending`
             : reviewStarted || !canComment
-              ? "Review merge request"
-              : "Comment on merge request"
+              ? "Review pull request"
+              : "Comment on pull request"
         }
       >
         <MessageSquareIcon className="size-4" />
@@ -106,7 +106,7 @@ export function PullRequestComposer({
         sideOffset={8}
         width="lg"
         initialFocus={mode === "review" ? reviewRef : commentRef}
-        aria-label="Merge request composer"
+        aria-label="Pull request composer"
       >
         <div className="mb-3 flex items-center justify-between gap-2">
           {canComment && verdicts.length > 0 ? (
@@ -126,7 +126,7 @@ export function PullRequestComposer({
             </ToggleGroup>
           ) : (
             <PopoverTitle>
-              {mode === "review" ? "Review merge request" : "Comment on merge request"}
+              {mode === "review" ? "Review pull request" : "Comment on pull request"}
             </PopoverTitle>
           )}
           <div className="flex items-center gap-1">
@@ -158,7 +158,7 @@ export function PullRequestComposer({
               environmentId={environmentId}
               reference={reference}
               verdicts={verdicts}
-              requestChangesSummaryRequired={false}
+              requestChangesSummaryRequired={detail.provider === "forgejo"}
               textareaRef={reviewRef}
               pending={reviewPending}
               onPendingChange={setReviewPending}

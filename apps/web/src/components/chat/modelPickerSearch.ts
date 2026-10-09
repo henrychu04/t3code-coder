@@ -1,10 +1,10 @@
 import { normalizeSearchQuery, scoreQueryMatch } from "@t3tools/shared/searchRanking";
 
 type ModelPickerSearchableModel = {
-  /** Claude driver kind, indexed alongside an instance display name. */
+  /** Driver kind — indexed so "codex" still matches a Codex Personal instance. */
   driverKind: string;
   /**
-   * Instance display name (e.g. "Claude Personal"). Indexed as a search
+   * Instance display name (e.g. "Codex Personal"). Indexed as a search
    * field so typing the custom instance's user-authored name matches its
    * models directly instead of just the driver kind.
    */

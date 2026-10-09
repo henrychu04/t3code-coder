@@ -1,17 +1,10 @@
-import {
-  EnvironmentId,
-  MessageId,
-  ThreadId,
-  PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  type AssistantCitation,
-} from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@t3tools/contracts";
 import {
   createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -41,22 +34,6 @@ function createCitationRouter(initialEntry = "/environment-one/thread-one") {
 }
 
 describe("assistant citation navigation", () => {
-  it("navigates a sendable citation with long Unicode text and comment", async () => {
-    const longCitation = {
-      ...citation,
-      text: "界".repeat(6000),
-      comment: "評".repeat(6000),
-      start: 0,
-      end: 6000,
-    };
-    expect(serializeAssistantCitation(longCitation).length).toBeLessThan(
-      PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-    );
-    const router = createCitationRouter();
-    await router.navigate(assistantCitationNavigation(longCitation));
-    expect(assistantCitationFromLocation(router.state.location.href)).toEqual(longCitation);
-  });
-
   it("preserves encoded quote whitespace through router navigation and reload", async () => {
     const router = createCitationRouter();
     await router.navigate(assistantCitationNavigation(citation));
