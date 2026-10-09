@@ -80,8 +80,9 @@ import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestS
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
 
+// The secret store also holds the one-use values of agent secret requests.
 const CoderSettingsLive = ServerSettings.layer.pipe(
-  Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );
 

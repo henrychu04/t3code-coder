@@ -21,6 +21,7 @@ import {
 } from "./scopedSettings";
 import { resolveSettingsScope } from "./settingsScope";
 
+import * as Cause from "effect/Cause";
 function environment(
   id: string,
   options: {

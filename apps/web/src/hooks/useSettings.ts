@@ -19,7 +19,6 @@ import {
   type ProviderInstanceMutation,
   ServerSettings,
   type ServerSettingsPatch,
-  sessionGrantsScope,
 } from "@t3tools/contracts";
 import {
   type ClientSettingsPatch,
@@ -54,7 +53,7 @@ import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
-import { environmentSession, readEnvironmentScope, useEnvironmentScope } from "~/state/session";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 
 const CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE = "[CLIENT_SETTINGS]";
@@ -424,21 +423,13 @@ function useSharedSettingsSyncTargetIds(includePending = false): ReadonlyArray<E
   const { environments } = useEnvironments();
   const writableTargetsAtom = useMemo(
     () =>
-      Atom.make((get) =>
-        environments.filter(supportsSharedSettingsSync).flatMap((environment) => {
-          const result = get(environmentSession.sessionStateAtom(environment.environmentId));
-          // A cold grant must not drop a shared edit. The server authorizes the
-          // write; mismatch suggestions still wait for a confirmed grant.
-          if (includePending && result._tag === "Initial") {
-            return [environment.environmentId];
-          }
-          const session =
-            result._tag === "Failure" ? null : Option.getOrNull(AsyncResult.value(result));
-          return session !== null && sessionGrantsScope(session, AuthSettingsWriteScope)
-            ? [environment.environmentId]
-            : [];
-        }),
+      Atom.make(() =>
+        // Coder: every workspace grants the settings write scope to its owner.
+        environments
+          .filter(supportsSharedSettingsSync)
+          .map((environment) => environment.environmentId),
       ),
+    // Coder: `includePending` matters only while a session grant loads, which never happens here.
     [environments, includePending],
   );
   return useAtomValue(writableTargetsAtom);
@@ -535,9 +526,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
               targetId === environmentId,
             );
             if (Object.keys(targetPatch).length === 0) continue;
-            const session = appAtomRegistry.get(environmentSession.sessionStateAtom(targetId));
             if (
-              session._tag !== "Initial" &&
               !requiredScopesForServerSettingsPatch(sharedPatch).every((scope) =>
                 readEnvironmentScope(targetId, scope),
               )

@@ -1,3 +1,4 @@
+import { splitPathAndPosition } from "./terminal-links";
 import {
   fileBasename,
   stripSlashPrefixedWindowsDrive,

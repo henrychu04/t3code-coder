@@ -147,16 +147,9 @@ interface ToolOutputState {
 }
 
 function ToolOutput(props: ToolOutputState) {
-  const images = props.images.map((resource) => (
-    <ChatMarkdownAssetImage
-      key={resource.index}
-      environmentId={props.environmentId}
-      resource={resource}
-      alt="Tool output image"
-      maxHeightRem={16}
-      onImageExpand={props.onImageExpand}
-    />
-  ));
+  // Coder: tool output images load through upstream's signed asset route, which the helper does
+  // not serve; `turnItemOutputImages` reports none.
+  const images: ReadonlyArray<React.ReactNode> = [];
   const text = props.output ? (
     <div className="max-h-80 overflow-auto text-muted-foreground">{props.output}</div>
   ) : props.pending ? (

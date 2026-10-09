@@ -1,5 +1,5 @@
 diff --git a/dist/components/CodeView.d.ts b/dist/components/CodeView.d.ts
-index cc32d28..3a46bf4 100644
+index cc32d281b029fd66b48819adf4ca0e532cecad86..3a46bf4c1166c064d349a4d980613a58ca4f9b07 100644
 --- a/dist/components/CodeView.d.ts
 +++ b/dist/components/CodeView.d.ts
 @@ -158,6 +158,12 @@ interface CodeViewOptions<LAnnotation, Caret> extends CodeViewPassThroughOptions
@@ -30,7 +30,7 @@ index cc32d28..3a46bf4 100644
     * Returns the editor while this item is being edited. Partial diffs get an
     * editor after their files load; scrolling away or collapsing keeps it.
 diff --git a/dist/components/CodeView.js b/dist/components/CodeView.js
-index 140f94f..96fc774 100644
+index 140f94fe8480aa6b4ccbfca5573123442644a808..96fc774ca7753427b7ba822627a5a1705ae52aee 100644
 --- a/dist/components/CodeView.js
 +++ b/dist/components/CodeView.js
 @@ -16,6 +16,7 @@ import { prefersReducedMotion } from "../utils/prefersReducedMotion.js";
@@ -330,7 +330,7 @@ index 140f94f..96fc774 100644
  	if (item.type === "diff") return item.instance.updateCodeViewLayout(item.item.fileDiff, item.top, void 0, item.item.annotations ?? []);
 diff --git a/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
 new file mode 100644
-index 0000000..29370ad
+index 0000000000000000000000000000000000000000..29370adf88299d8f7572d4054334b6ce81bdaf9e
 --- /dev/null
 +++ b/dist/components/CodeViewSearch.js
 @@ -0,0 +1,360 @@
@@ -694,8 +694,34 @@ index 0000000..29370ad
 +export { CodeViewSearch, collectMatches };
 +
 +//# sourceMappingURL=CodeViewSearch.js.map
+diff --git a/dist/components/FileDiff.d.ts b/dist/components/FileDiff.d.ts
+index 2e8df3a5679acb3f7b46e8247585ad7e891b7d22..9b8ffb7fc6809f467a515688a91ab1a847ab46a6 100644
+--- a/dist/components/FileDiff.d.ts
++++ b/dist/components/FileDiff.d.ts
+@@ -9,7 +9,7 @@ import { ScrollSyncManager } from "../managers/ScrollSyncManager.js";
+ import { DiffHunksRenderer, DiffHunksRendererOptions, HunksRenderResult } from "../renderers/DiffHunksRenderer.js";
+ import { Editor } from "../editor/editor.js";
+ //#region src/components/FileDiff.d.ts
+-type LoadedPartialDiffContents = Awaited<ReturnType<NonNullable<BaseDiffOptions['loadDiffFiles']>>>;
++type LoadedPartialDiffContents = NonNullable<Awaited<ReturnType<NonNullable<BaseDiffOptions['loadDiffFiles']>>>>;
+ type DeferredSelectedLinesWrite = [range: SelectedLineRange | null, options: SelectionWriteOptions | undefined];
+ type DeferredEditorActiveLineWrite = [lineNumber: number | null, options: EditorActiveLineOptions | undefined];
+ interface UpdateRenderCacheOptions {
+diff --git a/dist/components/FileDiff.js b/dist/components/FileDiff.js
+index 6f66bd3910315a1c16e37dabd9dd5b8df067661d..6cf97e265de0284ebcdcb99d10981fd84b521fbf 100644
+--- a/dist/components/FileDiff.js
++++ b/dist/components/FileDiff.js
+@@ -563,7 +563,7 @@ var FileDiff = class {
+ 		}
+ 	}
+ 	async handleFilesLoaded(expectedDiff, files) {
+-		if (this.fileDiff !== expectedDiff || !expectedDiff.isPartial) return;
++		if (files == null || this.fileDiff !== expectedDiff || !expectedDiff.isPartial) return;
+ 		hydratePartialDiff("merge", expectedDiff, files);
+ 		this.setHydratedState(files);
+ 		if (this.installHydratedSessionDiff(expectedDiff)) {
 diff --git a/dist/components/VirtualizedFile.d.ts b/dist/components/VirtualizedFile.d.ts
-index 5e68e35..79dcd88 100644
+index 5e68e354318c9d3556b5dd7dea0d96b0f438acd8..79dcd88829255d5479f2af11fc5f4f6ad75f6565 100644
 --- a/dist/components/VirtualizedFile.d.ts
 +++ b/dist/components/VirtualizedFile.d.ts
 @@ -49,7 +49,7 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
@@ -708,7 +734,7 @@ index 5e68e35..79dcd88 100644
    protected finalizeRender(): void;
    private updatePendingRender;
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index d1f57cd..5908ad7 100644
+index d1f57cdef24ed5d34d391ee3bfe4a1d3505acd73..5908ad77e5f18a8035cbfdf8ae9b1ba6a6c0b990 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
 @@ -23,6 +23,7 @@ var VirtualizedFile = class extends File {
@@ -774,7 +800,7 @@ index d1f57cd..5908ad7 100644
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
 diff --git a/dist/components/web-components.js b/dist/components/web-components.js
-index 6e7b486..5b7290f 100644
+index 6e7b486a02a0f9f9d2c57ea3d9e95b706925e72a..5b7290f1814f4883e9fd13ffdf22b9bacad461c0 100644
 --- a/dist/components/web-components.js
 +++ b/dist/components/web-components.js
 @@ -2,8 +2,17 @@ import { DIFFS_TAG_NAME } from "../constants.js";
@@ -808,7 +834,7 @@ index 6e7b486..5b7290f 100644
  		connectedCallback() {
  			const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: "open" });
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index 8f04a6f..c203023 100644
+index 8f04a6f92221c796a2636c203f739f94786c2df3..c20302320d991338fe2aaaee991e60f74564c1e9 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
 @@ -1899,7 +1899,11 @@ var Editor = class {
@@ -825,7 +851,7 @@ index 8f04a6f..c203023 100644
  		if (newLineAnnotations != null) {
  			this.#lineAnnotations = newLineAnnotations;
 diff --git a/dist/editor/searchPanel.d.ts b/dist/editor/searchPanel.d.ts
-index 9542849..1c1a51f 100644
+index 9542849786b98a7b11f98894847a2f53a9aac113..1c1a51f56da381105113d9b731e0573296edd9be 100644
 --- a/dist/editor/searchPanel.d.ts
 +++ b/dist/editor/searchPanel.d.ts
 @@ -15,6 +15,8 @@ interface SearchPanelOptions {
@@ -838,7 +864,7 @@ index 9542849..1c1a51f 100644
    scrollToMatch: (nextMatch: MatchRange, retainFocus: boolean) => void;
    applyReplace: (edits: ResolvedTextEdit[]) => void;
 diff --git a/dist/editor/searchPanel.js b/dist/editor/searchPanel.js
-index df1ba63..676751b 100644
+index df1ba637c2f7834f21f087eba7a416c802f4ac68..676751bb0ea518e24df95477183f647a78a59c98 100644
 --- a/dist/editor/searchPanel.js
 +++ b/dist/editor/searchPanel.js
 @@ -12,7 +12,7 @@ var SearchPanelWidget = class {
@@ -860,7 +886,7 @@ index df1ba63..676751b 100644
  			this.#inputElement.select();
  		};
 diff --git a/dist/managers/ResizeManager.d.ts b/dist/managers/ResizeManager.d.ts
-index 3efafc4..9e5b751 100644
+index 3efafc41324e09c546e66645c0dc474e68417896..9e5b7511f9f82702c4e15fe7063b3e9a0b05a79d 100644
 --- a/dist/managers/ResizeManager.d.ts
 +++ b/dist/managers/ResizeManager.d.ts
 @@ -5,6 +5,8 @@ interface ResizeManagerSetupOptions {
@@ -873,7 +899,7 @@ index 3efafc4..9e5b751 100644
    private static managersByElement;
    private static getResizeObserver;
 diff --git a/dist/managers/ResizeManager.js b/dist/managers/ResizeManager.js
-index 9724cb1..14145d8 100644
+index 9724cb1e344af1ac8763b592f671a9ceb63f1a76..14145d832900e7a9734786dbb6223d03424f7cb6 100644
 --- a/dist/managers/ResizeManager.js
 +++ b/dist/managers/ResizeManager.js
 @@ -19,6 +19,7 @@ var ResizeManager = class ResizeManager {
@@ -893,7 +919,7 @@ index 9724cb1..14145d8 100644
  	}
  	applyAnnotationUpdates(annotationUpdates) {
 diff --git a/dist/react/CodeView.d.ts b/dist/react/CodeView.d.ts
-index e78e713..642b235 100644
+index e78e713bdea30c46a548bc46dacf79aa8c184c3d..642b235942f2a8f476c95c9ed05661f4f4431923 100644
 --- a/dist/react/CodeView.d.ts
 +++ b/dist/react/CodeView.d.ts
 @@ -56,6 +56,8 @@ interface CodeViewBaseProps<LAnnotation, Caret> {
@@ -906,7 +932,7 @@ index e78e713..642b235 100644
    renderHeaderPrefix?(item: CodeViewItem<LAnnotation>): ReactNode;
    renderHeaderFilenameSuffix?(item: CodeViewItem<LAnnotation>): ReactNode;
 diff --git a/dist/react/CodeView.js b/dist/react/CodeView.js
-index 84c7915..d1930bf 100644
+index 84c7915d9bd1f9664010966370f60649a7a5d67e..d1930bfb8950ee6b78d56259181edeb1a1492d2a 100644
 --- a/dist/react/CodeView.js
 +++ b/dist/react/CodeView.js
 @@ -24,7 +24,7 @@ function createDefaultCache(controlled) {
@@ -970,8 +996,25 @@ index 84c7915..d1930bf 100644
  	if (hasCustomHeader) managedOptions.renderCustomHeader = noopRender;
  	if (hasGutterRenderer) managedOptions.renderGutterUtility = noopRender;
  	if (hasCodeViewHeader) managedOptions.renderCodeViewHeader = noopRender;
+diff --git a/dist/types.d.ts b/dist/types.d.ts
+index b469f0a2b6cc0aa0cd250a294efb674faee2b2a4..3276a2c7d0fc7995a0e2d33c2f34d8296fa5bbeb 100644
+--- a/dist/types.d.ts
++++ b/dist/types.d.ts
+@@ -44,7 +44,11 @@ type MaybeDiffFileInput = DiffFileInput | {
+   oldFile?: undefined;
+   newFile?: undefined;
+ };
+-type FileDiffContentsLoader = (fileDiff: FileDiffMetadata) => Promise<FileDiffLoadedFiles>;
++/**
++ * Loads complete contents for a partial diff. Return `null` when the contents
++ * are intentionally unavailable and the partial diff should remain unchanged.
++ */
++type FileDiffContentsLoader = (fileDiff: FileDiffMetadata) => Promise<FileDiffLoadedFiles | null>;
+ type HighlighterTypes = 'shiki-js' | 'shiki-wasm';
+ type HighlightedToken = [char: number, fg: string, text: string];
+ type DiffsThemeNames = BundledTheme | (string & {});
 diff --git a/package.json b/package.json
-index d9dc7b5..3c37bae 100644
+index d9dc7b5f55ef4ac464e027fff9619212cec143f4..3c37baedae2d975c65fa7273e591338164aff2ae 100644
 --- a/package.json
 +++ b/package.json
 @@ -58,6 +58,18 @@

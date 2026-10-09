@@ -64,6 +64,11 @@ import ChatMarkdown, {
   shouldUseMarkdownFileBrowserPrimaryAction,
 } from "./ChatMarkdown";
 
+import { MarkdownFindContext } from "./chat/markdownFindContext";
+import { countThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
+import { createRoot } from "react-dom/client";
+import { searchableMessageSegments } from "@t3tools/shared/threadFindText";
+import { useThreadFindHighlights } from "./chat/threadFindHighlights";
 function codeButton(renderer: ReactTestRenderer, label: string) {
   const button = renderer.root
     .findAllByType(Button)

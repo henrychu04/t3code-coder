@@ -13,15 +13,11 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { useFilesystemReadAccess } from "~/state/filesystem";
 import { projectEnvironment } from "~/state/projects";
 import { useProjectPathSearch } from "~/state/queries";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 
 const EMPTY_PROJECT_FILE_PATH = "";
-const EMPTY_PROJECT_ENTRIES_QUERY_ATOM = Atom.make(
-  AsyncResult.initial<ProjectListEntriesResult, never>(false),
-);
 const EMPTY_PROJECT_FILE_QUERY_ATOM = Atom.make(
   AsyncResult.initial<ProjectReadFileResult, never>(false),
 ).pipe(Atom.withLabel("project-file-query:empty"));
@@ -34,15 +30,6 @@ export function optimisticFileAtom(
   return projectEnvironment.optimisticFile({ environmentId, cwd, relativePath });
 }
 
-// Dirty contents must survive a closed preview, including failed or unauthorized saves.
-const unsavedFileMounts = new Map<ReturnType<typeof optimisticFileAtom>, () => void>();
-
-function releaseUnsavedFile(atom: ReturnType<typeof optimisticFileAtom>): void {
-  const unmount = unsavedFileMounts.get(atom);
-  unsavedFileMounts.delete(atom);
-  unmount?.();
-}
-
 interface ProjectQueryState<A> {
   readonly data: A | null;
   readonly error: string | null;
@@ -51,7 +38,6 @@ interface ProjectQueryState<A> {
 }
 
 interface ProjectFileQueryState extends ProjectQueryState<ProjectReadFileResult> {
-  readonly readError: ProjectReadFileError | null;
   /** The path exists but is not a regular file, typically a directory. */
   readonly isNotFile: boolean;
 }
@@ -90,11 +76,7 @@ export function setProjectFileQueryData(
   contents: string,
   revision: string,
 ): void {
-  const atom = optimisticFileAtom(environmentId, cwd, relativePath);
-  if (!unsavedFileMounts.has(atom)) {
-    unsavedFileMounts.set(atom, appAtomRegistry.mount(atom));
-  }
-  appAtomRegistry.set(atom, {
+  appAtomRegistry.set(optimisticFileAtom(environmentId, cwd, relativePath), {
     confirmedAgainst: undefined,
     data: {
       relativePath,
@@ -112,27 +94,6 @@ export function getOptimisticProjectFileQueryData(
   relativePath: string,
 ): ProjectReadFileResult | null {
   return appAtomRegistry.get(optimisticFileAtom(environmentId, cwd, relativePath))?.data ?? null;
-}
-
-/** The contents the Files panel shows, read outside React so it is current within a frame. */
-export function getProjectFileContents(
-  environmentId: EnvironmentId,
-  cwd: string,
-  relativePath: string,
-): string | undefined {
-  const optimistic = getOptimisticProjectFileQueryData(environmentId, cwd, relativePath);
-  if (optimistic) return optimistic.contents;
-  const result = appAtomRegistry.get(getProjectFileQueryAtom(environmentId, cwd, relativePath));
-  return Option.getOrUndefined(AsyncResult.value(result))?.contents;
-}
-
-export function getUnsavedProjectFileQueryData(
-  environmentId: EnvironmentId,
-  cwd: string,
-  relativePath: string,
-): ProjectReadFileResult | null {
-  const optimistic = appAtomRegistry.get(optimisticFileAtom(environmentId, cwd, relativePath));
-  return optimistic?.confirmedAgainst === undefined ? (optimistic?.data ?? null) : null;
 }
 
 export function confirmProjectFileQueryData(
@@ -155,7 +116,6 @@ export function confirmProjectFileQueryData(
     confirmedAgainst: appAtomRegistry.get(queryAtom),
   };
   appAtomRegistry.set(atom, confirmed);
-  releaseUnsavedFile(atom);
   appAtomRegistry.refresh(queryAtom);
   void executeAtomQuery(appAtomRegistry, queryAtom, {
     reportDefect: false,
@@ -183,9 +143,7 @@ export function clearProjectFileQueryData(
   cwd: string,
   relativePath: string,
 ): void {
-  const atom = optimisticFileAtom(environmentId, cwd, relativePath);
-  appAtomRegistry.set(atom, null);
-  releaseUnsavedFile(atom);
+  appAtomRegistry.set(optimisticFileAtom(environmentId, cwd, relativePath), null);
 }
 
 function failureCause<A>(result: AsyncResult.AsyncResult<A, unknown>): unknown {
@@ -211,12 +169,8 @@ export function useProjectEntriesQuery(
   const refresh = useCallback(() => refreshAtom(), [refreshAtom]);
   return {
     data: Option.getOrNull(AsyncResult.value(result)),
-    error: fileAccess.isPending
-      ? null
-      : canReadFiles
-        ? errorMessage(failureCause(result))
-        : (fileAccess.error ?? "This connection cannot read host files."),
-    isPending: fileAccess.isPending || result.waiting,
+    error: errorMessage(failureCause(result)),
+    isPending: result.waiting,
     refresh,
   };
 }
@@ -277,19 +231,12 @@ export function useProjectFileQuery(
   );
   const optimisticFile = relativePath === null ? null : optimisticResult;
   const cause = failureCause(result);
-  const readError = isProjectReadFileError(cause) ? cause : null;
 
   return {
-    data: canReadFiles ? (optimisticFile?.data ?? data) : null,
-    error:
-      !isQueryEnabled || fileAccess.isPending
-        ? null
-        : canReadFiles
-          ? errorMessage(cause)
-          : (fileAccess.error ?? "This connection cannot read host files."),
-    isPending: isQueryEnabled && (fileAccess.isPending || result.waiting),
-    readError,
-    isNotFile: readError?.failure === "path_not_file",
+    data: optimisticFile?.data ?? data,
+    error: errorMessage(cause),
+    isNotFile: isProjectReadFileError(cause) && cause.failure === "path_not_file",
+    isPending: result.waiting,
     refresh,
   };
 }

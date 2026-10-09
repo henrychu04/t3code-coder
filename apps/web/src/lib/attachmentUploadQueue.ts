@@ -27,6 +27,8 @@ import { projectEnvironment } from "../state/projects";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
 import { compressImageToByteLimit } from "./imageCompression";
 
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "../state/session";
 type PersistedAttachmentVerification =
   | { readonly status: "verified" }
   | { readonly status: "missing" }

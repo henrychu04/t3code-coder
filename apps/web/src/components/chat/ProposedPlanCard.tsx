@@ -2,11 +2,8 @@
 // and the Files surface edits only existing files).
 import { memo, useState } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
-import {
-  buildCollapsedProposedPlanPreviewMarkdown,
-  proposedPlanTitle,
-  stripDisplayedPlanMarkdown,
-} from "../../proposedPlan";
+import { buildCollapsedProposedPlanPreviewMarkdown } from "../../proposedPlan";
+import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
 import ChatMarkdown from "../ChatMarkdown";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";

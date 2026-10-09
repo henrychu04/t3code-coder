@@ -5,6 +5,7 @@ import {
   resolveThreadDetailsCardLayout,
 } from "./threadDetailsCardLayout";
 
+import { type ChatCanvasPreview } from "./chatCanvasLayout";
 // Coder: there is no floating preview, so the chat lane is always centered.
 describe("chat canvas layout", () => {
   it("centers chat in the whole container", () => {

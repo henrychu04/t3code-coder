@@ -1460,34 +1460,8 @@ export function KeybindingsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection
         {...searchableSetting("keybindings")}
-        headerAction={
-          <div className="flex items-center gap-1.5">
-            <ExpandableHeaderSearch
-              query={query}
-              onChange={setQuery}
-              isOpen={isSearchOpen}
-              onOpenChange={setIsSearchOpen}
-              inputRef={searchInputRef}
-              collapsedAccessory={bindingsCount}
-            />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-xs"
-                    variant="ghost-muted"
-                    onClick={() => setIsAddingBinding(true)}
-                    aria-label="Add keybinding"
-                  >
-                    <PlusIcon />
-                  </Button>
-                }
-              />
-              <TooltipPopup side="top">Add keybinding</TooltipPopup>
-            </Tooltip>
-          </div>
-        }
+        // Coder: browser only; the notice explains browser-claimed shortcuts.
+        headerAction={<BrowserKeybindingNotice />}
       >
         <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />

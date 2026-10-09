@@ -213,6 +213,10 @@ import type { Project } from "../types";
 import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 import { readPullRequestListPreferences } from "~/components/pullRequest/pullRequestListPreferences";
 
+import { AuthFilesystemReadScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthSourceControlWriteScope } from "@t3tools/contracts";
+import { useFilesystemReadAccess } from "../state/filesystem";
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
 function getEnvironmentBrowsePlatform(os: string | null | undefined): string {

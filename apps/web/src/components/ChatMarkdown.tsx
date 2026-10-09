@@ -189,6 +189,11 @@ import { useOpenLink } from "../browser/useOpenLink";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 
+import { Check } from "lucide";
+import { Copy } from "lucide";
+import { Maximize2 } from "lucide";
+import { Minimize2 } from "lucide";
+import { readEnvironmentScope } from "../state/session";
 interface ChatMarkdownProps {
   text: string;
   cwd: string | undefined;
@@ -2393,6 +2398,9 @@ function useChatMarkdownState({
   });
   const pullRequestLinking = usePullRequestLinking(threadRef?.environmentId);
   const environmentId = threadRef?.environmentId ?? explicitEnvironmentId ?? null;
+  // Coder: the workspace owner holds every scope, and there is no in-app browser preview.
+  const canOperateHost = true;
+  const canOperatePreview = false;
   // Coder: media resolves to a helper-read item rather than a signed asset URL.
   const openMarkdownMedia = useCallback(
     (source: string, resolvedFilePath?: string, clickedImage?: HTMLImageElement | null) => {

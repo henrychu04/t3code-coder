@@ -1,9 +1,7 @@
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
 
-import type { OpenPreviewMutation } from "./browser/openFileInPreview";
 import type { ClosedView, ClosedViewEntry } from "./closedViewStore";
 import type { PullRequestListPreferences } from "./components/pullRequest/pullRequestListPreferences";
-import { openPreviewSession } from "./components/preview/openPreviewSession";
 import {
   type RightPanelSurface,
   type ThreadRightPanelState,
@@ -99,26 +97,14 @@ export function pullRequestsSearchForRestore<S extends PullRequestsSearchLike>(
 export async function reopenClosedView(
   view: ClosedView,
   options: {
-    openPreview: OpenPreviewMutation;
     workspaceAvailable: boolean;
   },
 ): Promise<boolean> {
   const panels = useRightPanelStore.getState();
   const ref = view.threadRef;
 
-  if (view.kind === "browser") {
-    const url = view.snapshot.navStatus._tag === "Idle" ? undefined : view.snapshot.navStatus.url;
-    const result = await openPreviewSession({
-      openPreview: options.openPreview,
-      threadRef: ref,
-      ...(url === undefined ? {} : { url }),
-      ...(view.snapshot.viewport === undefined ? {} : { viewport: view.snapshot.viewport }),
-      ...(view.snapshot.profileId === undefined ? {} : { profileId: view.snapshot.profileId }),
-    });
-    if (result._tag === "Failure") return false;
-    panels.openBrowser(ref, result.value.tabId);
-    return true;
-  }
+  // Coder: there are no browser, preview, or device surfaces to reopen.
+  if (view.kind === "browser") return false;
   const surface = view.surface;
   if (
     !options.workspaceAvailable &&
@@ -127,18 +113,11 @@ export async function reopenClosedView(
     return false;
   switch (surface.kind) {
     case "preview":
-      if (surface.resourceId !== null) return false;
-      panels.openBrowser(ref, null);
-      break;
+    case "device":
+      return false;
     case "file":
       if (surface.attachment) panels.openAttachment(ref, surface.attachment);
       else panels.openFile(ref, surface.relativePath, surface.revealLine ?? undefined);
-      break;
-    case "device":
-      if (surface.target) {
-        panels.openDevice(ref, surface.target);
-        if (surface.title) panels.renameDevice(ref, surface.id, surface.title);
-      } else panels.open(ref, "device");
       break;
     case "pull-request":
       panels.openPullRequest(ref, surface);

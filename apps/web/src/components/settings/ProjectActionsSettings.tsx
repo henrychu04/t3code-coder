@@ -31,6 +31,8 @@ import { useProjectScriptSettings } from "./useProjectScriptSettings";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
 
+import { AuthSettingsWriteScope } from "@t3tools/contracts";
+import { useScopedSettingsWriteAllowed } from "./useScopedSettings";
 /**
  * A project's actions on each selected environment. Actions belong to a
  * project, so this only renders at a project scope; the environment's

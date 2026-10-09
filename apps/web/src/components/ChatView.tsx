@@ -522,6 +522,10 @@ const EMPTY_PROVIDERS: ServerProvider[] = [];
 const EMPTY_PROVIDER_MODELS: ServerProvider["models"] = [];
 import type { CodexArtifactTemplate } from "@t3tools/client-runtime/codex-artifact-templates";
 
+import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { readEnvironmentScope } from "../state/session";
+import { threadPullRequestPanelTarget } from "./pullRequest/pullRequestDetail.logic";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
 const TIMELINE_SCROLL_CANCEL_SENTINEL = Object.freeze({});
 const EMPTY_ANCHORED_TIMELINE_MESSAGES: ReadonlyArray<ChatMessage> = [];
 // During an active turn the thread's updatedAt advances several times per
@@ -2526,6 +2530,13 @@ export default function ChatView(props: ChatViewProps) {
   }, [activeEnvironment, activeEnvironmentUnavailable, activeEnvironmentUnavailableLabel]);
   const handleReconnectActiveEnvironment = useCallback(
     async (environmentId: EnvironmentId) => {
+  const { scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
+  const activeProjectIsScratch =
+    activeProject !== null &&
+    isScratchProject(
+      activeProject,
+      environmentById.get(activeProject.environmentId)?.serverConfig?.scratchWorkspaceRoot ?? null,
+    );
       const result = await retryEnvironment(environmentId);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -3595,6 +3606,9 @@ export default function ChatView(props: ChatViewProps) {
   });
   // Coder: there are no local editors to open.
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  const scriptKeybindings =
+    useAtomValue(serverEnvironment.configValueAtom(environmentId))?.keybindings ??
+    DEFAULT_RESOLVED_KEYBINDINGS;
   const manualCompactionProviderAvailable = useMemo(
     () =>
       hasAvailableCompactionProvider({
@@ -3784,6 +3798,16 @@ export default function ChatView(props: ChatViewProps) {
       useRightPanelStore.getState().toggle(activeThreadRef, "diff");
     }
   }, [activeThreadRef, diffOpen, isServerThread, onDiffPanelOpen]);
+
+  // The machine an in-flight switch is heading to; a newer switch replaces it.
+  const environmentChangeRef = useRef<{ readonly environmentId: EnvironmentId } | null>(null);
+  const [isEnvironmentChanging, setIsEnvironmentChanging] = useState(false);
+  useLayoutEffect(() => {
+    return () => {
+      environmentChangeRef.current = null;
+      setIsEnvironmentChanging(false);
+    };
+  }, [draftId, activeProjectKey]);
 
   // Handle environment change for draft threads.  When the user picks a
   // different environment we update the draft context to point at the physical

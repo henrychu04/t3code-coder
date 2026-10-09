@@ -465,7 +465,7 @@ export function ProviderInstanceCard({
   // Drivers that need a named secret (Cursor's API key) get a dedicated field;
   // the generic editor only shows the remaining variables.
   const environmentFields = driverOption?.environmentFields ?? [];
-  const updateEnvironmentField = (field: ProviderEnvironmentFieldDefinition, value: string) => {
+  const updateEnvironmentField = (field: ProviderEnvironmentField, value: string) => {
     updateEnvironment(nextProviderEnvironmentWithFieldValue(instance.environment, field, value));
   };
   const removeEnvironmentField = (field: ProviderEnvironmentField) => {

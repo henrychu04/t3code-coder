@@ -19,6 +19,24 @@
  */
 const MAX_DIMENSION = 2048;
 /** Base64 budget for a single stashed image (~975KB of binary). */
+
+export function readFileAsDataUrl(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Could not read image data."));
+    });
+    reader.addEventListener("error", () => {
+      reject(reader.error ?? new Error("Failed to read image."));
+    });
+    reader.readAsDataURL(file);
+  });
+}
+
 export const MAX_STASH_IMAGE_DATA_URL_CHARS = 1_300_000;
 /**
  * Ceiling on the *source* file handed to the re-encoder. File size is a

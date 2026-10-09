@@ -14,7 +14,6 @@ import {
   EnvironmentId,
   type ScopedThreadRef,
   ThreadId,
-  sessionGrantsScope,
 } from "@t3tools/contracts";
 import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
 import * as Cause from "effect/Cause";
@@ -25,7 +24,7 @@ import { useCallback, useMemo, useRef } from "react";
 
 import { getFallbackThreadIdAfterDelete, pinOrderKeyBetween } from "../components/Sidebar.logic";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { environmentSession, readEnvironmentScope } from "../state/session";
+import { readEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
@@ -49,7 +48,6 @@ import {
   readThreadShells,
 } from "../state/entities";
 import { useUiStateStore } from "../uiStateStore";
-import { clearThreadPreviewState } from "../previewStateStore";
 import { useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteRef } from "../threadRoutes";
 import { formatWorktreePathForDisplay, getOrphanedWorktreePathForThread } from "../worktreeCleanup";
@@ -59,7 +57,6 @@ import * as ThreadUndo from "./threadUndo";
 import { showThreadUndoNotice } from "./showThreadUndoNotice";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
-import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 
 export class ThreadArchiveBlockedError extends Schema.TaggedError<ThreadArchiveBlockedError>()(
   "ThreadArchiveBlockedError",
@@ -307,9 +304,6 @@ export function useThreadActions() {
   const removeWorktree = useAtomCommand(vcsEnvironment.removeWorktree, {
     reportFailure: false,
   });
-  const loadSessionState = useAtomQueryRunner(environmentSession.sessionStateAtom, {
-    reportFailure: false,
-  });
   const refreshVcsStatus = useAtomCommand(vcsEnvironment.refreshStatus, {
     reportFailure: false,
   });
@@ -447,7 +441,6 @@ export function useThreadActions() {
         });
         if (result._tag === "Success") {
           refreshArchivedThreadsForEnvironment(target.environmentId);
-          clearThreadPreviewState(target);
         }
         return result;
       }
@@ -491,12 +484,10 @@ export function useThreadActions() {
         !isScratchProject(threadProject, environmentConfig?.scratchWorkspaceRoot) &&
         localApi
       ) {
-        const sessionResult = await loadSessionState(threadRef.environmentId);
         const permissionFailure = threadOperationFailure(threadRef);
         if (permissionFailure) return permissionFailure;
-        canDeleteWorktree =
-          sessionResult._tag === "Success" &&
-          sessionGrantsScope(sessionResult.value, AuthSourceControlWriteScope);
+        // Coder: the workspace owner holds the source control write scope.
+        canDeleteWorktree = true;
       }
       let shouldDeleteWorktree = false;
       const environmentSettings = environmentConfig?.settings;
@@ -553,7 +544,6 @@ export function useThreadActions() {
         threadRef,
       );
       clearTerminalUiState(threadRef);
-      clearThreadPreviewState(threadRef);
 
       if (shouldNavigateToFallback) {
         const fallbackThread = fallbackThreadId
@@ -641,7 +631,6 @@ export function useThreadActions() {
       clearTerminalUiState,
       deleteThreadMutation,
       getCurrentRouteThreadRef,
-      loadSessionState,
       refreshVcsStatus,
       removeWorktree,
       router,

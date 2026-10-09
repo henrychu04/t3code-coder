@@ -7,12 +7,10 @@ import { CheckIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
-  DEFAULT_UNIFIED_SETTINGS,
   ProviderInstanceId,
   ProviderDriverKind,
   type EnvironmentId,
   type ProviderInstanceConfig,
-  type ProviderInstanceEnvironmentVariable,
 } from "@t3tools/contracts";
 
 import {
@@ -22,7 +20,6 @@ import {
 
 import { cn } from "../../lib/utils";
 import { normalizeProviderAccentColor } from "../../providerInstances";
-import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { Badge } from "../ui/badge";
@@ -71,7 +68,7 @@ function deriveInstanceId(driver: ProviderDriverKind, label: string): string {
 
 const INSTANCE_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]*$/;
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
-const DEFAULT_DRIVER_OPTION = DRIVER_OPTIONS[0]!;
+const DEFAULT_DRIVER_OPTION = providerClients.definitions[0]!;
 const EMPTY_CONFIG_DRAFT: Record<string, unknown> = {};
 /**
  * Validate an instance id against the same slug rules the server applies in
@@ -105,7 +102,6 @@ export function AddProviderInstanceDialog({
 }: AddProviderInstanceDialogProps) {
   const settings = useEnvironmentSettings(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
-  const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
 
   const [wizardStep, setWizardStep] = useState(0);
   const [driver, setDriver] = useState<ProviderDriverKind>(DEFAULT_DRIVER_KIND);
@@ -127,7 +123,7 @@ export function AddProviderInstanceDialog({
     [settings.providerInstances],
   );
 
-  const driverOption = DRIVER_OPTION_BY_VALUE[driver] ?? DEFAULT_DRIVER_OPTION;
+  const driverOption = providerClients.get(driver) ?? DEFAULT_DRIVER_OPTION;
   const defaultIdentity: ProviderIdentityDraft = {
     label: driverOption.label,
     accentColor: "",
@@ -191,24 +187,6 @@ export function AddProviderInstanceDialog({
     );
   };
 
-  const handleLocalAcpConfiguration = () => {
-    setDriver(ACP_REGISTRY_DRIVER_KIND);
-    setSelectedAcp(null);
-    setIsManualAcpConfiguration(true);
-    setConfigByDriver((existing) => ({
-      ...existing,
-      [ACP_REGISTRY_DRIVER_KIND]: { source: "local", commandArgs: [] },
-    }));
-    setIdentityByDriver((existing) =>
-      updateProviderIdentityDraft(existing, ACP_REGISTRY_DRIVER_KIND, {
-        label: "Local ACP",
-        instanceIdOverride: null,
-      }),
-    );
-    setLocalEnvironment([]);
-    setHasAttemptedSubmit(false);
-  };
-
   const handleSave = async () => {
     if (isSaving) return;
     setHasAttemptedSubmit(true);
@@ -227,7 +205,6 @@ export function AddProviderInstanceDialog({
       ...(label.trim().length > 0 ? { displayName: label.trim() } : {}),
       ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
       ...(hasConfig ? { config } : {}),
-      ...(isLocalAcp && localEnvironment.length > 0 ? { environment: localEnvironment } : {}),
     };
     // `ProviderInstanceId.make` revalidates the slug; we've already checked
     // it via `validateInstanceId`, but going through the brand constructor
@@ -290,15 +267,15 @@ export function AddProviderInstanceDialog({
                 aria-labelledby="add-instance-driver-label"
                 className="grid grid-cols-1 sm:grid-cols-2"
               >
-                {DRIVER_OPTIONS.map((option) => {
+                {providerClients.definitions.map((option) => {
                   return (
                     <RadioPrimitive.Root
-                      key={option.value}
-                      value={option.value}
+                      key={option.driverKind}
+                      value={option.driverKind}
                       className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-primary data-checked:hover:bg-primary/8 dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5 dark:data-checked:bg-primary/15 dark:data-checked:ring-primary dark:data-checked:hover:bg-primary/15"
                     >
                       <ProviderInstanceIcon
-                        driverKind={option.value}
+                        driverKind={option.driverKind}
                         displayName={option.label}
                         iconClassName="size-4"
                       />

@@ -78,6 +78,8 @@ import {
 } from "./ui/dialog";
 import { Input } from "./ui/input";
 
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthSourceControlWriteScope } from "@t3tools/contracts";
 export interface BranchToolbarBranchSelectorHandle {
   open: () => void;
 }
@@ -873,17 +875,14 @@ export function BranchToolbarBranchSelector({
               <ComposerContextLabel displayMode={displayMode}>
                 <MiddleTruncate value={triggerLabel} className="w-full" />
               </ComposerContextLabel>
-              {displayMode === "panel" ? (
-                <span data-slot="select-icon">
-                  <ChevronDownIcon className={THREAD_DETAILS_PANEL_CHEVRON_CLASS} />
-                </span>
-              ) : (
+              {displayMode !== "panel" ? (
                 <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
-              )}
+              ) : null}
             </ComboboxTrigger>
           </span>
           {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (
             <ThreadDetailsPrRows
+              threadRef={threadRef}
               links={serverThread?.pullRequests ?? []}
               currentLink={currentLinkedPr}
               onOpenLink={openPrLink}
@@ -898,33 +897,61 @@ export function BranchToolbarBranchSelector({
               onOpen={(event) => openPrLink(event, prUrl)}
               onActed={() => branchStatusQuery.refresh()}
             />
-            <ComposerContextLabel displayMode={displayMode}>
-              <MiddleTruncate value={triggerLabel} className="w-full" />
-            </ComposerContextLabel>
-            {displayMode !== "panel" ? (
-              <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
+          ) : null}
+        </div>
+      </BranchPicker>
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogPopup>
+          <DialogHeader>
+            <DialogTitle>Rename branch</DialogTitle>
+            <DialogDescription>Rename the checked-out branch for this thread.</DialogDescription>
+          </DialogHeader>
+          <DialogPanel className="space-y-4">
+            <label className="grid gap-1.5 text-sm font-medium">
+              Branch name
+              <Input
+                autoFocus
+                value={renameBranchName}
+                onChange={(event) => setRenameBranchName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    renameBranch();
+                  }
+                }}
+              />
+            </label>
+            {activeWorktreePath ? (
+              <label className="flex items-start gap-2.5 text-sm">
+                <Checkbox
+                  checked={renameWorktreeFolder}
+                  onCheckedChange={(checked) => setRenameWorktreeFolder(Boolean(checked))}
+                />
+                <span className="grid gap-1">
+                  <span className="font-medium">Also rename the T3 worktree folder</span>
+                  <span className="text-xs font-normal text-muted-foreground">
+                    This stops the agent session and closes terminals attached to this thread.
+                  </span>
+                </span>
+              </label>
             ) : null}
-          </ComboboxTrigger>
-        </span>
-        {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (
-          <ThreadDetailsPrRows
-            threadRef={threadRef}
-            links={serverThread?.pullRequests ?? []}
-            currentLink={currentLinkedPr}
-            onOpenLink={openPrLink}
-            environmentId={environmentId}
-            pr={displayedPr}
-            number={prNumber}
-            reference={currentLinkedPr}
-            status={displayedPrStatus}
-            project={activeProject}
-            label={panelPrLabel}
-            openAriaLabel={prUrl ?? "Open pull request"}
-            onOpen={(event) => openPrLink(event, prUrl)}
-            onActed={() => branchStatusQuery.refresh()}
-          />
-        ) : null}
-      </div>
-    </BranchPicker>
+          </DialogPanel>
+          <DialogFooter>
+            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
+            <Button
+              disabled={
+                isBranchActionPending ||
+                !sanitizeNewRefName(renameBranchName) ||
+                (sanitizeNewRefName(renameBranchName) === resolvedActiveBranch &&
+                  !renameWorktreeFolder)
+              }
+              onClick={renameBranch}
+            >
+              {isBranchActionPending ? "Renaming…" : "Rename"}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
+    </>
   );
 }

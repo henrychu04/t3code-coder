@@ -156,8 +156,32 @@ export function isTerminalLinkActivation(
     : event.ctrlKey && !event.metaKey;
 }
 
+// Coder: file chips and the file menu split a position off a path written in a message.
 export function splitPathAndPosition(value: string): {
   path: string;
   line: string | undefined;
   column: string | undefined;
 } {
+  let path = value;
+  let column: string | undefined;
+  let line: string | undefined;
+
+  const columnMatch = path.match(/:(\d+)$/);
+  if (!columnMatch?.[1]) {
+    return { path, line: undefined, column: undefined };
+  }
+
+  column = columnMatch[1];
+  path = path.slice(0, -columnMatch[0].length);
+
+  const lineMatch = path.match(/:(\d+)$/);
+  if (lineMatch?.[1]) {
+    line = lineMatch[1];
+    path = path.slice(0, -lineMatch[0].length);
+  } else {
+    line = column;
+    column = undefined;
+  }
+
+  return { path, line, column };
+}

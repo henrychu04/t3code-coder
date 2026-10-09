@@ -29,6 +29,9 @@ function mediaFileName(source: MediaActionSource): string {
 }
 
 function useMediaActions(source: MediaActionSource) {
+  // Coder: the workspace owner always holds the filesystem read scope.
+  const canReadMedia = true;
+  const assertCanReadMedia = useCallback(() => {}, []);
   const actionUrl = useCallback(async () => {
     if (!source.src) throw new Error("This media is unavailable. Try reopening the preview.");
     return source.src;

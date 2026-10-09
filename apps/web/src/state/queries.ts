@@ -12,7 +12,6 @@ import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
   ProjectContentMatch,
-  ThreadId,
   ProjectEntry,
   ProjectEntryKind,
   ThreadId,

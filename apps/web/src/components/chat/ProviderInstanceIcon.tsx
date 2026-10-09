@@ -7,6 +7,8 @@ import { ClaudeAI, Icon, OpenAI } from "../Icons";
 
 import { cn } from "~/lib/utils";
 
+import { ProviderPackageIcon } from "./ProviderPackageIcon";
+import { providerClients } from "../settings/providerDriverMeta";
 // Coder: only Codex and Claude are shipped; other drivers fall back to initials.
 const PROVIDER_ICON_BY_PROVIDER: Partial<Record<ProviderDriverKind, Icon>> = {
   [ProviderDriverKind.make("codex")]: OpenAI,

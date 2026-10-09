@@ -59,6 +59,9 @@ import {
   type KeybindingsUpdateToastController,
 } from "../components/KeybindingsUpdateToast.logic";
 
+import { Check } from "lucide";
+import { Copy } from "lucide";
+import { cn } from "../lib/utils";
 export const Route = createRootRoute({
   beforeLoad: () => ({}),
   component: RootRouteView,

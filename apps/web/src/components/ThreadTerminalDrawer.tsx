@@ -55,7 +55,7 @@ import {
   type GhosttyTerminalSurfaceOptions,
 } from "~/terminal/ghostty/surface";
 import { type GhosttyColor, type GhosttyTheme } from "~/terminal/ghostty/core";
-import { isTerminalLinkActivation } from "../terminal-links";
+import { isTerminalLinkActivation, isTerminalUrl } from "../terminal-links";
 import {
   isDiffToggleShortcut,
   isTerminalClearShortcut,
@@ -85,6 +85,9 @@ import {
   TYPOGRAPHY_ADVANCED_STORAGE_KEY,
 } from "../appearanceFonts";
 
+import { AuthOrchestrationOperateScope, AuthTerminalOperateScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "../state/session";
+import { useEnvironmentScope } from "../state/session";
 const MIN_DRAWER_HEIGHT = 180;
 const MAX_DRAWER_HEIGHT_RATIO = 0.75;
 
@@ -374,6 +377,14 @@ export function TerminalViewport({
   const terminalRef = useRef<GhosttyTerminalSurface | null>(null);
   const visibleRef = useRef(visible);
   const environmentId = threadRef.environmentId;
+  const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
+  const hasTerminalWriteAccess = useEffectEvent(() =>
+    readEnvironmentScope(environmentId, AuthTerminalOperateScope),
+  );
+  const canActivateTerminalLink = useEffectEvent(
+    (text: string) =>
+      isTerminalUrl(text) || readEnvironmentScope(environmentId, AuthOrchestrationOperateScope),
+  );
   const runTerminalWrite = useAtomCommand(terminalEnvironment.write, {
     reportFailure: false,
   });
@@ -484,11 +495,6 @@ export function TerminalViewport({
   useLayoutEffect(() => {
     if (terminalRef.current) terminalRef.current.input.readOnly = !canOperateTerminal;
   }, [canOperateTerminal]);
-
-  // A grant can change while the pointer remains over a link.
-  useEffect(() => {
-    terminalRef.current?.refreshLinkActivation();
-  }, [canOpenHostEditor]);
 
   useEffect(() => {
     if (resizeSessionGeneration === null) return;

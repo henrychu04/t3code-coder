@@ -22,7 +22,6 @@ import { Minimize2Icon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
-import { useAssetUrlRefresh, useAssetUrlState } from "~/assets/assetUrls";
 import { APP_VERSION } from "~/branding";
 import { isConfirmDialogActive, requestConfirmDialog } from "~/confirmDialog";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
@@ -111,40 +110,11 @@ export function McpAppFrame(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Closing and reopening replaces the box.
   }, [closed]);
 
-  const resource = useMemo(
-    () => ({
-      _tag: "attachment" as const,
-      attachmentId: app.attachmentId,
-      fileName: mcpAppFileName(app),
-      mimeType: "text/html",
-      disposition: "inline" as const,
-    }),
-    [app],
-  );
-  const asset = useAssetUrlState(props.environmentId, resource);
-  const refreshAsset = useAssetUrlRefresh(props.environmentId, resource);
-  // The frame keeps its first URL: a re-minted one would reload the app. A
-  // cached URL near expiry is minted afresh first, since a frame cannot
-  // report a failed load. At most one mint per document, so a skewed clock
-  // cannot mint on every update.
-  const [src, setSrc] = useState<string | null>(null);
-  const [mintFailed, setMintFailed] = useState(false);
-  const minting = useRef(false);
-  const cachedUrl = asset._tag === "Success" ? asset.url : null;
-  const cachedExpiresAt = asset._tag === "Success" ? asset.expiresAt : 0;
-  useEffect(() => {
-    if (src !== null || cachedUrl === null || minting.current) return;
-    if (cachedExpiresAt - Date.now() > MIN_URL_LIFE_MS) {
-      // oxlint-disable-next-line react/set-state-in-effect -- Adopts the cached URL once it is known to last.
-      setSrc(cachedUrl);
-      return;
-    }
-    minting.current = true;
-    void refreshAsset().then(
-      (url) => (url === null ? setMintFailed(true) : setSrc(url)),
-      () => setMintFailed(true),
-    );
-  }, [src, cachedUrl, cachedExpiresAt, refreshAsset]);
+  // Coder: upstream loads the captured app document through a signed asset URL, which the
+  // helper does not serve, so the frame reports the app as unavailable.
+  const asset = { _tag: "Failure" } as const;
+  const src: string | null = null;
+  const mintFailed = true;
 
   // The wire timeline omits tool input and output; the app needs both.
   const detail = useTurnItemDetail({
@@ -475,10 +445,6 @@ export function McpAppFrame(props: {
           size="xs"
           variant="ghost"
           onClick={() => {
-            // The first URL's token may have expired: the new document
-            // takes a fresh one, minted again if it is near expiry.
-            minting.current = false;
-            setSrc(null);
             setDocumentGeneration((value) => value + 1);
             setClosed(false);
           }}
