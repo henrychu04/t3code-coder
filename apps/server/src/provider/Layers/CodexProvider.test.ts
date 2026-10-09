@@ -1,18 +1,6 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { CodexSettings } from "@t3tools/contracts";
-import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 
-import * as CodexErrors from "effect-codex-app-server/errors";
-import { resolveUsageLimitsAfterProbe } from "../providerUsageLimits.ts";
-import {
-  applyPreferredCodexDefaultModel,
-  checkCodexProviderStatus,
-  mapCodexModelCapabilities,
-} from "./CodexProvider.ts";
-
-const decodeCodexSettings = Schema.decodeSync(CodexSettings);
+import { applyPreferredCodexDefaultModel, mapCodexModelCapabilities } from "./CodexProvider.ts";
 
 it("maps current Codex model capability fields", () => {
   const capabilities = mapCodexModelCapabilities({
@@ -149,18 +137,21 @@ it("prefers sol over terra when both are available", () => {
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.6-sol");
 });
 
-it("prefers a current Codex model exposed under its -codex alias", () => {
+it("ranks qualified Codex models while preserving their wire ids", () => {
   const models = applyPreferredCodexDefaultModel([
     {
-      slug: "gpt-5.6-sol-codex",
-      name: "GPT-5.6-Sol",
+      slug: "openai.gpt-5.6-luna",
+      name: "Luna",
       isCustom: false,
+      isDefault: true,
       capabilities: null,
     },
-    { slug: "gpt-5.4", name: "GPT-5.4", isCustom: false, isDefault: true, capabilities: null },
+    { slug: "openai.gpt-5.6-sol", name: "Sol", isCustom: false, capabilities: null },
   ]);
-
-  assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.6-sol-codex");
+  assert.deepStrictEqual(
+    models.filter((model) => model.isDefault).map((model) => model.slug),
+    ["openai.gpt-5.6-sol"],
+  );
 });
 
 it("keeps Codex's own default when no preferred model is available", () => {
@@ -179,111 +170,4 @@ it("ignores custom models that shadow a preferred slug", () => {
   ]);
 
   assert.deepStrictEqual(models.find((model) => model.isDefault)?.slug, "gpt-5.4");
-});
-
-it.layer(NodeServices.layer)("Codex provider availability", (it) => {
-  it.effect("clears previously published quota windows after logout", () =>
-    Effect.gen(function* () {
-      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
-        Effect.succeed({
-          account: { account: null, requiresOpenaiAuth: true },
-          version: "1.0",
-          models: [],
-          skills: [],
-        }),
-      );
-      assert.equal(provider.auth.status, "unauthenticated");
-      assert.equal(provider.usageLimits, undefined);
-      assert.equal(
-        resolveUsageLimitsAfterProbe({
-          published: {
-            checkedAt: "2026-09-04T10:00:00Z",
-            windows: [{ id: "primary", kind: "session", label: "Session", usedPercent: 42 }],
-          },
-          probed: provider.usageLimits,
-        }),
-        undefined,
-      );
-    }),
-  );
-  it.effect("publishes native quota windows with the provider snapshot", () =>
-    Effect.gen(function* () {
-      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
-        Effect.succeed({
-          account: {
-            account: { type: "chatgpt", email: "dev@example.test", planType: "pro" },
-            requiresOpenaiAuth: true,
-          },
-          version: "1.0",
-          models: [],
-          skills: [],
-          rateLimits: { primary: { usedPercent: 42, windowDurationMins: 300 } },
-        }),
-      );
-      assert.equal(provider.status, "ready");
-      assert.deepEqual(provider.usageLimits?.windows, [
-        {
-          id: "primary",
-          kind: "session",
-          label: "Session",
-          usedPercent: 42,
-          windowDurationMins: 300,
-        },
-      ]);
-    }),
-  );
-  it.effect("does not turn a missing quota reading into zero usage or failed authentication", () =>
-    Effect.gen(function* () {
-      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
-        Effect.succeed({
-          account: {
-            account: { type: "chatgpt", email: "dev@example.test", planType: "pro" },
-            requiresOpenaiAuth: true,
-          },
-          version: "1.0",
-          models: [],
-          skills: [],
-        }),
-      );
-      assert.equal(provider.status, "ready");
-      assert.equal(provider.usageLimits?.unavailable?.reason, "probeFailed");
-    }),
-  );
-  it.effect("reports API-key subscription windows as unsupported", () =>
-    Effect.gen(function* () {
-      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
-        Effect.succeed({
-          account: { account: { type: "apiKey" }, requiresOpenaiAuth: false },
-          version: "1.0",
-          models: [],
-          skills: [],
-        }),
-      );
-      assert.equal(provider.usageLimits?.unavailable?.reason, "unsupported");
-    }),
-  );
-  it.effect("reports a missing Codex binary as provider-unavailable", () =>
-    Effect.gen(function* () {
-      const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
-        Effect.fail(
-          new CodexErrors.CodexAppServerSpawnError({ command: "codex app-server", cause: null }),
-        ),
-      );
-
-      assert.equal(provider.installed, false);
-      assert.equal(provider.status, "error");
-      assert.equal(
-        provider.message,
-        "Could not start Codex CLI (`codex`). Check Settings → Providers → Codex → Binary path on the server.",
-      );
-    }),
-  );
-});
-
-it("prefers the current upstream default when exposed with a provider-qualified slug", () => {
-  const models = applyPreferredCodexDefaultModel([
-    { slug: "openai.gpt-6-astra", name: "Astra", isCustom: false, capabilities: null },
-    { slug: "gpt-5.6-sol", name: "Sol", isCustom: false, isDefault: true, capabilities: null },
-  ]);
-  assert.strictEqual(models.find((model) => model.isDefault)?.slug, "openai.gpt-6-astra");
 });

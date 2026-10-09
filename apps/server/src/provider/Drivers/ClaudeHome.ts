@@ -77,6 +77,8 @@ export const makeClaudeCapabilitiesCacheKey = Effect.fn("makeClaudeCapabilitiesC
 /**
  * Describe the spawned CLI's environment alongside the API credential guidance so
  * paths remain literal on every shell, including relative inherited values.
+ *
+ * Coder: API-backed usage only, so the guidance omits upstream's subscription login.
  */
 export const claudeSignedOutMessage = (input: {
   readonly configDir: string | undefined;

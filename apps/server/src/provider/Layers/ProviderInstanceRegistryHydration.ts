@@ -61,6 +61,7 @@ import {
   ProviderOrchestrationAdapterInfrastructureLive,
 } from "./ProviderOrchestrationAdapterInfrastructure.ts";
 
+// Coder: no ACP Registry driver, so no ACP catalog to provide.
 type ProviderInstanceRegistryHydrationEnv =
   | Exclude<BuiltInDriversEnv, ProviderOrchestrationAdapterInfrastructure>
   | Settings.ServerSettingsService;

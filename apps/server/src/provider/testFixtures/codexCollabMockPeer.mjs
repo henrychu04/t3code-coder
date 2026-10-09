@@ -1,8 +1,6 @@
-#!/usr/bin/env node
-
-// Minimal codex app-server stand-in for runtime-level collab tests.
-// Speaks just enough of the protocol for CodexSessionRuntime to start a
-// session, using REAL captured responses (codexMultiAgentWire.json), then
+// Minimal codex app-server stand-in, spawned as the Codex binary by the
+// provider readiness probe tests. Answers the handshake and, for session
+// requests, returns REAL captured responses (codexMultiAgentWire.json), then
 // replays a scripted multi-agent notification sequence read from the
 // T3_CODEX_COLLAB_SCRIPT env var (a JSON file path) when the first turn
 // starts. Runs as a plain Node process — stdlib only.
@@ -83,6 +81,25 @@ rl.on("line", (line) => {
         platformOs: "linux",
       },
     });
+    return;
+  }
+  if (method === "account/read") {
+    write({
+      id,
+      result: { account: script.account ?? { type: "apiKey" }, requiresOpenaiAuth: false },
+    });
+    return;
+  }
+  if (method === "account/rateLimits/read" && script.failRateLimitsRead) {
+    write({ id, error: { code: -32000, message: "usage unavailable" } });
+    return;
+  }
+  if (method === "account/rateLimitResetCredit/consume" && script.resetCreditOutcome) {
+    write({ id, result: { outcome: script.resetCreditOutcome } });
+    return;
+  }
+  if (method === "skills/list" || method === "model/list") {
+    write({ id, result: { data: [] } });
     return;
   }
   if (method === "thread/start") {

@@ -67,8 +67,14 @@ export function resolveProviderCompatibility(
   );
   if (!policy) return undefined;
   const unprefixed = version?.replace(/^v/, "");
-  // Semver prereleases and other release tags stay unknown.
-  const stable = unprefixed;
+  // Cursor appends a build hash to its date; Google's ACP runtime uses a release prefix.
+  // Strip only these driver-specific forms, keeping semver prereleases unknown.
+  const stable =
+    driver === "cursor"
+      ? unprefixed?.replace(/^(\d{4}\.\d{2}\.\d{2})-[a-f0-9]+$/, "$1")
+      : driver === "antigravity"
+        ? unprefixed?.replace(/^agy_acp_server_(\d+\.\d+\.\d+)$/, "$1")
+        : unprefixed;
   const status =
     stable && /^\d+\.\d+\.\d+$/.test(stable)
       ? (policy.ranges.find((entry) => satisfiesSemverRange(stable, entry.range))?.status ??
@@ -93,17 +99,21 @@ export function resolveProviderCompatibility(
   };
 }
 
-/** T3 Coder classifies against the bundled policies only; it never fetches a remote manifest. */
+/** A remote policy replaces its matching bundled policy; omission keeps the bundle. */
 export function applyProviderCompatibility(
   snapshot: ServerProvider,
   policies: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
+  fallback: ReadonlyArray<ProviderCompatibilityPolicy> | undefined,
 ): ServerProvider {
   const { compatibilityAdvisory: _previous, ...base } = snapshot;
   if (!snapshot.enabled || !snapshot.installed) return base;
-  const advisory = resolveProviderCompatibility(policies, snapshot.driver, snapshot.version);
+  const advisory =
+    resolveProviderCompatibility(policies, snapshot.driver, snapshot.version) ??
+    resolveProviderCompatibility(fallback, snapshot.driver, snapshot.version);
   const latestVersion = snapshot.versionAdvisory?.latestVersion;
   const latestAdvisory = latestVersion
-    ? resolveProviderCompatibility(policies, snapshot.driver, latestVersion)
+    ? (resolveProviderCompatibility(policies, snapshot.driver, latestVersion) ??
+      resolveProviderCompatibility(fallback, snapshot.driver, latestVersion))
     : undefined;
   return advisory
     ? {

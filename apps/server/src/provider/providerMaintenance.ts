@@ -5,7 +5,6 @@ import {
 } from "@t3tools/contracts";
 import { compareSemverVersions } from "@t3tools/shared/semver";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
-
 import { resolveCommandPath } from "@t3tools/shared/shell";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
@@ -363,6 +362,8 @@ const runHomebrew = Effect.fn("runHomebrew")(function* (
     Effect.catchCause((cause) =>
       Effect.logWarning("Homebrew probe failed", {
         subcommand: args[0],
+        // Coder: the shared observability module is not carried.
+        errorTag: cause.reasons[0]?._tag ?? "Empty",
       }).pipe(Effect.as(null)),
     ),
   );

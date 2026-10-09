@@ -18,6 +18,7 @@ import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { readCustomModelEntries } from "@t3tools/shared/model";
 import { isWindowsCommandNotFound } from "../processRunner.ts";
+import { createProviderVersionAdvisory } from "./providerMaintenance.ts";
 import { collectUint8StreamText } from "../stream/collectUint8StreamText.ts";
 
 export const DEFAULT_TIMEOUT_MS = 4_000;
@@ -52,12 +53,12 @@ export class ProviderCommandNotFoundError extends Schema.TaggedError<ProviderCom
 const isProviderCommandNotFoundError = Schema.is(ProviderCommandNotFoundError);
 
 export interface ProviderProbeResult {
-  readonly usageLimits?: ServerProviderUsageLimits;
   readonly installed: boolean;
   readonly version: string | null;
   readonly status: Exclude<ServerProviderState, "disabled">;
   readonly auth: ServerProviderAuth;
   readonly message?: string;
+  readonly usageLimits?: ServerProviderUsageLimits;
 }
 
 export interface ServerProviderPresentation {
@@ -72,7 +73,7 @@ export interface ServerProviderPresentation {
 
 export type ServerProviderDraft = Omit<ServerProvider, "instanceId" | "driver">;
 
-function nonEmptyTrimmed(value: string | undefined): string | undefined {
+export function nonEmptyTrimmed(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
@@ -107,28 +108,6 @@ export const spawnAndCollect = (binaryPath: string, command: ChildProcess.Comman
     }
     return result;
   }).pipe(Effect.scoped);
-
-export function extractAuthBoolean(value: unknown): boolean | undefined {
-  if (globalThis.Array.isArray(value)) {
-    for (const entry of value) {
-      const nested = extractAuthBoolean(entry);
-      if (nested !== undefined) return nested;
-    }
-    return undefined;
-  }
-
-  if (!value || typeof value !== "object") return undefined;
-
-  const record = value as Record<string, unknown>;
-  for (const key of ["authenticated", "isAuthenticated", "loggedIn", "isLoggedIn"] as const) {
-    if (typeof record[key] === "boolean") return record[key];
-  }
-  for (const key of ["auth", "status", "session", "account"] as const) {
-    const nested = extractAuthBoolean(record[key]);
-    if (nested !== undefined) return nested;
-  }
-  return undefined;
-}
 
 /**
  * Return the first semantic version found in CLI output, or null. Accepts a
@@ -230,6 +209,13 @@ export function buildServerProvider(input: {
   skills?: ReadonlyArray<ServerProviderSkill>;
   probe: ProviderProbeResult;
 }): ServerProviderDraft {
+  const versionAdvisory = input.driver
+    ? createProviderVersionAdvisory({
+        driver: input.driver,
+        currentVersion: input.probe.version,
+        checkedAt: input.checkedAt,
+      })
+    : undefined;
   return {
     displayName: input.presentation.displayName,
     ...(typeof input.presentation.supportsConversationRollback === "boolean"
@@ -254,13 +240,17 @@ export function buildServerProvider(input: {
     status: input.enabled ? input.probe.status : "disabled",
     auth: input.probe.auth,
     checkedAt: input.checkedAt,
-    ...(input.probe.usageLimits ? { usageLimits: input.probe.usageLimits } : {}),
     ...(input.probe.message ? { message: input.probe.message } : {}),
     models: input.models,
     slashCommands: [...(input.slashCommands ?? [])],
     skills: [...(input.skills ?? [])],
+    ...(input.probe.usageLimits ? { usageLimits: input.probe.usageLimits } : {}),
+    ...(versionAdvisory ? { versionAdvisory } : {}),
   };
 }
 
-const collectStreamAsString = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
-  collectUint8StreamText({ stream }).pipe(Effect.map((collected) => collected.text));
+export const collectStreamAsString = <E>(
+  stream: Stream.Stream<Uint8Array, E>,
+  options?: { readonly maxBytes?: number | undefined },
+): Effect.Effect<string, E> =>
+  collectUint8StreamText({ stream, ...options }).pipe(Effect.map((collected) => collected.text));

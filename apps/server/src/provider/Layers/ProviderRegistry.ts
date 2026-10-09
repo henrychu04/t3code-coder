@@ -1,20 +1,15 @@
-import type { ServerProviderUpdateState } from "@t3tools/contracts";
-import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
-const makeManualProviderMaintenanceCapabilities = (provider: ProviderDriverKind) =>
-  makeManualOnlyProviderMaintenanceCapabilities({
-    provider,
-    packageName: null,
-  });
-
 /**
  * ProviderRegistryLive — aggregates per-instance snapshot streams into a
  * single materialized list.
  *
- * Every driver carries its `snapshot: ServerProviderShape`
+ * Historically this Layer composed four per-kind Live Layers
+ * (`CodexProviderLive`, `ClaudeProviderLive`, …) that each exposed a
+ * `ServerProviderShape`. Those Lives were deleted during the driver /
+ * instance refactor — every driver now carries its `snapshot: ServerProviderShape`
  * bundled onto the `ProviderInstance` the registry produces.
  *
- * Each configured instance (including multi-instance Claude setups) contributes
- * one `ProviderSnapshotSource`,
+ * Each configured instance (including multi-instance setups like
+ * `codex_personal` + `codex_work`) contributes one `ProviderSnapshotSource`,
  * keyed by `instanceId`. Instances whose driver is unavailable or whose
  * config failed to decode are merged from `instanceRegistry.listUnavailable`
  * as shadow snapshots so the UI can render their exact unavailable reason.
@@ -32,6 +27,7 @@ import {
   ProviderDriverKind,
   type ProviderInstanceId,
   type ServerProvider,
+  type ServerProviderUpdateState,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
@@ -58,6 +54,7 @@ import {
   writeProviderStatusCache,
 } from "../providerStatusCache.ts";
 import type { ProviderInstance } from "../ProviderDriver.ts";
+import { makeManualOnlyProviderMaintenanceCapabilities } from "../providerMaintenance.ts";
 import type { ProviderSnapshotSource } from "../builtInProviderCatalog.ts";
 
 const loadProviders = (
@@ -74,37 +71,14 @@ const loadProviders = (
     },
   );
 
-const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean =>
-  (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
-
-const mergeProviderModels = (
-  provider: ServerProvider,
-  previousModels: ReadonlyArray<ServerProvider["models"][number]>,
-  nextModels: ReadonlyArray<ServerProvider["models"][number]>,
-): ReadonlyArray<ServerProvider["models"][number]> => {
-  if (provider.status !== "ready" && nextModels.length === 0 && previousModels.length > 0) {
-    return previousModels;
-  }
-
-  const previousBySlug = new Map(previousModels.map((model) => [model.slug, model] as const));
-  const mergedModels = nextModels.map((model) => {
-    const previousModel = previousBySlug.get(model.slug);
-    if (!previousModel || hasModelCapabilities(model) || !hasModelCapabilities(previousModel)) {
-      return model;
-    }
-    return {
-      ...model,
-      capabilities: previousModel.capabilities,
-    };
+const makeManualProviderMaintenanceCapabilities = (provider: ProviderDriverKind) =>
+  makeManualOnlyProviderMaintenanceCapabilities({
+    provider,
+    packageName: null,
   });
 
-  if (provider.status === "ready") {
-    return mergedModels;
-  }
-
-  const nextSlugs = new Set(nextModels.map((model) => model.slug));
-  return [...mergedModels, ...previousModels.filter((model) => !nextSlugs.has(model.slug))];
-};
+const hasModelCapabilities = (model: ServerProvider["models"][number]): boolean =>
+  (model.capabilities?.optionDescriptors?.length ?? 0) > 0;
 
 const MAX_WORKSPACE_SNAPSHOTS_PER_PROVIDER = 16;
 
@@ -137,21 +111,146 @@ export function upsertProviderWorkspaceSnapshot(
   };
 }
 
+const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean => {
+  if (provider.driver === ProviderDriverKind.make("acpRegistry")) {
+    // ACP Registry discovery probes return the agent's complete inventory, so
+    // a completed probe (ready and authenticated) replaces the model list —
+    // otherwise agents that rename or collapse models leave stale entries
+    // pinned forever through the snapshot cache. Readiness-only and failed
+    // probe snapshots only know the "default" placeholder and stay partial.
+    return !(
+      provider.installed &&
+      provider.status === "ready" &&
+      provider.auth.status === "authenticated"
+    );
+  }
+
+  const isAntigravity = provider.driver === ProviderDriverKind.make("antigravity");
+  const isCodex = provider.driver === ProviderDriverKind.make("codex");
+  if (!isAntigravity && !isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {
+    return true;
+  }
+
+  if (
+    (isAntigravity || isCodex) &&
+    (!provider.enabled || provider.auth.status === "unauthenticated")
+  ) {
+    return false;
+  }
+
+  // Successful discovery replaces these inventories so cached retired models disappear.
+  // Antigravity's local health check does not authenticate or discover models.
+  const isPendingAntigravityAuthentication =
+    isAntigravity && provider.status === "warning" && provider.auth.status === "unknown";
+  const isPendingInitialProbe =
+    provider.enabled && !provider.installed && provider.status === "warning";
+  const didInstalledProviderProbeFail = provider.installed && provider.status === "error";
+  return (
+    isPendingAntigravityAuthentication || isPendingInitialProbe || didInstalledProviderProbeFail
+  );
+};
+
+const shouldRetainMissingOpenCodeMetadata = (provider: ServerProvider): boolean =>
+  provider.driver === ProviderDriverKind.make("opencode") &&
+  shouldRetainMissingProviderModels(provider);
+
+const mergeProviderModels = (
+  provider: ServerProvider,
+  previousModels: ReadonlyArray<ServerProvider["models"][number]>,
+  nextModels: ReadonlyArray<ServerProvider["models"][number]>,
+): ReadonlyArray<ServerProvider["models"][number]> => {
+  const shouldRetainMissingModels = shouldRetainMissingProviderModels(provider);
+  // Custom rows are derived from settings and every snapshot carries the full
+  // current list, so a custom model missing from `nextModels` was removed by
+  // the user and must not be resurrected from the previous snapshot.
+  const retainablePreviousModels = previousModels.filter((model) => !model.isCustom);
+
+  if (shouldRetainMissingModels && nextModels.length === 0 && retainablePreviousModels.length > 0) {
+    return retainablePreviousModels;
+  }
+
+  const previousBySlug = new Map(previousModels.map((model) => [model.slug, model] as const));
+  const mergedModels = nextModels.map((model) => {
+    const previousModel = previousBySlug.get(model.slug);
+    if (!previousModel || hasModelCapabilities(model) || !hasModelCapabilities(previousModel)) {
+      return model;
+    }
+    return {
+      ...model,
+      capabilities: previousModel.capabilities,
+    };
+  });
+  const nextSlugs = new Set(nextModels.map((model) => model.slug));
+  return shouldRetainMissingModels
+    ? [...mergedModels, ...retainablePreviousModels.filter((model) => !nextSlugs.has(model.slug))]
+    : mergedModels;
+};
+
+/**
+ * Antigravity's health check only initializes the agent, so after a server
+ * restart it reports the account as unchecked. The saved Google login still
+ * works, and the previous snapshot proves it. Carry that account state until
+ * a session, refresh, or sign-out reports something new. A confirmed missing
+ * installation, sign-out, disabled instance, or a changed sign-in method is
+ * never overridden.
+ */
+const carrySavedAntigravityAccount = (
+  previousProvider: ServerProvider,
+  nextProvider: ServerProvider,
+): Pick<ServerProvider, "auth" | "status"> | undefined => {
+  const antigravity = ProviderDriverKind.make("antigravity");
+  if (
+    nextProvider.driver !== antigravity ||
+    previousProvider.driver !== antigravity ||
+    !nextProvider.enabled ||
+    nextProvider.auth.status !== "unknown" ||
+    previousProvider.auth.status !== "authenticated" ||
+    (nextProvider.auth.type !== undefined &&
+      nextProvider.auth.type !== previousProvider.auth.type) ||
+    (!nextProvider.installed && nextProvider.status !== "warning")
+  ) {
+    return undefined;
+  }
+  // The pending boot probe (`installed: false`, warning) and a failed probe
+  // keep their own status; only a passed health check reads as ready.
+  const status =
+    nextProvider.installed && nextProvider.status === "warning" ? "ready" : nextProvider.status;
+  return { auth: previousProvider.auth, status };
+};
+
 export const mergeProviderSnapshot = (
   previousProvider: ServerProvider | undefined,
   nextProvider: ServerProvider,
-): ServerProvider =>
-  !previousProvider
-    ? nextProvider
-    : {
-        ...nextProvider,
-        ...(!nextProvider.workspaceSnapshots && previousProvider.workspaceSnapshots
-          ? { workspaceSnapshots: previousProvider.workspaceSnapshots }
-          : {}),
-        models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
-      };
+): ServerProvider => {
+  if (!previousProvider) {
+    return nextProvider;
+  }
+  const savedAccount = carrySavedAntigravityAccount(previousProvider, nextProvider);
+  // "Google account access is not checked yet" describes the probe, not the
+  // account; it must not outlive the state it explained.
+  const { message: _uncheckedMessage, ...nextWithoutMessage } = nextProvider;
+  return {
+    ...(savedAccount?.status === "ready" ? nextWithoutMessage : nextProvider),
+    ...savedAccount,
+    models: mergeProviderModels(nextProvider, previousProvider.models, nextProvider.models),
+    ...(nextProvider.workspaceSnapshots !== undefined
+      ? { workspaceSnapshots: nextProvider.workspaceSnapshots }
+      : previousProvider.workspaceSnapshots !== undefined
+        ? { workspaceSnapshots: previousProvider.workspaceSnapshots }
+        : {}),
+    ...(shouldRetainMissingOpenCodeMetadata(nextProvider)
+      ? {
+          slashCommands:
+            nextProvider.slashCommands.length === 0
+              ? previousProvider.slashCommands
+              : nextProvider.slashCommands,
+          skills: nextProvider.skills.length === 0 ? previousProvider.skills : nextProvider.skills,
+        }
+      : {}),
+  };
+};
 
-const mergeProviderSnapshots = (
+export const mergeProviderSnapshots = (
   previousProviders: ReadonlyArray<ServerProvider>,
   nextProviders: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ServerProvider> => {
@@ -169,7 +268,7 @@ const mergeProviderSnapshots = (
   return orderProviderSnapshots([...mergedProviders.values()]);
 };
 
-const selectProvidersByKind = (
+export const selectProvidersByKind = (
   providers: ReadonlyArray<ServerProvider>,
   providerKinds: ReadonlySet<ProviderDriverKind>,
 ): ReadonlyArray<ServerProvider> =>
@@ -227,6 +326,8 @@ export const ProviderRegistryLive = Layer.effect(
   ProviderRegistry.ProviderRegistry,
   Effect.gen(function* () {
     const instanceRegistry = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+    const manifestService = yield* ModelManifest.ModelManifest;
+    const serviceScope = yield* Effect.scope;
     const config = yield* ServerConfig.ServerConfig;
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -305,13 +406,26 @@ export const ProviderRegistryLive = Layer.effect(
         ),
       ),
     );
-    // Bundled policies only: T3 Coder never refreshes the manifest over HTTP.
-    const classifyCompatibility = (provider: ServerProvider) =>
-      applyProviderCompatibility(provider, ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility);
-    const workspaceRefreshesRef = yield* Ref.make(new Map<ProviderInstance, Set<string>>());
+    const initialManifest = yield* manifestService.current;
+    const classifyCompatibility = (
+      provider: ServerProvider,
+      manifest: ModelManifest.ModelManifestData,
+    ) =>
+      applyProviderCompatibility(
+        provider,
+        manifest.compatibility,
+        ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
+      );
     const providersRef = yield* Ref.make<ReadonlyArray<ServerProvider>>(
-      cachedProviders.map(classifyCompatibility),
+      cachedProviders.map((provider) => classifyCompatibility(provider, initialManifest)),
     );
+    const workspaceRefreshesRef = yield* Ref.make<
+      ReadonlyMap<ProviderInstance, ReadonlySet<string>>
+    >(new Map());
+    const maintenanceActionStatesRef = yield* Ref.make<
+      ReadonlyMap<ProviderInstanceId, { readonly update?: ServerProviderUpdateState | undefined }>
+    >(new Map());
+
     // Live-source registry — the dynamic counterpart to the boot-time
     // `bootSources`. Keyed by `instanceId`; the stored `ProviderInstance`
     // reference is used for identity equality so "no-op" reconciles
@@ -340,11 +454,7 @@ export const ProviderRegistryLive = Layer.effect(
           cacheDir: config.providerStatusCacheDir,
           instanceId: key,
         }).pipe(Effect.provideService(Path.Path, path));
-        const {
-          workspaceSnapshots: _workspaceSnapshots,
-          updateState: _updateState,
-          ...machineProvider
-        } = provider;
+        const { workspaceSnapshots: _workspaceSnapshots, ...machineProvider } = provider;
         yield* writeProviderStatusCache({ filePath, provider: machineProvider }).pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
           Effect.provideService(Path.Path, path),
@@ -352,10 +462,6 @@ export const ProviderRegistryLive = Layer.effect(
           Effect.ignore,
         );
       });
-
-    const maintenanceActionStatesRef = yield* Ref.make<
-      ReadonlyMap<ProviderInstanceId, { readonly update?: ServerProviderUpdateState | undefined }>
-    >(new Map());
 
     const applyProviderUpdateState = Effect.fn("applyProviderUpdateState")(function* (
       provider: ServerProvider,
@@ -370,6 +476,88 @@ export const ProviderRegistryLive = Layer.effect(
         ...provider,
         updateState,
       };
+    });
+
+    const upsertProviders = Effect.fn("upsertProviders")(function* (
+      nextProviders: ReadonlyArray<ServerProvider>,
+      options?: {
+        readonly publish?: boolean;
+        readonly persist?: boolean;
+        readonly replace?: boolean;
+      },
+    ) {
+      const manifest = yield* manifestService.current;
+      const nextProvidersWithUpdateState = yield* Effect.forEach(
+        nextProviders,
+        applyProviderUpdateState,
+        {
+          concurrency: "unbounded",
+        },
+      );
+      const [previousProviders, providers, providersToPersist] = yield* Ref.modify(
+        providersRef,
+        (previousProviders) => {
+          const mergedProviders = new Map(
+            previousProviders.map((provider) => [snapshotInstanceKey(provider), provider] as const),
+          );
+          const updatedKeys = new Set<ProviderInstanceId>();
+
+          for (const provider of nextProvidersWithUpdateState) {
+            const key = snapshotInstanceKey(provider);
+            updatedKeys.add(key);
+            mergedProviders.set(
+              key,
+              options?.replace === true
+                ? provider
+                : mergeProviderSnapshot(mergedProviders.get(key), provider),
+            );
+          }
+
+          const providers = orderProviderSnapshots(
+            [...mergedProviders.values()].map((provider) =>
+              classifyCompatibility(provider, manifest),
+            ),
+          );
+          const providersToPersist = providers.filter((provider) =>
+            updatedKeys.has(snapshotInstanceKey(provider)),
+          );
+          return [[previousProviders, providers, providersToPersist] as const, providers];
+        },
+      );
+
+      if (haveProvidersChanged(previousProviders, providers)) {
+        if (options?.persist !== false) {
+          yield* Effect.forEach(providersToPersist, persistProvider, {
+            concurrency: "unbounded",
+            discard: true,
+          });
+        }
+        if (options?.publish !== false) {
+          yield* PubSub.publish(changesPubSub, providers);
+        }
+      }
+
+      return providers;
+    });
+
+    const compatibilityRefreshRunning = yield* Ref.make(false);
+    const syncProvider = Effect.fn("syncProvider")(function* (
+      provider: ServerProvider,
+      options?: {
+        readonly publish?: boolean;
+      },
+    ) {
+      const providers = yield* upsertProviders([provider], options);
+      // Reclassify the current read model after fetching. Never republish the
+      // probe captured before the fetch: a newer health result may have landed.
+      if (!(yield* Ref.getAndSet(compatibilityRefreshRunning, true))) {
+        yield* manifestService.refresh.pipe(
+          Effect.andThen(upsertProviders([], { persist: false })),
+          Effect.ensuring(Ref.set(compatibilityRefreshRunning, false)),
+          Effect.forkIn(serviceScope),
+        );
+      }
+      return providers;
     });
 
     const setProviderMaintenanceActionState = Effect.fn("setProviderMaintenanceActionState")(
@@ -410,90 +598,6 @@ export const ProviderRegistryLive = Layer.effect(
         });
       },
     );
-
-    const getProviderMaintenanceCapabilitiesForInstance = Effect.fn(
-      "getProviderMaintenanceCapabilitiesForInstance",
-    )(function* (
-      instanceId: ProviderInstanceId,
-      provider: ProviderDriverKind,
-      options?: { readonly fresh?: boolean },
-    ) {
-      // Read the instance registry, not `liveSubsRef`: the latter trails
-      // reconciliation, and an update must never run a retired instance's
-      // command against a freshly configured executable.
-      const instance = yield* instanceRegistry.getInstance(instanceId);
-      if (!instance || instance.driverKind !== provider) {
-        return makeManualProviderMaintenanceCapabilities(provider);
-      }
-      return yield* instance.snapshot.resolveMaintenance
-        ? instance.snapshot.resolveMaintenance(options)
-        : Effect.succeed(makeManualProviderMaintenanceCapabilities(provider));
-    });
-
-    const upsertProviders = Effect.fn("upsertProviders")(function* (
-      nextProviders: ReadonlyArray<ServerProvider>,
-      options?: {
-        readonly publish?: boolean;
-        readonly persist?: boolean;
-        readonly replace?: boolean;
-      },
-    ) {
-      const nextProvidersWithUpdateState = yield* Effect.forEach(
-        nextProviders,
-        applyProviderUpdateState,
-      );
-      const [previousProviders, providers, providersToPersist] = yield* Ref.modify(
-        providersRef,
-        (previousProviders) => {
-          const mergedProviders = new Map(
-            previousProviders.map((provider) => [snapshotInstanceKey(provider), provider] as const),
-          );
-          const updatedKeys = new Set<ProviderInstanceId>();
-
-          for (const provider of nextProvidersWithUpdateState) {
-            const key = snapshotInstanceKey(provider);
-            updatedKeys.add(key);
-            mergedProviders.set(
-              key,
-              options?.replace === true
-                ? provider
-                : mergeProviderSnapshot(mergedProviders.get(key), provider),
-            );
-          }
-
-          const providers = orderProviderSnapshots(
-            [...mergedProviders.values()].map(classifyCompatibility),
-          );
-          const providersToPersist = providers.filter((provider) =>
-            updatedKeys.has(snapshotInstanceKey(provider)),
-          );
-          return [[previousProviders, providers, providersToPersist] as const, providers];
-        },
-      );
-
-      if (haveProvidersChanged(previousProviders, providers)) {
-        if (options?.persist !== false) {
-          yield* Effect.forEach(providersToPersist, persistProvider, {
-            concurrency: "unbounded",
-            discard: true,
-          });
-        }
-        if (options?.publish !== false) {
-          yield* PubSub.publish(changesPubSub, providers);
-        }
-      }
-
-      return providers;
-    });
-
-    const syncProvider = Effect.fn("syncProvider")(function* (
-      provider: ServerProvider,
-      options?: {
-        readonly publish?: boolean;
-      },
-    ) {
-      return yield* upsertProviders([provider], options);
-    });
 
     const refreshOneSource = Effect.fn("refreshOneSource")(function* (
       providerSource: ProviderSnapshotSource,
@@ -540,6 +644,23 @@ export const ProviderRegistryLive = Layer.effect(
         return yield* Ref.get(providersRef);
       }
       return yield* refreshOneSource(providerSource);
+    });
+
+    const getProviderMaintenanceCapabilitiesForInstance = Effect.fn(
+      "getProviderMaintenanceCapabilitiesForInstance",
+    )(function* (
+      instanceId: ProviderInstanceId,
+      provider: ProviderDriverKind,
+      options?: { readonly fresh?: boolean },
+    ) {
+      // Read the instance registry, not `liveSubsRef`: the latter trails
+      // reconciliation, and an update must never run a retired instance's
+      // command against a freshly configured executable.
+      const instance = yield* instanceRegistry.getInstance(instanceId);
+      if (!instance || instance.driverKind !== provider) {
+        return makeManualProviderMaintenanceCapabilities(provider);
+      }
+      return yield* instance.snapshot.resolveMaintenance(options);
     });
 
     /**
@@ -674,6 +795,15 @@ export const ProviderRegistryLive = Layer.effect(
         if (haveProvidersChanged(previousProviders, providers)) {
           yield* PubSub.publish(changesPubSub, providers);
         }
+        yield* Ref.update(maintenanceActionStatesRef, (previous) => {
+          const next = new Map(previous);
+          for (const instanceId of previous.keys()) {
+            if (!knownInstanceIds.has(instanceId)) {
+              next.delete(instanceId);
+            }
+          }
+          return next;
+        });
       }),
     );
     const syncLiveSourcesAndContinue = syncLiveSources.pipe(
@@ -846,15 +976,15 @@ export const ProviderRegistryLive = Layer.effect(
     });
 
     return {
-      getProviderMaintenanceCapabilitiesForInstance,
-      setProviderMaintenanceActionState,
-      refreshWorkspaceSnapshot: (input) =>
-        refreshWorkspaceSnapshot(input).pipe(Effect.catchCause(recoverRefreshFailure)),
       getProviders: Ref.get(providersRef),
       refresh: (provider?: ProviderDriverKind) =>
         refresh(provider).pipe(Effect.catchCause(recoverRefreshFailure)),
       refreshInstance: (instanceId: ProviderInstanceId) =>
         refreshInstance(instanceId).pipe(Effect.catchCause(recoverRefreshFailure)),
+      refreshWorkspaceSnapshot: (input) =>
+        refreshWorkspaceSnapshot(input).pipe(Effect.catchCause(recoverRefreshFailure)),
+      getProviderMaintenanceCapabilitiesForInstance,
+      setProviderMaintenanceActionState,
       get streamChanges() {
         return Stream.fromPubSub(changesPubSub);
       },

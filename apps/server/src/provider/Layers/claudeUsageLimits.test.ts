@@ -15,7 +15,7 @@ describe("claudeUsageResponseToLimits", () => {
           rate_limits: {
             five_hour: { utilization: 54, resets_at: "2026-07-18T14:39:00Z" },
             seven_day: { utilization: 18.4, resets_at: "2026-07-24T08:59:00+00:00" },
-            ...({ seven_day_opus: { utilization: 3, resets_at: null } } as object),
+            seven_day_opus: { utilization: 3, resets_at: null },
             // Newer CLIs add this on top of the typed keys; the pinned SDK
             // typings do not know it yet.
             ...({
@@ -24,14 +24,12 @@ describe("claudeUsageResponseToLimits", () => {
                 { display_name: "Ghost", utilization: null, resets_at: null },
               ],
             } as object),
-            ...({
-              extra_usage: {
-                is_enabled: false,
-                monthly_limit: null,
-                used_credits: null,
-                utilization: null,
-              },
-            } as object),
+            extra_usage: {
+              is_enabled: false,
+              monthly_limit: null,
+              used_credits: null,
+              utilization: null,
+            },
           },
         },
       }),

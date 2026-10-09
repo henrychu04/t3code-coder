@@ -182,6 +182,35 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
     );
   });
 
+  it("does not resurrect cached custom models that settings no longer declare", () => {
+    const builtIn = {
+      slug: "gpt-5.4",
+      name: "GPT-5.4",
+      isCustom: false,
+      capabilities: emptyCapabilities,
+    } as const;
+    const cachedCodex = makeProvider(CODEX_DRIVER, {
+      models: [
+        builtIn,
+        {
+          slug: "removed-custom",
+          name: "removed-custom",
+          isCustom: true,
+          capabilities: emptyCapabilities,
+        },
+      ],
+    });
+    const fallbackCodex = makeProvider(CODEX_DRIVER, { models: [builtIn] });
+
+    assert.deepStrictEqual(
+      hydrateCachedProvider({
+        cachedProvider: cachedCodex,
+        fallbackProvider: fallbackCodex,
+      }).models,
+      [builtIn],
+    );
+  });
+
   it("ignores stale cached enabled state when the provider is now disabled", () => {
     const cachedCodex = makeProvider(CODEX_DRIVER, {
       checkedAt: "2026-04-10T12:00:00.000Z",
@@ -202,68 +231,6 @@ it.layer(NodeServices.layer)("providerStatusCache", (it) => {
         fallbackProvider: disabledFallback,
       }),
       disabledFallback,
-    );
-  });
-
-  it("does not restore a removed custom model from the cache", () => {
-    const fallbackProvider = makeProvider(CLAUDE_AGENT_DRIVER);
-    const cachedProvider = makeProvider(CLAUDE_AGENT_DRIVER, {
-      models: [
-        {
-          slug: "removed-custom",
-          name: "Removed",
-          isCustom: true,
-          capabilities: emptyCapabilities,
-        },
-      ],
-    });
-
-    assert.deepStrictEqual(hydrateCachedProvider({ cachedProvider, fallbackProvider }).models, []);
-  });
-
-  it("preserves current custom models and cached discovered models for the same instance", () => {
-    const instanceId = ProviderInstanceId.make("claude_personal");
-    const fallbackProvider = makeProvider(CLAUDE_AGENT_DRIVER, {
-      instanceId,
-      models: [
-        {
-          slug: "current-custom",
-          name: "Current custom name",
-          isCustom: true,
-          capabilities: emptyCapabilities,
-        },
-      ],
-    });
-    const discoveredModel = {
-      slug: "discovered-model",
-      name: "Discovered model",
-      isCustom: false,
-      capabilities: emptyCapabilities,
-    };
-    const cachedProvider = makeProvider(CLAUDE_AGENT_DRIVER, {
-      instanceId,
-      models: [
-        { ...fallbackProvider.models[0]!, name: "Stale custom name" },
-        {
-          slug: "removed-custom",
-          name: "Removed",
-          isCustom: true,
-          capabilities: emptyCapabilities,
-        },
-        discoveredModel,
-      ],
-    });
-
-    assert.deepStrictEqual(hydrateCachedProvider({ cachedProvider, fallbackProvider }).models, [
-      ...fallbackProvider.models,
-      discoveredModel,
-    ]);
-    assert.deepStrictEqual(
-      hydrateCachedProvider({
-        cachedProvider: { ...cachedProvider, instanceId: ProviderInstanceId.make("claude_work") },
-        fallbackProvider,
-      }),
-      fallbackProvider,
     );
   });
 

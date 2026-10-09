@@ -1,4 +1,12 @@
+// @effect-diagnostics nodeBuiltinImport:off - cleanup uses Node's retrying rm, which the FileSystem service does not expose.
+// Coder: the probe runs through the workspace CLI transport.
+import * as ClaudeCli from "../Drivers/ClaudeCli.ts";
+import { vi } from "vite-plus/test";
+import * as Deferred from "effect/Deferred";
+import * as Fiber from "effect/Fiber";
+import * as TestClock from "effect/testing/TestClock";
 import { ClaudeSettings } from "@t3tools/contracts";
+import * as NodeFSP from "node:fs/promises";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -8,164 +16,13 @@ import * as Schema from "effect/Schema";
 
 import {
   buildClaudeCapabilitiesProbeQueryOptions,
-  checkClaudeProviderStatus,
   CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES,
-  makePendingClaudeProvider,
   probeClaudeCapabilities,
-  providerModelsFromClaudeCapabilities,
 } from "./ClaudeProvider.ts";
 
-import { SYNTHETIC_CLAUDE_MODEL_CATALOG } from "../ClaudeModelCatalog.testFixtures.ts";
+vi.mock("../Drivers/ClaudeCli.ts", { spy: true });
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
-
-it.layer(NodeServices.layer)("Claude authentication status", (it) => {
-  it.effect("lists only configured models before the workspace CLI reports its models", () =>
-    Effect.gen(function* () {
-      const settings = decodeClaudeSettings({
-        enabled: false,
-        customModels: [{ slug: "custom-model", name: "Custom model" }],
-      });
-      const pending = yield* makePendingClaudeProvider(settings);
-      const checked = yield* checkClaudeProviderStatus(
-        settings,
-        undefined,
-        undefined,
-        undefined,
-        SYNTHETIC_CLAUDE_MODEL_CATALOG,
-      );
-      for (const snapshot of [pending, checked]) {
-        assert.deepEqual(
-          snapshot.models.map((model) => model.slug),
-          ["custom-model"],
-        );
-      }
-    }),
-  );
-
-  for (const testCase of [
-    {
-      name: "signed out despite initialized account metadata",
-      output: '{"loggedIn":false}',
-      code: 1,
-      auth: "unauthenticated",
-      status: "error",
-    },
-    {
-      name: "signed in",
-      output: '{"loggedIn":true}',
-      code: 0,
-      auth: "authenticated",
-      status: "ready",
-    },
-    { name: "missing status", output: "{}", code: 0, auth: "unknown", status: "warning" },
-    {
-      name: "malformed status",
-      output: "private invalid output",
-      code: 0,
-      auth: "unknown",
-      status: "warning",
-    },
-    {
-      name: "failed command with stale signed-in output",
-      output: '{"loggedIn":true}',
-      code: 2,
-      auth: "unknown",
-      status: "warning",
-    },
-    {
-      name: "API-key authentication succeeds",
-      output: '{"loggedIn":true}',
-      code: 0,
-      auth: "authenticated",
-      status: "ready",
-      tokenSource: "apiKey",
-      backendType: "apiKey",
-    },
-    {
-      name: "failed API-key auth retains identity without claiming readiness",
-      output: '{"loggedIn":false}',
-      code: 1,
-      auth: "unauthenticated",
-      status: "error",
-      tokenSource: "apiKey",
-      backendType: "apiKey",
-    },
-    {
-      name: "Bedrock authentication succeeds",
-      output: '{"loggedIn":true}',
-      code: 0,
-      auth: "authenticated",
-      status: "ready",
-      apiProvider: "bedrock",
-      backendType: "bedrock",
-    },
-    {
-      name: "Bedrock auth failure does not suggest OAuth login",
-      output: '{"loggedIn":false}',
-      code: 1,
-      auth: "unauthenticated",
-      status: "error",
-      apiProvider: "bedrock",
-      backendType: "bedrock",
-    },
-    {
-      name: "unknown Bedrock auth retains identity without trusting initialization",
-      output: "{}",
-      code: 0,
-      auth: "unknown",
-      status: "warning",
-      apiProvider: "bedrock",
-      backendType: "bedrock",
-    },
-  ]) {
-    it.effect(testCase.name, () =>
-      Effect.gen(function* () {
-        const fs = yield* FileSystem.FileSystem;
-        const path = yield* Path.Path;
-        const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-auth-" });
-        const executable = path.join(tempDir, "fake-claude.mjs");
-        yield* fs.writeFileString(
-          executable,
-          [
-            "#!/usr/bin/env node",
-            'if (process.argv[2] === "--version") { console.log("2.1.261 (Claude Code)"); process.exit(0); }',
-            'if (process.argv.slice(2).join(" ") !== "auth status") process.exit(3);',
-            `console.log(${JSON.stringify(testCase.output)});`,
-            `process.exit(${testCase.code});`,
-          ].join("\n"),
-        );
-        yield* fs.chmod(executable, 0o755);
-        const result = yield* checkClaudeProviderStatus(
-          decodeClaudeSettings({ binaryPath: executable, homePath: tempDir }),
-          () =>
-            Effect.succeed({
-              email: "stale@example.com",
-              subscriptionType: "pro",
-              tokenSource: "tokenSource" in testCase ? testCase.tokenSource : "oauth",
-              apiProvider: "apiProvider" in testCase ? testCase.apiProvider : "firstParty",
-              models: [],
-              slashCommands: [],
-              autoModeDisabled: true,
-              bypassPermissionsDisabled: true,
-            }),
-          process.env,
-          tempDir,
-        );
-        assert.equal(result.auth.status, testCase.auth);
-        assert.equal(result.status, testCase.status);
-        if (testCase.auth !== "authenticated") assert.equal(result.auth.email, undefined);
-        assert.equal(result.message?.includes("private invalid output") ?? false, false);
-        if ("backendType" in testCase) {
-          assert.equal(result.auth.type, testCase.backendType);
-          assert.equal(result.message?.includes("claude auth login") ?? false, false);
-        } else if (testCase.auth !== "authenticated") {
-          assert.equal(result.auth.type, undefined);
-        }
-      }),
-    );
-  }
-});
 
 it("isolates Claude capability probes without dropping workspace setting sources", () => {
   const abortController = new AbortController();
@@ -196,78 +53,6 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.env?.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL, "1");
 });
 
-it("uses Claude's reported model and permission capabilities as authoritative", () => {
-  const models = providerModelsFromClaudeCapabilities({
-    models: [
-      {
-        value: "sonnet",
-        resolvedModel: "claude-sonnet-5",
-        displayName: "Sonnet",
-        description: "Balanced model",
-        supportsAutoMode: false,
-      },
-      {
-        value: "opus",
-        resolvedModel: "claude-opus-5",
-        displayName: "Opus",
-        description: "Most capable model",
-        supportsAutoMode: true,
-      },
-    ],
-    autoModeDisabled: true,
-    bypassPermissionsDisabled: true,
-  });
-
-  assert.deepEqual(
-    models.map((model) => model.slug),
-    ["claude-sonnet-5", "claude-opus-5"],
-  );
-  assert.deepEqual(models[0]?.capabilities?.supportedRuntimeModes, [
-    "approval-required",
-    "auto-accept-edits",
-  ]);
-  assert.deepEqual(models[1]?.capabilities?.supportedRuntimeModes, [
-    "approval-required",
-    "auto-accept-edits",
-  ]);
-  assert.equal(
-    models.some((model) => model.slug === "claude-fable-5"),
-    false,
-  );
-
-  const unrestrictedModel = providerModelsFromClaudeCapabilities({
-    models: [
-      {
-        value: "opus",
-        resolvedModel: "claude-opus-5",
-        displayName: "Opus",
-        description: "Most capable model",
-        supportsAutoMode: true,
-      },
-    ],
-    autoModeDisabled: false,
-    bypassPermissionsDisabled: false,
-  })[0];
-  assert.deepEqual(unrestrictedModel?.capabilities?.supportedRuntimeModes, [
-    "approval-required",
-    "auto-accept-edits",
-    "auto",
-    "full-access",
-  ]);
-
-  const customModel = providerModelsFromClaudeCapabilities({
-    models: [],
-    autoModeDisabled: false,
-    bypassPermissionsDisabled: false,
-    customModels: ["claude-custom"],
-  })[0];
-  assert.deepEqual(customModel?.capabilities?.supportedRuntimeModes, [
-    "approval-required",
-    "auto-accept-edits",
-    "full-access",
-  ]);
-});
-
 it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
   it.effect("serializes strict no-MCP options and still resolves account capabilities", () =>
     Effect.gen(function* () {
@@ -276,8 +61,25 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-probe-sdk-" });
       const executablePath = path.join(tempDir, "fake-claude.mjs");
       const invocationPath = path.join(tempDir, "invocation.json");
-      const workspaceCwd = path.join(tempDir, "workspace");
-      yield* fs.makeDirectory(workspaceCwd, { recursive: true });
+      // The probe aborts the SDK without awaiting the child's exit, and on
+      // Windows a directory that is still some process's cwd cannot be
+      // removed. Keep the workspace outside the scoped directory and let it
+      // go with a retrying removal once the child has gone.
+      const workspaceCwd = yield* fs.makeTempDirectory({ prefix: "t3-claude-probe-cwd-" });
+      // Node's own retry rather than an Effect schedule: it.effect runs on a
+      // TestClock, so a scheduled retry would wait for time nobody advances.
+      // If the child still holds the directory after that, an empty temp
+      // directory is left behind rather than failing the test for it.
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() =>
+          NodeFSP.rm(workspaceCwd, {
+            recursive: true,
+            force: true,
+            maxRetries: 20,
+            retryDelay: 250,
+          }).catch(() => undefined),
+        ),
+      );
 
       yield* fs.writeFileString(
         executablePath,
@@ -303,50 +105,29 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           'lines.on("line", (line) => {',
           "  const message = JSON.parse(line);",
           '  if (message.type !== "control_request") return;',
-          '  if (message.request?.subtype === "initialize") {',
-          "  process.stdout.write(JSON.stringify({",
+          "  const reply = (response) => process.stdout.write(JSON.stringify({",
           '    type: "control_response",',
-          "    response: {",
-          '      subtype: "success",',
-          "      request_id: message.request_id,",
-          "      response: {",
-          '        commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],',
-          "        agents: [],",
-          '        output_style: "default",',
-          '        available_output_styles: ["default"],',
-          "        models: [{",
-          '          value: "sonnet",',
-          '          resolvedModel: "claude-sonnet-5",',
-          '          displayName: "Sonnet",',
-          '          description: "Balanced model",',
-          "          supportsAutoMode: false,",
-          "        }],",
-          '        account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },',
-          "      },",
-          "    },",
+          '    response: { subtype: "success", request_id: message.request_id, response },',
           '  }) + "\\n");',
-          "  return;",
+          '  if (message.request?.subtype === "initialize") {',
+          "    reply({",
+          '      commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],',
+          "      agents: [],",
+          '      output_style: "default",',
+          '      available_output_styles: ["default"],',
+          "      models: [],",
+          '      account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },',
+          "    });",
           "  }",
-          '  if (message.request?.subtype === "get_settings") {',
-          // The same foreground CLI handles usage; no SDK or HTTP client is involved.
-          "    process.stdout.write(JSON.stringify({",
-          '      type: "control_response",',
-          "      response: {",
-          '        subtype: "success",',
-          "        request_id: message.request_id,",
-          '        response: { effective: { disableAutoMode: "disable", permissions: { disableBypassPermissionsMode: "disable" } } },',
-          "      },",
-          '    }) + "\\n");',
-          "  }",
+          "  // The probe follows initialize with get_usage on the same process.",
           '  if (message.request?.subtype === "get_usage") {',
-          "    process.stdout.write(JSON.stringify({",
-          '      type: "control_response",',
-          "      response: {",
-          '        subtype: "success",',
-          "        request_id: message.request_id,",
-          "        response: { rate_limits_available: true, rate_limits: { five_hour: { utilization: 42, resets_at: null } } },",
-          "      },",
-          '    }) + "\\n");',
+          "    reply({",
+          "      session: {},",
+          '      subscription_type: "pro",',
+          "      rate_limits_available: true,",
+          '      rate_limits: { five_hour: { utilization: 12, resets_at: "2026-07-18T14:39:00Z" } },',
+          "      behaviors: null,",
+          "    });",
           "  }",
           "});",
           "setInterval(() => {}, 1_000);",
@@ -365,27 +146,13 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         workspaceCwd,
       );
 
-      assert.ok(capabilities?.usageCheckedAt);
-      assert.ok(Number.isFinite(Date.parse(capabilities.usageCheckedAt)));
       assert.deepEqual(capabilities, {
-        usageCheckedAt: capabilities.usageCheckedAt,
-        usage: {
-          rate_limits_available: true,
-          rate_limits: { five_hour: { utilization: 42, resets_at: null } },
-        },
         email: "dev@example.com",
         subscriptionType: "pro",
         tokenSource: "oauth",
         apiProvider: undefined,
-        models: [
-          {
-            value: "sonnet",
-            resolvedModel: "claude-sonnet-5",
-            displayName: "Sonnet",
-            description: "Balanced model",
-            supportsAutoMode: false,
-          },
-        ],
+        // Coder: the fake answers no get_settings request, so elevated modes fail closed.
+        models: [],
         autoModeDisabled: true,
         bypassPermissionsDisabled: true,
         slashCommands: [
@@ -395,6 +162,10 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
             input: { hint: "[path]" },
           },
         ],
+        usage: {
+          rate_limits_available: true,
+          rate_limits: { five_hour: { utilization: 12, resets_at: "2026-07-18T14:39:00Z" } },
+        },
       });
 
       // @effect-diagnostics-next-line preferSchemaOverJson:off
@@ -421,146 +192,40 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       assert.equal(flagSettings.disableAllHooks, true);
     }).pipe(Effect.scoped),
   );
-
-  it.effect("keeps a valid init result when an older CLI ignores get_settings", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-claude-probe-old-cli-" });
-      const executablePath = path.join(tempDir, "fake-claude.mjs");
-
-      yield* fs.writeFileString(
-        executablePath,
-        [
-          "#!/usr/bin/env node",
-          'import { createInterface } from "node:readline";',
-          "const lines = createInterface({ input: process.stdin });",
-          'lines.on("line", (line) => {',
-          "  const message = JSON.parse(line);",
-          '  if (message.type !== "control_request" || message.request?.subtype !== "initialize") return;',
-          "  process.stdout.write(JSON.stringify({",
-          '    type: "control_response",',
-          "    response: {",
-          '      subtype: "success",',
-          "      request_id: message.request_id,",
-          "      response: {",
-          "        commands: [],",
-          "        models: [],",
-          '        account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },',
-          "      },",
-          "    },",
-          '  }) + "\\n");',
-          "});",
-          "setInterval(() => {}, 1_000);",
-          "",
-        ].join("\n"),
-      );
-      yield* fs.chmod(executablePath, 0o755);
-
-      const capabilities = yield* probeClaudeCapabilities(
-        decodeClaudeSettings({ binaryPath: executablePath }),
-        process.env,
-        tempDir,
-      );
-
-      assert.equal(capabilities?.email, "dev@example.com");
-      assert.equal(capabilities?.subscriptionType, "pro");
-      assert.equal(capabilities?.autoModeDisabled, true);
-      assert.equal(capabilities?.bypassPermissionsDisabled, true);
-    }).pipe(Effect.scoped),
-  );
 });
 
-it("prefers Fable 5.1 only when advertised by the workspace CLI", () => {
-  const input = { autoModeDisabled: false, bypassPermissionsDisabled: false };
-  const models = providerModelsFromClaudeCapabilities({
-    ...input,
-    models: [
-      {
-        value: "default",
-        resolvedModel: "claude-sonnet-5",
-        displayName: "Sonnet",
-        description: "Sonnet",
-      },
-      {
-        value: "fable",
-        resolvedModel: "claude-fable-5-1",
-        displayName: "Fable",
-        description: "Fable",
-      },
-    ],
-  });
-  assert.strictEqual(models.find((model) => model.isDefault)?.slug, "claude-fable-5-1");
-  const fallback = providerModelsFromClaudeCapabilities({
-    ...input,
-    models: [
-      {
-        value: "default",
-        resolvedModel: "claude-sonnet-5",
-        displayName: "Sonnet",
-        description: "Sonnet",
-      },
-    ],
-  });
-  assert.strictEqual(fallback.find((model) => model.isDefault)?.slug, "claude-sonnet-5");
-});
-
-it("uses the bundled catalog for missing models without widening unreported runtime modes", () => {
-  const models = providerModelsFromClaudeCapabilities({
-    models: [],
-    version: "2.1.284",
-    autoModeDisabled: false,
-    bypassPermissionsDisabled: false,
-  });
-  for (const slug of ["claude-opus-5-5", "claude-sonnet-5-5"]) {
-    const model = models.find((entry) => entry.slug === slug);
-    assert.isDefined(model);
-    assert.deepEqual(model?.capabilities?.supportedRuntimeModes, [
-      "approval-required",
-      "auto-accept-edits",
-    ]);
-  }
-  assert.isFalse(models.find((entry) => entry.slug === "claude-opus-5")?.isLegacy ?? false);
-  const oldModels = providerModelsFromClaudeCapabilities({
-    models: [],
-    version: "2.1.219",
-    autoModeDisabled: true,
-    bypassPermissionsDisabled: true,
-  });
-  assert.isFalse(oldModels.some((entry) => entry.slug === "claude-sonnet-5-5"));
-});
-
-it("gives declared and bare custom models the same modes while preserving descriptors", () => {
-  for (const bypassPermissionsDisabled of [false, true]) {
-    const models = providerModelsFromClaudeCapabilities({
-      models: [],
-      version: "2.1.300",
-      autoModeDisabled: false,
-      bypassPermissionsDisabled,
-      customModels: [
-        "plain-custom",
-        { slug: "described-custom", name: "Described", capabilities: { optionDescriptors: [] } },
-      ],
+it.effect("preserves initialized capabilities when optional usage times out", () =>
+  Effect.gen(function* () {
+    const usageStarted = yield* Deferred.make<void>();
+    let abortSignal: AbortSignal | undefined;
+    const query = vi.spyOn(ClaudeCli, "query").mockImplementation(({ options }) => {
+      abortSignal = options?.abortController?.signal;
+      return {
+        initializationResult: async () => ({
+          account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },
+          commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],
+        }),
+        getSettings: async () => ({}),
+        getUsage: () => {
+          Deferred.doneUnsafe(usageStarted, Effect.void);
+          return new Promise(() => {});
+        },
+      } as unknown as ReturnType<typeof ClaudeCli.query>;
     });
-    const expected = [
-      "approval-required",
-      "auto-accept-edits",
-      ...(!bypassPermissionsDisabled ? (["full-access"] as const) : []),
-    ] as const;
-    for (const slug of ["plain-custom", "described-custom"]) {
-      const model = models.find((entry) => entry.slug === slug);
-      assert.deepEqual(model?.capabilities?.supportedRuntimeModes, expected);
-      assert.equal(model?.isCustom, true);
-    }
-    assert.deepEqual(
-      models.find((entry) => entry.slug === "described-custom")?.capabilities?.optionDescriptors,
-      [],
-    );
-    for (const model of models.filter((entry) => !entry.isCustom)) {
-      assert.deepEqual(model.capabilities?.supportedRuntimeModes, [
-        "approval-required",
-        "auto-accept-edits",
-      ]);
-    }
-  }
-});
+    yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
+    const probe = yield* probeClaudeCapabilities(
+      decodeClaudeSettings({ binaryPath: "claude" }),
+    ).pipe(Effect.forkChild);
+    yield* Deferred.await(usageStarted);
+    yield* TestClock.adjust("4 seconds");
+    const capabilities = yield* Fiber.join(probe);
+    assert.equal(capabilities?.email, "dev@example.com");
+    assert.equal(capabilities?.subscriptionType, "pro");
+    assert.equal(capabilities?.tokenSource, "oauth");
+    assert.deepEqual(capabilities?.slashCommands, [
+      { name: "review", description: "Review changes", input: { hint: "[path]" } },
+    ]);
+    assert.equal(capabilities?.usage, undefined);
+    assert.equal(abortSignal?.aborted, true);
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);

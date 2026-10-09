@@ -263,8 +263,6 @@ import {
 } from "./sourceControl.ts";
 import { VcsError } from "./vcs.ts";
 // Coder
-import { ServerProviderSlashCommands, ServerProviderSlashCommandsInput } from "./server.ts";
-// Coder
 import {
   ProjectTextSearchError,
   ProjectTextSearchInput,
@@ -516,7 +514,6 @@ export const WS_METHODS = {
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
   workspaceListLegacyScreenshotArtifacts: "workspace.listLegacyScreenshotArtifacts",
-  providerListSlashCommands: "provider.listSlashCommands",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
   pullRequestsDiff: "pullRequests.diff",
@@ -1660,11 +1657,6 @@ const WsWorkspaceListLegacyScreenshotArtifactsRpc = Rpc.make(
   },
 );
 
-const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashCommands, {
-  payload: ServerProviderSlashCommandsInput,
-  success: ServerProviderSlashCommands,
-});
-
 const WsSubscribeVcsRefStatusRpc = Rpc.make(WS_METHODS.subscribeVcsRefStatus, {
   payload: VcsStatusInput,
   success: VcsRefStatusStreamEvent,
@@ -1744,7 +1736,6 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
   WsWorkspaceListLegacyScreenshotArtifactsRpc,
-  WsProviderListSlashCommandsRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsServerDiscoverSourceControlRpc,

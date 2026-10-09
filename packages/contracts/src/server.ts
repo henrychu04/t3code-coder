@@ -96,15 +96,6 @@ export const ServerProviderSlashCommand = Schema.Struct({
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 
-// Coder: workspace-provider slash commands are read per project over helper stdio.
-export const ServerProviderSlashCommandsInput = Schema.Struct({
-  instanceId: ProviderInstanceId,
-  cwd: TrimmedNonEmptyString,
-});
-export type ServerProviderSlashCommandsInput = typeof ServerProviderSlashCommandsInput.Type;
-export const ServerProviderSlashCommands = Schema.Array(ServerProviderSlashCommand);
-export type ServerProviderSlashCommands = typeof ServerProviderSlashCommands.Type;
-
 export const ServerProviderSkill = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
