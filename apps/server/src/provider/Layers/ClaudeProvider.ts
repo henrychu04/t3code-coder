@@ -3,39 +3,34 @@ import {
   type ModelCapabilities,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
+  type ServerProviderResetCredits,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import {
-  BUNDLED_CLAUDE_MODEL_CATALOG,
-  type ClaudeModelCatalog,
-  scopeClaudeModelCatalog,
-  formatClaudeVersionUpgradeMessage,
-  resolveClaudeModelSlug,
-  resolveClaudeModelsForVersion,
-} from "../ClaudeModelCatalog.ts";
-import {
   query as claudeQuery,
   type Options as ClaudeQueryOptions,
-  type ModelInfo as ClaudeModelInfo,
   type SlashCommand as ClaudeSlashCommand,
+  type ModelInfo as ClaudeModelInfo,
   type SDKUserMessage,
-  type SDKControlGetUsageResponse,
   type SettingSource,
 } from "../Drivers/ClaudeCli.ts";
+import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
 
+// Coder: the probe runs through the workspace CLI transport directly; it also reads the CLI's
+// effective permission policy, which the SDK-typed query does not expose.
 import {
   buildServerProvider,
-  AUTH_PROBE_TIMEOUT_MS,
+  COMPACT_SLASH_COMMAND,
   DEFAULT_TIMEOUT_MS,
-  extractAuthBoolean,
   isCommandMissingCause,
   parseGenericCliVersion,
   providerModelsFromSettings,
@@ -43,9 +38,20 @@ import {
   type ServerProviderDraft,
 } from "../providerSnapshot.ts";
 import { makeClaudeEnvironment } from "../Drivers/ClaudeHome.ts";
-import { claudeUsageResponseToLimits } from "./claudeUsageLimits.ts";
-import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
 import { discoverClaudeSkills } from "../Drivers/ClaudeSkills.ts";
+import { makeUnavailableUsageLimits } from "../providerUsageLimits.ts";
+import {
+  type ClaudeScopedLimitNames,
+  claudeUsageResponseToLimits,
+  recordClaudeUsageResponse,
+} from "./claudeUsageLimits.ts";
+import {
+  BUNDLED_CLAUDE_MODEL_CATALOG,
+  type ClaudeModelCatalog,
+  formatClaudeVersionUpgradeMessage,
+  resolveClaudeModelSlug,
+  resolveClaudeModelsForVersion,
+} from "../ClaudeModelCatalog.ts";
 import {
   buildSupportedRuntimeModes,
   withSupportedRuntimeModes,
@@ -166,19 +172,16 @@ function apiProviderAuthMetadata(
   return apiProvider === "bedrock" ? { type: "bedrock", label: "Amazon Bedrock" } : undefined;
 }
 
-// ── CLI capability probe ────────────────────────────────────────────
+// ── SDK capability probe ────────────────────────────────────────────
 
-// Amazon Bedrock initializes far slower than first-party auth: the CLI boots the
+// Amazon Bedrock initializes far slower than first-party auth: the SDK boots the
 // Bedrock backend and runs the `awsAuthRefresh` credential hook before returning
 // account info. The previous 8s budget expired mid-init, so the probe returned
 // `undefined` and left the provider unverified and unselectable in the picker.
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
-// `get_settings` is optional capability metadata. Older Claude Code versions
-// may ignore the request instead of rejecting it, so it must not consume the
-// entire probe budget and discard a valid authentication-bearing init result.
+// Coder: `get_settings` is optional policy metadata. Older Claude Code versions may ignore it, so
+// it must not consume the probe budget and discard a valid initialization result.
 const CAPABILITIES_SETTINGS_TIMEOUT_MS = 1_000;
-// Usage can contact the provider; its deadline must not consume initialization's budget.
-const CAPABILITIES_USAGE_TIMEOUT_MS = 5_000;
 
 /**
  * Keep workspace-scoped command discovery intact while isolating the periodic
@@ -190,7 +193,7 @@ export const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
   "local",
 ] as const satisfies ReadonlyArray<SettingSource>;
 
-/** Build the exact CLI options used by the periodic Claude capability probe. */
+/** Build the exact SDK options used by the periodic Claude capability probe. */
 export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly executablePath: string;
   readonly abortController: AbortController;
@@ -234,23 +237,29 @@ function nonEmptyProbeString(value: string): string | undefined {
 }
 
 type ClaudeCapabilitiesProbe = {
-  readonly usage?: SDKControlGetUsageResponse;
-  readonly usageCheckedAt?: string;
   readonly email: string | undefined;
   readonly subscriptionType: string | undefined;
   readonly tokenSource: string | undefined;
   /**
-   * Active API backend reported by Claude Code's initialization response. Anthropic OAuth
+   * Active API backend reported by the SDK's `AccountInfo`. Anthropic OAuth
    * login only applies when `"firstParty"`; for Amazon Bedrock (`"bedrock"`)
    * the subscription/token fields are absent and auth is external AWS creds.
    */
   readonly apiProvider: string | undefined;
+  /** Coder: models and permission policy the CLI reports, for per-model runtime modes. */
   readonly models: ReadonlyArray<ClaudeModelInfo> | undefined;
   readonly autoModeDisabled: boolean;
   readonly bypassPermissionsDisabled: boolean;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
+  /**
+   * Subscription windows from the SDK's `get_usage` control request, or
+   * `undefined` when the request itself failed. Absent windows on an
+   * otherwise successful response mean the account has none (API key).
+   */
+  readonly usage?: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
 };
 
+// Coder: runtime modes follow the workspace's effective Claude permission policy.
 function readClaudePermissionModeDisabled(
   settings: Record<string, unknown>,
   key: "disableAutoMode" | "disableBypassPermissionsMode",
@@ -287,87 +296,35 @@ function resolveClaudeCatalogSlug(
   return undefined;
 }
 
-export function providerModelsFromClaudeCapabilities(input: {
-  readonly models: ReadonlyArray<ClaudeModelInfo>;
-  readonly version?: string | null;
-  readonly autoModeDisabled: boolean;
-  readonly bypassPermissionsDisabled: boolean;
-  readonly customModels?: ClaudeSettings["customModels"];
-  readonly catalog?: ClaudeModelCatalog;
-}): ReadonlyArray<ServerProviderModel> {
-  const catalog =
-    input.catalog ??
-    scopeClaudeModelCatalog(BUNDLED_CLAUDE_MODEL_CATALOG, input.customModels ?? []);
-  const catalogModels = catalog.models.map((entry) => entry.model);
-  const versionModels =
-    input.version === undefined
-      ? catalogModels
-      : resolveClaudeModelsForVersion(catalog, input.version);
-  const supportedSlugs = new Set(versionModels.map((model) => model.slug));
-  const resolved: ServerProviderModel[] = [];
-  const seen = new Set<string>();
-
-  for (const modelInfo of input.models) {
-    const value = nonEmptyProbeString(modelInfo.value);
-    if (!value) continue;
-    const catalogSlug = resolveClaudeCatalogSlug(modelInfo, catalog);
-    if (!catalogSlug && value === "default") continue;
-    if (catalogSlug && !supportedSlugs.has(catalogSlug)) continue;
-    const slug = catalogSlug ?? value;
-    if (seen.has(slug)) continue;
-    seen.add(slug);
-
-    const catalogModel = catalogModels.find((candidate) => candidate.slug === catalogSlug);
-    const supportedRuntimeModes = buildSupportedRuntimeModes({
-      auto: modelInfo.supportsAutoMode === true && !input.autoModeDisabled,
-      fullAccess: !input.bypassPermissionsDisabled,
-    });
-    const capabilities = withSupportedRuntimeModes(
-      catalogModel?.capabilities ?? DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-      supportedRuntimeModes,
-    );
-
-    resolved.push({
-      ...catalogModel,
-      slug,
-      name: catalogModel?.name ?? nonEmptyProbeString(modelInfo.displayName) ?? value,
-      isCustom: false,
-      capabilities,
-      ...(catalogModel?.isLegacy ? { isLegacy: true } : {}),
-      ...(modelInfo.value === "default" ? { isDefault: true } : {}),
-    });
-  }
-
-  // Catalog entries remain available when the CLI reports only aliases. Unreported
-  // built-in models retain safe modes until the workspace probe supplies their capabilities.
-  if (input.version !== undefined) {
-    for (const model of versionModels) {
-      if (seen.has(model.slug)) continue;
-      resolved.push({
-        ...model,
-        capabilities: withSupportedRuntimeModes(
-          model.capabilities ?? DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-          buildSupportedRuntimeModes({
-            fullAccess: model.isCustom === true && !input.bypassPermissionsDisabled,
-          }),
-        ),
-      });
-    }
-  }
-
-  const defaultSlug = catalogModels.find((model) => model.isDefault)?.slug;
-  const preferredModels = resolved.some((model) => model.slug === defaultSlug)
-    ? resolved.map(({ isDefault: _isDefault, ...model }) => ({
-        ...model,
-        ...(model.slug === defaultSlug ? { isDefault: true } : {}),
-      }))
-    : resolved;
-
-  const customCapabilities = withSupportedRuntimeModes(
-    DEFAULT_CLAUDE_MODEL_CAPABILITIES,
-    buildSupportedRuntimeModes({ fullAccess: !input.bypassPermissionsDisabled }),
+/**
+ * Coder: attach each model's supported runtime modes. Auto mode needs the CLI to report the model
+ * as auto-capable; both elevated modes stay off when the policy forbids them or could not be read.
+ */
+function withClaudeRuntimeModes(
+  models: ReadonlyArray<ServerProviderModel>,
+  capabilities: ClaudeCapabilitiesProbe | undefined,
+  catalog: ClaudeModelCatalog,
+): ReadonlyArray<ServerProviderModel> {
+  const autoCapable = new Set(
+    (capabilities?.models ?? []).flatMap((model) => {
+      if (model.supportsAutoMode !== true) return [];
+      const slug = resolveClaudeCatalogSlug(model, catalog);
+      return slug ? [slug] : [];
+    }),
   );
-  return providerModelsFromSettings(preferredModels, input.customModels ?? [], customCapabilities);
+  return models.map((model) => ({
+    ...model,
+    capabilities: withSupportedRuntimeModes(
+      model.capabilities,
+      buildSupportedRuntimeModes({
+        auto:
+          capabilities !== undefined &&
+          !capabilities.autoModeDisabled &&
+          autoCapable.has(model.slug),
+        fullAccess: capabilities !== undefined && !capabilities.bypassPermissionsDisabled,
+      }),
+    ),
+  }));
 }
 
 function parseClaudeInitializationCommands(
@@ -443,16 +400,17 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
 }
 
 /**
- * Probe account information by spawning a lightweight Claude Code CLI session
- * and reading the initialization result.
+ * Probe account information by spawning a lightweight Claude Agent SDK
+ * session and reading the initialization result.
  *
  * We pass a never-yielding AsyncIterable as the prompt so that no user
  * message is ever written to the subprocess stdin. This means the Claude
  * Code subprocess completes its local initialization IPC (returning
- * account info and slash commands) without starting a model turn. The explicit
- * usage read may contact the provider. We then abort the subprocess.
+ * account info and slash commands) but never starts an API request to
+ * Anthropic. We read the init data and then abort the subprocess.
  *
- * Authentication is verified separately through `claude auth status`.
+ * This is used as a fallback when `claude auth status` does not include
+ * subscription type information.
  */
 const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
@@ -484,12 +442,22 @@ const probeClaudeCapabilities = (
   }).pipe(
     Effect.timeout(CAPABILITIES_PROBE_TIMEOUT_MS),
     Effect.flatMap(({ q, init }) =>
-      Effect.tryPromise(async () => {
-        const settings = await q
-          .getSettings(CAPABILITIES_SETTINGS_TIMEOUT_MS)
-          .catch(() => undefined);
-        // Optional control reads have independent deadlines after successful initialization.
-        const usage = await q.getUsage(CAPABILITIES_USAGE_TIMEOUT_MS).catch(() => undefined);
+      Effect.gen(function* () {
+        // Coder: read the effective permission policy before usage; a CLI that cannot report it
+        // fails closed below.
+        const settings = yield* Effect.tryPromise(() =>
+          q.getSettings(CAPABILITIES_SETTINGS_TIMEOUT_MS),
+        ).pipe(Effect.option);
+        // Usage has its own deadline so a slow optional request cannot discard initialization.
+        const usageResult = yield* Effect.tryPromise(
+          () => q.getUsage() as unknown as Promise<SDKControlGetUsageResponse>,
+        ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result);
+        const usage = Result.isSuccess(usageResult)
+          ? {
+              rate_limits_available: usageResult.success.rate_limits_available,
+              rate_limits: usageResult.success.rate_limits,
+            }
+          : undefined;
         const account = init.account as
           | {
               readonly email?: string;
@@ -504,15 +472,14 @@ const probeClaudeCapabilities = (
           tokenSource: account?.tokenSource,
           apiProvider: account?.apiProvider,
           models: init.models,
-          // If an older CLI cannot report its effective policy, fail closed and
-          // do not advertise elevated modes as usable.
           autoModeDisabled:
-            settings === undefined || readClaudePermissionModeDisabled(settings, "disableAutoMode"),
+            Option.isNone(settings) ||
+            readClaudePermissionModeDisabled(settings.value, "disableAutoMode"),
           bypassPermissionsDisabled:
-            settings === undefined ||
-            readClaudePermissionModeDisabled(settings, "disableBypassPermissionsMode"),
+            Option.isNone(settings) ||
+            readClaudePermissionModeDisabled(settings.value, "disableBypassPermissionsMode"),
           slashCommands: parseClaudeInitializationCommands(init.commands),
-          ...(usage ? { usage, usageCheckedAt: new Date().toISOString() } : {}),
+          ...(usage ? { usage } : {}),
         } satisfies ClaudeCapabilitiesProbe;
       }),
     ),
@@ -522,14 +489,7 @@ const probeClaudeCapabilities = (
       }),
     ),
     Effect.result,
-    Effect.flatMap((result) => {
-      if (Result.isFailure(result)) {
-        return Effect.logWarning("Claude capability initialization failed.", {
-          errorTag: result.failure._tag,
-        }).pipe(Effect.as(undefined));
-      }
-      return Effect.succeed(result.success);
-    }),
+    Effect.map((result) => (Result.isSuccess(result) ? result.success : undefined)),
   );
 };
 
@@ -557,6 +517,10 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
   modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
+  /** Shared with the adapter so turn events reuse the scoped-bucket names this probe saw. */
+  scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>,
+  /** Banked resets for a subscription login, given the CLI version for the user agent. */
+  resolveResetCredits?: (version: string) => Effect.Effect<ServerProviderResetCredits | undefined>,
 ): Effect.fn.Return<
   ServerProviderDraft,
   never,
@@ -564,9 +528,8 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 > {
   const resolvedEnvironment = environment ?? process.env;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const scopedModelCatalog = scopeClaudeModelCatalog(modelCatalog, claudeSettings.customModels);
-  const configuredModels = providerModelsFromSettings(
-    [],
+  const allModels = providerModelsFromSettings(
+    modelCatalog.models.map((entry) => entry.model),
     claudeSettings.customModels,
     DEFAULT_CLAUDE_MODEL_CAPABILITIES,
   );
@@ -576,7 +539,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: false,
       checkedAt,
-      models: configuredModels,
+      models: allModels,
       probe: {
         installed: false,
         version: null,
@@ -602,7 +565,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models: configuredModels,
+      models: allModels,
       probe: {
         installed: !isCommandMissingCause(error),
         version: null,
@@ -620,7 +583,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models: configuredModels,
+      models: allModels,
       probe: {
         installed: true,
         version: null,
@@ -644,7 +607,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       presentation: CLAUDE_PRESENTATION,
       enabled: claudeSettings.enabled,
       checkedAt,
-      models: configuredModels,
+      models: allModels,
       probe: {
         installed: true,
         version: parsedVersion,
@@ -655,59 +618,22 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
-  // Initialization succeeds even while signed out. Only the CLI's explicit
-  // auth status can confirm authentication; never infer it from cached metadata.
-  const authenticated = yield* runClaudeCommand(
-    claudeSettings,
-    ["auth", "status"],
-    resolvedEnvironment,
-  ).pipe(
-    Effect.flatMap((result) =>
-      Effect.try(() => {
-        const value = extractAuthBoolean(JSON.parse(result.stdout));
-        return result.code === 0 || (result.code === 1 && value === false) ? value : undefined;
-      }),
-    ),
-    Effect.timeout(AUTH_PROBE_TIMEOUT_MS),
-    Effect.orElseSucceed(() => undefined),
-  );
-  const authStatus =
-    authenticated === true
-      ? "authenticated"
-      : authenticated === false
-        ? "unauthenticated"
-        : "unknown";
   const capabilities = resolveCapabilities
     ? yield* resolveCapabilities(claudeSettings).pipe(Effect.orElseSucceed(() => undefined))
     : undefined;
-  // Backend identity is configuration, not proof that credentials are valid.
-  // Keep it visible even when the explicit CLI authentication check fails.
-  const backendAuthMetadata =
-    apiProviderAuthMetadata(capabilities?.apiProvider) ??
-    (normalizeClaudeAuthMethod(capabilities?.tokenSource) === "apiKey"
-      ? { type: "apiKey", label: "Claude API Key" }
-      : undefined);
-  const authMessage =
-    authenticated === true
-      ? undefined
-      : backendAuthMetadata
-        ? `Could not verify ${backendAuthMetadata.label} authentication. Check the workspace's Claude backend credentials and retry the provider check.`
-        : authenticated === false
-          ? "Claude CLI is not authenticated. Run `claude auth login` in the workspace and try again."
-          : "Could not verify Claude CLI authentication. Retry the provider check.";
-  const builtInModels = providerModelsFromClaudeCapabilities({
-    models: capabilities?.models ?? [],
-    version: parsedVersion,
-    autoModeDisabled: capabilities?.autoModeDisabled ?? true,
-    bypassPermissionsDisabled: capabilities?.bypassPermissionsDisabled ?? true,
-    customModels: claudeSettings.customModels,
-    catalog: scopedModelCatalog,
-  });
-  const models = builtInModels;
+  // Coder: per-model runtime modes follow the workspace's Claude permission policy.
+  const models = withClaudeRuntimeModes(
+    providerModelsFromSettings(
+      resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+      claudeSettings.customModels,
+      DEFAULT_CLAUDE_MODEL_CAPABILITIES,
+    ),
+    capabilities,
+    modelCatalog,
+  );
   const versionUpgradeMessage = formatClaudeVersionUpgradeMessage(modelCatalog, parsedVersion);
-
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
-  const slashCommands = capabilities?.slashCommands ?? [];
+  const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {
@@ -721,29 +647,33 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       probe: {
         installed: true,
         version: parsedVersion,
-        status: authenticated === false ? "error" : "warning",
-        auth: { status: authStatus },
-        message:
-          authMessage ??
-          "Could not initialize Claude capabilities. CLI authentication may still be valid.",
+        status: "warning",
+        auth: { status: "unknown" },
+        message: "Could not verify Claude authentication status from initialization result.",
       },
     });
   }
 
   const authMetadata =
-    backendAuthMetadata ??
     claudeAuthMetadata({
       subscriptionType: capabilities.subscriptionType,
       authMethod: capabilities.tokenSource,
-    }) ??
-    apiProviderAuthMetadata(capabilities.apiProvider);
-  const usageLimits = capabilities.usage
-    ? claudeUsageResponseToLimits({
-        response: capabilities.usage,
-        checkedAt: capabilities.usageCheckedAt ?? checkedAt,
-      }).limits
-    : makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" });
-  const message = authMessage ?? versionUpgradeMessage;
+    }) ?? apiProviderAuthMetadata(capabilities.apiProvider);
+  const usageLimits = !capabilities.usage
+    ? makeUnavailableUsageLimits({ checkedAt, reason: "probeFailed" })
+    : scopedLimitNames
+      ? yield* recordClaudeUsageResponse(scopedLimitNames, {
+          response: capabilities.usage,
+          checkedAt,
+        })
+      : claudeUsageResponseToLimits({ response: capabilities.usage, checkedAt }).limits;
+  const resetCredits =
+    resolveResetCredits &&
+    capabilities.subscriptionType &&
+    !usageLimits.unavailable &&
+    parsedVersion
+      ? yield* resolveResetCredits(parsedVersion)
+      : undefined;
   return buildServerProvider({
     presentation: CLAUDE_PRESENTATION,
     enabled: claudeSettings.enabled,
@@ -754,14 +684,14 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probe: {
       installed: true,
       version: parsedVersion,
-      status: authenticated === true ? "ready" : authenticated === false ? "error" : "warning",
+      status: "ready",
       auth: {
-        status: authStatus,
-        ...(authenticated === true && capabilities.email ? { email: capabilities.email } : {}),
-        ...(backendAuthMetadata ?? (authenticated === true ? authMetadata : undefined)),
+        status: "authenticated",
+        ...(capabilities.email ? { email: capabilities.email } : {}),
+        ...(authMetadata ? authMetadata : {}),
       },
-      usageLimits,
-      ...(message ? { message } : {}),
+      ...(versionUpgradeMessage ? { message: versionUpgradeMessage } : {}),
+      usageLimits: resetCredits ? { ...usageLimits, resetCredits } : usageLimits,
     },
   });
 });
@@ -770,11 +700,12 @@ const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 
 export const makePendingClaudeProvider = (
   claudeSettings: ClaudeSettings,
+  modelCatalog: ClaudeModelCatalog = BUNDLED_CLAUDE_MODEL_CATALOG,
 ): Effect.Effect<ServerProviderDraft> =>
   Effect.gen(function* () {
     const checkedAt = yield* nowIso;
     const models = providerModelsFromSettings(
-      [],
+      modelCatalog.models.map((entry) => entry.model),
       claudeSettings.customModels,
       DEFAULT_CLAUDE_MODEL_CAPABILITIES,
     );

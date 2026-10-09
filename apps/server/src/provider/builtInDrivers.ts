@@ -20,6 +20,8 @@
  *
  * @module provider/builtInDrivers
  */
+// Coder: only Codex and Claude are registered. Pi stays in the source as an unregistered driver;
+// upstream's other drivers are not carried.
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
 import type { AnyProviderDriver } from "./ProviderDriver.ts";

@@ -1,11 +1,9 @@
-import type { ServerProvider } from "@t3tools/contracts";
 /**
  * ProviderDriver / ProviderInstance — driver SPI as plain values.
  *
  * `ProviderDriver` is a record, not a Context.Service. The thing it produces
  * (`ProviderInstance`) is also a record of captured closures
- * (`snapshot`, `orchestrationAdapter`, `textGeneration`, and optional command
- * discovery), an id, and a driver kind. There
+ * (`snapshot`, `orchestrationAdapter`, `textGeneration`), an id, and a driver kind. There
  * are intentionally no per-driver Context tags because tags are
  * singleton-per-runtime and we need many instances of the same driver.
  *
@@ -32,7 +30,7 @@ import type {
   ProviderDriverKind,
   ProviderInstanceEnvironment,
   ProviderInstanceId,
-  ServerProviderSlashCommand,
+  ServerProvider,
 } from "@t3tools/contracts";
 import type * as Effect from "effect/Effect";
 import type * as Schema from "effect/Schema";
@@ -77,14 +75,11 @@ export interface ProviderInstance {
   readonly displayName: string | undefined;
   readonly accentColor?: string | undefined;
   readonly enabled: boolean;
-  readonly invalidateCaches?: Effect.Effect<void>;
   readonly snapshot: ServerProviderShape;
-  /** Coder: resolve provider commands in the same cwd that will run the turn. */
-  readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, unknown>;
-  /** Coder: workspace-provider slash commands for `provider.listSlashCommands`. */
-  readonly listSlashCommands?: (
-    cwd: string,
-  ) => Effect.Effect<ReadonlyArray<ServerProviderSlashCommand>>;
+  readonly snapshotForCwd?: (cwd: string) => Effect.Effect<ServerProvider, ProviderDriverError>;
+  readonly refreshModels?: () => Effect.Effect<void, ProviderDriverError>;
+  /** Invalidate T3-owned discovery caches before an explicit provider refresh. */
+  readonly invalidateCaches?: Effect.Effect<void>;
   /**
    * Redeem one banked rate-limit reset credit on the signed-in account, then
    * re-probe so the snapshot reflects the cleared windows. Account-level,
@@ -149,7 +144,6 @@ export interface ProviderDriverCreateInput<Config> {
   readonly accentColor?: string | undefined;
   readonly environment: ProviderInstanceEnvironment;
   readonly enabled: boolean;
-  readonly invalidateCaches?: Effect.Effect<void>;
   readonly config: Config;
 }
 

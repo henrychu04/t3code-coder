@@ -10,7 +10,7 @@
  *
  * @module provider/Layers/claudeUsageLimits
  */
-import type { SDKControlGetUsageResponse, SDKRateLimitInfo } from "../Drivers/ClaudeCli.ts";
+import type { SDKControlGetUsageResponse, SDKRateLimitInfo } from "@anthropic-ai/claude-agent-sdk";
 import type {
   ProviderUsageLimitsUpdate,
   ServerProviderUsageLimits,
@@ -56,7 +56,7 @@ export interface ClaudeScopedLimitNames {
   readonly overageIncluded: string | undefined;
 }
 
-const makeClaudeScopedLimitNames = Ref.make<ClaudeScopedLimitNames>({
+export const makeClaudeScopedLimitNames = Ref.make<ClaudeScopedLimitNames>({
   overageIncluded: undefined,
 });
 
@@ -190,7 +190,7 @@ export function claudeUsageResponseToLimits(input: {
 }
 
 /** Probe-side helper: map the response and remember the scoped names for events. */
-const recordClaudeUsageResponse = (
+export const recordClaudeUsageResponse = (
   namesRef: Ref.Ref<ClaudeScopedLimitNames>,
   input: Parameters<typeof claudeUsageResponseToLimits>[0],
 ): Effect.Effect<ServerProviderUsageLimits> => {

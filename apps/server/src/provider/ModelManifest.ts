@@ -1,26 +1,35 @@
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 /**
- * Bundled upstream model lifecycle classification.
+ * ModelManifest — remote provider-model metadata with a bundled offline
+ * fallback.
  *
- * Upstream may refresh this manifest over HTTP. T3 Coder deliberately uses
- * only the bundled copy so provider discovery does not add a T3-owned network
- * request. The file is updated when upstream changes are carried into the
- * fork.
+ * Provider catalogs and legacy classification live in `model-manifest.json`.
+ * The bundled copy ships with every release; at runtime the service refreshes
+ * it from the same file on `main`. Preference order is remote, then the last
+ * successful on-disk copy, then the bundle. A failed fetch never fails a
+ * provider check.
+ *
+ * Providers with authoritative discovery can use only the classification
+ * overlay. Providers with static catalogs can resolve presentation and
+ * capabilities from `providers`, then decode their own allowlisted adapter
+ * payload separately.
+ *
+ * Coder: only the bundled copy is served; see `layerBundled`.
  */
 import {
   ModelCapabilities,
   TrimmedNonEmptyString,
-  ProviderDriverKind,
+  type ProviderDriverKind,
   type ServerProviderModel,
 } from "@t3tools/contracts";
 import { codexModelFamily } from "@t3tools/shared/model";
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import bundledManifestJson from "./model-manifest.json" with { type: "json" };
 import { ProviderCompatibilityPolicy } from "./providerCompatibility.ts";
-import { hasValidClaudeManifestAdapters } from "./ClaudeModelManifest.ts";
 import type { ServerProviderDraft } from "./providerSnapshot.ts";
 
 const ManifestModelStatus = Schema.Literals(["current", "legacy"]);
@@ -157,30 +166,90 @@ export function resolveProviderCatalog(
   };
 }
 
-const CODEX_DRIVER_KIND = ProviderDriverKind.make("codex");
-
-export function isLegacyModel(
+/** True when the manifest classifies `slug` as legacy for `driverKind`. */
+function isLegacyModel(
   manifest: ModelManifestData,
   driverKind: ProviderDriverKind,
   slug: string,
 ): boolean {
-  const family = driverKind === CODEX_DRIVER_KIND ? codexModelFamily(slug) : slug;
+  const family = driverKind === "codex" ? codexModelFamily(slug) : slug;
   const catalog = manifest.providers?.[driverKind]?.models;
   const catalogModel =
     catalog?.find((model) => model.slug === slug) ??
     catalog?.find((model) => model.slug === family);
   if (catalogModel) return catalogModel.status === "legacy";
-  slug = family;
   const currentModels = manifest.currentModels[driverKind];
   if (!currentModels) return false;
-  if (currentModels.includes(slug)) return false;
-  const codexAlias =
-    driverKind === CODEX_DRIVER_KIND && slug.endsWith("-codex")
-      ? slug.slice(0, -"-codex".length)
-      : undefined;
-  return codexAlias === undefined || !currentModels.includes(codexAlias);
+  return !currentModels.includes(slug) && !currentModels.includes(family);
 }
 
+/**
+ * Reclassifies every built-in model on a snapshot draft against the manifest.
+ * Custom models are user-defined and never reclassified.
+ */
+export function applyModelManifest(
+  draft: ServerProviderDraft,
+  manifest: ModelManifestData,
+  driverKind: ProviderDriverKind,
+): ServerProviderDraft {
+  return {
+    ...draft,
+    models: applyManifestDefault(
+      classifyModels(draft.models, manifest, driverKind),
+      manifest,
+      driverKind,
+    ),
+  };
+}
+
+/** The manifest's chat default for `driverKind`, when it names one. */
+export function manifestDefaultModel(
+  manifest: ModelManifestData,
+  driverKind: ProviderDriverKind,
+): string | undefined {
+  return manifest.providers?.[driverKind]?.defaults?.chat;
+}
+
+/**
+ * Moves `isDefault` to the manifest's chat default when the catalog carries
+ * it. Providers that learn their default from the runtime (Antigravity takes
+ * Google's current model) can be overridden here without a release. Aliases
+ * that pointed at the old default move with the flag so the shared
+ * "provider default" alias keeps resolving.
+ */
+export function applyManifestDefault(
+  models: ReadonlyArray<ServerProviderModel>,
+  manifest: ModelManifestData,
+  driverKind: ProviderDriverKind,
+): ReadonlyArray<ServerProviderModel> {
+  const requestedSlug = manifestDefaultModel(manifest, driverKind);
+  if (requestedSlug === undefined) return models;
+  const slug =
+    models.find((model) => model.slug === requestedSlug)?.slug ??
+    (driverKind === "codex"
+      ? models.find(
+          (model) =>
+            !model.isCustom && codexModelFamily(model.slug) === codexModelFamily(requestedSlug),
+        )?.slug
+      : undefined);
+  if (slug === undefined) return models;
+  const previous = models.find((model) => model.isDefault && model.slug !== slug);
+  if (!previous) return models;
+  const movedAliases = previous.aliases ?? [];
+  return models.map((model) => {
+    if (model.slug === previous.slug) {
+      const { isDefault: _isDefault, aliases: _aliases, ...rest } = model;
+      return rest;
+    }
+    if (model.slug === slug) {
+      const aliases = [...new Set([...(model.aliases ?? []), ...movedAliases])];
+      return { ...model, isDefault: true, ...(aliases.length > 0 ? { aliases } : {}) };
+    }
+    return model;
+  });
+}
+
+/** Model-level half of `applyModelManifest`, exported for focused tests. */
 export function classifyModels(
   models: ReadonlyArray<ServerProviderModel>,
   manifest: ModelManifestData,
@@ -197,37 +266,34 @@ export function classifyModels(
   });
 }
 
-export function applyBundledModelManifest(
-  draft: ServerProviderDraft,
-  driverKind: ProviderDriverKind,
-): ServerProviderDraft {
-  return {
-    ...draft,
-    models: classifyModels(draft.models, BUNDLED_MODEL_MANIFEST, driverKind),
-  };
-}
-
 export class ModelManifest extends Context.Service<
   ModelManifest,
   {
+    /** Manifest already in memory (disk cache or bundle); never fetches.
+     * Snapshot classification reads this, so it never waits on the network. */
     readonly current: Effect.Effect<ModelManifestData>;
+    /** Manifest after a TTL-gated remote refresh; never fails. */
     readonly refresh: Effect.Effect<ModelManifestData>;
+    /** Explicit refresh bypasses freshness and retry timers, retaining last-good data. */
     readonly forceRefresh: Effect.Effect<ModelManifestData>;
+    /** Forks `refresh` into the service's own scope. Drivers call this from
+     * provider checks: the fetch is process-shared state, so it must survive
+     * the teardown of whichever instance happened to trigger it. */
     readonly refreshInBackground: Effect.Effect<void>;
   }
 >()("t3/provider/ModelManifest") {}
 
-export const layer = Layer.succeed(ModelManifest, {
+/** Constant service backing the bundled-data test layer. */
+const BundledOnlyModelManifest: ModelManifest["Service"] = {
   current: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   forceRefresh: Effect.succeed(BUNDLED_MODEL_MANIFEST),
   refreshInBackground: Effect.void,
-});
-/** Model-level half of `applyModelManifest`, exported for focused tests. */
-/** Manifest already in memory (disk cache or bundle); never fetches.
- * Snapshot classification reads this, so it never waits on the network. */
-/** Manifest after a TTL-gated remote refresh; never fails. */
-/** Explicit refresh bypasses freshness and retry timers, retaining last-good data. */
-/** Forks `refresh` into the service's own scope. Drivers call this from
- * provider checks: the fetch is process-shared state, so it must survive
- * the teardown of whichever instance happened to trigger it. */
+};
+
+export const layerTest = Layer.succeed(ModelManifest, BundledOnlyModelManifest);
+
+// Coder: the helper makes no T3-owned network request, so upstream's hourly remote refresh and
+// its disk cache are omitted. The helper serves only the manifest bundled with each release;
+// upstream syncs update it.
+export const layerBundled = layerTest;

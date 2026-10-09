@@ -36,8 +36,7 @@ import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
-// Coder: the demand-only policy exposes just the VCS scope used by this suite.
-import type { BackgroundScope } from "../background/BackgroundPolicy.ts";
+import type { BackgroundScope } from "@t3tools/contracts";
 
 const baseLocalStatus: VcsStatusLocalResult = {
   isRepo: true,

@@ -784,29 +784,6 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
   },
 );
 
-// Coder: slash commands must be discovered from workspace-installed providers.
-export const listProviderWorkspaceSlashCommands = (
-  input: { instanceId: ProviderInstanceId; cwd: string },
-  providers: Pick<ProviderRegistry.ProviderRegistryShape, "refreshWorkspaceSnapshot">,
-  providerInstances: Pick<ProviderInstanceRegistryShape, "getInstance">,
-) =>
-  providers.refreshWorkspaceSnapshot(input).pipe(
-    Effect.flatMap((snapshots) => {
-      const workspace = snapshots
-        .find((provider) => provider.instanceId === input.instanceId)
-        ?.workspaceSnapshots?.find((snapshot) => snapshot.cwd === input.cwd);
-      if (workspace) return Effect.succeed(workspace.slashCommands);
-      return providerInstances.getInstance(input.instanceId).pipe(
-        Effect.flatMap((instance) => {
-          if (instance?.listSlashCommands) return instance.listSlashCommands(input.cwd);
-          return instance
-            ? instance.snapshot.getSnapshot.pipe(Effect.map((snapshot) => snapshot.slashCommands))
-            : Effect.succeed([]);
-        }),
-      );
-    }),
-  );
-
 // Coder: workspace RPCs run over authenticated helper stdio, with no HTTP/WebSocket listener.
 export const layer = CoderWsRpcGroup.toLayer(
   Effect.gen(function* () {
@@ -1535,9 +1512,6 @@ export const layer = CoderWsRpcGroup.toLayer(
               : providerRegistry.refresh();
           return { providers };
         }),
-      // Coder: discover provider commands only in the workspace.
-      [WS_METHODS.providerListSlashCommands]: (input) =>
-        listProviderWorkspaceSlashCommands(input, providerRegistry, providerInstances),
       [WS_METHODS.serverUpdateProvider]: (input) => providerMaintenanceRunner.updateProvider(input),
       [WS_METHODS.serverUpsertKeybinding]: (rule) =>
         Effect.gen(function* () {

@@ -267,11 +267,6 @@ export function createServerEnvironmentAtoms<R, E>(
           ]),
       },
     }),
-    slashCommands: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:provider:slash-commands",
-      tag: WS_METHODS.providerListSlashCommands,
-      staleTimeMs: 5 * 60_000,
-    }),
     /** Live scheduled-task list: snapshot on subscribe, fresh list after every server-side change. */
     scheduledTasksLive: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:scheduled-tasks:live",

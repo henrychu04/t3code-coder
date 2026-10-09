@@ -113,26 +113,8 @@ describe("Coder foreground helper", () => {
       strictEqual(configEnvelope.exit?._tag, "Success");
       deepStrictEqual(
         configEnvelope.exit?.value?.providers?.map((provider) => provider.driver),
-        ["claudeAgent", "codex"],
+        ["codex", "claudeAgent"],
       );
-
-      helper.stdin.write(
-        `${JSON.stringify({
-          _tag: "Request",
-          id: "provider-slash-commands",
-          tag: WS_METHODS.providerListSlashCommands,
-          payload: {
-            instanceId: ProviderInstanceId.make("missing-provider"),
-            cwd: helperHome,
-          },
-          headers: [],
-        })}\n`,
-      );
-      deepStrictEqual(await readResponse(), {
-        _tag: "Exit",
-        requestId: "provider-slash-commands",
-        exit: { _tag: "Success", value: [] },
-      });
 
       helper.stdin.write(
         `${JSON.stringify({

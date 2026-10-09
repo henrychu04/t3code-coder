@@ -13,6 +13,7 @@ import {
   type OrchestrationV2ServerCommand,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -80,7 +81,8 @@ const thread = (interactionMode: "default" | "plan") =>
 /** Upstream's pull-request handlers behind the Coder registry, reached through the real CLI. */
 const harness = (options: {
   readonly mode?: "default" | "plan";
-  readonly dispatchDelayMs?: number;
+  /** Holds pull-request dispatch until the test opens it. */
+  readonly dispatchGate?: Deferred.Deferred<void>;
 }) =>
   Effect.gen(function* () {
     const commands: Array<OrchestrationV2ServerCommand> = [];
@@ -89,7 +91,7 @@ const harness = (options: {
         getThreadShell: (id) =>
           Effect.succeed(id === THREAD_ID ? thread(options.mode ?? "default") : null),
         dispatch: (command) =>
-          Effect.sleep(options.dispatchDelayMs ?? 0).pipe(
+          (options.dispatchGate ? Deferred.await(options.dispatchGate) : Effect.void).pipe(
             Effect.andThen(
               Effect.sync(() => {
                 commands.push(command);
@@ -210,15 +212,20 @@ it.live("permits only read-only tools in plan mode", () =>
 it.live("answers a slow call with a task id that task_status resolves", () =>
   Effect.scoped(
     Effect.gen(function* () {
-      const { call, commands } = yield* harness({ dispatchDelayMs: 600 });
+      const gate = yield* Deferred.make<void>();
+      const { call, commands } = yield* harness({ dispatchGate: gate });
       const started = yield* call("link_pull_request", JSON.stringify({ url: URL }));
       const { taskId } = started.output as { status: string; taskId: string };
       assert.deepInclude(started.output as object, { status: "running" });
       assert.match(taskId, /^bridge-job:/u);
       const running = yield* call("task_status", JSON.stringify({ taskId }));
       assert.deepInclude(running.output as object, { status: "running" });
-      yield* Effect.sleep(700);
-      const finished = yield* call("task_status", JSON.stringify({ taskId }));
+      yield* Deferred.succeed(gate, undefined);
+      let finished = yield* call("task_status", JSON.stringify({ taskId }));
+      for (let attempt = 0; attempt < 50 && "status" in (finished.output as object); attempt++) {
+        yield* Effect.sleep(50);
+        finished = yield* call("task_status", JSON.stringify({ taskId }));
+      }
       assert.deepInclude(finished.output as object, { number: 12, alreadyLinked: false });
       assert.lengthOf(commands, 1);
       const consumed = yield* call("task_status", JSON.stringify({ taskId }));

@@ -1,7 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import {
-  sanitizeCodexScreenshotImages,
-} from "./CodexScreenshotImages.ts";
+import { sanitizeCodexScreenshotImages } from "./CodexScreenshotImages.ts";
 
 const image = { type: "image", mimeType: "image/png", data: "private-image-bytes" };
 const tool = {

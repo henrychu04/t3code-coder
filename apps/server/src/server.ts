@@ -88,7 +88,10 @@ const CoderSettingsLive = ServerSettings.layer.pipe(
 );
 
 const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
-  Layer.provide(ModelManifest.layer),
+  Layer.provide(ModelManifest.layerBundled),
+  // Coder: the demand-only background policy; provider update checks use fetch.
+  Layer.provide(BackgroundPolicy.layer),
+  Layer.provide(FetchHttpClient.layer),
   // Coder: no diagnostic provider event log files.
   Layer.provide(ProviderEventLoggers.layer),
   Layer.provideMerge(CoderSettingsLive),
@@ -280,14 +283,14 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   Layer.provideMerge(ProviderEventLoggers.layer),
   Layer.provideMerge(
     ProviderMaintenanceRunner.layer.pipe(
-      Layer.provide(ModelManifest.layer),
+      Layer.provide(ModelManifest.layerBundled),
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(ProviderRegistryLive),
     ),
   ),
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(CoderProviderInstancesLive),
-  Layer.provideMerge(ModelManifest.layer),
+  Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );
 

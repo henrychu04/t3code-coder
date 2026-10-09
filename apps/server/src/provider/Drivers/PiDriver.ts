@@ -148,6 +148,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
 
       const snapshotSettings = makeProviderSnapshotSettingsSource(effectiveConfig, serverSettings);
       const snapshot = yield* makeManagedServerProvider<ProviderSnapshotSettings<PiSettings>>({
+        resolveMaintenance,
         getSettings: snapshotSettings.getSettings,
         streamSettings: snapshotSettings.streamSettings,
         haveSettingsChanged: haveProviderSnapshotSettingsChanged,
@@ -185,8 +186,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         displayName,
         accentColor,
         enabled,
-        // Coder: the managed provider keeps upstream's maintenance resolver on the snapshot.
-        snapshot: { ...snapshot, resolveMaintenance },
+        snapshot,
         orchestrationAdapter,
         textGeneration,
       } satisfies ProviderInstance;

@@ -550,8 +550,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - Coder-only methods remain beside their upstream neighbors: local ref status, managed
     branch/worktree rename with `moveWorktree`, write-access probing, chunked review files,
     bounded text/content/media and legacy-artifact reads, fixed project-config reads, workspace
-    directory listing, workspace-provider slash commands, and merge-request diffs. The method
-    set stays `CoderWsRpcGroup`; unsupported upstream methods stay omitted.
+    directory listing, and merge-request diffs. The method set stays `CoderWsRpcGroup`;
+    unsupported upstream methods stay omitted.
 - **Provider and orchestration.** Upstream's orchestrator (`orchestration-v2/`: the orchestrator,
   effect worker, projection store, provider session manager, `ClaudeAdapterV2.ts`,
   `CodexAdapterV2.ts`, thread intake and launch, and attachment claims) runs in the helper with
@@ -616,6 +616,15 @@ listed here is drift to remove rather than fork behavior to keep.
   - `ProviderAuthService` reports every sign-in, logout, and credential-transfer operation
     unavailable; providers authenticate through the workspace's API configuration.
     `CodexManagedRuntime` keeps only upstream's resolution contract.
+  - Provider drivers, snapshots, and the registry are upstream's. Coder deltas: `CodexDriver`
+    offers no T3-managed Codex install (`setupMode: "managed"`), and neither driver redeems
+    rate-limit reset credits. `ModelManifest.layerBundled` serves the bundled manifest without
+    upstream's hourly fetch or disk cache. Both providers attach
+    per-model `supportedRuntimeModes` from workspace policy: Claude's effective
+    `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
+    closed) and Codex's `configRequirements/read`. The Claude signed-out message names API
+    credentials rather than subscription login. `providerMaintenance.ts` and
+    `providerStatusCache.ts` log the first cause tag in place of the omitted observability helper.
   - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
     provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
