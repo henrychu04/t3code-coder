@@ -38,9 +38,12 @@ import {
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
 import { resolveAppModelSelectionState } from "../../modelSelection";
-import { useEnvironments, type EnvironmentPresentation } from "../../state/environments";
+import {
+  useEnvironments,
+  usePrimaryEnvironmentId,
+  type EnvironmentPresentation,
+} from "../../state/environments";
 import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
-import { useActiveEnvironmentId } from "../../state/entities";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { getRelativeTimeState } from "../../timestampFormat";
 import {
@@ -262,8 +265,7 @@ export function ProviderSettingsPanel(target: ProviderSettingsTarget) {
 
 function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
   const { environments, isReady } = useEnvironments();
-  // Coder: there is no primary environment; the active workspace takes its place.
-  const primaryEnvironmentId = useActiveEnvironmentId();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const options = useMemo(
     () =>
       buildProviderEnvironmentOptions(environments, primaryEnvironmentId, target.environmentIds),

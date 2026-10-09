@@ -636,11 +636,7 @@ export function resolveSidebarStageBadgeLabel(input: {
   primaryServerVersion: string | null | undefined;
   fallbackStageLabel: string;
 }): string {
-  // Coder: the branding helper reads every workspace's server version.
-  return resolveServerBackedAppStageLabel({
-    serverVersions: [input.primaryServerVersion],
-    fallbackStageLabel: input.fallbackStageLabel,
-  });
+  return resolveServerBackedAppStageLabel(input);
 }
 
 export function createThreadJumpHintVisibilityController(input: {

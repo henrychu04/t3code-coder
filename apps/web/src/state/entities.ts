@@ -13,6 +13,7 @@ import type { ScopedProjectRef, ScopedThreadRef, ServerConfig } from "@t3tools/c
 import type { EnvironmentId, OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentProjects } from "./projects";
 import { environmentServerConfigsAtom } from "./server";
 import {
@@ -47,10 +48,8 @@ const EMPTY_THREAD_HISTORY_ATOM = Atom.make<ThreadHistoryMeta>(EMPTY_THREAD_HIST
   Atom.withLabel("web-thread-history:empty"),
 );
 
-const activeEnvironmentIdAtom = Atom.make<EnvironmentId | null>(null).pipe(
-  Atom.keepAlive,
-  Atom.withLabel("web-active-environment-id"),
-);
+// Coder: the active workspace is also upstream's primary environment; see primaryEnvironment.ts.
+const activeEnvironmentIdAtom = primaryEnvironmentIdAtom;
 
 export function useActiveEnvironmentId(): EnvironmentId | null {
   return useAtomValue(activeEnvironmentIdAtom);
@@ -60,7 +59,7 @@ export function setActiveEnvironmentId(environmentId: EnvironmentId | null): voi
   appAtomRegistry.set(activeEnvironmentIdAtom, environmentId);
 }
 
-// Coder: the first connected workspace becomes active; there is no primary environment.
+// Coder: the first workspace to send its welcome becomes active (and primary).
 export function readActiveEnvironmentId(): EnvironmentId | null {
   return appAtomRegistry.get(activeEnvironmentIdAtom);
 }

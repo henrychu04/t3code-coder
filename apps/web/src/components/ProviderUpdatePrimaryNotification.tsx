@@ -1,13 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import { Atom } from "effect/unstable/reactivity";
 import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { type ServerProvider, type ProviderInstanceId } from "@t3tools/contracts";
 
-import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../state/server";
-import { useActiveEnvironmentId } from "../state/entities";
-import { useEnvironment } from "../state/environments";
+import { primaryServerProvidersAtom, serverEnvironment } from "../state/server";
+import { usePrimaryEnvironment } from "../state/environments";
 import { useDismissedProviderUpdateNotificationKeys } from "../providerUpdateDismissal";
 import { ProviderInstanceIcon } from "./chat/ProviderInstanceIcon";
 import {
@@ -98,19 +96,10 @@ function addProviderUpdateToast(input: {
  * local environment (no WSL backend). Non-WSL users see exactly this flow — the
  * per-environment split is gated behind WSL presence.
  */
-const NO_ACTIVE_ENVIRONMENT_PROVIDERS = Atom.make<ReadonlyArray<ServerProvider> | null>(null);
-
 export function ProviderUpdatePrimaryNotification() {
   const navigate = useNavigate();
-  // Coder: the active workspace stands in for upstream's primary environment.
-  const activeEnvironmentId = useActiveEnvironmentId();
-  const providers =
-    useAtomValue(
-      activeEnvironmentId === null
-        ? NO_ACTIVE_ENVIRONMENT_PROVIDERS
-        : serverEnvironment.providersValueAtom(activeEnvironmentId),
-    ) ?? EMPTY_SERVER_PROVIDERS;
-  const primaryEnvironment = useEnvironment(activeEnvironmentId);
+  const providers = useAtomValue(primaryServerProvidersAtom);
+  const primaryEnvironment = usePrimaryEnvironment();
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider, {
     reportFailure: false,
   });

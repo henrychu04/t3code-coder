@@ -526,6 +526,13 @@ Shared product subsystems are upstream's code with the Coder deltas below layere
 syncing, take upstream's version of these files and reapply only these seams; a difference not
 listed here is drift to remove rather than fork behavior to keep.
 
+- **Primary environment.** `state/primaryEnvironment.ts` makes upstream's
+  `primaryEnvironmentIdAtom` the active workspace: the first workspace to send its welcome. Upstream's
+  `primaryServer*Atom`s, `usePrimaryEnvironmentId`, and `usePrimaryEnvironment` then work unchanged,
+  so keybindings, primary settings, providers, the app title, and environment themes follow that
+  workspace. Because the welcome picks the primary, `__root.tsx`'s `EventRouter` reads welcome
+  and config events per workspace. There is no available-editors atom, and the hosted-app case
+  of `usePrimarySettingsAvailable` does not exist.
 - **Transport and RPC handlers.** `ws.ts`, `server.ts`, and `serverRuntimeStartup.ts` keep
   upstream's paths, and so do client-runtime's `threadSnapshotHttp.ts` and `shellSnapshotHttp.ts`,
   whose loaders use helper stdio rather than HTTP. `ws.ts` follows upstream's handler and helper

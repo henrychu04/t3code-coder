@@ -11,7 +11,6 @@
  */
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 import { useAtomValue } from "@effect/atom-react";
-import { Atom } from "effect/unstable/reactivity";
 import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
@@ -42,9 +41,8 @@ import {
 } from "~/themePalette";
 import * as Struct from "effect/Struct";
 import { toastManager } from "~/components/ui/toast";
-import { serverEnvironment } from "~/state/server";
-import { useActiveEnvironmentId } from "~/state/entities";
-import { useEnvironments } from "~/state/environments";
+import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
+import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { useTheme } from "./useTheme";
 
@@ -392,34 +390,22 @@ export function usePersistEnvironmentProviderInstanceMutation(environmentId: Env
   );
 }
 
-const NO_ACTIVE_ENVIRONMENT_SETTINGS = Atom.make<ServerSettings | null>(null);
-
-/**
- * Primary-only settings access for the settings UI and other explicitly global surfaces.
- * Coder: there is no primary local server; the active workspace takes its place.
- */
+/** Primary-only settings access for the settings UI and other explicitly global surfaces. */
 export function usePrimarySettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
-  const environmentId = useActiveEnvironmentId();
-  const serverSettings = useAtomValue(
-    environmentId === null
-      ? NO_ACTIVE_ENVIRONMENT_SETTINGS
-      : serverEnvironment.settingsValueAtom(environmentId),
-  );
-  return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector);
+  return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
 }
 
 export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
   "This setting is saved in a workspace. Connect a Coder workspace to change it.";
 
-/** Coder: server-scoped settings need a connected workspace to live on. */
+/**
+ * Whether primary-scoped server settings have a server to live on. Coder: the active workspace
+ * is the primary environment, so settings wait for a workspace to connect; there is no hosted app.
+ */
 export function usePrimarySettingsAvailable(): boolean {
-  const { environments } = useEnvironments();
-  return environments.some(
-    (environment) =>
-      environment.connection.phase === "connected" && environment.serverConfig !== null,
-  );
+  return usePrimaryEnvironment() !== null;
 }
 
 /**
@@ -509,8 +495,7 @@ export function useUpdateEnvironmentSettings(environmentId: EnvironmentId) {
 }
 
 export function useUpdatePrimarySettings() {
-  // Coder: the active workspace stands in for upstream's primary environment.
-  return useUpdateSettingsTarget(useActiveEnvironmentId());
+  return useUpdateSettingsTarget(usePrimaryEnvironment()?.environmentId ?? null);
 }
 
 export function useUpdateClientSettings() {

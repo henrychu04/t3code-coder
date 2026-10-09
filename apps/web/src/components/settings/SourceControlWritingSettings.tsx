@@ -21,7 +21,10 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
-import { getCustomModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
+import {
+  getCustomModelOptionsByInstance,
+  resolveAppModelSelectionState,
+} from "../../modelSelection";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -295,7 +298,6 @@ export function SourceControlWritingSettingsSection() {
               ) : null}
               {usesDedicatedModel && canEnableDedicatedModel && environmentId ? (
                 <ProviderModelPicker
-                  environmentId={environmentId}
                   activeInstanceId={activeSelection.instanceId}
                   model={activeSelection.model}
                   lockedProvider={null}

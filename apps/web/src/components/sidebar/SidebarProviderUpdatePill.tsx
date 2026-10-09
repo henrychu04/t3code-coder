@@ -3,11 +3,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import type { ServerProvider } from "@t3tools/contracts";
 import { CircleCheckIcon, DownloadIcon, TriangleAlertIcon, XIcon } from "lucide-react";
-import { Atom } from "effect/unstable/reactivity";
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 
-import { useActiveEnvironmentId } from "../../state/entities";
-import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
+import { primaryServerProvidersAtom } from "../../state/server";
 import {
   getProviderUpdateSidebarPillView,
   type ProviderUpdateSidebarPillView,
@@ -41,18 +39,9 @@ function latestProviderCheckedAt(
   );
 }
 
-const NO_ACTIVE_ENVIRONMENT_PROVIDERS = Atom.make<ReadonlyArray<ServerProvider> | null>(null);
-
 export function SidebarProviderUpdatePill() {
   const navigate = useNavigate();
-  // Coder: the active workspace stands in for upstream's primary environment.
-  const activeEnvironmentId = useActiveEnvironmentId();
-  const providers =
-    useAtomValue(
-      activeEnvironmentId === null
-        ? NO_ACTIVE_ENVIRONMENT_PROVIDERS
-        : serverEnvironment.providersValueAtom(activeEnvironmentId),
-    ) ?? EMPTY_SERVER_PROVIDERS;
+  const providers = useAtomValue(primaryServerProvidersAtom);
   const [dismissedKeys, setDismissedKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [renderedView, setRenderedView] = useState<ProviderUpdateSidebarPillView | null>(null);
   const [pendingView, setPendingView] = useState<ProviderUpdateSidebarPillView | null>(null);

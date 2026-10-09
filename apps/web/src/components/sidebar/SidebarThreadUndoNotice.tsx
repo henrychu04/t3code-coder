@@ -1,13 +1,14 @@
+import { useAtomValue } from "@effect/atom-react";
+
 import { undoLatestThreadAction, useThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { useActiveEnvironmentId } from "../../state/entities";
-import { useEnvironmentKeybindings } from "../../state/environments";
+import { primaryServerKeybindingsAtom } from "../../state/server";
 import { Alert, AlertDescription } from "../ui/alert";
 import { InlineButton } from "../ui/button";
 
 export function SidebarThreadUndoNotice() {
   const notice = useThreadUndoNotice((state) => state.notice);
-  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
   if (!notice) return null;
   const shortcut = shortcutLabelForCommand(keybindings, "thread.undo");

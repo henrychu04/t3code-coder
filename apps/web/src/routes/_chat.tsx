@@ -1,12 +1,14 @@
-import { ThreadRouteView } from "../components/ThreadRouteView";
-import { resolveThreadRouteTarget } from "../threadRoutes";
 import { Outlet, createFileRoute, useParams } from "@tanstack/react-router";
+import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
 
-import { isCommandPaletteOpen, openCommandPalette } from "../commandPaletteBus";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { ThreadRouteView } from "../components/ThreadRouteView";
+import { resolveThreadRouteTarget } from "../threadRoutes";
 import { useClientSettings } from "../hooks/useSettings";
-import { useActiveEnvironmentId, useProjects } from "../state/entities";
-import { useEnvironmentKeybindings } from "../state/environments";
+import { openCommandPalette } from "../commandPaletteBus";
+import { useProjects } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
@@ -19,26 +21,27 @@ import { undoLatestThreadAction } from "../hooks/showThreadUndoNotice";
 import { resolveShortcutCommand } from "../keybindings";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
   const selectedThreadKeysSize = useThreadSelectionStore((state) => state.selectedThreadKeys.size);
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread, routeThreadRef } =
     useHandleNewThread();
-  const activeEnvironmentId = useActiveEnvironmentId();
-  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
-  const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projects = useProjects();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const { scratchEnvironmentId, startScratchThread } = useScratchProject();
   const projectGroupCount = useMemo(
     () =>
       buildSidebarProjectSnapshots({
         projects,
         settings: projectGroupingSettings,
-        preferredEnvironmentId: activeEnvironmentId,
+        primaryEnvironmentId,
         resolveEnvironmentLabel: () => null,
       }).length,
-    [activeEnvironmentId, projectGroupingSettings, projects],
+    [primaryEnvironmentId, projectGroupingSettings, projects],
   );
   const terminalOpen = useTerminalUiStateStore((state) =>
     routeThreadRef
@@ -90,7 +93,7 @@ function ChatRouteGlobalShortcuts() {
 
       if (command === "chat.newWithoutProject") {
         const environmentId = scratchEnvironmentId(
-          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? activeEnvironmentId,
+          activeThread?.environmentId ?? activeDraftThread?.environmentId ?? primaryEnvironmentId,
         );
         if (environmentId === null) return;
         event.preventDefault();
@@ -102,9 +105,9 @@ function ChatRouteGlobalShortcuts() {
       if (command === "chat.new") {
         event.preventDefault();
         event.stopPropagation();
-        // Multi-project setups route creation through the command palette's
-        // "New thread in..." picker, mirroring the sidebar button; single-
-        // project setups create immediately in the current context.
+        // The default sidebar routes creation through the command palette
+        // whenever there is a real choice to make; single-project setups keep
+        // the immediate contextual create. Coder: there is no legacy sidebar.
         if (projectGroupCount > 1) {
           openCommandPalette({ open: "new-thread-in" });
           return;
@@ -126,15 +129,16 @@ function ChatRouteGlobalShortcuts() {
   }, [
     activeDraftThread,
     activeThread,
-    activeEnvironmentId,
-    scratchEnvironmentId,
-    startScratchThread,
     clearSelection,
     handleNewThread,
     keybindings,
     defaultProjectRef,
+    primaryEnvironmentId,
     projectGroupCount,
+    routeThreadRef,
+    scratchEnvironmentId,
     selectedThreadKeysSize,
+    startScratchThread,
     terminalOpen,
   ]);
 
@@ -142,6 +146,8 @@ function ChatRouteGlobalShortcuts() {
 }
 
 function ChatRouteLayout() {
+  // Both thread routes render here, not in their own leaf components, so the
+  // draft-to-thread promotion keeps one ChatView mounted across the swap.
   const threadTarget = useParams({
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
@@ -154,4 +160,5 @@ function ChatRouteLayout() {
   );
 }
 
+// Coder owns authentication, so there is no pairing gate in front of the chat routes.
 export const Route = createFileRoute("/_chat")({ component: ChatRouteLayout });

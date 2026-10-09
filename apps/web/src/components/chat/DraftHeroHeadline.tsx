@@ -1,10 +1,6 @@
-import { shortcutLabelForCommand } from "~/keybindings";
-import { projectIconColorClassName } from "~/projectIconColors";
-import { useEnvironmentKeybindings } from "~/state/environments";
-import { useActiveEnvironmentId } from "~/state/entities";
-import { useScratchProject } from "~/hooks/useScratchProject";
-import { deriveLogicalProjectKeyFromSettings } from "~/logicalProject";
-import type { ScopedProjectRef } from "@t3tools/contracts";
+import type { DraftId } from "~/composerDraftStore";
+import { useComposerDraftStore } from "~/composerDraftStore";
+import { resolveEnvironmentMachineKind, type ScopedProjectRef } from "@t3tools/contracts";
 import { scopedProjectKey, scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { FolderPlusIcon, MessageSquareDashedIcon } from "lucide-react";
@@ -12,16 +8,24 @@ import { useAtomValue } from "@effect/atom-react";
 import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { openCommandPalette } from "~/commandPaletteBus";
-import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
+import { shortcutLabelForCommand } from "~/keybindings";
+import { projectIconColorClassName } from "~/projectIconColors";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { useScratchProject } from "~/hooks/useScratchProject";
 import { useClientSettings } from "~/hooks/useSettings";
-import { selectProjectGroupingSettings } from "~/logicalProject";
+import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  selectProjectGroupingSettings,
+} from "~/logicalProject";
 import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
+  projectGroupsSpanEnvironments,
 } from "~/sidebarProjectGrouping";
 import { useProjects, useThreadShells } from "~/state/entities";
-import { useEnvironments } from "~/state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";
 import {
@@ -54,6 +58,7 @@ export function DraftHeroHeadline({
   const projects = useProjects();
   const threads = useThreadShells();
   const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);
   const setLogicalProjectDraftThreadId = useComposerDraftStore(
@@ -64,8 +69,7 @@ export function DraftHeroHeadline({
   const setModelSelection = useComposerDraftStore((store) => store.setModelSelection);
   const openAddProject = useCallback(() => openCommandPalette({ open: "add-project" }), []);
   const { scratchEnvironmentId, scratchWorkspaceRootFor, openScratchProject } = useScratchProject();
-  const activeEnvironmentId = useActiveEnvironmentId();
-  const keybindings = useEnvironmentKeybindings(activeEnvironmentId);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
 
   const environmentLabelById = useMemo(
     () =>
@@ -80,7 +84,7 @@ export function DraftHeroHeadline({
         buildSidebarProjectSnapshots({
           projects,
           settings: projectGroupingSettings,
-          preferredEnvironmentId: activeProjectRef?.environmentId ?? null,
+          primaryEnvironmentId,
           resolveEnvironmentLabel: (environmentId) =>
             environmentLabelById.get(environmentId) ?? null,
         }),
@@ -89,12 +93,32 @@ export function DraftHeroHeadline({
       ),
     [
       environmentLabelById,
-      activeProjectRef?.environmentId,
+      primaryEnvironmentId,
       projectGroupingSettings,
       projectSortOrder,
       projects,
       threads,
     ],
+  );
+  // Same-named projects on two machines are only told apart by where they
+  // live, so rows on another machine carry its icon once the catalog spans
+  // more than one environment; a single-machine catalog stays as it was.
+  const showProjectEnvironments = useMemo(
+    () => projectGroupsSpanEnvironments(projectGroups),
+    [projectGroups],
+  );
+  const environmentMachineById = useMemo(
+    () =>
+      new Map(
+        environments.map(
+          (environment) =>
+            [
+              environment.environmentId,
+              resolveEnvironmentMachineKind(environment.serverConfig),
+            ] as const,
+        ),
+      ),
+    [environments],
   );
   const projectPickerEntries = useMemo(
     () =>
@@ -136,7 +160,7 @@ export function DraftHeroHeadline({
             project.id === activeProjectRef.projectId,
         ) ?? null);
   const scratchTargetEnvironmentId = scratchEnvironmentId(
-    activeProjectRef?.environmentId ?? activeEnvironmentId,
+    activeProjectRef?.environmentId ?? primaryEnvironmentId,
   );
   const scratchWorkspaceRoot = scratchWorkspaceRootFor(scratchTargetEnvironmentId);
   const isScratchDraft =
@@ -265,6 +289,13 @@ export function DraftHeroHeadline({
                     </TooltipTrigger>
                     <TooltipPopup side="top">{group.displayName}</TooltipPopup>
                   </Tooltip>
+                  {showProjectEnvironments ? (
+                    <ProjectEnvironmentBadge
+                      group={group}
+                      primaryEnvironmentId={primaryEnvironmentId}
+                      machineByEnvironmentId={environmentMachineById}
+                    />
+                  ) : null}
                 </span>
               </MenuRadioItem>
             );

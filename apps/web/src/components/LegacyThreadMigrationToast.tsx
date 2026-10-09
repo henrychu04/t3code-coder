@@ -1,13 +1,13 @@
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useRef } from "react";
 
-import { legacyThreadMigrationAtom } from "../state/server";
+import { primaryServerLegacyThreadMigrationAtom } from "../state/server";
 import { toastManager } from "./ui/toast";
 
 type MigrationToastId = ReturnType<typeof toastManager.add>;
 
 export function LegacyThreadMigrationToast() {
-  const migration = useAtomValue(legacyThreadMigrationAtom);
+  const migration = useAtomValue(primaryServerLegacyThreadMigrationAtom);
   const toastIdRef = useRef<MigrationToastId | null>(null);
 
   useEffect(() => {

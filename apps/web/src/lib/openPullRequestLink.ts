@@ -4,6 +4,7 @@ import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/co
 import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
 import { useNavigate } from "@tanstack/react-router";
 import { useProjects, useServerConfigs } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { serverEnvironment } from "../state/server";
 import { useRightPanelStore } from "../rightPanelStore";
 import { useOpenLink } from "../browser/useOpenLink";
@@ -268,8 +269,7 @@ export function shouldOpenPullRequestExternally(
  * page and says whether it did; anything else is left to the caller as an ordinary link.
  *
  * Given a thread, the link opens beside it in the right panel. Without one it opens the merge
- * requests page. Coder has no primary environment, so the page resolves the link against every
- * workspace that reads merge requests, in project order.
+ * requests page, which resolves the link against every workspace that reads merge requests.
  */
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
@@ -286,6 +286,7 @@ export function useOpenChangeRequestLink(
   const navigate = useNavigate();
   const allProjects = useProjects();
   const serverConfigs = useServerConfigs();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   return useCallback(
     (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
       if (shouldOpenPullRequestExternally(event)) return false;
@@ -295,12 +296,23 @@ export function useOpenChangeRequestLink(
       if (parsed === null) return false;
       const reads = (environmentId: EnvironmentId) =>
         serverConfigs.get(environmentId)?.environment.capabilities.pullRequests === true;
-      // Beside a thread the panel reads on that thread's environment; the page lists them all.
+      // Beside a thread the panel reads on that thread's environment, so a project from another
+      // one could not be read there whatever its remote says: two environments can hold the same
+      // repository, and handing the panel the wrong one's id opens a surface that never loads.
+      //
+      // The page has no such tie — it lists every server at once — so the link is resolved
+      // against all of them, the primary first where two hold the same repository.
       const projects = resolvedThreadRef
         ? allProjects.filter((project) => project.environmentId === resolvedThreadRef.environmentId)
         : targetEnvironmentId
           ? allProjects.filter((project) => project.environmentId === targetEnvironmentId)
-          : allProjects.filter((project) => reads(project.environmentId));
+          : allProjects
+              .filter((project) => reads(project.environmentId))
+              .toSorted(
+                (left, right) =>
+                  Number(right.environmentId === primaryEnvironmentId) -
+                  Number(left.environmentId === primaryEnvironmentId),
+              );
       const exactProject = findProjectForChangeRequest(projects, parsed);
       const project =
         exactProject ??
@@ -369,7 +381,7 @@ export function useOpenChangeRequestLink(
       });
       return true;
     },
-    [allProjects, navigate, panelRef, serverConfigs, threadRef],
+    [allProjects, navigate, panelRef, primaryEnvironmentId, serverConfigs, threadRef],
   );
 }
 

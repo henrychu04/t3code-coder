@@ -1,22 +1,26 @@
 import {
-  type ServerProvider,
+  DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
+  type EnvironmentTheme,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleLegacyThreadMigrationPayload,
   type ServerLifecycleWelcomePayload,
+  type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import { createServerEnvironmentAtoms } from "@t3tools/client-runtime/state/server";
 import { createEnvironmentServerConfigsAtom } from "@t3tools/client-runtime/state/shell";
+import { mergeWithDefaultKeybindings } from "@t3tools/shared/keybindings";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
+import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 
-export const EMPTY_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
-
+// Coder: the client runtime always opts into environment themes and has no usage-limit sources.
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
 });
@@ -25,6 +29,90 @@ export const environmentServerConfigsAtom = createEnvironmentServerConfigsAtom({
   serverConfigValueAtom: serverEnvironment.configValueAtom,
 });
 
+interface PrimaryServerState {
+  readonly config: ServerConfig | null;
+  readonly latestEvent: ServerConfigStreamEvent | null;
+  readonly welcome: ServerLifecycleWelcomePayload | null;
+}
+
+export const EMPTY_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [];
+const EMPTY_PRIMARY_SERVER_STATE: PrimaryServerState = {
+  config: null,
+  latestEvent: null,
+  welcome: null,
+};
+
+const primaryServerStateAtom = Atom.make((get): PrimaryServerState => {
+  const environmentId = get(primaryEnvironmentIdAtom);
+  if (environmentId === null) {
+    return EMPTY_PRIMARY_SERVER_STATE;
+  }
+
+  const target = { environmentId, input: {} };
+  const configProjection = Option.getOrNull(
+    AsyncResult.value(get(serverEnvironment.configProjection(target))),
+  );
+  const welcome = Option.getOrNull(AsyncResult.value(get(serverEnvironment.welcome(target))));
+
+  return {
+    config: get(serverEnvironment.configValueAtom(environmentId)),
+    latestEvent: configProjection?.latestEvent ?? null,
+    welcome,
+  };
+}).pipe(Atom.withLabel("web-primary-server-state"));
+
+export const primaryServerConfigAtom = Atom.make(
+  (get): ServerConfig | null => get(primaryServerStateAtom).config,
+).pipe(Atom.withLabel("web-primary-server-config"));
+
+export const primaryServerConfigEventAtom = Atom.make(
+  (get): ServerConfigStreamEvent | null => get(primaryServerStateAtom).latestEvent,
+).pipe(Atom.withLabel("web-primary-server-config-event"));
+
+export const primaryServerWelcomeAtom = Atom.make(
+  (get): ServerLifecycleWelcomePayload | null => get(primaryServerStateAtom).welcome,
+).pipe(Atom.withLabel("web-primary-server-welcome"));
+
+export const primaryServerLegacyThreadMigrationAtom = Atom.make(
+  (get): ServerLifecycleLegacyThreadMigrationPayload | null => {
+    const environmentId = get(primaryEnvironmentIdAtom);
+    if (environmentId === null) {
+      return null;
+    }
+    return Option.getOrNull(
+      AsyncResult.value(get(serverEnvironment.legacyThreadMigration({ environmentId, input: {} }))),
+    );
+  },
+).pipe(Atom.withLabel("web-primary-server-legacy-thread-migration"));
+
+export const primaryServerSettingsAtom = Atom.make(
+  (get): ServerSettings => get(primaryServerConfigAtom)?.settings ?? DEFAULT_SERVER_SETTINGS,
+).pipe(Atom.withLabel("web-primary-server-settings"));
+
+export const primaryServerProvidersAtom = Atom.make(
+  (get): ReadonlyArray<ServerProvider> =>
+    get(primaryServerConfigAtom)?.providers ?? EMPTY_SERVER_PROVIDERS,
+).pipe(Atom.withLabel("web-primary-server-providers"));
+
+export const primaryServerKeybindingsAtom = Atom.make((get): ServerConfig["keybindings"] =>
+  mergeWithDefaultKeybindings(get(primaryServerConfigAtom)?.keybindings ?? []),
+).pipe(Atom.withLabel("web-primary-server-keybindings"));
+
+// Coder: there are no local editors, so there is no available-editors atom.
+
+const EMPTY_ENVIRONMENT_THEMES: ReadonlyArray<EnvironmentTheme> = [];
+
+/**
+ * Palettes published by the primary environment's machine. Only the primary
+ * environment: a client follows the machine it is anchored to, not every
+ * environment it happens to be connected to.
+ */
+export const primaryServerEnvironmentThemesAtom = Atom.make(
+  (get): ReadonlyArray<EnvironmentTheme> =>
+    get(primaryServerConfigAtom)?.environmentThemes ?? EMPTY_ENVIRONMENT_THEMES,
+).pipe(Atom.withLabel("web-primary-server-environment-themes"));
+
+// Coder: every workspace is remote and equal, so lifecycle events are read per workspace.
 export interface EnvironmentServerState {
   readonly config: ServerConfig | null;
   readonly latestEvent: ServerConfigStreamEvent | null;
@@ -52,21 +140,3 @@ export const environmentServerStatesAtom = Atom.make(
     return states;
   },
 ).pipe(Atom.withLabel("web-environment-server-states"));
-
-/**
- * Coder: there is no primary environment, so the legacy-thread migration toast reports the first
- * workspace still migrating.
- */
-export const legacyThreadMigrationAtom = Atom.make(
-  (get): ServerLifecycleLegacyThreadMigrationPayload | null => {
-    for (const [environmentId] of get(environmentCatalog.catalogValueAtom).entries) {
-      const migration = Option.getOrNull(
-        AsyncResult.value(
-          get(serverEnvironment.legacyThreadMigration({ environmentId, input: {} })),
-        ),
-      );
-      if (migration?.status === "running") return migration;
-    }
-    return null;
-  },
-).pipe(Atom.withLabel("web-legacy-thread-migration"));
