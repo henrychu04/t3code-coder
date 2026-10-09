@@ -718,7 +718,9 @@ listed here is drift to remove rather than fork behavior to keep.
   surfaces in the store get a plain title and icon. Merge-request rows, tabs, and disabled reasons
   use GitLab wording and `!` references. The branch toolbar is upstream's; workspace options are never primary and use
   the server's machine kind, and the branch notice also covers a managed worktree whose branch
-  moved (`resolveCheckoutBranchMismatch`). Proposed-plan cards offer Copy but no Download or Save
+  moved (`resolveCheckoutBranchMismatch`). The branch picker adds "Rename current branch…" for a
+  thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
+  through the driver's `moveWorktree`. Proposed-plan cards offer Copy but no Download or Save
   to workspace (no exports, and Files edits only existing files). The provider-update launch notification uses the active workspace as upstream's primary
   environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
   upstream's `t3 theme set` CLI.
