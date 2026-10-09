@@ -23,7 +23,6 @@ import * as Schema from "effect/Schema";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as ProviderAuthService from "../provider/Services/ProviderAuthService.ts";
-import * as AgentMergeRequests from "../agentMergeRequests/AgentMergeRequests.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import {
@@ -944,25 +943,10 @@ export const layer: Layer.Layer<
       const routableSubagents = projection.subagents.filter((subagent) =>
         RunExecutionService.canRouteRelatedSubagent(subagent.status),
       );
-      const composerText = projectComposerContextForProvider({
+      const userText = projectComposerContextForProvider({
         text: message.text,
         records: message.context?.records ?? [],
       });
-      // Coder: workspace MR command instructions lead ordinary turns. Slash commands keep their
-      // exact text so provider-native parsing and arguments are unchanged.
-      const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
-      const mergeRequestInstructions = composerText.trimStart().startsWith("/")
-        ? undefined
-        : yield* agentMergeRequests.prepare({
-            threadId: projection.thread.id,
-            runId: run.id,
-            readOnly: resolvedRuntimePolicy.interactionMode === "plan",
-            instanceId: run.providerInstanceId,
-          });
-      const userText =
-        mergeRequestInstructions === undefined
-          ? composerText
-          : `${mergeRequestInstructions}\n\n${composerText}`;
       // Delivered once: this run's provider turn marks the work as told. A
       // restart continuation is prompted by its own text or resumes natively.
       const noteContinuation = isRestartNoteContinuation(
@@ -1223,53 +1207,50 @@ export const layer: Layer.Layer<
         !noteContinuation
           ? session
           : makeDeliverySession(session, startWithHandoffs);
-      yield* runExecution
-        .startRootRun({
-          commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
-          appThread: projection.thread,
-          providerSessionId,
-          session: deliverySession,
-          run: runningRun,
-          rootNode: runningRootNode,
-          checkpointScope,
-          providerThread: runningProviderThread,
-          attempt: runningAttempt,
-          attemptId: attempt.id,
-          loadInheritedBackgroundTurnItems: runControls.loadInheritedBackgroundTurnItems,
-          relatedThreadIds: routableSubagents.flatMap((subagent) =>
-            subagent.childThreadId === null ? [] : [subagent.childThreadId],
-          ),
-          relatedProviderThreadIds: routableSubagents.flatMap((subagent) =>
-            subagent.providerThreadId === null ? [] : [subagent.providerThreadId],
-          ),
-          providerTurnOrdinal:
-            Math.max(
-              0,
-              ...projection.providerTurns
-                .filter((turn) => turn.providerThreadId === providerThread.id)
-                .map((turn) => turn.ordinal),
-            ) + 1,
-          shouldStartProviderTurn: runControls.shouldStartProviderTurn,
-          shouldFinalizeRun: runControls.shouldFinalizeRun,
-          hasUnpairedRunInterruptRequest: runControls.hasUnpairedRunInterruptRequest,
-          message: {
-            messageId: message.id,
-            text: userText,
-            attachments: message.attachments,
-            createdBy: message.createdBy,
-            creationSource: message.creationSource,
-            ...(message.scheduledTaskId === undefined
-              ? {}
-              : { scheduledTaskId: message.scheduledTaskId }),
-            ...(message.senderThreadId === undefined
-              ? {}
-              : { senderThreadId: message.senderThreadId }),
-          },
-          modelSelection: run.modelSelection,
-          runtimePolicy: resolvedRuntimePolicy,
-        })
-        // Coder: a failed send revokes this turn's workspace MR commands.
-        .pipe(Effect.onError(() => agentMergeRequests.release(projection.thread.id, run.id)));
+      yield* runExecution.startRootRun({
+        commandId: CommandId.make(`command:effect:provider-turn.start:${run.id}`),
+        appThread: projection.thread,
+        providerSessionId,
+        session: deliverySession,
+        run: runningRun,
+        rootNode: runningRootNode,
+        checkpointScope,
+        providerThread: runningProviderThread,
+        attempt: runningAttempt,
+        attemptId: attempt.id,
+        loadInheritedBackgroundTurnItems: runControls.loadInheritedBackgroundTurnItems,
+        relatedThreadIds: routableSubagents.flatMap((subagent) =>
+          subagent.childThreadId === null ? [] : [subagent.childThreadId],
+        ),
+        relatedProviderThreadIds: routableSubagents.flatMap((subagent) =>
+          subagent.providerThreadId === null ? [] : [subagent.providerThreadId],
+        ),
+        providerTurnOrdinal:
+          Math.max(
+            0,
+            ...projection.providerTurns
+              .filter((turn) => turn.providerThreadId === providerThread.id)
+              .map((turn) => turn.ordinal),
+          ) + 1,
+        shouldStartProviderTurn: runControls.shouldStartProviderTurn,
+        shouldFinalizeRun: runControls.shouldFinalizeRun,
+        hasUnpairedRunInterruptRequest: runControls.hasUnpairedRunInterruptRequest,
+        message: {
+          messageId: message.id,
+          text: userText,
+          attachments: message.attachments,
+          createdBy: message.createdBy,
+          creationSource: message.creationSource,
+          ...(message.scheduledTaskId === undefined
+            ? {}
+            : { scheduledTaskId: message.scheduledTaskId }),
+          ...(message.senderThreadId === undefined
+            ? {}
+            : { senderThreadId: message.senderThreadId }),
+        },
+        modelSelection: run.modelSelection,
+        runtimePolicy: resolvedRuntimePolicy,
+      });
     });
 
     return ProviderTurnStartServiceV2.of({
