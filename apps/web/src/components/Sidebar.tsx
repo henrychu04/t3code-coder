@@ -102,6 +102,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -4546,8 +4547,8 @@ export default function Sidebar() {
           terminalFocus: isTerminalFocused(),
           terminalOpen: routeTerminalOpen,
           modelPickerOpen: isModelPickerOpen(),
-          isWeb: true,
-          isDesktop: false,
+          isWeb: !isElectron,
+          isDesktop: isElectron,
         },
       });
       const navigateToThreadKey = (targetThreadKey: string | null) => {
@@ -4599,8 +4600,8 @@ export default function Sidebar() {
         terminalFocus: terminalFocused,
         terminalOpen: routeTerminalOpen,
         modelPickerOpen: isModelPickerOpen(),
-        isWeb: true,
-        isDesktop: false,
+        isWeb: !isElectron,
+        isDesktop: isElectron,
       },
     },
   );
@@ -4648,7 +4649,7 @@ export default function Sidebar() {
   return (
     <>
       <ThreadContextDragGhost />
-      <SidebarChromeHeader />
+      <SidebarChromeHeader isElectron={isElectron} />
       <SidebarContent
         className="min-h-full"
         fixedHeader={

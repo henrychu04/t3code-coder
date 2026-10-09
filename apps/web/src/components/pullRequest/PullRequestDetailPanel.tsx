@@ -742,6 +742,7 @@ export function PullRequestDetailPanel({
         handoffSummary.number,
         handoffSummary.headBranch,
         detail?.headRepositoryNameWithOwner,
+        changeRequestRepositoryUrl(handoffSummary.url),
       )
     : loadingPullRequestCheckoutCommand(reference, repositoryIdentity);
   const onCheckoutCommandError = useCallback((error: Error) => {

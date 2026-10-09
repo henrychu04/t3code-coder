@@ -1,8 +1,3 @@
-import {
-  PanelAnimationSuppressionProvider,
-  usePanelAnimationSettings,
-  usePanelNavigationSuppression,
-} from "../panelAnimations";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
@@ -12,21 +7,28 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useParams } from "@tanstack/react-router";
+
+import { isElectron } from "../env";
 import { getLocalStorageItem, removeLocalStorageItem } from "../hooks/useLocalStorage";
 import {
   isRichTextBoldShortcut,
   resolveShortcutCommand,
   shortcutLabelForCommand,
 } from "../keybindings";
-import { cn } from "../lib/utils";
-import { useActiveEnvironmentId } from "../state/entities";
-import { useEnvironmentKeybindings } from "../state/environments";
-import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { cn } from "../lib/utils";
+import { useActiveEnvironmentId } from "../state/entities";
+import { useEnvironmentKeybindings } from "../state/environments";
+import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
+import {
+  PanelAnimationSuppressionProvider,
+  usePanelAnimationSettings,
+  usePanelNavigationSuppression,
+} from "../panelAnimations";
 import { useThreadVisitedMigration } from "../hooks/useThreadVisitedMigration";
 import ThreadSidebar from "./Sidebar";
 import { SettingsSidebarNav } from "./settings/SettingsSidebarNav";
@@ -73,6 +75,7 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function SidebarControl() {
+  // Coder: there is no usage page, and shortcuts follow the active workspace.
   const usagePageOpen = false;
   const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
   const { toggleSidebar } = useSidebar();
@@ -204,11 +207,16 @@ function ProjectProjectionRetention() {
 }
 
 export function AppSidebarLayout({ children }: { children: ReactNode }) {
-  // Seeds server-side visited tracking from this browser's local visit markers.
+  // Coder: no legacy sidebar and no desktop window bridge (fullscreen insets, menu actions).
+  const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
+    usePanelAnimationSettings();
+  // Settings routes show the settings nav in place of whichever thread
+  // sidebar is active.
+  // Seeds server-side visited tracking from this browser's localStorage the
   useThreadVisitedMigration();
   const pathname = useLocation({ select: (location) => location.pathname });
-  const { active: panelAnimationsActive, durationMs } = usePanelAnimationSettings();
-  const suppressed = usePanelNavigationSuppression(pathname);
+  const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
+  const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
   const isOnSettings = pathname === "/settings" || pathname.startsWith("/settings/");
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // Subscribed rather than read once: the clamp must track live window size,
@@ -225,15 +233,15 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
     setSidebarWidth(resolveInitialThreadSidebarWidth(null, viewportWidth));
   };
   const sidebarProviderStyle = {
-    "--panel-animation-duration": `${durationMs}ms`,
     "--sidebar-width": `${sidebarWidth}px`,
+    "--panel-animation-duration": `${panelAnimationDurationMs}ms`,
   } as CSSProperties;
 
   return (
-    <PanelAnimationSuppressionProvider value={suppressed}>
+    <PanelAnimationSuppressionProvider value={panelAnimationsSuppressed}>
       <SidebarProvider
-        data-panel-animations={panelAnimationsActive && !suppressed ? "true" : "false"}
         className="h-dvh! min-h-0!"
+        data-panel-animations={routePanelAnimationsActive ? "true" : "false"}
         defaultOpen
         style={sidebarProviderStyle}
       >
@@ -256,7 +264,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
         >
           {isOnSettings ? (
             <>
-              <SidebarChromeHeader />
+              <SidebarChromeHeader isElectron={isElectron} />
               <SettingsSidebarNav pathname={pathname} />
             </>
           ) : (

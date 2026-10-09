@@ -61,7 +61,10 @@ export function validateSettingsScopeSearch(raw: Record<string, unknown>): Setti
   };
 }
 
-/** Old project URLs identify one checkout, even when its logical group has other members. */
+/**
+ * Coder: older fork settings URLs named one checkout by its project settings key; resolve them to
+ * the checkout's logical group.
+ */
 export function resolveLegacyProjectSettingsSearch(
   search: SettingsScopeSearch,
   groups: readonly SidebarProjectSnapshot[],
