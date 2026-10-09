@@ -38,6 +38,7 @@ import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/Provide
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
 import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
 import * as ReviewService from "./review/ReviewService.ts";
+import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -81,7 +82,10 @@ import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestS
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
 
-const CoderSettingsLive = ServerSettings.layer.pipe(Layer.provideMerge(SqlitePersistenceLayerLive));
+const CoderSettingsLive = ServerSettings.layer.pipe(
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(SqlitePersistenceLayerLive),
+);
 
 const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
   Layer.provide(ModelManifest.layer),
