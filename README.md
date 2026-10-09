@@ -59,7 +59,7 @@ npm start
 `npm start` prints a local URL such as `http://127.0.0.1:PORT`. Open it in your browser — T3 Coder
 never opens the browser for you. Then:
 
-1. Open **Settings → Coder connections** and add your Coder domain.
+1. Open **Settings → Connections** and add your Coder domain.
 2. Choose **Sign in**. Coder prints its login URL and a hidden token prompt in the terminal running
    `npm start`; the token is handled there, never in the browser.
 3. Choose **Add project** in the sidebar, pick your domain and workspace, and select a folder in
@@ -74,19 +74,20 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 
 ## Documentation
 
-| Guide                                                           | Covers                                                       |
-| --------------------------------------------------------------- | ------------------------------------------------------------ |
-| [Install and first run](./docs/user/getting-started.md)         | Requirements, setup, and the first connection                |
-| [Codex and Claude Code](./docs/user/providers.md)               | Availability, sign-in, models, skills, and provider settings |
-| [Coder workspaces](./docs/user/workspaces.md)                   | Domains, lifecycle, health, port forwards, troubleshooting   |
-| [Projects and threads](./docs/user/projects-and-threads.md)     | Organizing projects, threads, pins, snooze, archive          |
-| [Permission modes](./docs/user/permission-modes.md)             | How much the selected agent does on its own                  |
-| [Message composer](./docs/user/composer.md)                     | Images, skills, commands, stash, context                     |
-| [Files and search](./docs/user/files-and-search.md)             | Browsing, editing, and searching project files               |
-| [Images and screenshots](./docs/user/images-and-screenshots.md) | Pasting images and viewing agent screenshots                 |
-| [Source control](./docs/user/source-control.md)                 | Diffs, branches, worktrees, commits, checkpoints             |
-| [Keyboard shortcuts](./docs/user/keybindings.md)                | Every shortcut and how to remap it                           |
-| [Product decisions](./docs/product-differences.md)              | What matches upstream and what changes for Coder             |
+| Guide                                                            | Covers                                                       |
+| ---------------------------------------------------------------- | ------------------------------------------------------------ |
+| [Install and first run](./docs/user/getting-started.md)          | Requirements, setup, and the first connection                |
+| [Codex and Claude Code](./docs/user/providers.md)                | Availability, sign-in, models, skills, and provider settings |
+| [Coder workspaces](./docs/user/workspaces.md)                    | Domains, lifecycle, health, port forwards, troubleshooting   |
+| [Projects and threads](./docs/user/projects-and-threads.md)      | Organizing projects, threads, pins, snooze, archive          |
+| [Permission modes](./docs/user/permission-modes.md)              | How much the selected agent does on its own                  |
+| [Message composer](./docs/user/composer.md)                      | Images, files, skills, commands, stash, context              |
+| [Files in question answers](./docs/user/question-attachments.md) | Attaching files when an agent asks a question                |
+| [Files and search](./docs/user/files-and-search.md)              | Browsing, editing, and searching project files               |
+| [Images and screenshots](./docs/user/images-and-screenshots.md)  | Pasting images and viewing agent screenshots                 |
+| [Source control](./docs/user/source-control.md)                  | Diffs, branches, worktrees, commits, checkpoints             |
+| [Keyboard shortcuts](./docs/user/keybindings.md)                 | Every shortcut and how to remap it                           |
+| [Product decisions](./docs/product-differences.md)               | What matches upstream and what changes for Coder             |
 
 ## How this differs from upstream T3 Code
 

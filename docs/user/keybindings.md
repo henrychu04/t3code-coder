@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-Edit shortcuts from **Settings → Keyboard shortcuts**. The page lists every command, its current
+Edit shortcuts from **Settings → Keybindings**. The page lists every command, its current
 shortcut, whether it is a default or your own, and warns about conflicts.
 
 Your shortcuts are stored in the workspace, so they follow your work rather than the browser you
@@ -41,7 +41,7 @@ When the model picker is open, `mod+1`…`mod+9` choose the _n_-th model instead
 thread.
 
 `thread.stop` interrupts the running turn in the focused thread. It has no default shortcut;
-assign one in **Settings → Keyboard shortcuts**.
+assign one in **Settings → Keybindings**.
 
 ## Queue and steer
 
@@ -96,7 +96,7 @@ regular-expression matching, with highlighted snippets and additional result pag
 **Search with file mask and preview…** for the expanded search view. File access requires an
 existing thread with an owned project; draft threads cannot read project files.
 
-The authoritative command list is always the one in **Settings → Keyboard shortcuts** for the
+The authoritative command list is always the one in **Settings → Keybindings** for the
 build you are running — use that rather than any copied table.
 
 ## Copy the current reference

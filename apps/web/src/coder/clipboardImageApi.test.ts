@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { uploadCoderClipboardImage } from "./api";
+import { uploadCoderClipboardImage, uploadCoderComposerFile } from "./api";
 
 const STAGED = {
   path: "/workspace/pending-11111111-1111-4111-8111-111111111111-png.png",
@@ -103,4 +103,39 @@ it("rejects prepared uploads above main's 10 MiB cap before sending bytes", asyn
   Object.defineProperty(image, "size", { value: 10 * 1024 * 1024 + 1 });
   await expect(uploadCoderClipboardImage("workspace", image)).rejects.toThrow("10 MiB");
   expect(FakeXHR.instances).toHaveLength(0);
+});
+
+it("stages composer files through the file route with the name only in the query", async () => {
+  const file = new File(["%PDF-1"], "Q3 report.pdf", { type: "" });
+  const result = uploadCoderComposerFile("workspace", file);
+  const xhr = FakeXHR.instances[0]!;
+  expect(xhr.open).toHaveBeenCalledWith(
+    "POST",
+    "/api/workspaces/workspace/attachment-file?name=Q3%20report.pdf",
+    true,
+  );
+  expect(xhr.setRequestHeader).toHaveBeenCalledWith("Content-Type", "application/octet-stream");
+  const staged = {
+    path: "/workspace/pending-11111111-1111-4111-8111-111111111111-pdf.pdf",
+    attachment: { id: "pending-11111111-1111-4111-8111-111111111111-pdf", sizeBytes: 6 },
+  };
+  xhr.responseText = JSON.stringify(staged);
+  xhr.finish();
+  await expect(result).resolves.toEqual(staged);
+});
+
+it("rejects composer files above 50 MiB and replies for another size", async () => {
+  const big = new File(["x"], "big.bin");
+  Object.defineProperty(big, "size", { value: 50 * 1024 * 1024 + 1 });
+  await expect(uploadCoderComposerFile("workspace", big)).rejects.toThrow("50 MiB");
+  expect(FakeXHR.instances).toHaveLength(0);
+
+  const result = uploadCoderComposerFile("workspace", new File(["abc"], "a.txt"));
+  const xhr = FakeXHR.instances[0]!;
+  xhr.responseText = JSON.stringify({
+    path: "/workspace/pending-11111111-1111-4111-8111-111111111111-txt.txt",
+    attachment: { id: "pending-11111111-1111-4111-8111-111111111111-txt", sizeBytes: 99 },
+  });
+  xhr.finish();
+  await expect(result).rejects.toThrow("invalid workspace path");
 });

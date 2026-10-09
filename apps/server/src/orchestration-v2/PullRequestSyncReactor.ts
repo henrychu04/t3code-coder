@@ -1,4 +1,3 @@
-import { normalizeThreadPullRequestKey } from "@t3tools/shared/threadPullRequests";
 import { siblingPullRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import {
   CommandId,
@@ -11,6 +10,7 @@ import {
 import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
 import {
   threadPullRequestKeyOf,
+  normalizeThreadPullRequestKey,
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
@@ -243,7 +243,7 @@ export const make = Effect.gen(function* () {
       const first = entries[0]!;
       const ref = {
         projectId: first.thread.projectId,
-        host: first.link.host,
+        host: normalizeThreadPullRequestKey(first.link).host,
         repository: first.link.repository,
         number: first.link.number,
       };
@@ -317,7 +317,7 @@ export const make = Effect.gen(function* () {
             )
           : Effect.void,
       // As wide as one batched summary read, so the sweep's reads on a host arrive together and
-      // GitLab answers them in one GraphQL request rather than one `glab` read apiece.
+      // GitHub answers them in one request rather than one `gh pr view` apiece.
       { concurrency: 25, discard: true },
     );
   });

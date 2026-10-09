@@ -58,15 +58,17 @@ import {
 } from "@t3tools/coder-cli/portForward";
 import {
   installCoderHelperWithScp,
-  uploadCoderClipboardImageWithScp,
+  uploadCoderComposerAttachmentWithScp,
 } from "@t3tools/coder-cli/scp";
 import {
   CLIPBOARD_IMAGE_MIME_TYPES,
-  ClipboardImageValidationError,
+  ComposerAttachmentValidationError,
   MAX_CLIPBOARD_IMAGE_BYTES,
+  MAX_COMPOSER_FILE_BYTES,
   validateClipboardImage,
-  withStagedClipboardImage,
-} from "./clipboardImage.ts";
+  validateComposerFile,
+  withStagedAttachment,
+} from "./composerAttachment.ts";
 import { GatewayProcessError, runGatewayProcess } from "./process.ts";
 import {
   makeWorkspaceRpcBridge,
@@ -724,8 +726,8 @@ export interface LocalCoderGatewayEffectOptions {
   readonly installHelper?: (
     input: Parameters<typeof installCoderHelperWithScp>[0],
   ) => Effect.Effect<void, unknown>;
-  readonly uploadClipboardImage?: (
-    input: Parameters<typeof uploadCoderClipboardImageWithScp>[0],
+  readonly uploadComposerAttachment?: (
+    input: Parameters<typeof uploadCoderComposerAttachmentWithScp>[0],
   ) => Effect.Effect<string, unknown>;
   readonly connectPortForward?: (
     invocation: CoderInvocation,
@@ -836,7 +838,8 @@ export function makeLocalCoderGateway(
     const runWorkspaceUpdate =
       options?.updateWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "update"));
     const installHelper = options?.installHelper ?? installCoderHelperWithScp;
-    const uploadClipboardImage = options?.uploadClipboardImage ?? uploadCoderClipboardImageWithScp;
+    const uploadComposerAttachment =
+      options?.uploadComposerAttachment ?? uploadCoderComposerAttachmentWithScp;
     const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
     const readWorkspaceResourceUsage =
       options?.readWorkspaceResourceUsage ??
@@ -2218,15 +2221,20 @@ export function makeLocalCoderGateway(
           }
           return;
         }
-        const imageRoute = request.url?.match(/^\/api\/workspaces\/([^/]+)\/clipboard-image$/);
-        if (request.method === "POST" && imageRoute !== null && imageRoute !== undefined) {
+        // Composer images and files stage through the same SCP path; only their validation
+        // and size limit differ.
+        const attachmentRoute = requestUrl.pathname.match(
+          /^\/api\/workspaces\/([^/]+)\/(clipboard-image|attachment-file)$/,
+        );
+        if (request.method === "POST" && attachmentRoute !== null) {
           if (request.headers.origin !== expectedOrigin) {
             sendText(response, 403, "text/plain; charset=utf-8", "Forbidden origin.");
             return;
           }
+          const isImage = attachmentRoute[2] === "clipboard-image";
           let workspaceId: string;
           try {
-            workspaceId = decodeURIComponent(imageRoute[1] ?? "");
+            workspaceId = decodeURIComponent(attachmentRoute[1] ?? "");
           } catch {
             sendText(response, 400, "text/plain; charset=utf-8", "Invalid workspace id.");
             return;
@@ -2249,16 +2257,26 @@ export function makeLocalCoderGateway(
             );
             return;
           }
+          const fileName = requestUrl.searchParams.get("name") ?? "";
+          if (!isImage && fileName.trim().length === 0) {
+            sendText(response, 400, "text/plain; charset=utf-8", "File name is required.");
+            return;
+          }
           const contentType = request.headers["content-type"] ?? "";
           const uploadAbort = new AbortController();
           const abortUpload = () => uploadAbort.abort();
           response.once("close", abortUpload);
           try {
-            const bytes = await readBody(request, MAX_CLIPBOARD_IMAGE_BYTES);
-            const extension = validateClipboardImage(contentType, bytes);
-            const path = await withStagedClipboardImage(bytes, extension, (localPath) =>
+            const bytes = await readBody(
+              request,
+              isImage ? MAX_CLIPBOARD_IMAGE_BYTES : MAX_COMPOSER_FILE_BYTES,
+            );
+            const extension = isImage
+              ? validateClipboardImage(contentType, bytes)
+              : validateComposerFile(fileName, bytes);
+            const path = await withStagedAttachment(bytes, extension, (localPath) =>
               runPromise(
-                uploadClipboardImage({
+                uploadComposerAttachment({
                   deployment,
                   workspace,
                   localPath,
@@ -2269,8 +2287,8 @@ export function makeLocalCoderGateway(
               ),
             );
             const attachmentId = NodePath.posix.basename(path, `.${extension}`);
-            if (!/^pending-[0-9a-f-]{36}-(?:jpg|png|webp)$/.test(attachmentId)) {
-              throw new Error("Clipboard image upload returned an unexpected workspace path.");
+            if (!new RegExp(`^pending-[0-9a-f-]{36}-${extension}$`).test(attachmentId)) {
+              throw new Error("Attachment upload returned an unexpected workspace path.");
             }
             sendText(
               response,
@@ -2280,7 +2298,14 @@ export function makeLocalCoderGateway(
                 path,
                 attachment: {
                   id: attachmentId,
-                  mimeType: CLIPBOARD_IMAGE_MIME_TYPES[extension],
+                  ...(isImage
+                    ? {
+                        mimeType:
+                          CLIPBOARD_IMAGE_MIME_TYPES[
+                            extension as keyof typeof CLIPBOARD_IMAGE_MIME_TYPES
+                          ],
+                      }
+                    : {}),
                   sizeBytes: bytes.byteLength,
                 },
               }),
@@ -2288,10 +2313,15 @@ export function makeLocalCoderGateway(
           } catch (cause) {
             if (uploadAbort.signal.aborted) return;
             if (cause instanceof RequestBodyTooLargeError) {
-              sendText(response, 413, "text/plain; charset=utf-8", "Image exceeds 10 MiB.");
+              sendText(
+                response,
+                413,
+                "text/plain; charset=utf-8",
+                isImage ? "Image exceeds 10 MiB." : "File exceeds 50 MiB.",
+              );
               return;
             }
-            if (cause instanceof ClipboardImageValidationError) {
+            if (cause instanceof ComposerAttachmentValidationError) {
               sendText(response, 415, "text/plain; charset=utf-8", cause.message);
               return;
             }
@@ -2299,7 +2329,7 @@ export function makeLocalCoderGateway(
               response,
               502,
               "text/plain; charset=utf-8",
-              cause instanceof Error ? cause.message : "Clipboard image upload failed.",
+              cause instanceof Error ? cause.message : "Attachment upload failed.",
             );
           } finally {
             response.off("close", abortUpload);

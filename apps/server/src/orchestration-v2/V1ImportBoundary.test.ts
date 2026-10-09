@@ -81,11 +81,13 @@ it("keeps the legacy importer out of reach of new code", () => {
     .toSorted();
   // Startup imports pending transcripts, the V2 runtime wires the importer, and
   // thread and project services hydrate a V1 transcript before they act on it.
-  // Coder: workspace startup runs in `server.ts`.
+  // Coder: workspace startup runs in `server.ts`, and `ws.ts` serves the read-only lookup of
+  // screenshots that V1 tool activities saved.
   assert.deepEqual(importers, [
     "orchestration-v2/ThreadManagementService.ts",
     "orchestration-v2/runtimeLayer.ts",
     "project/ProjectService.ts",
     "server.ts",
+    "ws.ts",
   ]);
 });

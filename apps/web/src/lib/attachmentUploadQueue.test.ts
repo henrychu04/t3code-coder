@@ -3,8 +3,12 @@ import { EnvironmentId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/unstable/reactivity";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
-import type { ComposerImageAttachment } from "../composerDraftStore";
-import { uploadCoderClipboardImage, type StagedCoderImage } from "../coder/api";
+import type { ComposerFileAttachment, ComposerImageAttachment } from "../composerDraftStore";
+import {
+  uploadCoderClipboardImage,
+  uploadCoderComposerFile,
+  type StagedCoderImage,
+} from "../coder/api";
 import {
   getUploadedAttachments,
   readAttachmentUpload,
@@ -33,7 +37,10 @@ vi.mock("../rpc/atomRegistry", () => ({
 vi.mock("../connection/catalog", () => ({
   environmentCatalog: { stateAtom: (id: string) => id },
 }));
-vi.mock("../coder/api", () => ({ uploadCoderClipboardImage: vi.fn() }));
+vi.mock("../coder/api", () => ({
+  uploadCoderClipboardImage: vi.fn(),
+  uploadCoderComposerFile: vi.fn(),
+}));
 vi.mock("../coder/environmentStore", () => ({
   coderWorkspaceIdForEnvironment: (id: string) => `workspace-${id}`,
 }));
@@ -45,7 +52,7 @@ vi.mock("../composerDraftStore", () => ({
 
 const environmentId = EnvironmentId.make("env-one");
 const otherEnvironmentId = EnvironmentId.make("env-two");
-let images: ComposerImageAttachment[];
+let images: Array<ComposerImageAttachment | ComposerFileAttachment>;
 let transfers: Array<{
   resolve: (image: StagedCoderImage) => void;
   reject: (error: Error) => void;
@@ -184,4 +191,32 @@ it("supports explicit retry without replacing the draft image", async () => {
   retryAttachmentUpload({ environmentId, image: value });
   await vi.waitFor(() => expect(transfers).toHaveLength(2));
   expect(images[0]).toBe(value);
+});
+
+it("stages a composer file as-is through the file route", async () => {
+  const file = new File(["%PDF-1"], "report.pdf", { type: "application/pdf" });
+  const value: ComposerFileAttachment = {
+    type: "file",
+    id: crypto.randomUUID(),
+    name: file.name,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    file,
+  };
+  images.push(value);
+  vi.mocked(uploadCoderComposerFile).mockResolvedValue({
+    path: "/home/fixture/.t3-coder/attachments/pending-file-pdf.pdf",
+    attachment: { id: "pending-file-pdf", sizeBytes: file.size },
+  });
+  startAttachmentUpload({ environmentId, image: value });
+  await vi.waitFor(() =>
+    expect(readAttachmentUpload(value.id)).toEqual({
+      status: "ready",
+      environmentId,
+      attachmentId: "pending-file-pdf",
+      sizeBytes: file.size,
+    }),
+  );
+  expect(vi.mocked(uploadCoderComposerFile).mock.calls[0]?.[1]).toBe(file);
+  expect(uploadCoderClipboardImage).not.toHaveBeenCalled();
 });

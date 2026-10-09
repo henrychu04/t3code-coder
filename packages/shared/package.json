@@ -172,6 +172,10 @@
       "types": "./src/imageSignature.ts",
       "import": "./src/imageSignature.ts"
     },
+    "./attachmentFileExtension": {
+      "types": "./src/attachmentFileExtension.ts",
+      "import": "./src/attachmentFileExtension.ts"
+    },
     "./imageDimensions": {
       "types": "./src/imageDimensions.ts",
       "import": "./src/imageDimensions.ts"

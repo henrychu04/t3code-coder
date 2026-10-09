@@ -52,6 +52,7 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
+import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as CoderWs from "./ws.ts";
@@ -262,6 +263,7 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
 
 const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   Layer.provideMerge(ScreenshotArtifacts.layer),
+  Layer.provideMerge(LegacyScreenshotArtifacts.layer),
   Layer.provideMerge(
     ProjectEnrichmentService.layer.pipe(Layer.provide(ProjectFaviconResolver.layer)),
   ),

@@ -14,6 +14,7 @@ import {
   installCoderHelperWithScp,
   runProcess,
   scopeCoderScpConfig,
+  uploadCoderComposerAttachmentWithScp,
 } from "./scp.ts";
 
 describe("Coder SCP", () => {
@@ -153,6 +154,28 @@ describe("Coder SCP", () => {
         }),
       /generated T3 Coder transfer path/u,
     );
+  });
+
+  it("rejects a composer attachment extension before spawning any process", async () => {
+    for (const extension of ["../x", "pdf;rm", "", "UPPER", "elevenchars"]) {
+      await rejects(
+        Effect.runPromise(
+          uploadCoderComposerAttachmentWithScp({
+            deployment: { id: "deployment", name: "Deployment", url: "https://coder.example.test" },
+            workspace: {
+              id: "workspace",
+              name: "Workspace",
+              deploymentId: "deployment",
+              workspace: "owner/workspace",
+            },
+            localPath: "/nonexistent",
+            extension,
+            scpExecutable: "/nonexistent/scp",
+          }),
+        ),
+        /Invalid attachment extension/u,
+      );
+    }
   });
 
   it("waits for a timed-out child to exit after escalating termination", async () => {
