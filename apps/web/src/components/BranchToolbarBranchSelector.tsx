@@ -31,14 +31,12 @@ import { useOpenPrLink } from "../lib/openPullRequestLink";
 import { usePaginatedBranches } from "../state/queries";
 import { useProject, useThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
 import { cn } from "../lib/utils";
-import {
-  THREAD_DETAILS_PANEL_CHEVRON_CLASS,
-  THREAD_DETAILS_PANEL_ICON_CLASS,
-} from "./chat/threadDetailsPanelStyles";
+import { THREAD_DETAILS_PANEL_ICON_CLASS } from "./chat/threadDetailsPanelStyles";
 import { ThreadDetailsPrRows } from "./chat/ThreadDetailsPrRows";
 import { parsePullRequestReference } from "../pullRequestReference";
 import { getSourceControlPresentation } from "../sourceControlPresentation";
@@ -124,6 +122,8 @@ export function BranchToolbarBranchSelector({
   onComposerFocusRequest,
 }: BranchToolbarBranchSelectorProps) {
   const composerFloatingLayerProps = useComposerMenuProps();
+  const canWriteSourceControl = useEnvironmentScope(environmentId, AuthSourceControlWriteScope);
+  const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const stopThreadSession = useAtomCommand(threadEnvironment.stopSession, "thread session stop");
   const updateThreadMetadata = useAtomCommand(
     threadEnvironment.updateMetadata,
@@ -171,6 +171,8 @@ export function BranchToolbarBranchSelector({
   const activeProjectCwd = activeProject?.workspaceRoot ?? null;
   const branchCwd = activeWorktreePath ?? activeProjectCwd;
   const hasServerThread = serverThread !== null;
+  const canUpdateThreadBranch = !hasServerThread || canOperateThread;
+  const canChangeThreadBranch = canWriteSourceControl && canUpdateThreadBranch;
   const effectiveEnvMode =
     effectiveEnvModeOverride ??
     resolveEffectiveEnvMode({
@@ -184,7 +186,12 @@ export function BranchToolbarBranchSelector({
   // ---------------------------------------------------------------------------
   const setThreadBranch = useCallback(
     (branch: string | null, worktreePath: string | null, automatic = false) => {
-      if (!activeThreadId || !activeProject) return;
+      if (
+        !activeThreadId ||
+        !activeProject ||
+        (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
+      )
+        return;
       if (serverSession && worktreePath !== activeWorktreePath) {
         void stopThreadSession({
           environmentId,
@@ -291,8 +298,11 @@ export function BranchToolbarBranchSelector({
   const isSelectingWorktreeBase =
     effectiveEnvMode === "worktree" && !envLocked && !activeWorktreePath;
   const checkoutPullRequestItemValue =
-    prReference && onCheckoutPullRequestRequest ? `__checkout_pull_request__:${prReference}` : null;
-  const canCreateBranch = !isSelectingWorktreeBase && trimmedBranchQuery.length > 0;
+    canChangeThreadBranch && prReference && onCheckoutPullRequestRequest
+      ? `__checkout_pull_request__:${prReference}`
+      : null;
+  const canCreateBranch =
+    canChangeThreadBranch && !isSelectingWorktreeBase && trimmedBranchQuery.length > 0;
   // The ref is created under its sanitized name, so the collision check has to
   // use that name too. Matching on the raw query would offer to create a ref
   // that already exists whenever sanitizing changes the name.
@@ -413,6 +423,20 @@ export function BranchToolbarBranchSelector({
   );
 
   const runBranchAction = (action: () => Promise<void>) => {
+    if (
+      !readEnvironmentScope(environmentId, AuthSourceControlWriteScope) ||
+      (hasServerThread && !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope))
+    ) {
+      // The menu already closed when the item was chosen; explain the no-op.
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Action unavailable",
+          description: "This connection cannot change the thread's branch.",
+        }),
+      );
+      return;
+    }
     startBranchActionTransition(async () => {
       await action();
       branchRefState.refresh();
@@ -421,7 +445,7 @@ export function BranchToolbarBranchSelector({
   };
 
   const selectBranch = (refName: VcsRef) => {
-    if (!branchCwd || !activeProjectCwd || isBranchActionPending) return;
+    if (!canUpdateThreadBranch || !branchCwd || !activeProjectCwd || isBranchActionPending) return;
 
     if (isSelectingWorktreeBase) {
       setThreadBranch(refName.name, null);
@@ -482,6 +506,7 @@ export function BranchToolbarBranchSelector({
   };
 
   const createRef = (rawName: string) => {
+    if (!canChangeThreadBranch) return;
     const name = sanitizeNewRefName(rawName);
     if (!branchCwd || !name || isBranchActionPending) return;
 
@@ -730,6 +755,17 @@ export function BranchToolbarBranchSelector({
         projectCwd={activeProjectCwd}
         index={index}
         value={itemValue}
+        disabled={
+          !canUpdateThreadBranch ||
+          (!canWriteSourceControl &&
+            !isSelectingWorktreeBase &&
+            (!activeProjectCwd ||
+              !resolveBranchSelectionTarget({
+                activeProjectCwd,
+                activeWorktreePath,
+                refName,
+              }).reuseExistingWorktree))
+        }
         onClick={() => selectPickerItem(itemValue)}
         onContextMenu={(event) => handleBranchContextMenu(event, itemValue)}
       />
@@ -862,61 +898,33 @@ export function BranchToolbarBranchSelector({
               onOpen={(event) => openPrLink(event, prUrl)}
               onActed={() => branchStatusQuery.refresh()}
             />
-          ) : null}
-        </div>
-      </BranchPicker>
-      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
-        <DialogPopup>
-          <DialogHeader>
-            <DialogTitle>Rename branch</DialogTitle>
-            <DialogDescription>Rename the checked-out branch for this thread.</DialogDescription>
-          </DialogHeader>
-          <DialogPanel className="space-y-4">
-            <label className="grid gap-1.5 text-sm font-medium">
-              Branch name
-              <Input
-                autoFocus
-                value={renameBranchName}
-                onChange={(event) => setRenameBranchName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    renameBranch();
-                  }
-                }}
-              />
-            </label>
-            {activeWorktreePath ? (
-              <label className="flex items-start gap-2.5 text-sm">
-                <Checkbox
-                  checked={renameWorktreeFolder}
-                  onCheckedChange={(checked) => setRenameWorktreeFolder(Boolean(checked))}
-                />
-                <span className="grid gap-1">
-                  <span className="font-medium">Also rename the T3 worktree folder</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    This stops the agent session and closes terminals attached to this thread.
-                  </span>
-                </span>
-              </label>
+            <ComposerContextLabel displayMode={displayMode}>
+              <MiddleTruncate value={triggerLabel} className="w-full" />
+            </ComposerContextLabel>
+            {displayMode !== "panel" ? (
+              <ChevronDownIcon className="size-3 shrink-0 opacity-50" />
             ) : null}
-          </DialogPanel>
-          <DialogFooter>
-            <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-            <Button
-              disabled={
-                isBranchActionPending ||
-                !sanitizeNewRefName(renameBranchName) ||
-                (sanitizeNewRefName(renameBranchName) === resolvedActiveBranch &&
-                  !renameWorktreeFolder)
-              }
-              onClick={renameBranch}
-            >
-              {isBranchActionPending ? "Renaming…" : "Rename"}
-            </Button>
-          </DialogFooter>
-        </DialogPopup>
-      </Dialog>
-    </>
+          </ComboboxTrigger>
+        </span>
+        {displayMode === "panel" && prNumber !== undefined && prUrl !== undefined ? (
+          <ThreadDetailsPrRows
+            threadRef={threadRef}
+            links={serverThread?.pullRequests ?? []}
+            currentLink={currentLinkedPr}
+            onOpenLink={openPrLink}
+            environmentId={environmentId}
+            pr={displayedPr}
+            number={prNumber}
+            reference={currentLinkedPr}
+            status={displayedPrStatus}
+            project={activeProject}
+            label={panelPrLabel}
+            openAriaLabel={prUrl ?? "Open pull request"}
+            onOpen={(event) => openPrLink(event, prUrl)}
+            onActed={() => branchStatusQuery.refresh()}
+          />
+        ) : null}
+      </div>
+    </BranchPicker>
   );
 }

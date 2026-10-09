@@ -4,6 +4,17 @@ import * as Schema from "effect/Schema";
 
 import { ConnectionTarget } from "./model.ts";
 
+/** One way to reach an environment: T3 Connect, a direct URL, or SSH. */
+export interface ConnectionRoute {
+  readonly target: ConnectionTarget;
+  readonly profile: Option.Option<ConnectionProfile>;
+}
+
+/**
+ * A saved environment. `target` and `profile` are its preferred route;
+ * `alternateRoutes` holds the others in preference order. Read them together
+ * with `connectionRoutes`.
+ */
 export interface ConnectionCatalogEntry {
   readonly target: ConnectionTarget;
 }

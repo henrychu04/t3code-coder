@@ -1,9 +1,14 @@
+import { createCommandPermissions } from "./commandPermissions.ts";
+import { RpcPermissionGuard } from "../rpc/client.ts";
+import { vi } from "vite-plus/test";
 import {
   EnvironmentId,
+  AuthSourceControlWriteScope,
   ProjectId,
   PullRequestOperationError,
   WS_METHODS,
   type PullRequestStack,
+  type AuthSessionState,
 } from "@t3tools/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Data from "effect/Data";
@@ -17,7 +22,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom, AtomRegistry } from "effect/unstable/reactivity";
+import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 
 import {
   AVAILABLE_CONNECTION_STATE,
@@ -137,6 +142,159 @@ it.effect("keeps concurrent diff file reads on different hosts separate", () =>
         { _tag: "Success", value: { newContents: "github.example.com" } },
       ]);
       expect(calls).toEqual(["github.com", "github.example.com"]);
+    }),
+  ),
+);
+
+it.effect("queues merge preparation with actions without restarting it on refresh", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const refreshEvents = yield* PubSub.unbounded<number>();
+      const calls: string[] = [];
+      const client = {
+        [WS_METHODS.pullRequestsSubscribeRefreshes]: () => Stream.fromPubSub(refreshEvents),
+        [WS_METHODS.pullRequestsDetail]: (input: { number: number; allowStale?: boolean }) =>
+          Effect.gen(function* () {
+            expect(input.allowStale).toBe(false);
+            calls.push(`detail:${input.number}`);
+            yield* Deferred.succeed(started, undefined);
+            yield* Deferred.await(release);
+            return {
+              state: "open",
+              isDraft: false,
+              capabilities: { actions: ["merge"], stackActions: true },
+              viewerPermissions: { actions: ["merge"] },
+            };
+          }),
+        [WS_METHODS.pullRequestsStack]: (input: { number: number; allowStale?: boolean }) =>
+          Effect.sync(() => {
+            expect(input.allowStale).toBe(false);
+            calls.push(`stack:${input.number}`);
+            return null;
+          }),
+        [WS_METHODS.pullRequestsRunAction]: (input: {
+          action: string;
+          number: number;
+          mergeMethod?: string;
+        }) =>
+          Effect.sync(() => {
+            if (input.action === "merge") expect(input.mergeMethod).toBe("squash");
+            expect(input).not.toHaveProperty("resolveMergeMethod");
+            calls.push(`${input.action}:${input.number}`);
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const unmount = registry.mount(
+        atoms.refreshes({ environmentId: TARGET.environmentId, input: {} }),
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unmount));
+      const reference = { projectId: ProjectId.make("project-1"), repository: "acme/web" };
+      const first = atoms.runAction.run(registry, {
+        environmentId: TARGET.environmentId,
+        input: { ...reference, number: 1, action: "merge", resolveMergeMethod: () => "squash" },
+      });
+      yield* Deferred.await(started);
+      const second = atoms.runAction.run(registry, {
+        environmentId: TARGET.environmentId,
+        input: { ...reference, number: 2, action: "close" },
+      });
+      yield* PubSub.publish(refreshEvents, 1);
+      expect(calls).toEqual(["detail:1"]);
+      yield* Deferred.succeed(release, undefined);
+      const results = yield* Effect.promise(() => Promise.all([first, second]));
+      expect(results.every(AsyncResult.isSuccess)).toBe(true);
+      expect(calls).toEqual(["detail:1", "stack:1", "merge:1", "close:2"]);
+    }),
+  ),
+);
+
+it.effect.each(["closed", "draft", "permission", "stack", "method"] as const)(
+  "rejects an unsafe quick merge with %s and keeps later actions running",
+  (reason) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const calls: string[] = [];
+        const client = {
+          [WS_METHODS.pullRequestsDetail]: () =>
+            Effect.succeed({
+              state: reason === "closed" ? "closed" : "open",
+              isDraft: reason === "draft",
+              capabilities: { actions: ["merge"], stackActions: true },
+              viewerPermissions: { actions: reason === "permission" ? [] : ["merge"] },
+            }),
+          [WS_METHODS.pullRequestsStack]: () => Effect.succeed(reason === "stack" ? {} : null),
+          [WS_METHODS.pullRequestsRunAction]: (input: { action: string }) =>
+            Effect.sync(() => calls.push(input.action)),
+        } as unknown as WsRpcProtocolClient;
+        const { atoms, registry } = yield* makeTestRuntime(client);
+        const target = {
+          environmentId: TARGET.environmentId,
+          input: { projectId: ProjectId.make("project-1"), repository: "acme/web", number: 1 },
+        };
+        const merge = atoms.runAction.run(registry, {
+          ...target,
+          input: {
+            ...target.input,
+            action: "merge",
+            resolveMergeMethod: () => {
+              if (reason === "method") throw new Error("No merge method is available.");
+              return "squash";
+            },
+          },
+        });
+        const close = atoms.runAction.run(registry, {
+          ...target,
+          input: { ...target.input, action: "close" },
+        });
+        const results = yield* Effect.promise(() => Promise.all([merge, close]));
+        expect(results.map((result) => result._tag)).toEqual(["Failure", "Success"]);
+        expect(calls).toEqual(["close"]);
+      }),
+    ),
+);
+
+it.effect("keeps a close batch ordered and continues after a refused close", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const calls: number[] = [];
+      const started = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const client = {
+        [WS_METHODS.pullRequestsRunAction]: (input: { number: number; action: string }) =>
+          Effect.gen(function* () {
+            expect(input.action).toBe("close");
+            calls.push(input.number);
+            if (input.number === 6) {
+              yield* Deferred.succeed(started, undefined);
+              yield* Deferred.await(release);
+            }
+            if (input.number === 5)
+              return yield* new PullRequestOperationError({
+                operation: "runAction",
+                detail: "You cannot close this pull request.",
+              });
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const { atoms, registry } = yield* makeTestRuntime(client);
+      const batch = [6, 5, 4].map((number) =>
+        atoms.runAction.run(registry, {
+          environmentId: TARGET.environmentId,
+          input: {
+            projectId: ProjectId.make("project-1"),
+            repository: "acme/web",
+            number,
+            action: "close",
+          },
+        }),
+      );
+      yield* Deferred.await(started);
+      expect(calls).toEqual([6]);
+      yield* Deferred.succeed(release, undefined);
+      const results = yield* Effect.promise(() => Promise.all(batch));
+      expect(results.map((result) => result._tag)).toEqual(["Success", "Failure", "Success"]);
+      expect(calls).toEqual([6, 5, 4]);
     }),
   ),
 );
@@ -744,6 +902,81 @@ it.effect("refreshes stack state after reopening and head SHAs after a turn", ()
       yield* PubSub.publish(refreshEvents, 1);
       yield* refreshed.await;
       expect((yield* AtomRegistry.getResult(registry, stack))?.layers[0]?.headSha).toBe("new-head");
+    }),
+  ),
+);
+
+// Transport fixtures have a source-control-only session; authorization edge cases
+// are exercised by commandPermissions.test.ts.
+vi.mock("./session.ts", () => ({
+  createEnvironmentSessionAtoms: () => ({ sessionStateAtom: grantedSessions }),
+}));
+const grantedSessions = Atom.family((_id: EnvironmentId) =>
+  Atom.make<AsyncResult.AsyncResult<AuthSessionState>>(
+    AsyncResult.success({
+      authenticated: true,
+      auth: {
+        policy: "remote-reachable" as const,
+        bootstrapMethods: [],
+        sessionMethods: [],
+        sessionCookieName: "test",
+      },
+      scopes: [AuthSourceControlWriteScope],
+    }),
+  ),
+);
+
+it.effect("denies a routed write when only the origin has source-control permission", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      let writes = 0;
+      const identity = { host: "github.com", provider: "github", viewer: "test", accountId: "123" };
+      const client = {
+        [WS_METHODS.pullRequestsRouting]: () => Effect.succeed(identity),
+        [WS_METHODS.pullRequestsRoutingIdentity]: () => Effect.succeed(identity),
+        [WS_METHODS.pullRequestsRunAction]: () =>
+          Effect.sync(() => {
+            writes++;
+          }),
+      } as unknown as WsRpcProtocolClient;
+      const fixture = yield* makeTestRuntime(client, client);
+      const local = EnvironmentId.make("local-environment");
+      const stop = fixture.registry.mount(grantedSessions(local));
+      yield* Effect.addFinalizer(() => Effect.sync(stop));
+      fixture.registry.set(
+        grantedSessions(local),
+        AsyncResult.success({
+          authenticated: true,
+          scopes: [],
+          auth: {
+            policy: "remote-reachable" as const,
+            bootstrapMethods: [],
+            sessionMethods: [],
+            sessionCookieName: "test",
+          },
+        }),
+      );
+      const error = yield* createPullRequestRouter()(WS_METHODS.pullRequestsRunAction, {
+        projectId: ProjectId.make("project"),
+        repository: "acme/repo",
+        number: 1,
+        action: "merge",
+      }).pipe(
+        Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, fixture.environmentRegistry),
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, fixture.supervisor),
+        Effect.provideService(GitHubRoutingPermissions, trustedRouting),
+        Effect.provideService(RpcPermissionGuard, {
+          authorize: (id, method, input) =>
+            createCommandPermissions(fixture.runtime, method).authorize(
+              fixture.registry,
+              id,
+              input,
+            ),
+        }),
+        Effect.flip,
+      );
+      expect(error._tag).toBe("EnvironmentAuthorizationError");
+      expect(writes).toBe(0);
     }),
   ),
 );

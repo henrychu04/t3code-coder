@@ -6,6 +6,7 @@ import {
   type OrchestrationV2ThreadStreamItem,
   type ThreadId as ThreadIdType,
 } from "@t3tools/contracts";
+import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -17,7 +18,7 @@ import * as Result from "effect/Result";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import { connectionProjectionPhase } from "../connection/model.ts";
@@ -601,7 +602,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       // Bounded socket fallbacks carry their cursor. Legacy-compatible full
       // snapshots omit these fields and still replace progressive state.
       yield* setThread(
-        item.projection,
+        boundedSnapshotProjection(item),
         hasProgressiveHistory
           ? {
               history: {
@@ -645,7 +646,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     );
   });
 
-  const loadEarlier = Effect.fn("EnvironmentThreadState.loadEarlier")(function* () {
+  const loadEarlier = Effect.fn("EnvironmentThreadState.loadEarlier")(function* (
+    throughEntryId?: string,
+  ) {
     const current = yield* SubscriptionRef.get(state);
     if (
       current.status === "deleted" ||
@@ -667,6 +670,26 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         ? { ...history, loading: true, error: null }
         : history,
     );
+
+    const failLoad = (message: string) =>
+      SubscriptionRef.modify(
+        state,
+        (
+          latest,
+        ): readonly [
+          ThreadHistoryController.ThreadHistoryLoadEarlierResult,
+          EnvironmentThreadState,
+        ] =>
+          isActiveHistoryRequestCursor(requestCursor, latest.history)
+            ? [
+                { _tag: "error", message },
+                {
+                  ...latest,
+                  history: { ...latest.history, loading: false, error: message },
+                },
+              ]
+            : [{ _tag: "noop" }, latest],
+      );
 
     const runLoad = Effect.gen(function* () {
       const preparedOption = yield* SubscriptionRef.get(supervisor.prepared);
@@ -751,32 +774,23 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             }
             if (Option.isNone(latest.data) || latest.status === "deleted") {
               return [
-                { _tag: "noop" },
+                { _tag: "loaded" },
                 {
                   ...latest,
-                  history: EMPTY_THREAD_HISTORY_META,
+                  data: Option.some(mergeOlderHistoryIntoProjection(latest.data.value, page.items)),
+                  status: complete && waiting ? "synchronizing" : latest.status,
+                  history: complete
+                    ? applyHistoryPageMeta(latest.history, page)
+                    : { ...latest.history, expanded: true },
                 },
               ];
-            }
-
-            const merged = mergeOlderHistoryIntoProjection(latest.data.value, page.items);
-            const history = applyHistoryPageMeta(latest.history, page);
-            return [
-              { _tag: "loaded" },
-              {
-                ...latest,
-                data: Option.some(merged),
-                status: waiting
-                  ? ("synchronizing" as const)
-                  : latest.status === "live"
-                    ? ("live" as const)
-                    : latest.status,
-                history,
-              },
-            ];
-          },
-        ).pipe(Effect.tap(() => remember)),
-      );
+            },
+          ),
+        );
+        if (result._tag !== "loaded") return result;
+        if (complete) yield* remember;
+      }
+      return { _tag: "loaded" } satisfies ThreadHistoryController.ThreadHistoryLoadEarlierResult;
     });
 
     // On Effect interruption only: clear loading when this request cursor is
@@ -794,7 +808,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   if (Option.isSome(historyController)) {
     const scope = yield* Scope.Scope;
     const registration = yield* historyController.value.register(environmentId, threadId, {
-      loadEarlier: () => loadEarlier().pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join)),
+      loadEarlier: (throughEntryId) =>
+        loadEarlier(throughEntryId).pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join)),
     });
     yield* Effect.addFinalizer(() => historyController.value.unregister(registration));
   }
@@ -929,7 +944,9 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           threadId,
           ...(canResume ? { afterSequence: sequence } : {}),
           ...(supportsCompletionMarker ? { requestCompletionMarker: true as const } : {}),
-          ...(acceptBoundedSnapshot ? { acceptBoundedSnapshot: true as const } : {}),
+          ...(acceptBoundedSnapshot
+            ? { acceptBoundedSnapshot: true as const, acceptCompactTurnItems: true as const }
+            : {}),
         };
       }),
       {

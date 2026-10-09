@@ -38,11 +38,12 @@ import {
   projectionFor,
 } from "./fixtures/shared.ts";
 import { runOrchestratorV2ProviderReplayScenario } from "./ProviderReplayHarness.ts";
-import { checkpointWorkspace } from "./ReplayFixtureWorkspace.ts";
+import { checkpointWorkspace } from "@t3tools/provider-testing/replayWorkspace";
+import { materializeReplayTranscriptRuntimeInstructions } from "./ReplayRuntimeInstructions.ts";
 import {
   materializeReplayTranscriptWorkspace,
   readProviderReplayTranscript,
-} from "./ReplayTranscriptNdjson.ts";
+} from "@t3tools/provider-testing/replayTranscript";
 
 const FIRST_FINAL = "provider thread resume fixture first turn complete";
 const SECOND_FINAL = "provider thread resume fixture second turn complete";
@@ -128,10 +129,10 @@ describe("orchestrator replay recovery", () => {
           const harness = {
             ...CodexOrchestratorReplayHarness,
             makeProviderAdapterRegistryLayer: () =>
-              makeCodexProviderAdapterRegistryReplayLayer({ transcript, driver }),
+              CodexAdapterV2Testkit.layer({ transcript, driver }),
           };
           const options = {
-            databaseLayer: makeSqlitePersistenceLive(dbPath).pipe(
+            databaseLayer: SqlitePersistence.layerFromPath(dbPath).pipe(
               Layer.provide(NodeServices.layer),
             ),
           };
@@ -216,7 +217,7 @@ describe("orchestrator replay recovery", () => {
           splitAfterFirstIdle(materialized);
         const { harness, assertComplete } = makeClaudeRestartReplayHarness(transcript);
         const options = {
-          databaseLayer: makeSqlitePersistenceLive(path.join(tempDir, "state.sqlite")).pipe(
+          databaseLayer: SqlitePersistence.layerFromPath(path.join(tempDir, "state.sqlite")).pipe(
             Layer.provide(NodeServices.layer),
           ),
         };

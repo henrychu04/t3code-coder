@@ -21,7 +21,7 @@ import * as CoderEnvironment from "../coderEnvironment.ts";
 import { createFileBridge, type FileBridge } from "./bridge/FileBridge.ts";
 import * as T3ToolDispatch from "./bridge/T3ToolDispatch.ts";
 import type * as McpInvocationContext from "./McpInvocationContext.ts";
-import type * as McpProviderSession from "./McpProviderSession.ts";
+import type * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 
 export interface McpCredentialRequest {
   readonly threadId: ThreadId;
@@ -38,7 +38,7 @@ export interface McpSessionRegistryShape {
   readonly issue: (request: McpCredentialRequest) => Effect.Effect<McpIssuedCredential>;
   readonly resolve: (
     rawToken: string,
-  ) => Effect.Effect<McpInvocationContext.McpInvocationScope | undefined>;
+  ) => Effect.Effect<McpInvocationContext.McpThreadInvocationScope | undefined>;
   /**
    * Records a sign of life for every credential bound to `threadId`. Provider
    * turns call this so that a session which is plainly alive keeps its
@@ -55,8 +55,9 @@ export class McpSessionRegistry extends Context.Service<
   McpSessionRegistryShape
 >()("t3/mcp/McpSessionRegistry") {}
 
+/** Registry credentials always belong to a provider session, so their scope has a thread. */
 interface CredentialRecord {
-  readonly scope: McpInvocationContext.McpInvocationScope;
+  readonly scope: McpInvocationContext.McpThreadInvocationScope;
   readonly bridge: FileBridge | undefined;
   readonly lastAliveAt: number;
 }
@@ -101,11 +102,15 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       yield* pruneDead(issuedAt);
       const providerSessionId = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
       const token = yield* crypto.randomUUIDv4.pipe(Effect.orDie);
-      const scope: McpInvocationContext.McpInvocationScope = {
+      const scope: McpInvocationContext.McpThreadInvocationScope = {
         environmentId,
-        threadId: ThreadId.make(request.threadId),
-        providerSessionId,
-        providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
+        requestNamespace: providerSessionId,
+        thread: {
+          threadId: ThreadId.make(request.threadId),
+          providerSessionId,
+          providerInstanceId: ProviderInstanceId.make(request.providerInstanceId),
+        },
+        client: undefined,
         // Upstream's scope, so credential reuse sees the capabilities it compares. Preview and
         // device tools are not bridged, so those capabilities grant nothing here.
         capabilities: new Set<McpInvocationContext.McpCapability>([
@@ -144,9 +149,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
       return {
         config: {
           environmentId,
-          threadId: scope.threadId,
+          threadId: scope.thread.threadId,
           providerSessionId,
-          providerInstanceId: scope.providerInstanceId,
+          providerInstanceId: scope.thread.providerInstanceId,
           endpoint: bridge?.directory ?? "",
           authorizationHeader: `Bearer ${token}`,
           browserToolsAvailable: scope.capabilities.has("preview"),
@@ -184,7 +189,7 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           new Map(
             [...records].map(([token, record]) => [
               token,
-              record.scope.threadId === threadId ? { ...record, lastAliveAt: timestamp } : record,
+              record.scope.thread.threadId === threadId ? { ...record, lastAliveAt: timestamp } : record,
             ]),
           ),
       );
@@ -199,8 +204,8 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
     resolve,
     touch,
     revokeProviderSession: (providerSessionId) =>
-      revokeWhere((record) => record.scope.providerSessionId === providerSessionId),
-    revokeThread: (threadId) => revokeWhere((record) => record.scope.threadId === threadId),
+      revokeWhere((record) => record.scope.thread.providerSessionId === providerSessionId),
+    revokeThread: (threadId) => revokeWhere((record) => record.scope.thread.threadId === threadId),
     revokeAll,
   });
 });

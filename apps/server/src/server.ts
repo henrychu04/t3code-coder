@@ -133,7 +133,7 @@ const CoderPullRequestsLive = PullRequestService.layer.pipe(
 const CoderGitManagerLive = GitManager.layer.pipe(
   // Per-project git settings resolve the acting thread's project.
   Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
-  Layer.provideMerge(ProjectSetupScriptRunnerLayerLive),
+  Layer.provideMerge(RuntimeLayer.layerProjectSetupScriptRunner),
   Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderSourceControlLive),
@@ -171,7 +171,7 @@ const CoderVcsLive = Layer.empty.pipe(
       Layer.provide(CoderGitWorkflowLive),
       Layer.provide(BackgroundPolicy.layer),
       Layer.provide(
-        VcsStatusBroadcaster.autoPullPolicyLayer.pipe(Layer.provide(ProjectStore.layer)),
+        VcsStatusBroadcaster.layerAutoPullPolicy.pipe(Layer.provide(ProjectStore.layer)),
       ),
     ),
   ),
@@ -209,7 +209,7 @@ const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
   Layer.provide(CoderGitWorkflowLive),
   Layer.provide(CoderResourceCleanupLive),
   Layer.provide(
-    RunFinalizationService.observerLive.pipe(
+    RunFinalizationService.layerObserver.pipe(
       Layer.provide(ProjectionStoreV2.layer),
       Layer.provide(CoderPullRequestsLive),
       Layer.provide(ProjectServiceLayerLive),
@@ -228,7 +228,7 @@ const ThreadSettlementWorkerLive = Layer.effectDiscard(
   ThreadSettlementService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(CoderPullRequestsLive), Layer.provide(ProjectionStoreV2.layer));
 
-const ThreadPullRequestWorkerLive = Layer.effectDiscard(
+const layerThreadPullRequestWorker = Layer.effectDiscard(
   ThreadPullRequestService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(CoderPullRequestsLive));
 

@@ -7,7 +7,7 @@ import {
   ServerSettingsPatch,
 } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { Tool, Toolkit } from "effect/unstable/ai";
+import { Tool, Toolkit } from "effect/ai";
 // Coder: the environment descriptor comes from the Linux Coder workspace.
 import * as CoderEnvironment from "../../../coderEnvironment.ts";
 import * as ThreadCommandExecutor from "../../../orchestration-v2/ThreadCommandExecutor.ts";

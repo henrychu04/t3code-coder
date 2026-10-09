@@ -2,10 +2,14 @@ import type { EnvironmentId, ProjectWriteFileResult, ThreadId } from "@t3tools/c
 import { createRef, useEffect, useMemo, useRef } from "react";
 
 import { projectEnvironment } from "~/state/projects";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
-import { confirmProjectFileQueryData } from "./projectFilesQueryState";
+import {
+  confirmProjectFileQueryData,
+  getUnsavedProjectFileQueryData,
+} from "./projectFilesQueryState";
 
 const FILE_SAVE_DEBOUNCE_MS = 500;
 
@@ -29,6 +33,7 @@ export function useFileSaveCoordinator({
   onPendingChange,
   onSaveFailed,
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
+  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
   // Coder: the base revision of the open file. It is tagged with the file identity so a write
   // confirmed for a retired file cannot leak its revision into the next file's writes.
@@ -56,6 +61,7 @@ export function useFileSaveCoordinator({
         let active = true;
         const coordinator = new FileSaveCoordinator<ProjectWriteFileResult>({
           debounceMs: FILE_SAVE_DEBOUNCE_MS,
+          canPersist: () => readEnvironmentScope(environmentId, AuthFilesystemWriteScope),
           onPendingChange: (pending) => onPendingChange(relativePath, pending),
           onFailed: () => {
             if (active) onSaveFailed(relativePath);
@@ -99,5 +105,18 @@ export function useFileSaveCoordinator({
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.
   useEffect(session.setup, [session]);
+  useEffect(() => {
+    if (!canWriteFiles) return;
+    let cancelled = false;
+    // Replay must retire the first session before recovery queues a draft to flush.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const unsaved = getUnsavedProjectFileQueryData(environmentId, cwd, relativePath);
+      if (unsaved) session.change(unsaved.contents);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [canWriteFiles, cwd, environmentId, relativePath, session]);
   return session;
 }

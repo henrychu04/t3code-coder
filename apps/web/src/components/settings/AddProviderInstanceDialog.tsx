@@ -12,23 +12,24 @@ import {
   ProviderDriverKind,
   type EnvironmentId,
   type ProviderInstanceConfig,
+  type ProviderInstanceEnvironmentVariable,
 } from "@t3tools/contracts";
 
 import {
   useEnvironmentSettings,
   usePersistEnvironmentProviderInstanceMutation,
 } from "../../hooks/useSettings";
-import * as Equal from "effect/Equal";
 
 import { cn } from "../../lib/utils";
 import { normalizeProviderAccentColor } from "../../providerInstances";
+import { readEnvironmentScope, useEnvironmentScope } from "../../state/session";
 import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { Badge } from "../ui/badge";
 import { Input } from "../ui/input";
 import { RadioGroup } from "../ui/radio-group";
 import { toastManager } from "../ui/toast";
-import { DRIVER_OPTION_BY_VALUE, DRIVER_OPTIONS } from "./providerDriverMeta";
+import { providerClients } from "./providerDriverMeta";
 import { ProviderAccentColorPicker } from "./ProviderAccentColorPicker";
 import { SettingsGroup } from "./SettingsGroup";
 import { SettingsRow } from "./settingsLayout";
@@ -104,6 +105,7 @@ export function AddProviderInstanceDialog({
 }: AddProviderInstanceDialogProps) {
   const settings = useEnvironmentSettings(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
+  const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
 
   const [wizardStep, setWizardStep] = useState(0);
   const [driver, setDriver] = useState<ProviderDriverKind>(DEFAULT_DRIVER_KIND);
@@ -118,15 +120,12 @@ export function AddProviderInstanceDialog({
   const [hasAttemptedSubmit, setHasAttemptedSubmit] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const existingIds = useMemo(() => {
-    const ids = new Set(["codex", "claudeAgent", ...Object.keys(settings.providerInstances ?? {})]);
-    const defaults = DEFAULT_UNIFIED_SETTINGS.providers as Record<string, unknown>;
-    // Reserve configured legacy slots too, so adding an account cannot replace them.
-    for (const [kind, config] of Object.entries(settings.providers ?? {})) {
-      if (!Equal.equals(config, defaults[kind])) ids.add(kind);
-    }
-    return ids;
-  }, [settings.providerInstances, settings.providers]);
+  // Codex and Claude run at their default slots before they are configured, so
+  // those ids stay reserved; other unconfigured default slots are free to take.
+  const existingIds = useMemo(
+    () => new Set(["codex", "claudeAgent", ...Object.keys(settings.providerInstances ?? {})]),
+    [settings.providerInstances],
+  );
 
   const driverOption = DRIVER_OPTION_BY_VALUE[driver] ?? DEFAULT_DRIVER_OPTION;
   const defaultIdentity: ProviderIdentityDraft = {
@@ -192,6 +191,24 @@ export function AddProviderInstanceDialog({
     );
   };
 
+  const handleLocalAcpConfiguration = () => {
+    setDriver(ACP_REGISTRY_DRIVER_KIND);
+    setSelectedAcp(null);
+    setIsManualAcpConfiguration(true);
+    setConfigByDriver((existing) => ({
+      ...existing,
+      [ACP_REGISTRY_DRIVER_KIND]: { source: "local", commandArgs: [] },
+    }));
+    setIdentityByDriver((existing) =>
+      updateProviderIdentityDraft(existing, ACP_REGISTRY_DRIVER_KIND, {
+        label: "Local ACP",
+        instanceIdOverride: null,
+      }),
+    );
+    setLocalEnvironment([]);
+    setHasAttemptedSubmit(false);
+  };
+
   const handleSave = async () => {
     if (isSaving) return;
     setHasAttemptedSubmit(true);
@@ -210,6 +227,7 @@ export function AddProviderInstanceDialog({
       ...(label.trim().length > 0 ? { displayName: label.trim() } : {}),
       ...(normalizedAccentColor ? { accentColor: normalizedAccentColor } : {}),
       ...(hasConfig ? { config } : {}),
+      ...(isLocalAcp && localEnvironment.length > 0 ? { environment: localEnvironment } : {}),
     };
     // `ProviderInstanceId.make` revalidates the slug; we've already checked
     // it via `validateInstanceId`, but going through the brand constructor

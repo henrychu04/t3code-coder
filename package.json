@@ -27,7 +27,7 @@
     "test:web:coder": "pnpm --filter @t3tools/web test",
     "test:client-runtime": "pnpm --filter @t3tools/client-runtime test",
     "test:shared:coder": "vp test run packages/shared/src scripts/lib/third-party-licenses.test.ts",
-    "knip:exports": "knip --workspace apps/server --workspace packages/client-runtime --workspace packages/contracts --workspace packages/shared --workspace packages/effect-codex-app-server --workspace packages/coder-cli --exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
+    "knip:exports": "knip --workspace apps/server --workspace packages/client-runtime --workspace packages/contracts --workspace packages/shared --workspace packages/effect-codex-app-server --workspace packages/coder-cli --workspace packages/provider-core --workspace packages/provider-pi --workspace packages/provider-testing --exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
     "test:knip": "vp test run scripts/knip-schemas.test.ts",
     "licenses:sync": "node scripts/sync-third-party-license-notices.ts"
   },

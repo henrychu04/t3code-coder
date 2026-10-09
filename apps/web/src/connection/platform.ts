@@ -91,14 +91,14 @@ const platformConnectionSourceLayer = Layer.effect(
   }),
 );
 
-const environmentOwnedDataCleanupLayer = Layer.succeed(
+const layerEnvironmentOwnedDataCleanup = Layer.succeed(
   Persistence.EnvironmentOwnedDataCleanup,
   Persistence.EnvironmentOwnedDataCleanup.of({
     clear: (environmentId) => Effect.sync(() => clearComposerDraftsEnvironment(environmentId)),
   }),
 );
 
-const rpcRequestObserverLayer = Layer.succeed(
+const layerRpcRequestObserver = Layer.succeed(
   EnvironmentRpcRequestObserver,
   EnvironmentRpcRequestObserver.of({
     observe: ({ environmentId, method }) =>

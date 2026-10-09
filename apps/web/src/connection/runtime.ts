@@ -1,14 +1,12 @@
 import { Connection } from "@t3tools/client-runtime/connection";
 import { ThreadHistoryController } from "@t3tools/client-runtime/state/threads";
 import * as Layer from "effect/Layer";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { runtimeContextLayer } from "../lib/runtime";
 import { connectionPlatformLayer } from "./platform";
 
-const providedConnectionPlatformLayer = connectionPlatformLayer.pipe(
-  Layer.provide(runtimeContextLayer),
-);
+const layerProvidedConnectionPlatform = ConnectionPlatform.layer.pipe(Layer.provide(Runtime.layer));
 
 // Coder: thread and shell snapshots load over helper stdio, so the only loader service is
 // history paging. Merge-request diffs use the `pullRequests.diff` RPC.
@@ -30,4 +28,4 @@ const connectionLayer = providedClientConnectionLayer;
 export const connectionAtomRuntime: Atom.AtomRuntime<
   Layer.Success<ConnectionLayerSource>,
   Layer.Error<ConnectionLayerSource>
-> = Atom.runtime(connectionLayer);
+> = Atom.runtime(layerConnection);

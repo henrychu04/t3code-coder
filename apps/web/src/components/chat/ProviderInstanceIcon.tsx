@@ -18,8 +18,20 @@ const PROVIDER_TEXT_COLOR_BY_PROVIDER: Partial<Record<ProviderDriverKind, string
   [ProviderDriverKind.make("claudeAgent")]: "text-[#d97757]",
 };
 
-export function providerTextColorClassName(driverKind: ProviderDriverKind): string | undefined {
-  return PROVIDER_TEXT_COLOR_BY_PROVIDER[driverKind];
+/** Brand text color for a provider label; package glyphs supply theirs as CSS variables. */
+export function providerTextColor(driverKind: ProviderDriverKind): {
+  readonly className?: string;
+  readonly style?: CSSProperties;
+} {
+  const icon = providerClients.get(driverKind)?.icon;
+  if (icon) {
+    return {
+      className: "text-(--icon-light) dark:text-(--icon-dark)",
+      style: { "--icon-light": icon.fill.light, "--icon-dark": icon.fill.dark } as CSSProperties,
+    };
+  }
+  const className = PROVIDER_TEXT_COLOR_BY_PROVIDER[driverKind];
+  return className ? { className } : {};
 }
 
 export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
@@ -38,6 +50,7 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
   indicatorBackground?: string;
 }) {
   const Icon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;
+  const packageIcon = providerClients.get(props.driverKind)?.icon;
   const indicatorBackground = props.indicatorBackground ?? "var(--card)";
   const accentStyle = props.accentColor
     ? ({ "--provider-accent": props.accentColor } as CSSProperties)
@@ -53,7 +66,13 @@ export const ProviderInstanceIcon = memo(function ProviderInstanceIcon(props: {
       style={accentStyle}
       data-provider-accent-color={props.accentColor}
     >
-      {Icon ? (
+      {packageIcon ? (
+        <ProviderPackageIcon
+          icon={packageIcon}
+          className={cn("size-5 shrink-0", props.iconClassName)}
+          aria-hidden
+        />
+      ) : Icon ? (
         <Icon className={cn("size-5 shrink-0", props.iconClassName)} aria-hidden />
       ) : (
         <span className={cn("text-3xs font-semibold leading-none", props.iconClassName)}>

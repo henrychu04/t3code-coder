@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import { GitCommandError, type SourceControlCloneProtocol } from "@t3tools/contracts";
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";

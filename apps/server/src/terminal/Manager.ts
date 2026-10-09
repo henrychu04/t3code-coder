@@ -28,6 +28,7 @@ import {
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
   type TerminalOpenInput,
+  type TerminalObserveInput,
   type TerminalResizeInput,
   type TerminalRestartInput,
   type TerminalSessionSnapshot,
@@ -40,12 +41,13 @@ import {
 } from "@t3tools/contracts";
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import * as KeyedLock from "@t3tools/shared/KeyedLock";
 
 import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
 import * as DateTime from "effect/DateTime";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Encoding from "effect/Encoding";
+import * as Base64Url from "effect/encoding/Base64Url";
 import * as Equal from "effect/Equal";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -55,18 +57,17 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Semaphore from "effect/Semaphore";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as ServerConfig from "../config.ts";
-import { mergeProviderInstanceEnvironment } from "../provider/ProviderInstanceEnvironment.ts";
+import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import { resolveCodexHomeLayout } from "../provider/Drivers/CodexHomeLayout.ts";
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
-import { deriveProviderInstanceConfigMap } from "../provider/Layers/ProviderInstanceRegistryHydration.ts";
+import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import { expandHomePath } from "../pathExpansion.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import * as ProcessRunner from "../processRunner.ts";
-import * as PtyAdapter from "./PtyAdapter.ts";
+import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
 export {
   TerminalCwdError,
@@ -161,6 +162,12 @@ export class TerminalManager extends Context.Service<
      */
     readonly attachStream: (
       input: TerminalAttachInput,
+      listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
+    ) => Effect.Effect<() => void, TerminalError>;
+
+    /** Observe an existing session without starting or changing its process. */
+    readonly observeStream: (
+      input: TerminalObserveInput,
       listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
     ) => Effect.Effect<() => void, TerminalError>;
 
@@ -1229,11 +1236,11 @@ function legacySafeThreadId(threadId: string): string {
 }
 
 function toSafeThreadId(threadId: string): string {
-  return `terminal_${Encoding.encodeBase64Url(threadId)}`;
+  return `terminal_${Base64Url.encode(threadId)}`;
 }
 
 function toSafeTerminalId(terminalId: string): string {
-  return Encoding.encodeBase64Url(terminalId);
+  return Base64Url.encode(terminalId);
 }
 
 function toSessionKey(threadId: string, terminalId: string): string {
@@ -1555,7 +1562,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     sessions: new Map(),
     killFibers: new Map(),
   });
-  const threadLocksRef = yield* SynchronizedRef.make(new Map<string, Semaphore.Semaphore>());
+  const threadLocks = yield* KeyedLock.make<string>();
   const terminalEventListeners = new Set<(event: TerminalEvent) => Effect.Effect<void>>();
   const attachReplay = new Map<
     string,
@@ -1638,29 +1645,10 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     f: (state: TerminalManagerState) => readonly [A, TerminalManagerState],
   ) => SynchronizedRef.modify(managerStateRef, f);
 
-  const getThreadSemaphore = (threadId: string) =>
-    SynchronizedRef.modifyEffect(threadLocksRef, (current) => {
-      const existing: Option.Option<Semaphore.Semaphore> = Option.fromNullishOr(
-        current.get(threadId),
-      );
-      return Option.match(existing, {
-        onNone: () =>
-          Semaphore.make(1).pipe(
-            Effect.map((semaphore) => {
-              const next = new Map(current);
-              next.set(threadId, semaphore);
-              return [semaphore, next] as const;
-            }),
-          ),
-        onSome: (semaphore) => Effect.succeed([semaphore, current] as const),
-      });
-    });
-
   const withThreadLock = <A, E, R>(
     threadId: string,
     effect: Effect.Effect<A, E, R>,
-  ): Effect.Effect<A, E, R> =>
-    Effect.flatMap(getThreadSemaphore(threadId), (semaphore) => semaphore.withPermit(effect));
+  ): Effect.Effect<A, E, R> => threadLocks.withLock(threadId, effect);
 
   const clearKillFiber = Effect.fn("terminal.clearKillFiber")(function* (
     process: PtyAdapter.PtyProcess | null,
@@ -2835,7 +2823,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     return entries.map((entry) => entry.event);
   };
 
-  const attachStream: TerminalManager["Service"]["attachStream"] = (input, listener) => {
+  const streamSession = (
+    input: TerminalObserveInput,
+    initial: Effect.Effect<TerminalSessionSnapshot, TerminalError>,
+    listener: (event: TerminalAttachStreamEvent) => Effect.Effect<void>,
+    // Coder: an attach may resume after the client's last applied sequence.
+    resume?: TerminalAttachInput,
+  ) => {
     let unsubscribe: (() => void) | null = null;
 
     return Effect.gen(function* () {
@@ -2856,8 +2850,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         return attachEvent ? listener(attachEvent) : Effect.void;
       });
 
-      const initialSnapshot = yield* openOrAttachForStream(input);
-      const replay = replayAttachEvents(input, initialSnapshot);
+      const initialSnapshot = yield* initial;
+      const replay = resume === undefined ? null : replayAttachEvents(resume, initialSnapshot);
       if (replay === null) {
         yield* listener({
           type: "snapshot",
@@ -2908,6 +2902,19 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       ),
     );
   };
+
+  const attachStream: TerminalManager["Service"]["attachStream"] = (input, listener) =>
+    streamSession(input, openOrAttachForStream(input), listener, input);
+
+  const observeStream: TerminalManager["Service"]["observeStream"] = (input, listener) =>
+    streamSession(
+      input,
+      withThreadLock(
+        input.threadId,
+        requireSession(input.threadId, input.terminalId).pipe(Effect.map(snapshot)),
+      ),
+      listener,
+    );
 
   const metadataEventFromTerminalEvent = (
     event: TerminalEvent,
@@ -3217,6 +3224,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
   return TerminalManager.of({
     open,
     attachStream,
+    observeStream,
     write,
     resize,
     clear,

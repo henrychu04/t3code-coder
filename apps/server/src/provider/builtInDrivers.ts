@@ -15,23 +15,23 @@
  *
  * The aggregated `BuiltInDriversEnv` type is the union of every driver's
  * env requirement — the registry layer's `R` is this type, and the runtime
- * layer (ChildProcessSpawner, FileSystem, Path, ServerConfig, and
- * Claude's process services) must satisfy it.
+ * layer (ChildProcessSpawner, FileSystem, Path, ServerConfig,
+ * OpenCodeRuntime, …) must satisfy it.
  *
  * @module provider/builtInDrivers
  */
-// Coder: only Codex and Claude are registered. Pi stays in the source as an unregistered driver;
-// upstream's other drivers are not carried.
+// Coder: only Codex, Claude Code, and Pi are registered; upstream's other drivers are not carried.
 import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
 import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
-import type { AnyProviderDriver } from "./ProviderDriver.ts";
+import { PiDriver, type PiDriverEnv } from "@t3tools/provider-pi/server";
+import type { AnyProviderDriver } from "@t3tools/provider-core/server/driver";
 
 /**
  * Union of infrastructure services required to construct any built-in
  * driver. The registry layer declares `R = BuiltInDriversEnv`; the runtime
  * layer must provide every service in this union.
  */
-export type BuiltInDriversEnv = ClaudeDriverEnv | CodexDriverEnv;
+export type BuiltInDriversEnv = ClaudeDriverEnv | CodexDriverEnv | PiDriverEnv;
 
 /**
  * Ordered list of built-in drivers. Order matters only for tie-breaking in
@@ -41,4 +41,5 @@ export type BuiltInDriversEnv = ClaudeDriverEnv | CodexDriverEnv;
 export const BUILT_IN_DRIVERS: ReadonlyArray<AnyProviderDriver<BuiltInDriversEnv>> = [
   CodexDriver,
   ClaudeDriver,
+  PiDriver,
 ];

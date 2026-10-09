@@ -5,7 +5,7 @@ import {
   type ServerConfig,
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import { AVAILABLE_CONNECTION_STATE, type SupervisorConnectionState } from "../connection/model.ts";
 import {
@@ -15,6 +15,7 @@ import {
   type EnvironmentPresentation,
 } from "../connection/presentation.ts";
 import type { EnvironmentCatalogState } from "./connections.ts";
+import { hasRelayRoute } from "../connection/routes.ts";
 
 function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
   if (left.size !== right.size) {

@@ -28,6 +28,7 @@ export function useAvailableSettingsSearchItems() {
         isWslSettingsRowVisible: false,
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+        managedTunnelActive,
       }),
     [environments],
   );

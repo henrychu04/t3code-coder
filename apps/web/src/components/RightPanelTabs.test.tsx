@@ -1,5 +1,6 @@
 import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { describe, expect, it } from "vite-plus/test";
 
 import { pullRequestSurface } from "../rightPanelStore";
