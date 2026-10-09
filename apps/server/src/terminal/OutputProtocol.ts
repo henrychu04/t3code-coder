@@ -19,7 +19,11 @@ export function withTerminalOutputWindow(
       receive = write;
       return protocol.run((clientId, message) =>
         Effect.suspend(() => {
-          if (message._tag === "Request" && message.tag === WS_METHODS.terminalAttach) {
+          if (
+            message._tag === "Request" &&
+            (message.tag === WS_METHODS.terminalAttach ||
+              message.tag === WS_METHODS.subscribeTerminalEvents)
+          ) {
             const key = `${clientId}:${message.id}`;
             if (!windows.has(key)) windows.set(key, []);
           } else if (message._tag === "Ack") {

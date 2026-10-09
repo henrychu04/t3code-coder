@@ -637,12 +637,19 @@ listed here is drift to remove rather than fork behavior to keep.
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
   - Client settings add per-workspace `providerPreferencesByEnvironment`.
+  - Terminal attach input adds `afterSequence`, and the attach stream adds a `resumed` event.
   - `shared/serverSettings.ts` adds `resolveCoderTextGenerationModelSelection`. Claude launch args
     reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
     which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods and
     providers the helper serves.
+- **Terminals.** `terminal/Manager.ts` is upstream's. Coder deltas: it records each terminal's
+  attach events in a bounded replay window (512 KiB per terminal, 64 MiB in total) and answers an
+  attach with `afterSequence` by replaying the missed events and a `resumed` event instead of a
+  snapshot when the window still covers the gap. Terminals poll the process table themselves
+  (no resource telemetry), register no ports for preview discovery, record no metrics, and get
+  no managed ACP install directories on `PATH`.
 - **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,
   clone, and new-project flows over `filesystem.browse` and the clone RPCs. Coder deltas (marked
   `Coder:`): the active workspace stands in for upstream's primary environment and supplies
