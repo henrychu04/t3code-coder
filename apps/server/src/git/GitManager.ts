@@ -807,8 +807,14 @@ export const make = Effect.gen(function* () {
         case "conventional_commits":
           return conventionalCommitsTextGenerationPolicy;
         case "custom":
-          // Coder: the fork's writing-policy preset accepts a single instruction string.
-          return customTextGenerationPolicy(settings.style.customInstructions);
+          return customTextGenerationPolicy(
+            settings.style.customInstructions
+              ? {
+                  commitInstructions: settings.style.customInstructions,
+                  changeRequestInstructions: settings.style.customInstructions,
+                }
+              : {},
+          );
         case "repo_conventions": {
           const subjects = yield* readRecentCommitSubjects(cwd);
           const agentInstructions = yield* readRepositoryInstructions(cwd, "AGENTS.md");

@@ -1,7 +1,9 @@
 /**
  * ClaudeTextGeneration – Text generation layer using the Claude CLI.
  *
- * Delegates to the `claude` CLI (`claude -p`) with structured JSON output.
+ * Implements the same TextGeneration service contract as CodexTextGeneration but
+ * delegates to the `claude` CLI (`claude -p`) with structured JSON output
+ * instead of the `codex exec` CLI.
  *
  * @module ClaudeTextGeneration
  */
@@ -49,7 +51,6 @@ import {
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
-const LABEL_GENERATION_MODEL = "claude-haiku-4-5";
 
 /**
  * Schema for the wrapper JSON returned by `claude -p --output-format json`.
@@ -68,12 +69,6 @@ const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 const decodeClaudeOutput = Schema.decodeEffect(
   Schema.fromJsonString(Schema.Union([ClaudeOutputEnvelope, Schema.Array(ClaudeOutputMessage)])),
 );
-
-function stripClaudeLauncherPreamble(output: string): string {
-  const lines = output.split(/\r?\n/);
-  const jsonLine = lines.findIndex((line) => line.trimStart().startsWith("{"));
-  return jsonLine === -1 ? output : lines.slice(jsonLine).join("\n");
-}
 
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
@@ -219,8 +214,6 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           "",
           "--disable-slash-commands",
           "--strict-mcp-config",
-          "--mcp-config",
-          JSON.stringify({ mcpServers: {} }),
           "--permission-mode",
           "dontAsk",
         ],
@@ -286,7 +279,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ),
     );
 
-    const output = yield* decodeClaudeOutput(stripClaudeLauncherPreamble(rawStdout)).pipe(
+    const output = yield* decodeClaudeOutput(rawStdout).pipe(
       Effect.catchTags({
         SchemaError: (cause) =>
           Effect.fail(
@@ -323,7 +316,14 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("ClaudeTextGeneration.generateCommitMessage")(function* (input) {
-      const { prompt, outputSchema } = buildCommitMessagePrompt(input);
+      const { prompt, outputSchema } = buildCommitMessagePrompt({
+        branch: input.branch,
+        stagedSummary: input.stagedSummary,
+        stagedPatch: input.stagedPatch,
+        includeBranch: input.includeBranch === true,
+        policy: input.policy,
+      });
+
       const generated = yield* runClaudeJson({
         operation: "generateCommitMessage",
         cwd: input.cwd,
@@ -343,7 +343,16 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
   const generatePrContent: TextGeneration.TextGeneration["Service"]["generatePrContent"] =
     Effect.fn("ClaudeTextGeneration.generatePrContent")(function* (input) {
-      const { prompt, outputSchema } = buildPrContentPrompt(input);
+      const { prompt, outputSchema } = buildPrContentPrompt({
+        baseBranch: input.baseBranch,
+        headBranch: input.headBranch,
+        commitSummary: input.commitSummary,
+        diffSummary: input.diffSummary,
+        diffPatch: input.diffPatch,
+        policy: input.policy,
+        changeRequestTemplate: input.changeRequestTemplate,
+      });
+
       const generated = yield* runClaudeJson({
         operation: "generatePrContent",
         cwd: input.cwd,
@@ -351,6 +360,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         outputSchemaJson: outputSchema,
         modelSelection: input.modelSelection,
       });
+
       return {
         title: sanitizePrTitle(generated.title),
         body: generated.body.trim(),
@@ -361,6 +371,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     Effect.fn("ClaudeTextGeneration.generateBranchName")(function* (input) {
       const { prompt, outputSchema } = buildBranchNamePrompt({
         message: input.message,
+        attachments: input.attachments,
         naming: input.naming,
       });
 
@@ -369,10 +380,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
-        modelSelection: {
-          instanceId: input.modelSelection.instanceId,
-          model: LABEL_GENERATION_MODEL,
-        },
+        modelSelection: input.modelSelection,
       });
 
       return {
@@ -394,10 +402,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
-        modelSelection: {
-          instanceId: input.modelSelection.instanceId,
-          model: LABEL_GENERATION_MODEL,
-        },
+        modelSelection: input.modelSelection,
       });
 
       return {

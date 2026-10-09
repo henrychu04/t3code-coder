@@ -104,7 +104,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const serverSettings = yield* ServerSettingsService;
-      const { attachmentsDir, cwd } = yield* ServerConfig;
+      const { cwd } = yield* ServerConfig;
       const processEnv = mergeProviderInstanceEnvironment(environment);
       /**
        * Services the driver needs to materialize an instance. Surfaced as the
@@ -212,8 +212,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
       const textGeneration = yield* makeCodexTextGeneration(
         effectiveConfig,
         processEnv,
-        attachmentsDir,
-        resolveMcpServerNames,
         snapshot.getSnapshot.pipe(Effect.map((value) => value.models)),
       );
 

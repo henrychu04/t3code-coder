@@ -2934,8 +2934,8 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       });
 
       expect(generatedPolicy).toEqual({
-        commitInstructions: "",
-        changeRequestInstructions: "",
+        kind: "custom",
+        inferRepositoryConventions: false,
       });
     }),
   );
@@ -3112,8 +3112,10 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       });
 
       expect(generatedPolicy).toEqual({
-        commitInstructions: `Follow the repository's established commit message style.\n\nLocal AGENTS.md:\n${agentInstructions}\n\nLocal CLAUDE.md:\n${claudeInstructions}`,
-        changeRequestInstructions: `Follow the repository's established merge request title and body style.\n\nLocal AGENTS.md:\n${agentInstructions}\n\nLocal CLAUDE.md:\n${claudeInstructions}`,
+        kind: "repo_conventions",
+        commitInstructions: `Follow the repository's established commit message style when examples are available.\n\nLocal AGENTS.md:\n${agentInstructions}\n\nLocal CLAUDE.md:\n${claudeInstructions}`,
+        changeRequestInstructions: `Follow the repository's established change request title and body style when examples are available.\n\nLocal AGENTS.md:\n${agentInstructions}\n\nLocal CLAUDE.md:\n${claudeInstructions}`,
+        inferRepositoryConventions: true,
       });
     }),
   );

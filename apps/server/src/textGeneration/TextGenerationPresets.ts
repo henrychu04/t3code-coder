@@ -1,20 +1,27 @@
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
 export const conventionalCommitsTextGenerationPolicy: TextGenerationPolicy = {
+  kind: "conventional_commits",
   commitInstructions:
-    "Use Conventional Commits. Prefer the narrowest accurate type and include a scope only when it is obvious from the diff.",
+    "Use Conventional Commits when generating commit subjects. Prefer the narrowest accurate type and include a scope only when it is obvious from the diff.",
   changeRequestInstructions:
-    "Keep the merge request title concise. Do not force Conventional Commit syntax into it unless the repository already uses it.",
+    "Keep the change request title concise. Do not force Conventional Commit syntax into the title unless the repository already uses it.",
+  inferRepositoryConventions: false,
 };
 
 export const repositoryConventionsTextGenerationPolicy: TextGenerationPolicy = {
-  commitInstructions: "Follow the repository's established commit message style.",
-  changeRequestInstructions: "Follow the repository's established merge request title and body style.",
+  kind: "repo_conventions",
+  commitInstructions:
+    "Follow the repository's established commit message style when examples are available.",
+  changeRequestInstructions:
+    "Follow the repository's established change request title and body style when examples are available.",
+  inferRepositoryConventions: true,
 };
 
 export const customTextGenerationPolicy = (
-  instructions: string,
+  overrides: Omit<Partial<TextGenerationPolicy>, "kind">,
 ): TextGenerationPolicy => ({
-  commitInstructions: instructions,
-  changeRequestInstructions: instructions,
+  kind: "custom",
+  inferRepositoryConventions: false,
+  ...overrides,
 });
