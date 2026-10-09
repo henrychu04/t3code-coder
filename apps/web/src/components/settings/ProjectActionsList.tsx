@@ -1,15 +1,19 @@
-import type { ProjectScript } from "@t3tools/contracts";
+import type { ProjectScript, ResolvedKeybindingsConfig } from "@t3tools/contracts";
 import { SettingsIcon } from "lucide-react";
+import { shortcutLabelForCommand } from "../../keybindings";
+import { commandForProjectScript } from "../../projectScripts";
 import { ScriptIcon } from "../projectScriptEditor";
 import { Button } from "../ui/button";
 import { SettingsRow } from "./settingsLayout";
 
 export function ProjectActionsList({
   scripts,
+  keybindings,
   disabled,
   onEdit,
 }: {
   scripts: readonly ProjectScript[];
+  keybindings: ResolvedKeybindingsConfig;
   disabled: boolean;
   onEdit: (script: ProjectScript) => void;
 }) {
@@ -20,6 +24,7 @@ export function ProjectActionsList({
       </p>
     );
   return scripts.map((script) => {
+    const shortcutLabel = shortcutLabelForCommand(keybindings, commandForProjectScript(script.id));
     return (
       <SettingsRow
         key={script.id}
@@ -33,11 +38,19 @@ export function ProjectActionsList({
                 setup
               </span>
             ) : null}
+            {script.previewUrl ? (
+              <span className="shrink-0 rounded-sm border border-border/60 px-1.5 py-px text-2xs font-normal text-muted-foreground max-sm:hidden">
+                preview · desktop only
+              </span>
+            ) : null}
           </span>
         }
         description={<code className="block max-w-full truncate font-mono">{script.command}</code>}
         control={
           <>
+            {shortcutLabel ? (
+              <span className="text-xs text-muted-foreground">{shortcutLabel}</span>
+            ) : null}
             <span className="flex shrink-0 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
               <Button
                 size="icon-xs"

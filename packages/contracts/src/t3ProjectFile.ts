@@ -12,6 +12,7 @@ export const T3_PROJECT_FILE_NAME = "t3.json";
 /** Public URL of the published JSON Schema for {@link T3ProjectFile}. */
 export const T3_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/t3.json";
 
+const T3_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const T3_PROJECT_FILE_MAX_SCRIPTS = 50;
 
 // Annotations go on the encoded (string) side so they survive into the
@@ -26,14 +27,12 @@ const trimmedNonEmpty = (annotations: { readonly description: string }, maxLengt
 };
 
 export const T3ProjectFileScript = Schema.Struct({
-  name: trimmedNonEmpty(
-    { description: "Display name for the script, shown in the T3 Code scripts menu." },
-    128,
-  ),
-  command: trimmedNonEmpty(
-    { description: "Shell command executed in a T3 Code terminal at the project root." },
-    16_384,
-  ),
+  name: trimmedNonEmpty({
+    description: "Display name for the script, shown in the T3 Code scripts menu.",
+  }),
+  command: trimmedNonEmpty({
+    description: "Shell command executed in a T3 Code terminal at the project root.",
+  }),
   icon: Schema.optionalKey(
     ProjectScriptIcon.annotate({
       description: 'Icon shown next to the script in the scripts menu. Defaults to "play".',
@@ -51,6 +50,18 @@ export const T3ProjectFileScript = Schema.Struct({
         "Only for runOnWorktreeCreate scripts. When true (the default), the agent starts while the script is still running. Set false to hold the agent until the script exits.",
     }),
   ),
+  previewUrl: Schema.optionalKey(
+    trimmedNonEmpty({
+      description:
+        "URL opened in the in-app browser preview when this script runs. Only honored on the desktop build.",
+    }),
+  ),
+  autoOpenPreview: Schema.optionalKey(
+    Schema.Boolean.annotate({
+      description:
+        "When true, automatically open the preview panel at `previewUrl` the moment the script starts.",
+    }),
+  ),
 }).annotate({
   description: "A project script that team members can import into T3 Code.",
 });
@@ -61,6 +72,15 @@ export const T3ProjectFile = Schema.Struct({
     Schema.String.annotate({
       description: `URL of the JSON Schema for this file, typically "${T3_PROJECT_FILE_SCHEMA_URL}".`,
     }),
+  ),
+  iconPath: Schema.optionalKey(
+    trimmedNonEmpty(
+      {
+        description:
+          'Workspace-relative path to the project icon (e.g. "assets/logo.svg"). Checked before T3 Code\'s built-in icon locations.',
+      },
+      T3_PROJECT_FILE_PATH_MAX_LENGTH,
+    ),
   ),
   defaultThreadEnvMode: Schema.optionalKey(
     ThreadEnvMode.annotate({
@@ -123,6 +143,8 @@ export type ResolvedServerSettings = Omit<ServerSettings, ProjectFileBackedSetti
   readonly [K in ProjectFileBackedSettingKey]: Exclude<ServerSettings[K], null>;
 };
 
+// Coder: the helper reads and validates a project's t3.json by project id, so settings and new
+// threads never read repository files by path.
 export const ProjectGetConfigInput = Schema.Struct({ projectId: ProjectId });
 export const ProjectGetConfigResult = Schema.Union([
   Schema.Struct({ status: Schema.Literal("valid"), file: T3ProjectFile }),

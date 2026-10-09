@@ -1,4 +1,8 @@
-import type { ProjectScript, ProjectScriptIcon } from "@t3tools/contracts";
+import type {
+  ProjectScript,
+  ProjectScriptIcon,
+  ResolvedKeybindingsConfig,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -12,8 +16,21 @@ import {
   PlayIcon,
   WrenchIcon,
 } from "lucide-react";
-import React, { type FormEvent, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  type FormEvent,
+  type KeyboardEvent,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 
+import {
+  keybindingValueForCommand,
+  decodeProjectScriptKeybindingRule,
+} from "~/lib/projectScriptKeybindings";
+import { keybindingFromKeyboardEvent } from "~/components/settings/KeybindingsSettings.logic";
+import { commandForProjectScript, nextProjectScriptId } from "~/projectScripts";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -68,7 +85,13 @@ export interface NewProjectScriptInput {
   command: string;
   icon: ProjectScriptIcon;
   runOnWorktreeCreate: boolean;
+  /** Setup scripts only: hold the agent until the script exits. */
   waitForSetup: boolean;
+  keybinding: string | null;
+  /** Optional URL to open in the in-app preview when this script runs. */
+  previewUrl: string | null;
+  /** When true, automatically open the preview panel pointed at `previewUrl`. */
+  autoOpenPreview: boolean;
 }
 
 export type ProjectScriptActionResult = AtomCommandResult<void, unknown>;
@@ -79,6 +102,9 @@ export const EMPTY_PROJECT_SCRIPT_INPUT: NewProjectScriptInput = {
   icon: "play",
   runOnWorktreeCreate: false,
   waitForSetup: false,
+  keybinding: null,
+  previewUrl: null,
+  autoOpenPreview: false,
 };
 
 /** What the editor dialog should open with. `scriptId: null` means "add". */
@@ -89,7 +115,10 @@ export interface ProjectScriptEditorRequest {
   error?: string;
 }
 
-export function editorRequestForScript(script: ProjectScript): ProjectScriptEditorRequest {
+export function editorRequestForScript(
+  script: ProjectScript,
+  keybindings: ResolvedKeybindingsConfig,
+): ProjectScriptEditorRequest {
   return {
     scriptId: script.id,
     initial: {
@@ -98,6 +127,9 @@ export function editorRequestForScript(script: ProjectScript): ProjectScriptEdit
       icon: script.icon,
       runOnWorktreeCreate: script.runOnWorktreeCreate,
       waitForSetup: script.runOnWorktreeCreate && script.async === false,
+      keybinding: keybindingValueForCommand(keybindings, commandForProjectScript(script.id)),
+      previewUrl: script.previewUrl ?? null,
+      autoOpenPreview: script.autoOpenPreview ?? false,
     },
   };
 }
@@ -109,11 +141,14 @@ export function editorRequestForScript(script: ProjectScript): ProjectScriptEdit
  */
 export function ProjectScriptEditorDialog({
   request,
+  scripts,
   onSubmit,
   onDelete,
   onClose,
 }: {
   request: ProjectScriptEditorRequest | null;
+  /** Existing scripts, used to derive a unique id for new scripts. */
+  scripts: ReadonlyArray<ProjectScript>;
   onSubmit: (
     scriptId: string | null,
     input: NewProjectScriptInput,
@@ -128,6 +163,9 @@ export function ProjectScriptEditorDialog({
   const [iconPickerOpen, setIconPickerOpen] = useState(false);
   const [runOnWorktreeCreate, setRunOnWorktreeCreate] = useState(false);
   const [waitForSetup, setWaitForSetup] = useState(false);
+  const [keybinding, setKeybinding] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [autoOpenPreview, setAutoOpenPreview] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [savingRequest, setSavingRequest] = useState<ProjectScriptEditorRequest | null>(null);
@@ -156,6 +194,9 @@ export function ProjectScriptEditorDialog({
     setIconPickerOpen(false);
     setRunOnWorktreeCreate(request.initial.runOnWorktreeCreate);
     setWaitForSetup(request.initial.waitForSetup);
+    setKeybinding(request.initial.keybinding ?? "");
+    setPreviewUrl(request.initial.previewUrl ?? "");
+    setAutoOpenPreview(request.initial.autoOpenPreview);
     setValidationError(request.error ?? null);
     setSavingRequest(null);
   }, [request]);
@@ -165,6 +206,18 @@ export function ProjectScriptEditorDialog({
     setSavingRequest(null);
     setIconPickerOpen(false);
     onClose();
+  };
+
+  const captureKeybinding = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Tab") return;
+    event.preventDefault();
+    if (event.key === "Backspace" || event.key === "Delete") {
+      setKeybinding("");
+      return;
+    }
+    const next = keybindingFromKeyboardEvent(event, navigator.platform);
+    if (!next) return;
+    setKeybinding(next);
   };
 
   const submit = async (event: FormEvent) => {
@@ -184,12 +237,26 @@ export function ProjectScriptEditorDialog({
     setValidationError(null);
     let payload: NewProjectScriptInput;
     try {
+      const scriptIdForValidation =
+        request.scriptId ??
+        nextProjectScriptId(
+          trimmedName,
+          scripts.map((script) => script.id),
+        );
+      const keybindingRule = decodeProjectScriptKeybindingRule({
+        keybinding,
+        command: commandForProjectScript(scriptIdForValidation),
+      });
+      const trimmedPreviewUrl = previewUrl.trim();
       payload = {
         name: trimmedName,
         command: trimmedCommand,
         icon,
         runOnWorktreeCreate,
         waitForSetup: runOnWorktreeCreate && waitForSetup,
+        keybinding: keybindingRule?.key ?? null,
+        previewUrl: trimmedPreviewUrl.length > 0 ? trimmedPreviewUrl : null,
+        autoOpenPreview: trimmedPreviewUrl.length > 0 ? autoOpenPreview : false,
       } satisfies NewProjectScriptInput;
     } catch (error) {
       setValidationError(error instanceof Error ? error.message : "Failed to save action.");
@@ -237,7 +304,7 @@ export function ProjectScriptEditorDialog({
           <DialogHeader>
             <DialogTitle>{isEditing ? "Edit Action" : "Add Action"}</DialogTitle>
             <DialogDescription>
-              Actions are project-scoped commands that run in the workspace.
+              Actions are project-scoped commands you can run from the top bar or keybindings.
             </DialogDescription>
           </DialogHeader>
           <DialogPanel>
@@ -295,6 +362,20 @@ export function ProjectScriptEditorDialog({
                   </div>
                 </div>
                 <div className="space-y-1.5">
+                  <Label htmlFor="script-keybinding">Keybinding</Label>
+                  <Input
+                    id="script-keybinding"
+                    placeholder="Press shortcut"
+                    value={keybinding}
+                    readOnly
+                    onKeyDown={captureKeybinding}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Press a shortcut. Use <code>Backspace</code> to clear. Shortcuts are
+                    environment-wide. Projects using the same action share its shortcut.
+                  </p>
+                </div>
+                <div className="space-y-1.5">
                   <Label htmlFor="script-command">Command</Label>
                   <Textarea
                     id="script-command"
@@ -303,6 +384,7 @@ export function ProjectScriptEditorDialog({
                     onChange={(event) => setCommand(event.target.value)}
                   />
                 </div>
+                {/* Coder: no in-app preview, so actions have no preview URL. */}
                 <label className="flex items-center justify-between gap-3 rounded-md border border-border/70 px-3 py-2 text-sm dark:border-transparent dark:bg-white/[0.035]">
                   <span>Run automatically on worktree creation</span>
                   <Switch
