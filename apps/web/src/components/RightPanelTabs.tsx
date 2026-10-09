@@ -1,3 +1,5 @@
+// Coder: a rewrite of upstream's tab strip without browser, device, and preview tabs; see
+// "Right panel and composer chrome" in docs/internals/coder-only.md.
 import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
 import {
   pullRequestHostOf,
