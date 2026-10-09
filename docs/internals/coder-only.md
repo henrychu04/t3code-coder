@@ -580,8 +580,7 @@ listed here is drift to remove rather than fork behavior to keep.
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
       8 seconds into `bridge-job:` tasks. `server.ts` binds it once the orchestrator runs.
     - `toolkits/pullRequests/handlers.ts` rejects merge requests outside the workspace's GitLab
-      hosts and passes no Forgejo remote to the shared URL helpers, which carry no Forgejo
-      authority. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
+      hosts. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
       upstream's `ServerEnvironment`.
     - `mcp/bridge/T3ToolInstructions.ts` reuses upstream's orchestration guidance without its MCP
       and ACP transport paragraphs; its test fails if upstream rewords them.

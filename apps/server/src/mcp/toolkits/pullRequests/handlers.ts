@@ -89,16 +89,16 @@ const resolveTarget = Effect.fn("PullRequestsToolkit.resolveTarget")(function* (
   }
   const repository = input.repository.toLowerCase();
   const url =
-    // Coder: the shared URL helpers carry no Forgejo remote authority, so no remote URL is passed.
     changeRequestUrlFor(
       // The project's kind only describes its own host; another host gets no URL guess.
       host === projectHost.host ? projectHost.kind : null,
       host,
       repository,
       input.number,
+      project?.repositoryIdentity?.locator.remoteUrl,
     ) ?? `https://${host}/${repository}/pull/${input.number}`;
   return {
-    ...normalizeThreadPullRequestKey({ host, repository, number: input.number }),
+    ...normalizeThreadPullRequestKey({ host, repository, number: input.number, url }),
     url,
   } satisfies ResolvedTarget;
 });
