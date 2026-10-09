@@ -26,9 +26,9 @@ import {
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
-  useActiveEnvironmentId,
   useProjects,
 } from "../state/entities";
+import { usePrimaryEnvironmentId } from "../state/environments";
 import { readLocalApi } from "../localApi";
 import {
   deriveLogicalProjectKeyFromSettings,
@@ -71,15 +71,14 @@ export function useThreadActionMenu(input: {
   const { threadRef, projectCwd, onStartRename } = input;
   const router = useRouter();
   const projects = useProjects();
-  // Coder: there is no primary environment; the active workspace takes its place.
-  const primaryEnvironmentId = useActiveEnvironmentId();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const logicalProjectKeyByPhysicalKey = useMemo(
     () =>
       buildPhysicalToLogicalProjectKeyMap({
         projects,
         settings: projectGroupingSettings,
-        preferredEnvironmentId: primaryEnvironmentId,
+        primaryEnvironmentId,
       }),
     [primaryEnvironmentId, projectGroupingSettings, projects],
   );

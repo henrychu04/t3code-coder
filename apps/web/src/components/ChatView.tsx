@@ -319,7 +319,11 @@ import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useEnvironmentQuery } from "../state/query";
-import { environmentServerConfigsAtom, serverEnvironment } from "../state/server";
+import {
+  environmentServerConfigsAtom,
+  primaryServerKeybindingsAtom,
+  serverEnvironment,
+} from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
@@ -327,7 +331,7 @@ import { vcsEnvironment } from "../state/vcs";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useProjectClone } from "../state/projectClones";
 import { projectCloneDisplayName, projectCloneProgressSummary } from "@t3tools/contracts";
-import { useEnvironmentKeybindings, useEnvironments } from "../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import {
   resolveThreadDetailRef,
   useProject,
@@ -2393,6 +2397,7 @@ export default function ChatView(props: ChatViewProps) {
   // Compute the list of environments this logical project spans, used to
   // drive the environment picker in BranchToolbar.
   const allProjects = useProjects();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const activeEnvironment =
     activeThread == null ? null : (environmentById.get(activeThread.environmentId) ?? null);
   const activeEnvironmentConnectionPhase = activeEnvironment?.connection.phase ?? "available";
@@ -2455,20 +2460,23 @@ export default function ChatView(props: ChatViewProps) {
     for (const p of memberProjects) {
       if (seen.has(p.environmentId)) continue;
       seen.add(p.environmentId);
+      const isPrimary = p.environmentId === primaryEnvironmentId;
       const environment = environmentById.get(p.environmentId) ?? null;
       envs.push({
         environmentId: p.environmentId,
         projectId: p.id,
         label: environment?.label ?? p.environmentId,
-        // Coder: every workspace is remote; there is no primary environment.
-        isPrimary: false,
+        isPrimary,
         machine: resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
       });
     }
-    // Coder: workspaces have no primary environment, so sort alphabetically.
-    envs.sort((a, b) => a.label.localeCompare(b.label));
+    // Sort: primary first, then alphabetical
+    envs.sort((a, b) => {
+      if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    });
     return envs;
-  }, [activeProject, allProjects, projectGroupingSettings, environmentById]);
+  }, [activeProject, allProjects, projectGroupingSettings, primaryEnvironmentId, environmentById]);
   const hasMultipleEnvironments = logicalProjectEnvironments.length > 1;
   const activeEnvironmentOption =
     logicalProjectEnvironments.find(
@@ -2651,7 +2659,7 @@ export default function ChatView(props: ChatViewProps) {
 
   // Once a thread selects an environment, never substitute another
   // environment's config while the selected environment is still loading.
-  // Coder: drafts read their route workspace; there is no primary environment.
+  // Coder: drafts read their route workspace rather than the primary workspace.
   const serverConfig = activeThread
     ? (activeEnvironment?.serverConfig ?? null)
     : (environmentById.get(environmentId)?.serverConfig ?? null);
@@ -3415,8 +3423,8 @@ export default function ChatView(props: ChatViewProps) {
     refresh: gitStatusQuery.refresh,
     resourceKey: `git-status:${activeThreadKey ?? ""}:${gitStatusCwd ?? ""}`,
   });
-  // Coder: keybindings come from the thread's workspace; there are no local editors to open.
-  const keybindings = useEnvironmentKeybindings(activeThread?.environmentId ?? environmentId);
+  // Coder: there are no local editors to open.
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const manualCompactionProviderAvailable = useMemo(
     () =>
       hasAvailableCompactionProvider({

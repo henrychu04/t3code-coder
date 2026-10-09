@@ -25,10 +25,11 @@ const { newThread, prepareThread, refresh, Wrapper, Trigger } = vi.hoisted(() =>
   ),
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => [] }));
+vi.mock("~/state/server", () => ({ primaryServerKeybindingsAtom: {} }));
 vi.mock("~/state/entities", () => ({ useProjects: () => [], useServerConfigs: () => new Map() }));
 vi.mock("~/state/environments", () => ({
   useEnvironments: () => ({ environments: [] }),
-  useEnvironmentKeybindings: () => [],
+  usePrimaryEnvironmentId: () => EnvironmentId.make("env-1"),
 }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: typeof DEFAULT_CLIENT_SETTINGS) => unknown) =>

@@ -2,10 +2,9 @@ import type { T3ProjectFile } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/unstable/reactivity";
-import { useActiveEnvironmentId } from "../../state/entities";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 
-import { useEnvironments } from "../../state/environments";
+import { useEnvironments, usePrimaryEnvironmentId } from "../../state/environments";
 import { projectEnvironment } from "../../state/projects";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "./scopedSettings";
@@ -50,8 +49,7 @@ function useMemberProjectFiles(scope: ReturnType<typeof resolveSettingsScope>) {
 function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironment: boolean) {
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
-  const primaryEnvironmentId = useActiveEnvironmentId();
-  // Coder: the active workspace stands in for upstream's primary environment.
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const resolvedSearch = useMemo(() => {
     const search = resolveLegacyProjectSettingsSearch(rawSearch, groups);
     return singleEnvironment

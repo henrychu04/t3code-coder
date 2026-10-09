@@ -14,11 +14,21 @@ import {
   THEME_PREVIEW_ID,
   THEME_HALVES_STORAGE_KEY,
 } from "../themePalette";
-const state = vi.hoisted(() => ({ themes: [] as EnvironmentTheme[] }));
-vi.mock("../state/entities", () => ({ useActiveEnvironmentId: () => "workspace" }));
-vi.mock("../state/environments", () => ({
-  useEnvironment: () => ({ serverConfig: { environmentThemes: state.themes } }),
+const state = vi.hoisted(() => ({
+  themes: [] as EnvironmentTheme[],
+  themesAtom: Symbol("primaryServerEnvironmentThemesAtom"),
 }));
+vi.mock("../state/server", () => ({ primaryServerEnvironmentThemesAtom: state.themesAtom }));
+vi.mock("@effect/atom-react", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@effect/atom-react")>();
+  return {
+    ...original,
+    useAtomValue: ((atom: unknown) =>
+      atom === state.themesAtom
+        ? state.themes
+        : original.useAtomValue(atom as never)) as typeof original.useAtomValue,
+  };
+});
 let host: HTMLDivElement;
 let root: Root;
 let theme: ReturnType<typeof useTheme>;

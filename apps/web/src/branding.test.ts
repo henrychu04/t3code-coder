@@ -20,44 +20,44 @@ describe("branding", () => {
 });
 
 describe("branding logic", () => {
-  it("returns Nightly when a connected server uses a nightly version", () => {
+  it("returns Nightly for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppStageLabel({
-        serverVersions: ["0.0.27", "0.0.28-nightly.20260616.12"],
+        primaryServerVersion: "0.0.28-nightly.20260616.12",
         fallbackStageLabel: "Alpha",
       }),
     ).toBe("Nightly");
   });
 
-  it("updates the display name when a connected server uses a nightly version", () => {
+  it("updates the display name for nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
         baseName: "T3 Code",
         fallbackDisplayName: "T3 Code (Alpha)",
         fallbackStageLabel: "Alpha",
-        serverVersions: ["0.0.28-nightly.20260616.12"],
+        primaryServerVersion: "0.0.28-nightly.20260616.12",
       }),
     ).toBe("T3 Code (Nightly)");
   });
 
-  it("keeps the fallback display name when all connected servers are stable", () => {
+  it("keeps the fallback display name for stable primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
         baseName: "T3 Code",
         fallbackDisplayName: "T3 Code (Alpha)",
         fallbackStageLabel: "Alpha",
-        serverVersions: ["0.0.27", "0.0.28"],
+        primaryServerVersion: "0.0.27",
       }),
     ).toBe("T3 Code (Alpha)");
   });
 
-  it("keeps the fallback display name for malformed nightly server versions", () => {
+  it("keeps the fallback display name for malformed nightly primary server versions", () => {
     expect(
       resolveServerBackedAppDisplayName({
         baseName: "T3 Code",
         fallbackDisplayName: "T3 Code (Alpha)",
         fallbackStageLabel: "Alpha",
-        serverVersions: ["0.0.28-nightly.20260616"],
+        primaryServerVersion: "0.0.28-nightly.20260616",
       }),
     ).toBe("T3 Code (Alpha)");
   });

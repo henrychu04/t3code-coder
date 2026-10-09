@@ -50,7 +50,7 @@ import {
 import { useUiStateStore } from "../uiStateStore";
 import { syncBrowserChromeTheme } from "../hooks/useTheme";
 import { useAtomValue } from "@effect/atom-react";
-import { environmentServerStatesAtom } from "../state/server";
+import { environmentServerStatesAtom, primaryServerConfigAtom } from "../state/server";
 import { initializeActiveEnvironmentId, readProject } from "../state/entities";
 import {
   createKeybindingsUpdateToastController,
@@ -194,14 +194,13 @@ function FontAppearanceSync() {
 }
 
 function DocumentTitleSync() {
-  const serverStates = useAtomValue(environmentServerStatesAtom);
+  const primaryServerVersion =
+    useAtomValue(primaryServerConfigAtom)?.environment.serverVersion ?? null;
   const title = resolveServerBackedAppDisplayName({
     baseName: APP_BASE_NAME,
     fallbackDisplayName: APP_DISPLAY_NAME,
     fallbackStageLabel: APP_STAGE_LABEL,
-    serverVersions: [...serverStates.values()].map(
-      ({ config }) => config?.environment.serverVersion,
-    ),
+    primaryServerVersion,
   });
 
   useEffect(() => {
@@ -209,10 +208,6 @@ function DocumentTitleSync() {
   }, [title]);
 
   return null;
-  // FirstRunGate holds back everything below it — including EventRouter,
-  // whose welcome payload navigates into a thread — until the first-run
-  // decision is known, so a fresh install renders nothing (not the shell,
-  // not a flash of threads) before landing on the welcome wizard.
 }
 
 function RootRouteErrorView({ error }: ErrorComponentProps) {
@@ -312,6 +307,10 @@ function errorReport(error: unknown, pathname: string): string {
   }
   return lines.join("\n");
 }
+/**
+ * Coder: every workspace sends its own welcome and config events. The first welcome picks the
+ * active (primary) workspace, so events are read per workspace rather than from the primary.
+ */
 function EventRouter() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (loc) => loc.pathname });

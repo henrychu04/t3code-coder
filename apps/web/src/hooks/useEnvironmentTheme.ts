@@ -1,10 +1,9 @@
 import type { EnvironmentTheme } from "@t3tools/contracts";
-import { useActiveEnvironmentId } from "../state/entities";
-import { useEnvironment } from "../state/environments";
+import { useAtomValue } from "@effect/atom-react";
 import * as Equal from "effect/Equal";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
-const EMPTY_PUBLISHED_THEMES: ReadonlyArray<EnvironmentTheme> = [];
+import { primaryServerEnvironmentThemesAtom } from "../state/server";
 import {
   createVividThemeColors,
   getDefaultThemeColors,
@@ -106,9 +105,7 @@ export function useEnvironmentThemeDefinitions(): ReadonlyArray<ThemeDefinition>
  * gains cards in the theme library.
  */
 export function useEnvironmentThemeSync(): void {
-  const published =
-    useEnvironment(useActiveEnvironmentId())?.serverConfig?.environmentThemes ??
-    EMPTY_PUBLISHED_THEMES;
+  const published = useAtomValue(primaryServerEnvironmentThemesAtom);
   const { refreshTheme } = useTheme();
   const lastPublished = useRef<ReadonlyArray<EnvironmentTheme> | null>(null);
 

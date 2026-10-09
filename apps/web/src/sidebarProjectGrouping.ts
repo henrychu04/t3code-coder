@@ -14,8 +14,8 @@ export interface SidebarProjectSnapshot extends Project {
   displayName: string;
   groupedProjectCount: number;
   environmentPresence: EnvironmentPresence;
-  // True iff every non-preferred member of this group lives in a
-  // desktopLocal env (today: the WSL backend). The sidebar uses this
+  // True iff every non-primary member of this group lives in a
+  // desktop-local environment. The sidebar uses this
   // to differentiate "lives on this machine but in a sandbox" from
   // "lives on a real remote" so the project header can pick a
   // local-device treatment instead of the generic remote treatment.
@@ -48,13 +48,13 @@ export interface SidebarProjectPickerEntry {
 export function buildPhysicalToLogicalProjectKeyMap(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
-  preferredEnvironmentId: EnvironmentId | null;
+  primaryEnvironmentId: EnvironmentId | null;
 }): Map<string, string> {
   const mapping = new Map<string, string>();
   const groups = buildProjectGroups({
     projects: input.projects,
     settings: input.settings,
-    preferredEnvironmentId: input.preferredEnvironmentId,
+    preferredEnvironmentId: input.primaryEnvironmentId,
   });
   for (const group of groups) {
     for (const member of group.members) {
@@ -67,7 +67,7 @@ export function buildPhysicalToLogicalProjectKeyMap(input: {
 export function buildSidebarProjectSnapshots(input: {
   projects: ReadonlyArray<Project>;
   settings: ProjectGroupingSettings;
-  preferredEnvironmentId: EnvironmentId | null;
+  primaryEnvironmentId: EnvironmentId | null;
   resolveEnvironmentLabel: (environmentId: EnvironmentId) => string | null;
   // Returns true when an env id maps to a desktop-local saved-env
   // record. Defaults to "false for every
@@ -79,7 +79,7 @@ export function buildSidebarProjectSnapshots(input: {
   return buildProjectGroups({
     projects: input.projects,
     settings: input.settings,
-    preferredEnvironmentId: input.preferredEnvironmentId,
+    preferredEnvironmentId: input.primaryEnvironmentId,
   }).map((group): SidebarProjectSnapshot => {
     const members = group.members.map(
       ({ physicalProjectKey, project }): SidebarProjectGroupMember => ({
@@ -96,16 +96,15 @@ export function buildSidebarProjectSnapshots(input: {
       ) ?? members[0]!;
 
     const hasLocal =
-      input.preferredEnvironmentId !== null &&
-      members.some((member) => member.environmentId === input.preferredEnvironmentId);
+      input.primaryEnvironmentId !== null &&
+      members.some((member) => member.environmentId === input.primaryEnvironmentId);
     const hasRemote =
-      input.preferredEnvironmentId !== null
-        ? members.some((member) => member.environmentId !== input.preferredEnvironmentId)
+      input.primaryEnvironmentId !== null
+        ? members.some((member) => member.environmentId !== input.primaryEnvironmentId)
         : false;
     const remoteMembers = members.filter(
       (member) =>
-        input.preferredEnvironmentId !== null &&
-        member.environmentId !== input.preferredEnvironmentId,
+        input.primaryEnvironmentId !== null && member.environmentId !== input.primaryEnvironmentId,
     );
     const remoteEnvironmentLabels = remoteMembers
       .flatMap((member) => (member.environmentLabel ? [member.environmentLabel] : []))

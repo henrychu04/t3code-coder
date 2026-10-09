@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import * as Schema from "effect/Schema";
 import {
   useEffect,
@@ -21,8 +22,7 @@ import { isModelPickerOpen } from "../modelPickerVisibility";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { resolveThreadRouteRef } from "../threadRoutes";
 import { cn } from "../lib/utils";
-import { useActiveEnvironmentId } from "../state/entities";
-import { useEnvironmentKeybindings } from "../state/environments";
+import { primaryServerKeybindingsAtom } from "../state/server";
 import { useEnvironmentIdentificationMode } from "../hooks/useSettings";
 import {
   PanelAnimationSuppressionProvider,
@@ -75,9 +75,9 @@ function readInitialThreadSidebarWidth(): number {
 }
 
 function SidebarControl() {
-  // Coder: there is no usage page, and shortcuts follow the active workspace.
+  // Coder: there is no usage page.
   const usagePageOpen = false;
-  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { toggleSidebar } = useSidebar();
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
@@ -155,7 +155,7 @@ function SidebarControl() {
 
 // Moves through the app's route history like a browser's back/forward buttons.
 function NavigationHistoryShortcuts() {
-  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const routeThreadRef = useParams({
     strict: false,
     select: (params) => resolveThreadRouteRef(params),

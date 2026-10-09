@@ -18,7 +18,7 @@ import { orderItemsByPreferredIds } from "./components/Sidebar.logic";
 import { legacyProjectCwdPreferenceKey } from "./uiStateStore";
 import type { Project } from "./types";
 
-const preferredEnvironmentId = EnvironmentId.make("env-preferred");
+const primaryEnvironmentId = EnvironmentId.make("env-preferred");
 const remoteEnvironmentId = EnvironmentId.make("env-remote");
 const repositoryIdentity = {
   canonicalKey: "workspace:/work/shared-repo",
@@ -36,7 +36,7 @@ const defaultGroupingSettings = {
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
     id: ProjectId.make("project-1"),
-    environmentId: preferredEnvironmentId,
+    environmentId: primaryEnvironmentId,
     title: "shared-repo",
     workspaceRoot: "/tmp/shared-repo",
     repositoryIdentity: null,
@@ -75,7 +75,7 @@ describe("environment grouping", () => {
     const projectGroupCount = buildSidebarProjectSnapshots({
       projects: [primary, remote],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: () => null,
     }).length;
 
@@ -104,7 +104,7 @@ describe("environment grouping", () => {
       buildSidebarProjectSnapshots({
         projects,
         settings: defaultGroupingSettings,
-        preferredEnvironmentId,
+        primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) =>
           environmentId === remoteEnvironmentId ? "Mac mini" : "Primary",
       });
@@ -203,7 +203,7 @@ describe("environment grouping", () => {
     const snapshots = buildSidebarProjectSnapshots({
       projects: [primary, duplicate, remote],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: (environmentId) =>
         environmentId === remoteEnvironmentId ? "remote" : "primary",
     });
@@ -233,7 +233,7 @@ describe("environment grouping", () => {
     const snapshots = buildSidebarProjectSnapshots({
       projects: [staleDuplicate, canonical],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: () => "primary",
     });
 
@@ -262,7 +262,7 @@ describe("environment grouping", () => {
     const snapshots = buildSidebarProjectSnapshots({
       projects: [staleWithoutRepositoryIdentity, canonical, remote],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: (environmentId) =>
         environmentId === remoteEnvironmentId ? "remote" : "primary",
     });
@@ -275,17 +275,17 @@ describe("environment grouping", () => {
     ]);
     expect(snapshots[0]?.memberProjectRefs).toEqual([
       {
-        environmentId: preferredEnvironmentId,
+        environmentId: primaryEnvironmentId,
         projectId: staleWithoutRepositoryIdentity.id,
       },
-      { environmentId: preferredEnvironmentId, projectId: canonical.id },
+      { environmentId: primaryEnvironmentId, projectId: canonical.id },
       { environmentId: remoteEnvironmentId, projectId: remote.id },
     ]);
 
     const [pickerEntry] = buildSidebarProjectPickerEntries({
       groups: snapshots,
       preferredProjectRef: {
-        environmentId: preferredEnvironmentId,
+        environmentId: primaryEnvironmentId,
         projectId: staleWithoutRepositoryIdentity.id,
       },
     });
@@ -308,7 +308,7 @@ describe("environment grouping", () => {
     const physicalToLogicalKey = buildPhysicalToLogicalProjectKeyMap({
       projects: [staleWithoutRepositoryIdentity, canonical],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
     });
 
     expect(physicalToLogicalKey.get(derivePhysicalProjectKey(staleWithoutRepositoryIdentity))).toBe(
@@ -336,7 +336,7 @@ describe("environment grouping", () => {
     const groups = buildSidebarProjectSnapshots({
       projects: [separate, primary, remote],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: () => null,
     });
 
@@ -400,7 +400,7 @@ describe("environment grouping", () => {
         fallbackPrimary,
       ],
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: () => null,
     });
 
@@ -421,7 +421,7 @@ describe("environment grouping", () => {
       id: destinationRemote.id,
     });
     expect(fallback?.targetProject).toMatchObject({
-      environmentId: preferredEnvironmentId,
+      environmentId: primaryEnvironmentId,
       id: fallbackPrimary.id,
     });
   });
@@ -451,7 +451,7 @@ describe("environment grouping", () => {
     const groups = buildSidebarProjectSnapshots({
       projects: orderedProjects,
       settings: defaultGroupingSettings,
-      preferredEnvironmentId,
+      primaryEnvironmentId,
       resolveEnvironmentLabel: () => null,
     });
 

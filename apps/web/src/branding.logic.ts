@@ -12,15 +12,11 @@ export function formatAppDisplayName(input: {
 }
 
 export function resolveServerBackedAppStageLabel(input: {
-  readonly serverVersions: ReadonlyArray<string | null | undefined>;
+  readonly primaryServerVersion: string | null | undefined;
   readonly fallbackStageLabel: string;
 }): string {
-  return input.serverVersions.some(
-    (serverVersion) =>
-      serverVersion !== null &&
-      serverVersion !== undefined &&
-      NIGHTLY_SERVER_VERSION_PATTERN.test(serverVersion),
-  )
+  return input.primaryServerVersion &&
+    NIGHTLY_SERVER_VERSION_PATTERN.test(input.primaryServerVersion)
     ? "Nightly"
     : input.fallbackStageLabel;
 }
@@ -29,10 +25,10 @@ export function resolveServerBackedAppDisplayName(input: {
   readonly baseName: string;
   readonly fallbackDisplayName: string;
   readonly fallbackStageLabel: string;
-  readonly serverVersions: ReadonlyArray<string | null | undefined>;
+  readonly primaryServerVersion: string | null | undefined;
 }): string {
   const stageLabel = resolveServerBackedAppStageLabel({
-    serverVersions: input.serverVersions,
+    primaryServerVersion: input.primaryServerVersion,
     fallbackStageLabel: input.fallbackStageLabel,
   });
 

@@ -1,17 +1,10 @@
-import {
-  EnvironmentId,
-  ProviderDriverKind,
-  ProviderInstanceId,
-  type ServerProvider,
-} from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { ProviderModelPicker } from "./ProviderModelPicker";
 import type { ModelEsque } from "./providerIconUtils";
-
-const environmentId = EnvironmentId.make("coder:test");
 
 function providerEntry(instanceId: string, driver: string) {
   const provider: ServerProvider = {
@@ -41,7 +34,6 @@ function renderPicker(input: {
   const entry = providerEntry(input.instanceId, input.driver);
   return renderToStaticMarkup(
     <ProviderModelPicker
-      environmentId={environmentId}
       activeInstanceId={instanceId}
       model={input.model}
       lockedProvider={null}
@@ -100,7 +92,6 @@ describe("ProviderModelPicker", () => {
     const activeEntry = providerEntry("codex_personal", "codex");
     const markup = renderToStaticMarkup(
       <ProviderModelPicker
-        environmentId={environmentId}
         activeInstanceId={activeEntry.instanceId}
         model="gpt-5"
         lockedProvider={null}

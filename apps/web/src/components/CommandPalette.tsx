@@ -103,14 +103,8 @@ import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useScratchProject } from "../hooks/useScratchProject";
 import { useNewProject } from "../hooks/useNewProject";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
-import { useEnvironmentKeybindings, useEnvironments } from "../state/environments";
-import {
-  useActiveEnvironmentId,
-  useProjects,
-  useServerConfigs,
-  useThreadShells,
-  waitForProject,
-} from "../state/entities";
+import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
+import { useProjects, useServerConfigs, useThreadShells, waitForProject } from "../state/entities";
 import { useThreadSearch } from "../state/queries";
 import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";
 import {
@@ -190,6 +184,7 @@ import {
   ThreadCommandSubtitle,
 } from "./ThreadCommandSubtitle";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
+import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -475,8 +470,7 @@ export function CommandPalette({ children }: { children: ReactNode }) {
   const openAddProject = useCallback(() => dispatch({ _tag: "OpenAddProject" }), []);
   const openNewThreadIn = useCallback(() => dispatch({ _tag: "OpenNewThreadIn" }), []);
   const clearOpenIntent = useCallback(() => dispatch({ _tag: "ClearOpenIntent" }), []);
-  // Coder: the active workspace's keybindings stand in for upstream's primary environment.
-  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const { theme, themeHalves, resolvedTheme, appearanceMode, setAppearanceMode } = useTheme();
   const composerHandleRef = useRef<ChatComposerHandle | null>(null);
   const routeTarget = useParams({
@@ -712,8 +706,7 @@ function OpenCommandPaletteDialog(props: {
     reportFailure: false,
   });
   const { environments } = useEnvironments();
-  // Coder: workspaces have no primary environment; the active workspace takes its place.
-  const primaryEnvironmentId = useActiveEnvironmentId();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
   const availableSettingsSearchItems = useAvailableSettingsSearchItems();
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
@@ -766,8 +759,7 @@ function OpenCommandPaletteDialog(props: {
   }, [activeThreadReferenceCopyTarget]);
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
-  // Coder: the active workspace's keybindings stand in for upstream's primary environment.
-  const keybindings = useEnvironmentKeybindings(useActiveEnvironmentId());
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const {
     theme,
     themeHalves,
@@ -792,11 +784,14 @@ function OpenCommandPaletteDialog(props: {
         .map(getThemeCardDefinition),
     ];
   }, [customThemes, environmentThemes]);
+  const providers = useAtomValue(primaryServerProvidersAtom);
   const providerEntryByEnvironmentAndInstanceId = useMemo(() => {
     const map = new Map<string, ProviderInstanceEntry>();
     for (const environment of environments) {
       const serverConfig = environment.serverConfig;
-      const environmentProviders = serverConfig?.providers ?? [];
+      const environmentProviders =
+        serverConfig?.providers ??
+        (environment.environmentId === primaryEnvironmentId ? providers : []);
       const derived = deriveProviderInstanceEntries(environmentProviders);
       // Settings fill the ACP registry identity (agent id, icon URL) the
       // derived entries alone do not carry.
@@ -808,7 +803,7 @@ function OpenCommandPaletteDialog(props: {
       }
     }
     return map;
-  }, [environments]);
+  }, [environments, primaryEnvironmentId, providers]);
   const [viewStack, setViewStack] = useState<CommandPaletteView[]>([]);
   const currentView = viewStack.at(-1) ?? null;
   const environmentIds = useMemo(
@@ -911,7 +906,7 @@ function OpenCommandPaletteDialog(props: {
       buildSidebarProjectSnapshots({
         projects: clientSettings.sidebarProjectSortOrder === "manual" ? orderedProjects : projects,
         settings: projectGroupingSettings,
-        preferredEnvironmentId: primaryEnvironmentId,
+        primaryEnvironmentId,
         resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,
       }),
     [
@@ -2525,6 +2520,7 @@ function OpenCommandPaletteDialog(props: {
       navigate,
       primaryEnvironmentId,
       projects,
+      providers,
       setOpen,
       clientSettings.sidebarThreadSortOrder,
       threads,

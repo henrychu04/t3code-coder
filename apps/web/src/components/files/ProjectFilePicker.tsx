@@ -1,9 +1,10 @@
+import { useAtomValue } from "@effect/atom-react";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useTheme } from "~/hooks/useTheme";
 import { useRightPanelStore } from "~/rightPanelStore";
-import { useEnvironmentKeybindings } from "~/state/environments";
+import { primaryServerKeybindingsAtom } from "~/state/server";
 
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { CommandPaletteContent } from "../CommandPaletteContent";
@@ -78,8 +79,7 @@ function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveP
     PROJECT_FILE_PICKER_RESULT_LIMIT,
   );
   const { resolvedTheme } = useTheme();
-  // Coder: there is no primary server; the target workspace supplies keybindings.
-  const keybindings = useEnvironmentKeybindings(target.environmentId);
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const matches = useMemo(
     () => getProjectFilePickerMatches(result.entries, result.matchedQuery),
     [result.entries, result.matchedQuery],
