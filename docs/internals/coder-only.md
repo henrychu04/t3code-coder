@@ -583,9 +583,8 @@ listed here is drift to remove rather than fork behavior to keep.
     driver as an entry. Upstream's other drivers (Cursor, OpenCode, ACP, Antigravity, Grok) are
     not carried.
   - Thread-title and branch-name generation use only Codex or Claude models. Text generation is
-    upstream's except that Codex `codex exec` disables every discovered workspace MCP server (fail
-    closed) and reads branch-name and title images through `PastedImageAttachments.ts`, skipping
-    an unreadable image as upstream does.
+    upstream's except that Codex reads branch-name and title images through
+    `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `server.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer.

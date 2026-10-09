@@ -14,7 +14,6 @@ import { expect } from "vite-plus/test";
 import { CodexSettings, ProviderInstanceId, TextGenerationError } from "@t3tools/contracts";
 
 import * as ServerConfig from "../config.ts";
-import { CodexIntegrationPolicyError } from "../provider/Layers/CodexIntegrationPolicy.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { makeCodexTextGeneration } from "./CodexTextGeneration.ts";
 import { writeFakeCli } from "../testUtils/fakeCli.ts";
@@ -141,7 +140,6 @@ function withFakeCodexEnv<A, E, R>(
     environment?: NodeJS.ProcessEnv;
     models?: ReadonlyArray<string>;
     managedRuntime?: boolean;
-    mcpServerNames?: Effect.Effect<ReadonlyArray<string>, CodexIntegrationPolicyError>;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -168,8 +166,6 @@ function withFakeCodexEnv<A, E, R>(
             revision: "test",
           })
         : undefined,
-      // Coder: MCP discovery is covered by CodexIntegrationPolicy tests.
-      input.mcpServerNames ? () => input.mcpServerNames! : () => Effect.succeed([]),
     );
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
@@ -197,48 +193,6 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
       ),
     );
   }
-  it.effect("disables discovered workspace MCP servers and app integrations", () =>
-    withFakeCodexEnv(
-      {
-        output: JSON.stringify({ title: "Disable MCP" }),
-        mcpServerNames: Effect.succeed(["docs"]),
-        requireArg: '--config mcp_servers={"docs"={enabled=false}} --config features.apps=false',
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const result = yield* textGeneration.generateThreadTitle({
-            cwd: process.cwd(),
-            message: "Describe this change",
-            modelSelection: DEFAULT_TEST_MODEL_SELECTION,
-          });
-          expect(result.title).toBe("Disable MCP");
-        }),
-    ),
-  );
-
-  it.effect("does not start Codex when MCP discovery fails", () =>
-    withFakeCodexEnv(
-      {
-        output: JSON.stringify({ title: "Unexpected" }),
-        mcpServerNames: Effect.fail(new CodexIntegrationPolicyError("MCP discovery failed.")),
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const result = yield* textGeneration
-            .generateThreadTitle({
-              cwd: process.cwd(),
-              message: "Describe this change",
-              modelSelection: DEFAULT_TEST_MODEL_SELECTION,
-            })
-            .pipe(Effect.result);
-          expect(Result.isFailure(result)).toBe(true);
-          if (Result.isFailure(result)) {
-            expect(result.failure.message).toContain("MCP discovery failed.");
-          }
-        }),
-    ),
-  );
-
   it.effect("generates and sanitizes commit messages without branch by default", () =>
     withFakeCodexEnv(
       {

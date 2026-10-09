@@ -20,10 +20,6 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../pathExpansion.ts";
 import { resolvePastedImageAttachment } from "../provider/PastedImageAttachments.ts";
-import {
-  discoverCodexMcpServerNames,
-  type CodexMcpServerNameResolver,
-} from "../provider/Layers/CodexIntegrationPolicy.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
@@ -57,8 +53,6 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     import("@t3tools/contracts").ProviderSetupError,
     Scope.Scope
   >,
-  // Coder: tests stub MCP discovery; production discovers with the effective runtime config.
-  mcpServerNameResolver?: CodexMcpServerNameResolver,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -221,23 +215,6 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         )?.slug ??
         requestedModel;
       const launchArgs = resolveCodexLaunchArgs(effectiveConfig.launchArgs, effectiveEnvironment);
-      // Coder: disable every workspace MCP server configured for the cwd; failed discovery is
-      // fail-closed and prevents the Codex process from starting.
-      const resolveMcpServerNames: CodexMcpServerNameResolver =
-        mcpServerNameResolver ??
-        ((serverCwd) =>
-          discoverCodexMcpServerNames({
-            binaryPath: effectiveConfig.binaryPath || "codex",
-            launchArgs,
-            cwd: serverCwd,
-            homePath: effectiveConfig.homePath,
-            environment: effectiveEnvironment,
-          }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, commandSpawner)));
-      const disabledMcpServerNames = yield* resolveMcpServerNames(cwd).pipe(
-        Effect.mapError(
-          (cause) => new TextGenerationError({ operation, detail: cause.message, cause }),
-        ),
-      );
       const reasoningEffort =
         getModelSelectionStringOptionValue(modelSelection, "reasoningEffort") ??
         DEFAULT_TEXT_GENERATION_REASONING_EFFORT;
@@ -246,7 +223,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         effectiveConfig.binaryPath || "codex",
         [
           "exec",
-          ...codexExecLaunchArgs(launchArgs, disabledMcpServerNames),
+          ...codexExecLaunchArgs(launchArgs),
           "--ephemeral",
           "--skip-git-repo-check",
           "-s",
