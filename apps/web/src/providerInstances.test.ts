@@ -328,7 +328,7 @@ describe("deriveProviderEntriesByEnvironment", () => {
 });
 
 describe("resolveSelectableProviderInstance", () => {
-  it("keeps an added Claude instance selectable", () => {
+  it("returns the requested instance when it is enabled and available", () => {
     const requested = ProviderInstanceId.make("claude_work");
     const providers = [
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
@@ -336,16 +336,6 @@ describe("resolveSelectableProviderInstance", () => {
     ];
 
     expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
-  });
-
-  it("falls back when the requested instance is not a Codex or Claude provider", () => {
-    const requested = ProviderInstanceId.make("grok");
-    const providers = [
-      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
-      provider({ provider: ProviderDriverKind.make("grok"), instanceId: requested }),
-    ];
-
-    expect(resolveSelectableProviderInstance(providers, requested)).toBe("codex");
   });
 
   it("falls back to the first enabled and available instance", () => {
@@ -505,6 +495,7 @@ describe("resolveDefaultProviderModelSelection", () => {
   it.each([
     ["codex", "codex", "gpt-5.6"],
     ["claudeAgent", "claudeAgent", "claude-fable-5"],
+    // Coder: the unregistered Cursor driver is never offered.
   ])("uses the only available %s instance", (driver, instanceId, modelSlug) => {
     const providers = [
       provider({
@@ -520,7 +511,7 @@ describe("resolveDefaultProviderModelSelection", () => {
     });
   });
 
-  it("falls back from a stored custom model on a built-in provider", () => {
+  it("preserves a valid stored selection including its options", () => {
     const providers = [
       provider({
         provider: ProviderDriverKind.make("claudeAgent"),
@@ -531,26 +522,6 @@ describe("resolveDefaultProviderModelSelection", () => {
     const stored = {
       instanceId: ProviderInstanceId.make("claudeAgent"),
       model: "custom-model",
-      options: [{ id: "effort", value: "high" }],
-    };
-
-    expect(resolveDefaultProviderModelSelection(providers, stored)).toEqual({
-      instanceId: ProviderInstanceId.make("claudeAgent"),
-      model: "claude-opus-4-8",
-    });
-  });
-
-  it("preserves a valid built-in stored selection including its options", () => {
-    const providers = [
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claudeAgent",
-        models: [model("claude-opus-4-8")],
-      }),
-    ];
-    const stored = {
-      instanceId: ProviderInstanceId.make("claudeAgent"),
-      model: "claude-opus-4-8",
       options: [{ id: "effort", value: "high" }],
     };
 
@@ -647,15 +618,16 @@ describe("resolveDefaultProviderModelSelection", () => {
   });
 });
 
-it("preserves a custom project/default selection and its options", () => {
-  const instanceId = ProviderInstanceId.make("codex");
-  const stored = { instanceId, model: "custom", options: [{ id: "effort", value: "high" }] };
-  const providers = [
-    provider({
-      provider: ProviderDriverKind.make("codex"),
-      instanceId,
-      models: [model("gpt-5.6", false, true), model("custom", true)],
-    }),
-  ];
-  expect(resolveDefaultProviderModelSelection(providers, stored)).toBe(stored);
+describe("provider icon metadata", () => {
+  it("retains server-published registry icons without local settings", () => {
+    const iconUrl = "https://cdn.agentclientprotocol.com/registry/icons/swe-agent.svg";
+    const [entry] = deriveProviderInstanceEntries([
+      {
+        ...provider({ provider: ProviderDriverKind.make("acpRegistry"), instanceId: "swe-remote" }),
+        iconUrl,
+      },
+    ]);
+    expect(entry?.acpRegistryIconUrl).toBe(iconUrl);
+    expect(entry?.driverKind).toBe("acpRegistry");
+  });
 });

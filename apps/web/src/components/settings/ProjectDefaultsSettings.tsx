@@ -8,7 +8,7 @@ import { createModelSelection } from "@t3tools/shared/model";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
-import { getModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -65,7 +65,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const entries = sortProviderInstanceEntries(
     applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings),
   );
-  const modelOptions = getModelOptionsByInstance(
+  const modelOptions = getCustomModelOptionsByInstance(
     settings,
     providers,
     selection?.instanceId,
@@ -103,7 +103,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
         deriveProviderInstanceEntries(config.providers),
         candidate.settings,
       ).find((option) => option.instanceId === instanceId);
-      const options = getModelOptionsByInstance(
+      const options = getCustomModelOptionsByInstance(
         { ...settings, ...candidate.settings },
         config.providers,
       ).get(instanceId);

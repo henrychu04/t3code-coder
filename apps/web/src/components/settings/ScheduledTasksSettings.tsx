@@ -31,7 +31,7 @@ import {
 
 import { formatRelativeTime } from "../../timestampFormat";
 import { useEnvironmentSettings } from "../../hooks/useSettings";
-import { getModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -532,7 +532,7 @@ function ScheduledTaskEditorDialog({
     activeSelection?.instanceId ?? firstInstance?.instanceId ?? ("" as ProviderInstanceId);
   const activeModel = activeSelection?.model ?? "";
   const modelOptionsByInstance = useMemo(
-    () => getModelOptionsByInstance(settings, providers, activeInstanceId, activeModel),
+    () => getCustomModelOptionsByInstance(settings, providers, activeInstanceId, activeModel),
     [settings, providers, activeInstanceId, activeModel],
   );
 

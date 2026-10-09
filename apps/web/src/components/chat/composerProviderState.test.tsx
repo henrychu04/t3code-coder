@@ -5,6 +5,8 @@ import {
   type ProviderOptionSelection,
   type ServerProviderModel,
 } from "@t3tools/contracts";
+import { getProviderOptionDescriptors } from "@t3tools/shared/model";
+import { getProviderModelCapabilities } from "../../providerModels";
 import {
   getComposerPromptInjectionState,
   getComposerProviderState,
@@ -12,20 +14,14 @@ import {
   renderProviderTraitsPicker,
   resolveAvailableRuntimeModes,
   resolveComposerRuntimeMode,
-  providerSupportsManualCompaction,
+  withImplicitFastModeDefault,
 } from "./composerProviderState";
 
 // Everything in composerProviderState is now data-driven by the model's
 // optionDescriptors, so these tests use a single synthetic provider/model and
 // vary only the descriptor shape per scenario.
 
-const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("claudeAgent");
-
-it("offers manual compaction for both retained providers, not unconfigured instances", () => {
-  expect(providerSupportsManualCompaction(ProviderDriverKind.make("codex"))).toBe(true);
-  expect(providerSupportsManualCompaction(ProviderDriverKind.make("claudeAgent"))).toBe(true);
-  expect(providerSupportsManualCompaction(ProviderDriverKind.make("unconfigured"))).toBe(false);
-});
+const PROVIDER: ProviderDriverKind = ProviderDriverKind.make("codex");
 const MODEL = "test-model";
 
 function selectDescriptor(
@@ -46,8 +42,16 @@ function selectDescriptor(
   };
 }
 
-function booleanDescriptor(id: string): Extract<ProviderOptionDescriptor, { type: "boolean" }> {
-  return { id, label: id, type: "boolean" };
+function booleanDescriptor(
+  id: string,
+  currentValue?: boolean,
+): Extract<ProviderOptionDescriptor, { type: "boolean" }> {
+  return {
+    id,
+    label: id,
+    type: "boolean",
+    ...(typeof currentValue === "boolean" ? { currentValue } : {}),
+  };
 }
 
 function modelWith(
@@ -71,15 +75,6 @@ const ULTRATHINK_FRAME_CLASSES = {
 } as const;
 
 describe("getComposerProviderState", () => {
-  it("falls back when the selected runtime mode is unsupported", () => {
-    expect(
-      resolveComposerRuntimeMode("full-access", ["approval-required", "auto-accept-edits"]),
-    ).toBe("auto-accept-edits");
-    expect(
-      resolveComposerRuntimeMode("auto-accept-edits", ["approval-required", "auto-accept-edits"]),
-    ).toBe("auto-accept-edits");
-  });
-
   it("derives a stable prompt injection state for ordinary prompt edits", () => {
     expect(getComposerPromptInjectionState("Investigate this failure")).toBe("none");
     expect(getComposerPromptInjectionState("Ultrathink:\nInvestigate this failure")).toBe(
@@ -106,53 +101,6 @@ describe("getComposerProviderState", () => {
       promptEffort: "high",
       modelOptionsForDispatch: undefined,
     });
-  });
-
-  it("returns the selected model's supported runtime modes", () => {
-    const models = modelWith([]).map((model) => ({
-      ...model,
-      capabilities: {
-        ...model.capabilities,
-        supportedRuntimeModes: ["approval-required", "auto-accept-edits"] as const,
-      },
-    }));
-
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models,
-      modelOptions: undefined,
-      planModeEnabled: true,
-    });
-
-    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
-  });
-
-  it("leaves missing capability handling to the provider-neutral availability resolver", () => {
-    const state = getComposerProviderState({
-      provider: PROVIDER,
-      model: MODEL,
-      models: [],
-      modelOptions: undefined,
-      planModeEnabled: true,
-    });
-
-    expect(state.supportedRuntimeModes).toBeUndefined();
-  });
-
-  it("fails closed when a warning provider retains cached model capabilities", () => {
-    expect(
-      resolveAvailableRuntimeModes("warning", [
-        "approval-required",
-        "auto-accept-edits",
-        "auto",
-        "full-access",
-      ]),
-    ).toEqual(["approval-required", "auto-accept-edits"]);
-    expect(resolveAvailableRuntimeModes("ready", undefined)).toEqual([
-      "approval-required",
-      "auto-accept-edits",
-    ]);
   });
 
   it("lets selections override defaults and propagates them through dispatch", () => {
@@ -233,6 +181,58 @@ describe("getComposerProviderState", () => {
     expect(state.modelOptionsForDispatch).toEqual(selections(["agent", "plan"]));
   });
 
+  it("drops the plan agent from dispatch when legacy plan mode is disabled", () => {
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models: modelWith([
+        selectDescriptor("agent", [
+          { id: "build", label: "Build", isDefault: true },
+          { id: "plan", label: "Plan" },
+        ]),
+      ]),
+      modelOptions: selections(["agent", "plan"]),
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["agent", "build"]));
+  });
+
+  it("drops the agent descriptor entirely when plan is the only option and plan mode is disabled", () => {
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models: modelWith([
+        selectDescriptor("agent", [{ id: "plan", label: "Plan", isDefault: true }]),
+      ]),
+      modelOptions: selections(["agent", "plan"]),
+      planModeEnabled: false,
+    });
+
+    expect(state).toEqual({
+      provider: PROVIDER,
+      promptEffort: null,
+      modelOptionsForDispatch: undefined,
+    });
+  });
+
+  it("falls back to a surviving agent when plan was the descriptor default and plan mode is disabled", () => {
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models: modelWith([
+        selectDescriptor("agent", [
+          { id: "plan", label: "Plan", isDefault: true },
+          { id: "research", label: "Research" },
+        ]),
+      ]),
+      modelOptions: undefined,
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toBeUndefined();
+  });
+
   it("returns undefined dispatch options when the model declares no descriptors", () => {
     const state = getComposerProviderState({
       provider: PROVIDER,
@@ -247,6 +247,56 @@ describe("getComposerProviderState", () => {
       promptEffort: null,
       modelOptionsForDispatch: undefined,
     });
+  });
+
+  it("preserves explicit options when the selected model is absent from the catalog", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("opencode"),
+      model: "opencode/kimi-k3",
+      models: [
+        {
+          slug: "opencode/big-pickle",
+          name: "Big Pickle",
+          isCustom: false,
+          capabilities: {},
+        },
+      ],
+      modelOptions: selections(["variant", "max"], ["agent", "build"]),
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(
+      selections(["variant", "max"], ["agent", "build"]),
+    );
+  });
+
+  it.each(["codex", "claudeAgent", "cursor", "grok"])(
+    "does not preserve unknown options for a missing %s model",
+    (provider) => {
+      const state = getComposerProviderState({
+        provider: ProviderDriverKind.make(provider),
+        model: "missing-model",
+        models: modelWith([]),
+        modelOptions: selections(["unknown", "value"]),
+        planModeEnabled: true,
+      });
+
+      expect(state.modelOptionsForDispatch).toBeUndefined();
+    },
+  );
+
+  it("preserves explicit options while the catalog is empty", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("opencode"),
+      model: "opencode/kimi-k3",
+      models: [],
+      modelOptions: selections(["variant", "max"], ["agent", "build"]),
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(
+      selections(["variant", "max"], ["agent", "build"]),
+    );
   });
 
   it("validates options for a known model selected through a legacy alias", () => {
@@ -274,6 +324,18 @@ describe("getComposerProviderState", () => {
     });
 
     expect(state.modelOptionsForDispatch).toEqual(selections(["effort", "low"]));
+  });
+
+  it("still drops the plan agent when an absent model has a saved plan selection", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("opencode"),
+      model: "opencode/kimi-k3",
+      models: [],
+      modelOptions: selections(["variant", "max"], ["agent", "plan"]),
+      planModeEnabled: false,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["variant", "max"]));
   });
 
   it("adds ultrathink class names when the prompt triggers a promptInjectedValues descriptor", () => {
@@ -324,6 +386,91 @@ describe("getComposerProviderState", () => {
     expect(state).not.toHaveProperty("composerSurfaceClassName");
     expect(state).not.toHaveProperty("modelPickerIconClassName");
   });
+
+  it("defaults fastMode to false when the provider reports true but the user has not selected it", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("cursor"),
+      model: MODEL,
+      models: modelWith([booleanDescriptor("fastMode", true)]),
+      modelOptions: undefined,
+      planModeEnabled: true,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["fastMode", false]));
+  });
+
+  it("keeps explicit fastMode true when the user selected Fast", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("cursor"),
+      model: MODEL,
+      models: modelWith([booleanDescriptor("fastMode", true)]),
+      modelOptions: selections(["fastMode", true]),
+      planModeEnabled: true,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["fastMode", true]));
+  });
+
+  it("keeps explicit fastMode false when the user selected Normal", () => {
+    const state = getComposerProviderState({
+      provider: ProviderDriverKind.make("cursor"),
+      model: MODEL,
+      models: modelWith([booleanDescriptor("fastMode", true)]),
+      modelOptions: selections(["fastMode", false]),
+      planModeEnabled: true,
+    });
+
+    expect(state.modelOptionsForDispatch).toEqual(selections(["fastMode", false]));
+  });
+});
+
+describe("withImplicitFastModeDefault", () => {
+  it("injects fastMode false only when the model exposes fastMode and no selection exists", () => {
+    expect(
+      withImplicitFastModeDefault(
+        {
+          optionDescriptors: [booleanDescriptor("fastMode", true)],
+        },
+        undefined,
+      ),
+    ).toEqual(selections(["fastMode", false]));
+
+    expect(
+      withImplicitFastModeDefault(
+        {
+          optionDescriptors: [booleanDescriptor("fastMode", true)],
+        },
+        selections(["fastMode", true]),
+      ),
+    ).toEqual(selections(["fastMode", true]));
+  });
+
+  it("does not add fastMode when the model does not expose it", () => {
+    expect(
+      withImplicitFastModeDefault(
+        {
+          optionDescriptors: [booleanDescriptor("thinking", true)],
+        },
+        undefined,
+      ),
+    ).toBeUndefined();
+  });
+});
+
+describe("trait controls fastMode display", () => {
+  it("resolves traits fastMode to Normal when the provider defaults to true without a user selection", () => {
+    const models = modelWith([booleanDescriptor("fastMode", true)]);
+    const provider = ProviderDriverKind.make("cursor");
+    const caps = getProviderModelCapabilities(models, MODEL, provider);
+    const resolved = withImplicitFastModeDefault(caps, undefined);
+    const descriptors = getProviderOptionDescriptors({ caps, selections: resolved });
+    const fastMode = descriptors.find((descriptor) => descriptor.id === "fastMode");
+
+    expect(fastMode?.type).toBe("boolean");
+    if (fastMode?.type === "boolean") {
+      expect(fastMode.currentValue).toBe(false);
+    }
+  });
 });
 
 describe("provider traits render guards", () => {
@@ -346,51 +493,61 @@ describe("provider traits render guards", () => {
   });
 });
 
-it("does not dispatch unselected Codex catalog defaults", () => {
-  const state = getComposerProviderState({
-    provider: ProviderDriverKind.make("codex"),
-    model: MODEL,
-    models: modelWith([
-      selectDescriptor("reasoningEffort", [{ id: "medium", label: "Medium", isDefault: true }]),
-      selectDescriptor("serviceTier", [
-        { id: "default", label: "Standard", isDefault: true },
-        { id: "fast", label: "Fast" },
-      ]),
-    ]),
-    modelOptions: undefined,
-    planModeEnabled: true,
+// Coder: per-model runtime modes reported by the workspace provider.
+describe("Coder runtime modes", () => {
+  it("falls back when the selected runtime mode is unsupported", () => {
+    expect(
+      resolveComposerRuntimeMode("full-access", ["approval-required", "auto-accept-edits"]),
+    ).toBe("auto-accept-edits");
+    expect(
+      resolveComposerRuntimeMode("auto-accept-edits", ["approval-required", "auto-accept-edits"]),
+    ).toBe("auto-accept-edits");
   });
-  expect(state.modelOptionsForDispatch).toBeUndefined();
-});
 
-it("uses a selectable custom model's descriptors and preserves full-access", () => {
-  // An exact custom slug wins even when it collides with a Claude alias.
-  const state = getComposerProviderState({
-    provider: PROVIDER,
-    model: "opus",
-    models: [
-      { slug: "claude-opus-4-8", name: "Opus", isCustom: false, capabilities: {} },
-      {
-        slug: "opus",
-        name: "Custom Opus",
-        isCustom: true,
-        capabilities: {
-          optionDescriptors: [
-            selectDescriptor("effort", [
-              { id: "low", label: "Low" },
-              { id: "high", label: "High", isDefault: true },
-            ]),
-          ],
-          supportedRuntimeModes: ["approval-required", "auto-accept-edits", "full-access"],
-        },
+  it("returns the selected model's supported runtime modes", () => {
+    const models = modelWith([]).map((model) => ({
+      ...model,
+      capabilities: {
+        ...model.capabilities,
+        supportedRuntimeModes: ["approval-required", "auto-accept-edits"] as const,
       },
-    ],
-    modelOptions: selections(["effort", "low"], ["unknown", "value"]),
-    planModeEnabled: false,
+    }));
+
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models,
+      modelOptions: undefined,
+      planModeEnabled: true,
+    });
+
+    expect(state.supportedRuntimeModes).toEqual(["approval-required", "auto-accept-edits"]);
   });
-  expect(state.promptEffort).toBe("low");
-  expect(state.modelOptionsForDispatch).toEqual(selections(["effort", "low"]));
-  const modes = resolveAvailableRuntimeModes("ready", state.supportedRuntimeModes);
-  expect(modes).toEqual(["approval-required", "auto-accept-edits", "full-access"]);
-  expect(resolveComposerRuntimeMode("full-access", modes)).toBe("full-access");
+
+  it("leaves missing capability handling to the provider-neutral availability resolver", () => {
+    const state = getComposerProviderState({
+      provider: PROVIDER,
+      model: MODEL,
+      models: [],
+      modelOptions: undefined,
+      planModeEnabled: true,
+    });
+
+    expect(state.supportedRuntimeModes).toBeUndefined();
+  });
+
+  it("fails closed when a warning provider retains cached model capabilities", () => {
+    expect(
+      resolveAvailableRuntimeModes("warning", [
+        "approval-required",
+        "auto-accept-edits",
+        "auto",
+        "full-access",
+      ]),
+    ).toEqual(["approval-required", "auto-accept-edits"]);
+    expect(resolveAvailableRuntimeModes("ready", undefined)).toEqual([
+      "approval-required",
+      "auto-accept-edits",
+    ]);
+  });
 });

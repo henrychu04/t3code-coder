@@ -1,16 +1,16 @@
-import { resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import {
+  ANTIGRAVITY_DEFAULT_MODEL,
   type EnvironmentId,
   type ProviderInstanceId,
   type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import { memo, useEffect, useMemo, useState } from "react";
-
+import { Badge } from "../ui/badge";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "~/lib/utils";
-import { ModelPickerContent } from "./ModelPickerContent";
+import { ModelPickerContent, resolveModelPickerSelectedModel } from "./ModelPickerContent";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   ModelEsque,
@@ -27,6 +27,7 @@ import { useComposerMenuProps } from "./composerEventScope";
 import { shortcutLabelForCommand } from "../../keybindings";
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
+  /** Coder: favorites, model preferences, and keybindings belong to this workspace. */
   environmentId: EnvironmentId;
   /**
    * The instance currently selected in the composer. Drives the trigger
@@ -51,8 +52,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   terminalOpen?: boolean;
   open?: boolean;
   triggerClassName?: string;
+  /** Aggregate settings can show a neutral value without claiming one provider is selected. */
+  triggerLabel?: string;
   triggerAriaLabel?: string;
-  triggerLabel?: string | undefined;
   onOpenChange?: (open: boolean) => void;
   onOpenProviderSetup?: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason?: (instanceId: ProviderInstanceId, model: string) => string | null;
@@ -74,15 +76,24 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
 
   const activeInstanceId = props.activeInstanceId;
   const selectedInstanceOptions = props.modelOptionsByInstance.get(activeInstanceId) ?? [];
-  // If the current slug belongs to a different instance (for example after
-  // a provider switch or disable), prefer the active instance's first
-  // option so the trigger icon and label stay in sync instead of showing
-  // a stale foreign slug.
+  // Account-specific catalogs must keep the selected model label while unavailable.
   const selectedModel =
-    selectedInstanceOptions.find((option) => option.slug === props.model) ??
-    selectedInstanceOptions[0];
-  const triggerTitle = selectedModel ? getTriggerDisplayModelName(selectedModel) : props.model;
-  const triggerLabel = selectedModel ? getTriggerDisplayModelLabel(selectedModel) : props.model;
+    resolveModelPickerSelectedModel({
+      driverKind: activeEntry?.driverKind,
+      model: props.model,
+      options: selectedInstanceOptions,
+    }) ??
+    (activeEntry?.driverKind === "opencode" || activeEntry?.driverKind === "antigravity"
+      ? undefined
+      : selectedInstanceOptions[0]);
+  const triggerTitle = selectedModel
+    ? getTriggerDisplayModelName(selectedModel)
+    : props.model === ANTIGRAVITY_DEFAULT_MODEL
+      ? "Choose model"
+      : props.model || "Choose model";
+  const triggerLabel = selectedModel
+    ? `${getTriggerDisplayModelLabel(selectedModel)}${selectedModel.isUnavailable ? " (Unavailable)" : ""}`
+    : triggerTitle;
   const showInstanceBadge =
     activeEntry !== null && shouldShowInstanceBadge(activeEntry, props.instanceEntries);
 
@@ -162,7 +173,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
     return {
       ...selection,
       entry,
-      label: model ? `${getTriggerDisplayModelName(model)}` : selection.model,
+      label: model
+        ? `${getTriggerDisplayModelName(model)}${model.isUnavailable ? " (Unavailable)" : ""}`
+        : selection.model,
     };
   });
   const multipleLabel = selectedEntries
@@ -263,6 +276,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             </TooltipTrigger>
             <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>
           </Tooltip>
+          {selectedModel?.isUnavailable && !selectedEntries && props.triggerLabel === undefined ? (
+            <Badge variant="outline" size="sm">
+              Unavailable
+            </Badge>
+          ) : null}
         </span>
         <span aria-hidden="true" className="flex items-center">
           <ComposerControlChevron size={size} />
@@ -299,6 +317,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
             : {})}
           onInstanceModelChange={handleInstanceModelChange}
         />
+        {/* Coder: no ChatGPT sharing control; subscription plans are out of scope. */}
       </PopoverPopup>
     </Popover>
   );
