@@ -450,6 +450,7 @@ import {
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { RightPanelSheet } from "./RightPanelSheet";
 import { appAtomRegistry } from "../rpc/atomRegistry";
+import { clampFileAttachmentUploadBytes } from "../lib/attachmentDisplay";
 import { fileAttachmentCapabilityBlockReason } from "./chat/composerAttachmentFiles";
 import { readScreenshotBlob } from "../lib/readScreenshotBlob";
 import { projectEnvironment } from "../state/projects";
@@ -2641,12 +2642,18 @@ export default function ChatView(props: ChatViewProps) {
   const modelPickerLockedProvider = supportsProviderSwitchingViaHandoff ? null : lockedProvider;
   const pullRequestsCapabilityKnown = serverConfig !== null;
   const supportsPullRequests = serverConfig?.environment.capabilities.pullRequests === true;
-  // Coder: composer images always stage through the gateway upload path; file and question
-  // attachments are not transferred yet.
-  const attachmentUploadsCapabilityKnown = true;
-  const supportsQuestionAttachments = false;
-  const supportsAttachmentUploads = true;
-  const maxFileAttachmentBytes = null;
+  const attachmentEnvironmentConfig = environmentById.get(environmentId)?.serverConfig ?? null;
+  const attachmentUploadsCapabilityKnown = attachmentEnvironmentConfig !== null;
+  const supportsQuestionAttachments =
+    attachmentEnvironmentConfig?.environment.capabilities.questionAttachments === true;
+  const supportsAttachmentUploads =
+    attachmentEnvironmentConfig?.environment.capabilities.attachmentUploads === true;
+  const advertisedFileAttachmentBytes =
+    attachmentEnvironmentConfig?.environment.capabilities.fileAttachments?.maxUploadBytes ?? null;
+  const maxFileAttachmentBytes =
+    advertisedFileAttachmentBytes === null
+      ? null
+      : clampFileAttachmentUploadBytes(advertisedFileAttachmentBytes);
   const envLocked = Boolean(activeThread && (activeMessageCount > 0 || activeRuntime !== null));
 
   const systemComposerBannerItems = useMemo<ComposerBannerStackItem[]>(() => {
@@ -4181,6 +4188,8 @@ export default function ChatView(props: ChatViewProps) {
   const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
+  // Coder: the launcher offers linked MRs only when the thread has some; otherwise it offers the
+  // branch's GitLab MR.
   const addPullRequestsSurface = useCallback(() => {
     if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
@@ -7118,11 +7127,15 @@ export default function ChatView(props: ChatViewProps) {
           readImage: readFileAsDataUrl,
           uploadFiles: async (files) => {
             const validateFiles = () => {
+              const config =
+                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId) ?? null;
               const reason = fileAttachmentCapabilityBlockReason({
                 files,
-                attachmentUploadsCapabilityKnown,
-                supportsAttachmentUploads,
-                maxFileAttachmentBytes,
+                attachmentUploadsCapabilityKnown: config !== null,
+                supportsAttachmentUploads:
+                  config?.environment.capabilities.attachmentUploads === true,
+                maxFileAttachmentBytes:
+                  config?.environment.capabilities.fileAttachments?.maxUploadBytes ?? null,
               });
               if (reason !== null) throw new Error(reason);
             };
@@ -7380,15 +7393,21 @@ export default function ChatView(props: ChatViewProps) {
       return;
     }
 
-    const readLiveAttachmentCapabilities = () => ({
-      supportsAttachmentUploads,
-      fileBlockReason: fileAttachmentCapabilityBlockReason({
-        files: composerFilesSnapshot,
-        attachmentUploadsCapabilityKnown,
-        supportsAttachmentUploads,
-        maxFileAttachmentBytes,
-      }),
-    });
+    const readLiveAttachmentCapabilities = () => {
+      const config = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId) ?? null;
+      const liveSupportsAttachmentUploads =
+        config?.environment.capabilities.attachmentUploads === true;
+      return {
+        supportsAttachmentUploads: liveSupportsAttachmentUploads,
+        fileBlockReason: fileAttachmentCapabilityBlockReason({
+          files: composerFilesSnapshot,
+          attachmentUploadsCapabilityKnown: config !== null,
+          supportsAttachmentUploads: liveSupportsAttachmentUploads,
+          maxFileAttachmentBytes:
+            config?.environment.capabilities.fileAttachments?.maxUploadBytes ?? null,
+        }),
+      };
+    };
 
     const multipleTargets = [];
     for (const selection of multipleModelSelections ?? []) {
@@ -9757,7 +9776,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
-          onAddPullRequests={addPullRequestsSurface}
+          onAddPullRequests={pullRequestsSurfaceAvailable ? addPullRequestsSurface : undefined}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
@@ -9798,7 +9817,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
-            onAddPullRequests={addPullRequestsSurface}
+            onAddPullRequests={pullRequestsSurfaceAvailable ? addPullRequestsSurface : undefined}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}

@@ -9,6 +9,7 @@ import { useEnvironments } from "../../state/environments";
 import { projectEnvironment } from "../../state/projects";
 import { useSettingsProjectGroups } from "./useSettingsProjectGroups";
 import { resolveScopedSettingsTargets, selectScopedSettingsEnvironments } from "./scopedSettings";
+import { selectSingleEnvironmentScope } from "./settingsScopeAxis";
 import {
   resolveLegacyProjectSettingsSearch,
   resolveSettingsScope,
@@ -50,10 +51,18 @@ function useResolvedSettingsScope(rawSearch: SettingsScopeSearch, singleEnvironm
   const groups = useSettingsProjectGroups();
   const { environments: availableEnvironments } = useEnvironments();
   const primaryEnvironmentId = useActiveEnvironmentId();
-  const resolvedSearch = useMemo(
-    () => resolveLegacyProjectSettingsSearch(rawSearch, groups),
-    [groups, rawSearch],
-  );
+  // Coder: the active workspace stands in for upstream's primary environment.
+  const resolvedSearch = useMemo(() => {
+    const search = resolveLegacyProjectSettingsSearch(rawSearch, groups);
+    return singleEnvironment
+      ? selectSingleEnvironmentScope(
+          search,
+          resolveSettingsScope(search, groups, availableEnvironments),
+          availableEnvironments,
+          primaryEnvironmentId,
+        )
+      : search;
+  }, [availableEnvironments, groups, primaryEnvironmentId, rawSearch, singleEnvironment]);
   const scope = useMemo(
     () => resolveSettingsScope(resolvedSearch, groups, availableEnvironments),
     [availableEnvironments, groups, resolvedSearch],

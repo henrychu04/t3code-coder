@@ -29,14 +29,27 @@ export function limitSection(value: string, maxChars: number): string {
   return `${truncated}\n\n[truncated]`;
 }
 
+/** Normalise a raw commit subject to imperative-mood, ≤72 chars, no trailing period. */
 export function sanitizeCommitSubject(raw: string): string {
-  const subject = raw.trim().split(/\r?\n/u)[0]?.trim().replace(/\.$/u, "") ?? "";
-  return (subject || "Update project files").slice(0, 72).trimEnd();
+  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
+  const withoutTrailingPeriod = singleLine.replace(/[.]+$/g, "").trim();
+  if (withoutTrailingPeriod.length === 0) {
+    return "Update project files";
+  }
+
+  if (withoutTrailingPeriod.length <= 72) {
+    return withoutTrailingPeriod;
+  }
+  return withoutTrailingPeriod.slice(0, 72).trimEnd();
 }
 
+/** Normalise a raw PR title to a single line with a sensible fallback. */
 export function sanitizePrTitle(raw: string): string {
-  const title = raw.trim().split(/\r?\n/u)[0]?.trim() ?? "";
-  return (title || "Update project").slice(0, 200).trimEnd();
+  const singleLine = raw.trim().split(/\r?\n/g)[0]?.trim() ?? "";
+  if (singleLine.length > 0) {
+    return singleLine;
+  }
+  return "Update project changes";
 }
 
 // Prompts ask for under 40 characters. This cap only stops a runaway model
@@ -67,7 +80,7 @@ export function sanitizeThreadTitle(raw: string): string {
   return `${normalized.slice(0, MAX_THREAD_TITLE_CHARS - 3).trimEnd()}...`;
 }
 
-/** CLI name to a human-readable label. */
+/** CLI name to human-readable label, e.g. "codex" → "Codex CLI (`codex`)" */
 function cliLabel(cliName: string): string {
   const capitalized = cliName.charAt(0).toUpperCase() + cliName.slice(1);
   return `${capitalized} CLI (\`${cliName}\`)`;
@@ -75,7 +88,8 @@ function cliLabel(cliName: string): string {
 
 /**
  * Normalize an unknown error from a CLI text generation process into a
- * typed `TextGenerationError`.
+ * typed `TextGenerationError`. Parameterized by CLI name so both Codex
+ * and Claude (and future providers) can share the same logic.
  */
 export function normalizeCliError(
   cliName: string,

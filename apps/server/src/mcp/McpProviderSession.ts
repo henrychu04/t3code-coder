@@ -22,6 +22,11 @@ export interface McpProviderSessionConfig {
    * already pointed at the server's daemon; the agent never handles a token.
    */
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  /**
+   * Coder: the shell command that runs this credential's T3 tools over the workspace file
+   * bridge. `endpoint` is then the bridge directory, not an MCP URL.
+   */
+  readonly toolCommand?: string;
 }
 
 /** Provider env with the device variables applied over `base`, or `base` untouched. */

@@ -108,7 +108,7 @@ function request(input: {
       {
         hostname: url.hostname,
         port: url.port,
-        path: url.pathname,
+        path: `${url.pathname}${url.search}`,
         method: input.method ?? "GET",
         headers: {
           ...(input.host === undefined ? {} : { Host: input.host }),
@@ -1514,7 +1514,7 @@ setTimeout(() => process.exit(0), 100);
         onRpcMessage: () => () => undefined,
         close: () => closeConnection?.(),
       }),
-      uploadClipboardImage: async (input) => {
+      uploadComposerAttachment: async (input) => {
         stagedPath = input.localPath;
         strictEqual(input.extension, "png");
         strictEqual((await NodeFS.readFile(input.localPath)).equals(png), true);
@@ -1602,6 +1602,95 @@ setTimeout(() => process.exit(0), 100);
     strictEqual(invalid.statusCode, 415);
   });
 
+  it("uploads any composer file up to 50 MiB under an extension derived from its name", async () => {
+    const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
+    tempDirectories.push(directory);
+    const configPath = NodePath.join(directory, "config.json");
+    await NodeFS.writeFile(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        deployments: [{ id: "deployment", name: "Deployment", url: "https://coder.example.test" }],
+        workspaces: [
+          {
+            id: "workspace",
+            name: "Workspace",
+            deploymentId: "deployment",
+            workspace: "owner/workspace",
+          },
+        ],
+      }),
+    );
+    const uploads: Array<{ readonly extension: string; readonly bytes: Buffer }> = [];
+    const gateway = await startLocalCoderGateway({
+      configPath,
+      probeWorkspace: async () => undefined,
+      connectHelper: async () => ({
+        info: helperInfo,
+        closed: new Promise(() => undefined),
+        sendRpc: () => undefined,
+        onRpcMessage: () => () => undefined,
+        close: () => undefined,
+      }),
+      uploadComposerAttachment: async (input) => {
+        uploads.push({ extension: input.extension, bytes: await NodeFS.readFile(input.localPath) });
+        return `/home/owner/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-${input.extension}.${input.extension}`;
+      },
+    });
+    closeGateway = gateway.close;
+    const upload = (name: string | undefined, body: Buffer) =>
+      request({
+        url: `${gateway.url}/api/workspaces/workspace/attachment-file${
+          name === undefined ? "" : `?name=${encodeURIComponent(name)}`
+        }`,
+        method: "POST",
+        headers: { Origin: gateway.url, "Content-Type": "application/pdf" },
+        body,
+      });
+
+    strictEqual((await upload("report.pdf", Buffer.from("%PDF"))).statusCode, 409);
+    await request({
+      url: `${gateway.url}/api/workspaces/workspace/connection`,
+      method: "POST",
+      headers: { Origin: gateway.url },
+    });
+
+    // No signature check: any non-empty file is accepted, including image-like names.
+    const uploaded = await upload("Quarterly Report.PDF", Buffer.from("not really a pdf"));
+    strictEqual(uploaded.statusCode, 200);
+    deepStrictEqual(JSON.parse(uploaded.body), {
+      path: "/home/owner/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-pdf.pdf",
+      attachment: {
+        id: "pending-11111111-1111-4111-8111-111111111111-pdf",
+        sizeBytes: 16,
+      },
+    });
+    // A path-like or unusual name only ever contributes an extension.
+    strictEqual((await upload("../../.ssh/authorized_keys", Buffer.from("x"))).statusCode, 200);
+    strictEqual((await upload("archive.tar.part", Buffer.from("x"))).statusCode, 200);
+    deepStrictEqual(
+      uploads.map((entry) => entry.extension),
+      ["pdf", "bin", "bin"],
+    );
+
+    strictEqual((await upload(undefined, Buffer.from("x"))).statusCode, 400);
+    strictEqual((await upload("empty.txt", Buffer.alloc(0))).statusCode, 415);
+    const exact = await upload("big.bin", Buffer.alloc(50 * 1024 * 1024));
+    strictEqual(exact.statusCode, 200);
+    const tooLarge = await upload("big.bin", Buffer.alloc(50 * 1024 * 1024 + 1));
+    strictEqual(tooLarge.statusCode, 413);
+    strictEqual(tooLarge.body, "File exceeds 50 MiB.");
+    strictEqual(uploads.length, 4);
+
+    const rejectedOrigin = await request({
+      url: `${gateway.url}/api/workspaces/workspace/attachment-file?name=a.txt`,
+      method: "POST",
+      headers: { Origin: "https://attacker.example", "Content-Type": "text/plain" },
+      body: Buffer.from("x"),
+    });
+    strictEqual(rejectedOrigin.statusCode, 403);
+  });
+
   it(
     "interrupts a cancelled clipboard transfer and deletes staging without closing the gateway",
     { timeout: 5_000 },
@@ -1643,7 +1732,7 @@ setTimeout(() => process.exit(0), 100);
               sendRpc: () => Effect.void,
               onRpcMessage: () => () => undefined,
             }),
-          uploadClipboardImage: (input) =>
+          uploadComposerAttachment: (input) =>
             Effect.acquireUseRelease(
               Effect.sync(() => {
                 stagedPath = input.localPath;
@@ -1670,7 +1759,7 @@ setTimeout(() => process.exit(0), 100);
       await NodeFS.access(stagedPath);
       client.destroy();
       await interrupted.promise;
-      // The transfer finalizer runs before withStagedClipboardImage's async unlink.
+      // The transfer finalizer runs before withStagedAttachment's async unlink.
       let removed = false;
       for (let attempt = 0; attempt < 100; attempt += 1) {
         removed = await NodeFS.access(stagedPath).then(

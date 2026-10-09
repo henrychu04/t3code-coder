@@ -37,7 +37,7 @@ choose **All checkouts** to edit the selected project group.
 The name saves when you leave its field or press Enter. Group edits apply to the selected
 checkouts; all selected workspaces must be connected for name and icon changes. Model, permissions,
 and checkout defaults live in **General**. Automatic pull and merge preferences live in
-**GitLab source control**. Those same controls edit project overrides while a project is selected.
+**Source Control**. Those same controls edit project overrides while a project is selected.
 
 ## Default merge method
 
@@ -55,7 +55,7 @@ built-in default. Leave a setting on **Inherit** to let the next tier decide.
 
 New worktrees initialize git submodules recursively from submodules already available in the
 workspace. If that step is slow because the repository declares many nested submodules, set
-**Submodules** in **Settings → Preferences** (with the project selected to override it there) to
+**Submodules** in **Settings → General → New threads** (with the project selected to override it there) to
 **Top level only** to stop at the ones the repository declares itself, or **Skip** to leave them
 for a setup script. It resolves in the same order: a `"worktreeSubmodules"` value in the `t3.json`
 of the branch being checked out applies when the project and workspace are both on **Inherit**.
@@ -99,7 +99,7 @@ custom name is invalid or already taken, the temporary branch name remains.
 ## Workspace defaults
 
 Open **Settings → General → New threads** to choose the default model and checkout mode.
-**Settings → GitLab source control → Repositories** contains automatic pull. These controls save
+**Settings → Source Control → Repositories** contains automatic pull. These controls save
 immediately for the selected scope. **Settings → General → Default actions** contains the
 workspace's default scripts when All projects is selected. Use **Add action**, or the edit button beside an existing action;
 **Save action** or **Save changes** saves the dialog.
@@ -182,7 +182,7 @@ published themes change. Published cards cannot be edited or removed through the
 
 ## Coder connections
 
-**Settings → Coder connections** lists Coder domains, workspace connections, and port forwards.
+**Settings → Connections** lists Coder domains, workspace connections, and port forwards.
 Use **Add domain** or **Add forward** to open an editor. Existing entries have an actions menu
 with edit and removal controls. Changes apply when you save the dialog; a failed save keeps your
 entries available for correction and retry. Domain sign-in still takes place in the terminal
@@ -203,7 +203,7 @@ workspace is connected.
 
 ## GitLab workspace status
 
-**Settings → GitLab source control → Workspace GitLab status** shows installation, authentication,
+**Settings → Source Control → Workspace GitLab status** shows installation, authentication,
 and write access for the connected workspaces selected in the breadcrumb. Use **Check status**
 to refresh a workspace and **Check write access** to run its write probe. Errors remain beside
 the affected workspace. Project-detail links on this page follow the selected scope as well.
@@ -228,4 +228,4 @@ Submitted composer attachments, current workspace source images, and current log
 
 Use **Change theme** in the command palette, or `mod+alt+a`, to select a theme without leaving chat.
 **Change appearance** selects System, Light, or Dark independently. `mod+alt+shift+a` cycles those
-modes. Customize both shortcuts in **Settings → Keyboard shortcuts**.
+modes. Customize both shortcuts in **Settings → Keybindings**.

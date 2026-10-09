@@ -78,6 +78,15 @@ T3-managed Codex and Claude sessions use the MCP servers and Codex app integrati
 the workspace, as upstream does. When a Codex MCP server asks for confirmation, T3 Coder shows it as
 an approval request. The Claude browser integration is disabled.
 
+## T3 tools
+
+Codex and Claude can still use T3 Code's own tools: delegating work to child agents, reading and
+messaging other threads, managing the queue and pending questions, scheduling recurring tasks,
+launching threads in worktrees, managing projects, and linking merge requests. Instead of an MCP
+server, T3 gives each provider session a workspace command that runs these tools and removes it
+when the session stops. In plan mode, agents can use only the tools that read state. Browser
+preview, device, and attachment-upload tools are not available.
+
 ## Provider settings
 
 The Providers page always shows which workspace you are editing. On the first visit it selects the

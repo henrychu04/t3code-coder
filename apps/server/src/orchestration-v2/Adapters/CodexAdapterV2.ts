@@ -704,6 +704,8 @@ export function buildCodexTurnStartParams(input: {
   readonly hasT3Mcp?: boolean;
   readonly browserToolsAvailable?: boolean;
   readonly deviceToolsAvailable?: boolean;
+  /** Coder: the session's T3 tool bridge command. */
+  readonly t3ToolCommand?: string;
   /** ChatGPT token sharing does not accept service tiers. */
   readonly omitServiceTier?: boolean;
 }) {
@@ -739,6 +741,7 @@ export function buildCodexTurnStartParams(input: {
               browser: input.browserToolsAvailable ?? true,
               device: input.deviceToolsAvailable ?? false,
             },
+            input.t3ToolCommand,
           )
         : undefined;
     const collaborationMode: CodexSchema.ClientRequest__CollaborationMode | undefined =
@@ -1208,26 +1211,11 @@ export function codexThreadRuntimeParams(input: {
   readonly model?: string;
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
-  const mcpSession =
-    input.threadId === null ? undefined : McpProviderSession.readMcpProviderSession(input.threadId);
+  // Coder: T3 tools reach Codex over the workspace file bridge, so no MCP server is configured.
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
-    config: {
-      ...CODEX_THREAD_CONFIG,
-      ...(mcpSession === undefined
-        ? {}
-        : {
-            mcp_servers: {
-              "t3-code": {
-                url: mcpSession.endpoint,
-                http_headers: {
-                  Authorization: mcpSession.authorizationHeader,
-                },
-              },
-            },
-          }),
-    },
+    config: { ...CODEX_THREAD_CONFIG },
   };
 }
 
@@ -5548,9 +5536,14 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                 codexInput,
                 runtimePolicy: turnInput.runtimePolicy,
                 modelSelection: turnInput.modelSelection,
-                hasT3Mcp: mcpSession !== undefined,
-                browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,
-                deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
+                // Coder: tools are attached only when the session's file bridge exists, and
+                // preview and device tools are not bridged.
+                hasT3Mcp: mcpSession?.toolCommand !== undefined,
+                browserToolsAvailable: false,
+                deviceToolsAvailable: false,
+                ...(mcpSession?.toolCommand === undefined
+                  ? {}
+                  : { t3ToolCommand: mcpSession.toolCommand }),
                 omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               });
               yield* Ref.update(pendingRootTurns, (current) => {

@@ -162,8 +162,13 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
 
   const generateCommitMessage: TextGeneration.TextGeneration["Service"]["generateCommitMessage"] =
     Effect.fn("PiTextGeneration.generateCommitMessage")(function* (input) {
-      // Coder: the shared prompt builders take the request as-is, as Claude's and Codex's do.
-      const { prompt, outputSchema } = buildCommitMessagePrompt(input);
+      const { prompt, outputSchema } = buildCommitMessagePrompt({
+        branch: input.branch,
+        stagedSummary: input.stagedSummary,
+        stagedPatch: input.stagedPatch,
+        includeBranch: input.includeBranch === true,
+        policy: input.policy,
+      });
       const generated = yield* runPiJson({
         operation: "generateCommitMessage",
         cwd: input.cwd,
@@ -182,7 +187,15 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
 
   const generatePrContent: TextGeneration.TextGeneration["Service"]["generatePrContent"] =
     Effect.fn("PiTextGeneration.generatePrContent")(function* (input) {
-      const { prompt, outputSchema } = buildPrContentPrompt(input);
+      const { prompt, outputSchema } = buildPrContentPrompt({
+        baseBranch: input.baseBranch,
+        headBranch: input.headBranch,
+        commitSummary: input.commitSummary,
+        diffSummary: input.diffSummary,
+        diffPatch: input.diffPatch,
+        policy: input.policy,
+        changeRequestTemplate: input.changeRequestTemplate,
+      });
       const generated = yield* runPiJson({
         operation: "generatePrContent",
         cwd: input.cwd,
@@ -200,6 +213,7 @@ export const makePiTextGeneration = Effect.fn("makePiTextGeneration")(function* 
     Effect.fn("PiTextGeneration.generateBranchName")(function* (input) {
       const { prompt, outputSchema } = buildBranchNamePrompt({
         message: input.message,
+        attachments: input.attachments,
         naming: input.naming,
       });
       const generated = yield* runPiJson({

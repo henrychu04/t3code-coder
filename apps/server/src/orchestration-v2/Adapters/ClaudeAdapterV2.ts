@@ -107,6 +107,7 @@ import {
 } from "../../provider/Layers/claudeUsageLimits.ts";
 import type { ServerProviderShape } from "../../provider/Services/ServerProvider.ts";
 import { mergeProviderInstanceEnvironment } from "../../provider/ProviderInstanceEnvironment.ts";
+import { t3ToolBridgeInstructions } from "../../mcp/bridge/T3ToolInstructions.ts";
 import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "../../provider/T3OrchestrationInstructions.ts";
 import { buildRuntimeInstructions } from "../../provider/RuntimeInstructions.ts";
 import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
@@ -788,6 +789,8 @@ export function makeClaudeQueryOptions(input: {
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
+  /** Coder: the session's T3 tool bridge command. */
+  readonly t3ToolCommand?: string;
   readonly tools?: ClaudeAgentSdkQueryTools;
   readonly allowedTools?: ReadonlyArray<string>;
   readonly disallowedTools?: ReadonlyArray<string>;
@@ -889,7 +892,8 @@ export function makeClaudeQueryOptions(input: {
       preset: "claude_code" as const,
       append:
         buildRuntimeInstructions({ harness: "Claude Code" }) +
-        (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
+        (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS) +
+        (input.t3ToolCommand === undefined ? "" : t3ToolBridgeInstructions(input.t3ToolCommand)),
     },
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
   };
@@ -946,26 +950,24 @@ export function claudeMcpQueryOverrides(input: {
 }): {
   readonly allowedTools?: ReadonlyArray<string>;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
+  readonly t3ToolCommand?: string;
 } {
   const session = McpProviderSession.readMcpProviderSession(input.threadId);
-  if (session === undefined) {
+  // Coder: T3 tools run over the workspace file bridge instead of an MCP server. Its command is
+  // pre-approved as upstream pre-approves the MCP tools: read-only sandboxes get only the
+  // read-only tools.
+  if (session?.toolCommand === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const mcpAllowedTools = input.readOnlySandbox
-    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
-    : [CLAUDE_T3_MCP_TOOL_WILDCARD];
+  const command = session.toolCommand;
+  const bridgeAllowedTools = input.readOnlySandbox
+    ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.map(
+        (tool) => `Bash(${command} ${tool.replace(/^mcp__t3-code__/u, "")}:*)`,
+      )
+    : [`Bash(${command}:*)`];
   return {
-    allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
-    mcpServers: {
-      "t3-code": {
-        type: "http",
-        url: session.endpoint,
-        headers: {
-          Authorization: session.authorizationHeader,
-        },
-        timeout: CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
-      },
-    },
+    allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...bridgeAllowedTools])),
+    t3ToolCommand: command,
   };
 }
 

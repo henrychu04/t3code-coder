@@ -45,6 +45,7 @@ import {
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { ProjectImageLink } from "./ProjectImageLink";
+import { LegacyScreenshotArtifactsRow } from "./LegacyScreenshotArtifactsRow";
 import { resolveMarkdownFileLinkMeta } from "../../markdown-links";
 import {
   subagentGroupSummary,
@@ -1786,6 +1787,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "message" && row.message.role === "assistant" ? (
         <AssistantTimelineRow row={row} />
       ) : null}
+      {row.kind === "message" ? <LegacyScreenshotArtifactsTimelineRow row={row} /> : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
@@ -1862,6 +1864,21 @@ const MESSAGE_HEADING_LEVEL = 3;
 
 function MessageAuthorHeading({ children }: { children: string }) {
   return <h3 className="sr-only select-none">{children}</h3>;
+}
+
+// Coder: screenshots a pre-v2 conversation saved after this imported message.
+function LegacyScreenshotArtifactsTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "message" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+  return (
+    <LegacyScreenshotArtifactsRow
+      environmentId={ctx.activeThreadEnvironmentId}
+      message={row.message}
+    />
+  );
 }
 
 function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" }> }) {

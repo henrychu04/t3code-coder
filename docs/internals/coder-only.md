@@ -136,17 +136,26 @@ that arrive together share one aliased `glab api graphql` request per checkout a
 individual REST reads. Settled-thread
 backfill has a bounded retry count. Inactivity settlement does not wait for an MR lookup.
 
-Agent MR commands use a generated workspace-local CLI, invoked with the helper's pinned Node
-runtime. The shared provider service supplies its command to Codex and Claude on ordinary message
-turns; native slash commands retain their original input. Temporary
-private directories hold one request/reply exchange per thread; no socket or MCP server is opened.
-The helper captures the thread identity, validates GitLab URLs, and dispatches normal orchestration
-commands rather than writing SQLite directly. Plan-mode invocations are read-only. Requests are
-limited to 16 KiB, responses to 256 KiB, and execution to 10 seconds; the CLI waits at most 15 seconds.
-At most 64 tool sessions exist at once; if tool setup is unavailable, ordinary provider turns still
-run without these commands. Turn completion, abortion, session exit/stop, and helper
-shutdown revoke the commands and remove their temporary files. Workspace processes run as the same
-OS user; these directories are not an isolation boundary between mutually untrusted agents.
+Agents reach upstream's T3 toolkits over a workspace file bridge instead of MCP. Each provider
+session credential from upstream's `McpSessionRegistry` is a private temporary directory holding a
+standalone CLI (run with the helper's pinned Node runtime) and a read-only tool catalog; no socket,
+listener, or MCP server is opened. The CLI writes one request per call into its own call directory,
+and the helper runs the named tool through upstream's toolkit handlers with the credential's
+thread identity, never one the agent supplies. Plan-mode threads may call only tools upstream marks
+read-only. Requests and responses are limited to 256 KiB. A call still running after 8 seconds
+answers with a `bridge-job:` task id that `task_status` resolves, so long tools never depend on a
+provider's shell timeout; at most 16 such calls run per thread and unread results are discarded
+after an hour. Upstream's lifecycle owns the bridges: credentials are reused across turns and
+revoked, which deletes the directory, when the session is released, the thread is archived or
+deleted, or the helper stops. If a bridge cannot be created, turns run without T3 tools. Workspace
+processes run as the same OS user; these directories are not an isolation boundary between mutually
+untrusted agents.
+
+The bridge carries upstream's orchestrator, thread, project, environment, worktree, and
+pull-request toolkits. The pull-request tools accept only merge requests on a GitLab host that a
+workspace project uses; project clones go through the same GitLab-only repository service as the
+browser. Preview, device, and attachment-upload toolkits are not carried, and neither is
+upstream's MCP HTTP server.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -284,33 +293,39 @@ installer inside the workspace. Versions marked broken or unsupported by the bun
 policy are not offered. The model manifest and compatibility policy remain bundled-only and are
 never refreshed over HTTP.
 
-General user-facing file transfer remains disabled. One exception is an image pasted, picked, or dropped into the
-message composer. The browser sends the image only to the loopback gateway. The gateway accepts
-signature-validated PNG, JPEG, or WebP content up to 10 MiB, stages it in an OS temporary directory,
-and copies it through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as upstream's
-pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and returns
-the workspace path plus the pending attachment's id, media type, and byte size to the draft's
-in-memory attachment state. The browser uses upstream's attachment upload queue with the Coder
+General user-facing file transfer remains disabled. The exception is a composer attachment: an
+image or file pasted, picked, or dropped into the message composer or a question answer. The
+browser sends it only to the loopback gateway. The gateway's `clipboard-image` route accepts
+signature-validated PNG, JPEG, or WebP content up to 10 MiB; its `attachment-file` route accepts
+any non-empty file up to 50 MiB, using the file name only to derive the stored extension
+(`[a-z0-9]{1,10}`, otherwise `bin`, by the helper's `attachmentFileExtension` rule, shared as
+`@t3tools/shared/attachmentFileExtension`). The gateway stages the bytes in an OS temporary
+directory and copies them through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as
+upstream's pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and
+returns the workspace path plus the pending attachment's id, byte size, and (for images) media type
+to the draft's in-memory attachment state. The helper advertises upstream's `attachmentUploads`,
+`questionAttachments`, and `fileAttachments` capabilities, which the composer gates on. The browser uses upstream's attachment upload queue with the Coder
 gateway as its transport: at most three concurrent transfers per workspace, matching upstream's
 per-environment limit. Source images up to 50 MiB are prepared with main's byte-limit compression
 algorithm inside the queue slot: images at or below 10 MiB pass through unchanged, and larger images
 are resized and re-encoded to fit. The draft keeps the source bytes in memory, so a retry prepares
 them again. The browser upload API, gateway, and workspace provider-input reader all enforce the
-same 10 MiB attachment constant. Composer files other than PNG, JPEG, and WebP images are rejected
-before queueing, and pending uploads are never deleted from the browser; the helper's pending
-sweep removes unsent ones. Completed images retain their workspace identity. Moving or restoring
+same 10 MiB image constant; files upload unchanged under main's 50 MiB file constant. Images in
+other formats are rejected before queueing, and pending uploads are never deleted from the
+browser; the helper's pending sweep removes unsent ones. Completed images retain their workspace identity. Moving or restoring
 images into another workspace queues them for that destination and cancels any old transfer. The
 browser retains failed images for explicit retry, requeues them when their workspace reconnects,
 and aborts a transfer when its draft attachment is removed. Persisted drafts and stashed prompts
 never store image bytes or image upload ids; a stashed prompt records only the names of images it dropped. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
 child process and cleans up staging. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
-workspace copy remains pending until SCP and finalization complete. A sent message carries
-upstream's image attachments—at most 100, never a caller-supplied path or inline data URL, and
-never a file attachment. As upstream does, the helper claims each pending upload into a
-thread-scoped copy when it accepts the message; Coder reads the staged file once through a
-no-follow handle, requires its exact declared size and a PNG, JPEG, or WebP signature matching the
-declared type, and writes those bytes exclusively to the claimed path. A failed dispatch removes
+workspace copy remains pending until SCP and finalization complete. A sent message or question
+answer carries upstream's attachments—at most 100, never a caller-supplied path or inline data
+URL. As upstream does, the helper claims each pending upload into a thread-scoped copy when it
+accepts the message; Coder reads the staged file once through a no-follow handle, requires its
+exact declared size (and, for images, a PNG, JPEG, or WebP signature matching the declared type),
+and writes those bytes exclusively to the claimed path. Files reach the provider as workspace
+paths, as on main. A failed dispatch removes
 its claimed copies; unsent pending uploads expire after a day. Provider input resolves attachments
 only beneath the attachment directory, rejects symlinks, size violations, and signature
 mismatches, bounds one message's images to 80 MiB in total, and sends the validated bytes to Codex
@@ -325,7 +340,7 @@ The composer uses upstream's structured context records. Mentions, terminal cont
 comments, and images travel as `t3-context://v1/<kind>/<id>` links in the message text plus
 `message.context` records, which the helper persists with the message and renders for the provider
 through upstream's projection. Coder omits upstream's preview annotations, element captures,
-SnapShot frames, video attachments, and non-image file attachments. Rewinding and restoring queued
+and SnapShot frames. Rewinding and restoring queued
 messages read images back through the bounded chunk read. The composer's provider refresh action
 uses upstream's `server.refreshProviders` RPC over the existing stdio stream, without upstream's
 remote model-manifest or usage-limit refreshes. The timeline renders sent context as upstream's inline chips; messages sent
@@ -551,12 +566,28 @@ listed here is drift to remove rather than fork behavior to keep.
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
     than copying transcript files.
-  - T3's own MCP server is absent: `McpSessionRegistry` never issues or resolves a credential and
-    the provider session manager runs with `configureMcp: false`. Workspace MCP servers, Codex app
-    integrations, and Codex MCP elicitations follow upstream. `RuntimeInstructions.ts`
-    omits upstream's `link_pull_request` block; agents link merge requests through the workspace
-    MR command. Bridging upstream's T3 tools to the helper (for example through an async file
-    channel) is follow-up work.
+  - Workspace MCP servers, Codex app integrations, and Codex MCP elicitations follow upstream.
+    T3's own MCP server is absent; upstream's T3 toolkits reach agents over the workspace file
+    bridge instead (see [Runtime boundary](#runtime-boundary)):
+    - `mcp/McpSessionRegistry.ts` keeps upstream's shape and lifecycle, but each credential is a
+      bridge (`mcp/bridge/FileBridge.ts`) whose `toolCommand` (a Coder field on
+      `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory.
+    - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
+      `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
+      8 seconds into `bridge-job:` tasks. `server.ts` binds it once the orchestrator runs.
+    - `toolkits/pullRequests/handlers.ts` rejects merge requests outside the workspace's GitLab
+      hosts. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
+      upstream's `ServerEnvironment`.
+    - `mcp/bridge/T3ToolInstructions.ts` reuses upstream's orchestration guidance without its MCP
+      and ACP transport paragraphs; its test fails if upstream rewords them.
+    - `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge
+      exists, and never advertises preview or device tools; `CodexDeveloperInstructions.ts` and
+      `ClaudeAdapterV2.ts` describe the bridge command (`mcp/bridge/T3ToolInstructions.ts`) in
+      place of upstream's MCP orchestration text. Claude pre-approves the command as a Bash
+      prefix, limited to read-only tools in a read-only sandbox, as upstream pre-approves its MCP
+      tools. `RuntimeInstructions.ts` keeps upstream's `link_pull_request` block, worded for T3
+      tools.
+    - Preview, device, and attachment-upload toolkits are not carried.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
     and WebP. Tool-result image bytes are omitted from persisted raw events
@@ -568,17 +599,15 @@ listed here is drift to remove rather than fork behavior to keep.
     images whose signature does not match their media type, and writes the validated bytes
     exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
     so upstream's attachment-cleanup side effects are absent.
-  - `ProviderTurnStartService` prepends the agent MR command instructions to ordinary turns. A
-    failed send revokes them, as does run finalization (`server.ts` wraps the run-finalization
-    observer), the thread's next turn, and helper shutdown. V2 has no session-exit or stop-all
-    hook, so a stopped session's commands stay open until one of those.
   - Only the Codex and Claude adapters are registered
     (`ProviderOrchestrationAdapterInfrastructure.ts`), and only shipped providers have replay
     harnesses. Pi (`PiDriver.ts`, `PiAdapterV2.ts`, `PiProvider.ts`, `PiTextGeneration.ts`) stays
     in the source as unregistered, disabled code so it can be added back; `knip.jsonc` lists its
     driver as an entry. Upstream's other drivers (Cursor, OpenCode, ACP, Antigravity, Grok) are
     not carried.
-  - Thread-title and branch-name generation use only Codex or Claude models.
+  - Thread-title and branch-name generation use only Codex or Claude models. Text generation is
+    upstream's except that Codex reads branch-name and title images through
+    `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `server.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer.
@@ -588,8 +617,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
     provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
-    sources, data-URL and non-image file uploads, attachments on question answers, preview-tool
-    metadata, and the agent device shim.
+    sources, data-URL uploads, preview-tool metadata, and the agent device shim.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
@@ -623,16 +651,24 @@ listed here is drift to remove rather than fork behavior to keep.
   reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
-  element captures, SnapShot, video, non-image files, and remote icons. Images move through the
-  gateway and SCP (see [Network and transfer constraints](#network-and-transfer-constraints)):
-  `ChatView` treats attachment uploads as always available and question and file attachments
-  as unavailable. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
+  element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Images
+  and files move through the gateway and SCP (see
+  [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
+  the helper's advertised attachment capabilities, as upstream does. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
   submitted images by id through the helper (`AttachmentImageResource` carries the media type
   and size the read verifies). Reads start only once the workspace is connected, because cached
   threads render before the helper is reachable. Rewind re-stages a message's images through the
   same reads.
   Sent file attachments render as static rows without preview, download, or open actions, and
   native app icons fall back to the tool glyph.
+  Upstream's v1 importer carries only messages, so screenshots that pre-v2 conversations saved
+  as `artifacts` on v1 tool activities have no v2 item. The v2 database starts as a copy of the
+  v1 one, so `orchestration-v2/legacy/LegacyScreenshotArtifacts.ts` reads them from the kept v1
+  `projection_thread_activities` rows, only for imported threads, and returns those recorded
+  between an imported message and the next (`workspace.listLegacyScreenshotArtifacts`, at most
+  100). The timeline's `LegacyScreenshotArtifactsTimelineRow` renders them after messages without
+  a run, through the bounded legacy chunk read. Nothing is written, so already-migrated
+  workspaces need no backfill.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), project-script
@@ -694,8 +730,8 @@ listed here is drift to remove rather than fork behavior to keep.
     creates a merge request, so a blocked workspace, or a remote that resolves to no registered
     provider, commits and pushes nothing. It also reads merge-request
     templates for GitLab and fetches merge-request heads from `refs/merge-requests/<n>/head`.
-    Custom writing instructions remain one string. Upstream's GitHub and Forgejo branches stay
-    verbatim but are unreachable with the GitLab-only registry.
+    Upstream's GitHub and Forgejo branches stay verbatim but are unreachable with the GitLab-only
+    registry.
   - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a

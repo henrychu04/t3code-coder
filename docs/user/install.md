@@ -34,7 +34,7 @@ not open a browser automatically.
 
 ## Connect to Coder
 
-1. Open **Settings → Coder connections**.
+1. Open **Settings → Connections**.
 2. Add the Coder domain. Use an explicit Coder executable path only when `coder` is not on the
    local `PATH`.
 3. Select **Sign in**.

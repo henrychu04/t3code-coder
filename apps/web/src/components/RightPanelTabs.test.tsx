@@ -205,6 +205,19 @@ describe("right-panel tab context menu", () => {
   });
 });
 
+// Coder: ChatView passes onAddPullRequests only when the thread has linked MRs.
+it("disables the MR entry when the thread has neither linked nor branch MRs", () => {
+  const markup = renderToStaticMarkup(
+    <RightPanelTabs {...sharedProps} mode="inline" pullRequestAvailable={false} />,
+  );
+  const button = markup.match(
+    /<button[^>]*>(?:(?!<\/button>)[\s\S])*GitLab MR(?:(?!<\/button>)[\s\S])*<\/button>/,
+  )?.[0];
+  expect(button).toBeDefined();
+  expect(button).toContain('disabled=""');
+  expect(markup).not.toContain("Linked MRs");
+});
+
 it("keeps the linked-MR surface available before the first MR exists", () => {
   const markup = renderToStaticMarkup(
     <RightPanelTabs

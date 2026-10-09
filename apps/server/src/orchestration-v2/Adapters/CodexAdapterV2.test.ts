@@ -612,7 +612,8 @@ describe("CodexAdapterV2 runtime policy", () => {
 });
 
 describe("CodexAdapterV2 process spawning", () => {
-  it("injects cwd, model, and MCP authorization into thread-scoped params", () => {
+  // Coder: T3 tools reach Codex over the workspace file bridge, so no MCP server is configured.
+  it("injects cwd and model into thread-scoped params without an MCP server", () => {
     const threadId = ThreadId.make("thread-codex-mcp");
     McpProviderSession.setMcpProviderSession({
       environmentId: EnvironmentId.make("environment-codex-mcp"),
@@ -640,14 +641,6 @@ describe("CodexAdapterV2 process spawning", () => {
           model: "gpt-5.4",
           config: {
             "tools.update_plan.enabled": true,
-            mcp_servers: {
-              "t3-code": {
-                url: "http://127.0.0.1:43123/mcp",
-                http_headers: {
-                  Authorization: "Bearer secret-codex-token",
-                },
-              },
-            },
           },
         },
       );
@@ -2401,16 +2394,21 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       Effect.gen(function* () {
         const nativeThreadId = "context-thread";
         const nativeTurnId = "context-turn";
+        // Coder: the session's T3 tools run over the file bridge; preview and device are not bridged.
+        const toolCommand = "/nix/store/node/bin/node /tmp/t3-tools-context/t3.mjs";
         const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
           nativeThreadId,
           codexInput: [{ type: "text", text: "work" }],
           runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasT3Mcp: true,
+          browserToolsAvailable: false,
+          deviceToolsAvailable: false,
+          t3ToolCommand: toolCommand,
         });
         assert.include(
           params.additionalContext?.t3_code_orchestration?.value ?? "",
-          "delegate_task",
+          `${toolCommand} --list`,
         );
         const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
         const transcript = makeCodexReplayTranscript({
@@ -2471,9 +2469,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           threadId: harness.threadId,
           providerSessionId: "context-session",
           providerInstanceId: ProviderInstanceId.make("codex"),
-          endpoint: "http://127.0.0.1:43123/mcp",
+          endpoint: "/tmp/t3-tools-context",
           authorizationHeader: "Bearer test",
           browserToolsAvailable: true,
+          toolCommand,
         });
         yield* Effect.addFinalizer(() =>
           Effect.sync(() => McpProviderSession.clearMcpProviderSession(harness.threadId)),

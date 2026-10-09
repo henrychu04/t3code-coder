@@ -35,7 +35,7 @@ import { layer as providerContinuationRequestsLayer } from "./ProviderContinuati
 import { workerLive as providerContinuationWorkerLive } from "./ProviderContinuationService.ts";
 import { layer as threadTitleRegenerationServiceLayer } from "./ThreadTitleRegenerationService.ts";
 import { layer as providerEventIngestorLayer } from "./ProviderEventIngestor.ts";
-import { layerWithOptions as providerSessionManagerLayerWithOptions } from "./ProviderSessionManager.ts";
+import { layer as providerSessionManagerLayer } from "./ProviderSessionManager.ts";
 import { layer as providerRuntimeRecoveryLayer } from "./ProviderRuntimeRecoveryService.ts";
 import { layer as providerSwitchServiceLayer } from "./ProviderSwitchService.ts";
 import { layer as providerTurnControlServiceLayer } from "./ProviderTurnControlService.ts";
@@ -110,9 +110,6 @@ const providerAdapterRegistryProvided = providerAdapterRegistryLayerFromProvider
 const providerSwitchServiceProvided = providerSwitchServiceLayer.pipe(
   Layer.provide(providerAdapterRegistryProvided),
 );
-
-// Coder: MCP is disabled for both providers, so sessions never mint MCP credentials.
-const providerSessionManagerLayer = providerSessionManagerLayerWithOptions({ configureMcp: false });
 
 const providerSessionManagerProvided = providerSessionManagerLayer.pipe(
   Layer.provide(

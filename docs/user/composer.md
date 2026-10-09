@@ -6,7 +6,7 @@ multiple messages, then send again in the same thread.
 
 In an existing thread, scrolling a conversation that overflows the viewport can rest the composer
 into one line. Losing focus does not collapse it, and multiline drafts remain expanded. Control
-scroll collapse under **Settings → Preferences**. When the thread-context strip has room, the
+scroll collapse with **Collapse composer on scroll** under **Settings → General → Behavior**. When the thread-context strip has room, the
 model and mode controls remain available beside it; otherwise they return when the composer is
 focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
 composer.
@@ -26,7 +26,7 @@ conversation.
 ## Rich text and multiple models
 
 The composer formats supported Markdown as you type. Turn off **Rich text composer** in
-**Settings → Preferences** to show formatting markers literally. File mentions, skills, images,
+**Settings → General → Behavior** to show formatting markers literally. File mentions, skills, images,
 terminal context, and review comments remain editable context chips in either mode.
 
 In a new draft, select multiple models to send the same prompt to separate background threads.
@@ -95,14 +95,19 @@ excerpts, is kept in browser storage. Image bytes stay in browser memory, includ
 between threads or restored from a prompt stash. Image bytes, upload IDs, and credentials are never
 saved in browser storage.
 
-## Images
+## Images and files
 
 Paste an image straight into the composer to share it with Codex or Claude. PNG, JPEG, and WebP images up
 to 50 MiB are accepted as sources and compressed to at most 10 MiB before upload. Unsupported
-formats and images that cannot meet the upload limit are rejected before sending. The
+image formats and images that cannot meet the upload limit are rejected before sending. The
 image is validated, not just renamed, and is stored at a generated path inside the workspace so
-the provider can read it. There are no general file attachments: images pasted into the composer are the
-only upload.
+the provider can read it.
+
+Attach other files, including videos, the same way, up to 50 MiB each. They upload unchanged to a
+generated path in the workspace, and the agent receives that path rather than the file's contents;
+attaching a video does not enable native video input. A message holds at most 100 attachments,
+with at most 80 MiB of images. You can also attach files to a question answer; see
+[Files in question answers](./question-attachments.md).
 
 Thumbnails appear above the input with queue and upload percentage indicators. You can keep editing
 and pasting images during uploads; Send waits until all images are ready. Retry or remove failed
@@ -197,7 +202,7 @@ Compacting from the context meter preserves the current draft and its images. Yo
 
 ## Response streaming
 
-Under **Settings → Preferences**, choose **Completed turn**, **Completed paragraphs**, or
+Under **Settings → General → Behavior → Response streaming**, choose **Completed turn**, **Completed paragraphs**, or
 **Live tokens**. Completed paragraphs is the default and also waits for complete code blocks.
 Projects can override this preference on their settings page. The former legacy-token-streaming
 switch is replaced by this setting; upgrading starts in paragraph mode unless the new setting

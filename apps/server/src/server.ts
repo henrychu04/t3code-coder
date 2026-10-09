@@ -52,12 +52,15 @@ import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";
 import * as WorkspaceFileSystem from "./workspace/WorkspaceFileSystem.ts";
 import * as WorkspacePaths from "./workspace/WorkspacePaths.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
+import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as CoderWs from "./ws.ts";
 import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
-import * as AgentMergeRequests from "./agentMergeRequests/AgentMergeRequests.ts";
+import * as T3ToolBridge from "./mcp/bridge/T3ToolBridge.ts";
+import * as T3ToolDispatch from "./mcp/bridge/T3ToolDispatch.ts";
+import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import {
   OrchestrationEventInfrastructureLayerLive,
@@ -193,24 +196,11 @@ const CoderResourceCleanupLive = Layer.effect(
   }),
 );
 
-// Coder: one instance serves turn start, run finalization, and the startup binding.
-const CoderAgentMergeRequestsLive = AgentMergeRequests.layer;
-
-// Coder: run finalization also revokes the turn's workspace MR commands.
-const CoderRunFinalizationObserverLive = Layer.effect(
-  RunFinalizationService.RunFinalizationObserver,
-  Effect.gen(function* () {
-    const upstream = yield* RunFinalizationService.RunFinalizationObserver;
-    const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
-    return {
-      refreshAfterTurn: upstream.refreshAfterTurn,
-      refresh: (input) =>
-        upstream
-          .refresh(input)
-          .pipe(Effect.ensuring(agentMergeRequests.release(input.threadId, input.runId))),
-    };
-  }),
-).pipe(
+// Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
+const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
+  Layer.provide(CoderCheckpointStoreLive),
+  Layer.provide(CoderGitWorkflowLive),
+  Layer.provide(CoderResourceCleanupLive),
   Layer.provide(
     RunFinalizationService.observerLive.pipe(
       Layer.provide(ProjectionStoreV2.layer),
@@ -218,16 +208,6 @@ const CoderRunFinalizationObserverLive = Layer.effect(
       Layer.provide(ProjectServiceLayerLive),
     ),
   ),
-  Layer.provide(CoderAgentMergeRequestsLive),
-);
-
-// Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
-const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
-  Layer.provide(CoderCheckpointStoreLive),
-  Layer.provide(CoderGitWorkflowLive),
-  Layer.provide(CoderResourceCleanupLive),
-  Layer.provide(CoderRunFinalizationObserverLive),
-  Layer.provide(CoderAgentMergeRequestsLive),
 );
 
 const CoderOrchestrationApplicationLive = CheckpointDiffQuery.layer.pipe(
@@ -283,15 +263,16 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
 
 const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   Layer.provideMerge(ScreenshotArtifacts.layer),
-  Layer.provideMerge(CoderAgentMergeRequestsLive),
+  Layer.provideMerge(LegacyScreenshotArtifacts.layer),
   Layer.provideMerge(
     ProjectEnrichmentService.layer.pipe(Layer.provide(ProjectFaviconResolver.layer)),
   ),
   Layer.provideMerge(RepositoryIdentityResolver.layer),
   Layer.provideMerge(CoderEnvironment.layer),
   Layer.provideMerge(ServerLifecycleEvents.layer),
-  // Coder: MCP is disabled; the registry never issues credentials.
-  Layer.provideMerge(McpSessionRegistry.layer),
+  // Coder: credentials are workspace file bridges that carry upstream's T3 toolkits.
+  Layer.provideMerge(McpSessionRegistry.layer.pipe(Layer.provide(CoderEnvironment.layer))),
+  Layer.provideMerge(T3ToolDispatch.layer),
   Layer.provideMerge(ProviderEventLoggers.layer),
   Layer.provideMerge(
     ProviderMaintenanceRunner.layer.pipe(
@@ -322,7 +303,7 @@ const CoderRuntimeStartupLive = Layer.effect(
     const gitLabCli = yield* GitLabCli.GitLabCli;
     const config = yield* ServerConfig.ServerConfig;
     const orchestrator = yield* Orchestrator.OrchestratorV2;
-    const agentMergeRequests = yield* AgentMergeRequests.AgentMergeRequests;
+    const t3Tools = yield* T3ToolDispatch.T3ToolDispatch;
     const runtimeScope = yield* Scope.make("sequential");
     const effectWorkerContext =
       yield* Effect.context<Effect.Services<typeof EffectWorker.runDaemon>>();
@@ -348,6 +329,14 @@ const CoderRuntimeStartupLive = Layer.effect(
       });
     }
     yield* legacyV1ThreadImporter.reconcileShells;
+    // Coder: bind agents' T3 tools before recovery or the effect worker can open a session.
+    yield* t3Tools.bind(
+      yield* T3ToolBridge.makeBinding.pipe(
+        // As upstream provides its MCP server's toolkits.
+        Effect.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+        Scope.provide(runtimeScope),
+      ),
+    );
     yield* providerRuntimeRecovery.recover;
     const effectWorker: Fiber.Fiber<void, never> = yield* EffectWorker.runDaemon.pipe(
       Effect.provide(effectWorkerContext),
@@ -378,12 +367,6 @@ const CoderRuntimeStartupLive = Layer.effect(
       Effect.ignoreCause({ log: true }),
       Effect.forkIn(runtimeScope),
     );
-    // Coder: workspace MR commands act through the orchestrator once it is running.
-    yield* agentMergeRequests.bind({
-      getThreadShell: orchestrator.getThreadShell,
-      listProjects: projectStore.listShells(),
-      dispatch: orchestrator.dispatch,
-    });
     yield* Effect.forkScoped(gitLabCli.probeWriteAccess({ cwd: config.cwd }).pipe(Effect.asVoid));
 
     return CoderRuntimeStartup.CoderRuntimeStartup.of({});

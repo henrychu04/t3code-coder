@@ -1,5 +1,8 @@
 /**
- * Prompt builders for Claude-generated local labels.
+ * Shared prompt builders for text generation providers.
+ *
+ * Extracts the prompt construction logic that is identical across
+ * Codex, Claude, and any future CLI-based text generation backends.
  *
  * @module textGenerationPrompts
  */
@@ -13,19 +16,26 @@ import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
 const EARLIER_CONTENT_TRUNCATION_MARKER = "[Earlier content truncated]\n\n";
 
-function policyInstruction(instruction: string | undefined): readonly string[] {
+function policyInstruction(instruction: string | undefined): ReadonlyArray<string> {
   const trimmed = instruction?.trim();
-  return trimmed ? ["", "Additional instructions:", limitSection(trimmed, 4_000)] : [];
+  return trimmed ? ["", "Additional instructions:", limitSection(trimmed, 20_000)] : [];
 }
 
-export function buildCommitMessagePrompt(input: {
-  readonly branch: string | null;
-  readonly stagedSummary: string;
-  readonly stagedPatch: string;
-  readonly includeBranch?: boolean;
-  readonly policy?: TextGenerationPolicy;
-}) {
+// ---------------------------------------------------------------------------
+// Commit message
+// ---------------------------------------------------------------------------
+
+export interface CommitMessagePromptInput {
+  branch: string | null;
+  stagedSummary: string;
+  stagedPatch: string;
+  includeBranch?: boolean;
+  policy?: TextGenerationPolicy | undefined;
+}
+
+export function buildCommitMessagePrompt(input: CommitMessagePromptInput) {
   const wantsBranch = input.includeBranch === true;
+
   const prompt = [
     "You write concise git commit messages.",
     wantsBranch
@@ -33,7 +43,7 @@ export function buildCommitMessagePrompt(input: {
       : "Return a JSON object with keys: subject, body.",
     "Rules:",
     "- subject must be imperative, <= 72 chars, and no trailing period",
-    "- body can be an empty string or short markdown bullet points",
+    "- body can be empty string or short bullet points",
     ...(wantsBranch
       ? ["- branch must be a short semantic git branch fragment for this change"]
       : []),
@@ -48,6 +58,7 @@ export function buildCommitMessagePrompt(input: {
     "Staged patch:",
     limitSection(input.stagedPatch, 40_000),
   ].join("\n");
+
   if (wantsBranch) {
     return {
       prompt,
@@ -58,6 +69,7 @@ export function buildCommitMessagePrompt(input: {
       }),
     };
   }
+
   return {
     prompt,
     outputSchema: Schema.Struct({
@@ -67,33 +79,44 @@ export function buildCommitMessagePrompt(input: {
   };
 }
 
-export function buildPrContentPrompt(input: {
-  readonly baseBranch: string;
-  readonly headBranch: string;
+// ---------------------------------------------------------------------------
+// Change request content
+// ---------------------------------------------------------------------------
 
-  readonly commitSummary: string;
-  readonly diffSummary: string;
-  readonly diffPatch: string;
-  readonly changeRequestTemplate?: string;
-  readonly policy?: TextGenerationPolicy;
-}) {
-  const template = input.changeRequestTemplate?.trim();
+export interface PrContentPromptInput {
+  baseBranch: string;
+  headBranch: string;
+  commitSummary: string;
+  diffSummary: string;
+  diffPatch: string;
+  changeRequestTemplate?: string | undefined;
+  policy?: TextGenerationPolicy | undefined;
+}
+
+export function buildPrContentPrompt(input: PrContentPromptInput) {
+  const changeRequestTemplate = input.changeRequestTemplate?.trim();
+  const bodyRules = changeRequestTemplate
+    ? [
+        "- body must be markdown and follow the repository change request template structure",
+        "- fill in the template sections appropriately for this change",
+        "- drop HTML comments from the template in the generated body",
+        "- keep the template's markdown structure",
+      ]
+    : [
+        "- body must be markdown and include headings '## Summary' and '## Testing'",
+        "- under Summary, provide short bullet points",
+        "- under Testing, include bullet points with concrete checks or 'Not run' where appropriate",
+      ];
   const prompt = [
-    "You write GitLab merge request content.",
+    "You write source control change request content.",
     "Return a JSON object with keys: title, body.",
     "Rules:",
     "- title should be concise and specific",
-    ...(template
-      ? [
-          "- body must follow the repository merge request template structure",
-          "- fill the template sections and remove HTML comments",
-        ]
-      : [
-          "- body must include headings '## Summary' and '## Testing'",
-          "- use short markdown bullet points under each heading",
-        ]),
+    ...bodyRules,
     ...policyInstruction(input.policy?.changeRequestInstructions),
-    ...(template ? ["", "Repository merge request template:", limitSection(template, 8_000)] : []),
+    ...(changeRequestTemplate
+      ? ["", "Repository change request template:", limitSection(changeRequestTemplate, 8_000)]
+      : []),
     "",
     `Base branch: ${input.baseBranch}`,
     `Head branch: ${input.headBranch}`,
@@ -107,10 +130,13 @@ export function buildPrContentPrompt(input: {
     "Diff patch:",
     limitSection(input.diffPatch, 40_000),
   ].join("\n");
-  return {
-    prompt,
-    outputSchema: Schema.Struct({ title: Schema.String, body: Schema.String }),
-  };
+
+  const outputSchema = Schema.Struct({
+    title: Schema.String,
+    body: Schema.String,
+  });
+
+  return { prompt, outputSchema };
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +146,8 @@ export function buildPrContentPrompt(input: {
 export interface BranchNamePromptInput {
   naming?: BranchNamingOptions | undefined;
   message: string;
+  attachments?: ReadonlyArray<ChatAttachment> | undefined;
+  policy?: TextGenerationPolicy | undefined;
 }
 
 interface PromptFromMessageInput {
@@ -127,10 +155,15 @@ interface PromptFromMessageInput {
   responseShape: string;
   rules: ReadonlyArray<string>;
   message: string;
+  attachments?: ReadonlyArray<ChatAttachment> | undefined;
   additionalInstructions?: string | undefined;
 }
 
 function buildPromptFromMessage(input: PromptFromMessageInput): string {
+  const attachmentLines = (input.attachments ?? []).map(
+    (attachment) => `- ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`,
+  );
+
   const promptSections = [
     input.instruction,
     input.responseShape,
@@ -141,6 +174,14 @@ function buildPromptFromMessage(input: PromptFromMessageInput): string {
     limitSection(input.message, 8_000),
     ...policyInstruction(input.additionalInstructions),
   ];
+  if (attachmentLines.length > 0) {
+    promptSections.push(
+      "",
+      "Attachment metadata:",
+      limitSection(attachmentLines.join("\n"), 4_000),
+    );
+  }
+
   return promptSections.join("\n");
 }
 
@@ -168,7 +209,11 @@ export function buildBranchNamePrompt(input: BranchNamePromptInput) {
       "If images are attached, use them as primary context for visual/UI issues.",
     ],
     message: input.message,
-    additionalInstructions: input.naming?.mode === "custom" ? input.naming.instructions : undefined,
+    attachments: input.attachments,
+    additionalInstructions:
+      input.naming?.mode === "custom"
+        ? input.naming.instructions
+        : input.policy?.branchInstructions,
   });
   const outputSchema = Schema.Struct({
     branch: Schema.String,
@@ -182,11 +227,11 @@ export function buildBranchNamePrompt(input: BranchNamePromptInput) {
 // ---------------------------------------------------------------------------
 
 export interface ThreadTitlePromptInput {
-  attachments?: ReadonlyArray<ChatAttachment> | undefined;
-  policy?: TextGenerationPolicy | undefined;
   linkedContext?: string | undefined;
   message: string;
   previousTitle?: string | undefined;
+  attachments?: ReadonlyArray<ChatAttachment> | undefined;
+  policy?: TextGenerationPolicy | undefined;
 }
 
 // Keep shared editorial rules in these two prompts in sync. Regeneration
@@ -214,7 +259,9 @@ Editorial rules:
 - Do not copy and truncate the user's message.
 - Avoid project names already visible in the UI, quotes, labels, filler, and trailing punctuation.
 - Use attached images as primary context for UI issues.
-- When a URL is the only source of the subject, use available tools to inspect it. If it cannot be resolved, remain accurate rather than guessing.`;
+- When a URL or attachment is the only source of the subject, use available tools to inspect it directly.
+- Local git history is not evidence of what a linked PR or issue is about. Never title the thread after branch names, commit messages, or merged commits found in the checkout.
+- If a linked PR or issue cannot be read, fall back to the user's stated action plus its number, such as "Take Over PR 8588". This is the one case where a PR or issue number belongs in the title.`;
 
 function regenerateThreadTitlePrompt(previousTitle: string): string {
   return `Regenerate the title for an existing T3 Code thread so the user can recognize it weeks later.
@@ -247,7 +294,7 @@ Editorial rules:
 - Keep the previous title unchanged if it is already accurate. Otherwise return a meaningfully improved title, not a cosmetic paraphrase.
 
 Examples of the distinction:
-- A subagent-monitoring review that finds a roster bug remains "Review Subagent Monitoring Risks," not "Roster Bug Review."
+- A subagent-monitoring review that finds a Codex roster bug remains "Review Subagent Monitoring Risks," not "Codex Roster Bug Review."
 - A vague failing-test request later identified as a lazy thread-feed mismatch becomes "Fix Lazy Thread Feed Test," not "Prevent Mobile Feed Regressions."
 - A QR-sharing overhaul that ends with CI and merge work remains about QR sharing, not the PR lifecycle.`;
 }
@@ -264,9 +311,9 @@ function preserveMessageEnd(message: string): string {
 }
 
 function threadTitlePromptSuffix(input: ThreadTitlePromptInput): string {
-  const additionalInstructions = [] as string[];
+  const additionalInstructions = policyInstruction(input.policy?.threadTitleInstructions);
   const attachmentLines = (input.attachments ?? []).map(
-    (attachment) => `- Image attachment ${attachment.id}`,
+    (attachment) => `- ${attachment.name} (${attachment.mimeType}, ${attachment.sizeBytes} bytes)`,
   );
 
   let suffix = input.linkedContext
@@ -288,7 +335,7 @@ export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
     prompt = `${INITIAL_THREAD_TITLE_PROMPT}\n\nUser message:\n${message}${threadTitlePromptSuffix(input)}`;
   } else {
     const message = preserveMessageEnd(input.message);
-    prompt = `${regenerateThreadTitlePrompt(input.previousTitle)}\n\nThread contents:\n${message}`;
+    prompt = `${regenerateThreadTitlePrompt(input.previousTitle)}\n\nThread contents:\n${message}${threadTitlePromptSuffix(input)}`;
   }
   const outputSchema = Schema.Struct({
     title: Schema.String,
