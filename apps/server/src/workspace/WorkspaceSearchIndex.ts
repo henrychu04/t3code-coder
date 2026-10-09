@@ -404,7 +404,10 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       }).pipe(Effect.orDie),
   );
   let initialScanTimedOut = false;
-  yield* waitForIndexReady(finder, (reason) => new WorkspaceSearchIndexCreateFailed({ reason })).pipe(
+  yield* waitForIndexReady(
+    finder,
+    (reason) => new WorkspaceSearchIndexCreateFailed({ reason }),
+  ).pipe(
     Effect.catchTags({
       WorkspaceSearchIndexScanTimedOut: (error) =>
         variant === "paths"
@@ -484,7 +487,8 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       );
       return {
         entries: sorted.slice(0, WORKSPACE_INDEX_MAX_ENTRIES),
-        truncated: incompleteBeforeQuery || mapped.truncated || sorted.length > WORKSPACE_INDEX_MAX_ENTRIES,
+        truncated:
+          incompleteBeforeQuery || mapped.truncated || sorted.length > WORKSPACE_INDEX_MAX_ENTRIES,
       };
     },
   );

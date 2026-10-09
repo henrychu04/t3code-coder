@@ -62,7 +62,9 @@ const BridgedHandlersLive = Layer.mergeAll(
   McpToolAccess.HandlersLayer.layer(ThreadToolkitHandlers.layer),
   McpToolAccess.HandlersLayer.layer(ProjectToolkitHandlers.layer),
   McpToolAccess.HandlersLayer.layer(EnvironmentToolkitHandlers.layer),
-  McpToolAccess.HandlersLayer.layer(WorktreeToolkitHandlers.layer).pipe(Layer.provide(WorktreeMcpService.layer)),
+  McpToolAccess.HandlersLayer.layer(WorktreeToolkitHandlers.layer).pipe(
+    Layer.provide(WorktreeMcpService.layer),
+  ),
   McpToolAccess.HandlersLayer.layer(PullRequestsToolkitHandlers.layer),
 );
 

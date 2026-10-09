@@ -8,6 +8,7 @@ import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   type OrchestrationProjectShell,
   type OrchestrationV2ServerCommand,
@@ -60,8 +61,9 @@ const project = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 } as OrchestrationProjectShell;
 
-const thread = (interactionMode: "default" | "plan") =>
-  v2PullRequestThread({
+// Upstream's T3 tools act only for a caller that owns a live run.
+const thread = (interactionMode: "default" | "plan") => ({
+  ...v2PullRequestThread({
     id: THREAD_ID,
     projectId: PROJECT_ID,
     title: "Thread",
@@ -77,7 +79,9 @@ const thread = (interactionMode: "default" | "plan") =>
     settledOverride: null,
     settledAt: null,
     latestUserMessageAt: "2026-08-20T00:00:00.000Z",
-  });
+  }),
+  activeRunId: RunId.make("run-bridge"),
+});
 
 /** Upstream's pull-request handlers behind the Coder registry, reached through the real CLI. */
 const harness = (options: {

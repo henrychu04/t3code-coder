@@ -492,7 +492,10 @@ const probeClaudeCapabilities = (
         const usageResult = includeUsage
           ? yield* Effect.tryPromise(
               // Coder: the workspace CLI transport answers the SDK's usage control request.
-              () => q.getUsage() as unknown as Promise<SDKControlGetUsageResponse>,
+              () =>
+                q.getUsage({
+                  skipBehaviors: true,
+                }) as unknown as Promise<SDKControlGetUsageResponse>,
             ).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
           : undefined;
         const usage =

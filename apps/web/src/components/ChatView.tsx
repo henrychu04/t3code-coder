@@ -8929,6 +8929,7 @@ export default function ChatView(props: ChatViewProps) {
         failure = startResult;
       } else {
         turnStartSucceeded = true;
+        setKeepFullHistory(routeThreadKey, false);
         if (turnUsesAttachmentUploads) {
           releaseDraftAttachments(composerAttachmentsSnapshot);
         }
@@ -10836,4 +10837,3 @@ export default function ChatView(props: ChatViewProps) {
     </div>
   );
 }
-

@@ -313,21 +313,95 @@ function useClientSettingsValue(): ClientSettings {
 export function mergeEnvironmentSettings(
   serverSettings: ServerSettings,
   clientSettings: ClientSettings,
+  environmentId: EnvironmentId | null = null,
 ): UnifiedSettings {
+  // Coder: each workspace keeps its own favorites and model preferences, falling back to the
+  // global ones until it has its own.
+  const providerPreferences =
+    environmentId === null
+      ? undefined
+      : clientSettings.providerPreferencesByEnvironment[environmentId];
   // Decode drops retired client keys, but older untyped persistence adapters
   // can still return them. Server-owned values must always win.
-  return { ...clientSettings, ...serverSettings };
+  return {
+    ...clientSettings,
+    ...serverSettings,
+    favorites: providerPreferences?.favorites ?? clientSettings.favorites,
+    providerModelPreferences:
+      providerPreferences?.providerModelPreferences ?? clientSettings.providerModelPreferences,
+  };
+}
+
+/**
+ * Coder: applies a client patch, scoping favorites and model preferences to `environmentId` when
+ * one is given. Other keys stay global.
+ */
+export function applyEnvironmentClientSettingsPatch(
+  current: ClientSettings,
+  patch: ClientSettingsPatch,
+  environmentId: EnvironmentId | null,
+): ClientSettings {
+  if (
+    environmentId === null ||
+    (!("favorites" in patch) && !("providerModelPreferences" in patch))
+  ) {
+    return { ...current, ...patch };
+  }
+
+  const existing = current.providerPreferencesByEnvironment[environmentId];
+  const scoped = {
+    favorites: existing?.favorites ?? current.favorites,
+    providerModelPreferences:
+      existing?.providerModelPreferences ?? current.providerModelPreferences,
+  };
+  const unscopedPatch = { ...patch };
+  delete unscopedPatch.favorites;
+  delete unscopedPatch.providerModelPreferences;
+
+  return {
+    ...current,
+    ...unscopedPatch,
+    providerPreferencesByEnvironment: {
+      ...current.providerPreferencesByEnvironment,
+      [environmentId]: {
+        favorites: patch.favorites ?? scoped.favorites,
+        providerModelPreferences: patch.providerModelPreferences ?? scoped.providerModelPreferences,
+      },
+    },
+  };
+}
+
+/** Coder: persists a client patch, scoping provider preferences to `environmentId`. */
+function persistEnvironmentClientSettingsPatch(
+  patch: ClientSettingsPatch,
+  environmentId: EnvironmentId | null,
+): Promise<unknown> {
+  if (
+    environmentId === null ||
+    (!("favorites" in patch) && !("providerModelPreferences" in patch))
+  ) {
+    return persistClientSettingsPatch(patch);
+  }
+  return persistClientSettingsUpdate((current) =>
+    applyEnvironmentClientSettingsPatch(current, patch, environmentId),
+  ).catch((error) => {
+    console.error(`${CLIENT_SETTINGS_PERSISTENCE_ERROR_SCOPE} persist failed`, {
+      operation: "persist",
+      ...safeErrorLogAttributes(error),
+    });
+  });
 }
 
 function useMergedSettings<T>(
   serverSettings: ServerSettings,
   selector: ((settings: UnifiedSettings) => T) | undefined,
+  environmentId: EnvironmentId | null = null,
 ): T {
   const clientSettings = useClientSettingsValue();
 
   const merged = useMemo<UnifiedSettings>(
-    () => mergeEnvironmentSettings(serverSettings, clientSettings),
-    [clientSettings, serverSettings],
+    () => mergeEnvironmentSettings(serverSettings, clientSettings, environmentId),
+    [clientSettings, environmentId, serverSettings],
   );
 
   return useMemo(() => (selector ? selector(merged) : (merged as T)), [merged, selector]);
@@ -382,7 +456,7 @@ export function useEnvironmentSettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
   const serverSettings = useAtomValue(serverEnvironment.settingsValueAtom(environmentId));
-  return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector);
+  return useMergedSettings(serverSettings ?? DEFAULT_SERVER_SETTINGS, selector, environmentId);
 }
 
 /** Atomically mutate one provider instance against the server's latest settings snapshot. */
@@ -404,7 +478,12 @@ export function usePersistEnvironmentProviderInstanceMutation(environmentId: Env
 export function usePrimarySettings<T = UnifiedSettings>(
   selector?: (settings: UnifiedSettings) => T,
 ): T {
-  return useMergedSettings(useAtomValue(primaryServerSettingsAtom), selector);
+  // Coder: the primary environment is the active workspace, whose provider preferences apply.
+  return useMergedSettings(
+    useAtomValue(primaryServerSettingsAtom),
+    selector,
+    usePrimaryEnvironment()?.environmentId ?? null,
+  );
 }
 
 export const PRIMARY_SETTINGS_UNAVAILABLE_MESSAGE =
@@ -581,7 +660,7 @@ function useUpdateSettingsTarget(environmentId: EnvironmentId | null) {
         }
       }
       if (Object.keys(clientPatch).length > 0) {
-        void persistClientSettingsPatch(clientPatch);
+        void persistEnvironmentClientSettingsPatch(clientPatch, environmentId);
       }
     },
     [environmentId, environments, persist, persistServerSettings, sharedSettingsSyncTargetIds],
@@ -598,10 +677,12 @@ export function useUpdatePrimarySettings() {
   return useUpdateSettingsTarget(usePrimaryEnvironment()?.environmentId ?? null);
 }
 
-export function useUpdateClientSettings() {
-  return useCallback((patch: ClientSettingsPatch) => {
-    return persistClientSettingsPatch(patch);
-  }, []);
+/** Coder: with an `environmentId`, favorites and model preferences are saved for that workspace. */
+export function useUpdateClientSettings(environmentId: EnvironmentId | null = null) {
+  return useCallback(
+    (patch: ClientSettingsPatch) => persistEnvironmentClientSettingsPatch(patch, environmentId),
+    [environmentId],
+  );
 }
 
 export function __resetClientSettingsPersistenceForTests(): void {

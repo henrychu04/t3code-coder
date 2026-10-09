@@ -25,8 +25,10 @@ import {
   probeClaudeWorkspaceSnapshot,
 } from "./ClaudeProvider.ts";
 import { COMPACT_SLASH_COMMAND } from "@t3tools/provider-core/server/snapshotProbe";
+import * as ClaudeCli from "./Drivers/ClaudeCli.ts";
 
-vi.mock("@anthropic-ai/claude-agent-sdk", { spy: true });
+// Coder: the probe runs the workspace CLI transport, not the SDK query.
+vi.mock("./Drivers/ClaudeCli.ts", { spy: true });
 
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
@@ -91,7 +93,7 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
           skills: [],
         } satisfies ServerProvider;
         let usageCalls = 0;
-        const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
+        const query = vi.spyOn(ClaudeCli, "query").mockImplementation(({ options }) => {
           assert.equal(options?.env?.CLAUDE_CONFIG_DIR, configDir);
           assert.equal(options?.env?.T3_WORKSPACE_PROBE, "owned-instance");
           return {
@@ -109,11 +111,11 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
                 { name: "user-command", description: "Existing user command", argumentHint: "" },
               ],
             }),
-            usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => {
+            getUsage: async () => {
               usageCalls++;
               return { rate_limits_available: false, rate_limits: null };
             },
-          } as ReturnType<typeof ClaudeSdk.query>;
+          } as unknown as ReturnType<typeof ClaudeCli.query>;
         });
         yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
         for (const [index, cwd] of workspaces.entries()) {
@@ -179,18 +181,18 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         slashCommands: [{ name: "server-cwd-only" }],
         skills: [],
       } satisfies ServerProvider;
-      const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+      const query = vi.spyOn(ClaudeCli, "query").mockImplementation(
         () =>
           ({
             initializationResult: () =>
               Promise.reject<ClaudeSdk.SDKControlInitializeResponse>(
                 new Error("Initialization failed"),
               ),
-            usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+            getUsage: async () => ({
               rate_limits_available: false,
               rate_limits: null,
             }),
-          }) as ReturnType<typeof ClaudeSdk.query>,
+          }) as unknown as ReturnType<typeof ClaudeCli.query>,
       );
       yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
       const settings = decodeClaudeSettings({ homePath: cwd });
@@ -215,11 +217,11 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
             initializationResult: async () => ({
               commands: [{ name: "recovered", description: "", argumentHint: "" }],
             }),
-            usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async () => ({
+            getUsage: async () => ({
               rate_limits_available: false,
               rate_limits: null,
             }),
-          }) as ReturnType<typeof ClaudeSdk.query>,
+          }) as unknown as ReturnType<typeof ClaudeCli.query>,
       );
       const recovered = yield* probeClaudeWorkspaceSnapshot(settings, machineSnapshot, cwd);
       assert.deepEqual(recovered.slashCommands, [COMPACT_SLASH_COMMAND, { name: "recovered" }]);
@@ -325,18 +327,18 @@ it.effect("preserves initialized capabilities when optional usage times out", ()
   Effect.gen(function* () {
     const usageStarted = yield* Deferred.make<void>();
     let abortSignal: AbortSignal | undefined;
-    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(({ options }) => {
+    const query = vi.spyOn(ClaudeCli, "query").mockImplementation(({ options }) => {
       abortSignal = options?.abortController?.signal;
       return {
         initializationResult: async () => ({
           account: { email: "dev@example.com", subscriptionType: "pro", tokenSource: "oauth" },
           commands: [{ name: "review", description: "Review changes", argumentHint: "[path]" }],
         }),
-        usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () => {
+        getUsage: () => {
           Deferred.doneUnsafe(usageStarted, Effect.void);
           return new Promise(() => {});
         },
-      } as ReturnType<typeof ClaudeSdk.query>;
+      } as unknown as ReturnType<typeof ClaudeCli.query>;
     });
     yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
     const probe = yield* probeClaudeCapabilities(
@@ -359,18 +361,18 @@ it.effect("preserves initialized capabilities when optional usage times out", ()
 it.effect("asks for usage without the local transcript scan", () =>
   Effect.gen(function* () {
     let usageOptions: unknown;
-    const query = vi.spyOn(ClaudeSdk, "query").mockImplementation(
+    const query = vi.spyOn(ClaudeCli, "query").mockImplementation(
       () =>
         ({
           initializationResult: async () => ({
             account: { email: "dev@example.com", subscriptionType: "max", tokenSource: "oauth" },
             commands: [],
           }),
-          usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: async (options?: unknown) => {
+          getUsage: async (options?: unknown) => {
             usageOptions = options;
             return { rate_limits_available: true, rate_limits: null };
           },
-        }) as unknown as ReturnType<typeof ClaudeSdk.query>,
+        }) as unknown as ReturnType<typeof ClaudeCli.query>,
     );
     yield* Effect.addFinalizer(() => Effect.sync(() => query.mockRestore()));
     yield* probeClaudeCapabilities(decodeClaudeSettings({ binaryPath: "claude" }));

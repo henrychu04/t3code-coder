@@ -148,7 +148,7 @@ interface ToolOutputState {
 
 function ToolOutput(props: ToolOutputState) {
   // Coder: tool output images load through upstream's signed asset route, which the helper does
-  // not serve; `turnItemOutputImages` reports none.
+  // not serve, so the inspector shows none of `props.images`.
   const images: ReadonlyArray<React.ReactNode> = [];
   const text = props.output ? (
     <div className="max-h-80 overflow-auto text-muted-foreground">{props.output}</div>

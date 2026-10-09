@@ -206,10 +206,7 @@ const make = Effect.gen(function* () {
   // concurrent calls from both reading a ref before either deletes it.
   const consumeLock = yield* Semaphore.make(1);
   const consume: SecretRequests["Service"]["consume"] = (input) =>
-    consumeRef(input).pipe(
-      consumeLock.withPermits(1),
-      Effect.withSpan("SecretRequests.consume"),
-    );
+    consumeRef(input).pipe(consumeLock.withPermits(1), Effect.withSpan("SecretRequests.consume"));
 
   const consumeRef = (input: { readonly ref: SecretRef; readonly projectId: ProjectId }) =>
     Effect.gen(function* () {

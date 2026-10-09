@@ -614,7 +614,11 @@ class AsyncMessageQueue<T> implements AsyncIterable<T> {
 }
 
 export interface Query extends AsyncIterable<SDKMessage> {
-  getUsage(timeoutMs?: number): Promise<SDKControlGetUsageResponse>;
+  /** `skipBehaviors` skips the CLI's local transcript scan, as the SDK's usage request does. */
+  getUsage(
+    options?: { readonly skipBehaviors?: boolean },
+    timeoutMs?: number,
+  ): Promise<SDKControlGetUsageResponse>;
   interrupt(): Promise<void>;
   stopTask(taskId: string): Promise<void>;
   setModel(model?: string): Promise<void>;
@@ -820,10 +824,14 @@ class ClaudeCliQuery implements Query {
     );
   }
 
-  getUsage(timeoutMs?: number): Promise<SDKControlGetUsageResponse> {
-    return this.request({ subtype: "get_usage" }, timeoutMs).then((response) =>
-      Schema.decodeUnknownSync(ClaudeUsageResponse)(response),
-    );
+  getUsage(
+    options?: { readonly skipBehaviors?: boolean },
+    timeoutMs?: number,
+  ): Promise<SDKControlGetUsageResponse> {
+    return this.request(
+      { subtype: "get_usage", ...(options?.skipBehaviors ? { skip_behaviors: true } : {}) },
+      timeoutMs,
+    ).then((response) => Schema.decodeUnknownSync(ClaudeUsageResponse)(response));
   }
 
   close(): void {

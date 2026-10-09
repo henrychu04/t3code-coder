@@ -589,13 +589,7 @@ function EditableFileSurface({
       if (file.contents === getProjectFileContents(environmentId, threadId, cwd, relativePath))
         return;
       setEditedContents(file.contents);
-      setProjectFileQueryData(
-        environmentId,
-        cwd,
-        relativePath,
-        file.contents,
-        revisionRef.current,
-      );
+      setProjectFileQueryData(environmentId, cwd, relativePath, file.contents, revisionRef.current);
       saveCoordinator.change(file.contents);
       if (!nextLineAnnotations) return;
       const remapped = remapFileCommentAnnotations(nextLineAnnotations);

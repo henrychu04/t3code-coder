@@ -33,7 +33,7 @@ it("resolves sanitized fragments inside the clicked message before other message
       anchor.dispatchEvent(event);
     });
     expect(event.defaultPrevented).toBe(true);
-    expect(localScroll).toHaveBeenCalledWith({ block: "nearest" });
+    expect(localScroll).toHaveBeenCalledWith({ block: "start" });
     expect(otherScroll).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());

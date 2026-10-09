@@ -229,7 +229,7 @@ it.effect("reuses only unexpired detail for previews", () =>
     yield* service.detail(ref);
     assert.strictEqual((yield* service.preview(ref)).title, "Change request 1");
     assert.strictEqual(previewReads, 0);
-    yield* TestClock.adjust("16 seconds");
+    yield* TestClock.adjust("61 seconds");
     const preview = yield* service.preview(ref);
     assert.strictEqual(preview.title, "Updated title");
     assert.strictEqual(preview.state, "closed");
@@ -3924,7 +3924,7 @@ it.effect("reads the fresh diff when detail or summary discovers a changed revis
     assert.strictEqual((yield* service.diff(reference)).patch, "old patch");
     revision = "2026-07-02T00:01:00Z";
     patch = "new patch";
-    yield* TestClock.adjust("16 seconds");
+    yield* TestClock.adjust("61 seconds");
     yield* service.detail(reference);
     yield* Effect.yieldNow;
     assert.strictEqual((yield* service.detail(reference)).updatedAt, revision);
@@ -4061,7 +4061,7 @@ it.effect("answers a known pull request immediately while the host refreshes", (
     assert.strictEqual(first.body, "cached body");
     assert.strictEqual(first.additions, 4);
 
-    yield* TestClock.adjust("16 seconds");
+    yield* TestClock.adjust("61 seconds");
     const second = yield* service.detail(reference);
     assert.strictEqual(second.body, "cached body");
     assert.strictEqual(second.additions, 4);

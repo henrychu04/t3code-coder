@@ -9,6 +9,7 @@ import * as Duration from "effect/Duration";
 import * as Schema from "effect/Schema";
 import * as SchemaTransformation from "effect/SchemaTransformation";
 import {
+  EnvironmentId,
   ForwardCompatibleNullable,
   ForwardCompatibleOptional,
   OmittedWhenNull,
@@ -297,6 +298,25 @@ export const DiffColorScheme = Schema.Literals(["red-green", "blue-orange"]);
 export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);
 export type ChatWidth = typeof ChatWidth.Type;
 
+// Coder: per-workspace provider preferences; see `providerPreferencesByEnvironment`.
+const EnvironmentProviderPreferences = Schema.Struct({
+  favorites: Schema.Array(
+    Schema.Struct({
+      provider: ProviderInstanceId,
+      model: TrimmedNonEmptyString,
+    }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+  providerModelPreferences: Schema.Record(
+    ProviderInstanceId,
+    Schema.Struct({
+      hiddenModels: Schema.Array(Schema.String).pipe(
+        Schema.withDecodingDefault(Effect.succeed([])),
+      ),
+      modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
+    }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+
 export const ClientSettingsSchema = Schema.Struct({
   notificationMode: NotificationMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("off" as const)),
@@ -435,6 +455,12 @@ export const ClientSettingsSchema = Schema.Struct({
       ),
       modelOrder: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(Effect.succeed([]))),
     }),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  // Coder: each workspace has its own provider catalog, so favorites and model
+  // order are kept per environment as well as globally.
+  providerPreferencesByEnvironment: Schema.Record(
+    EnvironmentId,
+    EnvironmentProviderPreferences,
   ).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   pullRequestMergeMethodOverrides: Schema.Record(
     TrimmedNonEmptyString,
@@ -1604,6 +1630,10 @@ export const ClientSettingsPatch = Schema.Struct({
         ),
       }),
     ),
+  ),
+  // Coder: per-workspace provider preferences.
+  providerPreferencesByEnvironment: Schema.optionalKey(
+    Schema.Record(EnvironmentId, EnvironmentProviderPreferences),
   ),
   pullRequestMergeMethodOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, PullRequestMergeMethod),

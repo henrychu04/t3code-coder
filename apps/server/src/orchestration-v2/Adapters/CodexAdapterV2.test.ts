@@ -637,7 +637,9 @@ describe("CodexAdapterV2 runtime policy", () => {
 });
 
 describe("CodexAdapterV2 process spawning", () => {
-  it("injects cwd, model, and MCP authorization into thread-scoped params", () => {
+  // Coder: T3 tools reach Codex over the workspace file bridge, so no MCP server or credential
+  // enters the thread params.
+  it("injects cwd and model into thread-scoped params without an MCP server", () => {
     const threadId = ThreadId.make("thread-codex-mcp");
     const mcpSession = {
       environmentId: EnvironmentId.make("environment-codex-mcp"),
@@ -664,14 +666,6 @@ describe("CodexAdapterV2 process spawning", () => {
         model: "gpt-5.4",
         config: {
           "tools.update_plan.enabled": true,
-          mcp_servers: {
-            "t3-code": {
-              url: "http://127.0.0.1:43123/mcp",
-              http_headers: {
-                Authorization: "Bearer secret-codex-token",
-              },
-            },
-          },
         },
       },
     );
@@ -2738,6 +2732,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   it.effect("preserves T3 context on the wire and restores it after compaction", () =>
     Effect.scoped(
       Effect.gen(function* () {
+        const TOOL_COMMAND = "/nix/store/node/bin/node /tmp/t3-tools-codex/t3.mjs";
         const nativeThreadId = "context-thread";
         const nativeTurnId = "context-turn";
         const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
@@ -2746,6 +2741,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasT3Mcp: true,
+          browserToolsAvailable: false,
+          deviceToolsAvailable: false,
+          // Coder: T3 tools run over the workspace file bridge command.
+          t3ToolCommand: TOOL_COMMAND,
         });
         assert.include(
           params.additionalContext?.t3_code_orchestration?.value ?? "",
@@ -2810,9 +2809,10 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           threadId: harness.threadId,
           providerSessionId: "context-session",
           providerInstanceId: ProviderInstanceId.make("codex"),
-          endpoint: "http://127.0.0.1:43123/mcp",
+          endpoint: "/tmp/t3-tools-codex",
           authorizationHeader: "Bearer test",
           browserToolsAvailable: true,
+          toolCommand: TOOL_COMMAND,
         });
         yield* harness.runtime.startTurn(
           makeCodexTestTurnInput({

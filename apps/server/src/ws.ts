@@ -965,20 +965,20 @@ export const layer = CoderWsRpcGroup.toLayer(
         threads: threads.archivedThreads,
       } as const;
     }).pipe(
-        Effect.flatMap((snapshot) =>
-          enrichProjectShells(snapshot.projects).pipe(
-            Effect.map(({ projects }) => ({ ...snapshot, projects })),
-          ),
+      Effect.flatMap((snapshot) =>
+        enrichProjectShells(snapshot.projects).pipe(
+          Effect.map(({ projects }) => ({ ...snapshot, projects })),
         ),
-        Effect.provide(streamContext),
-        Effect.mapError(
-          (cause) =>
-            new OrchestrationV2GetShellSnapshotError({
-              message: "Failed to load archived thread snapshot",
-              cause,
-            }),
-        ),
-      );
+      ),
+      Effect.provide(streamContext),
+      Effect.mapError(
+        (cause) =>
+          new OrchestrationV2GetShellSnapshotError({
+            message: "Failed to load archived thread snapshot",
+            cause,
+          }),
+      ),
+    );
 
     const subscribeOrchestrationV2ArchivedShell = Effect.fn(
       "ws.orchestrationV2.subscribeArchivedShell",

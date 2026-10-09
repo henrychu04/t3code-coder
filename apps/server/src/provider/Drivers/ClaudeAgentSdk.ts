@@ -178,8 +178,8 @@ function toSdkQuery(cli: Cli.Query): Sdk.Query {
     getContextUsage: () =>
       cli.getContextUsage() as unknown as ReturnType<Sdk.Query["getContextUsage"]>,
     stopTask: (taskId) => cli.stopTask(taskId),
-    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
-      cli.getUsage() as unknown as ReturnType<
+    usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: (options) =>
+      cli.getUsage(options) as unknown as ReturnType<
         Sdk.Query["usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET"]
       >,
     close: () => cli.close(),

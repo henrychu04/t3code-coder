@@ -114,7 +114,8 @@ describe("right panel new-tab shortcut", () => {
       );
       expect(event.defaultPrevented).toBe(true);
       expect(document.querySelector('[role="menu"]')?.textContent).toContain(
-        "Linked pull requests",
+        // Coder: GitLab wording.
+        "Linked merge requests",
       );
       expect(document.activeElement?.closest('[role="menu"]')).not.toBeNull();
       expect(
@@ -199,7 +200,7 @@ describe("right panel new-tab shortcut", () => {
     };
     await renderPanel(panel);
     await press("t", { metaKey: true });
-    await press("ArrowDown");
+    // Coder: no Browser entry precedes Terminal in the launcher.
     await press("ArrowDown");
     await press("ArrowDown");
     expect(document.activeElement?.textContent).toContain("Files");

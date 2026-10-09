@@ -7,7 +7,9 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../../persistence/Sqlite.ts";
 import * as LegacyScreenshotArtifacts from "./LegacyScreenshotArtifacts.ts";
 
-const TestLayer = LegacyScreenshotArtifacts.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory));
+const TestLayer = LegacyScreenshotArtifacts.layer.pipe(
+  Layer.provideMerge(SqlitePersistence.layerMemory),
+);
 
 const artifact = (id: string) => ({
   id: `0000000${id}-0000-4000-8000-000000000000`,

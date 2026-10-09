@@ -469,16 +469,16 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
 
   const mcpSessionFor = (
     threadId: ThreadId,
-    toolCommand: string | undefined = TOOL_COMMAND,
+    toolCommand: string | null = TOOL_COMMAND,
   ): McpProviderSession.McpProviderSessionConfig => ({
     environmentId: EnvironmentId.make(`environment-${threadId}`),
     threadId,
     providerSessionId: `mcp-session-${threadId}`,
     providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-    endpoint: toolCommand === undefined ? "" : "/tmp/t3-tools-claude",
+    endpoint: toolCommand === null ? "" : "/tmp/t3-tools-claude",
     authorizationHeader: "Bearer secret-claude-token",
     browserToolsAvailable: true,
-    ...(toolCommand === undefined ? {} : { toolCommand }),
+    ...(toolCommand === null ? {} : { toolCommand }),
   });
   const withMcpSession = (
     threadId: ThreadId,
@@ -543,7 +543,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     const threadId = ThreadId.make("thread-claude-mcp-no-bridge");
     assert.deepEqual(
       ClaudeAdapterV2.claudeMcpQueryOverrides({
-        mcpSession: mcpSessionFor(threadId, undefined),
+        mcpSession: mcpSessionFor(threadId, null),
         readOnlySandbox: false,
         allowedTools: ["Read"],
       }),
@@ -561,10 +561,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       });
 
       assert.deepEqual(overrides, {
-        allowedTools: [
-          ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
-          ...readOnlyBridgeRules,
-        ],
+        allowedTools: [...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS, ...readOnlyBridgeRules],
         t3ToolCommand: TOOL_COMMAND,
       });
       assert.isFalse(overrides.allowedTools?.includes(`Bash(${TOOL_COMMAND}:*)`));
@@ -1435,7 +1432,8 @@ describe("ClaudeAdapterV2 attachments", () => {
           ),
           name: "diagram.png",
           mimeType: "image/png",
-          sizeBytes: 4,
+          // Coder: the validated reader requires the declared size and a PNG signature.
+          sizeBytes: 12,
         });
         const document = ChatFileAttachment.make({
           type: "file",
@@ -1448,7 +1446,7 @@ describe("ClaudeAdapterV2 attachments", () => {
         });
         yield* fileSystem.writeFile(
           path.join(attachmentsDir, attachmentRelativePath(attachment)!),
-          Uint8Array.from([1, 2, 3, 4]),
+          Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]),
         );
         yield* fileSystem.writeFile(
           path.join(attachmentsDir, attachmentRelativePath(document)!),
@@ -1473,7 +1471,7 @@ describe("ClaudeAdapterV2 attachments", () => {
           source: {
             type: "base64",
             media_type: "image/png",
-            data: "AQIDBA==",
+            data: "iVBORw0KGgoBAgME",
           },
         } as const;
         const expectedAttachmentPath = path.join(
@@ -1599,7 +1597,8 @@ describe("ClaudeAdapterV2 attachments", () => {
           .pipe(Effect.flip);
 
         assert.equal(error._tag, "ProviderAdapterTurnStartError");
-        assert.include(String(error.cause), "Unsupported Claude image attachment type");
+        // Coder: the validated attachment reader rejects the type first.
+        assert.include(String(error.cause), "Pasted image attachment type is unsupported");
         assert.equal(openCount, 0);
       }).pipe(
         Effect.provide(
@@ -1782,8 +1781,15 @@ describe("ClaudeAdapterV2 native fork", () => {
           }),
         });
 
-        assert.equal(openedQueries[0]?.options.resume, "forked-native-session");
-        assert.equal(openedQueries[0]?.options.sessionId, undefined);
+        assert.deepEqual(forkedProviderThread.nativeMetadata?.claudeFork, {
+          sourceSessionId: "source-native-session",
+          upToMessageId: "assistant-message-cursor",
+        });
+        // Coder: the CLI forks natively on the fork's first query.
+        assert.equal(openedQueries[0]?.options.resume, "source-native-session");
+        assert.equal(openedQueries[0]?.options.forkSession, true);
+        assert.equal(openedQueries[0]?.options.sessionId, "forked-native-session");
+        assert.equal(openedQueries[0]?.options.resumeSessionAt, "assistant-message-cursor");
       }).pipe(
         Effect.provide(
           Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
@@ -2851,7 +2857,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "failed");
       if (terminal.status !== "failed") return;
-      assert.include(terminal.failure.message, "run `claude auth login`");
+      // Coder: providers authenticate through the workspace API configuration.
+      assert.include(terminal.failure.message, "API credentials");
       assert.include(terminal.failure.message, configDir);
       assert.include(terminal.failure.message, cwd);
       assert.notInclude(terminal.failure.message, "repeated API errors");

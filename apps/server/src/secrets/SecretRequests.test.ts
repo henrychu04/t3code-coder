@@ -10,7 +10,6 @@ import {
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Metric from "effect/Metric";
 import * as TestClock from "effect/testing/TestClock";
 import * as Tracer from "effect/Tracer";
 import * as Option from "effect/Option";
@@ -271,7 +270,8 @@ it.effect("declining stores nothing, and a request is answered once", () =>
   ),
 );
 
-it.effect("traces and counts a saved answer without ever recording the value", () =>
+// Coder: secret requests record no metrics; spans still never carry the value.
+it.effect("traces a saved answer without ever recording the value", () =>
   Effect.gen(function* () {
     const spans: Array<Tracer.NativeSpan> = [];
     const tracer = Tracer.make({
@@ -281,17 +281,6 @@ it.effect("traces and counts a saved answer without ever recording the value", (
         return span;
       },
     });
-    const counted = Metric.snapshot.pipe(
-      Effect.map((snapshots) => {
-        const found = snapshots.find(
-          (snapshot) =>
-            snapshot.id === "t3_secret_refs_consumed_total" &&
-            snapshot.attributes?.result === "used",
-        );
-        return found?.type === "Counter" ? Number(found.state.count) : 0;
-      }),
-    );
-    const before = yield* counted;
     yield* withService(({ service }) =>
       Effect.gen(function* () {
         yield* service.answer({
@@ -303,7 +292,6 @@ it.effect("traces and counts a saved answer without ever recording the value", (
         yield* service.consume({ ref, projectId });
       }),
     ).pipe(Effect.withTracer(tracer));
-    assert.equal((yield* counted) - before, 1);
     const recorded = spans.flatMap((span) => [
       span.name,
       ...Array.from(span.attributes.values(), String),

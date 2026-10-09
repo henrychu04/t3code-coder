@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
@@ -143,11 +145,8 @@ describe("ChatMarkdown bare anchor placeholders", () => {
       "text/html",
     );
 
-    expect([...document.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
-      "label",
-      "",
-      "docs",
-    ]);
+    // Coder: relative and non-web links stay inert, so only the web link renders as an anchor.
+    expect([...document.querySelectorAll("a")].map((link) => link.textContent)).toEqual(["docs"]);
     expect(document.querySelector("code")?.textContent).toBe("<A>");
     expect(document.querySelector("[data-markdown-details]")?.textContent).toContain("More");
   });
@@ -903,7 +902,7 @@ describe("ChatMarkdown Windows file links", () => {
     );
 
     // Coder: no local editor, so the chip offers its copy menu instead of an editor link.
-    expect(html).toContain('data-markdown-copy="[main.ts](C:/Users/shawn/project/src/main.ts)"');
+    expect(html).toContain('data-markdown-copy="[Open](C:/Users/shawn/project/src/main.ts)"');
     expect(html).toContain("chat-markdown-file-link");
   });
 
@@ -918,8 +917,12 @@ describe("ChatMarkdown Windows file links", () => {
       />,
     );
 
-    // Coder: no local editor, so the chip offers its copy menu instead of an editor link.
-    expect(html).toContain('data-markdown-copy="[main.ts](C:/Users/shawn/project/src/main.ts)"');
+    // Coder: no local editor, so the chip offers its copy menu instead of an editor link. The
+    // copied Markdown keeps the source text verbatim.
+    expect(html).toContain(
+      String.raw`data-markdown-copy="[Open](C:\Users\shawn\project\src\main.ts)"`,
+    );
+    expect(html).toContain('aria-label="File options for main.ts"');
     expect(html).toContain("chat-markdown-file-link");
   });
 
@@ -938,8 +941,9 @@ describe("ChatMarkdown Windows file links", () => {
 
       // Coder: file links render as a menu chip rather than an anchor.
       expect(html).toContain(
-        'data-markdown-copy="[settings.json](C:/Users/shawn/.claude/settings.json)"',
+        String.raw`data-markdown-copy="[settings](C:\Users\shawn\.claude\settings.json)"`,
       );
+      expect(html).toContain('aria-label="File options for settings.json"');
     },
   );
 
@@ -992,7 +996,7 @@ describe("ChatMarkdown Windows file links", () => {
     );
 
     // Coder: no local editor, so the chip offers its copy menu instead of an editor link.
-    expect(html).toContain('data-markdown-copy="[main.ts](C:/Users/shawn/project/src/main.ts)"');
+    expect(html).toContain('data-markdown-copy="[Open](C:/Users/shawn/project/src/main.ts)"');
     expect(html).toContain("chat-markdown-file-link");
   });
 

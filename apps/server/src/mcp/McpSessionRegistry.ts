@@ -189,7 +189,9 @@ const makeWithOptions = Effect.fn("McpSessionRegistry.make")(function* (
           new Map(
             [...records].map(([token, record]) => [
               token,
-              record.scope.thread.threadId === threadId ? { ...record, lastAliveAt: timestamp } : record,
+              record.scope.thread.threadId === threadId
+                ? { ...record, lastAliveAt: timestamp }
+                : record,
             ]),
           ),
       );

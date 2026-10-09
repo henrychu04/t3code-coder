@@ -1788,8 +1788,7 @@ export const layerWithOptions = (
                       busyTurnKey(input.providerThread.id, input.runOrdinal),
                     ),
                   ),
-                  () =>
-                    runtime.startTurn(input),
+                  () => runtime.startTurn(input),
                   (_, exit) =>
                     Exit.isFailure(exit)
                       ? observeActivity(
@@ -1810,11 +1809,7 @@ export const layerWithOptions = (
             ),
           respondToRuntimeRequest: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-              Effect.andThen(
-                runtime
-                  .respondToRuntimeRequest(input)
-                  ,
-              ),
+              Effect.andThen(runtime.respondToRuntimeRequest(input)),
             ),
         };
       };

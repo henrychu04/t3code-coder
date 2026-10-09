@@ -469,7 +469,9 @@ export function EnvironmentProviderSettings({
   // exactly the environment it displays.
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
-  const updateClientSettings = useUpdateClientSettings();
+  // Coder: favorites and model preferences are kept per workspace (`providerPreferencesByEnvironment`),
+  // matching what the pickers read.
+  const updateClientSettings = useUpdateClientSettings(environmentId);
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {

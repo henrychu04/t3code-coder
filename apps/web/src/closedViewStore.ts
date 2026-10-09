@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
-import { resolveStorage } from "./lib/storage";
+import { createMemoryStorage } from "./lib/storage";
 import { randomUUID } from "./lib/utils";
 import { type RightPanelSurface } from "./rightPanelStore";
 
@@ -124,9 +124,8 @@ export const useClosedViewStore = create<ClosedViewStoreState>()(
     }),
     {
       name: "t3code:closed-views:v2",
-      storage: createJSONStorage(() =>
-        resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
-      ),
+      // Coder: closed views name threads and workspace files; keep them in memory.
+      storage: createJSONStorage(createMemoryStorage),
       version: 2,
       migrate: (persisted) => {
         const entries = (persisted as Partial<Pick<ClosedViewStoreState, "entries">> | null)

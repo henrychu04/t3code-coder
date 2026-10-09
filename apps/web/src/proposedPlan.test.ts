@@ -83,4 +83,3 @@ describe("buildPlanImplementationThreadTitle", () => {
     expect(buildPlanImplementationThreadTitle("- step 1")).toBe("Implement plan");
   });
 });
-

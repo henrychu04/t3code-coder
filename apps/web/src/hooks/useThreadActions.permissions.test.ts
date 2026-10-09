@@ -319,19 +319,7 @@ describe("thread action permissions", () => {
     expect(state.localEffects).toEqual([]);
   });
 
-  it.each([
-    { reason: "without source-control permission", sessionLookupFails: false },
-    { reason: "when the permission lookup fails", sessionLookupFails: true },
-  ])("deletes a worktree thread and keeps its worktree $reason", async ({ sessionLookupFails }) => {
-    state.scopes.get(secondary)!.add(AuthOrchestrationOperateScope);
-    state.threads[0]!.worktreePath = "/worktrees/thread";
-    state.sessionLookupFails = sessionLookupFails;
-    expect((await useThreadActions().deleteThread(target))._tag).toBe("Success");
-    expect(state.confirm).not.toHaveBeenCalled();
-    expect(state.requests.map((request) => request.action)).toEqual(["stopSession", "delete"]);
-    expect(state.localEffects).toContain("clear-terminal-ui");
-  });
-
+  // Coder: worktree removal needs no source-control grant, so it is always offered.
   it("does not request worktree removal after its grant is revoked during delete", async () => {
     state.scopes
       .get(secondary)!

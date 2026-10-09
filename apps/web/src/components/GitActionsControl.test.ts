@@ -49,7 +49,10 @@ vi.mock("~/state/session", () => ({
 }));
 vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: (command: unknown) => command }));
 vi.mock("~/state/server", () => ({ serverEnvironment: { configValueAtom: () => null } }));
-vi.mock("~/state/sourceControl", () => ({ sourceControlEnvironment: {} }));
+// Coder: the GitLab write probe reads source-control discovery.
+vi.mock("~/state/sourceControl", () => ({
+  sourceControlEnvironment: { discovery: () => "source-control-discovery" },
+}));
 vi.mock("~/state/vcs", () => ({
   vcsEnvironment: { status: () => null },
   vcsActionManager: { stateAtom: () => "vcs-state" },
@@ -73,15 +76,18 @@ vi.mock("~/state/threads", () => ({
   },
 }));
 vi.mock("~/state/query", () => ({
-  useEnvironmentQuery: () => ({
-    data: {
-      isRepo: true,
-      refName: "main",
-      isDefaultRef: false,
-      hasPrimaryRemote: true,
-      hasWorkingTreeChanges: true,
-      workingTree: { files: [{ path: "file.ts", status: "modified" }] },
-    },
+  useEnvironmentQuery: (atom: unknown) => ({
+    data:
+      atom === "source-control-discovery"
+        ? { sourceControlProviders: [] }
+        : {
+            isRepo: true,
+            refName: "main",
+            isDefaultRef: false,
+            hasPrimaryRemote: true,
+            hasWorkingTreeChanges: true,
+            workingTree: { files: [{ path: "file.ts", status: "modified" }] },
+          },
     error: null,
   }),
 }));

@@ -298,6 +298,7 @@ export function SourceControlWritingSettingsSection() {
               ) : null}
               {usesDedicatedModel && canEnableDedicatedModel && environmentId ? (
                 <ProviderModelPicker
+                  environmentId={environmentId}
                   activeInstanceId={activeSelection.instanceId}
                   model={activeSelection.model}
                   lockedProvider={null}

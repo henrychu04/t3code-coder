@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { DEFAULT_SERVER_SETTINGS, ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  DEFAULT_SERVER_SETTINGS,
+  ProviderDriverKind,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 
 import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
 
