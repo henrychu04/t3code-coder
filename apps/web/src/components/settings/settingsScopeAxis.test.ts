@@ -6,8 +6,10 @@ import {
   projectAxisValue,
   selectEnvironmentAxis,
   selectProjectAxis,
+  selectSingleEnvironmentScope,
   settingsScopeEnvironmentLabel,
 } from "./settingsScopeAxis";
+import type { ResolvedSettingsScope } from "./settingsScope";
 
 const first = {
   environmentId: EnvironmentId.make("first"),
@@ -84,5 +86,33 @@ describe("environmentAxisValue", () => {
     expect(environmentAxisValue({ project: "p", checkout: "c" }, "laptop")).toBe("laptop");
     expect(environmentAxisValue({ project: "p" }, null)).toBe("all");
     expect(environmentAxisValue({ machine: "desk" }, "laptop")).toBe("desk");
+  });
+});
+
+// Coder: the Providers page relies on this to pick the active workspace instead of "No
+// environments".
+describe("single-environment settings scope", () => {
+  const all = {
+    kind: "all",
+    environmentIds: [first.environmentId, second.environmentId],
+  } as unknown as ResolvedSettingsScope;
+  const environments = [
+    { environmentId: first.environmentId, connection: { phase: "available" as const } },
+    { environmentId: second.environmentId, connection: { phase: "connected" as const } },
+  ];
+
+  it("selects the active environment, then a connected one", () => {
+    expect(selectSingleEnvironmentScope({}, all, environments, first.environmentId)).toEqual({
+      machine: first.environmentId,
+    });
+    expect(selectSingleEnvironmentScope({}, all, environments, null)).toEqual({
+      machine: second.environmentId,
+    });
+  });
+
+  it("keeps an explicit environment", () => {
+    expect(
+      selectSingleEnvironmentScope({ machine: "chosen" }, all, environments, first.environmentId),
+    ).toEqual({ machine: "chosen" });
   });
 });
