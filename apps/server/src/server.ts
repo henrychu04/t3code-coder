@@ -59,6 +59,7 @@ import * as VcsProcess from "./vcs/VcsProcess.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as T3ToolBridge from "./mcp/bridge/T3ToolBridge.ts";
 import * as T3ToolDispatch from "./mcp/bridge/T3ToolDispatch.ts";
+import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import {
   OrchestrationEventInfrastructureLayerLive,
@@ -327,7 +328,13 @@ const CoderRuntimeStartupLive = Layer.effect(
     }
     yield* legacyV1ThreadImporter.reconcileShells;
     // Coder: bind agents' T3 tools before recovery or the effect worker can open a session.
-    yield* t3Tools.bind(yield* T3ToolBridge.makeBinding.pipe(Scope.provide(runtimeScope)));
+    yield* t3Tools.bind(
+      yield* T3ToolBridge.makeBinding.pipe(
+        // As upstream provides its MCP server's toolkits.
+        Effect.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
+        Scope.provide(runtimeScope),
+      ),
+    );
     yield* providerRuntimeRecovery.recover;
     const effectWorker: Fiber.Fiber<void, never> = yield* EffectWorker.runDaemon.pipe(
       Effect.provide(effectWorkerContext),

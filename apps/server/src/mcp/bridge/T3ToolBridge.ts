@@ -12,6 +12,7 @@ import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as Tool from "effect/unstable/ai/Tool";
@@ -19,8 +20,21 @@ import * as Toolkit from "effect/unstable/ai/Toolkit";
 
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
+import * as OrchestratorMcpService from "../OrchestratorMcpService.ts";
+import * as ThreadMetadataMcpService from "../ThreadMetadataMcpService.ts";
+import { OrchestratorToolkitHandlersLive } from "../toolkits/orchestrator/handlers.ts";
+import { OrchestratorToolkit } from "../toolkits/orchestrator/tools.ts";
 import { PullRequestsToolkitHandlersLive } from "../toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "../toolkits/pullRequests/tools.ts";
+import { ThreadToolkitHandlersLive } from "../toolkits/thread/handlers.ts";
+import { ThreadToolkit } from "../toolkits/thread/tools.ts";
+import { EnvironmentHandlersLive } from "../toolkits/environment/handlers.ts";
+import { EnvironmentToolkit } from "../toolkits/environment/tools.ts";
+import { ProjectHandlersLive } from "../toolkits/project/handlers.ts";
+import { ProjectToolkit } from "../toolkits/project/tools.ts";
+import { WorktreeToolkitHandlersLive } from "../toolkits/worktree/handlers.ts";
+import { WorktreeToolkit } from "../toolkits/worktree/tools.ts";
+import * as WorktreeMcpService from "../WorktreeMcpService.ts";
 import {
   type FileBridgeCatalogEntry,
   type FileBridgeRequest,
@@ -29,7 +43,27 @@ import {
 import { type T3ToolBinding, t3ToolFailure } from "./T3ToolDispatch.ts";
 
 /** Upstream's toolkits the bridge carries. Preview, device, and attachment uploads stay out. */
-const BridgedToolkit = Toolkit.merge(PullRequestsToolkit);
+const BridgedToolkit = Toolkit.merge(
+  OrchestratorToolkit,
+  ThreadToolkit,
+  ProjectToolkit,
+  EnvironmentToolkit,
+  WorktreeToolkit,
+  PullRequestsToolkit,
+);
+
+/** Handlers as upstream's MCP server registers them. */
+const BridgedHandlersLive = Layer.mergeAll(
+  OrchestratorToolkitHandlersLive.pipe(
+    Layer.provide(OrchestratorMcpService.layer),
+    Layer.provide(ThreadMetadataMcpService.layer),
+  ),
+  ThreadToolkitHandlersLive,
+  ProjectHandlersLive,
+  EnvironmentHandlersLive,
+  WorktreeToolkitHandlersLive.pipe(Layer.provide(WorktreeMcpService.layer)),
+  PullRequestsToolkitHandlersLive,
+);
 
 export const INLINE_BUDGET_MS = 8_000;
 const BRIDGE_JOB_PREFIX = "bridge-job:";
@@ -52,7 +86,7 @@ const TASK_STATUS_ENTRY: FileBridgeCatalogEntry = {
 const isReadOnly = (tool: Tool.Any) => Context.get(tool.annotations, Tool.Readonly);
 
 /** What `--list` and `--schema` show; built from the tool definitions alone. */
-const T3_TOOL_CATALOG: ReadonlyArray<FileBridgeCatalogEntry> = [
+export const T3_TOOL_CATALOG: ReadonlyArray<FileBridgeCatalogEntry> = [
   ...Object.values(BridgedToolkit.tools as Record<string, Tool.Any>).map((tool) => ({
     name: tool.name,
     description: Tool.getDescription(tool) ?? "",
@@ -68,7 +102,7 @@ const READ_ONLY_TOOLS = new Set(
 
 const failure = t3ToolFailure;
 
-/** A tool's declared failure, as the agent reads it: its tag and its agent-facing message. */
+/** A failure the tool raised rather than returned: its tag and its agent-facing message. */
 const toolFailure = (cause: unknown) =>
   typeof cause === "object" && cause !== null && "_tag" in cause
     ? failure(
@@ -89,7 +123,9 @@ interface BridgeJob {
  */
 export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = {}) =>
   Effect.gen(function* () {
-    const toolkit = yield* BridgedToolkit.pipe(Effect.provide(PullRequestsToolkitHandlersLive));
+    const toolkit = yield* BridgedToolkit.pipe(Effect.provide(BridgedHandlersLive));
+    // Handlers also read services when they run, as upstream's MCP server provides them.
+    const services = yield* Effect.context<never>();
     const engine = yield* Orchestrator.OrchestratorV2;
     const crypto = yield* Crypto.Crypto;
     const jobScope = yield* Effect.scope;
@@ -117,8 +153,10 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
           Option.match(last, {
             onNone: () => Effect.fail(failure("T3ToolFailed", "The T3 tool returned no result.")),
             onSome: (result) =>
+              // A declared failure reaches the agent as its encoded result, like MCP's
+              // structured content.
               result.isFailure
-                ? Effect.fail(toolFailure(result.result))
+                ? Effect.fail(new FileBridgeToolFailure({ value: result.encodedResult }))
                 : Effect.succeed(result.encodedResult),
           }),
         ),
@@ -126,6 +164,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
           cause instanceof FileBridgeToolFailure ? cause : toolFailure(cause),
         ),
         Effect.provideService(McpInvocationContext.McpInvocationContext, scope),
+        Effect.provide(services),
       );
 
     const readJob = (scope: McpInvocationContext.McpInvocationScope, taskId: string) =>

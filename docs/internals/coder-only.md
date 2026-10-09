@@ -151,9 +151,11 @@ deleted, or the helper stops. If a bridge cannot be created, turns run without T
 processes run as the same OS user; these directories are not an isolation boundary between mutually
 untrusted agents.
 
-The bridge carries upstream's pull-request toolkit (`link_pull_request`, `unlink_pull_request`,
-`list_thread_pull_requests`), which accepts only merge requests on a GitLab host that a workspace
-project uses.
+The bridge carries upstream's orchestrator, thread, project, environment, worktree, and
+pull-request toolkits. The pull-request tools accept only merge requests on a GitLab host that a
+workspace project uses; project clones go through the same GitLab-only repository service as the
+browser. Preview, device, and attachment-upload toolkits are not carried, and neither is
+upstream's MCP HTTP server.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -573,7 +575,10 @@ listed here is drift to remove rather than fork behavior to keep.
       8 seconds into `bridge-job:` tasks. `server.ts` binds it once the orchestrator runs.
     - `toolkits/pullRequests/handlers.ts` rejects merge requests outside the workspace's GitLab
       hosts and passes no Forgejo remote to the shared URL helpers, which carry no Forgejo
-      authority.
+      authority. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
+      upstream's `ServerEnvironment`.
+    - `mcp/bridge/T3ToolInstructions.ts` reuses upstream's orchestration guidance without its MCP
+      and ACP transport paragraphs; its test fails if upstream rewords them.
     - `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge
       exists, and never advertises preview or device tools; `CodexDeveloperInstructions.ts` and
       `ClaudeAdapterV2.ts` describe the bridge command (`mcp/bridge/T3ToolInstructions.ts`) in

@@ -19,6 +19,14 @@ import * as Option from "effect/Option";
 
 import * as CoderEnvironment from "../../coderEnvironment.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
+import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
+import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
+import * as ProviderRegistry from "../../provider/Services/ProviderRegistry.ts";
+import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
+import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
+import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
+import * as ServerSettings from "../../serverSettings.ts";
+import * as VcsStatusBroadcaster from "../../vcs/VcsStatusBroadcaster.ts";
 import { v2PullRequestThread } from "../../orchestration-v2/testkit/pullRequestFixtures.ts";
 import * as ProjectService from "../../project/ProjectService.ts";
 import * as McpSessionRegistry from "../McpSessionRegistry.ts";
@@ -99,9 +107,25 @@ const harness = (options: {
         CoderEnvironment.CoderEnvironment.of({
           descriptor: {
             environmentId: EnvironmentId.make("environment-bridge"),
-          } as CoderEnvironment.CoderEnvironment["Service"]["descriptor"],
+            label: "Workspace",
+            platform: { os: "linux", arch: "x64" },
+            serverVersion: "0.0.0-test",
+            capabilities: { repositoryIdentity: true },
+          },
         }),
       ),
+      // The other toolkits capture these; only reading the calling thread is exercised here.
+      Layer.mock(ThreadManagementService.ThreadManagementService)({
+        getThreadShell: (id) =>
+          Effect.succeed(id === THREAD_ID ? thread(options.mode ?? "default") : null),
+      }),
+      ServerSettings.layerTest(),
+      Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+      Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
+      Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
+      Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      Layer.mock(ProviderRegistry.ProviderRegistry)({}),
+      Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
       T3ToolDispatch.layer,
       NodeServices.layer,
     );
@@ -202,3 +226,32 @@ it.live("answers a slow call with a task id that task_status resolves", () =>
     }),
   ),
 );
+
+// The handler reads the calling thread and settings when it runs, not when it is built.
+it.live("runs a toolkit whose handler needs runtime services", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { call } = yield* harness({});
+      const read = yield* call("t3_environment_read", "{}");
+      assert.deepInclude(read, { ok: true }, JSON.stringify(read));
+      assert.deepInclude(read.output as object, { environmentId: "environment-bridge" });
+    }),
+  ),
+);
+
+// Upstream's core toolkit test checks the same catalog shape for its MCP server.
+it("publishes unique tools with reference-free object-root input schemas", () => {
+  const names = T3ToolBridge.T3_TOOL_CATALOG.map((entry) => entry.name);
+  assert.strictEqual(new Set(names).size, names.length);
+  for (const entry of T3ToolBridge.T3_TOOL_CATALOG) {
+    assert.deepInclude(entry.inputSchema as object, { type: "object" }, entry.name);
+    assert.notInclude(JSON.stringify(entry.inputSchema), '"$ref"', entry.name);
+    assert.isAbove(entry.description.length, 0, entry.name);
+  }
+  for (const name of ["delegate_task", "task_status", "t3_thread_launch", "link_pull_request"]) {
+    assert.include(names, name);
+  }
+  for (const name of ["preview_open", "device_list", "t3_attachment_prepare_upload"]) {
+    assert.notInclude(names, name);
+  }
+});
