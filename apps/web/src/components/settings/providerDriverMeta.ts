@@ -9,6 +9,7 @@ import {
   PiSettings,
   ProviderDriverKind,
 } from "@t3tools/contracts";
+import { isCoderProviderDriver } from "@t3tools/shared/coderProviders";
 import type * as Schema from "effect/Schema";
 
 type ProviderSettingsSchema = {
@@ -46,7 +47,7 @@ export interface ProviderEnvironmentFieldDefinition {
   readonly sensitive?: boolean;
 }
 
-const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
+const UPSTREAM_PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
   {
     value: ProviderDriverKind.make("codex"),
     label: "Codex",
@@ -100,6 +101,11 @@ const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = [
     hasDefaultInstance: false,
   },
 ];
+
+// Coder: only the registered Codex and Claude drivers can be configured or added.
+const PROVIDER_CLIENT_DEFINITIONS = UPSTREAM_PROVIDER_CLIENT_DEFINITIONS.filter((definition) =>
+  isCoderProviderDriver(definition.value),
+);
 
 const PROVIDER_CLIENT_DEFINITION_BY_VALUE: Partial<
   Record<ProviderDriverKind, ProviderClientDefinition>

@@ -61,8 +61,9 @@ checks. See [Update providers](./providers.md#update-providers) for explicit wor
 
 ## Provider and model presentation
 
-Each workspace has one Codex and one Claude configuration. Give either a display name and accent
-color in Providers. These controls do not collect credentials or create additional instances.
+Each workspace starts with one Codex and one Claude instance. In Providers, add more Codex or Claude
+instances and give any instance a display name and accent color. These controls do not collect
+credentials or provider environment variables; configure those in the workspace.
 Long model lists have a filter. Favorites appear first, then visible models, then hidden models;
 reordering stays within those groups. Custom models retain their existing editor.
 

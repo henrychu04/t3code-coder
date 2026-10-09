@@ -483,8 +483,11 @@ Settings use upstream's layout, sidebar navigation, search catalog, and scope pi
 seams. The Integrations and SnapShot categories, desktop update and quit rows, the diagnostics row,
 browser and hosted-pairing settings, and the `keybindings.json` editor do not exist; keybinding
 changes are made in the table. Connections holds the Coder deployments, workspaces, workspace icon,
-and TCP/UDP port forwards instead of upstream's pairing and network access. Providers keeps the
-workspace provider settings, which accept no credentials. Source Control appends GitLab
+and TCP/UDP port forwards instead of upstream's pairing and network access. Providers uses upstream's provider panel and add-instance dialog,
+limited to the Codex and Claude drivers (any instance), without sign-in, provider setup or
+managed install, per-instance environment variables, ACP registry, or usage-limit sources;
+favorites and model preferences stay per workspace (`providerPreferencesByEnvironment`), and the
+provider health interval stays in General. Source Control appends GitLab
 workspace status and the write-policy probe. Background activity keeps the fork's Git fetch and
 provider health presets under General. The last project grouping mode is remembered in memory for
 the page session rather than in browser storage.
@@ -656,8 +659,8 @@ listed here is drift to remove rather than fork behavior to keep.
     reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
     which the CLI transport cannot host.
-  - The web provider list and client-runtime `state/server.ts` stay limited to the methods and
-    providers the helper serves.
+  - The web provider list and client-runtime `state/server.ts` stay limited to the methods the
+    helper serves and to Codex and Claude driver instances (`isCoderProviderDriver`).
 - **Terminals.** `terminal/Manager.ts` is upstream's. Coder deltas: it records each terminal's
   attach events in a bounded replay window (512 KiB per terminal, 64 MiB in total) and answers an
   attach with `afterSequence` by replaying the missed events and a `resumed` event instead of a

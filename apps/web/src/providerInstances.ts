@@ -25,7 +25,7 @@ import {
   type ServerSettings,
   type ServerProviderState,
 } from "@t3tools/contracts";
-import { isCoderProviderInstanceId } from "@t3tools/shared/coderProviders";
+import { isCoderProviderDriver } from "@t3tools/shared/coderProviders";
 
 import { formatProviderDriverKindLabel } from "./providerModels";
 
@@ -227,16 +227,15 @@ export function deriveProviderInstanceEntries(
 }
 
 /**
- * New selections in T3 Coder are intentionally limited to the workspace's
- * built-in Codex and Claude instances. Keep the broader projection above for
- * decoding historical upstream data, but do not surface additional instances
- * or providers in interactive pickers.
+ * Coder: new selections are limited to Codex and Claude instances, built-in or added in
+ * Settings → Providers. Keep the broader projection above for decoding historical upstream
+ * data, but do not surface other providers in interactive pickers.
  */
 export function deriveCoderProviderInstanceEntries(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  return deriveProviderInstanceEntries(providers).filter(
-    (entry) => entry.isDefault && isCoderProviderInstanceId(entry.instanceId),
+  return deriveProviderInstanceEntries(providers).filter((entry) =>
+    isCoderProviderDriver(entry.driverKind),
   );
 }
 
