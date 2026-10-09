@@ -1,6 +1,6 @@
 # T3 Coder
 
-T3 Coder is a browser interface for Codex and Claude Code running inside Linux Coder workspaces. It
+T3 Coder is a browser interface for Codex, Claude Code, and Pi running inside Linux Coder workspaces. It
 keeps the T3 Code product — projects, threads, review, terminals, files — and specializes it for
 Coder-managed workspaces, removing upstream's desktop, mobile, hosted-web, relay, telemetry, and
 other provider surfaces.
@@ -9,15 +9,19 @@ Use the global `karpathy-guidelines` skill for coding, review, and refactoring w
 
 T3 Coder is a Coder-only fork of T3 Code. A browser talks to a Node gateway bound to
 `127.0.0.1`; the gateway talks to authenticated Linux Coder workspaces only through foreground
-Coder CLI processes. The workspace helper owns Codex, Claude Code, repositories, terminals, Git,
+Coder CLI processes. The workspace helper owns Codex, Claude Code, Pi, repositories, terminals, Git,
 SQLite, projects, threads, sessions, and checkpoints.
 
 Read `docs/internals/coder-only.md` before changing the runtime boundary.
 
 ## Provider usage model
 
-This fork supports API-backed Codex and Claude Code usage only. Configure API credentials through
-the workspace's provider configuration; never add credential entry or storage to the local UI.
+This fork supports API-backed Codex, Claude Code, and Pi usage only. Configure API credentials through
+the workspace's provider configuration (Pi's lives in the workspace's `~/.pi/agent`); never add
+provider credential entry or storage to the local UI. The one exception is upstream's agent secret
+request: an agent may ask the user for a secret through a private card, and the value goes only to
+the workspace's one-use secret store. It never enters browser storage, the transcript, projections,
+model context, or logs, and the card never asks for Coder, GitLab, or provider credentials.
 Subscription-backed ChatGPT and Claude consumer plans are outside the supported product scope.
 Do not port subscription-quota dashboards, plan windows, or subscription account-management UI.
 Provider readiness, authentication status, context/token usage, and runtime rate-limit errors
@@ -62,7 +66,7 @@ claim: shared provider protocols may still report subscription metadata.
   persist Coder tokens.
 - The helper runs in the foreground through `coder ssh`, uses newline-delimited RPC over stdio, and
   opens no HTTP, WebSocket, tunnel, forwarded port, or other listener.
-- Codex and Claude Code exist only in the Linux workspace. Do not probe for or launch a local
+- Codex, Claude Code, and Pi exist only in the Linux workspace. Do not probe for or launch a local
   provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
   non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
@@ -146,6 +150,11 @@ claim: shared provider protocols may still report subscription metadata.
       chunk RPC. Submitted composer attachments remain preserved. Saved legacy image artifacts may be deleted by
       the upstream-compatible, opt-in artifact retention policy; cleanup is disabled by default.
       Never delete current workspace source images through this policy.
+  - **MCP Apps.** Interactive UIs that the workspace's own MCP servers declare may render inline in
+    upstream's sandboxed iframe (`allow-scripts allow-forms`, never `allow-same-origin`). Their
+    resource reads and tool calls go only through the helper's stdio RPC. The frame gets no camera,
+    microphone, geolocation, or clipboard permission, and there is no `ui/download-file` or save
+    action; links the app opens follow the Markdown link rule below.
   - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and
@@ -156,9 +165,9 @@ claim: shared provider protocols may still report subscription metadata.
   another hosted provider, and do not move Git or `glab` execution into the local gateway.
 - Do not reintroduce Electron, mobile, marketing, hosted web, relay, Tailscale, Cloudflare, Clerk,
   OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
-  forwarding, or arbitrary tunnels. Do not register or enable providers other than Codex and
-  Claude; upstream's other provider drivers may remain in the source as unregistered, disabled
-  code so they can be added back. OpenSSH use is limited to helper bootstrap and validated
+  forwarding, or arbitrary tunnels. Codex, Claude Code, and Pi are the only providers. Do not
+  carry, register, or enable upstream's other provider drivers or packages (Cursor, OpenCode,
+  Muse, ACP, ACP Registry, Grok, Antigravity, or later additions). OpenSSH use is limited to helper bootstrap and validated
   composer-attachment uploads through a `coder ssh --stdio` ProxyCommand.
 - Markdown HTTP(S) links follow main: they open in a new tab with `noopener noreferrer`, show
   main's favicon, and preview media links in the gallery. Relative and non-web links stay inert.
@@ -169,7 +178,7 @@ claim: shared provider protocols may still report subscription metadata.
 
 - Local development and testing: macOS.
 - Production local host: Windows 11 with the OpenSSH Client feature (`ssh.exe` and `scp.exe`).
-- Remote workspace: Linux x86-64 with Nix, Git, and Codex or Claude Code. T3 provisions its pinned
+- Remote workspace: Linux x86-64 with Nix, Git, and Codex, Claude Code, or Pi. T3 provisions its pinned
   Node.js 24 runtime through Nix and bundles the native terminal runtime without changing the
   workspace's default Node.js version.
 
@@ -184,7 +193,7 @@ Coder's arguments after `--`.
 - `packages/coder-cli`: validated non-secret profiles, Coder command construction, helper install,
   helper connection lifecycle, and foreground port-forward lifecycle.
 - `apps/coder-helper`: bundled Linux stdio entry point.
-- `apps/server`: workspace-owned orchestration, Codex and Claude adapters, persistence, terminal,
+- `apps/server`: workspace-owned orchestration, Codex, Claude, and Pi adapters, persistence, terminal,
   filesystem, and repository-local VCS implementation.
 - `apps/web`: browser client and Coder deployment/workspace manager.
 - `packages/contracts`, `packages/client-runtime`, `packages/shared`: typed wire and shared runtime
