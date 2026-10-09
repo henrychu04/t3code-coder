@@ -8,11 +8,7 @@ import * as Path from "effect/Path";
 import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/unstable/process";
 
-import {
-  GitCommandError,
-  SourceControlProviderError,
-  type SourceControlCloneProtocol,
-} from "@t3tools/contracts";
+import { GitCommandError, type SourceControlCloneProtocol } from "@t3tools/contracts";
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
@@ -50,37 +46,6 @@ const TestLayer = Layer.mergeAll(
   }),
 );
 
-it.effect("clone cleanup removes only a destination created by the failed operation", () =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const service = yield* SourceControlRepositoryService.make;
-    const fixtureRoot = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-clone-cleanup-" });
-    const preExisting = path.join(fixtureRoot, "existing");
-    const createdByClone = path.join(fixtureRoot, "new");
-    yield* fileSystem.makeDirectory(preExisting);
-
-    yield* service
-      .cloneRepository({
-        provider: "gitlab",
-        remoteUrl: "https://gitlab.example/group/project.git",
-        destinationPath: preExisting,
-      })
-      .pipe(Effect.flip);
-    yield* service
-      .cloneRepository({
-        provider: "gitlab",
-        remoteUrl: "https://gitlab.example/group/project.git",
-        destinationPath: createdByClone,
-      })
-      .pipe(Effect.flip);
-
-    assert.strictEqual(yield* fileSystem.exists(preExisting), true);
-    assert.strictEqual(yield* fileSystem.exists(path.join(preExisting, "partial-clone")), true);
-    assert.strictEqual(yield* fileSystem.exists(createdByClone), false);
-  }).pipe(Effect.scoped, Effect.provide(TestLayer)),
-);
-
 const cloneUrls = {
   nameWithOwner: "group/subgroup/project",
   url: "https://gitlab.example/group/subgroup/project",
@@ -91,11 +56,6 @@ for (const [repository, protocol, expectedUrl] of [
   [cloneUrls.url, undefined, cloneUrls.url],
   [`${cloneUrls.url}.git`, "auto", `${cloneUrls.url}.git`],
   [cloneUrls.sshUrl, undefined, cloneUrls.sshUrl],
-  [
-    "ssh://git@gitlab.example:2222/group/subgroup/project.git",
-    undefined,
-    "ssh://git@gitlab.example:2222/group/subgroup/project.git",
-  ],
   [cloneUrls.nameWithOwner, undefined, cloneUrls.sshUrl],
   [cloneUrls.nameWithOwner, "https", cloneUrls.url],
 ] satisfies Array<[string, SourceControlCloneProtocol | undefined, string]>) {
@@ -157,50 +117,6 @@ for (const [repository, protocol, expectedUrl] of [
     }).pipe(Effect.scoped, Effect.provide(TestLayer)),
   );
 }
-
-it.effect(
-  "preserves safe provider diagnostics without including raw command output in the message",
-  () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const root = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-clone-error-" });
-      const provider = yield* SourceControlProvider.SourceControlProvider.pipe(
-        Effect.provide(
-          Layer.mock(SourceControlProvider.SourceControlProvider)({
-            kind: "gitlab",
-            getRepositoryCloneUrls: () =>
-              Effect.fail(
-                new SourceControlProviderError({
-                  provider: "gitlab",
-                  operation: "getRepositoryCloneUrls",
-                  cwd: root,
-                  detail: "GitLab CLI is not authenticated. Run `glab auth login` and retry.",
-                  cause: new Error("raw output containing secret"),
-                }),
-              ),
-          }),
-        ),
-      );
-      const service = yield* SourceControlRepositoryService.make.pipe(
-        Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => undefined,
-            get: () => Effect.succeed(provider),
-          }),
-        ),
-      );
-      const error = yield* service
-        .cloneRepository({
-          provider: "gitlab",
-          repository: cloneUrls.nameWithOwner,
-          destinationPath: path.join(root, "project"),
-        })
-        .pipe(Effect.flip);
-      assert.ok(error.message.includes("not authenticated"));
-      assert.ok(!error.message.includes("secret"));
-    }).pipe(Effect.scoped, Effect.provide(TestLayer)),
-);
 
 for (const remoteUrl of [
   "https://user:secret@gitlab.example/group/project.git",

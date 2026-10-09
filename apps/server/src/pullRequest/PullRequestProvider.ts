@@ -213,7 +213,7 @@ export interface ProviderChangeRequestStat {
 }
 
 export interface ProviderChangeRequestDetail extends ProviderChangeRequest {
-  /** Overrides the provider defaults when this workspace cannot currently reach host writes. */
+  /** Coder: overrides the provider defaults when this workspace cannot currently reach host writes. */
   readonly capabilities?: PullRequestCapabilities;
   readonly body: string;
   readonly changedFiles: number;
@@ -311,6 +311,8 @@ export interface ProviderRepositoryRef {
  * the neutral types above; anything a host cannot do is declared in `capabilities` rather than
  * failing at call time.
  */
+// Coder: GitLab uses the workspace's `glab` login, so upstream's verified-credential and
+// routing-identity hooks are omitted.
 export interface PullRequestProviderApi {
   readonly kind: SourceControlProviderKind;
   readonly capabilities: PullRequestCapabilities;

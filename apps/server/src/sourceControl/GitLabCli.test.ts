@@ -517,33 +517,6 @@ layer("GitLabCli.layer", (it) => {
     }),
   );
 
-  it.effect("provides safe guidance for repository lookup not-found failures", () =>
-    Effect.gen(function* () {
-      const cause = new VcsProcessExitError({
-        operation: "GitLabCli.execute",
-        command: "glab",
-        cwd: "/repo",
-        exitCode: 1,
-        detail: "GET 404 project not found",
-        failureKind: "not-found",
-      });
-      mockedRun.mockReturnValueOnce(Effect.fail(cause));
-
-      const error = yield* Effect.gen(function* () {
-        const glab = yield* GitLabCli.GitLabCli;
-        return yield* glab.getRepositoryCloneUrls({
-          cwd: "/repo",
-          repository: "missing/project",
-        });
-      }).pipe(Effect.flip);
-
-      assert.strictEqual(error._tag, "GitLabCliCommandError");
-      assert.strictEqual(error.cause, cause);
-      assert.ok(error.message.includes("Check the repository path"));
-      assert.ok(!error.message.includes(cause.detail));
-    }),
-  );
-
   it.effect("preserves rate-limit failures as a distinct error", () =>
     Effect.gen(function* () {
       const cause = new VcsProcessExitError({

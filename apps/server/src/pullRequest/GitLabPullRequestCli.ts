@@ -202,7 +202,7 @@ const COMMIT_PAGE_SIZE = 100;
  * request a person is reading holds, and a walk that ends whatever the host has.
  */
 const CONVERSATION_PAGES = 10;
-// Leave room for the RPC envelope beneath the gateway's 8 MiB message ceiling.
+// Coder: leave room for the RPC envelope beneath the gateway's 8 MiB message ceiling.
 const DIFF_MAX_OUTPUT_BYTES = 6 * 1024 * 1024;
 const DIFF_TIMEOUT_MS = 60_000;
 const DIFF_FILE_MAX_OUTPUT_BYTES = 1024 * 1024;
@@ -229,6 +229,7 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly cwd: string;
     }) => Effect.Effect<string, GitLabPullRequestCliError>;
 
+    /** Coder: the workspace write-access probe. */
     readonly probeWriteAccess: (input: {
       readonly cwd: string;
     }) => Effect.Effect<{ readonly writable: boolean }>;
@@ -253,6 +254,7 @@ export class GitLabPullRequestCli extends Context.Service<
     }) => Effect.Effect<GitLabMergeRequestDetail, GitLabPullRequestCliError>;
 
     /**
+     * Coder: GitLab's implementation of upstream's summary reads.
      * The live fields linked threads need. Reads that arrive together from one checkout share an
      * aliased GraphQL request; anything the batch cannot answer is read on its own.
      */
@@ -550,6 +552,7 @@ function actionArgs(
 
 /** @public Service construction is part of the canonical Effect module API. */
 /**
+ * Coder: batching for GitLab summary reads.
  * How long a summary read waits for company. The background sync asks for every linked merge
  * request at once, and each read reaches the resolver after its own cache check.
  */
@@ -597,6 +600,7 @@ export const make = Effect.gen(function* () {
     });
 
   const api = (input: ApiInput) => apiWith(gitlab.execute, input);
+  // Coder: host writes run only after the workspace write-access probe allows them.
   const writeApi = (input: ApiInput) => apiWith(gitlab.executeWrite, input);
 
   /**

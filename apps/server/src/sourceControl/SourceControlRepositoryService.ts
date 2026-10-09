@@ -8,7 +8,6 @@ import * as Schema from "effect/Schema";
 
 import {
   SourceControlRepositoryError,
-  SourceControlProviderError,
   type SourceControlCloneRepositoryInput,
   type SourceControlCloneRepositoryResult,
   type SourceControlCloneProtocol,
@@ -29,8 +28,6 @@ import {
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
-
-const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
 export class SourceControlRepositoryService extends Context.Service<
@@ -96,9 +93,7 @@ function mapRepositoryError(operation: string, provider: SourceControlProviderKi
       : new SourceControlRepositoryError({
           operation,
           provider,
-          detail: isSourceControlProviderError(cause)
-            ? `GitLab repository operation failed: ${cause.detail}`
-            : "The source control operation could not be completed.",
+          detail: "The source control operation could not be completed.",
           cause,
         }),
   );
@@ -124,8 +119,6 @@ function toRepositoryInfo(
 function redactRemoteUrl(remoteUrl: string): string {
   try {
     const url = new URL(remoteUrl);
-    if (url.protocol === "ssh:" && url.username === "git" && !url.password && !url.search)
-      return remoteUrl;
     // Clone URLs have no legitimate query; when one is present it is a token.
     if (url.username.length === 0 && url.password.length === 0 && url.search.length === 0) {
       return remoteUrl;
@@ -219,8 +212,7 @@ export const make = Effect.gen(function* () {
   const prepareDestination = Effect.fn("SourceControlRepositoryService.prepareDestination")(
     function* (destinationPath: string) {
       const normalizedDestination = yield* normalizeDestinationPath(destinationPath);
-      const destinationExisted = yield* fileSystem.exists(normalizedDestination);
-      if (destinationExisted) {
+      if (yield* fileSystem.exists(normalizedDestination)) {
         const entries = yield* fileSystem
           .readDirectory(normalizedDestination, { recursive: false })
           .pipe(
@@ -249,7 +241,6 @@ export const make = Effect.gen(function* () {
         destinationPath: normalizedDestination,
         parentPath: path.dirname(normalizedDestination),
         directoryName: path.basename(normalizedDestination),
-        destinationExisted,
       };
     },
   );
@@ -257,6 +248,7 @@ export const make = Effect.gen(function* () {
   const prepareClone = Effect.fn("SourceControlRepositoryService.prepareClone")(function* (
     input: SourceControlCloneRepositoryInput,
   ) {
+    // Coder: clone only GitLab URLs without credentials, query parameters, or fragments.
     if (input.remoteUrl) {
       const source = parseGitLabCloneSource(input.remoteUrl);
       if (!source || !("remoteUrl" in source)) {
@@ -304,7 +296,6 @@ export const make = Effect.gen(function* () {
     options?: SourceControlCloneOptions,
   ) {
     const prepared = yield* prepareClone(input);
-    const destinationExisted = yield* fileSystem.exists(prepared.destinationPath);
     const onProgress = options?.onProgress;
     // Git interleaves progress redraws with its real messages on stderr. The
     // last non-progress lines are what explain a failure ("Repository not
@@ -325,6 +316,7 @@ export const make = Effect.gen(function* () {
       .execute({
         operation: "SourceControlRepositoryService.cloneRepository",
         cwd: path.dirname(prepared.destinationPath),
+        // Coder: `--` keeps a clone URL from being read as a Git option.
         args: [
           "clone",
           "--progress",
@@ -343,13 +335,6 @@ export const make = Effect.gen(function* () {
         progress: { onStderrLine },
       })
       .pipe(
-        Effect.onError(() =>
-          destinationExisted
-            ? Effect.void
-            : fileSystem
-                .remove(prepared.destinationPath, { recursive: true, force: true })
-                .pipe(Effect.ignore),
-        ),
         Effect.mapError(
           (cause) =>
             new SourceControlRepositoryError({
