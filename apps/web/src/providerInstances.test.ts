@@ -328,11 +328,21 @@ describe("deriveProviderEntriesByEnvironment", () => {
 });
 
 describe("resolveSelectableProviderInstance", () => {
-  it("falls back when the requested instance is not a built-in workspace provider", () => {
+  it("keeps an added Claude instance selectable", () => {
     const requested = ProviderInstanceId.make("claude_work");
     const providers = [
       provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
       provider({ provider: ProviderDriverKind.make("claudeAgent"), instanceId: requested }),
+    ];
+
+    expect(resolveSelectableProviderInstance(providers, requested)).toBe(requested);
+  });
+
+  it("falls back when the requested instance is not a Codex or Claude provider", () => {
+    const requested = ProviderInstanceId.make("grok");
+    const providers = [
+      provider({ provider: ProviderDriverKind.make("codex"), instanceId: "codex" }),
+      provider({ provider: ProviderDriverKind.make("grok"), instanceId: requested }),
     ];
 
     expect(resolveSelectableProviderInstance(providers, requested)).toBe("codex");

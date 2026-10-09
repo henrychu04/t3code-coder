@@ -1,34 +1,20 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
+import { ProviderDriverKind } from "@t3tools/contracts";
 
+import { DRIVER_OPTION_BY_VALUE } from "./providerDriverMeta";
 import {
   deriveProviderSettingsFields,
   nextProviderConfigWithFieldValue,
-  readProviderConfigBoolean,
-  readProviderConfigString,
 } from "./ProviderSettingsForm";
-import {
-  PROVIDER_CLIENT_DEFINITIONS,
-  PROVIDER_CLIENT_DEFINITION_BY_VALUE,
-} from "./providerDriverMeta";
 
+// Coder: cases for the unregistered Cursor, OpenCode, Antigravity, and ACP Registry drivers are
+// omitted because their definitions are filtered out.
 describe("ProviderSettingsForm helpers", () => {
-  it("exposes only the two workspace providers supported by T3 Coder", () => {
-    expect(
-      PROVIDER_CLIENT_DEFINITIONS.map((definition) => ({
-        driver: definition.value,
-        label: definition.label,
-      })),
-    ).toEqual([
-      { driver: "codex", label: "Codex" },
-      { driver: "claudeAgent", label: "Claude" },
-    ]);
-  });
+  it("derives visible provider config fields from the client definition schema", () => {
+    const codex = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("codex")];
 
-  it("derives Codex fields from the upstream schema annotations", () => {
-    const definition = PROVIDER_CLIENT_DEFINITION_BY_VALUE[ProviderDriverKind.make("codex")];
-    expect(definition).toBeDefined();
-    expect(deriveProviderSettingsFields(definition!).map((field) => field.key)).toEqual([
+    expect(codex).toBeDefined();
+    expect(deriveProviderSettingsFields(codex!).map((field) => field.key)).toEqual([
       "binaryPath",
       "homePath",
       "shadowHomePath",
@@ -36,10 +22,11 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
-  it("uses the same form for Claude's workspace settings", () => {
-    const definition = PROVIDER_CLIENT_DEFINITION_BY_VALUE[ProviderDriverKind.make("claudeAgent")];
-    expect(definition).toBeDefined();
-    expect(deriveProviderSettingsFields(definition!).map((field) => field.key)).toEqual([
+  it("shows the auto-compaction threshold for Claude providers", () => {
+    const claude = DRIVER_OPTION_BY_VALUE[ProviderDriverKind.make("claudeAgent")];
+    expect(claude).toBeDefined();
+
+    expect(deriveProviderSettingsFields(claude!).map((field) => field.key)).toEqual([
       "binaryPath",
       "homePath",
       "autoCompactWindow",
@@ -47,19 +34,66 @@ describe("ProviderSettingsForm helpers", () => {
     ]);
   });
 
-  it("preserves unknown config keys while omitting an empty field", () => {
-    const definition = PROVIDER_CLIENT_DEFINITION_BY_VALUE[ProviderDriverKind.make("codex")]!;
-    const binaryPath = deriveProviderSettingsFields(definition).find(
-      (field) => field.key === "binaryPath",
-    )!;
-    expect(
-      nextProviderConfigWithFieldValue({ forkOwned: 1, binaryPath: "/opt/codex" }, binaryPath, ""),
-    ).toEqual({ forkOwned: 1 });
+  it("omits false boolean fields when clearWhenEmpty is omit", () => {
+    const next = nextProviderConfigWithFieldValue(
+      { forkOwned: 1, experimental: true },
+      {
+        key: "experimental",
+        control: "switch",
+        label: "Experimental",
+        clearWhenEmpty: "omit",
+        defaultBooleanValue: false,
+      },
+      false,
+    );
+
+    expect(next).toEqual({ forkOwned: 1 });
   });
 
-  it("reads unexpected field values conservatively", () => {
-    expect(readProviderConfigString({ binaryPath: 123 }, "binaryPath")).toBe("");
-    expect(readProviderConfigBoolean({ experimental: "true" }, "experimental")).toBe(false);
-    expect(readProviderConfigBoolean({}, "experimental", true)).toBe(true);
+  it("omits true boolean fields when true is the default", () => {
+    const next = nextProviderConfigWithFieldValue(
+      { forkOwned: 1, experimental: false },
+      {
+        key: "experimental",
+        control: "switch",
+        label: "Experimental",
+        clearWhenEmpty: "omit",
+        defaultBooleanValue: true,
+      },
+      true,
+    );
+
+    expect(next).toEqual({ forkOwned: 1 });
+  });
+
+  it("stores false boolean fields when true is the default", () => {
+    const next = nextProviderConfigWithFieldValue(
+      undefined,
+      {
+        key: "experimental",
+        control: "switch",
+        label: "Experimental",
+        clearWhenEmpty: "omit",
+        defaultBooleanValue: true,
+      },
+      false,
+    );
+
+    expect(next).toEqual({ experimental: false });
+  });
+
+  it("preserves false boolean fields when clearWhenEmpty is persist", () => {
+    const next = nextProviderConfigWithFieldValue(
+      undefined,
+      {
+        key: "experimental",
+        control: "switch",
+        label: "Experimental",
+        clearWhenEmpty: "persist",
+      },
+      false,
+    );
+
+    expect(next).toEqual({ experimental: false });
   });
 });

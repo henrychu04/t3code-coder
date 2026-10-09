@@ -1,5 +1,5 @@
 import type { EnvironmentId, ProjectWriteFileResult, ThreadId } from "@t3tools/contracts";
-import { createRef, useEffect, useMemo } from "react";
+import { createRef, useEffect, useMemo, useRef } from "react";
 
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -30,11 +30,25 @@ export function useFileSaveCoordinator({
   onSaveFailed,
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
+  // Coder: the base revision of the open file. It is tagged with the file identity so a write
+  // confirmed for a retired file cannot leak its revision into the next file's writes.
+  const fileKey = JSON.stringify([environmentId, threadId, cwd, relativePath]);
+  const revisionRef = useRef({ fileKey, revision });
+  useEffect(() => {
+    revisionRef.current = { fileKey, revision };
+  }, [fileKey, revision]);
   const session = useMemo(() => {
     const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult>>();
-    const revisionRef = { current: "" };
+    const sessionFileKey = JSON.stringify([environmentId, threadId, cwd, relativePath]);
+    // The revision this session last used, so a retired session's retry keeps its own file's.
+    const sessionRevision: { current: string | undefined } = { current: undefined };
+    const currentRevision = () => {
+      if (revisionRef.current.fileKey === sessionFileKey) {
+        sessionRevision.current = revisionRef.current.revision;
+      }
+      return sessionRevision.current ?? revisionRef.current.revision;
+    };
     return {
-      revisionRef,
       change: (contents: string) => coordinatorRef.current?.change(contents),
       setup: () => {
         // Coder: a retired editor still retries its pending edit on close, as upstream does,
@@ -54,11 +68,14 @@ export function useFileSaveCoordinator({
                 cwd,
                 relativePath,
                 contents: nextContents,
-                expectedRevision: revisionRef.current,
+                expectedRevision: currentRevision(),
               },
             }),
           onConfirmed: (confirmedContents, result) => {
-            revisionRef.current = result.revision;
+            sessionRevision.current = result.revision;
+            if (revisionRef.current.fileKey === sessionFileKey) {
+              revisionRef.current = { fileKey: sessionFileKey, revision: result.revision };
+            }
             confirmProjectFileQueryData(
               environmentId,
               threadId,
@@ -78,9 +95,6 @@ export function useFileSaveCoordinator({
       },
     };
   }, [cwd, environmentId, onPendingChange, onSaveFailed, relativePath, threadId, writeFile]);
-  useEffect(() => {
-    session.revisionRef.current = revision;
-  }, [revision, session]);
 
   // StrictMode replays effect setup. Retired file sessions stay inert, while the
   // replay gets a fresh coordinator instead of reusing a disposed one.

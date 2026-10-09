@@ -16,7 +16,7 @@ import {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { isCoderProviderInstanceId } from "./coderProviders.ts";
+import { isCoderProviderDriver } from "./coderProviders.ts";
 import { deepMerge } from "./Struct.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection } from "./model.ts";
@@ -96,7 +96,7 @@ export function resolveCoderTextGenerationModelSelection(
 ): ModelSelection {
   const candidates = providers.filter(
     (provider) =>
-      isCoderProviderInstanceId(provider.instanceId) &&
+      isCoderProviderDriver(provider.driver) &&
       provider.enabled &&
       provider.availability !== "unavailable" &&
       provider.status === "ready" &&

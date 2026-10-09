@@ -164,7 +164,7 @@ describe("instance-scoped model selection", () => {
     ).toBe("opus");
   });
 
-  it("offers only the built-in Codex and Claude provider instances", () => {
+  it("offers Codex and Claude provider instances, including added ones, but no other providers", () => {
     const providers = [
       provider({ instanceId: "claudeAgent", models: ["claude-sonnet-4-6"] }),
       provider({ instanceId: "claude_openrouter", models: ["claude-sonnet-4-6"] }),
@@ -174,7 +174,11 @@ describe("instance-scoped model selection", () => {
 
     expect([
       ...getModelOptionsByInstance(settingsWithProviderInstances(), providers).keys(),
-    ]).toEqual([ProviderInstanceId.make("claudeAgent"), ProviderInstanceId.make("codex")]);
+    ]).toEqual([
+      ProviderInstanceId.make("claudeAgent"),
+      ProviderInstanceId.make("claude_openrouter"),
+      ProviderInstanceId.make("codex"),
+    ]);
   });
 
   it("does not inject an unknown selected slug into the stock instance list", () => {
@@ -329,16 +333,13 @@ describe("instance-scoped model selection", () => {
         instanceId: "claudeAgent",
         models: ["claude-sonnet-4-6"],
       }),
-      provider({
-        instanceId: "claude_openrouter",
-        models: ["claude-sonnet-4-6"],
-      }),
+      provider({ provider: ProviderDriverKind.make("grok"), instanceId: "grok", models: ["grok"] }),
     ];
     const settings: UnifiedSettings = {
       ...settingsWithProviderInstances(),
       textGenerationModelSelection: {
-        instanceId: ProviderInstanceId.make("claude_openrouter"),
-        model: "openai/gpt-5.5",
+        instanceId: ProviderInstanceId.make("grok"),
+        model: "grok",
       },
     };
 

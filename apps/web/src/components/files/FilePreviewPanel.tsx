@@ -27,7 +27,7 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { resolveDiffThemeName } from "~/lib/diffRendering";
 import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
 import { cn } from "~/lib/utils";
-import { isAbsolutePath, resolvePathLinkTarget } from "~/terminal-links";
+import { isAbsolutePath } from "~/terminal-links";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { buildFileReviewComment } from "~/reviewCommentContext";
@@ -467,9 +467,11 @@ function EditableFileSurface({
     onPendingChange,
     onSaveFailed,
   });
-  // Coder: the editor is rebuilt per file, so it reads the revision through a ref.
+  // Coder: the editor is built once per file, so it reads the latest revision through a ref.
   const revisionRef = useRef(revision);
-  revisionRef.current = revision;
+  useEffect(() => {
+    revisionRef.current = revision;
+  }, [revision]);
   const editor = useMemo(
     () =>
       new Editor<FileCommentAnnotationGroup>({
