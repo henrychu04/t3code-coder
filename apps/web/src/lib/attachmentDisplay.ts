@@ -1,4 +1,17 @@
-// Upstream display formatting, shared by the Coder image chips.
+import { PROVIDER_SEND_TURN_MAX_FILE_BYTES } from "@t3tools/contracts";
+
+// Upstream display formatting and file limits, shared by the Coder attachment chips.
+
+/**
+ * The effective per-file byte limit for a server that advertises
+ * `capabilities.fileAttachments.maxUploadBytes`. The contract caps what a
+ * turn may reference, so a larger advertised value must not admit files the
+ * send would then refuse.
+ */
+export function clampFileAttachmentUploadBytes(advertisedMaxUploadBytes: number): number {
+  return Math.min(advertisedMaxUploadBytes, PROVIDER_SEND_TURN_MAX_FILE_BYTES);
+}
+
 export function formatAttachmentSize(sizeBytes: number): string {
   return sizeBytes >= 1024 * 1024
     ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`

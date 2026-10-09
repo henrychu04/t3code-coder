@@ -1,4 +1,7 @@
-import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "@t3tools/contracts";
+import {
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+} from "@t3tools/contracts";
 import { reportErrorDiagnostic } from "@t3tools/client-runtime/errors";
 import type { ExecutionEnvironmentDescriptor } from "@t3tools/contracts";
 
@@ -247,30 +250,40 @@ export interface StagedCoderImage {
   };
 }
 
-export async function uploadCoderClipboardImage(
-  workspaceId: string,
-  file: File,
-  options?: { signal?: AbortSignal; onProgress?: (progress: number) => void },
-): Promise<StagedCoderImage> {
-  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-    throw new Error("Clipboard image must be PNG, JPEG, or WebP.");
-  }
-  if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
-    throw new Error("Image exceeds the 10 MiB limit.");
-  }
-  return new Promise<StagedCoderImage>((resolve, reject) => {
+/** A composer file staged in the workspace, ready to be claimed when the message is sent. */
+export interface StagedCoderFile {
+  readonly path: string;
+  readonly attachment: { readonly id: string; readonly sizeBytes: number };
+}
+
+interface WorkspaceAttachmentUploadOptions {
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (progress: number) => void;
+}
+
+/** Posts one composer attachment to the gateway's SCP staging route. */
+function postWorkspaceAttachment<T>(input: {
+  readonly url: string;
+  readonly file: File;
+  readonly contentType: string;
+  readonly label: string;
+  readonly options: WorkspaceAttachmentUploadOptions | undefined;
+  readonly parse: (body: unknown) => T | null;
+}): Promise<T> {
+  const { label, options } = input;
+  return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abort = () => {
       xhr.abort();
-      reject(new DOMException("Image upload cancelled.", "AbortError"));
+      reject(new DOMException(`${label} upload cancelled.`, "AbortError"));
     };
     if (options?.signal?.aborted) {
       abort();
       return;
     }
-    xhr.open("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/clipboard-image`, true);
+    xhr.open("POST", input.url, true);
     xhr.timeout = 5 * 60 * 1000;
-    xhr.setRequestHeader("Content-Type", file.type);
+    xhr.setRequestHeader("Content-Type", input.contentType);
     xhr.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && event.total > 0) {
         options?.onProgress?.(Math.min(1, event.loaded / event.total));
@@ -279,40 +292,94 @@ export async function uploadCoderClipboardImage(
     xhr.upload.addEventListener("load", () => options?.onProgress?.(1));
     xhr.addEventListener("load", () => {
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(xhr.responseText || `Image upload failed (${xhr.status}).`));
+        reject(new Error(xhr.responseText || `${label} upload failed (${xhr.status}).`));
         return;
       }
+      let staged: T | null = null;
       try {
-        const body: unknown = JSON.parse(xhr.responseText);
-        const staged = body as Partial<StagedCoderImage> | null;
-        const attachment = staged?.attachment;
-        if (
-          typeof staged?.path !== "string" ||
-          !staged.path.startsWith("/") ||
-          typeof attachment?.id !== "string" ||
-          !/^pending-[0-9a-f-]{36}-(?:jpg|png|webp)$/.test(attachment.id) ||
-          !["image/png", "image/jpeg", "image/webp"].includes(attachment.mimeType ?? "") ||
-          typeof attachment.sizeBytes !== "number"
-        ) {
-          throw new Error("Clipboard image upload returned an invalid workspace path.");
-        }
-        resolve({ path: staged.path, attachment });
+        staged = input.parse(JSON.parse(xhr.responseText));
       } catch {
-        reject(new Error("Clipboard image upload returned an invalid workspace path."));
+        staged = null;
       }
+      if (staged === null) {
+        reject(new Error(`${label} upload returned an invalid workspace path.`));
+        return;
+      }
+      resolve(staged);
     });
-    xhr.addEventListener("error", () => reject(new Error("Clipboard image upload failed.")));
-    xhr.addEventListener("timeout", () => reject(new Error("Clipboard image upload timed out.")));
+    xhr.addEventListener("error", () => reject(new Error(`${label} upload failed.`)));
+    xhr.addEventListener("timeout", () => reject(new Error(`${label} upload timed out.`)));
     xhr.addEventListener("abort", () =>
-      reject(new DOMException("Image upload cancelled.", "AbortError")),
+      reject(new DOMException(`${label} upload cancelled.`, "AbortError")),
     );
     xhr.addEventListener("loadend", () => options?.signal?.removeEventListener("abort", abort));
     options?.signal?.addEventListener("abort", abort, { once: true });
     try {
-      xhr.send(file);
+      xhr.send(input.file);
     } catch (cause) {
       options?.signal?.removeEventListener("abort", abort);
       reject(cause);
     }
+  });
+}
+
+export async function uploadCoderClipboardImage(
+  workspaceId: string,
+  file: File,
+  options?: WorkspaceAttachmentUploadOptions,
+): Promise<StagedCoderImage> {
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+    throw new Error("Clipboard image must be PNG, JPEG, or WebP.");
+  }
+  if (file.size > PROVIDER_SEND_TURN_MAX_IMAGE_BYTES) {
+    throw new Error("Image exceeds the 10 MiB limit.");
+  }
+  return postWorkspaceAttachment({
+    url: `/api/workspaces/${encodeURIComponent(workspaceId)}/clipboard-image`,
+    file,
+    contentType: file.type,
+    label: "Clipboard image",
+    options,
+    parse: (body) => {
+      const staged = body as Partial<StagedCoderImage> | null;
+      const attachment = staged?.attachment;
+      return typeof staged?.path === "string" &&
+        staged.path.startsWith("/") &&
+        typeof attachment?.id === "string" &&
+        /^pending-[0-9a-f-]{36}-(?:jpg|png|webp)$/.test(attachment.id) &&
+        ["image/png", "image/jpeg", "image/webp"].includes(attachment.mimeType ?? "") &&
+        typeof attachment.sizeBytes === "number"
+        ? { path: staged.path, attachment }
+        : null;
+    },
+  });
+}
+
+/** Stages any non-image composer file up to main's 50 MiB file limit. */
+export async function uploadCoderComposerFile(
+  workspaceId: string,
+  file: File,
+  options?: WorkspaceAttachmentUploadOptions,
+): Promise<StagedCoderFile> {
+  if (file.size > PROVIDER_SEND_TURN_MAX_FILE_BYTES) {
+    throw new Error("File exceeds the 50 MiB limit.");
+  }
+  return postWorkspaceAttachment({
+    url: `/api/workspaces/${encodeURIComponent(workspaceId)}/attachment-file?name=${encodeURIComponent(file.name)}`,
+    file,
+    contentType: file.type || "application/octet-stream",
+    label: "File",
+    options,
+    parse: (body) => {
+      const staged = body as Partial<StagedCoderFile> | null;
+      const attachment = staged?.attachment;
+      return typeof staged?.path === "string" &&
+        staged.path.startsWith("/") &&
+        typeof attachment?.id === "string" &&
+        /^pending-[0-9a-f-]{36}-[a-z0-9]{1,10}$/.test(attachment.id) &&
+        attachment.sizeBytes === file.size
+        ? { path: staged.path, attachment: { id: attachment.id, sizeBytes: attachment.sizeBytes } }
+        : null;
+    },
   });
 }

@@ -1,6 +1,14 @@
-import { type EnvironmentId, isProviderSendTurnSupportedImageMimeType } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  isProviderSendTurnSupportedImageMimeType,
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+} from "@t3tools/contracts";
 
 import type { ComposerFileAttachment, ComposerImageAttachment } from "../../composerDraftStore";
+import {
+  clampFileAttachmentUploadBytes,
+  fileAttachmentTooLargeMessage,
+} from "../../lib/attachmentDisplay";
 import { isHeicImageFile } from "../../lib/imageCompression";
 import { isVideoAttachment } from "../../types";
 
@@ -91,12 +99,15 @@ export function composerOtherFilesForPresentation(
   );
 }
 
-/**
- * Byte limit for adding a generic file to the local composer draft. Coder workspaces never
- * accept file attachments, only composer images.
- */
-export function fileAttachmentStagingLimit(_input: FileAttachmentCapabilityState): number | null {
-  return null;
+/** Byte limit for adding a generic file to the local composer draft. */
+export function fileAttachmentStagingLimit(input: FileAttachmentCapabilityState): number | null {
+  if (!input.attachmentUploadsCapabilityKnown) {
+    return PROVIDER_SEND_TURN_MAX_FILE_BYTES;
+  }
+  if (!input.supportsAttachmentUploads || input.maxFileAttachmentBytes === null) {
+    return null;
+  }
+  return clampFileAttachmentUploadBytes(input.maxFileAttachmentBytes);
 }
 
 /** Why retained generic files cannot send with the current server config. */
@@ -108,7 +119,18 @@ export function fileAttachmentCapabilityBlockReason(
   if (input.files.length === 0) {
     return null;
   }
-  return "Coder workspaces accept only PNG, JPEG, and WebP images. Remove the files to send.";
+  if (!input.attachmentUploadsCapabilityKnown) {
+    return "Waiting for the server before file attachments can send";
+  }
+  const maxFileAttachmentBytes = fileAttachmentStagingLimit(input);
+  if (maxFileAttachmentBytes === null) {
+    return "This server does not accept file attachments right now. Remove the files to send.";
+  }
+  const oversizedFile = input.files.find((file) => file.sizeBytes > maxFileAttachmentBytes);
+  if (oversizedFile) {
+    return fileAttachmentTooLargeMessage(oversizedFile.name, maxFileAttachmentBytes);
+  }
+  return null;
 }
 
 /**
