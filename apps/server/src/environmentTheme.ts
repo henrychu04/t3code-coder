@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - the guarded file read needs open
 // flags (O_NOFOLLOW, O_NONBLOCK) the FileSystem service does not expose.
-/** Workspace-published palettes, delivered as decoded metadata through helper stdio.
+/** Coder: see "Workspace themes" in docs/internals/coder-only.md.
+ * Workspace-published palettes, delivered as decoded metadata through helper stdio.
  * The filename is a stable ID, so selected themes follow subsequent recolors.
  * Invalid or inaccessible files are skipped without exposing paths or contents.
  */
