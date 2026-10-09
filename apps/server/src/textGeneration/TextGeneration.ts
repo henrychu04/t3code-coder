@@ -15,8 +15,6 @@ import * as SourceControlProviderRegistry from "../sourceControl/SourceControlPr
 import * as ThreadTitleLinks from "./ThreadTitleLinks.ts";
 import type { TextGenerationPolicy } from "./TextGenerationPolicy.ts";
 
-export type TextGenerationProvider = "codex" | "claudeAgent";
-
 export interface CommitMessageGenerationInput {
   cwd: string;
   branch: string | null;
@@ -24,8 +22,9 @@ export interface CommitMessageGenerationInput {
   stagedPatch: string;
   /** When true, the model also returns a semantic branch name for the change. */
   includeBranch?: boolean;
+  policy?: TextGenerationPolicy | undefined;
+  /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
-  policy?: TextGenerationPolicy;
 }
 
 export interface CommitMessageGenerationResult {
@@ -42,9 +41,10 @@ export interface PrContentGenerationInput {
   commitSummary: string;
   diffSummary: string;
   diffPatch: string;
-  changeRequestTemplate?: string;
+  changeRequestTemplate?: string | undefined;
+  policy?: TextGenerationPolicy | undefined;
+  /** What model and provider to use for generation. */
   modelSelection: ModelSelection;
-  policy?: TextGenerationPolicy;
 }
 
 export interface PrContentGenerationResult {
@@ -81,34 +81,26 @@ export interface ThreadTitleGenerationResult {
   needsRefinement?: boolean | undefined;
 }
 
-export interface TextGenerationService {
-  generateCommitMessage(
-    input: CommitMessageGenerationInput,
-  ): Promise<CommitMessageGenerationResult>;
-  generatePrContent(input: PrContentGenerationInput): Promise<PrContentGenerationResult>;
-  generateBranchName(input: BranchNameGenerationInput): Promise<BranchNameGenerationResult>;
-  /**
-   * Generate a commit message from staged change context.
-   */
-  generateThreadTitle(input: ThreadTitleGenerationInput): Promise<ThreadTitleGenerationResult>;
-}
-
 /**
- * Generate change request title/body from branch and diff context.
+ * TextGeneration - Service tag for commit and change request text generation.
  */
-/**
- * TextGeneration - Service tag for local branch and thread labels.
- */
-
 export class TextGeneration extends Context.Service<
   TextGeneration,
   {
+    /**
+     * Generate a commit message from staged change context.
+     */
     readonly generateCommitMessage: (
       input: CommitMessageGenerationInput,
     ) => Effect.Effect<CommitMessageGenerationResult, TextGenerationError>;
+
+    /**
+     * Generate change request title/body from branch and diff context.
+     */
     readonly generatePrContent: (
       input: PrContentGenerationInput,
     ) => Effect.Effect<PrContentGenerationResult, TextGenerationError>;
+
     /**
      * Generate a concise branch name from a user message.
      */
@@ -122,9 +114,6 @@ export class TextGeneration extends Context.Service<
     ) => Effect.Effect<ThreadTitleGenerationResult, TextGenerationError>;
   }
 >()("t3/textGeneration/TextGeneration") {}
-
-/** @deprecated Use `TextGeneration["Service"]`. */
-export type TextGenerationShape = TextGeneration["Service"];
 
 type TextGenerationOp =
   | "generateCommitMessage"

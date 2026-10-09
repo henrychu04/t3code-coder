@@ -582,7 +582,12 @@ listed here is drift to remove rather than fork behavior to keep.
     in the source as unregistered, disabled code so it can be added back; `knip.jsonc` lists its
     driver as an entry. Upstream's other drivers (Cursor, OpenCode, ACP, Antigravity, Grok) are
     not carried.
-  - Thread-title and branch-name generation use only Codex or Claude models.
+  - Thread-title and branch-name generation use only Codex or Claude models. Text generation is
+    upstream's except: Codex `codex exec` disables every discovered workspace MCP server (fail
+    closed) and reads branch-name and title images through `PastedImageAttachments.ts`, failing
+    rather than skipping an unreadable image; Claude generates branch names and thread titles with
+    `claude-haiku-4-5` whatever the thread's model, and skips launcher status lines printed before
+    its JSON result.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
     session stores through the helper. `server.ts` provides the scanner beside the helper RPC
     layer, as upstream does beside its WebSocket layer.

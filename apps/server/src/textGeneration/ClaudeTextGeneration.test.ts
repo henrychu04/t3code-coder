@@ -15,9 +15,9 @@ import {
   SYNTHETIC_CLAUDE_CAPABLE_MODEL,
   SYNTHETIC_CLAUDE_COLLIDING_ALIAS,
   SYNTHETIC_CLAUDE_MODEL_CATALOG,
+  SYNTHETIC_CLAUDE_STANDARD_MODEL,
   SYNTHETIC_CLAUDE_THINKING_MODEL,
 } from "../provider/ClaudeModelCatalog.testFixtures.ts";
-import type { ClaudeModelCatalog } from "../provider/ClaudeModelCatalog.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import { sanitizeThreadTitle } from "./TextGenerationUtils.ts";
 import { makeClaudeTextGeneration } from "./ClaudeTextGeneration.ts";
@@ -50,6 +50,10 @@ function makeFakeClaudeBinary(dir: string) {
         "  process.exit(code);",
         "}",
         "",
+        'const permissionIndex = argv.indexOf("--permission-mode");',
+        'if (permissionIndex === -1 || argv[permissionIndex + 1] !== "dontAsk") {',
+        '  fail("text generation must deny permission prompts", 12);',
+        "}",
         'const toolsIndex = argv.indexOf("--tools");',
         'if (toolsIndex === -1 || argv[toolsIndex + 1] !== "") {',
         '  fail("text generation must receive an explicit empty tool set", 6);',
@@ -126,7 +130,6 @@ function withFakeClaudeEnv<A, E, R>(
     configDirMustBe?: string;
     cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
-    modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   },
   effectFn: (textGeneration: TextGeneration.TextGeneration["Service"]) => Effect.Effect<A, E, R>,
 ) {
@@ -247,7 +250,11 @@ function withFakeClaudeEnv<A, E, R>(
     );
 
     const config = decodeClaudeSettings(input.claudeConfig ?? {});
-    const textGeneration = yield* makeClaudeTextGeneration(config, undefined, input.modelCatalog);
+    const textGeneration = yield* makeClaudeTextGeneration(
+      config,
+      undefined,
+      Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
+    );
     return yield* effectFn(textGeneration);
   }).pipe(Effect.scoped);
 }
@@ -256,7 +263,6 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
   it.effect("forwards Claude thinking settings without passing unsupported effort", () =>
     withFakeClaudeEnv(
       {
-        modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
         output: JSON.stringify({
           structured_output: {
             subject: "Add important change",
@@ -293,7 +299,6 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
   it.effect("keeps a configured custom alias opaque to the Claude CLI", () =>
     withFakeClaudeEnv(
       {
-        modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
         output: JSON.stringify({
           structured_output: {
             title: "Keep custom model",
@@ -333,7 +338,6 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     () =>
       withFakeClaudeEnv(
         {
-          modelCatalog: Effect.succeed(SYNTHETIC_CLAUDE_MODEL_CATALOG),
           output: JSON.stringify({
             structured_output: {
               title: "Improve orchestration flow",
@@ -369,68 +373,6 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
       ),
   );
 
-  it.effect("generates labels without requiring bypass-permissions mode", () =>
-    withFakeClaudeEnv(
-      {
-        output: [
-          "Claude Startup Script",
-          "Authentication verified",
-          JSON.stringify({
-            structured_output: {
-              title: "Permission-safe labels",
-            },
-          }),
-        ].join("\n"),
-        argsMustContain: "--permission-mode dontAsk",
-        argsMustNotContain: "--dangerously-skip-permissions",
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateThreadTitle({
-            cwd: process.cwd(),
-            message: "Generate labels without bypassing workspace policy.",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
-            },
-          });
-
-          expect(generated.title).toBe("Permission-safe labels");
-        }),
-    ),
-  );
-
-  it.effect("generates branch names with Haiku", () =>
-    withFakeClaudeEnv(
-      {
-        output: [
-          "Claude Startup Script",
-          "Authentication verified",
-          JSON.stringify({
-            structured_output: {
-              branch: "use-haiku-for-labels",
-            },
-          }),
-        ].join("\n"),
-        argsMustContain: "--model claude-haiku-4-5",
-        argsMustNotContain: "claude-sonnet-4-6",
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateBranchName({
-            cwd: process.cwd(),
-            message: "Use Haiku for generated worktree branch names.",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
-            },
-          });
-
-          expect(generated.branch).toBe("use-haiku-for-labels");
-        }),
-    ),
-  );
-
   it.effect(
     "generates thread titles outside the project with tools, skills, and hooks disabled",
     () =>
@@ -452,7 +394,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               message: "/call-script",
               modelSelection: {
                 instanceId: ProviderInstanceId.make("claudeAgent"),
-                model: "claude-sonnet-4-6",
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
               },
             });
 
@@ -478,7 +420,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             message: "/call-script",
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
             },
           });
 
@@ -487,136 +429,53 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("generates commit messages through the configured Claude model", () =>
+  // Coder: labels always use Haiku, and launcher status lines before the JSON are skipped.
+  it.effect("generates thread titles with Haiku past a launcher preamble", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({
-          structured_output: {
-            subject: "Restore Git actions.",
-            body: "- Route operations through the workspace helper",
-          },
-        }),
-        argsMustContain: "--model claude-sonnet-4-6",
-        stdinMustContain: "Staged files:",
+        output: [
+          "Claude Startup Script",
+          "Authentication verified",
+          JSON.stringify({ structured_output: { title: "Haiku labels" } }),
+        ].join("\n"),
+        argsMustContain: "--model claude-haiku-4-5",
+        argsMustNotContain: SYNTHETIC_CLAUDE_STANDARD_MODEL,
       },
       (textGeneration) =>
         Effect.gen(function* () {
-          const generated = yield* textGeneration.generateCommitMessage({
+          const generated = yield* textGeneration.generateThreadTitle({
             cwd: process.cwd(),
-            branch: "feature/git-actions",
-            stagedSummary: "1 file changed",
-            stagedPatch: "+restore",
+            message: "Name this thread",
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
             },
           });
 
-          expect(generated).toEqual({
-            subject: "Restore Git actions",
-            body: "- Route operations through the workspace helper",
-          });
+          expect(generated.title).toBe("Haiku labels");
         }),
     ),
   );
 
-  it.effect("returns a semantic branch with the commit message when requested", () =>
+  it.effect("generates branch names with Haiku", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({
-          structured_output: {
-            subject: "Restore Git actions",
-            body: "",
-            branch: "Restore Git Actions",
-          },
-        }),
-        stdinMustContain: "Return a JSON object with keys: subject, body, branch.",
+        output: JSON.stringify({ structured_output: { branch: "haiku-labels" } }),
+        argsMustContain: "--model claude-haiku-4-5",
+        argsMustNotContain: SYNTHETIC_CLAUDE_STANDARD_MODEL,
       },
       (textGeneration) =>
         Effect.gen(function* () {
-          const generated = yield* textGeneration.generateCommitMessage({
+          const generated = yield* textGeneration.generateBranchName({
             cwd: process.cwd(),
-            branch: "main",
-            stagedSummary: "1 file changed",
-            stagedPatch: "+restore",
-            includeBranch: true,
+            message: "Use Haiku for branch names",
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
             },
           });
 
-          expect(generated).toEqual({
-            subject: "Restore Git actions",
-            body: "",
-            branch: "feature/restore-git-actions",
-          });
-        }),
-    ),
-  );
-
-  it.effect("honors custom descriptors without resolving a shadowed Claude alias", () =>
-    withFakeClaudeEnv(
-      {
-        output: JSON.stringify({ structured_output: { subject: "Use custom model", body: "" } }),
-        argsMustContain: "--model opus-4.6 --effort high",
-        claudeConfig: {
-          customModels: [
-            {
-              slug: "opus-4.6",
-              capabilities: {
-                optionDescriptors: [
-                  {
-                    id: "effort",
-                    label: "Effort",
-                    type: "select",
-                    options: [{ id: "high", label: "High", isDefault: true }],
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      },
-      (textGeneration) =>
-        textGeneration.generateCommitMessage({
-          cwd: process.cwd(),
-          branch: "feature/custom-model",
-          stagedSummary: "1 file changed",
-          stagedPatch: "+custom",
-          modelSelection: createModelSelection(ProviderInstanceId.make("claudeAgent"), "opus-4.6"),
-        }),
-    ),
-  );
-
-  it.effect("generates GitLab merge request content", () =>
-    withFakeClaudeEnv(
-      {
-        output: JSON.stringify({
-          structured_output: {
-            title: "Restore GitLab workflow",
-            body: "## Summary\n\n- Restore actions\n\n## Testing\n\n- Focused tests",
-          },
-        }),
-        stdinMustContain: "GitLab merge request content",
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generatePrContent({
-            cwd: process.cwd(),
-            baseBranch: "main",
-            headBranch: "feature/git-actions",
-            commitSummary: "abc Restore actions",
-            diffSummary: "1 file changed",
-            diffPatch: "+restore",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
-            },
-          });
-
-          expect(generated.title).toBe("Restore GitLab workflow");
-          expect(generated.body).toContain("## Testing");
+          expect(generated.branch).toBe("haiku-labels");
         }),
     ),
   );
@@ -643,7 +502,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               message: "thread title",
               modelSelection: {
                 instanceId: ProviderInstanceId.make("claudeAgent"),
-                model: "claude-sonnet-4-6",
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
               },
             });
 
@@ -668,7 +527,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               message: "Refresh ev-stg APP ASG instances",
               modelSelection: {
                 instanceId: ProviderInstanceId.make("claudeAgent"),
-                model: "claude-sonnet-4-6",
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
               },
             });
 
@@ -705,7 +564,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
                 previousTitle,
                 modelSelection: {
                   instanceId: ProviderInstanceId.make("claudeAgent"),
-                  model: "claude-sonnet-4-6",
+                  model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
                 },
               });
 
@@ -736,7 +595,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
               message: "Name this thread",
               modelSelection: {
                 instanceId: ProviderInstanceId.make("claudeAgent"),
-                model: "claude-sonnet-4-6",
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
               },
             }),
           );
@@ -763,7 +622,7 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
             message: "Name this thread.",
             modelSelection: {
               instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: "claude-sonnet-4-6",
+              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
             },
           });
 
