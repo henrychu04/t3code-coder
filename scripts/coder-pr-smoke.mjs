@@ -135,7 +135,7 @@ async function seedProject(environment, repository) {
     connection.sendRpc({
       _tag: "Request",
       id: requestId,
-      tag: "orchestration.dispatchCommand",
+      tag: "projects.mutate",
       payload: {
         type: "project.create",
         commandId: randomUUID(),
@@ -143,7 +143,6 @@ async function seedProject(environment, repository) {
         title: "GitLab MR smoke repo",
         workspaceRoot: repository,
         createWorkspaceRootIfMissing: false,
-        createdAt: new Date().toISOString(),
       },
       headers: [],
     });
