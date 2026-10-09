@@ -698,8 +698,8 @@ listed here is drift to remove rather than fork behavior to keep.
     creates a merge request, so a blocked workspace, or a remote that resolves to no registered
     provider, commits and pushes nothing. It also reads merge-request
     templates for GitLab and fetches merge-request heads from `refs/merge-requests/<n>/head`.
-    Custom writing instructions remain one string. Upstream's GitHub and Forgejo branches stay
-    verbatim but are unreachable with the GitLab-only registry.
+    Upstream's GitHub and Forgejo branches stay verbatim but are unreachable with the GitLab-only
+    registry.
   - `GitWorkflowService` adds `moveWorktree` and `localRefStatus` pass-throughs.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
