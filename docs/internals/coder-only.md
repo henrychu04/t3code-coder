@@ -635,7 +635,8 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
-  selection falls back to the most permissive supported mode.
+  selection falls back to the most permissive supported mode. `RuntimePolicy` applies the same
+  per-model clamp when it starts a run, so the provider receives the mode the composer shows.
 - **Contracts.** `packages/contracts` follows upstream, including dormant schemas for surfaces Coder
   does not serve (auth, provider setup, other providers' settings, browser, device, preview, usage
   sources, agent sessions, filesystem browse, background policy). Coder deltas:
