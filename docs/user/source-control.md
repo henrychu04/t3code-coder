@@ -80,14 +80,14 @@ instead of inside T3 Coder.
 ## Linked merge requests
 
 A thread can hold several GitLab merge requests. Use **Link merge request to thread** in the command
-palette or **Linked MRs** in the right-panel menu. Enter a merge-request URL or a number for the
+palette or the **Linked merge requests** panel. Enter a merge-request URL or a number for the
 thread's own repository. A URL may name another repository on a GitLab host already identified by
 workspace project metadata. Creating a merge request from the thread's Git actions links it automatically.
 
 A sidebar MR badge shows the review number for one linked MR, a count for multiple unrelated MRs,
-or the layer count for a branch chain. Clicking a badge with more than one review opens **Linked MRs**.
+or the layer count for a branch chain. Clicking a badge with more than one review opens the **Linked merge requests** panel.
 
-The **Linked MRs** panel lists the linked reviews and groups related branches. Its row menu can
+The **Linked merge requests** panel lists the linked reviews and groups related branches. Its row menu can
 unlink a review. The review header's **Link to thread** action links it to another active thread;
 the linked-thread count opens a search that includes archived threads. Sidebar and command-palette
 search also match linked review numbers, repositories, and titles.

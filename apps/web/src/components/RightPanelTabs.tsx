@@ -1,101 +1,115 @@
-// Coder: a rewrite of upstream's tab strip without browser, device, and preview tabs; see
+// Coder: upstream's tab strip without its browser, device, and preview surfaces; see
 // "Right panel and composer chrome" in docs/internals/coder-only.md.
-import { PullRequestGlyph } from "./pullRequest/pullRequestIcons";
-import {
-  pullRequestHostOf,
-  type EnvironmentId,
-  type ProjectId,
-  type PullRequestState,
-  type SourceControlProviderKind,
-} from "@t3tools/contracts";
+import { pullRequestHostOf, type SourceControlProviderKind } from "@t3tools/contracts";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
   threadPullRequestKeysEqual,
   visibleThreadPullRequests,
 } from "@t3tools/shared/threadPullRequests";
-import { useMemo } from "react";
-import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
+import type { EnvironmentId, ProjectId, PullRequestState } from "@t3tools/contracts";
+import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FileDiff,
+  Files,
+  Globe2,
+  Plus,
+  Smartphone,
+  TerminalSquare,
+} from "lucide-react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+
+import { isElectron } from "~/env";
+import type { ContextMenuItem } from "~/localApiTypes";
+import type { RightPanelSurface } from "~/rightPanelStore";
+import { cn } from "~/lib/utils";
+import { readLocalApi } from "~/localApi";
+import { Button } from "~/components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
+import { Kbd } from "~/components/ui/kbd";
+import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "~/components/ui/menu";
+import { ScrollArea } from "~/components/ui/scroll-area";
+import { PanelTabCloseButton } from "~/components/ui/panel-tab-close-button";
+import { useTheme } from "~/hooks/useTheme";
+import type { PreviewPanelInlineSize } from "~/hooks/usePreviewPanelInlineSize";
 import {
   newestPullRequestSummary,
   pullRequestEnvironment,
   useSharedPullRequestSummary,
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
-import { ChevronLeft, ChevronRight, FileDiff, Files, Plus, TerminalSquare } from "lucide-react";
-import {
-  type ReactElement,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-  type ReactNode,
-  type RefObject,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
-import { useResizableWidth } from "../hooks/useResizableWidth";
-import { useTheme } from "../hooks/useTheme";
-import type { ContextMenuItem } from "../localApiTypes";
-import { readLocalApi } from "../localApi";
-import type { RightPanelSurface } from "../rightPanelStore";
-import {
-  resolveRightPanelWidths,
-  RIGHT_PANEL_MIN_WIDTH,
-  RIGHT_PANEL_WIDTH_STORAGE_KEY,
-} from "../rightPanelLayout";
-import { cn } from "../lib/utils";
-import { Button } from "./ui/button";
-import { Kbd } from "./ui/kbd";
-import { Menu, MenuItem, MenuPopup, MenuShortcut, MenuTrigger } from "./ui/menu";
-import { PanelTabCloseButton } from "./ui/panel-tab-close-button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { PreviewPanelShell, type PreviewPanelMode } from "./preview/PreviewPanelShell";
 import { PierreEntryIcon } from "./chat/PierreEntryIcon";
+import { resolvePullRequestState } from "./pullRequest/pullRequestPresentation";
+import { PullRequestGlyph } from "~/components/pullRequest/pullRequestIcons";
 
 interface RightPanelTabsProps {
-  readonly open?: boolean;
-  readonly mode: "inline" | "sheet";
-  readonly maximized?: boolean;
-  readonly widthStorageKey?: string;
-  readonly defaultWidth?: number;
-  readonly layoutControls?: ReactNode;
-  readonly surfaces: readonly RightPanelSurface[];
-  readonly activeSurfaceId: string | null;
-  readonly pendingSurfaceIds: ReadonlySet<string>;
-  readonly terminalLabelsById: ReadonlyMap<string, string>;
-  readonly onActivate: (surface: RightPanelSurface) => void;
-  readonly onCloseSurface: (surface: RightPanelSurface) => void;
-  readonly onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
-  readonly onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
-  readonly onCloseAllSurfaces: () => void;
-  readonly onCopyFilePath: (relativePath: string) => void;
-  readonly onAddBrowser?: () => void;
-  readonly onAddTerminal: () => void;
-  readonly onAddDiff: () => void;
-  readonly onAddFiles: () => void;
-  readonly onAddPullRequests?: (() => void) | undefined;
-  readonly onAddPullRequest: () => void;
-  readonly terminalAvailable: boolean;
-  readonly diffAvailable: boolean;
-  readonly filesAvailable: boolean;
-  readonly pullRequestAvailable: boolean;
-  readonly browserAvailable?: boolean;
-  readonly previewSessions?: Readonly<Record<string, unknown>>;
-  readonly desktopByTabId?: Readonly<Record<string, unknown>>;
-  /** Environment used for pull-request tabs that do not name their own. */
-  readonly environmentId?: EnvironmentId | null;
-  /** List rows already loaded by the pull-request page, shown while a tab's own read arrives. */
-  readonly pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
-  readonly children: ReactNode;
+  mode: PreviewPanelMode;
+  maximized?: boolean;
+  open?: boolean;
+  /** Forwarded to PreviewPanelShell so this surface persists its own width. */
+  widthStorageKey?: string;
+  /** Forwarded to PreviewPanelShell as the initial width before a user resize. */
+  defaultWidth?: number;
+  inlineSize?: PreviewPanelInlineSize;
+  layoutControls?: ReactNode;
+  surfaces: readonly RightPanelSurface[];
+  /** Fallback environment for surfaces that do not carry their own. */
+  environmentId: EnvironmentId | null;
+  activeSurfaceId: string | null;
+  pendingSurfaceIds: ReadonlySet<string>;
+  terminalLabelsById: ReadonlyMap<string, string>;
+  onActivate: (surface: RightPanelSurface) => void;
+  onCloseSurface: (surface: RightPanelSurface) => void;
+  onCloseOtherSurfaces: (surface: RightPanelSurface) => void;
+  onCloseSurfacesToRight: (surface: RightPanelSurface) => void;
+  onCloseAllSurfaces: () => void;
+  onCopyFilePath: (relativePath: string) => void;
+  onAddTerminal: () => void;
+  onAddDiff: () => void;
+  onAddFiles: () => void;
+  onAddPullRequest: () => void;
+  onAddPullRequests: () => void;
+  terminalAvailable: boolean;
+  diffAvailable: boolean;
+  filesAvailable: boolean;
+  pullRequestAvailable: boolean;
+  pullRequestsAvailable: boolean;
+  pullRequestStatusSeeds?: Readonly<Record<string, PullRequestTabStatusSeed>>;
+  children: ReactNode;
 }
 
+export interface PullRequestTabStatus {
+  projectId: string;
+  repository: string;
+  number: number;
+  state: PullRequestState;
+  isDraft: boolean;
+}
+
+export type PullRequestTabStatusSeed = Pick<PullRequestTabStatus, "state" | "isDraft">;
+
+// Coder: GitLab merge-request wording.
 const SURFACE_DISABLED_REASONS = {
   terminal: "Terminal surfaces are only available from a project thread.",
   files: "Files are only available when a project is open.",
   diff: "Diff is only available for server threads in Git repositories.",
-  pullRequest: "GitLab merge requests are only available from GitLab project threads.",
+  pullRequest: "This thread's branch has no merge request yet.",
+  pullRequests: "No linked merge requests are available for this thread.",
 } as const;
 
 /** Overlays that must win over the launcher's letter shortcuts. */
@@ -110,26 +124,22 @@ const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
   '[data-slot="autocomplete-popup"]',
 ].join(",");
 
+/** One-line unavailability hints for the empty-state rows. */
 const SURFACE_UNAVAILABLE_HINTS = {
   terminal: "Available when a project is open.",
   files: "Available when a project is open.",
   diff: "Available for Git repositories.",
-  pullRequest: "Available for GitLab project threads.",
+  pullRequest: "No merge request on this branch yet.",
+  pullRequests: "No linked merge requests available.",
 } as const;
-
-export interface PullRequestTabStatus {
-  projectId: string;
-  repository: string;
-  number: number;
-  state: PullRequestState;
-  isDraft: boolean;
-}
-
-export type PullRequestTabStatusSeed = Pick<PullRequestTabStatus, "state" | "isDraft">;
 
 type TabContextMenuAction = "copy-path" | "close" | "close-others" | "close-to-right" | "close-all";
 
 const TAB_SCROLL_EDGE_TOLERANCE = 1;
+
+function tabScrollViewport(root: HTMLDivElement | null): HTMLDivElement | null {
+  return root?.querySelector<HTMLDivElement>('[data-slot="scroll-area-viewport"]') ?? null;
+}
 
 type SurfaceShortcutEvent = Pick<
   KeyboardEvent,
@@ -148,6 +158,14 @@ export function surfaceShortcutActionForKey<
   );
 }
 
+/**
+ * A focused editable is a typing context whether or not it has text yet: an
+ * empty chat composer at rest is still where the user's next keystrokes are
+ * meant to land, and claiming launcher letters from it would redirect prompts
+ * into whatever surface opens. The `:not` clause lets `closest` see past
+ * non-editable islands (`contenteditable="false"`) to an editable host around
+ * them, matching ComposerPendingUserInputPanel's typing guard.
+ */
 export function surfaceShortcutTargetsTypingContext(
   target: { closest(selectors: string): unknown } | null,
 ): boolean {
@@ -155,35 +173,6 @@ export function surfaceShortcutTargetsTypingContext(
     target?.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])') !=
     null
   );
-}
-
-export function rightPanelTabContextMenuItems(
-  surfaces: readonly RightPanelSurface[],
-  surface: RightPanelSurface,
-): readonly ContextMenuItem<TabContextMenuAction>[] {
-  const surfaceIndex = surfaces.findIndex((entry) => entry.id === surface.id);
-  if (surfaceIndex < 0) return [];
-
-  return [
-    /** One-line unavailability hints for the empty-state rows. */
-    ...(surface.kind === "file" ? [{ id: "copy-path" as const, label: "Copy path" }] : []),
-    { id: "close", label: "Close" },
-    {
-      id: "close-others",
-      label: "Close others",
-      disabled: surfaces.length <= 1,
-    },
-    {
-      id: "close-to-right",
-      label: "Close to the right",
-      disabled: surfaceIndex >= surfaces.length - 1,
-    },
-    {
-      id: "close-all",
-      label: "Close all",
-      disabled: surfaces.length === 0,
-    },
-  ];
 }
 
 function DisabledReasonTooltip(props: { reason: string; trigger: ReactElement }) {
@@ -217,23 +206,31 @@ function SurfaceMenuItem(props: {
   return <DisabledReasonTooltip reason={props.disabledReason} trigger={item} />;
 }
 
+/**
+ * List launcher shown when the right panel has no surfaces. Keyboard-first
+ * without palette chrome: a surface's letter opens it directly from anywhere
+ * outside a typing context, and arrows plus Enter work while the launcher is
+ * focused. The highlight only appears on hover or arrow use. Unavailable
+ * surfaces stay visible with a one-line reason.
+ */
 function RightPanelEmptyState(props: {
   onAddTerminal: () => void;
   onAddDiff: () => void;
   onAddFiles: () => void;
-  onAddPullRequests?: (() => void) | undefined;
   onAddPullRequest: () => void;
+  onAddPullRequests: () => void;
   terminalAvailable: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
+  pullRequestsAvailable: boolean;
 }) {
+  // -1 means no highlight: it only appears on hover or arrow use.
   const [highlight, setHighlight] = useState(-1);
 
   const actions = [
     {
       label: "Terminal",
-      description: "Start a shell in this workspace.",
       icon: TerminalSquare,
       shortcut: "T",
       available: props.terminalAvailable,
@@ -242,24 +239,14 @@ function RightPanelEmptyState(props: {
     },
     {
       label: "Files",
-      description: "Browse and read workspace files.",
       icon: Files,
       shortcut: "F",
-      /**
-       * A focused editable is a typing context whether or not it has text yet: an
-       * empty chat composer at rest is still where the user's next keystrokes are
-       * meant to land, and claiming launcher letters from it would redirect prompts
-       * into whatever surface opens. The `:not` clause lets `closest` see past
-       * non-editable islands (`contenteditable="false"`) to an editable host around
-       * them, matching ComposerPendingUserInputPanel's typing guard.
-       */
       available: props.filesAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.files,
       onClick: props.onAddFiles,
     },
     {
       label: "Diff",
-      description: "Review changes in this thread.",
       icon: FileDiff,
       shortcut: "D",
       available: props.diffAvailable,
@@ -267,29 +254,33 @@ function RightPanelEmptyState(props: {
       onClick: props.onAddDiff,
     },
     {
-      label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
-      description: "View the current GitLab merge request.",
+      label: "Merge request",
       icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
-      available: props.onAddPullRequests !== undefined || props.pullRequestAvailable,
+      available: props.pullRequestAvailable,
       disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequest,
-      onClick: props.onAddPullRequests ?? props.onAddPullRequest,
+      onClick: props.onAddPullRequest,
+    },
+    {
+      label: "Linked merge requests",
+      icon: PullRequestGlyph.link,
+      shortcut: "L",
+      available: props.pullRequestsAvailable,
+      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,
+      onClick: props.onAddPullRequests,
     },
   ] as const;
 
   type SurfaceAction = (typeof actions)[number];
 
   const availableActions = actions.filter((action) => action.available);
-  /**
-   * List launcher shown when the right panel has no surfaces. Keyboard-first
-   * without palette chrome: a surface's letter opens it directly from anywhere
-   * outside a typing context, and arrows plus Enter work while the launcher is
-   * focused. The highlight only appears on hover or arrow use. Unavailable
-   * surfaces stay visible with a one-line reason.
-   */
   const highlightIndex =
     availableActions.length === 0 ? -1 : Math.min(highlight, availableActions.length - 1);
 
+  // Letter shortcuts work while the launcher is visible, not only while it
+  // is focused; focus moves around too easily (stray clicks) to carry them.
+  // Capture phase so app-level key handlers cannot swallow the event first;
+  // typing contexts and already-handled events are left alone.
   const shortcutActionsRef = useRef(availableActions);
   useEffect(() => {
     shortcutActionsRef.current = availableActions;
@@ -308,7 +299,6 @@ function RightPanelEmptyState(props: {
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, []);
-  // -1 means no highlight: it only appears on hover or arrow use.
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -328,7 +318,8 @@ function RightPanelEmptyState(props: {
       return;
     }
     if (event.key === "Enter") {
-      if (event.target instanceof HTMLElement && event.target.closest("button")) return;
+      // Only activate the highlight when the launcher itself has focus.
+      if (event.target !== event.currentTarget) return;
       const action = availableActions[highlightIndex];
       if (!action) return;
       event.preventDefault();
@@ -336,6 +327,8 @@ function RightPanelEmptyState(props: {
     }
   };
 
+  // Stable identity so React only runs this callback ref on mount/unmount;
+  // an inline arrow would re-attach and re-focus on every render.
   const focusOnMount = useCallback((node: HTMLDivElement | null) => {
     node?.focus();
   }, []);
@@ -343,11 +336,11 @@ function RightPanelEmptyState(props: {
   const isHighlighted = (action: SurfaceAction) =>
     highlightIndex !== -1 && availableActions[highlightIndex] === action;
 
-  const actionIcon = (action: SurfaceAction) => {
+  const actionIcon = (action: SurfaceAction, iconClassName = "size-4") => {
     const Icon = action.icon;
     return (
       <span className="relative inline-flex shrink-0">
-        <Icon className="size-4" />
+        <Icon className={iconClassName} />
       </span>
     );
   };
@@ -360,64 +353,92 @@ function RightPanelEmptyState(props: {
       aria-label="Open a surface"
       data-surface-launcher-keys={availableActions.map((action) => action.shortcut).join("")}
       className={cn(
-        "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 pt-6 outline-none",
-        "pb-[calc(var(--workspace-topbar-height)+--spacing(6))]",
+        "flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 outline-none",
+        // The panel topbar sits above this container; matching bottom padding
+        // keeps the list centered against the full panel, not the leftover.
+        "pb-(--workspace-topbar-height)",
       )}
     >
       <div className="w-full max-w-xs py-6">
         <h3 className="mb-3 text-center font-medium text-foreground text-sm">Open a surface</h3>
         <div className="flex flex-col gap-0.5">
-          {actions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              disabled={!action.available}
-              onClick={action.onClick}
-              onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
-              onMouseLeave={() => setHighlight(-1)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition-colors disabled:opacity-40",
-                action.available && "hover:bg-accent/60",
-                isHighlighted(action) && "bg-accent/60",
-              )}
-            >
-              {actionIcon(action)}
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium">{action.label}</span>
-                {!action.available ? (
-                  // Letter shortcuts work while the launcher is visible, not only while it
-                  // is focused; focus moves around too easily (stray clicks) to carry them.
-                  // Capture phase so app-level key handlers cannot swallow the event first;
-                  // typing contexts and already-handled events are left alone.
-                  <span className="block text-xs text-muted-foreground">
-                    {action.disabledReason}
-                  </span>
-                ) : null}
-              </span>
-              <Kbd>{action.shortcut}</Kbd>
-            </button>
-          ))}
+          {actions.map((action) =>
+            action.available ? (
+              <div
+                key={action.label}
+                className="group relative"
+                onMouseEnter={() => setHighlight(availableActions.indexOf(action))}
+                onMouseLeave={() =>
+                  setHighlight((current) =>
+                    current === availableActions.indexOf(action) ? -1 : current,
+                  )
+                }
+              >
+                <button
+                  type="button"
+                  onClick={action.onClick}
+                  className={cn(
+                    "flex h-8 w-full cursor-pointer items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm transition-colors group-hover:bg-accent/60",
+                    isHighlighted(action) && "bg-accent/60",
+                  )}
+                >
+                  {actionIcon(action, "size-4")}
+                  <span className="min-w-0 flex-1 truncate">{action.label}</span>
+                  <Kbd>{action.shortcut}</Kbd>
+                </button>
+              </div>
+            ) : (
+              <DisabledReasonTooltip
+                key={action.label}
+                reason={action.disabledReason}
+                trigger={
+                  <div
+                    tabIndex={0}
+                    aria-disabled="true"
+                    className="flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50"
+                  >
+                    {actionIcon(action, "size-4")}
+                    <span className="min-w-0 flex-1 truncate">{action.label}</span>
+                    <Kbd>{action.shortcut}</Kbd>
+                  </div>
+                }
+              />
+            ),
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function surfaceLabel(
+function surfaceTitle(
   surface: RightPanelSurface,
-  terminalLabels: ReadonlyMap<string, string>,
+  terminalLabelsById: ReadonlyMap<string, string>,
 ): string {
-  if (surface.kind === "diff") return "Diff";
-  if (surface.kind === "files") return "Files";
-  if (surface.kind === "file")
-    return surface.relativePath.split("/").at(-1) ?? surface.relativePath;
-  if (surface.kind === "pull-requests") return "Linked MRs";
-  if (surface.kind === "pull-request")
-    return "number" in surface ? `MR !${surface.number}` : "GitLab MR";
-  // Coder: preview and device surfaces are never opened.
-  if (surface.kind === "preview") return "Browser";
-  if (surface.kind === "device") return surface.title ?? "Device";
-  return terminalLabels.get(surface.activeTerminalId) ?? "Terminal";
+  switch (surface.kind) {
+    case "diff":
+      return "Diff";
+    case "files":
+      return "Files";
+    case "file":
+      return surface.relativePath.slice(
+        Math.max(surface.relativePath.lastIndexOf("/"), surface.relativePath.lastIndexOf("\\")) + 1,
+      );
+    case "terminal":
+      return (
+        terminalLabelsById.get(surface.activeTerminalId) ??
+        getTerminalLabel(surface.activeTerminalId)
+      );
+    case "pull-request":
+      return `!${surface.number}`;
+    case "pull-requests":
+      return "Merge requests";
+    // Coder: preview and device surfaces are never opened.
+    case "device":
+      return "Device";
+    case "preview":
+      return "Browser";
+  }
 }
 
 function SurfaceIcon({
@@ -426,37 +447,43 @@ function SurfaceIcon({
   environmentId,
   pullRequestStatusSeeds,
 }: {
-  readonly surface: RightPanelSurface;
-  readonly theme: "light" | "dark";
-  readonly environmentId: EnvironmentId | null;
-  readonly pullRequestStatusSeeds: Readonly<Record<string, PullRequestTabStatusSeed>> | undefined;
+  surface: RightPanelSurface;
+  theme: "light" | "dark";
+  environmentId: EnvironmentId | null;
+  pullRequestStatusSeeds: Readonly<Record<string, PullRequestTabStatusSeed>> | undefined;
 }) {
-  if (surface.kind === "diff") return <FileDiff className="size-3.5" />;
-  if (surface.kind === "files") return <Files className="size-3.5" />;
-  if (surface.kind === "file") {
-    return (
-      <PierreEntryIcon
-        pathValue={surface.relativePath}
-        // Stable identity so React only runs this callback ref on mount/unmount;
-        // an inline arrow would re-attach and re-focus on every render.
-        kind="file"
-        theme={theme}
-        className="size-3.5"
-      />
-    );
+  switch (surface.kind) {
+    case "diff":
+      return <FileDiff className="size-3 shrink-0" />;
+    case "files":
+      return <Files className="size-3 shrink-0" />;
+    case "file":
+      return (
+        <PierreEntryIcon
+          pathValue={surface.relativePath}
+          kind="file"
+          theme={theme}
+          className="size-3"
+        />
+      );
+    case "terminal":
+      return <TerminalSquare className="size-3 shrink-0" />;
+    case "pull-request":
+      return (
+        <PullRequestSurfaceIcon
+          surface={surface}
+          environmentId={environmentId}
+          seed={pullRequestStatusSeeds?.[surface.id]}
+        />
+      );
+    case "pull-requests":
+      return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    // Coder: preview and device surfaces are never opened.
+    case "preview":
+      return <Globe2 className="size-3 shrink-0" />;
+    case "device":
+      return <Smartphone className="size-3 shrink-0" />;
   }
-  if (surface.kind === "pull-request") {
-    return (
-      <PullRequestSurfaceIcon
-        surface={surface}
-        environmentId={environmentId}
-        seed={pullRequestStatusSeeds?.[surface.id]}
-      />
-    );
-  }
-  if (surface.kind === "pull-requests")
-    return <PullRequestGlyph.pullRequest className="size-3.5" />;
-  return <TerminalSquare className="size-3.5" />;
 }
 
 export function resolvePullRequestTabLink(
@@ -548,99 +575,56 @@ function PullRequestSurfaceIcon({
   // detail data arrives.
   const status = linkedSnapshot ?? newestPullRequestSummary(detail, sharedSummary) ?? seed ?? null;
   if (status === null) {
-    return <PullRequestGlyph.pullRequest className="size-3.5 shrink-0 text-muted-foreground" />;
+    return <PullRequestGlyph.pullRequest className="size-3 shrink-0 text-muted-foreground" />;
   }
   const presentation = resolvePullRequestState({
     state: status.state,
     isDraft: status.isDraft ?? detail?.isDraft ?? seed?.isDraft ?? false,
   });
-  return <presentation.Icon className={cn("size-3.5 shrink-0", presentation.toneClassName)} />;
+  return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const { resolvedTheme } = useTheme();
-  const resizable = props.mode === "inline" && !props.maximized;
-  const hostRef = useRef<HTMLElement | null>(null);
-  const tabsRef = useRef<HTMLDivElement | null>(null);
+  const tabListRef = useRef<HTMLDivElement>(null);
   const [addSurfaceMenuOpen, setAddSurfaceMenuOpen] = useState(false);
   const [tabScrollState, setTabScrollState] = useState({
     hasOverflow: false,
     canScrollLeft: false,
     canScrollRight: false,
   });
+
   const updateTabScrollState = useCallback(() => {
-    const viewport = tabsRef.current;
+    const viewport = tabScrollViewport(tabListRef.current);
     if (!viewport) return;
+
     const hasOverflow = viewport.scrollWidth - viewport.clientWidth > TAB_SCROLL_EDGE_TOLERANCE;
     const canScrollLeft = hasOverflow && viewport.scrollLeft > TAB_SCROLL_EDGE_TOLERANCE;
     const canScrollRight =
       hasOverflow &&
       viewport.scrollLeft + viewport.clientWidth < viewport.scrollWidth - TAB_SCROLL_EDGE_TOLERANCE;
-    setTabScrollState((current) =>
-      current.hasOverflow === hasOverflow &&
-      current.canScrollLeft === canScrollLeft &&
-      current.canScrollRight === canScrollRight
-        ? current
-        : { hasOverflow, canScrollLeft, canScrollRight },
-    );
+    setTabScrollState((current) => {
+      if (
+        current.hasOverflow === hasOverflow &&
+        current.canScrollLeft === canScrollLeft &&
+        current.canScrollRight === canScrollRight
+      ) {
+        return current;
+      }
+      return { hasOverflow, canScrollLeft, canScrollRight };
+    });
   }, []);
+
   const scrollTabs = useCallback((direction: -1 | 1) => {
-    const viewport = tabsRef.current;
+    const viewport = tabScrollViewport(tabListRef.current);
     if (!viewport) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     viewport.scrollBy({
       left: direction * Math.max(120, viewport.clientWidth * 0.75),
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      behavior: reduceMotion ? "auto" : "smooth",
     });
   }, []);
-  const { defaultWidth, maxWidth } = useClampedRightPanelWidths(hostRef, resizable);
-  const { width, handlers } = useResizableWidth({
-    storageKey: props.widthStorageKey ?? RIGHT_PANEL_WIDTH_STORAGE_KEY,
-    defaultWidth: props.defaultWidth ?? defaultWidth,
-    minWidth: RIGHT_PANEL_MIN_WIDTH,
-    maxWidth,
-    edge: "left",
-  });
-
-  const open = props.open ?? true;
-  const maximized = props.maximized ?? false;
-  const collapsible = props.mode === "inline" && props.open !== undefined;
-  // Derive suppression before the layout commits so the browser never creates
-  // a width transition for resize or maximize changes.
-  const [layoutTransition, setLayoutTransition] = useState(() => ({
-    open,
-    width,
-    maximized,
-    suppressed: false,
-  }));
-  if (
-    layoutTransition.open !== open ||
-    layoutTransition.width !== width ||
-    layoutTransition.maximized !== maximized
-  ) {
-    setLayoutTransition({
-      open,
-      width,
-      maximized,
-      suppressed:
-        collapsible &&
-        layoutTransition.open === open &&
-        (layoutTransition.width !== width || layoutTransition.maximized !== maximized),
-    });
-  }
-  const suppressWidthTransition = layoutTransition.suppressed;
-  useLayoutEffect(() => {
-    if (!suppressWidthTransition) return;
-    let restoreFrame = 0;
-    const paintFrame = window.requestAnimationFrame(() => {
-      restoreFrame = window.requestAnimationFrame(() => {
-        setLayoutTransition((current) => ({ ...current, suppressed: false }));
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(paintFrame);
-      window.cancelAnimationFrame(restoreFrame);
-    };
-  }, [suppressWidthTransition]);
 
   const addSurfaceActions = [
     {
@@ -668,12 +652,20 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       onClick: props.onAddDiff,
     },
     {
-      label: props.onAddPullRequests ? "Linked MRs" : "GitLab MR",
+      label: "Merge request",
       icon: PullRequestGlyph.pullRequest,
       shortcut: "P",
-      available: props.onAddPullRequests !== undefined || props.pullRequestAvailable,
+      available: props.pullRequestAvailable,
       disabledReason: SURFACE_DISABLED_REASONS.pullRequest,
-      onClick: props.onAddPullRequests ?? props.onAddPullRequest,
+      onClick: props.onAddPullRequest,
+    },
+    {
+      label: "Linked merge requests",
+      icon: PullRequestGlyph.link,
+      shortcut: "L",
+      available: props.pullRequestsAvailable,
+      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,
+      onClick: props.onAddPullRequests,
     },
   ] as const;
 
@@ -688,19 +680,44 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   const handleTabContextMenu = useCallback(
     async (event: ReactMouseEvent, surface: RightPanelSurface) => {
+      event.preventDefault();
+      event.stopPropagation();
+
       const api = readLocalApi();
       if (!api) return;
 
-      const items = rightPanelTabContextMenuItems(props.surfaces, surface);
-      if (items.length === 0) return;
+      const surfaceIndex = props.surfaces.findIndex((entry) => entry.id === surface.id);
+      if (surfaceIndex < 0) return;
 
-      event.preventDefault();
-      event.stopPropagation();
+      const items: ContextMenuItem<TabContextMenuAction>[] = [];
+      if (surface.kind === "file" && surface.attachment === undefined) {
+        items.push({ id: "copy-path", label: "Copy path" });
+      }
+      items.push(
+        { id: "close", label: "Close" },
+        {
+          id: "close-others",
+          label: "Close others",
+          disabled: props.surfaces.length <= 1,
+        },
+        {
+          id: "close-to-right",
+          label: "Close to the right",
+          disabled: surfaceIndex >= props.surfaces.length - 1,
+        },
+        {
+          id: "close-all",
+          label: "Close all",
+          disabled: props.surfaces.length === 0,
+        },
+      );
 
       const action = await api.contextMenu.show(items, { x: event.clientX, y: event.clientY });
       switch (action) {
         case "copy-path":
-          if (surface.kind === "file") props.onCopyFilePath(surface.relativePath);
+          if (surface.kind === "file" && surface.attachment === undefined) {
+            props.onCopyFilePath(surface.relativePath);
+          }
           break;
         case "close":
           props.onCloseSurface(surface);
@@ -736,20 +753,21 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   useEffect(() => {
     if (!props.activeSurfaceId || !tabScrollState.hasOverflow) return;
-    const active = tabsRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
-    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    const activeTab = tabListRef.current?.querySelector<HTMLElement>("[data-active-tab='true']");
+    activeTab?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [props.activeSurfaceId, tabScrollState.hasOverflow]);
 
-  useLayoutEffect(() => {
-    updateTabScrollState();
-  }, [props.surfaces, props.terminalLabelsById, updateTabScrollState]);
-
   useEffect(() => {
-    const viewport = tabsRef.current;
+    const viewport = tabScrollViewport(tabListRef.current);
     if (!viewport) return;
+
+    const content = viewport.firstElementChild;
     const resizeObserver = new ResizeObserver(updateTabScrollState);
     resizeObserver.observe(viewport);
+    if (content) resizeObserver.observe(content);
     viewport.addEventListener("scroll", updateTabScrollState, { passive: true });
+    updateTabScrollState();
+
     return () => {
       resizeObserver.disconnect();
       viewport.removeEventListener("scroll", updateTabScrollState);
@@ -757,166 +775,154 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
   }, [updateTabScrollState]);
 
   useEffect(() => {
-    const viewport = tabsRef.current;
+    const viewport = tabScrollViewport(tabListRef.current);
     if (!viewport) return;
+
     const handleWheel = (event: WheelEvent) => {
       if (event.ctrlKey) return;
       let delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
       if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) delta *= 16;
       if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) delta *= viewport.clientWidth;
       if (delta === 0) return;
+
       const previousScrollLeft = viewport.scrollLeft;
       viewport.scrollLeft += delta;
       if (viewport.scrollLeft === previousScrollLeft) return;
       event.preventDefault();
       updateTabScrollState();
     };
+
     viewport.addEventListener("wheel", handleWheel, { passive: false });
     return () => viewport.removeEventListener("wheel", handleWheel);
   }, [updateTabScrollState]);
 
   return (
-    <section
-      ref={hostRef}
-      className={cn(
-        "relative flex h-full min-h-0 min-w-0 max-w-full flex-col border-l border-border bg-background",
-        props.mode === "inline" && (props.maximized ? "w-full" : "shrink-0"),
-        props.mode === "sheet" && "w-full",
-        collapsible &&
-          "overflow-clip [[data-panel-animations=true]_&]:transition-[width] [[data-panel-animations=true]_&]:[transition-duration:var(--panel-animation-duration)] [[data-panel-animations=true]_&]:ease-out",
-        collapsible && open && "[[data-panel-animations=true]_&]:starting:w-0!",
-        collapsible && !open && "pointer-events-none border-l-0",
-      )}
-      style={
-        props.mode === "inline"
-          ? {
-              width: !open ? "0px" : maximized ? "100%" : `${width}px`,
-              transitionDuration: suppressWidthTransition ? "0ms" : undefined,
-            }
-          : undefined
-      }
-      inert={!open || undefined}
+    <PreviewPanelShell
+      mode={props.mode}
+      {...(props.maximized !== undefined ? { maximized: props.maximized } : {})}
+      {...(props.open !== undefined ? { open: props.open } : {})}
+      {...(props.widthStorageKey !== undefined ? { widthStorageKey: props.widthStorageKey } : {})}
+      {...(props.defaultWidth !== undefined ? { defaultWidth: props.defaultWidth } : {})}
+      {...(props.inlineSize ? { inlineSize: props.inlineSize } : {})}
     >
-      {resizable ? (
-        <div
-          role="separator"
-          aria-label="Resize right panel"
-          aria-orientation="vertical"
-          aria-valuemin={RIGHT_PANEL_MIN_WIDTH}
-          aria-valuemax={maxWidth}
-          aria-valuenow={width}
-          title="Drag to resize right panel"
-          className="group absolute inset-y-0 -left-1 z-40 w-2 cursor-col-resize touch-none select-none"
-          {...handlers}
-        >
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors duration-150 group-hover:bg-border group-active:bg-primary/60"
-          />
-        </div>
-      ) : null}
-      <header
+      <div
         className={cn(
-          "flex h-11 shrink-0 items-center gap-1 border-b border-border pl-2",
-          props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-2",
+          "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center gap-1 pl-2",
+          // The sheet overlays from the viewport top, so its tab bar keeps
+          // the titlebar's height: a compact row re-centers the layout
+          // controls a few pixels higher and the cluster jumps on open.
+          props.mode === "inline" && !props.layoutControls ? "pr-28" : "pr-3",
+          ownsDesktopTitleBar && "drag-region",
+          ownsDesktopTitleBar && "wco:pr-(--workspace-native-controls-inset)",
+          props.mode === "inline" && props.maximized && COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
         )}
+        data-right-panel-tabbar
       >
-        <div ref={tabsRef} className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {props.surfaces.map((surface) => {
-            const active = surface.id === props.activeSurfaceId;
-            const pending = props.pendingSurfaceIds.has(surface.id);
-            const title = surfaceLabel(surface, props.terminalLabelsById);
-            return (
-              <div
-                key={surface.id}
-                data-active-tab={active}
-                onMouseDown={handleTabMouseDown}
-                onAuxClick={(event) => handleTabAuxClick(event, surface)}
-                onContextMenu={(event) => void handleTabContextMenu(event, surface)}
-                className={cn(
-                  "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
-                  active
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                )}
-              >
-                <PanelTabCloseButton
-                  label={`Close ${title}`}
-                  onClick={() => props.onCloseSurface(surface)}
+        <ScrollArea
+          radius="none"
+          ref={tabListRef}
+          hideScrollbars
+          scrollFade
+          className="min-w-0 flex-1"
+          data-right-panel-tab-list
+        >
+          <div className="flex h-full w-max min-w-full items-center gap-1">
+            {props.surfaces.map((surface) => {
+              const active = surface.id === props.activeSurfaceId;
+              const pending = props.pendingSurfaceIds.has(surface.id);
+              const title = surfaceTitle(surface, props.terminalLabelsById);
+              return (
+                <div
+                  key={surface.id}
+                  data-active-tab={active}
+                  onMouseDown={handleTabMouseDown}
+                  onAuxClick={(event) => handleTabAuxClick(event, surface)}
+                  onContextMenu={(event) => void handleTabContextMenu(event, surface)}
+                  className={cn(
+                    "cursor-pointer group/tab flex h-6 max-w-36 shrink-0 items-center gap-0.5 rounded-md pr-2 pl-1.5 text-xs",
+                    ownsDesktopTitleBar && "[-webkit-app-region:no-drag]",
+                    active
+                      ? "bg-accent text-foreground"
+                      : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                  )}
                 >
-                  <SurfaceIcon
-                    surface={surface}
-                    theme={resolvedTheme}
-                    environmentId={props.environmentId ?? null}
-                    pullRequestStatusSeeds={props.pullRequestStatusSeeds}
-                  />
-                  {pending ? (
-                    <span
-                      className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
-                      aria-hidden
+                  <PanelTabCloseButton
+                    label={`Close ${title}`}
+                    onClick={() => props.onCloseSurface(surface)}
+                  >
+                    <SurfaceIcon
+                      surface={surface}
+                      theme={resolvedTheme}
+                      environmentId={props.environmentId}
+                      pullRequestStatusSeeds={props.pullRequestStatusSeeds}
                     />
-                  ) : null}
-                </PanelTabCloseButton>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <button
-                        type="button"
-                        className="cursor-pointer flex min-w-0 items-center"
-                        onClick={() => props.onActivate(surface)}
+                    {pending ? (
+                      <span
+                        className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full bg-current"
+                        aria-hidden
+                      />
+                    ) : null}
+                  </PanelTabCloseButton>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <button
+                          type="button"
+                          className="cursor-pointer flex min-w-0 items-center"
+                          onClick={() => props.onActivate(surface)}
+                        >
+                          <span className="truncate">{title}</span>
+                        </button>
+                      }
+                    />
+                    <TooltipPopup>{title}</TooltipPopup>
+                  </Tooltip>
+                </div>
+              );
+            })}
+            {props.surfaces.length > 0 ? (
+              <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
+                <MenuTrigger
+                  render={
+                    <Button
+                      aria-label="Add panel surface"
+                      className="shrink-0"
+                      size="icon-xs"
+                      variant="ghost-muted"
+                    />
+                  }
+                >
+                  <Plus className="size-3.5" />
+                </MenuTrigger>
+                <MenuPopup
+                  align="start"
+                  side="bottom"
+                  sideOffset={6}
+                  onKeyDownCapture={handleAddSurfaceMenuKeyDown}
+                >
+                  {addSurfaceActions.map((action) => {
+                    const Icon = action.icon;
+                    return (
+                      <SurfaceMenuItem
+                        key={action.label}
+                        available={action.available}
+                        disabledReason={action.disabledReason}
+                        shortcut={action.shortcut}
+                        onClick={action.onClick}
                       >
-                        <span className="truncate">{title}</span>
-                      </button>
-                    }
-                  />
-                  <TooltipPopup>{title}</TooltipPopup>
-                </Tooltip>
-              </div>
-            );
-          })}
-          {props.surfaces.length > 0 ? (
-            <Menu open={addSurfaceMenuOpen} onOpenChange={setAddSurfaceMenuOpen}>
-              <MenuTrigger
-                render={
-                  <Button
-                    aria-label="Add panel surface"
-                    className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
-                    size="icon-xs"
-                    variant="ghost"
-                  />
-                }
-              >
-                <Plus className="size-3.5" />
-              </MenuTrigger>
-              <MenuPopup
-                align="start"
-                side="bottom"
-                sideOffset={6}
-                className="min-w-44"
-                onKeyDownCapture={handleAddSurfaceMenuKeyDown}
-              >
-                {addSurfaceActions.map((action) => {
-                  const Icon = action.icon;
-                  return (
-                    <SurfaceMenuItem
-                      key={action.label}
-                      available={action.available}
-                      disabledReason={action.disabledReason}
-                      shortcut={action.shortcut}
-                      onClick={action.onClick}
-                    >
-                      <Icon />
-                      {action.label}
-                    </SurfaceMenuItem>
-                  );
-                })}
-              </MenuPopup>
-            </Menu>
-          ) : null}
-        </div>
+                        <Icon />
+                        {action.label}
+                      </SurfaceMenuItem>
+                    );
+                  })}
+                </MenuPopup>
+              </Menu>
+            ) : null}
+          </div>
+        </ScrollArea>
         {tabScrollState.hasOverflow ? (
           <div
-            className="flex shrink-0 items-center gap-0.5"
+            className="flex shrink-0 items-center gap-0.5 [-webkit-app-region:no-drag]"
             role="group"
             aria-label="Scroll panel tabs"
           >
@@ -959,73 +965,35 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
           </div>
         ) : null}
         {props.layoutControls}
-      </header>
-
-      {props.activeSurfaceId === null ? (
-        <RightPanelEmptyState
-          onAddTerminal={props.onAddTerminal}
-          onAddDiff={props.onAddDiff}
-          onAddFiles={props.onAddFiles}
-          onAddPullRequests={props.onAddPullRequests}
-          onAddPullRequest={props.onAddPullRequest}
-          terminalAvailable={props.terminalAvailable}
-          diffAvailable={props.diffAvailable}
-          filesAvailable={props.filesAvailable}
-          pullRequestAvailable={props.pullRequestAvailable}
-        />
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{props.children}</div>
-      )}
-    </section>
+        {ownsDesktopTitleBar && !props.layoutControls ? (
+          // Keeps the tabs clear of the window controls when the layout toggles live elsewhere.
+          <span aria-hidden className="hidden w-24 shrink-0 wco:block" />
+        ) : null}
+        {ownsDesktopTitleBar ? (
+          <span
+            aria-hidden
+            className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"
+          />
+        ) : null}
+      </div>
+      <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>
+        {props.activeSurfaceId === null ? (
+          <RightPanelEmptyState
+            onAddTerminal={props.onAddTerminal}
+            onAddDiff={props.onAddDiff}
+            onAddFiles={props.onAddFiles}
+            onAddPullRequest={props.onAddPullRequest}
+            onAddPullRequests={props.onAddPullRequests}
+            terminalAvailable={props.terminalAvailable}
+            diffAvailable={props.diffAvailable}
+            filesAvailable={props.filesAvailable}
+            pullRequestAvailable={props.pullRequestAvailable}
+            pullRequestsAvailable={props.pullRequestsAvailable}
+          />
+        ) : (
+          props.children
+        )}
+      </div>
+    </PreviewPanelShell>
   );
-}
-
-function useViewportWidth(): number {
-  const [viewportWidth, setViewportWidth] = useState(() =>
-    typeof window === "undefined" ? 1280 : window.innerWidth,
-  );
-
-  useEffect(() => {
-    let frame = 0;
-    const onResize = () => {
-      if (frame !== 0) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        setViewportWidth(window.innerWidth);
-      });
-    };
-
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      if (frame !== 0) window.cancelAnimationFrame(frame);
-    };
-  }, []);
-
-  return viewportWidth;
-}
-
-function useClampedRightPanelWidths(
-  hostRef: RefObject<HTMLElement | null>,
-  enabled: boolean,
-): ReturnType<typeof resolveRightPanelWidths> {
-  const viewportWidth = useViewportWidth();
-  const [containerWidth, setContainerWidth] = useState<number | undefined>(undefined);
-
-  useLayoutEffect(() => {
-    if (!enabled) return;
-    const parent = hostRef.current?.parentElement;
-    if (!parent) return;
-
-    const measure = () => {
-      setContainerWidth(parent.clientWidth);
-    };
-    measure();
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(parent);
-    return () => observer.disconnect();
-  }, [enabled, hostRef]);
-
-  return resolveRightPanelWidths(viewportWidth, containerWidth);
 }

@@ -1,4 +1,5 @@
 import { useEnvironmentThemeSync } from "../hooks/useEnvironmentTheme";
+import { ProviderUpdateLaunchNotification } from "../components/ProviderUpdateLaunchNotification";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import type {
   EnvironmentId,
@@ -114,6 +115,7 @@ function RootRouteView() {
         <ProjectCloneToastCoordinator />
         <SlowRpcRequestToastCoordinator />
         <LegacyThreadMigrationToast />
+        <ProviderUpdateLaunchNotification />
         <ThreadNotificationCoordinator />
         <EventRouter />
         {appShell}

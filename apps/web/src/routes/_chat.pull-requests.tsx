@@ -120,6 +120,7 @@ import {
 import { WorkspacePageContainer } from "../components/WorkspacePageContainer";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
+import { isElectron } from "../env";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { PanelLayoutControls } from "../components/chat/PanelLayoutControls";
@@ -165,8 +166,8 @@ function getShortcutContext() {
     previewFocus: false,
     previewOpen: false,
     modelPickerOpen: false,
-    isWeb: true,
-    isDesktop: false,
+    isWeb: !isElectron,
+    isDesktop: isElectron,
   };
 }
 
@@ -262,8 +263,6 @@ const MAX_PAGE_SIZE = 500;
 const EMPTY_VIEWERS: PullRequestListResult["viewers"] = {};
 /** Stable so a read that is not wanted right now does not re-key on every render. */
 const NO_LIST_TARGETS: ReadonlyArray<EnvironmentQueryTarget<PullRequestListInput>> = [];
-const EMPTY_PREVIEW_SESSIONS = {};
-const EMPTY_PREVIEW_DESKTOP_STATE = {};
 const EMPTY_TERMINAL_LABELS = new Map<string, string>();
 const EMPTY_PENDING_SURFACES = new Set<string>();
 const MAX_SEARCH_LABEL_CANDIDATES = 100;
@@ -1821,7 +1820,7 @@ function PullRequestsRouteView() {
       )}
 
       {listQuery.error && shownCount > 0 ? (
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-warning/30 bg-warning-surface px-3 py-2 text-xs">
           <span>{listQuery.error} Showing the last merge requests loaded.</span>
           <Button size="xs" variant="outline" onClick={() => listQuery.refresh()}>
             Retry
@@ -1983,6 +1982,7 @@ function PullRequestsRouteView() {
           openPanelControls
         )
       ) : null,
+    rightPanelOpen: rightPanelState.isOpen,
     listBody,
     scrollRef,
   };
@@ -2088,8 +2088,6 @@ function PullRequestsRouteView() {
             environmentId={panelEnvironmentId}
             activeSurfaceId={renderedPullRequestSurface.id}
             pendingSurfaceIds={EMPTY_PENDING_SURFACES}
-            previewSessions={EMPTY_PREVIEW_SESSIONS}
-            desktopByTabId={EMPTY_PREVIEW_DESKTOP_STATE}
             terminalLabelsById={EMPTY_TERMINAL_LABELS}
             onActivate={(surface) => {
               if (surface.kind === "pull-request") activateSurface(surface);
@@ -2105,17 +2103,16 @@ function PullRequestsRouteView() {
             }}
             onCloseAllSurfaces={closeAllSurfaces}
             onCopyFilePath={() => undefined}
-            onAddBrowser={() => undefined}
             onAddTerminal={() => undefined}
             onAddDiff={() => undefined}
             onAddFiles={() => undefined}
             onAddPullRequest={() => undefined}
             onAddPullRequests={() => undefined}
-            browserAvailable={false}
             terminalAvailable={false}
             diffAvailable={false}
             filesAvailable={false}
             pullRequestAvailable={false}
+            pullRequestsAvailable={false}
             pullRequestStatusSeeds={listedPullRequestTabStatuses}
           >
             <PullRequestDetailPanel
@@ -2372,6 +2369,7 @@ function PullRequestsColumn({
   filtersMenu,
   rightPanelControl,
   titlebarControls,
+  rightPanelOpen,
   listBody,
   scrollRef,
 }: {
@@ -2390,6 +2388,7 @@ function PullRequestsColumn({
   filtersMenu: ReactNode;
   rightPanelControl: ReactNode;
   titlebarControls: ReactNode;
+  rightPanelOpen: boolean;
   listBody: ReactNode;
   scrollRef: RefObject<HTMLDivElement | null>;
 }) {
@@ -2459,7 +2458,11 @@ function PullRequestsColumn({
           matter its z-index. While the panel is open, the strip mounts back at
           the route level, whose box spans the panel too, so the toggle keeps one
           fixed top-right anchor. */}
-      <WorkspacePageHeader className="relative bg-background">
+      <WorkspacePageHeader
+        electron={isElectron}
+        reserveNativeControls={!rightPanelOpen}
+        className="relative bg-background"
+      >
         {titlebarControls}
         {condensed ? (
           <WorkspaceBreadcrumb ariaLabel="Merge request scope" className="overflow-hidden">

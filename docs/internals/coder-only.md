@@ -700,15 +700,16 @@ listed here is drift to remove rather than fork behavior to keep.
   upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
   project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
   no preview URL; and, as upstream's browser build, action keybindings are saved only on desktop.
-- **Right panel and composer chrome.** `RightPanelTabs.tsx` is a Coder rewrite of upstream's tab
-  strip without browser, device, and preview tabs, their favicons, audio controls, and
-  `PreviewPanelShell`; it keeps upstream's launcher, shortcuts, tab menus, and merge-request
-  status icons. The branch toolbar is upstream's; workspace options are never primary and use
+- **Right panel and composer chrome.** `RightPanelTabs.tsx` is upstream's tab strip and
+  `PreviewPanelShell` layout without browser, device, and preview surfaces: no launcher rows,
+  favicons, browser profiles, audio controls, or device rename. Never-opened preview and device
+  surfaces in the store get a plain title and icon. Merge-request rows, tabs, and disabled reasons
+  use GitLab wording and `!` references. The branch toolbar is upstream's; workspace options are never primary and use
   the server's machine kind, and the branch notice also covers a managed worktree whose branch
   moved (`resolveCheckoutBranchMismatch`). Proposed-plan cards offer Copy but no Download or Save
-  to workspace (no exports, and Files edits only existing files). The root route has no
-  provider-update launch notification (updates stay in the sidebar action) and no default-theme
-  adoption, which follows upstream's `t3 theme set` CLI.
+  to workspace (no exports, and Files edits only existing files). The provider-update launch notification uses the active workspace as upstream's primary
+  environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
+  upstream's `t3 theme set` CLI.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), sidebar file drops, and the favicon store.

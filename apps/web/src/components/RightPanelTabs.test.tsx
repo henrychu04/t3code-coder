@@ -1,10 +1,11 @@
+import { EnvironmentId, type ThreadPullRequestLink } from "@t3tools/contracts";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
-import { pullRequestSurface, type RightPanelSurface } from "../rightPanelStore";
+import { pullRequestSurface } from "../rightPanelStore";
 import {
   RightPanelTabs,
-  rightPanelTabContextMenuItems,
+  resolvePullRequestTabLink,
   surfaceShortcutActionForKey,
   surfaceShortcutTargetsTypingContext,
 } from "./RightPanelTabs";
@@ -24,109 +25,15 @@ function shortcutEvent(
   };
 }
 
-const sharedProps = {
-  surfaces: [],
-  activeSurfaceId: null,
-  pendingSurfaceIds: new Set<string>(),
-  terminalLabelsById: new Map<string, string>(),
-  onActivate: () => {},
-  onCloseSurface: () => {},
-  onCloseOtherSurfaces: () => {},
-  onCloseSurfacesToRight: () => {},
-  onCloseAllSurfaces: () => {},
-  onCopyFilePath: () => {},
-  onAddTerminal: () => {},
-  onAddDiff: () => {},
-  onAddFiles: () => {},
-  onAddPullRequest: () => {},
-  terminalAvailable: true,
-  diffAvailable: true,
-  filesAvailable: true,
-  pullRequestAvailable: true,
-  children: null,
-} as const;
-
-describe("RightPanelTabs", () => {
-  it("renders a resize handle for the inline panel", () => {
-    const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
-
-    expect(markup).toContain('aria-label="Resize right panel"');
-    expect(markup).toContain('style="width:614px"');
-    expect(markup).toContain("max-w-full");
-    expect(markup).toContain("pr-28");
-  });
-
-  it("reserves inline titlebar controls only when they are overlaid", () => {
-    const sheetMarkup = renderToStaticMarkup(
-      <RightPanelTabs {...sharedProps} mode="sheet" layoutControls={<span>Controls</span>} />,
-    );
-
-    expect(sheetMarkup).toContain("pr-2");
-    expect(sheetMarkup).not.toContain("pr-28");
-  });
-
-  it("does not render a resize handle when maximized or in a sheet", () => {
-    const maximizedMarkup = renderToStaticMarkup(
-      <RightPanelTabs {...sharedProps} mode="inline" maximized />,
-    );
-    const sheetMarkup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="sheet" />);
-
-    expect(maximizedMarkup).not.toContain('aria-label="Resize right panel"');
-    expect(sheetMarkup).not.toContain('aria-label="Resize right panel"');
-  });
-
-  it("explains why Files is disabled before a thread starts", () => {
-    const markup = renderToStaticMarkup(
-      <RightPanelTabs {...sharedProps} filesAvailable={false} mode="inline" />,
-    );
-
-    expect(markup).toContain("Available when a project is open.");
-  });
-
-  it("uses tab close controls without a redundant pane-level close-all button", () => {
-    const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
-
-    expect(markup).not.toContain('aria-label="Close all panel tabs"');
-  });
-
-  it("renders the compact launcher and its retained shortcuts", () => {
-    const markup = renderToStaticMarkup(<RightPanelTabs {...sharedProps} mode="inline" />);
-
-    expect(markup).toContain('data-surface-launcher-keys="TFDP"');
-    expect(markup).toContain("flex flex-col gap-0.5");
-    expect(markup.match(/disabled:opacity-40/g)).toHaveLength(4);
-  });
-
-  it("colors a merge-request tab from its list seed", () => {
-    const surface = pullRequestSurface({
-      projectId: "project-1",
-      repository: "group/project",
-      number: 42,
-    });
-    const markup = renderToStaticMarkup(
-      <RightPanelTabs
-        {...sharedProps}
-        mode="inline"
-        surfaces={[surface]}
-        activeSurfaceId={surface.id}
-        environmentId={null}
-        pullRequestStatusSeeds={{ [surface.id]: { state: "merged", isDraft: false } }}
-      />,
-    );
-
-    expect(markup).toContain("text-violet-600");
-  });
-});
-
 describe("surface shortcuts", () => {
   const actions = [
-    { shortcut: "T", available: true, label: "Terminal" },
+    { shortcut: "B", available: true, label: "Browser" },
     { shortcut: "D", available: false, label: "Diff" },
   ] as const;
 
   it("matches available surface shortcuts case-insensitively", () => {
-    expect(surfaceShortcutActionForKey(actions, shortcutEvent("t"))).toBe(actions[0]);
-    expect(surfaceShortcutActionForKey(actions, shortcutEvent("T"))).toBe(actions[0]);
+    expect(surfaceShortcutActionForKey(actions, shortcutEvent("b"))).toBe(actions[0]);
+    expect(surfaceShortcutActionForKey(actions, shortcutEvent("B"))).toBe(actions[0]);
   });
 
   it("does not activate unavailable surfaces", () => {
@@ -134,17 +41,19 @@ describe("surface shortcuts", () => {
   });
 
   it("leaves modified, composing, and already-handled key events alone", () => {
-    expect(surfaceShortcutActionForKey(actions, shortcutEvent("t", { metaKey: true }))).toBeNull();
+    expect(surfaceShortcutActionForKey(actions, shortcutEvent("b", { metaKey: true }))).toBeNull();
     expect(
-      surfaceShortcutActionForKey(actions, shortcutEvent("t", { isComposing: true })),
+      surfaceShortcutActionForKey(actions, shortcutEvent("b", { isComposing: true })),
     ).toBeNull();
     expect(
-      surfaceShortcutActionForKey(actions, shortcutEvent("t", { defaultPrevented: true })),
+      surfaceShortcutActionForKey(actions, shortcutEvent("b", { defaultPrevented: true })),
     ).toBeNull();
   });
 });
 
 describe("surface shortcut typing contexts", () => {
+  // Selector-aware stub: closest() answers only tokens the combined selector
+  // would actually match, mirroring how the browser resolves it.
   const makeTarget = (matches: string | null) => ({
     closest(selectors: string) {
       if (matches === null || !selectors.includes(matches)) return null;
@@ -156,6 +65,10 @@ describe("surface shortcut typing contexts", () => {
     expect(surfaceShortcutTargetsTypingContext(makeTarget("input"))).toBe(true);
     expect(surfaceShortcutTargetsTypingContext(makeTarget("textarea"))).toBe(true);
     expect(surfaceShortcutTargetsTypingContext(makeTarget("select"))).toBe(true);
+    // The chat composer is a contenteditable that sits empty until a draft
+    // exists; launcher letters claimed from it redirected prompts into shells.
+    // The :not clause sees past contenteditable="false" islands to an editable
+    // host around them, so nested editors stay protected too.
     expect(surfaceShortcutTargetsTypingContext(makeTarget("[contenteditable]"))).toBe(true);
   });
 
@@ -165,71 +78,110 @@ describe("surface shortcut typing contexts", () => {
   });
 });
 
-describe("right-panel tab context menu", () => {
-  const fileSurface: RightPanelSurface = {
-    id: "file:src/App.tsx",
-    kind: "file",
-    relativePath: "src/App.tsx",
-    revealLine: null,
-    revealRequestId: 0,
+describe("pull request tab snapshots", () => {
+  const environmentId = EnvironmentId.make("local");
+  const link: ThreadPullRequestLink = {
+    host: "github.com",
+    repository: "acme/api",
+    number: 7,
+    url: "https://github.com/acme/api/pull/7",
+    source: "manual",
+    linkedAt: "2026-01-01T00:00:00Z",
+    stack: null,
+    snapshot: null,
   };
-  const surfaces: RightPanelSurface[] = [
-    { id: "files", kind: "files" },
-    fileSurface,
-    { id: "diff", kind: "diff" },
-  ];
-
-  it("matches upstream file-tab actions and disabled states", () => {
-    expect(rightPanelTabContextMenuItems(surfaces, fileSurface)).toEqual([
-      { id: "copy-path", label: "Copy path" },
-      { id: "close", label: "Close" },
-      { id: "close-others", label: "Close others", disabled: false },
-      { id: "close-to-right", label: "Close to the right", disabled: false },
-      { id: "close-all", label: "Close all", disabled: false },
-    ]);
-  });
-
-  it("omits Copy path for non-file tabs and disables closing to the right at the end", () => {
-    expect(rightPanelTabContextMenuItems(surfaces, surfaces[2]!)).toEqual([
-      { id: "close", label: "Close" },
-      { id: "close-others", label: "Close others", disabled: false },
-      { id: "close-to-right", label: "Close to the right", disabled: true },
-      { id: "close-all", label: "Close all", disabled: false },
-    ]);
-  });
-
-  it("returns no actions for a stale surface", () => {
+  it("keeps unknown linked state authoritative and scopes matches to environment and host", () => {
+    const threads = [{ environmentId, pullRequests: [link] }];
+    expect(resolvePullRequestTabLink(threads, environmentId, "github.com", link)).toBe(link);
     expect(
-      rightPanelTabContextMenuItems(surfaces.slice(0, 2), { id: "diff", kind: "diff" }),
-    ).toEqual([]);
+      resolvePullRequestTabLink(threads, EnvironmentId.make("remote"), "github.com", link),
+    ).toBeUndefined();
+    expect(
+      resolvePullRequestTabLink(threads, environmentId, "github.enterprise.test", link),
+    ).toBeUndefined();
+  });
+  it("uses the newest snapshot when several threads link the same PR", () => {
+    const snapshot = {
+      state: "merged" as const,
+      title: "API",
+      headBranch: "api",
+      baseBranch: "main",
+      isDraft: false,
+      updatedAt: null,
+      syncedAt: "2026-02-01T00:00:00Z",
+    };
+    const newer = { ...link, snapshot };
+    expect(
+      resolvePullRequestTabLink(
+        [{ environmentId, pullRequests: [link, newer] }],
+        environmentId,
+        "github.com",
+        link,
+      ),
+    ).toBe(newer);
   });
 });
 
-// Coder: ChatView passes onAddPullRequests only when the thread has linked MRs.
-it("disables the MR entry when the thread has neither linked nor branch MRs", () => {
-  const markup = renderToStaticMarkup(
-    <RightPanelTabs {...sharedProps} mode="inline" pullRequestAvailable={false} />,
-  );
-  const button = markup.match(
-    /<button[^>]*>(?:(?!<\/button>)[\s\S])*GitLab MR(?:(?!<\/button>)[\s\S])*<\/button>/,
-  )?.[0];
-  expect(button).toBeDefined();
-  expect(button).toContain('disabled=""');
-  expect(markup).not.toContain("Linked MRs");
-});
+// Coder: the launcher offers only workspace surfaces, in GitLab wording.
+describe("RightPanelTabs launcher", () => {
+  const render = (overrides: Partial<Parameters<typeof RightPanelTabs>[0]> = {}) =>
+    renderToStaticMarkup(
+      <RightPanelTabs
+        mode="inline"
+        surfaces={[]}
+        environmentId={null}
+        activeSurfaceId={null}
+        pendingSurfaceIds={new Set()}
+        terminalLabelsById={new Map()}
+        onActivate={() => undefined}
+        onCloseSurface={() => undefined}
+        onCloseOtherSurfaces={() => undefined}
+        onCloseSurfacesToRight={() => undefined}
+        onCloseAllSurfaces={() => undefined}
+        onCopyFilePath={() => undefined}
+        onAddTerminal={() => undefined}
+        onAddDiff={() => undefined}
+        onAddFiles={() => undefined}
+        onAddPullRequest={() => undefined}
+        onAddPullRequests={() => undefined}
+        terminalAvailable
+        diffAvailable
+        filesAvailable
+        pullRequestAvailable
+        pullRequestsAvailable
+        {...overrides}
+      >
+        <div>content</div>
+      </RightPanelTabs>,
+    );
 
-it("keeps the linked-MR surface available before the first MR exists", () => {
-  const markup = renderToStaticMarkup(
-    <RightPanelTabs
-      {...sharedProps}
-      mode="inline"
-      pullRequestAvailable={false}
-      onAddPullRequests={() => {}}
-    />,
-  );
-  const button = markup.match(
-    /<button[^>]*>(?:(?!<\/button>)[\s\S])*Linked MRs(?:(?!<\/button>)[\s\S])*<\/button>/,
-  )?.[0];
-  expect(button).toBeDefined();
-  expect(button).not.toContain('disabled=""');
+  it("lists workspace surfaces without browser or device entries", () => {
+    const html = render();
+    expect(html).toContain('data-surface-launcher-keys="TFDPL"');
+    expect(html).toContain("Merge request");
+    expect(html).toContain("Linked merge requests");
+    expect(html).not.toContain("Browser");
+    expect(html).not.toContain("Device");
+  });
+
+  it("keeps unavailable merge-request rows visible but inert", () => {
+    const html = render({ pullRequestAvailable: false, pullRequestsAvailable: false });
+    expect(html).toContain('data-surface-launcher-keys="TFD"');
+    expect(html.match(/aria-disabled="true"/g)).toHaveLength(2);
+  });
+
+  it("titles a merge-request tab with its GitLab reference and seeds its state", () => {
+    const surface = pullRequestSurface({
+      projectId: "project-1",
+      repository: "group/project",
+      number: 42,
+    });
+    const html = render({
+      surfaces: [surface],
+      activeSurfaceId: surface.id,
+      pullRequestStatusSeeds: { [surface.id]: { state: "merged", isDraft: false } },
+    });
+    expect(html).toContain("!42");
+    expect(html).toContain("text-violet-600");
+  });
 });
