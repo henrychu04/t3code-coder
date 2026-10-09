@@ -4181,6 +4181,8 @@ export default function ChatView(props: ChatViewProps) {
   const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
+  // Coder: the launcher offers linked MRs only when the thread has some; otherwise it offers the
+  // branch's GitLab MR.
   const addPullRequestsSurface = useCallback(() => {
     if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
@@ -9757,7 +9759,7 @@ export default function ChatView(props: ChatViewProps) {
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
-          onAddPullRequests={addPullRequestsSurface}
+          onAddPullRequests={pullRequestsSurfaceAvailable ? addPullRequestsSurface : undefined}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
@@ -9798,7 +9800,7 @@ export default function ChatView(props: ChatViewProps) {
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
-            onAddPullRequests={addPullRequestsSurface}
+            onAddPullRequests={pullRequestsSurfaceAvailable ? addPullRequestsSurface : undefined}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}
