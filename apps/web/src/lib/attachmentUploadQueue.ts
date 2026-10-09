@@ -10,7 +10,7 @@ import { runAtomCommand, squashAtomCommandFailure } from "@t3tools/client-runtim
 import * as Predicate from "effect/Predicate";
 import { create } from "zustand";
 import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import {
   DraftId,
@@ -27,6 +27,8 @@ import { projectEnvironment } from "../state/projects";
 import type { AttachmentUploadState, ReadyAttachmentUpload } from "./attachmentUploadState";
 import { compressImageToByteLimit } from "./imageCompression";
 
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "../state/session";
 type PersistedAttachmentVerification =
   | { readonly status: "verified" }
   | { readonly status: "missing" }
@@ -175,6 +177,15 @@ async function verifyPersistedAttachmentUpload(input: {
 }
 
 async function runUpload(job: UploadJob): Promise<void> {
+  if (!readEnvironmentScope(job.environmentId, AuthOrchestrationOperateScope)) {
+    setUploadState(job.image.id, {
+      status: "failed",
+      environmentId: job.environmentId,
+      reason: "This connection cannot upload attachments.",
+      ...(job.previous ? { previous: job.previous } : {}),
+    });
+    return;
+  }
   if (job.persistedAttachmentId) {
     const verification = await verifyPersistedAttachmentUpload({
       environmentId: job.environmentId,
@@ -382,6 +393,7 @@ export function startAttachmentUpload(input: {
   /** Draft that owns the file; lets a background completion persist its ids. */
   readonly draftTarget?: ComposerThreadTarget;
 }): void {
+  if (!readEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope)) return;
   const existingJob = jobsByImageId.get(input.image.id);
   if (existingJob?.environmentId === input.environmentId) {
     return;
@@ -539,6 +551,7 @@ export function retryAttachmentUpload(input: {
   readonly image: ComposerImageAttachment | ComposerFileAttachment;
   readonly draftTarget?: ComposerThreadTarget;
 }): void {
+  if (!readEnvironmentScope(input.environmentId, AuthOrchestrationOperateScope)) return;
   const previous = readAttachmentUpload(input.image.id);
   cancelAttachmentUpload(input.image.id);
   // A failed state's `attachmentId` is always one this queue minted, so this

@@ -1,6 +1,6 @@
 import { type EnvironmentId } from "@t3tools/contracts";
 import { createEnvironmentRpcCommand } from "@t3tools/client-runtime/state/runtime";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";

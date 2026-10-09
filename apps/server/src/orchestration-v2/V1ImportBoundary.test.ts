@@ -26,8 +26,8 @@ const retiredPaths = [
   "orchestration/Layers/ProviderRuntimeIngestion.ts",
   "orchestration/Services/ProviderCommandReactor.ts",
   "orchestration/Services/ProviderRuntimeIngestion.ts",
-  "persistence/Services/ProjectionThreads.ts",
-  "persistence/Services/ProjectionProjects.ts",
+  "persistence/ProjectionThreads.ts",
+  "persistence/ProjectionProjects.ts",
 ] as const;
 
 function productionTypeScriptFiles(directory: string): ReadonlyArray<string> {

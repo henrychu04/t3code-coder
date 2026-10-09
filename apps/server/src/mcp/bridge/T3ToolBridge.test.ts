@@ -8,6 +8,7 @@ import {
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
+  RunId,
   ThreadId,
   type OrchestrationProjectShell,
   type OrchestrationV2ServerCommand,
@@ -22,8 +23,9 @@ import * as CoderEnvironment from "../../coderEnvironment.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
-import * as ProviderRegistry from "../../provider/Services/ProviderRegistry.ts";
+import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
+import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -59,8 +61,9 @@ const project = {
   updatedAt: "2026-08-01T00:00:00.000Z",
 } as OrchestrationProjectShell;
 
-const thread = (interactionMode: "default" | "plan") =>
-  v2PullRequestThread({
+// Upstream's T3 tools act only for a caller that owns a live run.
+const thread = (interactionMode: "default" | "plan") => ({
+  ...v2PullRequestThread({
     id: THREAD_ID,
     projectId: PROJECT_ID,
     title: "Thread",
@@ -76,7 +79,9 @@ const thread = (interactionMode: "default" | "plan") =>
     settledOverride: null,
     settledAt: null,
     latestUserMessageAt: "2026-08-20T00:00:00.000Z",
-  });
+  }),
+  activeRunId: RunId.make("run-bridge"),
+});
 
 /** Upstream's pull-request handlers behind the Coder registry, reached through the real CLI. */
 const harness = (options: {
@@ -126,6 +131,7 @@ const harness = (options: {
       Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
       Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
       Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      Layer.mock(SecretRequests.SecretRequests)({}),
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
       T3ToolDispatch.layer,

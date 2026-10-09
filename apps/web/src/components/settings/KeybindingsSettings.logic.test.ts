@@ -7,6 +7,7 @@ import {
   buildKeybindingCommandOptions,
   buildWhenVariableOptions,
   commandLabel,
+  groupKeybindingRows,
   keybindingConflictLabels,
   keybindingFromKeyboardEvent,
   parseWhenExpressionDraft,
@@ -240,6 +241,7 @@ describe("KeybindingsSettings.logic", () => {
   it("formats static and project script command labels", () => {
     expect(commandLabel("commandPalette.toggle")).toBe("Command Palette: Toggle");
     expect(commandLabel("themeEditor.toggle")).toBe("Theme Editor: Toggle");
+    expect(commandLabel("view.reopenClosed")).toBe("Reopen Closed Tab");
     expect(commandLabel("script.setup-db.run")).toBe("Run Script: Setup Db");
   });
 
@@ -280,14 +282,17 @@ describe("KeybindingsSettings.logic", () => {
         "chat.new",
         "threadPanel.toggle",
         "rightPanel.toggleMaximized",
+        "composer.cycleHost",
         "thread.stop",
         "chat.newWithoutProject",
         "script.setup-db.run",
       ]),
     );
-    expect(DEFAULT_RESOLVED_KEYBINDINGS.some((binding) => binding.command === "thread.stop")).toBe(
-      false,
-    );
+    for (const command of ["thread.stop", "composer.cycleHost"]) {
+      expect(DEFAULT_RESOLVED_KEYBINDINGS.some((binding) => binding.command === command)).toBe(
+        false,
+      );
+    }
   });
 
   it("reports unknown when variables without rejecting parseable expressions", () => {

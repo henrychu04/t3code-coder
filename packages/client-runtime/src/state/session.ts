@@ -4,13 +4,13 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 
 import * as EnvironmentRegistry from "../connection/registry.ts";
 import type { PreparedConnection } from "../connection/model.ts";
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import { safeErrorLogAttributes } from "../errors/safeLog.ts";
-import { followStreamInEnvironment } from "./runtime.ts";
+import { followStreamInEnvironment } from "./environmentStreams.ts";
 
 export function initialConfigOption<E>(
   initialConfig: Effect.Effect<ServerConfig, E>,
@@ -26,7 +26,7 @@ export function initialConfigOption<E>(
   );
 }
 
-export function createEnvironmentSessionAtoms<R, E>(
+function makeEnvironmentSessionAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
 ) {
   const initialConfigAtom = Atom.family((environmentId: EnvironmentId) =>
@@ -93,4 +93,17 @@ export function createEnvironmentSessionAtoms<R, E>(
     preparedConnectionAtom,
     preparedConnectionValueAtom,
   };
+}
+
+const sessionAtomsByRuntime = new WeakMap<object, ReturnType<typeof makeEnvironmentSessionAtoms>>();
+
+/** Commands and UI share one session fetch and the same reconnect invalidation. */
+export function createEnvironmentSessionAtoms<R, E>(
+  runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
+): ReturnType<typeof makeEnvironmentSessionAtoms<R, E>> {
+  const existing = sessionAtomsByRuntime.get(runtime);
+  if (existing) return existing as ReturnType<typeof makeEnvironmentSessionAtoms<R, E>>;
+  const atoms = makeEnvironmentSessionAtoms(runtime);
+  sessionAtomsByRuntime.set(runtime, atoms);
+  return atoms;
 }

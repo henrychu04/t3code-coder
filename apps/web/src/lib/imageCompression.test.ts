@@ -6,7 +6,7 @@ function makeFile(sizeBytes: number, type = "image/png"): File {
 
 function stubCanvasPipeline(
   sizeForQuality: (quality: number) => number,
-  options?: { supportsWebp?: boolean },
+  options?: { supportsWebp?: boolean; htmlCanvas?: boolean },
 ) {
   const supportsWebp = options?.supportsWebp ?? true;
   const close = vi.fn();
@@ -35,6 +35,17 @@ function stubCanvasPipeline(
       }
     },
   );
+  if (options?.htmlCanvas) {
+    const Canvas = globalThis.OffscreenCanvas;
+    class HtmlCanvas extends Canvas {
+      toBlob(callback: BlobCallback, type: string, quality: number) {
+        void this.convertToBlob({ type, quality }).then(callback);
+      }
+    }
+    vi.stubGlobal("OffscreenCanvas", undefined);
+    vi.stubGlobal("HTMLCanvasElement", HtmlCanvas);
+    vi.stubGlobal("document", { createElement: () => new HtmlCanvas(0, 0) });
+  }
   return { close, fillRect };
 }
 

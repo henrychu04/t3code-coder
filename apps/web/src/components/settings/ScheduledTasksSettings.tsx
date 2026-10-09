@@ -168,6 +168,8 @@ export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
       ? `Every ${minutes} min`
       : `Every ${Math.round(schedule.everyMs / 1000)} sec`;
   }
+  // Coder: webhook schedules need a public URL and T3 Connect, which T3 Coder does not offer.
+  if (schedule.type === "webhook") return "On webhook";
   const weekdays = schedule.weekdays ?? [];
   const days =
     weekdays.length === 0
@@ -797,6 +799,7 @@ function ScheduledTaskEditorDialog({
 
             <Field label="Model">
               <ProviderModelPicker
+                environmentId={environmentId}
                 disabled={saving || !connected}
                 activeInstanceId={activeInstanceId}
                 model={activeModel}

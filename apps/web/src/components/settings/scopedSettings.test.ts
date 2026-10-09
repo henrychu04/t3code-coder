@@ -1,5 +1,6 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentAuthorizationError,
   EnvironmentId,
   ProjectId,
   type ServerSettings,
@@ -20,6 +21,7 @@ import {
 } from "./scopedSettings";
 import { resolveSettingsScope } from "./settingsScope";
 
+import * as Cause from "effect/Cause";
 function environment(
   id: string,
   options: {
@@ -301,7 +303,15 @@ describe("scoped settings writes", () => {
     const persistServer = vi
       .fn()
       .mockResolvedValueOnce({ _tag: "Success" })
-      .mockResolvedValueOnce({ _tag: "Failure" })
+      .mockResolvedValueOnce({
+        _tag: "Failure",
+        cause: Cause.fail(
+          new EnvironmentAuthorizationError({
+            requiredScope: "settings:write",
+            message: "This connection lacks permission to change settings.",
+          }),
+        ),
+      })
       .mockRejectedValueOnce(new Error("Disconnected during save"))
       .mockResolvedValueOnce({ _tag: "Success" });
     const result = await persistScopedSettingsPatch(
@@ -310,6 +320,14 @@ describe("scoped settings writes", () => {
       vi.fn(),
     );
     expect(result.savedEnvironmentCount).toBe(2);
+    expect(result.savedEnvironments.map(({ label }) => label)).toEqual([
+      laptop.label,
+      fourth.label,
+    ]);
+    expect(result.failedEnvironments.map(({ message }) => message)).toEqual([
+      "This connection lacks permission to change settings.",
+      "Disconnected during save",
+    ]);
     expect(result.failedEnvironments.map(({ label }) => label)).toEqual([
       server.label,
       third.label,

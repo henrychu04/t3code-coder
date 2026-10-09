@@ -1,5 +1,5 @@
 import * as Effect from "effect/Effect";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 // Request IDs are unique: terminal activities win regardless of clock or provider sequence.
 export default Effect.gen(function* () {

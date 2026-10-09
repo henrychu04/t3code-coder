@@ -10,7 +10,6 @@ import type { DraftId } from "../../composerDraftStore";
 import { useT3ProjectFile } from "../../hooks/useT3ProjectFile";
 import type { EnvMode, EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
-import { BranchToolbarEnvironmentSelector } from "../BranchToolbarEnvironmentSelector";
 import GitActionsControl from "../GitActionsControl";
 import ProjectScriptsControl, {
   type NewProjectScriptInput,
@@ -108,18 +107,18 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             headingId="thread-details-workspace-heading"
             title="Workspace"
             separated={false}
-            showHeading={density === "full"}
+            showHeading={false}
           >
             <div className="flex flex-col">
-              {density === "full" && props.availableEnvironments.length > 1 ? (
-                <BranchToolbarEnvironmentSelector
-                  displayMode="panel"
-                  autoEnvironmentLabel={props.autoEnvironmentLabel}
-                  onAutoEnvironment={props.onAutoEnvironment}
-                  envLocked={props.envLocked}
-                  environmentId={props.environmentId}
+              {density === "full" ? (
+                <BranchToolbar
+                  layout="panel"
+                  panelSection="workspace"
                   availableEnvironments={props.availableEnvironments}
                   onEnvironmentChange={props.onEnvironmentChange}
+                  autoEnvironmentLabel={props.autoEnvironmentLabel}
+                  onAutoEnvironment={props.onAutoEnvironment}
+                  {...branchToolbarProps}
                 />
               ) : null}
 
@@ -129,10 +128,10 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {props.activeProjectScripts ? (
                 <ProjectScriptsControl
+                  environmentId={props.environmentId}
                   displayMode="panel"
                   scripts={props.activeProjectScripts}
                   fileScripts={fileScripts}
-                  keybindings={props.keybindings}
                   preferredScriptId={props.preferredScriptId}
                   onRunScript={props.onRunProjectScript}
                   onAddScript={props.onAddProjectScript}
@@ -147,7 +146,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             <ThreadDetailsSection
               headingId="thread-details-version-control-heading"
               title="Version Control"
-              showHeading={density === "full"}
+              showHeading={false}
               separated={density === "full"}
             >
               <div className="flex flex-col">

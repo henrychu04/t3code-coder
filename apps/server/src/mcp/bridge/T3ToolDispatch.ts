@@ -27,7 +27,7 @@ export interface T3ToolBinding {
   /** What `--list` and `--schema` show. */
   readonly catalog: ReadonlyArray<FileBridgeCatalogEntry>;
   readonly dispatch: (
-    scope: McpInvocationContext.McpInvocationScope,
+    scope: McpInvocationContext.McpThreadInvocationScope,
     request: FileBridgeRequest,
   ) => Effect.Effect<unknown, FileBridgeToolFailure>;
 }

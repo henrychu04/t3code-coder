@@ -26,7 +26,7 @@ export interface WrappedTerminalLinkLine {
   segments: ReadonlyArray<WrappedTerminalLinkLineSegment>;
 }
 
-const URL_PATTERN = /https?:\/\/[^\s"'`<>]+/g;
+const URL_PATTERN = /https?:\/\/[^\s"'`<>]+/giu;
 const FILE_PATH_PATTERN =
   /(?:~\/|\.{1,2}\/|\/|[A-Za-z]:[\\/]|\\\\)[^\s"'`<>]+|[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)+(?::\d+){0,2}/g;
 const TRAILING_PUNCTUATION_PATTERN = /[.,;!?]+$/;
@@ -75,7 +75,7 @@ function collectMatches(
 
     const trimmed = trimClosingDelimiters(raw, kind);
     if (trimmed.length === 0) continue;
-    if (kind === "path" && /^https?:\/\//i.test(trimmed)) continue;
+    if (kind === "path" && isTerminalUrl(trimmed)) continue;
 
     const candidate: TerminalLinkMatch = {
       kind,
@@ -93,78 +93,14 @@ function collectMatches(
   return matches;
 }
 
-function isWindowsAbsolutePath(value: string): boolean {
-  return /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
-}
-
-export function isAbsolutePath(value: string): boolean {
-  return value.startsWith("/") || isWindowsAbsolutePath(value);
-}
-
-function isWindowsPathStyle(value: string): boolean {
-  return isWindowsAbsolutePath(value) || /[A-Za-z]:\\/.test(value);
-}
-
-function joinPath(base: string, next: string, separator: "/" | "\\"): string {
-  const cleanBase = base.replace(/[\\/]+$/, "");
-  if (separator === "\\") {
-    return `${cleanBase}\\${next.replaceAll("/", "\\")}`;
-  }
-  return `${cleanBase}/${next.replace(/^\/+/, "")}`;
-}
-
-function inferHomeFromCwd(cwd: string): string | undefined {
-  const posixUser = cwd.match(/^\/Users\/([^/]+)/);
-  if (posixUser?.[1]) {
-    return `/Users/${posixUser[1]}`;
-  }
-
-  const posixHome = cwd.match(/^\/home\/([^/]+)/);
-  if (posixHome?.[1]) {
-    return `/home/${posixHome[1]}`;
-  }
-
-  const windowsUser = cwd.match(/^([A-Za-z]:\\Users\\[^\\]+)/);
-  if (windowsUser?.[1]) {
-    return windowsUser[1];
-  }
-
-  return undefined;
-}
-
-export function splitPathAndPosition(value: string): {
-  path: string;
-  line: string | undefined;
-  column: string | undefined;
-} {
-  let path = value;
-  let column: string | undefined;
-  let line: string | undefined;
-
-  const columnMatch = path.match(/:(\d+)$/);
-  if (!columnMatch?.[1]) {
-    return { path, line: undefined, column: undefined };
-  }
-
-  column = columnMatch[1];
-  path = path.slice(0, -columnMatch[0].length);
-
-  const lineMatch = path.match(/:(\d+)$/);
-  if (lineMatch?.[1]) {
-    line = lineMatch[1];
-    path = path.slice(0, -lineMatch[0].length);
-  } else {
-    line = column;
-    column = undefined;
-  }
-
-  return { path, line, column };
-}
-
 export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
   const urlMatches = collectMatches(line, "url", URL_PATTERN, []);
   const pathMatches = collectMatches(line, "path", FILE_PATH_PATTERN, urlMatches);
   return [...urlMatches, ...pathMatches].toSorted((a, b) => a.start - b.start);
+}
+
+export function isTerminalUrl(value: string): boolean {
+  return /^https?:\/\//iu.test(value);
 }
 
 export function collectWrappedTerminalLinkLine(
@@ -224,21 +160,32 @@ export function isTerminalLinkActivation(
     : event.ctrlKey && !event.metaKey;
 }
 
-export function resolvePathLinkTarget(rawPath: string, cwd: string): string {
-  const { path, line, column } = splitPathAndPosition(rawPath);
+// Coder: file chips and the file menu split a position off a path written in a message.
+export function splitPathAndPosition(value: string): {
+  path: string;
+  line: string | undefined;
+  column: string | undefined;
+} {
+  let path = value;
+  let column: string | undefined;
+  let line: string | undefined;
 
-  let resolvedPath = path;
-  if (path.startsWith("~/")) {
-    const home = inferHomeFromCwd(cwd);
-    if (home) {
-      const separator: "/" | "\\" = isWindowsPathStyle(home) ? "\\" : "/";
-      resolvedPath = joinPath(home, path.slice(2), separator);
-    }
-  } else if (!isAbsolutePath(path)) {
-    const separator: "/" | "\\" = isWindowsPathStyle(cwd) ? "\\" : "/";
-    resolvedPath = joinPath(cwd, path, separator);
+  const columnMatch = path.match(/:(\d+)$/);
+  if (!columnMatch?.[1]) {
+    return { path, line: undefined, column: undefined };
   }
 
-  if (!line) return resolvedPath;
-  return `${resolvedPath}:${line}${column ? `:${column}` : ""}`;
+  column = columnMatch[1];
+  path = path.slice(0, -columnMatch[0].length);
+
+  const lineMatch = path.match(/:(\d+)$/);
+  if (lineMatch?.[1]) {
+    line = lineMatch[1];
+    path = path.slice(0, -lineMatch[0].length);
+  } else {
+    line = column;
+    column = undefined;
+  }
+
+  return { path, line, column };
 }

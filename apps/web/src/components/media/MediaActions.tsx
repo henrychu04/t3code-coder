@@ -29,6 +29,9 @@ function mediaFileName(source: MediaActionSource): string {
 }
 
 function useMediaActions(source: MediaActionSource) {
+  // Coder: the workspace owner always holds the filesystem read scope.
+  const canReadMedia = true;
+  const assertCanReadMedia = useCallback(() => {}, []);
   const actionUrl = useCallback(async () => {
     if (!source.src) throw new Error("This media is unavailable. Try reopening the preview.");
     return source.src;
@@ -37,6 +40,7 @@ function useMediaActions(source: MediaActionSource) {
     await downloadMedia(await actionUrl(), mediaFileName(source));
   }, [actionUrl, source]);
   const copyImage = useCallback(async () => {
+    assertCanReadMedia();
     if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined") {
       throw new Error(
         "Image copying is unavailable. Use a secure browser connection or save the image.",
@@ -46,8 +50,8 @@ function useMediaActions(source: MediaActionSource) {
     await navigator.clipboard.write([
       new ClipboardItem({ "image/png": actionUrl().then(readMediaPng) }),
     ]);
-  }, [actionUrl]);
-  return { save, copyImage };
+  }, [actionUrl, assertCanReadMedia]);
+  return { save, copyImage, canReadMedia, assertCanReadMedia };
 }
 
 /** Adds source-aware actions and a tooltip to the existing media element without a layout wrapper. */
@@ -58,7 +62,7 @@ export function MediaActions({
   source: MediaActionSource;
   children: ReactElement;
 }) {
-  const { save, copyImage } = useMediaActions(source);
+  const { save, copyImage, canReadMedia, assertCanReadMedia } = useMediaActions(source);
   const [tooltipOpen, setTooltipOpen] = useState(false);
   const menuOpen = useRef(false);
   const reference = source.reference;
@@ -86,7 +90,8 @@ export function MediaActions({
       } else if (reference?.kind === "url") {
         items.push({ id: "copy-url", label: "Copy URL" });
       }
-      if (source.onOpenFile) items.push({ id: "open-file", label: "Open in file viewer" });
+      if (source.onOpenFile)
+        items.push({ id: "open-file", label: "Open in file viewer", disabled: !canReadMedia });
       items.push({ id: "save", label: `Save ${noun}`, disabled: unavailable });
       if (source.kind === "image") {
         items.push({
@@ -114,6 +119,7 @@ export function MediaActions({
           title: action === "copy-url" ? "URL copied" : "Path copied",
         });
       } else if (action === "open-file") {
+        assertCanReadMedia();
         source.onOpenFile?.();
       } else if (action === "save" || action === "copy-image") {
         progressToast = toastManager.add({

@@ -24,6 +24,7 @@ import {
   OrchestrationDispatchCommandError,
   OrchestrationGetFullThreadDiffError,
   OrchestrationSearchThreadsError,
+  OrchestrationV2SearchThreadError,
   OrchestrationGetTurnDiffError,
   ORCHESTRATION_V2_WS_METHODS,
   OrchestrationV2DispatchCommandError,
@@ -63,10 +64,12 @@ import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
+import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
+import * as SecretRequests from "./secrets/SecretRequests.ts";
 import {
   archivedShellStreamItemFromThreadShell,
   buildActiveShellSnapshot,
@@ -74,10 +77,12 @@ import {
   coalesceStoredThreadEvents,
   composeShellStreamWithEnrichment,
   dedupeShellEnrichment,
+  loadShellSnapshotParts,
   shellStreamItemFromEnrichmentRefresh,
   shellStreamItemFromThreadShell,
   shellStreamItemsFromInitialSnapshot,
   shellStreamItemsFromResumeSnapshot,
+  skipUnchangedThreadShells,
   toShellApplicationEvent,
   type ShellApplicationEvent,
 } from "./orchestration-v2/ShellStream.ts";
@@ -106,14 +111,11 @@ import {
 } from "./orchestration-v2/WireProjection.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
-import * as OrchestrationEventStore from "./persistence/Services/OrchestrationEventStore.ts";
+import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
-import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
-import {
-  ProviderInstanceRegistry,
-  type ProviderInstanceRegistryShape,
-} from "./provider/Services/ProviderInstanceRegistry.ts";
+import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -139,7 +141,7 @@ import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
 import { pullRequestSyncKey } from "./pullRequest/pullRequestSyncKey.ts";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -360,6 +362,7 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
     readonly afterSequence?: number;
     readonly requestCompletionMarker?: boolean;
     readonly acceptBoundedSnapshot?: boolean;
+    readonly acceptCompactTurnItems?: boolean;
   }) {
     const threadManagement = yield* ThreadManagementService.ThreadManagementService;
     const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
@@ -453,7 +456,10 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
       );
       const { snapshotSequence } = snapshot;
       const snapshotItem = useBoundedSnapshot
-        ? buildBoundedThreadStreamSnapshot(snapshot)
+        ? buildBoundedThreadStreamSnapshot({
+            ...snapshot,
+            compactTurnItems: input.acceptCompactTurnItems === true,
+          })
         : {
             kind: "snapshot" as const,
             snapshotSequence,
@@ -582,14 +588,12 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       },
     );
     const loadSnapshot = Effect.fn("ws.orchestrationV2.loadShellSnapshot")(function* () {
-      const base = yield* sql.withTransaction(
-        Effect.gen(function* () {
-          const threads = yield* threadManagement.getShellSnapshot({ location: "active" });
-          return buildActiveShellSnapshot({
-            projects: yield* projects.listShells(),
-            threads,
-            snapshotSequence: yield* applicationEvents.latestApplicationSequence,
-          });
+      const base = buildActiveShellSnapshot(
+        yield* loadShellSnapshotParts({
+          sql,
+          readThreads: threadManagement.readShellSnapshot({ location: "active" }),
+          listProjects: projects.listShells(),
+          latestSequence: applicationEvents.latestApplicationSequence,
         }),
       );
       const enriched = yield* enrichProjectShells(base.projects);
@@ -656,6 +660,7 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
         Stream.groupedWithin(512, Duration.millis(50)),
         Stream.mapEffect((events) => projectShellItems(Array.from(events))),
         Stream.flatMap(Stream.fromIterable),
+        skipUnchangedThreadShells,
       );
 
     const liveFrom = (afterSequence: number) =>
@@ -671,16 +676,35 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
     const enrichmentRefreshes = Stream.fromSubscription(enrichmentChanges).pipe(
       Stream.filter((change) => change.repositoryIdentityResolved),
       Stream.groupedWithin(64, Duration.millis(25)),
+      // Build the refresh from the identities the changes carry. Re-enriching
+      // every project here re-requested each expired root, whose resolution
+      // published again, so one expiry kept every subscriber reloading every
+      // project's metadata once a minute.
       Stream.mapEffect((changes) =>
-        applicationEvents.latestApplicationSequence.pipe(
-          Effect.flatMap(loadProjectMetadataSnapshot),
-          Effect.map(({ snapshot }) =>
-            shellStreamItemFromEnrichmentRefresh({
-              snapshot,
-              changes: Array.from(changes),
-            }),
-          ),
-        ),
+        Effect.gen(function* () {
+          const identities = new Map(
+            Array.from(changes, (change) => [
+              change.workspaceRoot,
+              change.enrichment.repositoryIdentity,
+            ]),
+          );
+          const snapshotSequence = yield* applicationEvents.latestApplicationSequence;
+          const changedProjects = (yield* projects.listShells()).flatMap((project) =>
+            identities.has(project.workspaceRoot)
+              ? [{ ...project, repositoryIdentity: identities.get(project.workspaceRoot) ?? null }]
+              : [],
+          );
+          return shellStreamItemFromEnrichmentRefresh({
+            snapshot: {
+              schemaVersion: ORCHESTRATION_V2_PROJECTION_SCHEMA_VERSION,
+              snapshotSequence,
+              projects: changedProjects,
+              threads: [],
+              archivedThreads: [],
+            } as OrchestrationV2ShellSnapshot,
+            changes: Array.from(changes),
+          });
+        }),
       ),
     );
 
@@ -786,6 +810,14 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 );
 
 // Coder: workspace RPCs run over authenticated helper stdio, with no HTTP/WebSocket listener.
+// A defect in a handler's effect fails only its own request. RpcServer's default
+// sends a socket-level Defect frame instead, and the client ends every pending
+// request on the socket with it. DefectReporter logs these defects.
+export const WS_RPC_SERVER_OPTIONS = {
+  disableTracing: true,
+  disableFatalDefects: true,
+} as const;
+
 export const layer = CoderWsRpcGroup.toLayer(
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
@@ -813,6 +845,8 @@ export const layer = CoderWsRpcGroup.toLayer(
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+    const secretRequests = yield* SecretRequests.SecretRequests;
+    const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
     const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
     const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
     const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
@@ -907,6 +941,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         shellResumeCompletionMarker: true,
         threadResumeCompletionMarker: true,
         threadSnapshotPagination: true,
+        threadFind: true,
+        threadFindProgressive: true,
         ...Option.match(scratchWorkspaceRoot, {
           onNone: () => ({}),
           onSome: (root) => ({ scratchWorkspaceRoot: root }),
@@ -915,33 +951,34 @@ export const layer = CoderWsRpcGroup.toLayer(
       };
     });
 
-    const getOrchestrationV2ArchivedShellSnapshot = sql
-      .withTransaction(
-        Effect.gen(function* () {
-          const threads = yield* threadManagement.getShellSnapshot({ location: "archive" });
-          return {
-            schemaVersion: threads.schemaVersion,
-            snapshotSequence: yield* applicationEvents.latestApplicationSequence,
-            projects: yield* projectStore.listShells(),
-            threads: threads.archivedThreads,
-          } as const;
-        }),
-      )
-      .pipe(
-        Effect.flatMap((snapshot) =>
-          enrichProjectShells(snapshot.projects).pipe(
-            Effect.map(({ projects }) => ({ ...snapshot, projects })),
-          ),
+    const getOrchestrationV2ArchivedShellSnapshot = Effect.gen(function* () {
+      const { threads, projects, snapshotSequence } = yield* loadShellSnapshotParts({
+        sql,
+        readThreads: threadManagement.readShellSnapshot({ location: "archive" }),
+        listProjects: projectStore.listShells(),
+        latestSequence: applicationEvents.latestApplicationSequence,
+      });
+      return {
+        schemaVersion: threads.schemaVersion,
+        snapshotSequence,
+        projects,
+        threads: threads.archivedThreads,
+      } as const;
+    }).pipe(
+      Effect.flatMap((snapshot) =>
+        enrichProjectShells(snapshot.projects).pipe(
+          Effect.map(({ projects }) => ({ ...snapshot, projects })),
         ),
-        Effect.provide(streamContext),
-        Effect.mapError(
-          (cause) =>
-            new OrchestrationV2GetShellSnapshotError({
-              message: "Failed to load archived thread snapshot",
-              cause,
-            }),
-        ),
-      );
+      ),
+      Effect.provide(streamContext),
+      Effect.mapError(
+        (cause) =>
+          new OrchestrationV2GetShellSnapshotError({
+            message: "Failed to load archived thread snapshot",
+            cause,
+          }),
+      ),
+    );
 
     const subscribeOrchestrationV2ArchivedShell = Effect.fn(
       "ws.orchestrationV2.subscribeArchivedShell",
@@ -1037,7 +1074,40 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     // Coder: upstream's HTTP older-history page, served over helper stdio.
     const getThreadHistoryPage = Effect.fn("ws.orchestrationV2.getThreadHistoryPage")(
-      function* (input: { readonly threadId: ThreadId; readonly cursor: string }) {
+      function* (input: {
+        readonly threadId: ThreadId;
+        readonly cursor: string;
+        readonly throughEntryId?: string | undefined;
+        readonly view?: "conversation" | "activity" | undefined;
+      }) {
+        // Coder: a find-in-thread page (a target entry or the conversation view) uses upstream's
+        // history read; plain paging keeps the bounded snapshot-window page below.
+        if (input.throughEntryId !== undefined || input.view !== undefined) {
+          const upstreamPage = yield* threadManagement
+            .getThreadHistoryPage(
+              input.threadId,
+              input.cursor,
+              input.throughEntryId,
+              input.view === "conversation",
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationV2GetThreadProjectionError({
+                    threadId: input.threadId,
+                    message: `Failed to load orchestration V2 thread ${input.threadId} history`,
+                    cause,
+                  }),
+              ),
+            );
+          if (exceedsHelperStdioFrame(upstreamPage)) {
+            return yield* new OrchestrationV2GetThreadProjectionError({
+              threadId: input.threadId,
+              message: "The thread history page exceeds the helper stdio frame limit.",
+            });
+          }
+          return upstreamPage;
+        }
         const invalidCursor = () =>
           new OrchestrationV2GetThreadProjectionError({
             threadId: input.threadId,
@@ -1350,11 +1420,15 @@ export const layer = CoderWsRpcGroup.toLayer(
       [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
         ensureCoderPullRequestLink(command).pipe(
           Effect.andThen(
-            ThreadMessageIntake.dispatchCommand(
-              ThreadManagementService.withCreationProvenance(command, {
-                createdBy: "user",
-                creationSource: "creationSource" in command ? command.creationSource : "web",
-              }),
+            // A retry also restarts the preparation work the launch owns.
+            (command.type === "prepared-run.retry"
+              ? threadLaunch.retryPreparation(command)
+              : ThreadMessageIntake.dispatchCommand(
+                  ThreadManagementService.withCreationProvenance(command, {
+                    createdBy: "user",
+                    creationSource: "creationSource" in command ? command.creationSource : "web",
+                  }),
+                )
             ).pipe(Effect.provide(intakeContext)),
           ),
           Effect.map((result) => ({ sequence: result.sequence })),
@@ -1370,6 +1444,25 @@ export const layer = CoderWsRpcGroup.toLayer(
             });
           }),
         ),
+      [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: (input) =>
+        threadManagement.getTurnItem(input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationV2GetThreadProjectionError({
+                threadId: input.threadId,
+                message: "Failed to load turn item",
+                cause,
+              }),
+          ),
+        ),
+      [ORCHESTRATION_V2_WS_METHODS.searchThread]: (input) =>
+        threadManagement
+          .searchThread(input)
+          .pipe(Effect.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
+      [ORCHESTRATION_V2_WS_METHODS.searchThreadStream]: (input) =>
+        threadManagement
+          .searchThreadStream(input)
+          .pipe(Stream.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
       [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: (input) =>
         readWorkflowScript({ scriptPath: input.scriptPath }),
       [ORCHESTRATION_V2_WS_METHODS.getTurnDiff]: (input) =>
@@ -1498,6 +1591,11 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.scheduledTasksSetEnabled]: (input) => scheduledTasks.setEnabled(input),
       [WS_METHODS.scheduledTasksDelete]: (input) => scheduledTasks.delete(input),
       [WS_METHODS.scheduledTasksRunNow]: (input) => scheduledTasks.runNow(input),
+      [WS_METHODS.secretsAnswerRequest]: (input) => secretRequests.answer(input),
+      [WS_METHODS.mcpAppsCallTool]: (input) => mcpAppRequests.callTool(input),
+      [WS_METHODS.mcpAppsToolInfo]: (input) => mcpAppRequests.toolInfo(input),
+      [WS_METHODS.mcpAppsUpdateModelContext]: (input) => mcpAppRequests.updateModelContext(input),
+      [WS_METHODS.mcpAppsReadResource]: (input) => mcpAppRequests.readResource(input),
       [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
       [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig,
       // Coder: refresh workspace providers without remote manifests or unsupported usage/model refreshes.
@@ -1932,6 +2030,13 @@ export const layer = CoderWsRpcGroup.toLayer(
             terminalManager.attachStream(input, (event) => Queue.offer(queue, event)),
             (unsubscribe) => Effect.sync(unsubscribe),
           ),
+        ),
+      [WS_METHODS.terminalObserve]: (input) =>
+        Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
+          Effect.acquireRelease(
+            terminalManager.observeStream(input, (event) => Queue.offer(queue, event)),
+            (unsubscribe) => Effect.sync(unsubscribe),
+          ).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
         ),
       [WS_METHODS.terminalWrite]: (input) => terminalManager.write(input),
       [WS_METHODS.terminalResize]: (input) => terminalManager.resize(input),

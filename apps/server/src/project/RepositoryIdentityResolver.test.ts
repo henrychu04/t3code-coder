@@ -2,10 +2,10 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Duration from "effect/Duration";
 import { TestClock } from "effect/testing";
-import { ChildProcessSpawner } from "effect/unstable/process";
+import { ChildProcessSpawner } from "effect/process";
 
 import * as ProcessRunner from "../processRunner.ts";
-import { make, repositoryPathFromRemoteUrl } from "./RepositoryIdentityResolver.ts";
+import { make } from "./RepositoryIdentityResolver.ts";
 
 function output(stdout: string): ProcessRunner.ProcessRunOutput {
   return {
@@ -20,15 +20,7 @@ function output(stdout: string): ProcessRunner.ProcessRunOutput {
   };
 }
 
-describe("repositoryPathFromRemoteUrl", () => {
-  it.each([
-    ["https://gitlab.example.gs.com/goldman/smoke.git", "goldman/smoke"],
-    ["ssh://git@gitlab.example.gs.com/goldman/platform/smoke.git", "goldman/platform/smoke"],
-    ["git@gitlab.example.gs.com:goldman/platform/smoke.git", "goldman/platform/smoke"],
-  ])("extracts the provider-native project path from %s", (remoteUrl, expected) => {
-    expect(repositoryPathFromRemoteUrl(remoteUrl)).toBe(expected);
-  });
-
+describe("RepositoryIdentityResolver", () => {
   it.effect("stores host/repository as the canonical identity used by MR discovery", () =>
     Effect.gen(function* () {
       const process = ProcessRunner.ProcessRunner.of({

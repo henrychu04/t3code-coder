@@ -13,7 +13,6 @@ import {
   resolveBranchToolbarPrBranch,
   resolveBranchToolbarValue,
   resolveLockedWorkspaceLabel,
-  resolveWorkspaceDisplayName,
   resolveCheckoutBranchMismatch,
   resolvePreviousWorktreeLabel,
   resolvePreviousWorktreeSeed,
@@ -302,7 +301,6 @@ describe("resolveBranchToolbarPrBranch", () => {
   });
 });
 
-// Coder: the notice also covers a managed worktree whose branch moved.
 describe("resolveCheckoutBranchMismatch", () => {
   it("detects when a local thread is associated with a different branch than the checkout", () => {
     expect(
@@ -571,18 +569,6 @@ describe("resolveLockedWorkspaceLabel", () => {
 
   it("describes a worktree that is still being created as a new worktree", () => {
     expect(resolveLockedWorkspaceLabel(null, "worktree")).toBe("New worktree");
-  });
-});
-
-describe("resolveWorkspaceDisplayName", () => {
-  it("returns the final folder for POSIX and Windows paths", () => {
-    expect(resolveWorkspaceDisplayName("/repo/.t3/worktrees/feature-a")).toBe("feature-a");
-    expect(resolveWorkspaceDisplayName("C:\\code\\project\\feature-b\\")).toBe("feature-b");
-  });
-
-  it("handles missing and root paths", () => {
-    expect(resolveWorkspaceDisplayName(null)).toBeNull();
-    expect(resolveWorkspaceDisplayName("/")).toBe("/");
   });
 });
 

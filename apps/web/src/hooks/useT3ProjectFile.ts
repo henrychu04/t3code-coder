@@ -2,7 +2,7 @@ import { useAtomValue, useAtomRefresh } from "@effect/atom-react";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ProjectId, ProjectGetConfigResult } from "@t3tools/contracts";
 import * as Option from "effect/Option";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { projectEnvironment } from "../state/projects";
 const empty = Atom.make(

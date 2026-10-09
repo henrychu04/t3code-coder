@@ -213,6 +213,7 @@ pnpm --filter @t3tools/contracts typecheck
 pnpm --filter @t3tools/shared typecheck
 pnpm --filter @t3tools/client-runtime typecheck
 pnpm --filter @t3tools/coder-cli typecheck
+pnpm --filter @t3tools/provider-core --filter @t3tools/provider-pi --filter @t3tools/provider-testing typecheck
 pnpm build
 ```
 

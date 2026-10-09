@@ -1,7 +1,7 @@
 import { Connection } from "@t3tools/client-runtime/connection";
 import { ThreadHistoryController } from "@t3tools/client-runtime/state/threads";
 import * as Layer from "effect/Layer";
-import { Atom } from "effect/unstable/reactivity";
+import { Atom } from "effect/reactivity";
 
 import { runtimeContextLayer } from "../lib/runtime";
 import { connectionPlatformLayer } from "./platform";

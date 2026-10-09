@@ -35,22 +35,6 @@
       "types": "./src/markdownImages.ts",
       "default": "./src/markdownImages.ts"
     },
-    "./markdown-links": {
-      "types": "./src/markdownLinks.ts",
-      "default": "./src/markdownLinks.ts"
-    },
-    "./codex-file-citations": {
-      "types": "./src/codexFileCitations.ts",
-      "default": "./src/codexFileCitations.ts"
-    },
-    "./codex-artifact-templates": {
-      "types": "./src/codexArtifactTemplates.ts",
-      "default": "./src/codexArtifactTemplates.ts"
-    },
-    "./codex-markdown-directives": {
-      "types": "./src/codexMarkdownDirectives.ts",
-      "default": "./src/codexMarkdownDirectives.ts"
-    },
     "./environment": {
       "types": "./src/environment/index.ts",
       "default": "./src/environment/index.ts"
@@ -253,6 +237,30 @@
     "./state/turn-item-presentation": {
       "types": "./src/state/turnItemPresentation.ts",
       "default": "./src/state/turnItemPresentation.ts"
+    },
+    "./secret-request": {
+      "types": "./src/secretRequest.ts",
+      "default": "./src/secretRequest.ts"
+    },
+    "./providerUpdateRequiredModels": {
+      "types": "./src/providerUpdateRequiredModels.ts",
+      "default": "./src/providerUpdateRequiredModels.ts"
+    },
+    "./state/thread-inbox": {
+      "types": "./src/state/threadInbox.ts",
+      "default": "./src/state/threadInbox.ts"
+    },
+    "./work-log/item-detail": {
+      "types": "./src/work-log/itemDetail.ts",
+      "default": "./src/work-log/itemDetail.ts"
+    },
+    "./mcp-apps": {
+      "types": "./src/mcpApps/host.ts",
+      "default": "./src/mcpApps/host.ts"
+    },
+    "./state/mcp-apps": {
+      "types": "./src/state/mcpApps.ts",
+      "default": "./src/state/mcpApps.ts"
     }
   },
   "scripts": {
@@ -262,16 +270,10 @@
   "dependencies": {
     "@t3tools/contracts": "workspace:*",
     "@t3tools/shared": "workspace:*",
-    "effect": "catalog:",
-    "mdast-util-directive": "^3.1.0",
-    "micromark-extension-directive": "^4.0.0",
-    "micromark-util-character": "^2.1.1",
-    "remark-parse": "^11.0.0",
-    "unified": "^11.0.5"
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",
-    "micromark-util-types": "^2.0.2",
     "vite-plus": "catalog:"
   }
 }

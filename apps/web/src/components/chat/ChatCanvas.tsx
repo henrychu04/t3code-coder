@@ -7,6 +7,7 @@ import {
   type ComponentProps,
   type CSSProperties,
 } from "react";
+import { flushSync } from "react-dom";
 import { ChatCanvasContext } from "./ChatCanvasContext";
 import {
   resolveChatCanvasLayout,
@@ -14,13 +15,18 @@ import {
   type ChatCanvasPreview,
 } from "./chatCanvasLayout";
 
-/** Owns the available conversation space. Floating cards never reserve it themselves. */
+/**
+ * Owns the available conversation space. Cards only report where they sit; the
+ * canvas decides when chat moves over to make room for them.
+ */
 export function ChatCanvas({
   composerOverlayElement,
+  detailsCardTopInset = 0,
   children,
   ...props
 }: Omit<ComponentProps<"div">, "className" | "style" | "ref"> & {
   composerOverlayElement: HTMLElement | null;
+  detailsCardTopInset?: number;
 }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const widthProbeRef = useRef<HTMLDivElement | null>(null);
@@ -39,7 +45,7 @@ export function ChatCanvas({
   const [measurements, setMeasurements] = useState({
     width: 0,
     height: 0,
-    padding: 20,
+    padding: 48,
     maxChatWidth: 768,
     minChatWidth: 640,
     composerHeight: 0,
@@ -88,7 +94,7 @@ export function ChatCanvas({
       );
     };
     measure();
-    const observer = new ResizeObserver(measure);
+    const observer = new ResizeObserver(() => flushSync(measure));
     observer.observe(element);
     observer.observe(probe);
     if (composerOverlayElement) observer.observe(composerOverlayElement);
@@ -99,14 +105,24 @@ export function ChatCanvas({
     const container = { width: measurements.width, height: measurements.height };
     return {
       container,
+      lane: { padding: measurements.padding, minChatWidth: measurements.minChatWidth },
       layout: resolveChatCanvasLayout({ ...measurements, container, preview, detailsCard }),
       previewKey: preview?.key ?? null,
       reportPreview,
       clearPreview,
       registerTimeline,
       reportDetailsCard,
+      detailsCardTopInset,
     };
-  }, [measurements, preview, detailsCard, reportPreview, clearPreview, reportDetailsCard]);
+  }, [
+    measurements,
+    preview,
+    detailsCard,
+    reportPreview,
+    clearPreview,
+    reportDetailsCard,
+    detailsCardTopInset,
+  ]);
   const { layout } = context;
   return (
     <ChatCanvasContext value={context}>
@@ -127,7 +143,7 @@ export function ChatCanvas({
         <div
           ref={widthProbeRef}
           aria-hidden
-          className="pointer-events-none invisible absolute h-0 w-(--chat-content-max-width) min-w-[40rem] box-content ps-3 sm:ps-5"
+          className="pointer-events-none invisible absolute h-0 w-(--chat-content-max-width) min-w-[40rem] box-content ps-3 sm:ps-12"
         />
         {children}
       </div>

@@ -11,7 +11,7 @@ import * as TerminalManager from "../terminal/Manager.ts";
 export class ResourceCleanupError extends Schema.TaggedError<ResourceCleanupError>()(
   "ResourceCleanupError",
   {
-    operation: Schema.Literals(["terminal", "attachment"]),
+    operation: Schema.Literals(["terminal", "preview", "attachment"]),
     threadId: Schema.optional(Schema.String),
     attachmentId: Schema.optional(Schema.String),
     cause: Schema.Defect(),
@@ -20,17 +20,20 @@ export class ResourceCleanupError extends Schema.TaggedError<ResourceCleanupErro
 
 export class ResourceCleanupService extends Context.Reference<{
   readonly cleanupTerminals: (threadId: string) => Effect.Effect<void, ResourceCleanupError>;
+  /** Closes every preview session of the thread; server browser tabs end with them. */
+  readonly cleanupPreviews: (threadId: string) => Effect.Effect<void, ResourceCleanupError>;
   readonly cleanupAttachments: (
     attachmentIds: ReadonlyArray<string>,
   ) => Effect.Effect<void, ResourceCleanupError>;
 }>("t3/orchestration-v2/ResourceCleanupService", {
   defaultValue: () => ({
     cleanupTerminals: () => Effect.void,
+    cleanupPreviews: () => Effect.void,
     cleanupAttachments: () => Effect.void,
   }),
 }) {}
 
-export const live = Layer.effect(
+export const layer = Layer.effect(
   ResourceCleanupService,
   Effect.gen(function* () {
     const terminals = yield* TerminalManager.TerminalManager;
@@ -45,6 +48,8 @@ export const live = Layer.effect(
               (cause) => new ResourceCleanupError({ operation: "terminal", threadId, cause }),
             ),
           ),
+      // Coder: there is no browser preview, so a thread has no preview sessions to close.
+      cleanupPreviews: () => Effect.void,
       cleanupAttachments: (attachmentIds: ReadonlyArray<string>) =>
         Effect.forEach(
           attachmentIds,

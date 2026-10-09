@@ -28,6 +28,8 @@ export function useAvailableSettingsSearchItems() {
         isWslSettingsRowVisible: false,
         hasThreadAutoSettlement:
           getThreadAutoSettlementSearchAvailability(environments).eligibleEnvironmentIds.length > 0,
+        // Coder: there is no T3 Connect managed tunnel.
+        managedTunnelActive: false,
       }),
     [environments],
   );

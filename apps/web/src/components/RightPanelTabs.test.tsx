@@ -128,6 +128,15 @@ describe("RightPanelTabs launcher", () => {
     renderToStaticMarkup(
       <RightPanelTabs
         mode="inline"
+        keybindings={[]}
+        getShortcutContext={() => ({
+          terminalFocus: false,
+          terminalOpen: false,
+          previewFocus: false,
+          previewOpen: false,
+          isWeb: true,
+          isDesktop: false,
+        })}
         surfaces={[]}
         environmentId={null}
         activeSurfaceId={null}

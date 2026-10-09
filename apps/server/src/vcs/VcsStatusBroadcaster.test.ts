@@ -1182,7 +1182,7 @@ describe("Coder auto-pull policy", () => {
         Layer.provideMerge(NodeServices.layer),
         Layer.provide(BackgroundPolicy.layer),
         Layer.provide(
-          VcsStatusBroadcaster.autoPullPolicyLayer.pipe(
+          VcsStatusBroadcaster.layerAutoPullPolicy.pipe(
             Layer.provide(
               Layer.mock(ProjectStore.ProjectStoreV2)({
                 findActiveByWorkspaceRoot: () =>

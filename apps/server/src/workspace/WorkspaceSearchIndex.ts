@@ -403,7 +403,22 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
           }),
       }).pipe(Effect.orDie),
   );
-  yield* waitForIndexReady(finder, (reason) => new WorkspaceSearchIndexCreateFailed({ reason }));
+  let initialScanTimedOut = false;
+  yield* waitForIndexReady(
+    finder,
+    (reason) => new WorkspaceSearchIndexCreateFailed({ reason }),
+  ).pipe(
+    Effect.catchTags({
+      WorkspaceSearchIndexScanTimedOut: (error) =>
+        variant === "paths"
+          ? Effect.sync(() => {
+              initialScanTimedOut = true;
+            })
+          : Effect.fail(error),
+    }),
+  );
+
+  const hasIncompleteInitialScan = () => initialScanTimedOut && finder.isScanning();
 
   const runSearch = Effect.fn("WorkspaceSearchIndex.runSearch")(function* <A>(
     query: string,
@@ -462,6 +477,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
 
   const list: WorkspaceSearchIndex["Service"]["list"] = Effect.fn("WorkspaceSearchIndex.list")(
     function* () {
+      const incompleteBeforeQuery = hasIncompleteInitialScan();
       const result = yield* runSearch("", WORKSPACE_INDEX_PAGE_SIZE, "mixedSearch", () =>
         finder.mixedSearch("", { pageSize: WORKSPACE_INDEX_PAGE_SIZE }),
       );
@@ -471,7 +487,8 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       );
       return {
         entries: sorted.slice(0, WORKSPACE_INDEX_MAX_ENTRIES),
-        truncated: mapped.truncated || sorted.length > WORKSPACE_INDEX_MAX_ENTRIES,
+        truncated:
+          incompleteBeforeQuery || mapped.truncated || sorted.length > WORKSPACE_INDEX_MAX_ENTRIES,
       };
     },
   );
@@ -479,6 +496,7 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
   const search: WorkspaceSearchIndex["Service"]["search"] = Effect.fn(
     "WorkspaceSearchIndex.search",
   )(function* (query, limit, kind, imageOnly = false, fileMask = "") {
+    const incompleteBeforeQuery = hasIncompleteInitialScan();
     if (kind === "file" || imageOnly || fileMask.trim().length > 0) {
       const hasFileMask = fileMask.trim().length > 0;
       const nativeFileMask = hasFileMask ? toFffFileMaskConstraint(fileMask) : "";
@@ -489,20 +507,23 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
       const result = yield* runSearch(query, pageSize, "fileSearch", () =>
         finder.fileSearch(nativeQuery, { pageSize }),
       );
-      return mapFileSearchResult(result, limit, imageOnly, fileMask);
+      const mapped = mapFileSearchResult(result, limit, imageOnly, fileMask);
+      return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
     }
     if (kind === "directory") {
       const pageSize = Math.max(1, limit + 1);
       const result = yield* runSearch(query, pageSize, "directorySearch", () =>
         finder.directorySearch(query, { pageSize }),
       );
-      return mapDirectorySearchResult(result, limit);
+      const mapped = mapDirectorySearchResult(result, limit);
+      return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
     }
     const pageSize = Math.max(1, limit + 1);
     const result = yield* runSearch(query, pageSize, "mixedSearch", () =>
       finder.mixedSearch(query, { pageSize }),
     );
-    return mapMixedSearchResult(result, limit);
+    const mapped = mapMixedSearchResult(result, limit);
+    return { ...mapped, truncated: incompleteBeforeQuery || mapped.truncated };
   });
 
   // FFF pages end at file boundaries and can exceed pageSize by up to 99 matches.

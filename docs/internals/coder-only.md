@@ -31,7 +31,7 @@ behavior, notify the maintainer before making that removal.
 
 - The browser interface is local-only.
 - Coder owns workspace connectivity and Coder authentication.
-- Codex and Claude Code run only in the workspace and use workspace-owned configuration.
+- Codex, Claude Code, and Pi run only in the workspace and use workspace-owned configuration.
 - Durable development and conversation data remains in the workspace.
 - Workspace actions, file access, image exceptions, and port forwards stay within the deliberate
   product boundaries described below.
@@ -486,7 +486,7 @@ seams. The Integrations and SnapShot categories, desktop update and quit rows, t
 browser and hosted-pairing settings, and the `keybindings.json` editor do not exist; keybinding
 changes are made in the table. Connections holds the Coder deployments, workspaces, workspace icon,
 and TCP/UDP port forwards instead of upstream's pairing and network access. Providers uses upstream's provider panel and add-instance dialog,
-limited to the Codex and Claude drivers (any instance), without sign-in, provider setup or
+limited to the Codex, Claude, and Pi drivers (any instance), without sign-in, provider setup or
 managed install, per-instance environment variables, ACP registry, or usage-limit sources. Source Control appends GitLab
 workspace status and the write-policy probe. Background activity uses upstream's profiles and Advanced
 dialog, without the host power-monitor intervals or power and lock pauses, and profile
@@ -542,7 +542,10 @@ listed here is drift to remove rather than fork behavior to keep.
   after a non-cancel bootstrap failure. Reapply only these differences, each marked `Coder:` in
   code (see [Runtime boundary](#runtime-boundary)):
   - No HTTP/WebSocket listener, auth/session scopes, pairing, relay, client-origin attribution,
-    analytics, RPC metrics, or trace export. `CoderRuntimeStartup` completes before the RPC
+    analytics, RPC metrics, or trace export. The helper's RPC server uses upstream's
+    `WS_RPC_SERVER_OPTIONS`, so a handler defect fails only its own request rather than every
+    request on the stdio connection, and `observability/DefectReporter.ts` logs those defects to
+    the helper's stderr. `CoderRuntimeStartup` completes before the RPC
     layer is built, replacing upstream's startup command queue. Lifecycle welcome/ready events
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
@@ -588,8 +591,9 @@ listed here is drift to remove rather than fork behavior to keep.
     T3's own MCP server is absent; upstream's T3 toolkits reach agents over the workspace file
     bridge instead (see [Runtime boundary](#runtime-boundary)):
     - `mcp/McpSessionRegistry.ts` keeps upstream's shape and lifecycle, but each credential is a
-      bridge (`mcp/bridge/FileBridge.ts`) whose `toolCommand` (a Coder field on
-      `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory.
+      bridge (`mcp/bridge/FileBridge.ts`) whose `toolCommand` (a Coder field on provider-core's
+      `McpProviderSessionConfig`) runs the tools; `endpoint` is the bridge directory. Upstream's
+      tools act only for a caller that owns a live run, as over MCP.
     - `mcp/bridge/T3ToolBridge.ts` runs upstream's toolkit handlers by name with the credential's
       `McpInvocationContext`, enforces read-only tools in plan mode, and turns calls that outlive
       8 seconds into `bridge-job:` tasks. `server.ts` binds it once the orchestrator runs.
@@ -603,8 +607,8 @@ listed here is drift to remove rather than fork behavior to keep.
       `ClaudeAdapterV2.ts` describe the bridge command (`mcp/bridge/T3ToolInstructions.ts`) in
       place of upstream's MCP orchestration text. Claude pre-approves the command as a Bash
       prefix, limited to read-only tools in a read-only sandbox, as upstream pre-approves its MCP
-      tools. `RuntimeInstructions.ts` keeps upstream's `link_pull_request` block, worded for T3
-      tools.
+      tools. provider-core's `runtimeInstructions.ts` keeps upstream's `link_pull_request` block,
+      worded for T3 tools.
     - Preview, device, and attachment-upload toolkits are not carried.
   - Provider input reads images only through `PastedImageAttachments.ts`: native `localImage`
     paths for Codex and base64 blocks for Claude. Read-tool image views are limited to PNG, JPEG,
@@ -617,13 +621,16 @@ listed here is drift to remove rather than fork behavior to keep.
     images whose signature does not match their media type, and writes the validated bytes
     exclusively with mode `0600`. Deleting or reverting a thread never deletes its attachments,
     so upstream's attachment-cleanup side effects are absent.
-  - Only the Codex and Claude adapters are registered
-    (`ProviderOrchestrationAdapterInfrastructure.ts`), and only shipped providers have replay
-    harnesses. Pi (`PiDriver.ts`, `PiAdapterV2.ts`, `PiProvider.ts`, `PiTextGeneration.ts`) stays
-    in the source as unregistered, disabled code so it can be added back; `knip.jsonc` lists its
-    driver as an entry. Upstream's other drivers (Cursor, OpenCode, ACP, Antigravity, Grok) are
-    not carried.
-  - Thread-title and branch-name generation use only Codex or Claude models. Text generation is
+  - `provider/builtInDrivers.ts` registers only Codex, Claude, and Pi (upstream's
+    `@t3tools/provider-pi` package), and `ProviderOrchestrationAdapterInfrastructure.ts` provides
+    only the Claude query runner and the Codex app-server factory. Only shipped providers have
+    replay harnesses. Pi keeps upstream's T3 extension for its permission hook (Supervised and
+    Auto-accept edits) and skill chips, but `PiAdapterV2` gives it no T3 MCP endpoint, because
+    the extension speaks MCP over HTTP and T3 tools run over the file bridge; Pi turns therefore
+    have no T3 tools yet. Upstream's other provider packages (Cursor, OpenCode, Muse, ACP, ACP
+    Registry, Grok, Antigravity) are not carried.
+  - Thread-title and branch-name generation use only Codex, Claude, or Pi models (Pi through
+    upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
     upstream's except that Codex reads branch-name and title images through
     `PastedImageAttachments.ts`, skipping an unreadable image as upstream does.
   - Agent-session import follows upstream, scanning only the workspace's own Codex and Claude
@@ -639,12 +646,31 @@ listed here is drift to remove rather than fork behavior to keep.
     per-model `supportedRuntimeModes` from workspace policy: Claude's effective
     `disableAutoMode`/`disableBypassPermissionsMode` settings (read through `ClaudeCli`, failing
     closed) and Codex's `configRequirements/read`. The Claude signed-out message names API
-    credentials rather than subscription login. `providerMaintenance.ts` and
-    `providerStatusCache.ts` log the first cause tag in place of the omitted observability helper.
+    credentials rather than subscription login. Claude's usage read asks the CLI to skip its local
+    transcript scan (`ClaudeCli.getUsage({ skipBehaviors })`), as upstream's SDK call does.
+    provider-core's `maintenanceResolver.ts` and `providerStatusCache.ts` log the first cause tag
+    in place of the omitted observability helper. `ProviderHostLive` gives drivers no credential
+    store: reads find nothing and writes fail.
   - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
     provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
     sources, data-URL uploads, preview-tool metadata, and the agent device shim.
+- **Authorization scopes.** Coder owns authentication, so upstream's per-session scopes always
+  grant: web `useEnvironmentScope`, `readEnvironmentScope`, and `useFilesystemReadAccess`
+  return granted for a known workspace, and client-runtime `commandPermissions` authorizes every
+  command and installs the `RpcPermissionGuard` that upstream's guarded RPCs require. Settings
+  sync writes to every connected workspace without grant checks, and worktree removal is always
+  offered.
+- **Agent secret requests.** Upstream's `request_secret` tool, card, and one-use secret store,
+  with the value sent only to the workspace store over `secrets.answerRequest`; it never enters
+  browser storage, the transcript, projections, model context, or logs.
+- **MCP Apps.** Upstream's inline app rows and sandboxed frame, with resource reads and tool calls
+  over the helper's MCP Apps RPCs. The frame has no camera, microphone, geolocation, or clipboard
+  permission, no `ui/download-file`, and no save action. Upstream loads the app document through
+  a signed asset URL, which the helper does not serve, so the frame currently reports that the app
+  could not load.
+- **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does,
+  but the inspector shows none, because they load through upstream's signed asset route.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
@@ -656,8 +682,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - `rpc.ts` omits RPCs whose schemas belong to excluded modules (assets, attachment upload URLs,
     preview automation, relay, resource telemetry, usage, editor launch, GitHub routing, feedback
     upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
-    only group the helper serves. Upstream's `EnvironmentAuthorizationError` stays in error
-    unions but is never emitted.
+    only group the helper serves. That group carries upstream's thread find
+    (`searchThread`, `searchThreadStream`), turn-item reads, passive terminal observation, agent
+    secret answers, and the MCP Apps methods. Upstream's `EnvironmentAuthorizationError` stays in
+    error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
@@ -667,7 +695,9 @@ listed here is drift to remove rather than fork behavior to keep.
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
     which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods the
-    helper serves and to Codex and Claude driver instances (`isCoderProviderDriver`).
+    helper serves and to Codex, Claude, and Pi driver instances (`isCoderProviderDriver`).
+  - Client settings add `providerPreferencesByEnvironment`, which keeps favorites and model
+    order per workspace (see [Persistence](#upstream-seams)).
 - **Terminals.** `terminal/Manager.ts` is upstream's. Coder deltas: it records each terminal's
   attach events in a bounded replay window (512 KiB per terminal, 64 MiB in total) and answers an
   attach with `afterSequence` by replaying the missed events and a `resumed` event instead of a
@@ -838,7 +868,11 @@ listed here is drift to remove rather than fork behavior to keep.
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
   the Coder legacy registry never recorded `OrchestrationV2`. New migrations take upstream's next ID; never add a Coder-only
   migration ID.
-- **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last project grouping mode stay in memory where upstream uses browser storage. `storage.ts` keeps
+- **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections, closed-view
+  history, the last merge method, and the last project grouping mode stay in memory where
+  upstream uses browser storage. Model favorites and model order are kept per workspace
+  (`providerPreferencesByEnvironment`), falling back to the global lists until a workspace has its
+  own; the pickers and the Providers settings page read and write the workspace's lists. `storage.ts` keeps
   upstream's IndexedDB environment cache without the connection catalog, credentials, GitHub
   routing permissions, or project favicons. The upstream idle thread-snapshot retention lifecycle
   keeps Coder's 24-thread / 64 MiB cap. Composer drafts and the prompt stash keep text in browser
@@ -847,6 +881,9 @@ listed here is drift to remove rather than fork behavior to keep.
   config, because stopped and disconnected workspaces also leave the platform registrations.
   The workspace-to-environment mapping that makes this possible is memory-only, so a workspace
   removed before it reconnects after a reload keeps its drafts.
+- **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
+  that ignores loaded file contents unless the current diff is still the partial diff that asked
+  for them.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab.
 

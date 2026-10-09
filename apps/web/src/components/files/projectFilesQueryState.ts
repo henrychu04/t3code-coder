@@ -9,7 +9,7 @@ import {
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { AsyncResult, Atom } from "effect/unstable/reactivity";
+import { AsyncResult, Atom } from "effect/reactivity";
 import { useCallback } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -94,6 +94,21 @@ export function getOptimisticProjectFileQueryData(
   relativePath: string,
 ): ProjectReadFileResult | null {
   return appAtomRegistry.get(optimisticFileAtom(environmentId, cwd, relativePath))?.data ?? null;
+}
+
+/** The contents the Files panel shows, read outside React so it is current within a frame. */
+export function getProjectFileContents(
+  environmentId: EnvironmentId,
+  threadId: ThreadId,
+  cwd: string,
+  relativePath: string,
+): string | undefined {
+  const optimistic = getOptimisticProjectFileQueryData(environmentId, cwd, relativePath);
+  if (optimistic) return optimistic.contents;
+  const result = appAtomRegistry.get(
+    getProjectFileQueryAtom(environmentId, threadId, cwd, relativePath),
+  );
+  return Option.getOrUndefined(AsyncResult.value(result))?.contents;
 }
 
 export function confirmProjectFileQueryData(

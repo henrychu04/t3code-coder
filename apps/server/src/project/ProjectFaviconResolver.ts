@@ -11,6 +11,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
+
+const isWorkspaceRootNotExistsError = Schema.is(WorkspacePaths.WorkspaceRootNotExistsError);
+
 export class ProjectFaviconResolutionError extends Schema.TaggedError<ProjectFaviconResolutionError>()(
   "ProjectFaviconResolutionError",
   {
@@ -30,6 +34,10 @@ export class ProjectFaviconResolutionError extends Schema.TaggedError<ProjectFav
     return `Failed to resolve project favicon during ${this.operation} for workspace ${this.workspaceRoot}.`;
   }
 }
+
+/** Whether resolution failed only because the workspace root is gone. */
+export const isMissingWorkspaceRoot = (error: ProjectFaviconResolutionError): boolean =>
+  error.operation === "normalize-workspace" && isWorkspaceRootNotExistsError(error.cause);
 
 /** Service tag for project favicon resolution. */
 export class ProjectFaviconResolver extends Context.Service<

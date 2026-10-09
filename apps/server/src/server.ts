@@ -1,6 +1,6 @@
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
-import { FetchHttpClient } from "effect/unstable/http";
+import { FetchHttpClient } from "effect/http";
 import * as StorageCleanup from "./storageCleanup.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
 import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts";
@@ -30,13 +30,15 @@ import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as SourceControlRateLimit from "./sourceControl/SourceControlRateLimit.ts";
 import * as Keybindings from "./keybindings.ts";
-import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Layers/Sqlite.ts";
+import { layerConfig as SqlitePersistenceLayerLive } from "./persistence/Sqlite.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
 import * as ProjectFaviconResolver from "./project/ProjectFaviconResolver.ts";
-import { ProviderInstanceRegistryHydrationLive } from "./provider/Layers/ProviderInstanceRegistryHydration.ts";
-import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry.ts";
-import * as ProviderEventLoggers from "./provider/Layers/ProviderEventLoggers.ts";
+import * as ProviderInstanceRegistryHydration from "./provider/ProviderInstanceRegistryHydration.ts";
+import * as ProviderRegistryLayer from "./provider/ProviderRegistry.ts";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -63,12 +65,8 @@ import * as T3ToolBridge from "./mcp/bridge/T3ToolBridge.ts";
 import * as T3ToolDispatch from "./mcp/bridge/T3ToolDispatch.ts";
 import * as ProviderAdapterRegistry from "./orchestration-v2/ProviderAdapterRegistry.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
-import {
-  OrchestrationEventInfrastructureLayerLive,
-  OrchestrationV2ProductionLayerLive,
-  ProjectServiceLayerLive,
-  ProjectSetupScriptRunnerLayerLive,
-} from "./orchestration-v2/runtimeLayer.ts";
+import * as RuntimeLayer from "./orchestration-v2/runtimeLayer.ts";
+import * as PullRequestWatchReactor from "./orchestration-v2/PullRequestWatchReactor.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
 import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
@@ -82,18 +80,35 @@ import * as ThreadPullRequestService from "./orchestration-v2/ThreadPullRequestS
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
 import * as ThreadSettlementService from "./orchestration-v2/ThreadSettlementService.ts";
 
+// The secret store also holds the one-use values of agent secret requests.
 const CoderSettingsLive = ServerSettings.layer.pipe(
-  Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(ServerSecretStore.layer),
   Layer.provideMerge(SqlitePersistenceLayerLive),
 );
 
-const CoderProviderInstancesLive = ProviderInstanceRegistryHydrationLive.pipe(
-  Layer.provide(ModelManifest.layerBundled),
+// Coder: no diagnostic provider event log files, so drivers get upstream's no-op loggers.
+const CoderProviderEventLoggersLive = Layer.succeed(
+  ProviderEventLoggers.ProviderEventLoggers,
+  ProviderEventLoggers.NoOpProviderEventLoggers,
+);
+
+// Drivers read the bundled manifest through upstream's `ModelCatalog` port.
+const CoderModelCatalogLive = ModelManifest.layerModelCatalog.pipe(
+  Layer.provideMerge(ModelManifest.layerBundled),
+);
+
+const CoderProviderSupportLive = Layer.mergeAll(
+  CoderProviderEventLoggersLive,
+  CoderModelCatalogLive,
+  ProviderLatestVersions.layer,
+  McpProviderSessions.layer,
+);
+
+const CoderProviderInstancesLive = ProviderInstanceRegistryHydration.layer.pipe(
+  Layer.provide(CoderProviderSupportLive),
   // Coder: the demand-only background policy; provider update checks use fetch.
   Layer.provide(BackgroundPolicy.layer),
   Layer.provide(FetchHttpClient.layer),
-  // Coder: no diagnostic provider event log files.
-  Layer.provide(ProviderEventLoggers.layer),
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(ScreenshotArtifacts.layer),
 );
@@ -133,7 +148,7 @@ const CoderPullRequestsLive = PullRequestService.layer.pipe(
 const CoderGitManagerLive = GitManager.layer.pipe(
   // Per-project git settings resolve the acting thread's project.
   Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),
-  Layer.provideMerge(ProjectSetupScriptRunnerLayerLive),
+  Layer.provideMerge(RuntimeLayer.layerProjectSetupScriptRunner),
   Layer.provideMerge(WorktreeSetupTracker.layer),
   Layer.provideMerge(GitVcsDriver.layer),
   Layer.provideMerge(CoderSourceControlLive),
@@ -171,7 +186,7 @@ const CoderVcsLive = Layer.empty.pipe(
       Layer.provide(CoderGitWorkflowLive),
       Layer.provide(BackgroundPolicy.layer),
       Layer.provide(
-        VcsStatusBroadcaster.autoPullPolicyLayer.pipe(Layer.provide(ProjectStore.layer)),
+        VcsStatusBroadcaster.layerAutoPullPolicy.pipe(Layer.provide(ProjectStore.layer)),
       ),
     ),
   ),
@@ -198,21 +213,23 @@ const CoderResourceCleanupLive = Layer.effect(
               }),
           ),
         ),
+      // Coder: there is no browser preview.
+      cleanupPreviews: () => Effect.void,
       cleanupAttachments: () => Effect.void,
     };
   }),
 );
 
 // Coder: no provider turn analytics are recorded (`ProviderTurnAnalytics` keeps its no-op default).
-const CoderOrchestrationRuntimeLive = OrchestrationV2ProductionLayerLive.pipe(
+const CoderOrchestrationRuntimeLive = RuntimeLayer.layerProduction.pipe(
   Layer.provide(CoderCheckpointStoreLive),
   Layer.provide(CoderGitWorkflowLive),
   Layer.provide(CoderResourceCleanupLive),
   Layer.provide(
-    RunFinalizationService.observerLive.pipe(
+    RunFinalizationService.layerObserver.pipe(
       Layer.provide(ProjectionStoreV2.layer),
       Layer.provide(CoderPullRequestsLive),
-      Layer.provide(ProjectServiceLayerLive),
+      Layer.provide(RuntimeLayer.layerProjectService),
     ),
   ),
 );
@@ -243,6 +260,18 @@ const PullRequestSyncWorkerLive = Layer.effectDiscard(
   Layer.provide(ProjectionStoreV2.layer),
 );
 
+// Agents watching a merge request are woken when its checks, reviews, or conflicts need them.
+const PullRequestWatchWorkerLive = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const service = yield* PullRequestWatchReactor.PullRequestWatchReactor;
+    yield* service.start();
+  }),
+).pipe(
+  Layer.provide(PullRequestWatchReactor.layer),
+  Layer.provide(CoderPullRequestsLive),
+  Layer.provide(ProjectionStoreV2.layer),
+);
+
 const CoderWorkspaceEntriesLive = WorkspaceEntries.layer.pipe(Layer.provide(WorkspacePaths.layer));
 const CoderWorkspaceFileSystemLive = WorkspaceFileSystem.layer.pipe(
   Layer.provide(WorkspacePaths.layer),
@@ -253,10 +282,11 @@ const CoderRuntimeCoreLive = Layer.mergeAll(
   ThreadSettlementWorkerLive,
   ThreadPullRequestWorkerLive,
   PullRequestSyncWorkerLive,
+  PullRequestWatchWorkerLive,
   CoderPullRequestsLive,
 ).pipe(
   Layer.provideMerge(CoderOrchestrationApplicationLive),
-  Layer.provideMerge(OrchestrationEventInfrastructureLayerLive),
+  Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
   Layer.provideMerge(Layer.merge(ProjectStore.layer, ThreadSearch.layer)),
   Layer.provideMerge(CoderSettingsLive),
   Layer.provideMerge(Keybindings.layer),
@@ -280,15 +310,15 @@ const CoderRuntimeDependenciesLive = CoderRuntimeCoreLive.pipe(
   // Coder: credentials are workspace file bridges that carry upstream's T3 toolkits.
   Layer.provideMerge(McpSessionRegistry.layer.pipe(Layer.provide(CoderEnvironment.layer))),
   Layer.provideMerge(T3ToolDispatch.layer),
-  Layer.provideMerge(ProviderEventLoggers.layer),
+  Layer.provideMerge(CoderProviderSupportLive),
   Layer.provideMerge(
     ProviderMaintenanceRunner.layer.pipe(
-      Layer.provide(ModelManifest.layerBundled),
+      Layer.provide(CoderProviderSupportLive),
       Layer.provide(FetchHttpClient.layer),
-      Layer.provide(ProviderRegistryLive),
+      Layer.provide(ProviderRegistryLayer.layer),
     ),
   ),
-  Layer.provideMerge(ProviderRegistryLive),
+  Layer.provideMerge(ProviderRegistryLayer.layer),
   Layer.provideMerge(CoderProviderInstancesLive),
   Layer.provideMerge(ModelManifest.layerBundled),
   Layer.provideMerge(SqlitePersistenceLayerLive),

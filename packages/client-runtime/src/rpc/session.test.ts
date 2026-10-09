@@ -11,7 +11,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Socket from "effect/socket/Socket";
 
 import { ConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import * as RpcSession from "./session.ts";
@@ -117,13 +117,13 @@ const ENCODED_SERVER_CONFIG = encodeServerConfig(SERVER_CONFIG);
 
 const makeFactory = Effect.fn("TestRpcSessionFactory.make")(function* () {
   const sockets: TestWebSocket[] = [];
-  const constructorLayer = Layer.succeed(Socket.WebSocketConstructor, (url) => {
+  const layerConstructor = Layer.succeed(Socket.WebSocketConstructor, (url) => {
     const socket = new TestWebSocket(url);
     sockets.push(socket);
     return socket as unknown as globalThis.WebSocket;
   });
   const factory = yield* RpcSession.RpcSessionFactory.pipe(
-    Effect.provide(RpcSession.layer.pipe(Layer.provide(constructorLayer))),
+    Effect.provide(RpcSession.layer.pipe(Layer.provide(layerConstructor))),
   );
   return { factory, sockets };
 });

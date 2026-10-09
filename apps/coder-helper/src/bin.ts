@@ -6,8 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
-import * as RpcSerialization from "effect/unstable/rpc/RpcSerialization";
-import * as RpcServer from "effect/unstable/rpc/RpcServer";
+import * as RpcSerialization from "effect/rpc/RpcSerialization";
+import * as RpcServer from "effect/rpc/RpcServer";
 
 import {
   CODER_HELPER_INFO_METHOD,
@@ -16,8 +16,10 @@ import {
   CoderHelperRpcGroup,
 } from "@t3tools/coder-cli/rpc";
 import * as ServerConfig from "t3/src/config.ts";
+import * as DefectReporter from "t3/src/observability/DefectReporter.ts";
 import { withTerminalOutputWindow } from "t3/src/terminal/OutputProtocol.ts";
 import { makeCoderRuntimeLayer } from "t3/src/server.ts";
+import { WS_RPC_SERVER_OPTIONS } from "t3/src/ws.ts";
 
 export const coderHelperHandlers = CoderHelperRpcGroup.toLayer({
   [CODER_HELPER_INFO_METHOD]: ({ protocolVersion }) =>
@@ -54,10 +56,11 @@ const coderServerConfigLayer = Layer.effect(
 
 export const CoderWorkspaceRpcGroup = CoderHelperRpcGroup.merge(CoderWsRpcGroup);
 
-export const coderHelperStdioLayer = RpcServer.layer(CoderWorkspaceRpcGroup, {
-  disableTracing: true,
-}).pipe(
-  Layer.provide(Layer.merge(coderHelperHandlers, makeCoderRuntimeLayer())),
+export const coderHelperStdioLayer = RpcServer.layer(
+  CoderWorkspaceRpcGroup,
+  WS_RPC_SERVER_OPTIONS,
+).pipe(
+  Layer.provide(Layer.mergeAll(coderHelperHandlers, makeCoderRuntimeLayer(), DefectReporter.layer)),
   Layer.provide(
     Layer.effect(RpcServer.Protocol, Effect.map(RpcServer.Protocol, withTerminalOutputWindow)).pipe(
       Layer.provide(RpcServer.layerProtocolStdio),

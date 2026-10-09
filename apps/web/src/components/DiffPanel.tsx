@@ -1082,6 +1082,10 @@ export default function DiffPanel({
                     sectionId={reviewSectionId}
                     sectionTitle={reviewSectionTitle}
                     composerDraftTarget={composerDraftTarget}
+                    // A find match in a folded file opens it, as upstream's panel does.
+                    onRevealSearchMatch={(fileKey) => {
+                      if (collapsedDiffFileKeys.has(fileKey)) toggleDiffFileCollapsed(fileKey);
+                    }}
                     renderHeaderPrefix={(fileDiff, fileKey, collapsed) => {
                       const filePath = resolveFileDiffPath(fileDiff);
                       return (

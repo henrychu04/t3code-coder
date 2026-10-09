@@ -1,6 +1,6 @@
 import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as Layer from "effect/Layer";
-import * as Socket from "effect/unstable/socket/Socket";
+import * as Socket from "effect/socket/Socket";
 
 import { browserCryptoLayer } from "./browserCrypto";
 

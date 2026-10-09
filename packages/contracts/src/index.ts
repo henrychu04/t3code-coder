@@ -40,6 +40,7 @@ export * from "./project.ts";
 export * from "./filesystem.ts";
 export * from "./agentSessions.ts";
 export * from "./review.ts";
+export * from "./mcpApps.ts";
 export * from "./browserProfile.ts";
 export * from "./device.ts";
 export * from "./preview.ts";
@@ -52,3 +53,5 @@ export * from "./worktreeSetup.ts";
 // Coder: legacy screenshot artifacts and the local gateway wire.
 export * from "./screenshotArtifact.ts";
 export type * from "./coderGateway.ts";
+export * from "./secretRequest.ts";
+export * from "./clientRpcPermissions.ts";

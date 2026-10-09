@@ -1,7 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import { EnvironmentId, type ReviewDiffFileSnapshotResult } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
-import { AsyncResult } from "effect/unstable/reactivity";
+import { AsyncResult } from "effect/reactivity";
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vite-plus/test";
 

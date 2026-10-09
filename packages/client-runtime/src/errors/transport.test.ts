@@ -21,6 +21,7 @@ describe("isTransportConnectionErrorMessage", () => {
 
   it("recognizes connection errors emitted by the Effect RPC session", () => {
     expect(isTransportConnectionErrorMessage("Test environment disconnected.")).toBe(true);
+    expect(isTransportConnectionErrorMessage("Test environment stopped responding.")).toBe(true);
     expect(
       isTransportConnectionErrorMessage(
         "Test environment could not establish a WebSocket connection.",
@@ -28,6 +29,22 @@ describe("isTransportConnectionErrorMessage", () => {
     ).toBe(true);
     expect(isTransportConnectionErrorMessage("Test environment is not connected.")).toBe(true);
     expect(isTransportConnectionErrorMessage("ClientProtocolError: socket closed")).toBe(true);
+  });
+
+  // Coder: no relay connections, so no network hint is appended.
+  it("recognizes connection errors, including a session that stopped responding", () => {
+    for (const sentence of [
+      "Workspace disconnected.",
+      "Workspace stopped responding.",
+      "Workspace could not establish a WebSocket connection.",
+    ]) {
+      expect(isTransportConnectionErrorMessage(sentence)).toBe(true);
+    }
+    expect(
+      isTransportConnectionErrorMessage(
+        "Your ChatGPT connection expired or was disconnected. Sign in again.",
+      ),
+    ).toBe(false);
   });
 
   it("returns true for the T3 server WebSocket message", () => {

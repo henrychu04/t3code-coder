@@ -1,5 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as RpcTest from "effect/unstable/rpc/RpcTest";
+import * as RpcTest from "effect/rpc/RpcTest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -17,7 +17,7 @@ import {
   type OrchestrationProjectShell,
   type OrchestrationV2ThreadShell,
 } from "@t3tools/contracts";
-import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ServerConfig from "./config.ts";
 import * as CoderEnvironment from "./coderEnvironment.ts";
@@ -34,7 +34,7 @@ import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
 import * as ThreadSearch from "./orchestration-v2/ThreadSearch.ts";
-import * as OrchestrationEventStore from "./persistence/Services/OrchestrationEventStore.ts";
+import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as ManagedProjectFolders from "./project/ManagedProjectFolders.ts";
@@ -44,12 +44,14 @@ import * as ProjectService from "./project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as WorktreeSetupTracker from "./project/WorktreeSetupTracker.ts";
 import { ProviderMaintenanceRunner } from "./provider/providerMaintenanceRunner.ts";
-import * as ProviderInstanceRegistry from "./provider/Services/ProviderInstanceRegistry.ts";
-import * as ProviderRegistry from "./provider/Services/ProviderRegistry.ts";
+import * as ProviderInstanceRegistry from "./provider/ProviderInstanceRegistry.ts";
+import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as ReviewService from "./review/ReviewService.ts";
 import * as ScheduledTasks from "./scheduledTasks/ScheduledTaskService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
+import * as SecretRequests from "./secrets/SecretRequests.ts";
+import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as GitLabCli from "./sourceControl/GitLabCli.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -214,6 +216,8 @@ const harness = (
       stub(ReviewService.ReviewService),
       stub(TerminalManager.TerminalManager),
       stub(GitWorkflowService.GitWorkflowService),
+      stub(SecretRequests.SecretRequests),
+      stub(McpAppRequests.McpAppRequests),
       ServerConfig.layer(config),
       WorkspacePaths.layer,
     ).pipe(Layer.provideMerge(NodeServices.layer));

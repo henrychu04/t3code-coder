@@ -5,7 +5,7 @@
  *
  * @module mcp/bridge/T3ToolInstructions
  */
-import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "../../provider/T3OrchestrationInstructions.ts";
+import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/server/orchestrationInstructions";
 
 const UPSTREAM_MCP_INTRO = "The `t3-code` MCP server provides app-owned orchestration.";
 const UPSTREAM_MCP_TRANSPORT = /\nTool names may include a harness-normalized MCP prefix[^\n]*\n/u;

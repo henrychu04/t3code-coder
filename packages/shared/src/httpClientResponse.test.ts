@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { Cookies, HttpClientRequest, HttpClientResponse } from "effect/unstable/http";
+import { Cookies, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 describe("Effect HTTP response compatibility", () => {
   it("can inspect a rejected response when Headers has no getSetCookie", () => {

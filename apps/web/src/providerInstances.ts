@@ -16,6 +16,7 @@ import { isCoderProviderDriver } from "@t3tools/shared/coderProviders";
 import {
   DEFAULT_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
+  isUnconfiguredDefaultInstanceEnabled,
   resolveProviderInstanceEnabled,
   type ModelSelection,
   type ProviderDriverKind,
@@ -167,11 +168,7 @@ export function deriveCoderProviderInstanceEntries(
 
 export function deriveProviderEntriesByEnvironment(
   providersByEnvironment: Iterable<
-    readonly [
-      string,
-      ReadonlyArray<ServerProvider>,
-      Pick<ServerSettings, "providerInstances" | "providers">?,
-    ]
+    readonly [string, ReadonlyArray<ServerProvider>, Pick<ServerSettings, "providerInstances">?]
   >,
 ): ReadonlyMap<string, ReadonlyMap<string, ProviderInstanceEntry>> {
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
@@ -192,30 +189,23 @@ export function deriveProviderEntriesByEnvironment(
  * settings write, so picker visibility must follow settings rather than waiting
  * for probe reconciliation.
  *
- * Only built-in default instances have a legacy `providers` entry. Every
- * other instance exists through `providerInstances`; if it is absent there,
- * its streamed snapshot is stale (for example immediately after deletion)
- * and is treated as disabled.
+ * A built-in default instance without a `providerInstances` entry keeps its
+ * streamed state, since the server runs it with default config. Any other
+ * instance missing from `providerInstances` is stale (for example
+ * immediately after deletion) and is treated as disabled.
  */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
-  settings: Pick<ServerSettings, "providerInstances" | "providers">,
+  settings: Pick<ServerSettings, "providerInstances">,
 ): ReadonlyArray<ProviderInstanceEntry> {
-  const legacyProviders = settings.providers as Readonly<
-    Record<string, { readonly enabled?: boolean } | undefined>
-  >;
-
   return entries.map((entry) => {
     const explicitInstance = Object.hasOwn(settings.providerInstances, entry.instanceId)
       ? settings.providerInstances[entry.instanceId]
       : undefined;
-    const legacyProvider = Object.hasOwn(legacyProviders, entry.driverKind)
-      ? legacyProviders[entry.driverKind]
-      : undefined;
     const enabled = explicitInstance
       ? resolveProviderInstanceEnabled(explicitInstance)
-      : entry.isDefault && legacyProvider
-        ? (legacyProvider.enabled ?? entry.enabled)
+      : entry.isDefault
+        ? isUnconfiguredDefaultInstanceEnabled(entry.instanceId)
         : false;
     if (entry.driverKind !== "acpRegistry" || explicitInstance === undefined) {
       return enabled === entry.enabled ? entry : { ...entry, enabled };
@@ -224,6 +214,9 @@ export function applyProviderInstanceSettings(
       explicitInstance.config !== null && typeof explicitInstance.config === "object"
         ? (explicitInstance.config as Readonly<Record<string, unknown>>)
         : null;
+    if (config?.source === "local") {
+      return { ...entry, enabled, acpRegistryAgentId: undefined, acpRegistryIconUrl: undefined };
+    }
     const agentId = config?.agentId;
     const iconUrl = config?.registryIconUrl;
     return {
