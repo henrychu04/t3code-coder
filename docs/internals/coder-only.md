@@ -485,10 +485,10 @@ browser and hosted-pairing settings, and the `keybindings.json` editor do not ex
 changes are made in the table. Connections holds the Coder deployments, workspaces, workspace icon,
 and TCP/UDP port forwards instead of upstream's pairing and network access. Providers uses upstream's provider panel and add-instance dialog,
 limited to the Codex and Claude drivers (any instance), without sign-in, provider setup or
-managed install, per-instance environment variables, ACP registry, or usage-limit sources;
-the provider health interval stays in General. Source Control appends GitLab
-workspace status and the write-policy probe. Background activity keeps the fork's Git fetch and
-provider health presets under General. The last project grouping mode is remembered in memory for
+managed install, per-instance environment variables, ACP registry, or usage-limit sources. Source Control appends GitLab
+workspace status and the write-policy probe. Background activity uses upstream's profiles and Advanced
+dialog, without the host power-monitor intervals or power and lock pauses, and profile
+descriptions name their intervals. The last project grouping mode is remembered in memory for
 the page session rather than in browser storage.
 
 Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
@@ -804,8 +804,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `VcsStatusBroadcaster` adds `streamRefStatus` for `subscribeVcsRefStatus` and resolves
     auto-pull with `resolveProjectAutoPull`. Its `BackgroundPolicy` dependency is a
     Coder-owned stub that always allows work, because polling already stops when the last
-    status subscription ends. `ws.ts` reads the remote refresh interval from the flat
-    `automaticGitFetchInterval` setting.
+    status subscription ends. `ws.ts` resolves the remote refresh interval from the background-activity profile as upstream does.
   - Startup auto-pull (`vcs/projectAutoPull.ts`) is upstream's `autoPullProjects` from
     `serverRuntimeStartup.ts`, with the same per-project enablement.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,

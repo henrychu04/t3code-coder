@@ -1,11 +1,12 @@
 import { SettingsGroup } from "./SettingsGroup";
 import { Spinner } from "~/components/ui/spinner";
 import { NotificationSettings } from "./NotificationSettings";
-import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon } from "lucide-react";
+import { ArchiveIcon, ArchiveX, CheckIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type BackgroundActivityProfile,
   ProviderDriverKind,
   type ProviderInstanceId,
   type ScopedThreadRef,
@@ -19,6 +20,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
   type ChatWidth,
   type DiffLayout,
@@ -41,16 +43,19 @@ import {
   type ResponseStreamingMode,
   MIN_TERMINAL_FONT_SIZE,
 } from "@t3tools/contracts/settings";
+import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import { createModelSelection } from "@t3tools/shared/model";
+import * as Duration from "effect/Duration";
 import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
-import { APP_VERSION } from "../../branding";
+import { APP_VERSION, HOSTED_APP_CHANNEL } from "../../branding";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import {
   resolveEnvironmentIdentificationPillLabel,
   useEnvironmentStageLabel,
 } from "../SidebarStageBackdrop";
+import { isElectron } from "../../env";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
 import {
   readAppearanceModePreference,
@@ -67,9 +72,11 @@ import {
 import { useScopedModelDisabledReason } from "./useScopedModelAvailability";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
-import { BackgroundActivitySettings } from "./BackgroundActivitySettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { getCustomModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
+import {
+  getCustomModelOptionsByInstance,
+  resolveAppModelSelectionState,
+} from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -82,6 +89,15 @@ import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../ui/collapsible";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
 import { DraftInput } from "../ui/draft-input";
 import { Input } from "../ui/input";
 import {
@@ -96,19 +112,36 @@ import {
 } from "../../appearanceFonts";
 import { CodeFontPreview, PromptFontPreview, TerminalFontPreview } from "./SettingsFontPreviews";
 import { discoverInstalledFonts, FontFamilyPicker, useFontEnumeration } from "./FontFamilyPicker";
+import {
+  NumberField,
+  NumberFieldDecrement,
+  NumberFieldGroup,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "../ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ThemeLibrary } from "./ThemeSettings";
 import {
+  backgroundActivityOverrideSettings,
+  backgroundActivitySharedPolicySettings,
+  durationToSeconds,
+  getChangedBrowserSettingLabels,
   getChangedTypographySettingLabels,
+  normalizeIntervalSeconds,
+  PROVIDER_HEALTH_INTERVAL_STEP_SECONDS,
+  hasChangedBackgroundActivitySettings,
   isProjectGroupingEnabled,
   projectGroupingModeFromToggle,
   readLastEnabledProjectGroupingMode,
   rememberEnabledProjectGroupingMode,
+  resolveBackgroundActivityProfileOption,
 } from "./SettingsPanels.logic";
 import {
+  PolicyTooltip,
   SETTINGS_PICKER_TRIGGER_CLASSNAME,
   SettingResetButton,
   SettingsPageContainer,
@@ -154,7 +187,62 @@ const DIFF_LAYOUT_LABELS: Record<DiffLayout, string> = {
   split: "Split",
 };
 
+const BACKGROUND_ACTIVITY_PROFILE_LABELS: Record<BackgroundActivityProfile, string> = {
+  balanced: "Balanced",
+  performance: "Performance",
+  "battery-saver": "Battery saver",
+};
+
+type BackgroundActivityProfileOption = BackgroundActivityProfile | "advanced";
+
+const BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS: Record<BackgroundActivityProfileOption, string> = {
+  ...BACKGROUND_ACTIVITY_PROFILE_LABELS,
+  advanced: "Advanced",
+};
+
+// Coder: workspaces have no host power or lock state, so profiles differ only by interval.
+const BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS: Record<BackgroundActivityProfile, string> = {
+  balanced: "Refreshes Git and provider status at the default intervals.",
+  performance: "Refreshes Git every 15 seconds and provider status every minute.",
+  "battery-saver": "Stops automatic Git refresh and checks providers every 15 minutes.",
+};
+
+const ADVANCED_BACKGROUND_ACTIVITY_DESCRIPTION = "Uses custom intervals.";
+
 const DEFAULT_DRIVER_KIND = ProviderDriverKind.make("codex");
+
+function resetBackgroundActivitySettings() {
+  return {
+    backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
+  };
+}
+
+function backgroundActivityProfileSettings(profile: BackgroundActivityProfile) {
+  return {
+    backgroundActivity: {
+      schemaVersion: 1 as const,
+      profile,
+      overrides: {},
+    },
+  };
+}
+
+function AboutVersionTitle() {
+  return (
+    <span className="inline-flex items-baseline gap-2">
+      <span>Version</span>
+      <code className="text-2xs font-medium text-muted-foreground">{APP_VERSION}</code>
+    </span>
+  );
+}
+
+// Coder: the gateway installs the matching helper; there is no desktop or hosted-app update track.
+function AboutVersionSection() {
+  return (
+    <SettingsRow title={<AboutVersionTitle />} description="Current version of the application." />
+  );
+}
+
 export function useSettingsRestore(onRestored?: () => void) {
   const {
     theme,
@@ -172,6 +260,7 @@ export function useSettingsRestore(onRestored?: () => void) {
     settings.textGenerationModelSelection ?? null,
     DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection ?? null,
   );
+  const isBackgroundActivityDirty = hasChangedBackgroundActivitySettings(settings);
 
   const changedSettingLabels = useMemo(
     () => [
@@ -269,6 +358,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate
         ? ["Continue threads after restarts"]
         : []),
+      ...(isBackgroundActivityDirty ? ["Background activity"] : []),
       ...(settings.defaultThreadEnvMode !== DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode
         ? ["New thread mode"]
         : []),
@@ -288,12 +378,29 @@ export function useSettingsRestore(onRestored?: () => void) {
       ...(settings.confirmThreadDelete !== DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete
         ? ["Delete confirmation"]
         : []),
+      ...(settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? ["Quit shortcut"] : []),
       ...(isTextGenerationModelDirty ? ["Text generation model"] : []),
+      ...getChangedBrowserSettingLabels(settings),
+      ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
+        ? ["Agent browser access"]
+        : []),
     ],
     [
       isTextGenerationModelDirty,
+      isBackgroundActivityDirty,
+      settings.browserDefaultViewport,
+      settings.browserDefaultZoomFactor,
+      settings.browserDefaultAppearance,
+      settings.browserRecordingFrameRate,
+      settings.browserRecordingShowKeyPresses,
+      settings.browserRecordingShowMousePresses,
+      settings.browserLinkTarget,
+      settings.browserAutoShowFloatingPreview,
       settings.appearanceContrast,
       settings.diffColorScheme,
+      settings.chatWidth,
+      settings.enableAgentBrowserAccess,
+      settings.confirmQuit,
       settings.confirmThreadArchive,
       settings.confirmThreadDelete,
       settings.confirmThreadUnpin,
@@ -436,6 +543,8 @@ export function useSettingsRestore(onRestored?: () => void) {
       responseStreamingMode: DEFAULT_UNIFIED_SETTINGS.responseStreamingMode,
       enableProviderUpdateChecks: DEFAULT_UNIFIED_SETTINGS.enableProviderUpdateChecks,
       continueThreadsAfterServerUpdate: DEFAULT_UNIFIED_SETTINGS.continueThreadsAfterServerUpdate,
+      backgroundActivity: DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
+      backgroundActivityProfile: DEFAULT_UNIFIED_SETTINGS.backgroundActivityProfile,
       automaticGitFetchInterval: DEFAULT_UNIFIED_SETTINGS.automaticGitFetchInterval,
       providerHealthRefreshInterval: DEFAULT_UNIFIED_SETTINGS.providerHealthRefreshInterval,
       defaultThreadEnvMode: DEFAULT_UNIFIED_SETTINGS.defaultThreadEnvMode,
@@ -444,6 +553,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       confirmThreadArchive: DEFAULT_UNIFIED_SETTINGS.confirmThreadArchive,
       confirmThreadDelete: DEFAULT_UNIFIED_SETTINGS.confirmThreadDelete,
       confirmThreadUnpin: DEFAULT_UNIFIED_SETTINGS.confirmThreadUnpin,
+      confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit,
       textGenerationModelSelection: DEFAULT_UNIFIED_SETTINGS.textGenerationModelSelection,
       fontFamilySans: DEFAULT_UNIFIED_SETTINGS.fontFamilySans,
       fontFamilyComposer: DEFAULT_UNIFIED_SETTINGS.fontFamilyComposer,
@@ -453,6 +563,18 @@ export function useSettingsRestore(onRestored?: () => void) {
       fontSizePrompt: DEFAULT_UNIFIED_SETTINGS.fontSizePrompt,
       fontSizeCode: DEFAULT_UNIFIED_SETTINGS.fontSizeCode,
       fontSizeTerminal: DEFAULT_UNIFIED_SETTINGS.fontSizeTerminal,
+      browserDefaultViewport: DEFAULT_UNIFIED_SETTINGS.browserDefaultViewport,
+      browserDefaultZoomFactor: DEFAULT_UNIFIED_SETTINGS.browserDefaultZoomFactor,
+      browserDefaultAppearance: DEFAULT_UNIFIED_SETTINGS.browserDefaultAppearance,
+      browserRecordingFrameRate: DEFAULT_UNIFIED_SETTINGS.browserRecordingFrameRate,
+      browserRecordingShowKeyPresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowKeyPresses,
+      browserRecordingShowMousePresses: DEFAULT_UNIFIED_SETTINGS.browserRecordingShowMousePresses,
+      browserLinkTarget: DEFAULT_UNIFIED_SETTINGS.browserLinkTarget,
+      browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
+      // Re-granted like any other default. The confirmation dialog lists it by
+      // name, so a user restoring defaults is told the agent regains access
+      // rather than discovering it later.
+      enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
     });
     onRestored?.();
   }, [
@@ -471,6 +593,172 @@ export function useSettingsRestore(onRestored?: () => void) {
     changedSettingLabels,
     restoreDefaults,
   };
+}
+
+function BackgroundActivityAdvancedDialog({
+  open,
+  onOpenChange,
+}: {
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+}) {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
+  const activeProfile = resolvedBackgroundActivity.profile;
+  const automaticGitFetchIntervalSeconds = durationToSeconds(
+    resolvedBackgroundActivity.automaticGitFetchInterval,
+  );
+  const providerHealthRefreshIntervalSeconds = durationToSeconds(
+    resolvedBackgroundActivity.providerHealthRefreshInterval,
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogPopup className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Background Activity</DialogTitle>
+          <DialogDescription>
+            Tune the shared power policy and the background intervals that feed it.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogPanel>
+          <div className="overflow-hidden rounded-xl border bg-card text-card-foreground">
+            <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-medium">Shared policy</div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Controls whether background work may run after a subscribed interval fires.
+                </p>
+              </div>
+              <Select
+                value={activeProfile}
+                onValueChange={(value) => {
+                  if (
+                    value === "balanced" ||
+                    value === "performance" ||
+                    value === "battery-saver"
+                  ) {
+                    updateSettings({
+                      backgroundActivity: backgroundActivitySharedPolicySettings(settings, value),
+                    });
+                  }
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-full sm:w-40"
+                  aria-label="Shared background policy"
+                >
+                  <SelectValue>{BACKGROUND_ACTIVITY_PROFILE_LABELS[activeProfile]}</SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="balanced">
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="performance">
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="battery-saver">
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-3 border-b px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-medium">
+                  {searchableSetting("git-fetch-interval").title}
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Refresh remote branch status in the background.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <NumberField
+                  value={automaticGitFetchIntervalSeconds}
+                  min={0}
+                  step={5}
+                  size="sm"
+                  className="w-32"
+                  onValueChange={(value) =>
+                    updateSettings(
+                      backgroundActivityOverrideSettings(
+                        settings.backgroundActivity,
+                        resolvedBackgroundActivity,
+                        {
+                          automaticGitFetchInterval: Duration.seconds(
+                            normalizeIntervalSeconds(value),
+                          ),
+                        },
+                      ),
+                    )
+                  }
+                >
+                  <NumberFieldGroup>
+                    <NumberFieldDecrement aria-label="Decrease Git fetch interval" />
+                    <NumberFieldInput aria-label="Git fetch interval in seconds" />
+                    <NumberFieldIncrement aria-label="Increase Git fetch interval" />
+                  </NumberFieldGroup>
+                </NumberField>
+                <span className="text-xs text-muted-foreground">seconds</span>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <div className="text-sm font-medium">Provider health interval</div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Refresh provider availability, versions, auth state, and model metadata.
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <NumberField
+                  value={providerHealthRefreshIntervalSeconds}
+                  min={0}
+                  step={PROVIDER_HEALTH_INTERVAL_STEP_SECONDS}
+                  size="sm"
+                  className="w-32"
+                  onValueChange={(value) =>
+                    updateSettings(
+                      backgroundActivityOverrideSettings(
+                        settings.backgroundActivity,
+                        resolvedBackgroundActivity,
+                        {
+                          providerHealthRefreshInterval: Duration.seconds(
+                            normalizeIntervalSeconds(value),
+                          ),
+                        },
+                      ),
+                    )
+                  }
+                >
+                  <NumberFieldGroup>
+                    <NumberFieldDecrement aria-label="Decrease provider health interval" />
+                    <NumberFieldInput aria-label="Provider health interval in seconds" />
+                    <NumberFieldIncrement aria-label="Increase provider health interval" />
+                  </NumberFieldGroup>
+                </NumberField>
+                <span className="text-xs text-muted-foreground">seconds</span>
+              </div>
+            </div>
+
+            {/* Coder: no host power monitor or power-state pauses in a Coder workspace. */}
+          </div>
+        </DialogPanel>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => updateSettings(resetBackgroundActivitySettings())}
+          >
+            Reset all
+          </Button>
+          <Button onClick={() => onOpenChange(false)}>Done</Button>
+        </DialogFooter>
+      </DialogPopup>
+    </Dialog>
+  );
 }
 
 export function AppearanceSettingsPanel() {
@@ -627,14 +915,12 @@ export function AppearanceSettingsPanel() {
             {...searchableSetting("environment-identification")}
             description="Choose how Dev and Nightly environments are identified."
             resetAction={
-              settings.environmentIdentificationMode !==
-              DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode ? (
+              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
                   label="environment identification"
                   onClick={() =>
                     updateSettings({
-                      environmentIdentificationMode:
-                        DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode,
+                      environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
                     })
                   }
                 />
@@ -1503,13 +1789,15 @@ export function GeneralSettingsPanel() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
   const navigate = useNavigate();
-  const { environment, connectedEnvironments } = useSettingsScope();
+  const { scope, environment, connectedEnvironments } = useSettingsScope();
   // The representative environment supplies the provider list for pickers;
   // a fanned-out model choice is validated against every target before it
   // is written. Per-machine tuning (background activity overrides) still
   // needs exactly one environment.
   const environmentId = environment?.environmentId ?? null;
+  const isEnvironmentScope = scope.environmentIds.length === 1 && environmentId !== null;
   const hasServerTargets = connectedEnvironments.length > 0;
+  const [backgroundActivityDialogOpen, setBackgroundActivityDialogOpen] = useState(false);
   const mixedResponseStreamingMode = useScopedSettingsMixed(["responseStreamingMode"]);
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
     readLastEnabledProjectGroupingMode(),
@@ -1561,8 +1849,22 @@ export function GeneralSettingsPanel() {
     settings,
     textGenerationModelInstanceEntries,
   );
+  const resolvedBackgroundActivity = resolveServerBackgroundActivitySettings(settings);
+  const activeBackgroundActivityProfile = resolvedBackgroundActivity.profile;
+  const backgroundActivityProfileOption = resolveBackgroundActivityProfileOption(settings);
+  const mixedBackgroundActivity = useScopedSettingsMixed(["backgroundActivity"]);
   const mixedAddProjectBaseDirectory = useScopedSettingsMixed(["addProjectBaseDirectory"]);
   const mixedTextGenerationModel = useScopedSettingsMixed(["textGenerationModelSelection"]);
+  const backgroundActivityDescription =
+    backgroundActivityProfileOption === "advanced"
+      ? `${ADVANCED_BACKGROUND_ACTIVITY_DESCRIPTION} Shared policy: ${
+          BACKGROUND_ACTIVITY_PROFILE_LABELS[activeBackgroundActivityProfile]
+        }.`
+      : BACKGROUND_ACTIVITY_PROFILE_DESCRIPTIONS[resolvedBackgroundActivity.profile];
+  const canResetBackgroundActivity = !Equal.equals(
+    settings.backgroundActivity,
+    DEFAULT_UNIFIED_SETTINGS.backgroundActivity,
+  );
 
   return (
     <SettingsPageContainer>
@@ -2212,9 +2514,100 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-      </SettingsSection>
 
-      <BackgroundActivitySettings />
+        <SettingsRow
+          serverScoped
+          settingKeys={["backgroundActivity"]}
+          id={searchableSetting("background-activity").id}
+          title={
+            <span className="inline-flex items-center gap-1.5">
+              {searchableSetting("background-activity").title}
+              <PolicyTooltip>
+                This shared policy gates background work such as Git refreshes and provider health
+                probes after their individual intervals elapse.
+              </PolicyTooltip>
+            </span>
+          }
+          description={backgroundActivityDescription}
+          resetAction={
+            canResetBackgroundActivity ? (
+              <SettingResetButton
+                label="background activity"
+                onClick={() => updateSettings(resetBackgroundActivitySettings())}
+              />
+            ) : null
+          }
+          control={
+            <>
+              <Select
+                value={mixedBackgroundActivity ? null : backgroundActivityProfileOption}
+                onValueChange={(value) => {
+                  if (value === "advanced") {
+                    if (isEnvironmentScope) setBackgroundActivityDialogOpen(true);
+                    return;
+                  }
+                  if (
+                    value === "balanced" ||
+                    value === "performance" ||
+                    value === "battery-saver"
+                  ) {
+                    updateSettings(backgroundActivityProfileSettings(value));
+                  }
+                }}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-full sm:w-40"
+                  aria-label="Background activity profile"
+                >
+                  <SelectValue>
+                    {(value: BackgroundActivityProfileOption | null) =>
+                      value === null ? "Mixed" : BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS[value]
+                    }
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectPopup align="end" alignItemWithTrigger={false}>
+                  <SelectItem hideIndicator value="balanced">
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.balanced}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="performance">
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS.performance}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="battery-saver">
+                    {BACKGROUND_ACTIVITY_PROFILE_LABELS["battery-saver"]}
+                  </SelectItem>
+                  <SelectItem hideIndicator value="advanced" disabled={!isEnvironmentScope}>
+                    {isEnvironmentScope
+                      ? BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced
+                      : `${BACKGROUND_ACTIVITY_PROFILE_OPTION_LABELS.advanced} (one environment)`}
+                  </SelectItem>
+                </SelectPopup>
+              </Select>
+              {backgroundActivityProfileOption === "advanced" && isEnvironmentScope ? (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="icon-sm"
+                        variant="outline"
+                        aria-label="Configure advanced background activity"
+                        onClick={() => setBackgroundActivityDialogOpen(true)}
+                      >
+                        <SettingsIcon className="size-4" />
+                      </Button>
+                    }
+                  />
+                  <TooltipPopup side="top">Configure background activity</TooltipPopup>
+                </Tooltip>
+              ) : null}
+              <BackgroundActivityAdvancedDialog
+                open={backgroundActivityDialogOpen && isEnvironmentScope}
+                onOpenChange={setBackgroundActivityDialogOpen}
+              />
+            </>
+          }
+        />
+      </SettingsSection>
 
       <SettingsSection id="projects-and-threads" title="Projects & threads">
         <SettingsRow
@@ -2357,6 +2750,8 @@ export function GeneralSettingsPanel() {
             />
           }
         />
+
+        {/* Coder: no desktop app, so no quit shortcut confirmation. */}
       </SettingsSection>
 
       <SettingsSection id="text-generation" title="Text generation">
@@ -2383,7 +2778,7 @@ export function GeneralSettingsPanel() {
               <span className="text-sm text-muted-foreground">
                 Connect an environment to choose its text generation model.
               </span>
-            ) : !hasTextGenerationProvider || environmentId === null ? (
+            ) : !hasTextGenerationProvider ? (
               <span className="text-sm text-muted-foreground">
                 No text generation providers available.
               </span>
@@ -2471,15 +2866,15 @@ export function GeneralSettingsPanel() {
       </SettingsSection>
 
       <SettingsSection id="about" title="About">
-        <SettingsRow
-          title={
-            <span className="inline-flex items-baseline gap-2">
-              <span>Version</span>
-              <code className="text-[11px] font-medium text-muted-foreground">{APP_VERSION}</code>
-            </span>
-          }
-          description="Current version of the application."
-        />
+        {isElectron || HOSTED_APP_CHANNEL ? (
+          <AboutVersionSection />
+        ) : (
+          <SettingsRow
+            title={<AboutVersionTitle />}
+            description="Current version of the application."
+          />
+        )}
+        {/* Coder: no diagnostics page; licenses stay under About. */}
         <SettingsRow
           {...searchableSetting("open-source-licenses")}
           description="Notices for dependencies, assets, and optional tools used by T3 Code."

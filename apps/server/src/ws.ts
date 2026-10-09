@@ -1,3 +1,4 @@
+import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import * as Cause from "effect/Cause";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -865,9 +866,10 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     // Coder: source-control mutations use the workspace glab login and write-policy probe.
     const gitLabCli = yield* GitLabCli.GitLabCli;
-    // Coder: read the flat fetch setting on each upstream poll loop, including live changes.
     const automaticGitFetchInterval = serverSettings.getSettings.pipe(
-      Effect.map((value) => value.automaticGitFetchInterval),
+      Effect.map(
+        (settings) => resolveServerBackgroundActivitySettings(settings).automaticGitFetchInterval,
+      ),
       Effect.catch((cause) =>
         Effect.logWarning("Failed to read automatic Git fetch interval setting", {
           detail: cause.message,

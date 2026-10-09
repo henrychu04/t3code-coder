@@ -151,7 +151,7 @@ function ModelListSeparator() {
 
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
   /** Coder: there is no primary server; this workspace supplies the default keybindings. */
-  environmentId: EnvironmentId;
+  environmentId: EnvironmentId | null;
   /** The instance currently selected in the composer (combobox "value"). */
   activeInstanceId: ProviderInstanceId;
   model: string;

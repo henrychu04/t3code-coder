@@ -516,7 +516,7 @@ export const SETTINGS_SEARCH_ITEMS = [
   {
     id: "provider-health-check-interval",
     title: "Health check interval",
-    to: "/settings/general",
+    to: "/settings/providers",
     searchTerms: ["refresh availability versions auth state models background probes seconds off"],
     providerSettingsOnly: true,
   },
