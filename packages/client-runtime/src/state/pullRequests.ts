@@ -21,6 +21,7 @@ import {
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
+import { requestGuarded } from "../rpc/client.ts";
 
 const LINKED_PULL_REQUEST_IDLE_TTL_MS = 5_000;
 

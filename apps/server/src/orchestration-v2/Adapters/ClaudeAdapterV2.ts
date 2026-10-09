@@ -115,6 +115,7 @@ import {
   normalizeMcpText,
 } from "@t3tools/provider-core/server/mcpToolPresentation";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { t3ToolBridgeInstructions } from "../../mcp/bridge/T3ToolInstructions.ts";
 import { resolvePastedImageAttachments } from "../../provider/PastedImageAttachments.ts";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";

@@ -6,16 +6,14 @@
  */
 import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import { ProviderCredentialError } from "@t3tools/provider-core/server/errors";
-import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 
 import { resolveAttachmentPath } from "../attachmentStore.ts";
-import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
 
 export const layer = Layer.effect(
   ProviderHost.ProviderHost,
@@ -23,8 +21,6 @@ export const layer = Layer.effect(
     const config = yield* ServerConfig.ServerConfig;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
-    const secrets = yield* ServerSecretStore.ServerSecretStore;
-    const crypto = yield* Crypto.Crypto;
     return ProviderHost.ProviderHost.of({
       paths: {
         cwd: config.cwd,
@@ -42,30 +38,26 @@ export const layer = Layer.effect(
       shouldRunBackgroundWork: backgroundPolicy.shouldRunScopeWork,
       resolveAttachmentPath: (attachment) =>
         resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment }),
+      // Coder: providers authenticate through the workspace's own configuration, and T3 Coder
+      // never stores provider credentials: nothing is stored and writes fail.
       credentials: (namespace, bindingId) =>
-        ProviderCredentialStore.make(namespace, bindingId).pipe(
-          Effect.map((store) => ({
-            binding: store.binding,
-            get: store.get.pipe(
-              Effect.mapError((cause) => new ProviderCredentialError({ operation: "get", cause })),
+        Effect.succeed({
+          binding: { owner: "t3" as const, key: `${namespace}:${bindingId}` },
+          get: Effect.succeed(Option.none<Uint8Array>()),
+          set: (_credentials: Uint8Array) =>
+            Effect.fail(
+              new ProviderCredentialError({
+                operation: "set",
+                cause: "T3 Coder does not store provider credentials.",
+              }),
             ),
-            set: (credentials: Uint8Array) =>
-              store
-                .set(credentials)
-                .pipe(
-                  Effect.mapError(
-                    (cause) => new ProviderCredentialError({ operation: "set", cause }),
-                  ),
-                ),
-            remove: store.remove.pipe(
-              Effect.mapError(
-                (cause) => new ProviderCredentialError({ operation: "remove", cause }),
-              ),
-            ),
-          })),
-          Effect.provideService(ServerSecretStore.ServerSecretStore, secrets),
-          Effect.provideService(Crypto.Crypto, crypto),
-        ),
+          remove: Effect.fail(
+            new ProviderCredentialError({
+              operation: "remove",
+              cause: "T3 Coder does not store provider credentials.",
+            }),
+          ),
+        }),
     });
   }),
 );

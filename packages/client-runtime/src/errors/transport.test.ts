@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { NETWORK_BLOCKING_HINT } from "./network.ts";
 import { isTransportConnectionErrorMessage, sanitizeThreadErrorMessage } from "./transport.ts";
 
 describe("isTransportConnectionErrorMessage", () => {
@@ -32,13 +31,14 @@ describe("isTransportConnectionErrorMessage", () => {
     expect(isTransportConnectionErrorMessage("ClientProtocolError: socket closed")).toBe(true);
   });
 
-  it("recognizes relay connection errors that carry the network hint", () => {
+  // Coder: no relay connections, so no network hint is appended.
+  it("recognizes connection errors, including a session that stopped responding", () => {
     for (const sentence of [
-      "Relay environment disconnected.",
-      "Relay environment stopped responding.",
-      "Relay environment could not establish a WebSocket connection.",
+      "Workspace disconnected.",
+      "Workspace stopped responding.",
+      "Workspace could not establish a WebSocket connection.",
     ]) {
-      expect(isTransportConnectionErrorMessage(`${sentence} ${NETWORK_BLOCKING_HINT}`)).toBe(true);
+      expect(isTransportConnectionErrorMessage(sentence)).toBe(true);
     }
     expect(
       isTransportConnectionErrorMessage(

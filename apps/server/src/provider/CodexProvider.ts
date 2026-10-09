@@ -36,8 +36,8 @@ import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts
 import {
   decodeCodexRuntimeRequirementsResponse,
   resolveCodexSupportedRuntimeModes,
-} from "../CodexRuntimeModes.ts";
-import { attachSupportedRuntimeModes } from "../runtimeModeCapabilities.ts";
+} from "./CodexRuntimeModes.ts";
+import { attachSupportedRuntimeModes } from "./runtimeModeCapabilities.ts";
 import {
   AUTH_PROBE_TIMEOUT_MS,
   buildServerProvider,

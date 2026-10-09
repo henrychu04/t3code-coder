@@ -91,7 +91,6 @@ import {
   type McpThreadInvocationScope,
   requireThreadScope,
 } from "./McpInvocationContext.ts";
-import * as Metrics from "../observability/Metrics.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -1753,7 +1752,6 @@ const make = Effect.gen(function* () {
                 Effect.orElseSucceed(() => "timed_out" as const),
               );
         yield* Effect.annotateCurrentSpan({ "secret_request.status": status });
-        yield* Metrics.increment(Metrics.secretRequestsTotal, { status });
         if (status !== "saved") return { status };
         // Saved means the value was stored before the card said so; a missing
         // value is a storage fault, not an answer the agent can act on.

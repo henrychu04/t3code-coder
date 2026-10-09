@@ -15,24 +15,25 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
-import * as Tool from "effect/unstable/ai/Tool";
-import * as Toolkit from "effect/unstable/ai/Toolkit";
+import * as Tool from "effect/ai/Tool";
+import * as Toolkit from "effect/ai/Toolkit";
 
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as McpInvocationContext from "../McpInvocationContext.ts";
+import * as McpToolAccess from "../McpToolAccess.ts";
 import * as OrchestratorMcpService from "../OrchestratorMcpService.ts";
 import * as ThreadMetadataMcpService from "../ThreadMetadataMcpService.ts";
-import { OrchestratorToolkitHandlersLive } from "../toolkits/orchestrator/handlers.ts";
+import * as OrchestratorToolkitHandlers from "../toolkits/orchestrator/handlers.ts";
 import { OrchestratorToolkit } from "../toolkits/orchestrator/tools.ts";
-import { PullRequestsToolkitHandlersLive } from "../toolkits/pullRequests/handlers.ts";
+import * as PullRequestsToolkitHandlers from "../toolkits/pullRequests/handlers.ts";
 import { PullRequestsToolkit } from "../toolkits/pullRequests/tools.ts";
-import { ThreadToolkitHandlersLive } from "../toolkits/thread/handlers.ts";
+import * as ThreadToolkitHandlers from "../toolkits/thread/handlers.ts";
 import { ThreadToolkit } from "../toolkits/thread/tools.ts";
-import { EnvironmentHandlersLive } from "../toolkits/environment/handlers.ts";
+import * as EnvironmentToolkitHandlers from "../toolkits/environment/handlers.ts";
 import { EnvironmentToolkit } from "../toolkits/environment/tools.ts";
-import { ProjectHandlersLive } from "../toolkits/project/handlers.ts";
+import * as ProjectToolkitHandlers from "../toolkits/project/handlers.ts";
 import { ProjectToolkit } from "../toolkits/project/tools.ts";
-import { WorktreeToolkitHandlersLive } from "../toolkits/worktree/handlers.ts";
+import * as WorktreeToolkitHandlers from "../toolkits/worktree/handlers.ts";
 import { WorktreeToolkit } from "../toolkits/worktree/tools.ts";
 import * as WorktreeMcpService from "../WorktreeMcpService.ts";
 import {
@@ -54,15 +55,15 @@ const BridgedToolkit = Toolkit.merge(
 
 /** Handlers as upstream's MCP server registers them. */
 const BridgedHandlersLive = Layer.mergeAll(
-  OrchestratorToolkitHandlersLive.pipe(
+  McpToolAccess.HandlersLayer.layer(OrchestratorToolkitHandlers.layer).pipe(
     Layer.provide(OrchestratorMcpService.layer),
     Layer.provide(ThreadMetadataMcpService.layer),
   ),
-  ThreadToolkitHandlersLive,
-  ProjectHandlersLive,
-  EnvironmentHandlersLive,
-  WorktreeToolkitHandlersLive.pipe(Layer.provide(WorktreeMcpService.layer)),
-  PullRequestsToolkitHandlersLive,
+  McpToolAccess.HandlersLayer.layer(ThreadToolkitHandlers.layer),
+  McpToolAccess.HandlersLayer.layer(ProjectToolkitHandlers.layer),
+  McpToolAccess.HandlersLayer.layer(EnvironmentToolkitHandlers.layer),
+  McpToolAccess.HandlersLayer.layer(WorktreeToolkitHandlers.layer).pipe(Layer.provide(WorktreeMcpService.layer)),
+  McpToolAccess.HandlersLayer.layer(PullRequestsToolkitHandlers.layer),
 );
 
 export const INLINE_BUDGET_MS = 8_000;
@@ -132,7 +133,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
     const jobs = new Map<string, BridgeJob>();
 
     const run = (
-      scope: McpInvocationContext.McpInvocationScope,
+      scope: McpInvocationContext.McpThreadInvocationScope,
       request: FileBridgeRequest,
     ): Effect.Effect<unknown, FileBridgeToolFailure> =>
       (
@@ -167,10 +168,10 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
         Effect.provide(services),
       );
 
-    const readJob = (scope: McpInvocationContext.McpInvocationScope, taskId: string) =>
+    const readJob = (scope: McpInvocationContext.McpThreadInvocationScope, taskId: string) =>
       Effect.gen(function* () {
         const job = jobs.get(taskId);
-        if (job === undefined || job.threadId !== scope.threadId) {
+        if (job === undefined || job.threadId !== scope.thread.threadId) {
           return yield* failure("TaskNotFound", "No running T3 tool call has this taskId.");
         }
         const exit = job.fiber.pollUnsafe();
@@ -193,7 +194,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
           return yield* failure("UnknownTool", "Unknown T3 tool. Run --list to see the tools.");
         }
         const thread = yield* engine
-          .getThreadShell(scope.threadId)
+          .getThreadShell(scope.thread.threadId)
           .pipe(Effect.orElseSucceed(() => null));
         if (thread?.interactionMode === "plan" && !READ_ONLY_TOOLS.has(request.tool)) {
           return yield* failure("PlanModeReadOnly", "Plan mode permits read-only T3 tools only.");
@@ -212,7 +213,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
         );
         if (Option.isSome(exit)) return yield* exit.value;
         if (
-          [...jobs.values()].filter((job) => job.threadId === scope.threadId).length >=
+          [...jobs.values()].filter((job) => job.threadId === scope.thread.threadId).length >=
           MAX_JOBS_PER_THREAD
         ) {
           yield* Fiber.interrupt(fiber);
@@ -222,7 +223,7 @@ export const makeBindingWith = (options: { readonly inlineBudgetMs?: number } = 
           );
         }
         const taskId = `${BRIDGE_JOB_PREFIX}${yield* crypto.randomUUIDv4.pipe(Effect.orDie)}`;
-        jobs.set(taskId, { threadId: scope.threadId, startedAt: now, fiber });
+        jobs.set(taskId, { threadId: scope.thread.threadId, startedAt: now, fiber });
         return {
           status: "running",
           taskId,

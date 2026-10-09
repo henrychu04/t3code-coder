@@ -637,8 +637,7 @@ describe("CodexAdapterV2 runtime policy", () => {
 });
 
 describe("CodexAdapterV2 process spawning", () => {
-  // Coder: T3 tools reach Codex over the workspace file bridge, so no MCP server is configured.
-  it("injects cwd and model into thread-scoped params without an MCP server", () => {
+  it("injects cwd, model, and MCP authorization into thread-scoped params", () => {
     const threadId = ThreadId.make("thread-codex-mcp");
     const mcpSession = {
       environmentId: EnvironmentId.make("environment-codex-mcp"),
@@ -658,9 +657,20 @@ describe("CodexAdapterV2 process spawning", () => {
           runtimeMode: "full-access",
           interactionMode: "default",
           cwd: "/workspace/thread-codex-mcp",
-          model: "gpt-5.4",
-          config: {
-            "tools.update_plan.enabled": true,
+        },
+      }),
+      {
+        cwd: "/workspace/thread-codex-mcp",
+        model: "gpt-5.4",
+        config: {
+          "tools.update_plan.enabled": true,
+          mcp_servers: {
+            "t3-code": {
+              url: "http://127.0.0.1:43123/mcp",
+              http_headers: {
+                Authorization: "Bearer secret-codex-token",
+              },
+            },
           },
         },
       },
@@ -953,40 +963,16 @@ describe("CodexAdapterV2 dynamic tool projection", () => {
     }).pipe(Effect.provide(NodeServices.layer)),
   );
 
-  it("omits image bytes from persisted dynamic tool output", () => {
-    const projection = CodexAdapterV2.projectCodexDynamicToolItem({
-      type: "dynamicToolCall",
-      id: "screenshot",
-      namespace: null,
-      tool: "screenshot",
-      status: "completed",
-      arguments: {},
-      success: true,
-      contentItems: [
-        { type: "inputText", text: "kept" },
-        { type: "inputImage", imageUrl: "data:image/png;base64,AAAA" },
-      ],
-    });
-    assert.deepEqual(projection.output, [
-      { type: "inputText", text: "kept" },
-      { type: "inputImage", imageUrl: "[image content omitted by T3]" },
-    ]);
-  });
-
-  it("preserves MCP arguments and prefers structured output", () => {
-    const projection = CodexAdapterV2.projectCodexDynamicToolItem({
-      type: "mcpToolCall",
-      id: "call-create-threads",
-      server: "t3-code",
-      tool: "create_threads",
-      status: "completed",
-      arguments: {
-        threads: [{ title: "Fixture child", prompt: "fixture child prompt" }],
-      },
-      result: {
-        content: [{ type: "text", text: '{"threads":[{"threadId":"thread:mcp:fixture:0"}]}' }],
-        structuredContent: {
-          threads: [{ threadId: "thread:mcp:fixture:0" }],
+  it.effect("preserves MCP arguments and prefers structured output", () =>
+    Effect.gen(function* () {
+      const projection = yield* CodexAdapterV2.projectCodexDynamicToolItem({
+        type: "mcpToolCall",
+        id: "call-create-threads",
+        server: "t3-code",
+        tool: "create_threads",
+        status: "completed",
+        arguments: {
+          threads: [{ title: "Fixture child", prompt: "fixture child prompt" }],
         },
         result: {
           content: [{ type: "text", text: '{"threads":[{"threadId":"thread:mcp:fixture:0"}]}' }],
@@ -2754,21 +2740,16 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       Effect.gen(function* () {
         const nativeThreadId = "context-thread";
         const nativeTurnId = "context-turn";
-        // Coder: the session's T3 tools run over the file bridge; preview and device are not bridged.
-        const toolCommand = "/nix/store/node/bin/node /tmp/t3-tools-context/t3.mjs";
         const params = yield* CodexAdapterV2.buildCodexTurnStartParams({
           nativeThreadId,
           codexInput: [{ type: "text", text: "work" }],
           runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
           modelSelection: CODEX_TEST_MODEL_SELECTION,
           hasT3Mcp: true,
-          browserToolsAvailable: false,
-          deviceToolsAvailable: false,
-          t3ToolCommand: toolCommand,
         });
         assert.include(
           params.additionalContext?.t3_code_orchestration?.value ?? "",
-          `${toolCommand} --list`,
+          "delegate_task",
         );
         const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
         const transcript = makeCodexReplayTranscript({
@@ -2829,10 +2810,9 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           threadId: harness.threadId,
           providerSessionId: "context-session",
           providerInstanceId: ProviderInstanceId.make("codex"),
-          endpoint: "/tmp/t3-tools-context",
+          endpoint: "http://127.0.0.1:43123/mcp",
           authorizationHeader: "Bearer test",
           browserToolsAvailable: true,
-          toolCommand,
         });
         yield* harness.runtime.startTurn(
           makeCodexTestTurnInput({

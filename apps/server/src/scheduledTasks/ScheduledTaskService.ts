@@ -41,7 +41,6 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
-import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as Scheduler from "../scheduling/Scheduler.ts";
@@ -1390,21 +1389,18 @@ export const layer = Layer.effect(
           "scheduled_task.webhook.outcome": outcome,
           "scheduled_task.webhook.source": source,
         });
-        yield* Metrics.increment(Metrics.webhookDeliveriesTotal, { outcome, source });
         if (request.receivedAt !== undefined && receivedAt !== undefined && now !== undefined) {
           const heldMs = Math.max(
             0,
             DateTime.toEpochMillis(now) - DateTime.toEpochMillis(receivedAt),
           );
           yield* Effect.annotateCurrentSpan({ "scheduled_task.webhook.held_ms": heldMs });
-          yield* Metric.update(Metrics.webhookHeldDelay, Duration.millis(heldMs));
         }
       });
 
     const triggerWebhook: ScheduledTaskService["Service"]["triggerWebhook"] = (request) =>
       triggerWebhookUnobserved(request).pipe(
         Effect.tapError(() => observeDelivery(request, "error", undefined, undefined)),
-        Metrics.withMetrics({ timer: Metrics.webhookDeliveryDuration }),
         Effect.withSpan("ScheduledTaskService.triggerWebhook", {
           attributes: {
             "scheduled_task.webhook.method": request.method,
@@ -1616,10 +1612,7 @@ export const layer = Layer.effect(
             yield* observe("accepted");
             const permit = yield* webhookPermit(task.id);
             const runOutcome = (outcome: "started" | "skipped" | "failed") =>
-              Effect.all([
-                Effect.annotateCurrentSpan({ "scheduled_task.webhook.run_outcome": outcome }),
-                Metrics.increment(Metrics.webhookRunsTotal, { outcome }),
-              ]);
+              Effect.annotateCurrentSpan({ "scheduled_task.webhook.run_outcome": outcome });
             yield* runTask(task, "webhook", { deliveryId, prompt: rendered.prompt }).pipe(
               Effect.flatMap((completed) =>
                 completed.lastRunStatus === "failed"

@@ -30,7 +30,6 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import * as Metrics from "../observability/Metrics.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 
 const SECRET_REF_PREFIX = "secret-ref:";
@@ -209,10 +208,6 @@ const make = Effect.gen(function* () {
   const consume: SecretRequests["Service"]["consume"] = (input) =>
     consumeRef(input).pipe(
       consumeLock.withPermits(1),
-      Effect.tap(() => Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "used" })),
-      Effect.tapError(() =>
-        Metrics.increment(Metrics.secretRefsConsumedTotal, { result: "rejected" }),
-      ),
       Effect.withSpan("SecretRequests.consume"),
     );
 

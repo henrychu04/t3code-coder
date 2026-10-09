@@ -1,74 +1,26 @@
-import {
-  clientRpcRequiredScopes,
-  sessionGrantsScope,
-  authScopeRequiredResponse,
-  EnvironmentAuthorizationError,
-  type EnvironmentId,
-  type AuthSessionState,
-  type AuthEnvironmentScope,
-} from "@t3tools/contracts";
+import { clientRpcRequiredScopes, type EnvironmentId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
-import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
+import { Atom, type AtomRegistry } from "effect/reactivity";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
-import { createEnvironmentSessionAtoms } from "./session.ts";
 
-/** UI availability and dispatch use the same target session and method policy. */
-function makeCommandPermissions<R, E>(
-  runtime: Atom.AtomRuntime<EnvironmentRegistry | R, E>,
-  method: string,
-) {
-  const sessions = createEnvironmentSessionAtoms(runtime);
+/**
+ * UI availability and dispatch use the same target session and method policy.
+ *
+ * Coder: Coder authenticates the workspace owner and T3 Coder has no environment auth, so every
+ * connected workspace grants each method's scopes. The guard keeps upstream's shape and passes.
+ */
+function makeCommandPermissions(method: string) {
   const requiredScopes = (input?: unknown) => clientRpcRequiredScopes(method, input);
   const atomsByEnvironment = Atom.family((environmentId: EnvironmentId | null) =>
-    Atom.family((scopeKey: string) =>
-      Atom.make((get) => {
-        if (environmentId === null) return false;
-        const scopes = scopeKey.split(",").filter(Boolean) as AuthEnvironmentScope[];
-        if (scopes.length === 0) return true;
-        const result = get(sessions.sessionStateAtom(environmentId));
-        const session = Option.getOrNull(AsyncResult.value(result));
-        return (
-          result._tag !== "Failure" &&
-          session !== null &&
-          scopes.every((scope) => sessionGrantsScope(session, scope))
-        );
-      }),
-    ),
+    Atom.make(() => environmentId !== null),
   );
-  const permissionAtom = (environmentId: EnvironmentId | null, input?: unknown) =>
-    atomsByEnvironment(environmentId)(requiredScopes(input).join(","));
+  const permissionAtom = (environmentId: EnvironmentId | null, _input?: unknown) =>
+    atomsByEnvironment(environmentId);
   const authorize = (
-    registry: AtomRegistry.AtomRegistry,
-    environmentId: EnvironmentId,
-    input?: unknown,
-  ) =>
-    Effect.suspend(() => {
-      const scopes = requiredScopes(input);
-      if (scopes.length === 0) return Effect.void;
-      const atom = sessions.sessionStateAtom(environmentId);
-      return Effect.scoped(
-        Effect.gen(function* () {
-          yield* AtomRegistry.mount(registry, atom);
-          const session = yield* AtomRegistry.getResult(registry, atom, {
-            suspendOnWaiting: false,
-          }).pipe(
-            Effect.timeoutOption(6_000),
-            Effect.catch(() => Effect.succeed(Option.none<AuthSessionState>())),
-          );
-          const missing = scopes.find(
-            (scope) => Option.isNone(session) || !sessionGrantsScope(session.value, scope),
-          );
-          if (missing !== undefined)
-            return yield* Effect.fail(
-              new EnvironmentAuthorizationError({
-                ...authScopeRequiredResponse(missing),
-                message: `This connection requires ${missing}.`,
-              }),
-            );
-        }),
-      );
-    });
+    _registry: AtomRegistry.AtomRegistry,
+    _environmentId: EnvironmentId,
+    _input?: unknown,
+  ) => Effect.void;
   return { requiredScopes, permissionAtom, authorize };
 }
 
@@ -89,7 +41,7 @@ export function createCommandPermissions<R, E>(
   }
   const existing = permissions.get(method);
   if (existing !== undefined) return existing;
-  const created = makeCommandPermissions(runtime, method);
+  const created = makeCommandPermissions(method);
   permissions.set(method, created);
   return created;
 }

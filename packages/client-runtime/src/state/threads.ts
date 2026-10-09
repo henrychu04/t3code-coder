@@ -693,86 +693,38 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
 
     const runLoad = Effect.gen(function* () {
       const preparedOption = yield* SubscriptionRef.get(supervisor.prepared);
-      if (Option.isNone(preparedOption)) {
-        const message = "Environment is not connected.";
-        const stillCurrent = yield* SubscriptionRef.modify(
-          state,
-          (latest): readonly [boolean, EnvironmentThreadState] => {
-            if (!isActiveHistoryRequestCursor(requestCursor, latest.history)) {
-              return [false, latest];
-            }
-            return [
-              true,
-              {
-                ...latest,
-                history: { ...latest.history, loading: false, error: message },
-              },
-            ];
-          },
-        );
-        if (!stillCurrent) {
-          return { _tag: "noop" } satisfies ThreadHistoryController.ThreadHistoryLoadEarlierResult;
-        }
-        return {
-          _tag: "error",
-          message,
-        } satisfies ThreadHistoryController.ThreadHistoryLoadEarlierResult;
-      }
+      if (Option.isNone(preparedOption)) return yield* failLoad("Environment is not connected.");
 
-      const pageResult = yield* fetchEnvironmentThreadHistoryPage({
-        supervisor,
-        threadId,
-        cursor: requestCursor,
-      }).pipe(Effect.result);
-
-      if (Result.isFailure(pageResult)) {
-        const message = formatHistoryError(pageResult.failure);
-        // Only mark error when this request's cursor is still active. Leave
-        // stream/status/error alone so concurrent live updates stay intact.
-        const stillCurrent = yield* SubscriptionRef.modify(
-          state,
-          (latest): readonly [boolean, EnvironmentThreadState] => {
-            if (!isActiveHistoryRequestCursor(requestCursor, latest.history)) {
-              return [false, latest];
-            }
-            return [
-              true,
-              {
-                ...latest,
-                history: { ...latest.history, loading: false, error: message },
-              },
-            ];
-          },
-        );
-        if (!stillCurrent) {
-          return { _tag: "noop" } satisfies ThreadHistoryController.ThreadHistoryLoadEarlierResult;
-        }
-        return {
-          _tag: "error",
-          message,
-        } satisfies ThreadHistoryController.ThreadHistoryLoadEarlierResult;
-      }
-
-      const page = pageResult.success;
-      const waiting = yield* Ref.get(awaitingCompletion);
-      // Single atomic merge against whatever is current after the await so a
-      // concurrent applyItem cannot be clobbered by a stale get/set pair.
-      return yield* applyLock.withPermits(1)(
-        SubscriptionRef.modify(
-          state,
-          (
-            latest,
-          ): readonly [
-            ThreadHistoryController.ThreadHistoryLoadEarlierResult,
-            EnvironmentThreadState,
-          ] => {
-            // Stale page: socket/full snapshot or newer bounded install changed the
-            // progressive cursor while this request was in flight. Never mutate the
-            // replacement meta (including deleted/empty installs).
-            if (!isActiveHistoryRequestCursor(requestCursor, latest.history)) {
-              return [{ _tag: "noop" }, latest];
-            }
-            if (Option.isNone(latest.data) || latest.status === "deleted") {
+      const views =
+        throughEntryId === undefined ? [undefined] : ["conversation" as const, undefined];
+      for (const view of views) {
+        const pageResult = yield* fetchEnvironmentThreadHistoryPage({
+          supervisor,
+          threadId,
+          cursor: requestCursor,
+          throughEntryId,
+          view,
+        }).pipe(Effect.result);
+        if (Result.isFailure(pageResult))
+          return yield* failLoad(formatHistoryError(pageResult.failure));
+        const page = pageResult.success;
+        const complete = view === undefined;
+        const waiting = yield* Ref.get(awaitingCompletion);
+        // Both stages merge against live state under the same lock. Only the
+        // complete page advances the cursor and releases the loading indicator.
+        const result = yield* applyLock.withPermits(1)(
+          SubscriptionRef.modify(
+            state,
+            (
+              latest,
+            ): readonly [
+              ThreadHistoryController.ThreadHistoryLoadEarlierResult,
+              EnvironmentThreadState,
+            ] => {
+              if (!isActiveHistoryRequestCursor(requestCursor, latest.history))
+                return [{ _tag: "noop" }, latest];
+              if (Option.isNone(latest.data) || latest.status === "deleted")
+                return [{ _tag: "noop" }, { ...latest, history: EMPTY_THREAD_HISTORY_META }];
               return [
                 { _tag: "loaded" },
                 {

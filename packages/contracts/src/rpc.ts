@@ -1858,7 +1858,12 @@ const WsOrchestrationGetThreadBoundedSnapshotRpc = Rpc.make(
 const WsOrchestrationGetThreadHistoryPageRpc = Rpc.make(
   WS_METHODS.orchestrationGetThreadHistoryPage,
   {
-    payload: Schema.Struct({ threadId: ThreadId, cursor: TrimmedNonEmptyString }),
+    payload: Schema.Struct({
+      threadId: ThreadId,
+      cursor: TrimmedNonEmptyString,
+      throughEntryId: Schema.optional(TrimmedNonEmptyString),
+      view: Schema.optional(Schema.Literals(["conversation", "activity"])),
+    }),
     success: OrchestrationV2ThreadHistoryPage,
     error: OrchestrationV2GetThreadProjectionError,
   },
@@ -1947,6 +1952,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsReviewReadDiffFileChunkRpc,
   WsTerminalOpenRpc,
   WsTerminalAttachRpc,
+  WsTerminalObserveRpc,
   WsTerminalWriteRpc,
   WsTerminalResizeRpc,
   WsTerminalClearRpc,
@@ -1961,8 +1967,11 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsOrchestrationV2GetFullThreadDiffRpc,
   WsOrchestrationV2GetWorkflowScriptRpc,
   WsOrchestrationV2SearchThreadsRpc,
+  WsOrchestrationV2SearchThreadRpc,
+  WsOrchestrationV2SearchThreadStreamRpc,
   WsOrchestrationV2GetArchivedShellSnapshotRpc,
   WsOrchestrationV2GetThreadProjectionRpc,
+  WsOrchestrationV2GetTurnItemRpc,
   WsOrchestrationV2LaunchThreadRpc,
   WsOrchestrationV2SubscribeArchivedShellRpc,
   WsOrchestrationGetThreadBoundedSnapshotRpc,

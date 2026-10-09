@@ -18,6 +18,8 @@ export const fetchEnvironmentThreadHistoryPage = Effect.fn(
   readonly supervisor: EnvironmentSupervisor.EnvironmentSupervisor["Service"];
   readonly threadId: ThreadId;
   readonly cursor: string;
+  readonly throughEntryId?: string | undefined;
+  readonly view?: "conversation" | "activity" | undefined;
 }) {
   const session = yield* SubscriptionRef.get(input.supervisor.session);
   if (Option.isNone(session)) {
@@ -26,5 +28,7 @@ export const fetchEnvironmentThreadHistoryPage = Effect.fn(
   return yield* session.value.client[WS_METHODS.orchestrationGetThreadHistoryPage]({
     threadId: input.threadId,
     cursor: input.cursor,
+    ...(input.view === undefined ? {} : { view: input.view }),
+    ...(input.throughEntryId === undefined ? {} : { throughEntryId: input.throughEntryId }),
   });
 });

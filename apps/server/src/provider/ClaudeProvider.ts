@@ -23,7 +23,7 @@ import {
   type ModelInfo as ClaudeModelInfo,
   type SDKUserMessage,
   type SettingSource,
-} from "../Drivers/ClaudeCli.ts";
+} from "./Drivers/ClaudeCli.ts";
 import type { SDKControlGetUsageResponse } from "@anthropic-ai/claude-agent-sdk";
 
 // Coder: the probe runs through the workspace CLI transport directly; it also reads the CLI's

@@ -26,7 +26,7 @@ export function initialConfigOption<E>(
   );
 }
 
-export function createEnvironmentSessionAtoms<R, E>(
+function makeEnvironmentSessionAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry.EnvironmentRegistry | R, E>,
 ) {
   const initialConfigAtom = Atom.family((environmentId: EnvironmentId) =>

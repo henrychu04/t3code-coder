@@ -67,7 +67,7 @@ export function createTerminalEnvironmentAtoms<R, E>(
             ...input,
             ...(afterSequence === null ? {} : { afterSequence }),
           }).pipe(
-            Stream.scan(initial, applyTerminalAttachStreamEvent),
+            Stream.scan(() => initial, applyTerminalAttachStreamEvent),
             Stream.tap((state) =>
               Effect.sync(() => terminalBufferCache.write(environmentId, input, state)),
             ),

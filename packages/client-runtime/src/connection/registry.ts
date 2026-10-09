@@ -23,17 +23,6 @@ import * as EnvironmentSupervisor from "./supervisor.ts";
 import * as ConnectionDriver from "./driver.ts";
 import * as ConnectionWakeups from "./wakeups.ts";
 
-function unsupportedState(
-  entry: ConnectionCatalogEntry,
-): Pick<ConnectionCatalogEntry, "unsupportedReason" | "serverUpdateRequired"> {
-  return {
-    ...(entry.unsupportedReason === undefined
-      ? {}
-      : { unsupportedReason: entry.unsupportedReason }),
-    ...(entry.serverUpdateRequired === true ? { serverUpdateRequired: true } : {}),
-  };
-}
-
 export class EnvironmentNotRegisteredError extends Schema.TaggedError<EnvironmentNotRegisteredError>()(
   "EnvironmentNotRegisteredError",
   { environmentId: EnvironmentId },
@@ -134,7 +123,6 @@ export const make = Effect.gen(function* () {
           const scope = yield* Scope.make();
           const supervisor = yield* EnvironmentSupervisor.make(entry, {
             initiallyDesired: false,
-            learnRoutes: (input) => learnRoutes({ environmentId, ...input }),
           }).pipe(
             Effect.provideService(Connectivity.Connectivity, connectivity),
             Effect.provideService(ConnectionDriver.ConnectionDriver, driver),
@@ -191,10 +179,7 @@ export const make = Effect.gen(function* () {
       SubscriptionRef.changes(entries),
     ).pipe(
       Stream.map((current) => Option.fromUndefinedOr(current.get(environmentId))),
-      // Re-pairing can replace the supervisor while its catalog details stay unchanged.
-      Stream.changesWith(
-        (previous, current) => Option.getOrNull(previous) === Option.getOrNull(current),
-      ),
+      Stream.changes,
       Stream.switchMap(
         Option.match({
           onNone: () => Stream.empty,
@@ -246,16 +231,19 @@ export const make = Effect.gen(function* () {
           next.delete(environmentId);
           return next;
         });
-        if (routes === null) return Option.none<ConnectionCatalogEntry>();
-        const next = entryWithRoutes(entry, routes);
-        // Save new learned profiles and any whose Tailscale mark changed. A
-        // learned route owns its profile; the credential stays with the route
-        // it borrows from.
-        const previousProfiles = new Map(
-          connectionRoutes(entry).map((route) => [
-            connectionRouteId(route.target),
-            Option.getOrNull(route.profile),
-          ]),
+        yield* Effect.all(
+          [
+            cache.clear(environmentId).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("Could not clear cached environment data after removal.", {
+                  environmentId,
+                  error,
+                }),
+              ),
+            ),
+            ownedDataCleanup.clear(environmentId),
+          ],
+          { concurrency: "unbounded", discard: true },
         );
       }),
     );

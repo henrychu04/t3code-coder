@@ -115,10 +115,7 @@ import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.
 import { userFacingDispatchErrorMessage } from "./orchestration-v2/UserFacingErrors.ts";
 import * as ProviderRegistry from "./provider/ProviderRegistry.ts";
 import * as ProviderMaintenanceRunner from "./provider/providerMaintenanceRunner.ts";
-import {
-  ProviderInstanceRegistry,
-  type ProviderInstanceRegistryShape,
-} from "./provider/ProviderInstanceRegistry.ts";
+import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
@@ -840,6 +837,8 @@ export const layer = CoderWsRpcGroup.toLayer(
     const threadLaunch = yield* ThreadLaunchService.ThreadLaunchService;
     const providerSessionManager = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const scheduledTasks = yield* ScheduledTasks.ScheduledTaskService;
+    const secretRequests = yield* SecretRequests.SecretRequests;
+    const mcpAppRequests = yield* McpAppRequests.McpAppRequests;
     const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
     const agentSessionScanner = yield* AgentSessionScanner.AgentSessionScanner;
     const agentSessionImporter = yield* AgentSessionImporter.AgentSessionImporter;
@@ -934,6 +933,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         shellResumeCompletionMarker: true,
         threadResumeCompletionMarker: true,
         threadSnapshotPagination: true,
+        threadFind: true,
+        threadFindProgressive: true,
         ...Option.match(scratchWorkspaceRoot, {
           onNone: () => ({}),
           onSome: (root) => ({ scratchWorkspaceRoot: root }),
@@ -1064,7 +1065,40 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     // Coder: upstream's HTTP older-history page, served over helper stdio.
     const getThreadHistoryPage = Effect.fn("ws.orchestrationV2.getThreadHistoryPage")(
-      function* (input: { readonly threadId: ThreadId; readonly cursor: string }) {
+      function* (input: {
+        readonly threadId: ThreadId;
+        readonly cursor: string;
+        readonly throughEntryId?: string | undefined;
+        readonly view?: "conversation" | "activity" | undefined;
+      }) {
+        // Coder: a find-in-thread page (a target entry or the conversation view) uses upstream's
+        // history read; plain paging keeps the bounded snapshot-window page below.
+        if (input.throughEntryId !== undefined || input.view !== undefined) {
+          const upstreamPage = yield* threadManagement
+            .getThreadHistoryPage(
+              input.threadId,
+              input.cursor,
+              input.throughEntryId,
+              input.view === "conversation",
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationV2GetThreadProjectionError({
+                    threadId: input.threadId,
+                    message: `Failed to load orchestration V2 thread ${input.threadId} history`,
+                    cause,
+                  }),
+              ),
+            );
+          if (exceedsHelperStdioFrame(upstreamPage)) {
+            return yield* new OrchestrationV2GetThreadProjectionError({
+              threadId: input.threadId,
+              message: "The thread history page exceeds the helper stdio frame limit.",
+            });
+          }
+          return upstreamPage;
+        }
         const invalidCursor = () =>
           new OrchestrationV2GetThreadProjectionError({
             threadId: input.threadId,
@@ -1397,6 +1431,25 @@ export const layer = CoderWsRpcGroup.toLayer(
             });
           }),
         ),
+      [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: (input) =>
+        threadManagement.getTurnItem(input).pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestrationV2GetThreadProjectionError({
+                threadId: input.threadId,
+                message: "Failed to load turn item",
+                cause,
+              }),
+          ),
+        ),
+      [ORCHESTRATION_V2_WS_METHODS.searchThread]: (input) =>
+        threadManagement
+          .searchThread(input)
+          .pipe(Effect.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
+      [ORCHESTRATION_V2_WS_METHODS.searchThreadStream]: (input) =>
+        threadManagement
+          .searchThreadStream(input)
+          .pipe(Stream.mapError((cause) => new OrchestrationV2SearchThreadError({ cause }))),
       [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: (input) =>
         readWorkflowScript({ scriptPath: input.scriptPath }),
       [ORCHESTRATION_V2_WS_METHODS.getTurnDiff]: (input) =>
@@ -1525,6 +1578,11 @@ export const layer = CoderWsRpcGroup.toLayer(
       [WS_METHODS.scheduledTasksSetEnabled]: (input) => scheduledTasks.setEnabled(input),
       [WS_METHODS.scheduledTasksDelete]: (input) => scheduledTasks.delete(input),
       [WS_METHODS.scheduledTasksRunNow]: (input) => scheduledTasks.runNow(input),
+      [WS_METHODS.secretsAnswerRequest]: (input) => secretRequests.answer(input),
+      [WS_METHODS.mcpAppsCallTool]: (input) => mcpAppRequests.callTool(input),
+      [WS_METHODS.mcpAppsToolInfo]: (input) => mcpAppRequests.toolInfo(input),
+      [WS_METHODS.mcpAppsUpdateModelContext]: (input) => mcpAppRequests.updateModelContext(input),
+      [WS_METHODS.mcpAppsReadResource]: (input) => mcpAppRequests.readResource(input),
       [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
       [WS_METHODS.serverGetConfig]: (_input) => loadServerConfig,
       // Coder: refresh workspace providers without remote manifests or unsupported usage/model refreshes.
@@ -1959,6 +2017,13 @@ export const layer = CoderWsRpcGroup.toLayer(
             terminalManager.attachStream(input, (event) => Queue.offer(queue, event)),
             (unsubscribe) => Effect.sync(unsubscribe),
           ),
+        ),
+      [WS_METHODS.terminalObserve]: (input) =>
+        Stream.callback<TerminalAttachStreamEvent, TerminalError>((queue) =>
+          Effect.acquireRelease(
+            terminalManager.observeStream(input, (event) => Queue.offer(queue, event)),
+            (unsubscribe) => Effect.sync(unsubscribe),
+          ).pipe(Effect.catchCause((cause) => Queue.failCause(queue, cause))),
         ),
       [WS_METHODS.terminalWrite]: (input) => terminalManager.write(input),
       [WS_METHODS.terminalResize]: (input) => terminalManager.resize(input),

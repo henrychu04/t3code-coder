@@ -1,5 +1,5 @@
-import type { AssetResource, OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { readToolOutputImage, toolOutputImages } from "@t3tools/shared/toolOutput";
+import type { OrchestrationV2TurnItem, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { readToolOutputImage } from "@t3tools/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 
 const MAX_TEXT_BLOCK_DEPTH = 4;
@@ -204,20 +204,24 @@ export function turnItemOutputText(item: OrchestrationV2TurnItem): string | null
   }
 }
 
+/** An image a tool returned inline, by its order in the stored output. */
+export interface ToolOutputImageResource {
+  readonly _tag: "tool-output-image";
+  readonly threadId: ThreadId;
+  readonly itemId: TurnItemId;
+  readonly index: number;
+}
+
 /**
- * Images in a fetched item's tool output, as assets. The detail read leaves
- * the bytes out, so each loads over HTTP by its index.
+ * Images in a fetched item's tool output, as assets.
+ *
+ * Coder: upstream loads these over the environment's signed asset route, which the helper does
+ * not serve, so fetched items expose no tool output images.
  */
 export function turnItemOutputImages(
-  item: OrchestrationV2TurnItem,
-): ReadonlyArray<Extract<AssetResource, { readonly _tag: "tool-output-image" }>> {
-  if (item.type !== "dynamic_tool" || item.outputOmitted === true) return [];
-  return toolOutputImages(item.output).map((_, index) => ({
-    _tag: "tool-output-image",
-    threadId: item.threadId,
-    itemId: item.id,
-    index,
-  }));
+  _item: OrchestrationV2TurnItem,
+): ReadonlyArray<ToolOutputImageResource> {
+  return [];
 }
 
 /**

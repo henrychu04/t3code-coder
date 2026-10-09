@@ -29,6 +29,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { assert, describe, it } from "@effect/vitest";
+import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Crypto from "effect/Crypto";
@@ -43,20 +44,28 @@ import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
+import { Tool } from "effect/ai";
 import { formatClaudeResumeCompactionQuestion } from "@t3tools/shared/claudeCompaction";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import * as ServerConfig from "../../config.ts";
-import * as McpProviderSession from "../../mcp/McpProviderSession.ts";
-import type { EventNdjsonLogger } from "../../provider/Layers/EventNdjsonLogger.ts";
-import {
-  ProviderAdapterV2RuntimePolicy,
-  type ProviderAdapterV2Event,
-  type ProviderAdapterV2TurnInput,
-} from "../ProviderAdapter.ts";
-import type { ProviderContinuationRequest } from "../ProviderContinuationRequests.ts";
+import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { PreviewControlsToolkit } from "../../mcp/toolkits/previewControls/tools.ts";
+import { HtmlToolkit } from "../../mcp/toolkits/html/tools.ts";
+import { EnvironmentToolkit } from "../../mcp/toolkits/environment/tools.ts";
+import { ProjectToolkit } from "../../mcp/toolkits/project/tools.ts";
+import { WorktreeToolkit } from "../../mcp/toolkits/worktree/tools.ts";
+import { ThreadToolkit } from "../../mcp/toolkits/thread/tools.ts";
+import { OrchestratorToolkit } from "../../mcp/toolkits/orchestrator/tools.ts";
+import { ClaudeExecutableFileCheck } from "../../provider/Drivers/ClaudeExecutable.ts";
+import type * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
 import * as ClaudeAdapterV2 from "./ClaudeAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 
@@ -460,32 +469,33 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
   });
 });
 
-// Coder: T3 tools run over the workspace file bridge, so the session's tool command is
-// pre-approved as a Bash prefix instead of attaching a `t3-code` MCP server.
 describe("ClaudeAdapterV2 MCP query overrides", () => {
-  const TOOL_COMMAND = "/nix/store/node/bin/node /tmp/t3-tools-claude/t3.mjs";
+  const T3_MCP_SERVERS = {
+    "t3-code": {
+      type: "http",
+      url: "http://127.0.0.1:43123/mcp",
+      headers: {
+        Authorization: "${T3_CODE_MCP_AUTHORIZATION}",
+      },
+      timeout: ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
+    },
+  } as const;
+  const T3_MCP_ENVIRONMENT = {
+    T3_CODE_MCP_AUTHORIZATION: "Bearer secret-claude-token",
+  } as const;
 
-  const withMcpSession = (threadId: ThreadId, run: () => void) => {
-    McpProviderSession.setMcpProviderSession({
-      environmentId: EnvironmentId.make(`environment-${threadId}`),
-      threadId,
-      providerSessionId: `mcp-session-${threadId}`,
-      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      endpoint: "/tmp/t3-tools-claude",
-      authorizationHeader: "Bearer secret-claude-token",
-      browserToolsAvailable: true,
-      toolCommand: TOOL_COMMAND,
-    });
-    try {
-      run();
-    } finally {
-      McpProviderSession.clearMcpProviderSession(threadId);
-    }
-  };
-
-  const readOnlyBridgeRules = ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS.map(
-    (tool) => `Bash(${TOOL_COMMAND} ${tool.replace(/^mcp__t3-code__/u, "")}:*)`,
-  );
+  const mcpSessionFor = (
+    threadId: ThreadId,
+    authorizationHeader = "Bearer secret-claude-token",
+  ): McpProviderSession.McpProviderSessionConfig => ({
+    environmentId: EnvironmentId.make(`environment-${threadId}`),
+    threadId,
+    providerSessionId: `mcp-session-${threadId}`,
+    providerInstanceId: ProviderInstanceId.make("claudeAgent"),
+    endpoint: "http://127.0.0.1:43123/mcp",
+    authorizationHeader,
+    browserToolsAvailable: true,
+  });
 
   it("leaves an absent allowlist absent when no MCP session exists", () => {
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
@@ -506,7 +516,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.deepEqual(overrides, { allowedTools: ["Read"] });
   });
 
-  it("pre-approves the T3 tool command when a bridge session exists without an allowlist", () => {
+  it("pre-approves all t3-code tools when attaching an MCP session without an allowlist", () => {
     const threadId = ThreadId.make("thread-claude-mcp-no-allowlist");
     const mcpSession = mcpSessionFor(threadId);
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
@@ -514,52 +524,27 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       readOnlySandbox: false,
     });
 
-      assert.deepEqual(overrides, {
-        allowedTools: [`Bash(${TOOL_COMMAND}:*)`],
-        t3ToolCommand: TOOL_COMMAND,
-      });
+    assert.deepEqual(overrides, {
+      allowedTools: [ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD],
+      mcpServers: T3_MCP_SERVERS,
+      mcpEnvironment: T3_MCP_ENVIRONMENT,
     });
   });
 
-  it("extends an explicit allowlist with the T3 tool command", () => {
+  it("extends an explicit allowlist with the t3-code wildcard", () => {
     const threadId = ThreadId.make("thread-claude-mcp-with-allowlist");
-    withMcpSession(threadId, () => {
-      const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
-        threadId,
-        readOnlySandbox: false,
-        allowedTools: ["Read"],
-      });
-
-      assert.deepEqual(overrides, {
-        allowedTools: ["Read", `Bash(${TOOL_COMMAND}:*)`],
-        t3ToolCommand: TOOL_COMMAND,
-      });
+    const mcpSession = mcpSessionFor(threadId);
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession,
+      readOnlySandbox: false,
+      allowedTools: ["Read", "mcp__t3-code__*"],
     });
-  });
 
-  it("attaches nothing when the session's bridge could not be created", () => {
-    const threadId = ThreadId.make("thread-claude-mcp-no-bridge");
-    McpProviderSession.setMcpProviderSession({
-      environmentId: EnvironmentId.make(`environment-${threadId}`),
-      threadId,
-      providerSessionId: `mcp-session-${threadId}`,
-      providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      endpoint: "",
-      authorizationHeader: "Bearer secret-claude-token",
-      browserToolsAvailable: true,
+    assert.deepEqual(overrides, {
+      allowedTools: ["Read", "mcp__t3-code__*"],
+      mcpServers: T3_MCP_SERVERS,
+      mcpEnvironment: T3_MCP_ENVIRONMENT,
     });
-    try {
-      assert.deepEqual(
-        ClaudeAdapterV2.claudeMcpQueryOverrides({
-          threadId,
-          readOnlySandbox: false,
-          allowedTools: ["Read"],
-        }),
-        { allowedTools: ["Read"] },
-      );
-    } finally {
-      McpProviderSession.clearMcpProviderSession(threadId);
-    }
   });
 
   it("pre-approves only read-only t3-code tools in a read-only sandbox", () => {
@@ -571,27 +556,23 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       allowedTools: [...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS],
     });
 
-      assert.deepEqual(overrides, {
-        allowedTools: [
-          ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
-          ...readOnlyBridgeRules,
-        ],
-        t3ToolCommand: TOOL_COMMAND,
-      });
-      assert.isFalse(overrides.allowedTools?.includes(`Bash(${TOOL_COMMAND}:*)`));
+    assert.deepEqual(overrides, {
+      allowedTools: [
+        ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
+        ...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS,
+      ],
+      mcpServers: T3_MCP_SERVERS,
+      mcpEnvironment: T3_MCP_ENVIRONMENT,
     });
     assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_WILDCARD));
   });
 
   it("pre-approves only read-only t3-code tools in a read-only sandbox without an allowlist", () => {
     const threadId = ThreadId.make("thread-claude-mcp-read-only-no-allowlist");
-    withMcpSession(threadId, () => {
-      const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
-        threadId,
-        readOnlySandbox: true,
-      });
-
-      assert.deepEqual(overrides.allowedTools, readOnlyBridgeRules);
+    const mcpSession = mcpSessionFor(threadId);
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession,
+      readOnlySandbox: true,
     });
 
     assert.deepEqual(overrides.allowedTools, [
@@ -632,29 +613,18 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
 
   it("invalidates live-query reuse when MCP credentials rotate", () => {
     const threadId = ThreadId.make("thread-claude-mcp-credential-rotation");
-    withMcpSession(threadId, () => {
-      const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
-        ProviderAdapterV2RuntimePolicy.make({
-          runtimeMode: "approval-required",
-          interactionMode: "default",
-          cwd: "/workspace",
-        }),
-      );
-      const initialKey = ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
-        queryPolicy,
-        ClaudeAdapterV2.claudeMcpQueryOverrides({ threadId, readOnlySandbox: false }),
-      );
-
-      McpProviderSession.setMcpProviderSession({
-        environmentId: EnvironmentId.make(`environment-${threadId}`),
-        threadId,
-        providerSessionId: `mcp-session-${threadId}`,
-        providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-        endpoint: "/tmp/t3-tools-rotated",
-        authorizationHeader: "Bearer rotated-claude-token",
-        browserToolsAvailable: true,
-        toolCommand: "/nix/store/node/bin/node /tmp/t3-tools-rotated/t3.mjs",
-      });
+    const mcpSession = mcpSessionFor(threadId);
+    const queryPolicy = ClaudeAdapterV2.claudeRuntimeQueryPolicyForRuntimePolicy(
+      ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+        runtimeMode: "approval-required",
+        interactionMode: "default",
+        cwd: "/workspace",
+      }),
+    );
+    const initialKey = ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
+      queryPolicy,
+      ClaudeAdapterV2.claudeMcpQueryOverrides({ mcpSession, readOnlySandbox: false }),
+    );
 
     const rotatedKey = ClaudeAdapterV2.claudeEffectiveQueryPolicyKey(
       queryPolicy,
@@ -665,72 +635,89 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     );
     assert.notEqual(rotatedKey, initialKey);
   });
-});
 
-// Coder: persisted tool results carry no image or file bytes.
-describe("ClaudeAdapterV2 tool result bytes", () => {
-  it("omits base64 image blocks and structured base64 fields", () => {
+  it("matches the read-only allowlist to the orchestrator toolkit annotations", () => {
+    const readOnlyToolNames = [
+      ...Object.values(OrchestratorToolkit.tools),
+      ...Object.values(ThreadToolkit.tools),
+      ...Object.values(WorktreeToolkit.tools),
+      ...Object.values(ProjectToolkit.tools),
+      ...Object.values(EnvironmentToolkit.tools),
+      ...Object.values(PreviewControlsToolkit.tools),
+      ...Object.values(HtmlToolkit.tools),
+    ]
+      .filter((tool) => Context.get(tool.annotations, Tool.Readonly))
+      .map((tool) => `mcp__t3-code__${tool.name}`)
+      .sort();
+
     assert.deepEqual(
-      ClaudeAdapterV2.omitClaudeToolResultBytes([
-        { type: "text", text: "kept" },
-        { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
-      ]),
-      [
-        { type: "text", text: "kept" },
-        { type: "text", text: "[image content omitted by T3]" },
-      ],
-    );
-    assert.deepEqual(
-      ClaudeAdapterV2.omitClaudeToolResultBytes<unknown>({
-        type: "image",
-        file: { base64: "AAAA", type: "image/png", originalSize: 4 },
-      }),
-      { type: "image", file: { type: "image/png", originalSize: 4 } },
+      [...ClaudeAdapterV2.CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS].sort(),
+      readOnlyToolNames,
     );
   });
 });
 
 describe("ClaudeAdapterV2 native protocol logging", () => {
-  // Coder: the T3 tool bridge command reaches the system prompt; no MCP server or credential does.
-  it("injects the thread's T3 tool command without an MCP server or credential", () => {
+  it("injects thread-scoped MCP configuration without logging the credential", () => {
     const threadId = ThreadId.make("thread-claude-mcp");
-    const toolCommand = "/nix/store/node/bin/node /tmp/t3-tools-claude/t3.mjs";
-    McpProviderSession.setMcpProviderSession({
+    const mcpSession = {
       environmentId: EnvironmentId.make("environment-claude-mcp"),
       threadId,
       providerSessionId: "mcp-session-claude",
       providerInstanceId: ProviderInstanceId.make("claudeAgent"),
-      endpoint: "/tmp/t3-tools-claude",
+      endpoint: "http://127.0.0.1:43123/mcp",
       authorizationHeader: "Bearer secret-claude-token",
       browserToolsAvailable: true,
-      toolCommand,
+    };
+
+    const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
+      mcpSession,
+      readOnlySandbox: false,
+      allowedTools: ["Read"],
+    });
+    assert.deepEqual(overrides, {
+      allowedTools: ["Read", "mcp__t3-code__*"],
+      mcpServers: {
+        "t3-code": {
+          type: "http",
+          url: "http://127.0.0.1:43123/mcp",
+          headers: {
+            Authorization: "${T3_CODE_MCP_AUTHORIZATION}",
+          },
+          timeout: ClaudeAdapterV2.CLAUDE_T3_MCP_TOOL_TIMEOUT_MS,
+        },
+      },
+      mcpEnvironment: { T3_CODE_MCP_AUTHORIZATION: "Bearer secret-claude-token" },
     });
 
-    try {
-      const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
-        threadId,
-        readOnlySandbox: false,
-        allowedTools: ["Read"],
-      });
-      const options = ClaudeAdapterV2.makeClaudeQueryOptions({
-        modelSelection: {
-          instanceId: ProviderInstanceId.make("claudeAgent"),
-          model: "claude-sonnet-4-6",
-        },
-        nativeThreadId: "native-thread-claude-mcp",
-        resume: false,
-        cwd: "/workspace",
-        ...overrides,
-      });
-      const systemPrompt = options.systemPrompt as { readonly append?: string };
-      assert.include(systemPrompt.append ?? "", `${toolCommand} --list`);
-      assert.include(systemPrompt.append ?? "", "link_pull_request");
-      const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
-      assert.isUndefined(logged.hasMcpServers);
-      assert.notInclude(JSON.stringify(options), "secret-claude-token");
-    } finally {
-      McpProviderSession.clearMcpProviderSession(threadId);
-    }
+    const options = ClaudeAdapterV2.makeClaudeQueryOptions({
+      modelSelection: {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-4-6",
+      },
+      nativeThreadId: "native-thread-claude-mcp",
+      resume: false,
+      cwd: "/workspace",
+      allowedTools: overrides.allowedTools ?? [],
+      mcpServers: overrides.mcpServers ?? {},
+      environment: { ...overrides.mcpEnvironment },
+    });
+    // mcpServers becomes a CLI argument, readable by every local user; the
+    // credential may only travel in the child's environment.
+    assert.notInclude(JSON.stringify(options.mcpServers), "secret-claude-token");
+    assert.equal(options.env?.T3_CODE_MCP_AUTHORIZATION, "Bearer secret-claude-token");
+    assert.isObject(options.systemPrompt);
+    const systemPrompt = options.systemPrompt as {
+      readonly type: string;
+      readonly preset: string;
+      readonly append?: string;
+    };
+    assert.equal(systemPrompt.type, "preset");
+    assert.equal(systemPrompt.preset, "claude_code");
+    assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
+    const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
+    assert.equal(logged.hasMcpServers, true);
+    assert.notInclude(JSON.stringify(logged), "secret-claude-token");
   });
 
   it.effect("writes Claude Agent SDK protocol frames to the native provider log", () =>
@@ -1481,8 +1468,7 @@ describe("ClaudeAdapterV2 attachments", () => {
           ),
           name: "diagram.png",
           mimeType: "image/png",
-          // Coder: the validated reader requires the declared size and a PNG signature.
-          sizeBytes: 12,
+          sizeBytes: 4,
         });
         const document = ChatFileAttachment.make({
           type: "file",
@@ -1495,7 +1481,7 @@ describe("ClaudeAdapterV2 attachments", () => {
         });
         yield* fileSystem.writeFile(
           path.join(attachmentsDir, attachmentRelativePath(attachment)!),
-          Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]),
+          Uint8Array.from([1, 2, 3, 4]),
         );
         yield* fileSystem.writeFile(
           path.join(attachmentsDir, attachmentRelativePath(document)!),
@@ -1520,7 +1506,7 @@ describe("ClaudeAdapterV2 attachments", () => {
           source: {
             type: "base64",
             media_type: "image/png",
-            data: "iVBORw0KGgoBAgME",
+            data: "AQIDBA==",
           },
         } as const;
         const expectedAttachmentPath = path.join(
@@ -1646,7 +1632,7 @@ describe("ClaudeAdapterV2 attachments", () => {
           .pipe(Effect.flip);
 
         assert.equal(error._tag, "ProviderAdapterTurnStartError");
-        assert.include(String(error.cause), "Pasted image attachment type is unsupported");
+        assert.include(String(error.cause), "Unsupported Claude image attachment type");
         assert.equal(openCount, 0);
       }).pipe(
         Effect.provide(
@@ -1829,16 +1815,13 @@ describe("ClaudeAdapterV2 native fork", () => {
           }),
         });
 
-        assert.deepEqual(forkedProviderThread.nativeMetadata?.claudeFork, {
-          sourceSessionId: "source-native-session",
-          upToMessageId: "assistant-message-cursor",
-        });
-        // Coder: the CLI forks natively on the fork's first query.
-        assert.equal(openedQueries[0]?.options.resume, "source-native-session");
-        assert.equal(openedQueries[0]?.options.forkSession, true);
-        assert.equal(openedQueries[0]?.options.sessionId, "forked-native-session");
-        assert.equal(openedQueries[0]?.options.resumeSessionAt, "assistant-message-cursor");
-      }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, NodeServices.layer))),
+        assert.equal(openedQueries[0]?.options.resume, "forked-native-session");
+        assert.equal(openedQueries[0]?.options.sessionId, undefined);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
     ),
   );
 });
@@ -2901,8 +2884,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       const terminal = yield* Queue.take(harness.terminalReceipts);
       assert.equal(terminal.status, "failed");
       if (terminal.status !== "failed") return;
-      // Coder: API-backed usage only; the guidance names the workspace provider configuration.
-      assert.include(terminal.failure.message, "API credentials");
+      assert.include(terminal.failure.message, "run `claude auth login`");
       assert.include(terminal.failure.message, configDir);
       assert.include(terminal.failure.message, cwd);
       assert.notInclude(terminal.failure.message, "repeated API errors");

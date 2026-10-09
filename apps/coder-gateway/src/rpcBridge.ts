@@ -5,7 +5,7 @@ import * as Exit from "effect/Exit";
 import * as FiberSet from "effect/FiberSet";
 import type * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
-import type * as RpcMessage from "effect/unstable/rpc/RpcMessage";
+import type * as RpcMessage from "effect/rpc/RpcMessage";
 
 type RpcRequestId = string | number;
 type BrowserRpcMessage = RpcMessage.FromClientEncoded;
