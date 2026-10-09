@@ -80,7 +80,7 @@ an approval request. The Claude browser integration is disabled.
 
 ## T3 tools
 
-Codex and Claude can still use T3 Code's own tools: delegating work to child agents, reading and
+Codex and Claude can still use T3 Coder's own tools: delegating work to child agents, reading and
 messaging other threads, managing the queue and pending questions, scheduling recurring tasks,
 launching threads in worktrees, managing projects, and linking merge requests. Instead of an MCP
 server, T3 gives each provider session a workspace command that runs these tools and removes it
