@@ -27,9 +27,7 @@ import {
 } from "../providerUpdateSettings.ts";
 import { makeCodexTextGeneration } from "../../textGeneration/CodexTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeCodexMcpServerNameResolver } from "../Layers/CodexIntegrationPolicy.ts";
 import { checkCodexProviderStatus, makePendingCodexProvider } from "../Layers/CodexProvider.ts";
-import { resolveCodexLaunchArgs } from "../Layers/codexLaunchArgs.ts";
 import { makeManagedServerProvider } from "../makeManagedServerProvider.ts";
 import { applyBundledModelManifest } from "../ModelManifest.ts";
 import type { ProviderDriver, ProviderInstance } from "../ProviderDriver.ts";
@@ -139,12 +137,6 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
         enabled,
         homePath: homeLayout.effectiveHomePath ?? "",
       } satisfies CodexSettings;
-      const resolveMcpServerNames = yield* makeCodexMcpServerNameResolver({
-        binaryPath: effectiveConfig.binaryPath || "codex",
-        launchArgs: resolveCodexLaunchArgs(effectiveConfig.launchArgs, processEnv),
-        homePath: effectiveConfig.homePath,
-        environment: processEnv,
-      });
       const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
         resolveProviderMaintenanceCapabilitiesEffect(
           makeCodexMaintenanceResolver(homeLayout.sharedHomePath),
@@ -193,12 +185,15 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv> = {
             }),
         ),
       );
-      // Coder: the adapter disables every workspace MCP server it discovers for the session cwd.
-      // There are no subscription usage-limit snapshots to update.
-      const orchestrationAdapter = yield* createCodexAdapterV2(
-        { instanceId, displayName, accentColor, environment, enabled, config },
-        { resolveMcpServerNames },
-      ).pipe(
+      // Coder: there are no subscription usage-limit snapshots to update.
+      const orchestrationAdapter = yield* createCodexAdapterV2({
+        instanceId,
+        displayName,
+        accentColor,
+        environment,
+        enabled,
+        config,
+      }).pipe(
         Effect.mapError(
           (cause) =>
             new ProviderDriverError({

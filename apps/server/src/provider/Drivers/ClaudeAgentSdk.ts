@@ -34,6 +34,7 @@ const SUPPORTED_QUERY_OPTIONS: ReadonlySet<string> = new Set([
   "extraArgs",
   "forkSession",
   "includePartialMessages",
+  "mcpServers",
   "model",
   "onUserDialog",
   "pathToClaudeCodeExecutable",
@@ -45,14 +46,12 @@ const SUPPORTED_QUERY_OPTIONS: ReadonlySet<string> = new Set([
   "settingSources",
   "settings",
   "stderr",
+  "strictMcpConfig",
   "supportedDialogKinds",
   "systemPrompt",
   "thinking",
   "tools",
 ]);
-
-/** The CLI transport always runs with an empty strict MCP configuration. */
-const DROPPED_QUERY_OPTIONS: ReadonlySet<string> = new Set(["mcpServers", "strictMcpConfig"]);
 
 const unsupported = (feature: string): Error =>
   new Error(`Claude ${feature} is not available through T3 Coder's CLI transport.`);
@@ -60,7 +59,7 @@ const unsupported = (feature: string): Error =>
 /** SDK query options as CLI transport options; exported for tests. */
 export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
   for (const [key, value] of Object.entries(options)) {
-    if (value === undefined || SUPPORTED_QUERY_OPTIONS.has(key) || DROPPED_QUERY_OPTIONS.has(key)) {
+    if (value === undefined || SUPPORTED_QUERY_OPTIONS.has(key)) {
       continue;
     }
     throw unsupported(`query option '${key}'`);
@@ -81,6 +80,9 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
   ) {
     throw unsupported(`thinking configuration '${thinking.type}'`);
   }
+  for (const [name, server] of Object.entries(options.mcpServers ?? {})) {
+    if (server.type === "sdk") throw unsupported(`in-process MCP server '${name}'`);
+  }
   if (options.pathToClaudeCodeExecutable === undefined) {
     throw unsupported("query without a workspace Claude executable");
   }
@@ -100,6 +102,13 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
     ...(options.extraArgs ? { extraArgs: options.extraArgs } : {}),
     ...(options.forkSession ? { forkSession: true } : {}),
     ...(options.includePartialMessages ? { includePartialMessages: true } : {}),
+    ...(options.mcpServers
+      ? {
+          mcpServers: options.mcpServers as Readonly<
+            Record<string, Readonly<Record<string, unknown>>>
+          >,
+        }
+      : {}),
     ...(options.model ? { model: options.model } : {}),
     ...(options.onUserDialog
       ? {
@@ -116,6 +125,7 @@ export function toClaudeCliOptions(options: Sdk.Options): Cli.Options {
     ...(options.settingSources ? { settingSources: options.settingSources } : {}),
     ...(options.settings ? { settings: options.settings as Record<string, unknown> | string } : {}),
     ...(options.stderr ? { stderr: options.stderr } : {}),
+    ...(options.strictMcpConfig ? { strictMcpConfig: true } : {}),
     ...(options.supportedDialogKinds ? { supportedDialogKinds: options.supportedDialogKinds } : {}),
     ...(systemPrompt
       ? {

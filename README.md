@@ -95,7 +95,7 @@ T3 Coder is a Coder-only fork of the open-source [T3 Code](https://github.com/pi
 It keeps the T3 Code interface and developer workflow but specializes it for Coder-managed Linux
 workspaces: no desktop or mobile apps, no hosted web or relay service, no telemetry or auto-update,
 only Codex and Claude Code as providers, and GitLab as the only hosted source-control provider.
-MCP servers and provider app integrations are disabled. Git and `glab` run inside the workspace
+Git and `glab` run inside the workspace
 through the existing Coder RPC connection; the local gateway never handles GitLab credentials.
 Where upstream and T3 Coder share behavior, upstream's documentation is the source of truth; T3
 Coder's guides adapt it and note the differences.

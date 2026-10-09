@@ -11,8 +11,8 @@ Reviewers can expect:
 - the local app to remember only non-secret Coder targets and explicit port-forward rules, while
   the browser keeps UI preferences and the text of unsent drafts and stashed prompts;
 - Coder to own deployment authentication and provider CLIs to own provider authentication;
-- no general upload, download, synchronization, non-GitLab hosted source-control, MCP, or
-  app-integration surface;
+- no general upload, download, synchronization, or non-GitLab hosted source-control surface; MCP
+  servers and app integrations are only those the workspace's provider configuration defines;
 - workspace lifecycle and port-forward actions to remain explicit and visible to the user.
 
 This document provides software-intake evidence for those product promises. It is not an assertion
@@ -41,12 +41,9 @@ forwarded port. Separately, validated settings may start foreground `coder port-
 whose local endpoint is fixed to `127.0.0.1`; raw arguments, reverse forwards, and non-loopback bind
 addresses are not accepted. SCP is restricted to generated helper and clipboard-image paths and
 reaches the workspace only through a temporary Coder ProxyCommand. Network telemetry and direct
-workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Claude
-sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers. Every
-T3-managed Codex process enumerates configured MCP names without starting the servers, appends a
-final per-server disable override for every name, and disables app integrations. Configured launch
-arguments cannot supersede these final overrides; failed discovery prevents the managed process
-from starting.
+workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Codex
+and Claude sessions load the MCP servers and app integrations configured in the workspace, as
+upstream does; those servers run as workspace processes started by the provider executables.
 
 User commands entered in a workspace terminal, repository-local Git hooks, and the externally
 installed Codex, Claude, GitLab, Git, or Coder executables remain subject to the workspace and
@@ -96,8 +93,8 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
   clone, repository publishing, and merge-request operations are available only in the workspace
   helper through Git and the workspace-installed `glab` CLI; the local gateway performs none of
   those operations and does not register GitHub, Azure DevOps, or Bitbucket;
-- the removed T3 preview MCP, all Codex MCP and app integrations, Claude browser integration,
-  free-form Claude launch flags, and the packaged Anthropic Agent SDK;
+- the removed T3 preview MCP, Claude browser integration, free-form Claude launch flags, and the
+  packaged Anthropic Agent SDK;
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
   the gateway's loopback URL.
 

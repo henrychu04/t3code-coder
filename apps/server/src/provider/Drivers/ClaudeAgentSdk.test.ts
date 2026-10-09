@@ -14,7 +14,7 @@ import {
 import { buildClaudeCliArgs } from "./ClaudeCli.ts";
 
 describe("ClaudeAgentSdk", () => {
-  it("maps SDK options onto the CLI transport and keeps MCP disabled", () => {
+  it("maps SDK options onto the CLI transport", () => {
     const args = buildClaudeCliArgs(
       toClaudeCliOptions({
         pathToClaudeCodeExecutable: "claude",
@@ -35,8 +35,10 @@ describe("ClaudeAgentSdk", () => {
     assert.equal(args[args.indexOf("--settings") + 1], "/workspace/.claude/settings.json");
     assert.equal(args[args.indexOf("--resume") + 1], "11111111-1111-4111-8111-111111111111");
     assert.equal(args[args.indexOf("--max-turns") + 1], "5");
-    assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
-    assert.ok(!args.join(" ").includes("127.0.0.1"));
+    assert.equal(
+      args[args.indexOf("--mcp-config") + 1],
+      '{"mcpServers":{"t3-code":{"type":"http","url":"http://127.0.0.1:1/mcp"}}}',
+    );
   });
 
   it("rejects options the CLI transport cannot honour", () => {
@@ -48,6 +50,14 @@ describe("ClaudeAgentSdk", () => {
       /thinking/,
     );
     assert.throws(() => toClaudeCliOptions({}), /executable/);
+    assert.throws(
+      () =>
+        toClaudeCliOptions({
+          ...base,
+          mcpServers: { local: { type: "sdk", name: "local", instance: {} as never } },
+        }),
+      /in-process MCP server/,
+    );
   });
 
   it("streams through the workspace CLI with the SDK query surface", async () => {

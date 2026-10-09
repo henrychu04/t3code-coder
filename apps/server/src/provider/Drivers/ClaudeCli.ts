@@ -396,6 +396,9 @@ export type Options = {
   readonly includePartialMessages?: boolean;
   readonly thinking?: { readonly type: "adaptive"; readonly display: "summarized" };
   readonly model?: string;
+  /** External MCP server configurations, passed as `--mcp-config` as the SDK does. */
+  readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  readonly strictMcpConfig?: boolean;
   readonly onUserDialog?: (
     request: UserDialogRequest,
     options: { readonly signal: AbortSignal },
@@ -624,11 +627,9 @@ export interface Query extends AsyncIterable<SDKMessage> {
 }
 
 const CONTROL_REQUEST_TIMEOUT_MS = 60_000;
-// Coder: launch args may add CLI flags but never an MCP configuration or the
-// stream-json transport flags this driver depends on.
+// Coder: launch args may add CLI flags but never the stream-json transport flags this
+// driver depends on.
 const RESERVED_CLAUDE_CLI_FLAGS: ReadonlySet<string> = new Set([
-  "mcp-config",
-  "strict-mcp-config",
   "output-format",
   "input-format",
   "print",
@@ -666,9 +667,11 @@ export function buildClaudeCliArgs(options: Options): Array<string> {
       "type" in options.tools ? "default" : (options.tools as ReadonlyArray<string>).join(","),
     );
   }
+  if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
+    args.push("--mcp-config", JSON.stringify({ mcpServers: options.mcpServers }));
+  }
   if (options.settingSources) args.push(`--setting-sources=${options.settingSources.join(",")}`);
-  // This transport never accepts an integration configuration from callers.
-  args.push("--strict-mcp-config", "--mcp-config", JSON.stringify({ mcpServers: {} }));
+  if (options.strictMcpConfig) args.push("--strict-mcp-config");
   if (options.permissionMode) args.push("--permission-mode", options.permissionMode);
   if (options.allowDangerouslySkipPermissions) {
     args.push("--allow-dangerously-skip-permissions");
@@ -716,10 +719,7 @@ class ClaudeCliQuery implements Query {
   constructor(prompt: AsyncIterable<SDKUserMessage>, options: Options) {
     this.options = options;
     this.abortController = options.abortController ?? new AbortController();
-    const environment: NodeJS.ProcessEnv = {
-      ...options.env,
-      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
-    };
+    const environment: NodeJS.ProcessEnv = { ...options.env };
     if (!environment.CLAUDE_CODE_ENTRYPOINT) {
       environment.CLAUDE_CODE_ENTRYPOINT = "sdk-ts";
     }
