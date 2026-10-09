@@ -655,8 +655,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
   - Client settings add per-workspace `providerPreferencesByEnvironment`.
   - Terminal attach input adds `afterSequence`, and the attach stream adds a `resumed` event.
-  - `shared/serverSettings.ts` adds `resolveCoderTextGenerationModelSelection`. Claude launch args
-    reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
+  - Claude launch args reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
     which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods the

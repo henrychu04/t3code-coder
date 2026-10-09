@@ -1,4 +1,5 @@
 import {
+  ANTIGRAVITY_DEFAULT_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL,
   DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   defaultInstanceIdForDriver,
@@ -6,16 +7,19 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
+  type ServerSettingsPatch,
 } from "@t3tools/contracts";
 import {
   type CustomModelDefinition,
   createModelSelection,
+  normalizeCustomModelSlug,
   readCustomModelEntries,
   resolveSelectableModel,
 } from "@t3tools/shared/model";
-import { resolveCoderTextGenerationModelSelection } from "@t3tools/shared/serverSettings";
 import { getComposerProviderState } from "./components/chat/composerProviderState";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
+import * as Arr from "effect/Array";
+import * as Result from "effect/Result";
 import {
   getDefaultServerModel,
   getProviderModels,
@@ -23,9 +27,10 @@ import {
 } from "./providerModels";
 import { ModelEsque } from "./components/chat/providerIconUtils";
 import {
-  deriveCoderProviderInstanceEntries,
-  isProviderInstancePickerReady,
   type ProviderInstanceEntry,
+  // Coder: pickers and fallbacks only offer Codex and Claude instances.
+  deriveCoderProviderInstanceEntries,
+  NO_PROVIDER_MODEL_SELECTION,
 } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
 
@@ -54,6 +59,7 @@ function readInstanceCustomModels(
   instanceId: ProviderInstanceId,
   driverKind: ProviderDriverKind,
 ): ReadonlyArray<CustomModelDefinition> {
+  if (driverKind === "antigravity") return [];
   const instance = settings.providerInstances?.[instanceId];
   const config = instance?.config;
   if (config !== null && typeof config === "object") {
@@ -78,9 +84,33 @@ export interface AppModelOption {
   name: string;
   shortName?: string;
   subProvider?: string;
+  aliases?: ReadonlyArray<string>;
+  badge?: "new";
   isCustom: boolean;
   isDefault?: boolean;
   isLegacy?: boolean;
+  isUnavailable?: boolean;
+}
+
+function appendUnavailableDynamicModelSelection(
+  options: AppModelOption[],
+  rawModels: ReadonlyArray<ServerProvider["models"][number]>,
+  provider: ProviderDriverKind,
+  selectedModel: string | null | undefined,
+  hiddenModels: ReadonlyArray<string>,
+): AppModelOption[] {
+  if (provider !== "opencode" && provider !== "antigravity") return options;
+  const slug = normalizeCustomModelSlug(selectedModel);
+  if (!slug) return options;
+  if (provider === "antigravity" && slug === ANTIGRAVITY_DEFAULT_MODEL) return options;
+
+  // A model that exists in the raw catalog can be absent from `options`
+  // because the user hid it. Keep that preference authoritative.
+  if (resolveSelectableModel(provider, slug, rawModels) !== null) return options;
+  if (hiddenModels.includes(slug)) return options;
+  if (options.some((option) => option.slug === slug)) return options;
+
+  return [...options, { slug, name: slug, isCustom: false, isUnavailable: true }];
 }
 
 function toAppModelOption(model: ServerProvider["models"][number]): AppModelOption {
@@ -91,6 +121,8 @@ function toAppModelOption(model: ServerProvider["models"][number]): AppModelOpti
   };
   if (model.shortName) option.shortName = model.shortName;
   if (model.subProvider) option.subProvider = model.subProvider;
+  if (model.aliases) option.aliases = model.aliases;
+  if (model.badge) option.badge = model.badge;
   if (model.isDefault) option.isDefault = true;
   if (model.isLegacy) option.isLegacy = true;
   return option;
@@ -148,17 +180,49 @@ function normalizeCustomModelEntries(
   return normalizedModels;
 }
 
-export function getAppModelOptions(
+function getAppModelOptions(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderDriverKind,
-  _selectedModel?: string | null,
+  selectedModel?: string | null,
 ): AppModelOption[] {
-  const entry = deriveCoderProviderInstanceEntries(providers).find(
-    (candidate) => candidate.driverKind === provider,
+  const rawModels = getProviderModels(providers, provider);
+  // Server-reported custom rows mirror settings and can lag a removal, so
+  // only built-ins are taken from the snapshot; custom rows are rebuilt from
+  // settings below.
+  const options: AppModelOption[] = rawModels
+    .filter((model) => !model.isCustom)
+    .map(toAppModelOption);
+  const seen = new Set(options.map((option) => option.slug));
+  const builtInModelSlugs = new Set(
+    Arr.filterMap(getProviderModels(providers, provider), (model) =>
+      model.isCustom ? Result.failVoid : Result.succeed(model.slug),
+    ),
   );
-  if (!entry) return [];
-  return getAppModelOptionsForInstance(settings, entry);
+
+  // Read from the default instance's config first (that's where edits
+  // now land), falling back to the legacy per-kind bucket so unmigrated
+  // settings and the initial render before the first write both still
+  // see the user's authored custom models.
+  const defaultInstanceId = defaultInstanceIdForDriver(provider);
+  const customModels = readInstanceCustomModels(settings, defaultInstanceId, provider);
+  for (const entry of normalizeCustomModelEntries(customModels, builtInModelSlugs)) {
+    if (seen.has(entry.slug)) {
+      continue;
+    }
+
+    seen.add(entry.slug);
+    options.push({ slug: entry.slug, name: entry.name, isCustom: true });
+  }
+
+  const preferences = readInstanceModelPreferences(settings, defaultInstanceId);
+  return appendUnavailableDynamicModelSelection(
+    applyInstanceModelPreferences(options, preferences),
+    rawModels,
+    provider,
+    selectedModel,
+    preferences.hiddenModels,
+  );
 }
 
 /**
@@ -177,12 +241,17 @@ export function getAppModelOptions(
 export function getAppModelOptionsForInstance(
   settings: UnifiedSettings,
   entry: ProviderInstanceEntry,
+  selectedModel?: string | null,
 ): AppModelOption[] {
   const options: AppModelOption[] = entry.models
     .filter((model) => !model.isCustom)
     .map(toAppModelOption);
   const seen = new Set(options.map((option) => option.slug));
-  const builtInModelSlugs = new Set(options.map((option) => option.slug));
+  const builtInModelSlugs = new Set(
+    Arr.filterMap(entry.models, (model) =>
+      model.isCustom ? Result.failVoid : Result.succeed(model.slug),
+    ),
+  );
 
   const customModels = readInstanceCustomModels(settings, entry.instanceId, entry.driverKind);
   for (const custom of normalizeCustomModelEntries(customModels, builtInModelSlugs)) {
@@ -194,9 +263,13 @@ export function getAppModelOptionsForInstance(
     options.push({ slug: custom.slug, name: custom.name, isCustom: true });
   }
 
-  return applyInstanceModelPreferences(
-    options,
-    readInstanceModelPreferences(settings, entry.instanceId),
+  const preferences = readInstanceModelPreferences(settings, entry.instanceId);
+  return appendUnavailableDynamicModelSelection(
+    applyInstanceModelPreferences(options, preferences),
+    entry.models,
+    entry.driverKind,
+    selectedModel,
+    preferences.hiddenModels,
   );
 }
 
@@ -219,55 +292,138 @@ export function resolveAppModelSelectionForInstance(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
   selectedModel: string | null | undefined,
+  resolutionOptions?: { readonly preserveUnavailableSelection?: boolean },
 ): string | null {
   const entry = deriveCoderProviderInstanceEntries(providers).find(
     (candidate) => candidate.instanceId === instanceId,
   );
   if (!entry) return null;
-  const options = getAppModelOptionsForInstance(settings, entry);
-  return (
-    resolveSelectableModel(entry.driverKind, selectedModel, options) ??
-    options.find((option) => option.isDefault)?.slug ??
-    options[0]?.slug ??
-    null
+  const options = getAppModelOptionsForInstance(
+    settings,
+    entry,
+    resolutionOptions?.preserveUnavailableSelection ? selectedModel : null,
   );
+  const resolvedSelection = resolveSelectableModel(entry.driverKind, selectedModel, options);
+  if (resolvedSelection) {
+    return resolvedSelection;
+  }
+  if (
+    resolutionOptions?.preserveUnavailableSelection &&
+    (entry.driverKind === "opencode" || entry.driverKind === "antigravity")
+  ) {
+    const unavailableSelection = normalizeCustomModelSlug(selectedModel);
+    const hiddenModels = readInstanceModelPreferences(settings, entry.instanceId).hiddenModels;
+    if (
+      unavailableSelection &&
+      !hiddenModels.includes(unavailableSelection) &&
+      resolveSelectableModel(entry.driverKind, selectedModel, entry.models) === null &&
+      (entry.driverKind !== "antigravity" || unavailableSelection !== ANTIGRAVITY_DEFAULT_MODEL)
+    ) {
+      return unavailableSelection;
+    }
+  }
+  return options.find((option) => option.isDefault)?.slug ?? options[0]?.slug ?? null;
 }
 
 /**
- * Instance-keyed model options for the two built-in workspace providers.
+ * Instance-keyed model options map. Each configured instance gets its own
+ * option list so the model picker can show the same driver's built-in and
+ * custom instances side by side without collapsing them.
  */
-export function getModelOptionsByInstance(
+export function getCustomModelOptionsByInstance(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
-  _selectedInstanceId?: ProviderInstanceId | null,
-  _selectedModel?: string | null,
+  selectedInstanceId?: ProviderInstanceId | null,
+  selectedModel?: string | null,
 ): ReadonlyMap<ProviderInstanceId, ReadonlyArray<ModelEsque>> {
   const out = new Map<ProviderInstanceId, ReadonlyArray<ModelEsque>>();
   for (const entry of deriveCoderProviderInstanceEntries(providers)) {
-    out.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
+    out.set(
+      entry.instanceId,
+      getAppModelOptionsForInstance(
+        settings,
+        entry,
+        entry.instanceId === selectedInstanceId ? selectedModel : null,
+      ),
+    );
   }
   return out;
+}
+
+/**
+ * Drop the opencode "plan" agent option from a stored model selection.
+ * Used when legacy plan mode is turned off so server-side text-generation
+ * tasks (title, branch, PR) cannot keep dispatching the plan agent.
+ */
+export function withoutPlanAgentSelection(
+  selection: ModelSelection | null | undefined,
+): ModelSelection | null | undefined {
+  if (!selection?.options) {
+    return selection;
+  }
+  const options = selection.options.filter(
+    (option) => !(option.id === "agent" && option.value === "plan"),
+  );
+  if (options.length === selection.options.length) {
+    return selection;
+  }
+  return createModelSelection(selection.instanceId, selection.model, options);
+}
+
+// The dropdown hides the opencode "plan" agent while legacy plan mode is off,
+// but the persisted text-generation selections are only healed when the toggle
+// flips. Users who already have plan mode off and a stored "plan" selection
+// never trip the toggle handler, so resolve the heal once per settings load.
+export function resolvePlanAgentHealPatch(input: {
+  readonly planModeEnabled: boolean;
+  readonly textGenerationModelSelection: ModelSelection | null | undefined;
+  readonly sourceControlWriterModelSelection: ModelSelection | null | undefined;
+}): ServerSettingsPatch | null {
+  if (input.planModeEnabled) {
+    return null;
+  }
+  const healedText = withoutPlanAgentSelection(input.textGenerationModelSelection);
+  const healedSourceControl = withoutPlanAgentSelection(input.sourceControlWriterModelSelection);
+  const patch: ServerSettingsPatch = {
+    ...(healedText && healedText !== input.textGenerationModelSelection
+      ? { textGenerationModelSelection: healedText }
+      : {}),
+    ...(healedSourceControl && healedSourceControl !== input.sourceControlWriterModelSelection
+      ? { sourceControlWriterModelSelection: healedSourceControl }
+      : {}),
+  };
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 export function resolveAppModelSelectionState(
   settings: UnifiedSettings,
   providers: ReadonlyArray<ServerProvider>,
 ): ModelSelection {
-  const configuredSelection = settings.textGenerationModelSelection ?? {
+  const selection = settings.textGenerationModelSelection ?? {
     instanceId: DEFAULT_TEXT_GENERATION_INSTANCE_ID,
     model: DEFAULT_TEXT_GENERATION_MODEL,
   };
-  const selection = resolveCoderTextGenerationModelSelection(configuredSelection, providers);
-  const entries = deriveCoderProviderInstanceEntries(providers);
-  const readyEntries = entries.filter(isProviderInstancePickerReady);
-  const selectedEntry = readyEntries.find((entry) => entry.instanceId === selection.instanceId);
-  const entry = selectedEntry ?? readyEntries[0];
+  const supportedProviders = providers.filter(
+    (provider) => provider.supportsTextGeneration !== false,
+  );
+  const entries = deriveCoderProviderInstanceEntries(supportedProviders);
+  const selectedEntry = entries.find(
+    (entry) => entry.instanceId === selection.instanceId && entry.enabled && entry.isAvailable,
+  );
+  const entry =
+    selectedEntry ?? entries.find((candidate) => candidate.enabled && candidate.isAvailable);
   if (entry) {
     // When the instance changed due to fallback (e.g. selected instance was disabled),
     // don't carry over the old instance's model — use the fallback instance's default.
     const selectedModel = selectedEntry ? selection.model : null;
     const model =
-      resolveAppModelSelectionForInstance(entry.instanceId, settings, providers, selectedModel) ??
+      resolveAppModelSelectionForInstance(
+        entry.instanceId,
+        settings,
+        supportedProviders,
+        selectedModel,
+      ) ??
+      entry.models[0]?.slug ??
       DEFAULT_TEXT_GENERATION_MODEL_BY_PROVIDER[entry.driverKind];
     if (!model) {
       return createModelSelection(entry.instanceId, "", []);
@@ -284,21 +440,5 @@ export function resolveAppModelSelectionState(
     return createModelSelection(entry.instanceId, model, modelOptionsForDispatch);
   }
 
-  const supportedProviders = readyEntries.map((entry) => entry.snapshot);
-  const provider = resolveSelectableProvider(supportedProviders, null);
-  const keptSelectedProvider = false;
-
-  // When the provider changed due to fallback (e.g. selected provider was disabled),
-  // don't carry over the old provider's model — use the fallback provider's default.
-  const selectedModel = keptSelectedProvider ? selection.model : null;
-  const model = resolveAppModelSelection(provider, settings, supportedProviders, selectedModel);
-  const { modelOptionsForDispatch } = getComposerProviderState({
-    provider,
-    model,
-    models: getProviderModels(supportedProviders, provider),
-    modelOptions: keptSelectedProvider ? selection.options : undefined,
-    planModeEnabled: settings.planModeEnabled,
-  });
-
-  return createModelSelection(defaultInstanceIdForDriver(provider), model, modelOptionsForDispatch);
+  return NO_PROVIDER_MODEL_SELECTION;
 }

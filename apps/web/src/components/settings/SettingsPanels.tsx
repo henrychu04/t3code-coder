@@ -69,7 +69,7 @@ import { useSettingsScope } from "./SettingsScopeContext";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { BackgroundActivitySettings } from "./BackgroundActivitySettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
-import { getModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
+import { getCustomModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -1547,7 +1547,7 @@ export function GeneralSettingsPanel() {
   );
   const textGenProvider: ProviderDriverKind =
     textGenInstanceEntry?.driverKind ?? DEFAULT_DRIVER_KIND;
-  const textGenerationModelOptionsByInstance = getModelOptionsByInstance(
+  const textGenerationModelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     textGenerationProviders,
     textGenInstanceId,

@@ -1,6 +1,4 @@
 import {
-  DEFAULT_MODEL,
-  DEFAULT_MODEL_BY_PROVIDER,
   isProviderDriverKind,
   isProviderAvailable,
   resolveProviderInstanceEnabled,
@@ -16,7 +14,6 @@ import {
 } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { isCoderProviderDriver } from "./coderProviders.ts";
 import { deepMerge } from "./Struct.ts";
 import { fromLenientJson } from "./schemaJson.ts";
 import { createModelSelection } from "./model.ts";
@@ -83,44 +80,6 @@ export function isModelSelectionProviderEnabled(
     isProviderDriverKind(selection.instanceId) &&
     getLegacyProviderSettings(settings, selection.instanceId)?.enabled === true
   );
-}
-
-/**
- * Coder: resolve the model used for generated titles and branch names against the
- * live Coder provider snapshots. Persisted settings express the preference;
- * snapshots decide whether that preference can currently be used.
- */
-export function resolveCoderTextGenerationModelSelection(
-  selection: ModelSelection,
-  providers: ReadonlyArray<ServerProvider>,
-): ModelSelection {
-  const candidates = providers.filter(
-    (provider) =>
-      isCoderProviderDriver(provider.driver) &&
-      provider.enabled &&
-      provider.availability !== "unavailable" &&
-      provider.status === "ready" &&
-      provider.models.length > 0,
-  );
-  const selectedProvider = candidates.find(
-    (provider) => provider.instanceId === selection.instanceId,
-  );
-  const provider = selectedProvider ?? candidates[0];
-  if (!provider) return selection;
-
-  const models = provider.models;
-  const selectedModel = selectedProvider
-    ? models.find((model) => model.slug === selection.model)
-    : undefined;
-  if (selectedModel) return selection;
-
-  const model =
-    models.find((candidate) => candidate.isDefault && !candidate.isCustom)?.slug ??
-    models.find((candidate) => !candidate.isCustom)?.slug ??
-    models[0]?.slug ??
-    DEFAULT_MODEL_BY_PROVIDER[provider.driver] ??
-    DEFAULT_MODEL;
-  return createModelSelection(provider.instanceId, model);
 }
 
 export function resolveSourceControlWriterModelSelection(

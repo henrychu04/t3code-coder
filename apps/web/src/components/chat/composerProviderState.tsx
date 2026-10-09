@@ -1,9 +1,10 @@
 import {
+  type ModelCapabilities,
   type ProviderDriverKind,
   type ProviderInstanceId,
   type ProviderOptionSelection,
-  type RuntimeMode,
   type ScopedThreadRef,
+  type RuntimeMode,
   type ServerProvider,
   type ServerProviderModel,
 } from "@t3tools/contracts";
@@ -12,6 +13,7 @@ import {
   getProviderOptionCurrentValue,
   getProviderOptionDescriptors,
   isClaudeUltrathinkPrompt,
+  normalizeModelSlug,
 } from "@t3tools/shared/model";
 import type { ReactNode } from "react";
 
@@ -31,15 +33,11 @@ export type ComposerProviderStateInput = {
 
 export type ComposerPromptInjectionState = "none" | "ultrathink";
 
-const SAFE_RUNTIME_MODES = [
-  "approval-required",
-  "auto-accept-edits",
-] as const satisfies ReadonlyArray<RuntimeMode>;
-
 export type ComposerProviderState = {
   provider: ProviderDriverKind;
   promptEffort: string | null;
   modelOptionsForDispatch: ReadonlyArray<ProviderOptionSelection> | undefined;
+  // Coder: the runtime modes the selected model reports, from the provider's policy.
   supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   composerFrameClassName?: string;
   composerSurfaceClassName?: string;
@@ -63,35 +61,46 @@ type TraitsRenderInput = {
   isComposerOwned?: boolean;
 };
 
-/** The two retained workspace providers both implement manual compaction. */
-export function providerSupportsManualCompaction(provider: ProviderDriverKind): boolean {
-  return provider === "claudeAgent" || provider === "codex";
-}
-
 export function getComposerPromptInjectionState(prompt: string): ComposerPromptInjectionState {
   return isClaudeUltrathinkPrompt(prompt) ? "ultrathink" : "none";
 }
 
 /**
- * Coder: keep the requested mode when the workspace provider supports it; otherwise use the
- * most permissive supported mode. Supported modes are ordered from least to most permissive.
+ * Cursor ACP can report `fastMode: true` as the provider default. T3 only
+ * treats Fast as selected when the user chose it (draft/sticky/settings).
+ * Otherwise inject an explicit `false` so new chats stay Normal and the
+ * send path can overwrite a prior Fast session — descriptor defaults are
+ * otherwise omitted by `buildExplicitProviderOptionSelectionsFromDescriptors`.
  */
-export function resolveComposerRuntimeMode(
-  runtimeMode: RuntimeMode,
-  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
-): RuntimeMode {
-  return supportedRuntimeModes.includes(runtimeMode)
-    ? runtimeMode
-    : (supportedRuntimeModes.at(-1) ?? "approval-required");
+export function withImplicitFastModeDefault(
+  caps: ModelCapabilities,
+  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,
+): ReadonlyArray<ProviderOptionSelection> | undefined {
+  const hasExplicitFastMode = modelOptions?.some((selection) => selection.id === "fastMode");
+  if (hasExplicitFastMode) {
+    return modelOptions ?? undefined;
+  }
+  const hasFastModeDescriptor = caps.optionDescriptors?.some(
+    (descriptor) => descriptor.type === "boolean" && descriptor.id === "fastMode",
+  );
+  if (!hasFastModeDescriptor) {
+    return modelOptions ?? undefined;
+  }
+  return [...(modelOptions ?? []), { id: "fastMode", value: false }];
 }
 
-export function resolveAvailableRuntimeModes(
-  providerStatus: ServerProvider["status"] | null | undefined,
-  supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
-): ReadonlyArray<RuntimeMode> {
-  return providerStatus === "ready"
-    ? (supportedRuntimeModes ?? SAFE_RUNTIME_MODES)
-    : SAFE_RUNTIME_MODES;
+function resolveComposerOptionSelections(
+  models: ReadonlyArray<ServerProviderModel>,
+  model: string,
+  provider: ProviderDriverKind,
+  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,
+  planModeEnabled: boolean,
+): {
+  caps: ModelCapabilities;
+  selections: ReadonlyArray<ProviderOptionSelection> | undefined;
+} {
+  const caps = getProviderModelCapabilities(models, model, provider, planModeEnabled);
+  return { caps, selections: withImplicitFastModeDefault(caps, modelOptions) };
 }
 
 export function getComposerProviderState(input: ComposerProviderStateInput): ComposerProviderState {
@@ -103,8 +112,29 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     promptInjectionState = "none",
     planModeEnabled,
   } = input;
-  const caps = getProviderModelCapabilities(models, model, provider, planModeEnabled);
-  const descriptors = getProviderOptionDescriptors({ caps, selections: modelOptions });
+  if (provider === "opencode") {
+    const normalizedModel = normalizeModelSlug(model, provider);
+    const modelIsInCatalog = models.some((candidate) => candidate.slug === normalizedModel);
+    if (!modelIsInCatalog) {
+      const preservedOptions = modelOptions?.filter(
+        (option) => planModeEnabled || option.id !== "agent" || option.value !== "plan",
+      );
+      return {
+        provider,
+        promptEffort: null,
+        modelOptionsForDispatch:
+          preservedOptions && preservedOptions.length > 0 ? preservedOptions : undefined,
+      };
+    }
+  }
+  const { caps, selections } = resolveComposerOptionSelections(
+    models,
+    model,
+    provider,
+    modelOptions,
+    planModeEnabled,
+  );
+  const descriptors = getProviderOptionDescriptors({ caps, selections });
   const primarySelectDescriptor = descriptors.find(
     (descriptor): descriptor is Extract<(typeof descriptors)[number], { type: "select" }> =>
       descriptor.type === "select",
@@ -120,7 +150,7 @@ export function getComposerProviderState(input: ComposerProviderStateInput): Com
     promptEffort,
     modelOptionsForDispatch: buildExplicitProviderOptionSelectionsFromDescriptors(
       descriptors,
-      modelOptions,
+      selections,
     ),
     ...(caps.supportedRuntimeModes ? { supportedRuntimeModes: caps.supportedRuntimeModes } : {}),
     ...(ultrathinkActive
@@ -154,13 +184,20 @@ function renderTraitsControl(
     isComposerOwned,
   } = input;
   const hasTarget = threadRef !== undefined || draftId !== undefined;
+  const { selections: resolvedModelOptions } = resolveComposerOptionSelections(
+    models,
+    model,
+    provider,
+    modelOptions,
+    planModeEnabled,
+  );
   if (
     !hasTarget ||
     !shouldRenderTraitsControls({
       provider,
       models,
       model,
-      modelOptions,
+      modelOptions: resolvedModelOptions,
       prompt,
       planModeEnabled,
     })
@@ -175,7 +212,7 @@ function renderTraitsControl(
       {...(threadRef ? { threadRef } : {})}
       {...(draftId ? { draftId } : {})}
       model={model}
-      modelOptions={modelOptions}
+      modelOptions={resolvedModelOptions}
       prompt={prompt}
       onPromptChange={onPromptChange}
       planModeEnabled={planModeEnabled}
@@ -193,4 +230,33 @@ export function renderProviderTraitsMenuContent(input: TraitsRenderInput): React
 
 export function renderProviderTraitsPicker(input: TraitsRenderInput): ReactNode {
   return renderTraitsControl(TraitsPicker, input);
+}
+
+// Coder: until a provider reports supported modes, the composer offers only the safe ones.
+const SAFE_RUNTIME_MODES = [
+  "approval-required",
+  "auto-accept-edits",
+] as const satisfies ReadonlyArray<RuntimeMode>;
+
+/**
+ * Coder: keep the requested mode when the workspace provider supports it; otherwise use the
+ * most permissive supported mode. Supported modes are ordered from least to most permissive.
+ */
+export function resolveComposerRuntimeMode(
+  runtimeMode: RuntimeMode,
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode>,
+): RuntimeMode {
+  return supportedRuntimeModes.includes(runtimeMode)
+    ? runtimeMode
+    : (supportedRuntimeModes.at(-1) ?? "approval-required");
+}
+
+/** Coder: a provider that is not ready offers only the safe modes. */
+export function resolveAvailableRuntimeModes(
+  providerStatus: ServerProvider["status"] | null | undefined,
+  supportedRuntimeModes: ReadonlyArray<RuntimeMode> | undefined,
+): ReadonlyArray<RuntimeMode> {
+  return providerStatus === "ready"
+    ? (supportedRuntimeModes ?? SAFE_RUNTIME_MODES)
+    : SAFE_RUNTIME_MODES;
 }

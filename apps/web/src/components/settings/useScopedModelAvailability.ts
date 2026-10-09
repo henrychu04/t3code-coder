@@ -1,7 +1,7 @@
 import type { ProviderInstanceId, UnifiedSettings } from "@t3tools/contracts";
 import { useCallback } from "react";
 
-import { getModelOptionsByInstance } from "../../modelSelection";
+import { getCustomModelOptionsByInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -35,7 +35,7 @@ export function useScopedModelDisabledReason(
           deriveProviderInstanceEntries(config.providers),
           candidate.settings,
         ).find((option) => option.instanceId === instanceId);
-        const options = getModelOptionsByInstance(
+        const options = getCustomModelOptionsByInstance(
           { ...settings, ...candidate.settings },
           config.providers,
         ).get(instanceId);

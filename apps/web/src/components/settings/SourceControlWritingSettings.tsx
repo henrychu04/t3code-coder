@@ -21,7 +21,7 @@ import {
   deriveProviderInstanceEntries,
   sortProviderInstanceEntries,
 } from "../../providerInstances";
-import { getModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
+import { getCustomModelOptionsByInstance, resolveAppModelSelectionState } from "../../modelSelection";
 import { EMPTY_SERVER_PROVIDERS } from "../../state/server";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -111,7 +111,7 @@ export function SourceControlWritingSettingsSection() {
     (entry) =>
       entry.instanceId === defaultModelSelection.instanceId && entry.enabled && entry.isAvailable,
   );
-  const modelOptionsByInstance = getModelOptionsByInstance(
+  const modelOptionsByInstance = getCustomModelOptionsByInstance(
     settings,
     textGenerationProviders,
     activeSelection.instanceId,
