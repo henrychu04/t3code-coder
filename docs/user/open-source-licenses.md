@@ -1,6 +1,6 @@
 # Open source licenses
 
-T3 Coder includes third-party software and adapted assets. Open **Settings → Open source licenses**
+T3 Coder includes third-party software and adapted assets. Open **Settings → General → About → Open source licenses**
 to read their license and attribution notices.
 
 The page lists versions, license identifiers, and the parts of T3 Coder that include each item.

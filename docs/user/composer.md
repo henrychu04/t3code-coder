@@ -6,7 +6,7 @@ multiple messages, then send again in the same thread.
 
 In an existing thread, scrolling a conversation that overflows the viewport can rest the composer
 into one line. Losing focus does not collapse it, and multiline drafts remain expanded. Control
-scroll collapse under **Settings → Preferences**. When the thread-context strip has room, the
+scroll collapse with **Collapse composer on scroll** under **Settings → General → Behavior**. When the thread-context strip has room, the
 model and mode controls remain available beside it; otherwise they return when the composer is
 focused. Focus the composer or start typing to expand it again. New-thread layouts keep the full
 composer.
@@ -26,7 +26,7 @@ conversation.
 ## Rich text and multiple models
 
 The composer formats supported Markdown as you type. Turn off **Rich text composer** in
-**Settings → Preferences** to show formatting markers literally. File mentions, skills, images,
+**Settings → General → Behavior** to show formatting markers literally. File mentions, skills, images,
 terminal context, and review comments remain editable context chips in either mode.
 
 In a new draft, select multiple models to send the same prompt to separate background threads.
@@ -197,7 +197,7 @@ Compacting from the context meter preserves the current draft and its images. Yo
 
 ## Response streaming
 
-Under **Settings → Preferences**, choose **Completed turn**, **Completed paragraphs**, or
+Under **Settings → General → Behavior → Response streaming**, choose **Completed turn**, **Completed paragraphs**, or
 **Live tokens**. Completed paragraphs is the default and also waits for complete code blocks.
 Projects can override this preference on their settings page. The former legacy-token-streaming
 switch is replaced by this setting; upgrading starts in paragraph mode unless the new setting

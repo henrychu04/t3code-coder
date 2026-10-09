@@ -59,7 +59,7 @@ npm start
 `npm start` prints a local URL such as `http://127.0.0.1:PORT`. Open it in your browser — T3 Coder
 never opens the browser for you. Then:
 
-1. Open **Settings → Coder connections** and add your Coder domain.
+1. Open **Settings → Connections** and add your Coder domain.
 2. Choose **Sign in**. Coder prints its login URL and a hidden token prompt in the terminal running
    `npm start`; the token is handled there, never in the browser.
 3. Choose **Add project** in the sidebar, pick your domain and workspace, and select a folder in

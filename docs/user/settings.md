@@ -33,7 +33,7 @@ Scheduling profiles update Git refresh and provider health-check intervals toget
 | Balanced      | 30 seconds  | 5 minutes       |
 | Battery saver | Disabled    | 15 minutes      |
 
-Change the provider interval in General and the Git interval in GitLab source control. Other
+Change the provider interval in General and the Git interval in Source Control. Other
 combinations display **Custom**. Zero disables scheduled work; explicit refreshes still run.
 Git polling exists only while a repository has subscribers. These profiles do not monitor desktop
 battery, power modes, or screen locks. Existing interval settings are preserved until changed.
@@ -66,9 +66,9 @@ color in Providers. These controls do not collect credentials or create addition
 Long model lists have a filter. Favorites appear first, then visible models, then hidden models;
 reordering stays within those groups. Custom models retain their existing editor.
 
-## Keyboard shortcuts
+## Keybindings
 
-**Keyboard shortcuts** includes Stop current thread, Pin or unpin current thread, and Copy MR URL
+**Keybindings** includes Stop current thread, Pin or unpin current thread, and Copy MR URL
 or thread ID. Select multiple workspaces to apply an edit to each connected workspace. Reset uses
 each workspace's own saved rules.
 
