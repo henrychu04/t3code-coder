@@ -16,9 +16,10 @@ const legacyReaders = ["orchestration-v2/legacy/", "persistence/Migrations/"] as
  * Individual files allowed to read the V1 tables, each with its reason. Keep this
  * list short; new V1 reads belong in the importer.
  */
-// Coder: upstream's settings migration reads V1 sessions to restore Cursor, Grok, and OpenCode,
-// which this fork does not ship, so no individual file reads the V1 tables.
-const legacyReaderFiles: Record<string, string> = {};
+const legacyReaderFiles: Record<string, string> = {
+  // Provider history for settings migration reads V1 thread sessions once at load.
+  "serverSettings.ts": "one-time provider history for settings migration",
+};
 const retiredPaths = [
   "orchestration",
   "orchestration/Layers/ProviderCommandReactor.ts",

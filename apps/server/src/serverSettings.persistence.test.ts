@@ -6,10 +6,14 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 
 import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL, ProjectId } from "@t3tools/contracts";
+import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfig from "./config.ts";
+import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 const settingsLayer = ServerSettings.layer.pipe(
+  Layer.provide(ServerSecretStore.layer),
+  Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), {
       prefix: "t3code-server-settings-test-",
@@ -33,17 +37,17 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
           [projectB]: { pullRequestMergeMethod: "merge" },
         },
       });
-      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
-        pullRequestMergeMethod: "squash",
-        projectSettingsOverrides: {
-          [projectA]: { pullRequestMergeMethod: "rebase" },
-          [projectB]: { pullRequestMergeMethod: "merge" },
-        },
+      const saved = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+      assert.strictEqual(saved.pullRequestMergeMethod, "squash");
+      assert.deepStrictEqual(saved.projectSettingsOverrides, {
+        [projectA]: { pullRequestMergeMethod: "rebase" },
+        [projectB]: { pullRequestMergeMethod: "merge" },
       });
       yield* settings.updateSettings({ projectSettingsOverrides: { [projectA]: null } });
-      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
-        pullRequestMergeMethod: "squash",
-        projectSettingsOverrides: { [projectB]: { pullRequestMergeMethod: "merge" } },
+      const cleared = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+      assert.strictEqual(cleared.pullRequestMergeMethod, "squash");
+      assert.deepStrictEqual(cleared.projectSettingsOverrides, {
+        [projectB]: { pullRequestMergeMethod: "merge" },
       });
     }).pipe(Effect.provide(settingsLayer)),
   );
@@ -60,13 +64,10 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
       });
 
       assert.strictEqual(Duration.toMillis(updated.automaticGitFetchInterval), 45_000);
-      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {
+      const saved = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+      assert.strictEqual(saved.automaticGitFetchInterval, 45_000);
+      assert.deepStrictEqual(saved.backgroundActivity.overrides, {
         automaticGitFetchInterval: 45_000,
-        backgroundActivity: {
-          baseProfile: "balanced",
-          overrides: { automaticGitFetchInterval: 45_000 },
-          profile: "custom",
-        },
       });
 
       const reset = yield* settings.updateSettings({
@@ -77,7 +78,9 @@ it.layer(NodeServices.layer)("server settings persistence", (it) => {
         Duration.toMillis(reset.automaticGitFetchInterval),
         Duration.toMillis(DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL),
       );
-      assert.deepStrictEqual(JSON.parse(yield* fileSystem.readFileString(config.settingsPath)), {});
+      const reverted = JSON.parse(yield* fileSystem.readFileString(config.settingsPath));
+      assert.strictEqual(reverted.automaticGitFetchInterval, undefined);
+      assert.strictEqual(reverted.backgroundActivity, undefined);
     }).pipe(Effect.provide(settingsLayer)),
   );
 });

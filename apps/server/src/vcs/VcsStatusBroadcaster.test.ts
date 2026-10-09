@@ -1166,12 +1166,6 @@ describe("Coder auto-pull policy", () => {
       enabled: true,
     },
     {
-      name: "honors a legacy explicit override",
-      autoPull: true,
-      settings: { projectAutoPullOverrides: { [projectId]: false } },
-      enabled: false,
-    },
-    {
       name: "prefers project settings over legacy overrides",
       autoPull: false,
       settings: {

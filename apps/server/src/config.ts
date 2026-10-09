@@ -18,6 +18,7 @@ export interface ServerDerivedPaths {
   readonly logsDir: string;
   readonly terminalLogsDir: string;
   readonly environmentIdPath: string;
+  readonly secretsDir: string;
   readonly attachmentsDir: string;
   readonly screenshotArtifactsDir: string;
 }
@@ -50,6 +51,7 @@ export const deriveServerPaths = Effect.fn(function* (baseDir: string) {
     logsDir,
     terminalLogsDir: path.join(logsDir, "terminals"),
     environmentIdPath: path.join(stateDir, "environment-id"),
+    secretsDir: path.join(stateDir, "secrets"),
     attachmentsDir: path.join(baseDir, "attachments"),
     screenshotArtifactsDir: path.join(baseDir, "artifacts"),
   } satisfies ServerDerivedPaths;

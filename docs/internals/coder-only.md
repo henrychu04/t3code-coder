@@ -263,10 +263,12 @@ spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
 remote OS and architecture, realizes a Node.js 24 package from the workspace's configured
 `nixpkgs` only when that runtime is not already available, and checks Git, Codex or Claude Code,
-and the workspace state directory. The helper carries its locked Linux x86-64 `node-pty` runtime
-and is launched with the Nix package's absolute Node path without changing `PATH`, so workspace
-shells and helper children retain the workspace's default Node.js version. Platform and protocol
-versions are then negotiated before a helper is used.
+and the workspace state directory. As upstream, server settings keep sensitive provider
+environment values out of `settings.json` in a `0700` secrets directory in that state directory;
+they never leave the workspace. The helper carries its locked Linux x86-64 `node-pty` runtime and
+is launched with the Nix package's absolute Node path without changing `PATH`, so workspace shells
+and helper children retain the workspace's default Node.js version. Platform and protocol versions
+are then negotiated before a helper is used.
 
 ## Network and transfer constraints
 
