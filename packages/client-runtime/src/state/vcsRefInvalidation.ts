@@ -31,7 +31,7 @@ export function vcsRefsCacheStateAtom(target: VcsRefsInvalidationTarget) {
   return stateByEnvironment(target.environmentId);
 }
 
-function invalidateVcsRefs(
+export function invalidateVcsRefs(
   registry: AtomRegistry.AtomRegistry,
   target: VcsRefsInvalidationTarget,
   persistedCacheReadable?: boolean,

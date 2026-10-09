@@ -1,3 +1,4 @@
+// Coder: no server self-update flow; the Coder helper is versioned by the gateway.
 import {
   type EnvironmentId,
   type ServerConfig,

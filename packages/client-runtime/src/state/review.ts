@@ -52,6 +52,7 @@ export function createReviewEnvironmentAtoms<R, E>(
           }),
         ),
     }),
+    // Coder: review files are read as bounded chunks below the gateway RPC-frame limit.
     openDiffFileContents: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:review:open-diff-file-contents",
       tag: WS_METHODS.reviewOpenDiffFileContents,

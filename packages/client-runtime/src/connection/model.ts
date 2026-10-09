@@ -1,3 +1,5 @@
+// Coder: one gateway connection target per workspace; relay, bearer, SSH, and HTTP
+// authorization variants are omitted.
 import { EnvironmentId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 

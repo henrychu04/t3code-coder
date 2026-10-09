@@ -1,3 +1,4 @@
+// Coder: the helper serves no `/api/auth/session` endpoint, so no session-state atoms.
 import type { EnvironmentId, ServerConfig } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
