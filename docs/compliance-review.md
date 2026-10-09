@@ -11,8 +11,8 @@ Reviewers can expect:
 - the local app to remember only non-secret Coder targets and explicit port-forward rules, while
   the browser keeps UI preferences and the text of unsent drafts and stashed prompts;
 - Coder to own deployment authentication and provider CLIs to own provider authentication;
-- no general upload, download, synchronization, non-GitLab hosted source-control, MCP, or
-  app-integration surface;
+- no general upload, download, synchronization, or non-GitLab hosted source-control surface; MCP
+  servers and app integrations are only those the workspace's provider configuration defines;
 - workspace lifecycle and port-forward actions to remain explicit and visible to the user.
 
 This document provides software-intake evidence for those product promises. It is not an assertion
@@ -93,8 +93,8 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
   clone, repository publishing, and merge-request operations are available only in the workspace
   helper through Git and the workspace-installed `glab` CLI; the local gateway performs none of
   those operations and does not register GitHub, Azure DevOps, or Bitbucket;
-- the removed T3 preview MCP, all Codex MCP and app integrations, Claude browser integration,
-  free-form Claude launch flags, and the packaged Anthropic Agent SDK;
+- the removed T3 preview MCP, Claude browser integration, free-form Claude launch flags, and the
+  packaged Anthropic Agent SDK;
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
   the gateway's loopback URL.
 
