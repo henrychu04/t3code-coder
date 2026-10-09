@@ -770,12 +770,13 @@ listed here is drift to remove rather than fork behavior to keep.
   come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
   `!` references and GitLab wording are used. Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
-  upstream's `useOpenChangeRequestLink` and `useOpenPrLink` with GitLab-only URL and project
-  matching: a plain click opens the panel or page, and a modifier click or an MR no workspace
-  project can read goes to the system browser. In Markdown they are upstream's new-tab anchors
-  with hover previews. Coder has no primary
-  environment, so the merge requests page resolves a link against every workspace that reads
-  merge requests. Right-clicking a web link shows upstream's menu (system browser, Copy Link, and
+  upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` narrows the shared parser to
+  `/-/merge_requests/` URLs, and project matching skips checkouts whose provider is neither GitLab
+  nor unknown. `gitLabMergeRequestBrowserUrl` replaces upstream's GitHub fallback URL and keeps a
+  self-hosted install's origin and path prefix. A plain click opens the panel or page, and a
+  modifier click or an MR no workspace project can read goes to the system browser. In Markdown
+  they are upstream's new-tab anchors with hover previews. The merge requests page resolves a link
+  against every workspace that reads merge requests, the primary first. Right-clicking a web link shows upstream's menu (system browser, Copy Link, and
   Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
   `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
   unused.

@@ -1,114 +1,124 @@
-import { useAtomValue } from "@effect/atom-react";
-import { useCallback, useMemo, type MouseEvent } from "react";
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef } from "@t3tools/contracts";
-import { sourceControlRepositorySelector } from "@t3tools/shared/sourceControl";
+import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
-import { useProjects, useServerConfigs } from "../state/entities";
-import { usePrimaryEnvironmentId } from "../state/environments";
-import { serverEnvironment } from "../state/server";
-import { useRightPanelStore } from "../rightPanelStore";
-import { useOpenLink } from "../browser/useOpenLink";
-import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { type MouseEvent, useCallback, useMemo } from "react";
+
 import {
   pullRequestHostOf,
   type RepositoryIdentity,
-  type ThreadLinkedPullRequest,
+  type SourceControlProviderKind,
 } from "@t3tools/contracts";
+import {
+  parseChangeRequestUrl as parseHostedChangeRequestUrl,
+  type ChangeRequestLink,
+} from "@t3tools/shared/changeRequestUrl";
+import {
+  canonicalRepositoryKey,
+  sourceControlRepositorySelector,
+} from "@t3tools/shared/sourceControl";
+
+import { useOpenLink } from "../browser/useOpenLink";
+import { stackedThreadToast, toastManager } from "../components/ui/toast";
+import { useRightPanelStore } from "../rightPanelStore";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 
-export interface GitLabMergeRequestLink {
-  readonly host: string;
-  readonly repository: string;
-  readonly number: number;
+import { useProjects, useServerConfigs } from "../state/entities";
+import { serverEnvironment } from "../state/server";
+import { usePrimaryEnvironmentId } from "../state/environments";
+
+export {
+  type ChangeRequestLink,
+  gitHubPullRequestBrowserUrl,
+  pullRequestCandidateUrlFromReferenceAutolink,
+  matchesLinkedPullRequestUrl,
+  changeRequestRepositoryUrl,
+} from "@t3tools/shared/changeRequestUrl";
+
+/**
+ * Coder: GitLab is the only hosted provider, so only a merge request URL is a change request here.
+ * Other hosts' pull request links stay ordinary links.
+ */
+export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | null {
+  const link = parseHostedChangeRequestUrl(targetUrl);
+  if (link === null) return null;
+  return /\/-\/merge_requests\/\d+(?:\/|$)/u.test(new URL(targetUrl).pathname) ? link : null;
 }
 
-export type ChangeRequestLink = GitLabMergeRequestLink;
-
-export async function openPullRequestLink(
-  shell: { readonly openExternal: (url: string) => Promise<void> },
-  url: string,
-): Promise<void> {
-  await shell.openExternal(url);
-}
-
-/** Only known GitLab hosts may open external markdown links. */
-export function isGitLabExternalUrl(
-  targetUrl: string,
-  projects: ReadonlyArray<Pick<EnvironmentProject, "repositoryIdentity">>,
-): boolean {
-  let url: URL;
+function resolvedForgejoRepository(project: EnvironmentProject): URL | null {
+  const identity = project.repositoryIdentity;
+  if (identity?.provider !== "forgejo" || !identity.webUrl) return null;
   try {
-    url = new URL(targetUrl);
-  } catch {
-    return false;
-  }
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
-    return false;
-  return (
-    url.hostname === "gitlab.com" ||
-    projects.some(
-      ({ repositoryIdentity }) =>
-        repositoryIdentity?.provider === "gitlab" &&
-        pullRequestHostOf(repositoryIdentity, "gitlab") === url.hostname.toLowerCase(),
-    )
-  );
-}
-
-export function parseGitLabMergeRequestUrl(targetUrl: string): GitLabMergeRequestLink | null {
-  let url: URL;
-  try {
-    url = new URL(targetUrl);
+    const url = new URL(identity.webUrl);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
   } catch {
     return null;
   }
-  if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password)
-    return null;
-  const match = /^\/([^/]+(?:\/[^/]+)+)\/-\/merge_requests\/(\d+)(?:\/|$)/u.exec(url.pathname);
-  const repository = match?.[1];
-  const number = Number(match?.[2]);
-  return repository && Number.isSafeInteger(number) && number > 0
-    ? { host: url.hostname.toLowerCase(), repository: repository.toLowerCase(), number }
-    : null;
 }
 
-export const parseChangeRequestUrl = parseGitLabMergeRequestUrl;
-
-/** Match a stored MR without requiring its project to remain available. */
-export function matchesLinkedPullRequestUrl(
-  linkedPullRequest: ThreadLinkedPullRequest,
-  targetUrl: string,
+/** Keep Forgejo servers on different HTTP ports separate when selecting a project. */
+function matchesChangeRequestAuthority(
+  project: EnvironmentProject,
+  link: ChangeRequestLink,
 ): boolean {
-  const linked = parseGitLabMergeRequestUrl(linkedPullRequest.url);
-  const target = parseGitLabMergeRequestUrl(targetUrl);
-  return (
-    linked !== null &&
-    target !== null &&
-    linked.host === target.host &&
-    linked.repository === target.repository &&
-    linked.number === target.number
-  );
+  if (link.authority === undefined) return true;
+  try {
+    const remote = new URL(project.repositoryIdentity?.locator.remoteUrl ?? "");
+    if (remote.protocol === "http:" || remote.protocol === "https:") {
+      return remote.host.toLowerCase() === link.authority;
+    }
+  } catch {
+    // SSH remotes do not specify the server's HTTP port; tea resolves the configured login.
+  }
+  return true;
 }
 
-type ProjectIdentity = Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">;
+/**
+ * Coder: merge requests are read through the workspace's GitLab CLI, so only GitLab checkouts
+ * (including self-hosted remotes whose provider could not be named) can resolve a link.
+ */
+function isGitLabProject(project: EnvironmentProject): boolean {
+  const provider = project.repositoryIdentity?.provider;
+  return provider === "gitlab" || provider === "unknown";
+}
 
-export function findProjectForGitLabMergeRequest<P extends ProjectIdentity>(
-  projects: ReadonlyArray<P>,
-  link: GitLabMergeRequestLink,
-): P | undefined {
-  return projects.find((project) => {
+/**
+ * The project a link belongs to, or nothing. Matched the way the server matches: the repository
+ * identity is the full path below the host where one was recorded — which is what nested GitLab
+ * groups and Azure project paths need — and the host is the first segment of the canonical
+ * remote, so github.com and an Enterprise install stay apart.
+ */
+export function findProjectForChangeRequest(
+  projects: ReadonlyArray<EnvironmentProject>,
+  link: ChangeRequestLink,
+): EnvironmentProject | undefined {
+  return projects.filter(isGitLabProject).find((project) => {
     const identity = project.repositoryIdentity;
-    if (!identity || (identity.provider !== "gitlab" && identity.provider !== "unknown")) {
-      return false;
+    if (!identity || !matchesChangeRequestAuthority(project, link)) return false;
+    const kind = identity.provider as SourceControlProviderKind | undefined;
+    if (kind === undefined) return false;
+    const web = resolvedForgejoRepository(project);
+    if (web)
+      return (
+        web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
+        web.pathname.replace(/^\/+|\/+$/g, "").toLowerCase() === link.repository.toLowerCase()
+      );
+    if (kind === "azure-devops") {
+      return (
+        canonicalRepositoryKey(identity.canonicalKey.toLowerCase()) ===
+        canonicalRepositoryKey(`${link.host}/${link.repository}`.toLowerCase())
+      );
     }
     const repository =
       identity.displayName ??
       (identity.owner && identity.name ? `${identity.owner}/${identity.name}` : null);
-    const canonicalHost = pullRequestHostOf(identity, "gitlab");
-    return repository?.toLowerCase() === link.repository && canonicalHost === link.host;
+    return (
+      repository !== null &&
+      repository.toLowerCase() === link.repository.toLowerCase() &&
+      (pullRequestHostOf(identity, kind) === link.host.toLowerCase() ||
+        pullRequestHostOf(identity, kind) === link.authority)
+    );
   });
 }
-
-export const findProjectForChangeRequest = findProjectForGitLabMergeRequest;
 
 export function resolvePullRequestPreviewTarget({
   environmentId,
@@ -117,7 +127,7 @@ export function resolvePullRequestPreviewTarget({
   url,
 }: {
   environmentId: EnvironmentId | null;
-  projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "repositoryIdentity">>;
+  projects: ReadonlyArray<EnvironmentProject>;
   pullRequestsEnabled: boolean;
   url: string;
 }): { environmentId: EnvironmentId; input: PullRequestRef } | null {
@@ -133,7 +143,7 @@ export function resolvePullRequestPreviewTarget({
     environmentId,
     input: {
       projectId: project.id,
-      host: parsed.host,
+      host: parsed.authority ?? parsed.host,
       repository: sourceControlRepositorySelector(project.repositoryIdentity) ?? parsed.repository,
       number: parsed.number,
     },
@@ -155,7 +165,10 @@ export function usePullRequestPreviewTarget(environmentId: EnvironmentId | null,
   );
 }
 
-/** Builds a GitLab URL that remains available when the pull request API cannot be read. */
+/**
+ * Coder: GitLab's counterpart of `gitHubPullRequestBrowserUrl`. It keeps a self-hosted install's
+ * origin and path prefix rather than assuming `https://{host}/`.
+ */
 export function gitLabMergeRequestBrowserUrl(
   identity: RepositoryIdentity | null | undefined,
   repository: string,
@@ -206,57 +219,65 @@ export function gitLabMergeRequestBrowserUrl(
   }
 }
 
-/** Preserve the deployment's path prefix; never assume gitlab.com. */
-export function gitLabAuthorProfileUrl(
-  targetUrl: string,
-  repository: string,
-  login: string,
-): string | null {
-  if (!/^[A-Za-z0-9_.-]+$/u.test(login) || login === "." || login === "..") return null;
-  if (!parseGitLabMergeRequestUrl(targetUrl)) return null;
-  const url = new URL(targetUrl);
-  const suffix = `/${repository}/-/merge_requests/`;
-  const index = url.pathname.lastIndexOf(suffix);
-  if (index < 0) return null;
-  url.pathname = `${url.pathname.slice(0, index)}/${encodeURIComponent(login)}`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
-/** The repository root behind a recognized change-request URL. */
-export function changeRequestRepositoryUrl(targetUrl: string): string | null {
-  let url: URL;
-  try {
-    url = new URL(targetUrl);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
-  const repositoryPath = /^(.*?)\/-\/merge_requests\/\d+(?:\/|$)/iu.exec(url.pathname)?.[1];
-  if (!repositoryPath) return null;
-  url.pathname = repositoryPath;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
-}
-
-export function findProjectOnChangeRequestHost<P extends ProjectIdentity>(
-  projects: ReadonlyArray<P>,
+/**
+ * Any project checked out from the link's host. Thread links are host-level, so a pull request
+ * from a repository nobody has checked out is still linkable as long as one project on that
+ * host can lend the server its credentials. The link's own project, when it exists, comes first.
+ */
+export function findProjectOnChangeRequestHost(
+  projects: ReadonlyArray<EnvironmentProject>,
   link: ChangeRequestLink,
-): P | undefined {
-  return (
-    findProjectForChangeRequest(projects, link) ??
-    projects.find(
-      ({ repositoryIdentity }) =>
-        repositoryIdentity?.provider === "gitlab" &&
-        pullRequestHostOf(repositoryIdentity, "gitlab") === link.host,
+): EnvironmentProject | undefined {
+  const own = findProjectForChangeRequest(projects, link);
+  if (own !== undefined) return own;
+  // Coder: only GitLab checkouts can lend the workspace's glab credentials.
+  const gitLabProjects = projects.filter(isGitLabProject);
+  // Azure CLI reads use the checkout's organization and project, not host-wide credentials.
+  if (
+    canonicalRepositoryKey(`${link.host}/${link.repository}`.toLowerCase()).startsWith(
+      "dev.azure.com/",
     )
-  );
+  )
+    return undefined;
+  return gitLabProjects.find((project) => {
+    const identity = project.repositoryIdentity;
+    const kind = identity?.provider as SourceControlProviderKind | undefined;
+    const web = resolvedForgejoRepository(project);
+    if (web) {
+      const mount = web.pathname
+        .replace(/^\/+|\/+$/g, "")
+        .split("/")
+        .slice(0, -2)
+        .join("/");
+      return (
+        web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
+        (!mount || link.repository.toLowerCase().startsWith(`${mount.toLowerCase()}/`))
+      );
+    }
+    return (
+      identity != null &&
+      kind !== undefined &&
+      kind !== "azure-devops" &&
+      matchesChangeRequestAuthority(project, link) &&
+      (pullRequestHostOf(identity, kind) === link.host.toLowerCase() ||
+        pullRequestHostOf(identity, kind) === link.authority)
+    );
+  });
 }
 
 /**
- * Upstream's modifier rule: cmd/ctrl+click leaves a change-request link to the browser.
+ * Opens a change request link on the page, and says whether it did. Anything else — another
+ * organisation's repository, a host nothing here is checked out from, a link that merely looks
+ * like one — is left alone for the caller to handle as the ordinary link it is.
+ *
+ * Resolving the project here rather than on the page is what makes recognising a URL safe: a
+ * lookalike hostname matches no project and stays a link, and the page is handed the project
+ * rather than a host to narrow its whole list by.
+ *
+ * Given a thread, the link opens beside it in the right panel instead of taking the whole app to
+ * the pull requests page: a reader following a link the agent wrote is reading the thread, and
+ * should still be reading it afterwards. Any change request opens there, not only the thread's
+ * own, since the panel is told which one to show.
  */
 export function shouldOpenPullRequestExternally(
   event: Pick<MouseEvent<HTMLElement>, "metaKey" | "ctrlKey">,
@@ -264,13 +285,6 @@ export function shouldOpenPullRequestExternally(
   return event.metaKey || event.ctrlKey;
 }
 
-/**
- * Upstream's change-request opener with GitLab-only matching. Opens a merge request link on the
- * page and says whether it did; anything else is left to the caller as an ordinary link.
- *
- * Given a thread, the link opens beside it in the right panel. Without one it opens the merge
- * requests page, which resolves the link against every workspace that reads merge requests.
- */
 export function useOpenChangeRequestLink(
   threadRef?: ScopedThreadRef,
   panelRef?: ScopedThreadRef,
@@ -294,8 +308,9 @@ export function useOpenChangeRequestLink(
       const resolvedPanelRef = panelRef ?? resolvedThreadRef;
       const parsed = parseChangeRequestUrl(targetUrl);
       if (parsed === null) return false;
-      const reads = (environmentId: EnvironmentId) =>
-        serverConfigs.get(environmentId)?.environment.capabilities.pullRequests === true;
+      const reads = (environmentId: string) =>
+        serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
+        true;
       // Beside a thread the panel reads on that thread's environment, so a project from another
       // one could not be read there whatever its remote says: two environments can hold the same
       // repository, and handing the panel the wrong one's id opens a surface that never loads.
@@ -336,14 +351,14 @@ export function useOpenChangeRequestLink(
       event.stopPropagation();
       if (resolvedPanelRef) {
         useRightPanelStore.getState().openPullRequest(resolvedPanelRef, {
-          // The standalone MR panel has a synthetic ref; each tab keeps its real environment.
+          // The standalone PR panel has a synthetic ref; each tab keeps its real environment.
           ...(resolvedPanelRef.environmentId === project.environmentId
             ? {}
             : { environmentId: project.environmentId }),
           projectId: project.id,
           ...(serverConfigs.get(project.environmentId)?.environment.capabilities
             .threadPullRequests === true
-            ? { host: parsed.host }
+            ? { host: parsed.authority ?? parsed.host }
             : {}),
           repository,
           url: targetUrl,
@@ -358,7 +373,7 @@ export function useOpenChangeRequestLink(
               state: previous.state ?? "all",
               repository,
               number: parsed.number,
-              selectedHost: parsed.host,
+              selectedHost: parsed.authority ?? parsed.host,
               selectedProjectId: project.id,
               selectedEnvironmentId: project.environmentId,
             }),
@@ -371,11 +386,14 @@ export function useOpenChangeRequestLink(
         to: "/pull-requests",
         search: {
           involvement: "all",
+          // Every state, so the pull request being opened is also in the list behind it whether
+          // it is open, merged or closed.
           state: "all",
           repository,
           number: parsed.number,
-          selectedHost: parsed.host,
+          selectedHost: parsed.authority ?? parsed.host,
           selectedProjectId: project.id,
+          // Named so the page opens the right one of two servers holding this project.
           selectedEnvironmentId: project.environmentId,
         },
       });
@@ -395,14 +413,15 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
       const isAnchor =
         event.currentTarget instanceof HTMLAnchorElement && event.currentTarget.href.length > 0;
       // A real link already knows how to cmd/ctrl+click. Leave its default
-      // action alone so the browser opens the host. Buttons have no href, so
-      // they still go through openExternal.
+      // action alone so the browser (or Electron's window-open handler) opens
+      // the host. Buttons have no href, so they still go through openExternal.
       if (openInBrowser && isAnchor) return false;
 
       event.preventDefault();
       if (!openInBrowser && openChangeRequest(event, prUrl, targetThreadRef)) return true;
 
-      // No project to show it in, so it is an ordinary link for the system browser.
+      // No project to show it in, so it is an ordinary link and follows the
+      // "Open links in" setting; the modifier still forces the system browser.
       void openLink(prUrl, { event, threadRef: targetThreadRef }).catch((error: unknown) => {
         console.error(error);
         toastManager.add(

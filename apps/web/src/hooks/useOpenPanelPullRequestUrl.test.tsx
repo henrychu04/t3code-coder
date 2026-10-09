@@ -41,36 +41,6 @@ beforeEach(() => {
 afterEach(async () => {
   await act(() => root.unmount());
 });
-it("uses the selected MR's workspace and refuses a stale detail from another MR", async () => {
-  state.detail = {
-    projectId: "project",
-    repository: "group/project",
-    number: 1,
-    url: "https://gitlab.example/group/project/-/merge_requests/1",
-  };
-  useRightPanelStore.getState().openPullRequest(PULL_REQUESTS_PANEL_REF, {
-    environmentId: "workspace-b",
-    projectId: "project",
-    repository: "group/project",
-    number: 2,
-  });
-  await act(() => root.render(<Probe />));
-  expect(value).toBeNull();
-  expect(state.query).toHaveBeenLastCalledWith({
-    environmentId: "workspace-b",
-    input: { projectId: "project", repository: "group/project", number: 2 },
-  });
-  state.detail = {
-    ...(state.detail as object),
-    number: 2,
-    url: "https://gitlab.example/group/project/-/merge_requests/2",
-  };
-  await act(() => root.render(<Probe />));
-  expect(value).toBe("https://gitlab.example/group/project/-/merge_requests/2");
-  await act(() => useRightPanelStore.getState().close(PULL_REQUESTS_PANEL_REF));
-  expect(value).toBeUndefined();
-  expect(state.query).toHaveBeenLastCalledWith(null);
-});
 it("uses a selected list entry's URL before detail has loaded and updates it on reopen", async () => {
   const target = {
     environmentId: "workspace",

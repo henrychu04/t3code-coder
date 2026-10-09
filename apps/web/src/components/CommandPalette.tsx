@@ -11,7 +11,6 @@ import {
   getCloneDirectoryName,
   getDefaultCloneUrl,
   getNewProjectGitHubRepository,
-  getNewProjectGitHubTarget,
   getNewProjectPathPreview,
   normalizePastedCloneUrl,
 } from "@t3tools/client-runtime/operations/projects";
@@ -43,7 +42,6 @@ import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
   ArrowLeftIcon,
-  ChartNoAxesColumnIcon,
   CheckIcon,
   ChevronRightIcon,
   CornerLeftUpIcon,
@@ -122,13 +120,11 @@ import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import {
   PULL_REQUESTS_PANEL_REF,
-  selectActiveRightPanel,
   useRightPanelStore,
 } from "../rightPanelStore";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
 import {
   cn,
-  getLocalFileManagerName,
   isMacPlatform,
   isWindowsPlatform,
   newProjectId,
@@ -191,7 +187,7 @@ import {
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
-import { CommandDialog, CommandDialogPopup, CommandFooterAction } from "./ui/command";
+import { CommandDialog, CommandDialogPopup } from "./ui/command";
 import { Button } from "./ui/button";
 import { Kbd, KbdGroup } from "./ui/kbd";
 import { stackedThreadToast, toastManager } from "./ui/toast";
@@ -837,7 +833,6 @@ function OpenCommandPaletteDialog(props: {
   const [addProjectEnvironmentId, setAddProjectEnvironmentId] = useState<EnvironmentId | null>(
     null,
   );
-  const [isPickingProjectFolder, setIsPickingProjectFolder] = useState(false);
   const [addProjectCloneFlow, setAddProjectCloneFlow] = useState<AddProjectCloneFlow | null>(null);
   // The name step of New project: while set, the palette input is the name.
   const [newProjectFlow, setNewProjectFlow] = useState<{
@@ -1054,7 +1049,6 @@ function OpenCommandPaletteDialog(props: {
     ],
   );
   const isBrowsing = browsePath.isBrowsing;
-  const browseDirectoryPath = browsePath.directoryPath;
   const paletteMode = getCommandPaletteMode({ currentView, isBrowsing });
   const getAddProjectInitialQueryForEnvironment = useCallback(
     (environmentId: EnvironmentId | null): string => {
@@ -3031,32 +3025,8 @@ function OpenCommandPaletteDialog(props: {
     query.trim().length > 0 &&
     canCreateProjectInEnvironment(browseEnvironment?.connection.phase) &&
     !isRemoteProjectPending;
-  const fileManagerName = getLocalFileManagerName(navigator.platform);
-  // Coder: the browser cannot open a native folder picker on the workspace.
-  const canOpenProjectFromFileManager = false;
-  const fileManagerInitialPath = useMemo(() => {
-    if (!canOpenProjectFromFileManager) {
-      return undefined;
-    }
-
-    const trimmedQuery = query.trim();
-    if (trimmedQuery.length === 0) {
-      return undefined;
-    }
-
-    const initialPath = hasTrailingPathSeparator(query)
-      ? (browseResult?.parentPath ?? trimmedQuery)
-      : browseDirectoryPath || trimmedQuery;
-
-    const resolvedPath = resolveProjectPathForDispatch(initialPath, currentProjectCwdForBrowse);
-    return resolvedPath.length > 0 ? resolvedPath : undefined;
-  }, [
-    browseDirectoryPath,
-    browseResult?.parentPath,
-    canOpenProjectFromFileManager,
-    currentProjectCwdForBrowse,
-    query,
-  ]);
+  // Coder: the browser cannot open a native folder picker on the workspace, so there is no
+  // "Open in" file-manager action.
 
   function isPrimaryModifierPressed(event: KeyboardEvent<HTMLInputElement>): boolean {
     return useMetaForMod ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
@@ -3153,8 +3123,6 @@ function OpenCommandPaletteDialog(props: {
       );
     });
   }
-
-  const handleOpenProjectFromFileManager = useCallback(async () => {}, []);
 
   const inputAccessory =
     newProjectFlow !== null ? (
@@ -3268,17 +3236,6 @@ function OpenCommandPaletteDialog(props: {
           ? "Select"
           : undefined;
 
-  const footerTrailing = canOpenProjectFromFileManager ? (
-    <CommandFooterAction
-      disabled={isPickingProjectFolder}
-      onClick={() => {
-        void handleOpenProjectFromFileManager();
-      }}
-    >
-      {`Open in ${fileManagerName}`}
-    </CommandFooterAction>
-  ) : null;
-
   return (
     <CommandPaletteContent
       key={`${viewStack.length}-${browseGeneration}-${isBrowsing}-${newProjectFlow ? "new-project" : (addProjectCloneFlow?.step ?? "none")}`}
@@ -3287,7 +3244,6 @@ function OpenCommandPaletteDialog(props: {
         isBrowsing || isRemoteProjectCloneFlow || newProjectFlow !== null ? false : "always"
       }
       footerActionLabel={footerActionLabel}
-      footerTrailing={footerTrailing}
       inputAccessory={inputAccessory}
       inputProps={{
         // The submit button is absolutely positioned over the field, so the
