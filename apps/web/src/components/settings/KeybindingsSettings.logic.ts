@@ -14,6 +14,7 @@ import {
 import { shortcutKeyFromEvent } from "../../keybindings";
 import { isMacPlatform } from "../../lib/utils";
 
+// Coder: no Usage page, so no Usage command block in the ordering.
 function compareCommands(
   left: KeybindingCommand,
   right: KeybindingCommand,

@@ -83,6 +83,18 @@ it.effect("parses keybinding rules", () =>
     });
     assert.strictEqual(parsedProjectSearch.command, "projectSearch.toggle");
 
+    const parsedUsageOpen = yield* decode(KeybindingRule, {
+      key: "mod+u",
+      command: "usage.open",
+    });
+    assert.strictEqual(parsedUsageOpen.command, "usage.open");
+
+    const parsedThemeEditor = yield* decode(KeybindingRule, {
+      key: "mod+alt+shift+t",
+      command: "themeEditor.toggle",
+    });
+    assert.strictEqual(parsedThemeEditor.command, "themeEditor.toggle");
+
     const parsedLocal = yield* decode(KeybindingRule, {
       key: "mod+shift+n",
       command: "chat.newLocal",
@@ -113,12 +125,26 @@ it.effect("parses keybinding rules", () =>
       when: "!terminalFocus",
     });
     assert.strictEqual(parsedThreadSettle.command, "thread.settle");
+
+    const parsedThreadCopyReference = yield* decode(KeybindingRule, {
+      key: "mod+shift+c",
+      command: "thread.copyReference",
+      when: "!terminalFocus",
+    });
+    assert.strictEqual(parsedThreadCopyReference.command, "thread.copyReference");
+
     const parsedPullRequestCopyNumber = yield* decode(KeybindingRule, {
       key: "mod+shift+k",
       command: "pullRequest.copyNumber",
       when: "!terminalFocus",
     });
     assert.strictEqual(parsedPullRequestCopyNumber.command, "pullRequest.copyNumber");
+
+    const parsedThreadStop = yield* decode(KeybindingRule, {
+      key: "mod+escape",
+      command: "thread.stop",
+    });
+    assert.strictEqual(parsedThreadStop.command, "thread.stop");
   }),
 );
 
@@ -131,13 +157,16 @@ it.effect("rejects invalid command values", () =>
       }),
     );
     assert.strictEqual(result._tag, "Failure");
-    const retiredAlias = yield* Effect.exit(
-      decode(KeybindingRule, {
-        key: "shift shift",
-        command: "fileViewer.searchFiles",
-      }),
-    );
-    assert.strictEqual(retiredAlias._tag, "Failure");
+  }),
+);
+
+it.effect("accepts dynamic script run commands", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decode(KeybindingRule, {
+      key: "mod+r",
+      command: "script.setup.run",
+    });
+    assert.strictEqual(parsed.command, "script.setup.run");
   }),
 );
 

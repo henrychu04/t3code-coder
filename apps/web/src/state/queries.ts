@@ -11,9 +11,9 @@ import {
 import { type VcsRefTarget } from "@t3tools/client-runtime/state/vcs";
 import type {
   EnvironmentId,
-  ProjectEntryKind,
-  ProjectTextSearchMatch,
+  ProjectContentMatch,
   ThreadId,
+  ProjectEntryKind,
   VcsListRefsResult,
   VcsRef,
 } from "@t3tools/contracts";
@@ -31,9 +31,12 @@ import { vcsEnvironment } from "./vcs";
 
 const PROJECT_PATH_SEARCH_DEBOUNCE_MS = 120;
 const COMPOSER_PATH_SEARCH_LIMIT = 80;
+const PROJECT_CONTENT_SEARCH_DEBOUNCE_MS = 120;
+const PROJECT_CONTENT_SEARCH_LIMIT = 500;
 const THREAD_SEARCH_DEBOUNCE_MS = 200;
 const VCS_REF_LIST_LIMIT = 100;
 const EMPTY_REFS: ReadonlyArray<VcsRef> = [];
+const EMPTY_CONTENT_MATCHES: ReadonlyArray<ProjectContentMatch> = [];
 const INITIAL_BRANCH_CURSORS = [undefined] as const;
 const EMPTY_THREAD_SEARCH_MATCHES: ReadonlyArray<EnvironmentThreadSearchMatch> = Object.freeze([]);
 const EMPTY_THREAD_SEARCH_ATOM = Atom.make({
@@ -196,7 +199,6 @@ export function usePaginatedBranches(target: VcsRefTarget) {
 type ProjectPathSearchTarget = ComposerPathSearchTarget & {
   readonly kind?: ProjectEntryKind | undefined;
   readonly imageOnly?: boolean | undefined;
-  readonly fileMask?: string | undefined;
 };
 
 export function areProjectPathSearchTargetsEqual(
@@ -208,8 +210,7 @@ export function areProjectPathSearchTargetsEqual(
     left.cwd === right.cwd &&
     left.query === right.query &&
     left.kind === right.kind &&
-    left.imageOnly === right.imageOnly &&
-    left.fileMask === right.fileMask
+    left.imageOnly === right.imageOnly
   );
 }
 
@@ -226,16 +227,8 @@ export function useProjectPathSearch(
       query: target.query == null ? null : target.query.trim(),
       kind: target.kind,
       imageOnly: target.imageOnly,
-      fileMask: target.fileMask?.trim(),
     }),
-    [
-      target.cwd,
-      target.environmentId,
-      target.fileMask,
-      target.imageOnly,
-      target.kind,
-      target.query,
-    ],
+    [target.cwd, target.environmentId, target.imageOnly, target.kind, target.query],
   );
   const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
   const result = useEnvironmentQuery(
@@ -251,17 +244,16 @@ export function useProjectPathSearch(
             limit,
             ...(debouncedTarget.kind ? { kind: debouncedTarget.kind } : {}),
             ...(debouncedTarget.imageOnly ? { imageOnly: true } : {}),
-            ...(debouncedTarget.fileMask ? { fileMask: debouncedTarget.fileMask } : {}),
           },
         })
       : null,
   );
-  const isCurrentSearch = areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget);
 
   return {
-    entries: isCurrentSearch ? (result.data?.entries ?? []) : [],
-    error: isCurrentSearch ? result.error : null,
-    isPending: !isCurrentSearch || result.isPending,
+    entries: result.data?.entries ?? [],
+    error: result.error,
+    isPending:
+      !areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget) || result.isPending,
     searchedQuery: debouncedTarget.query ?? "",
     truncated: result.data?.truncated ?? false,
     refresh: result.refresh,
@@ -272,98 +264,53 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
 }
 
-export function useProjectTextSearch(target: {
+interface ProjectContentSearchTarget {
   readonly environmentId: EnvironmentId | null;
+  // Coder: the helper verifies that the project root belongs to this thread.
   readonly threadId: ThreadId | null;
   readonly cwd: string | null;
   readonly query: string;
-  readonly fileMask?: string;
   readonly caseSensitive: boolean;
   readonly wholeWord: boolean;
   readonly useRegex: boolean;
-}) {
-  const identity = JSON.stringify(target);
-  const [page, setPage] = useState<{
-    identity: string;
-    cursor?: string;
-    previous: readonly ProjectTextSearchMatch[];
-  }>({ identity, previous: [] });
-  const currentPage = page.identity === identity ? page : { identity, previous: [] };
-  const normalizedTarget = useMemo(
-    () => ({
-      query: target.query,
-      fileMask: target.fileMask?.trim() ?? "",
-      caseSensitive: target.caseSensitive,
-      wholeWord: target.wholeWord,
-      useRegex: target.useRegex,
-    }),
-    [target.caseSensitive, target.fileMask, target.query, target.useRegex, target.wholeWord],
-  );
-  const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
-  const request =
+}
+
+export function useProjectContentSearch(target: ProjectContentSearchTarget) {
+  // Whitespace is significant in content queries; trimming is only used to
+  // decide whether the input is blank.
+  const query = target.query;
+  const hasQuery = query.trim().length > 0;
+  const debouncedQuery = useDebouncedValue(query, PROJECT_CONTENT_SEARCH_DEBOUNCE_MS);
+  const result = useEnvironmentQuery(
     target.environmentId !== null &&
-    target.threadId !== null &&
-    target.cwd !== null &&
-    debouncedTarget.query.length > 0
-      ? {
+      target.threadId !== null &&
+      target.cwd !== null &&
+      hasQuery &&
+      debouncedQuery.trim().length > 0
+      ? // Coder: the helper's time-budgeted content search; the first page is shown.
+        projectEnvironment.searchText({
           environmentId: target.environmentId,
           input: {
             threadId: target.threadId,
             cwd: target.cwd,
-            query: debouncedTarget.query,
-            ...(debouncedTarget.fileMask ? { fileMask: debouncedTarget.fileMask } : {}),
-            limit: 500,
-            caseSensitive: debouncedTarget.caseSensitive,
-            wholeWord: debouncedTarget.wholeWord,
-            useRegex: debouncedTarget.useRegex,
+            query: debouncedQuery,
+            limit: PROJECT_CONTENT_SEARCH_LIMIT,
+            caseSensitive: target.caseSensitive,
+            wholeWord: target.wholeWord,
+            useRegex: target.useRegex,
           },
-        }
-      : null;
-  const firstPageAtom = request ? projectEnvironment.searchText(request) : null;
-  const result = useEnvironmentQuery(
-    request && currentPage.cursor
-      ? projectEnvironment.searchText({
-          ...request,
-          input: { ...request.input, cursor: currentPage.cursor },
         })
-      : firstPageAtom,
+      : null,
   );
-  const restartSearch = useCallback(() => {
-    setPage({ identity, previous: [] });
-    if (firstPageAtom) appAtomRegistry.refresh(firstPageAtom);
-  }, [identity, firstPageAtom]);
-  const isCurrentQuery =
-    normalizedTarget.query === debouncedTarget.query &&
-    normalizedTarget.fileMask === debouncedTarget.fileMask &&
-    normalizedTarget.caseSensitive === debouncedTarget.caseSensitive &&
-    normalizedTarget.wholeWord === debouncedTarget.wholeWord &&
-    normalizedTarget.useRegex === debouncedTarget.useRegex;
 
-  // A failed continuation may have expired after a save, index eviction, or reconnect.
-  // Restart from fresh data rather than appending to results from an obsolete index.
-  useEffect(() => {
-    if (isCurrentQuery && currentPage.cursor && result.error && !result.isPending) restartSearch();
-  }, [isCurrentQuery, currentPage.cursor, result.error, result.isPending, restartSearch]);
-
-  const matches = useMemo(
-    () => (isCurrentQuery ? [...currentPage.previous, ...(result.data?.matches ?? [])] : []),
-    [isCurrentQuery, currentPage.previous, result.data?.matches],
-  );
-  const loadMore = () => {
-    if (isCurrentQuery && !result.isPending && result.data?.nextCursor) {
-      setPage({ identity, cursor: result.data.nextCursor, previous: matches });
-    }
-  };
   return {
-    matches,
-    loadMore,
-    restartSearch,
-    hasMore: isCurrentQuery && !!result.data?.nextCursor,
-    truncated: isCurrentQuery ? (result.data?.truncated ?? false) : false,
-    regexFallbackError: isCurrentQuery ? (result.data?.regexFallbackError ?? null) : null,
-    error: isCurrentQuery ? result.error : null,
-    isPending: !isCurrentQuery || result.isPending,
-    searchedQuery: debouncedTarget.query,
+    matches: result.data?.matches ?? EMPTY_CONTENT_MATCHES,
+    error: result.error,
+    isPending: hasQuery && (query !== debouncedQuery || result.isPending),
+    hasQuery,
+    // Coder: a further page also means the results stop short of every match.
+    truncated: (result.data?.truncated ?? false) || result.data?.nextCursor !== undefined,
+    invalidRegex: target.useRegex && result.data?.regexFallbackError !== undefined,
   };
 }
 

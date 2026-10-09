@@ -1,66 +1,68 @@
-import { ProjectReadFileError, type ProjectReadFileResult } from "@t3tools/contracts";
-import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
-import { AsyncResult } from "effect/unstable/reactivity";
-import { describe, expect, it } from "vite-plus/test";
+import type { ProjectReadFileResult } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
-  projectFileDataFromResult,
-  projectFileReadMatches,
-  projectFileIsNotFile,
+  clearProjectFileQueryData,
+  confirmProjectFileQueryData,
+  getOptimisticProjectFileQueryData,
+  resolveProjectFileQueryData,
+  setProjectFileQueryData,
 } from "./projectFilesQueryState";
 
-const file: ProjectReadFileResult = {
-  relativePath: "notes.txt",
-  contents: "saved",
-  byteLength: 5,
-  truncated: false,
-  revision: "revision-2",
-};
+const environmentId = EnvironmentId.make("environment-project-files-query-test");
+const threadId = ThreadId.make("thread-project-files-query-test");
 
-describe("project file query state", () => {
-  it("does not expose a previous success after an explicit refresh fails", () => {
-    const previous = AsyncResult.success<ProjectReadFileResult, Error>(file);
-    const failed = AsyncResult.failureWithPrevious(Cause.fail(new Error("file is gone")), {
-      previous: Option.some(previous),
-    });
-
-    expect(AsyncResult.value(failed)).toEqual(Option.some(file));
-    expect(projectFileDataFromResult(failed)).toBeNull();
+describe("project files queries", () => {
+  afterEach(() => {
+    clearProjectFileQueryData(environmentId, "/repo", "convex.json");
+    vi.unstubAllGlobals();
   });
 
-  it("clears a confirmed optimistic value only after the read cache has caught up", () => {
-    expect(projectFileReadMatches(file, "saved", "revision-2")).toBe(true);
-    expect(projectFileReadMatches(file, "old", "revision-1")).toBe(false);
-  });
-});
+  it("keeps the latest optimistic draft when an older write finishes", () => {
+    vi.stubGlobal("window", {});
+    const initial = {
+      relativePath: "convex.json",
+      contents: '{"nodeVersion":"20"}',
+      byteLength: 20,
+      truncated: false,
+      revision: "r1",
+    } satisfies ProjectReadFileResult;
+    setProjectFileQueryData(environmentId, "/repo", "convex.json", '{"nodeVersion":"220"}', "r1");
+    setProjectFileQueryData(environmentId, "/repo", "convex.json", '{"nodeVersion":"22"}', "r1");
 
-it("reveals a directory only after a validated not-file response, not on access or binary failures", () => {
-  expect(
-    projectFileIsNotFile(
-      AsyncResult.failure(
-        Cause.fail(
-          new ProjectReadFileError({
-            failure: "path_not_file",
-            cwd: "/workspace",
-            relativePath: "src",
-          }),
-        ),
-      ),
-    ),
-  ).toBe(true);
-  for (const failure of [
-    "workspace_not_owned_by_thread",
-    "resolved_path_outside_root",
-    "binary_file",
-  ] as const) {
+    expect(getOptimisticProjectFileQueryData(environmentId, "/repo", "convex.json")?.contents).toBe(
+      '{"nodeVersion":"22"}',
+    );
+
     expect(
-      projectFileIsNotFile(
-        AsyncResult.failure(
-          Cause.fail(new ProjectReadFileError({ cwd: "/workspace", failure, relativePath: "src" })),
-        ),
+      confirmProjectFileQueryData(
+        environmentId,
+        threadId,
+        "/repo",
+        "convex.json",
+        '{"nodeVersion":"220"}',
+        "r2",
       ),
     ).toBe(false);
-  }
-  expect(projectFileIsNotFile(AsyncResult.success(file))).toBe(false);
+
+    expect(resolveProjectFileQueryData(environmentId, "/repo", "convex.json", initial)).toEqual({
+      relativePath: "convex.json",
+      contents: '{"nodeVersion":"22"}',
+      byteLength: 20,
+      truncated: false,
+      revision: "r1",
+    });
+
+    expect(
+      confirmProjectFileQueryData(
+        environmentId,
+        threadId,
+        "/repo",
+        "convex.json",
+        '{"nodeVersion":"22"}',
+        "r2",
+      ),
+    ).toBe(true);
+  });
 });

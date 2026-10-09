@@ -30,31 +30,20 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "terminal.close", when: "terminalFocus" },
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
+  { key: "mod+shift+j", command: "preview.toggle" },
+  { key: "mod+r", command: "preview.refresh", when: "previewFocus" },
+  { key: "mod+l", command: "preview.focusUrl", when: "previewFocus" },
+  { key: "mod+=", command: "preview.zoomIn", when: "previewFocus" },
+  { key: "mod++", command: "preview.zoomIn", when: "previewFocus" },
+  { key: "mod+-", command: "preview.zoomOut", when: "previewFocus" },
+  { key: "mod+0", command: "preview.resetZoom", when: "previewFocus" },
   { key: "mod+k", command: "commandPalette.toggle", when: "!terminalFocus" },
-  {
-    key: "mod+f",
-    command: "fileViewer.find",
-    when: "fileOpen && fileViewerFocus && !terminalFocus",
-  },
+  { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
   { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
-  {
-    key: "mod+p",
-    command: "filePicker.toggle",
-    when: "!terminalFocus",
-  },
-  {
-    key: "shift shift",
-    command: "filePicker.toggle",
-    when: "projectOpen && !terminalFocus",
-  },
-  {
-    key: "mod+g",
-    command: "fileViewer.goToLine",
-    when: "fileOpen && fileViewerFocus && !terminalFocus",
-  },
-  { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
+  { key: "mod+u", command: "usage.open", when: "!terminalFocus" },
   { key: "mod+alt+a", command: "theme.select", when: "!terminalFocus" },
   { key: "mod+alt+shift+a", command: "appearance.cycle", when: "!terminalFocus" },
+  { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
   { key: "mod+s", command: "composer.stash", when: "!terminalFocus" },
   { key: "mod+shift+enter", command: "thread.steerQueuedMessage", when: "!terminalFocus" },
   { key: "alt+arrowup", command: "thread.editQueuedMessage", when: "composerFocus" },
@@ -78,6 +67,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+shift+k", command: "pullRequest.copyNumber", when: "!terminalFocus" },
   { key: "mod+shift+arrowup", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
   { key: "mod+shift+arrowdown", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
+  { key: "mod+o", command: "editor.openFavorite" },
   { key: "mod+shift+[", command: "thread.previous" },
   { key: "mod+shift+]", command: "thread.next" },
   { key: "mod+shift+c", command: "thread.copyReference", when: "!terminalFocus" },
@@ -94,6 +84,13 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
     command,
     when: "modelPickerOpen && isDesktop",
   })),
+  { key: "c", command: "usage.cost", when: "usagePageOpen" },
+  { key: "t", command: "usage.tokens", when: "usagePageOpen" },
+  { key: "l", command: "usage.limits", when: "usagePageOpen" },
+  { key: "mod+shift+1", command: "usage.period.day", when: "usagePageOpen" },
+  { key: "mod+shift+2", command: "usage.period.week", when: "usagePageOpen" },
+  { key: "mod+shift+3", command: "usage.period.month", when: "usagePageOpen" },
+  { key: "mod+shift+4", command: "usage.period.quarter", when: "usagePageOpen" },
 ];
 
 function normalizeKeyToken(token: string): string {
@@ -103,16 +100,6 @@ function normalizeKeyToken(token: string): string {
 }
 
 export function parseKeybindingShortcut(value: string): KeybindingShortcut | null {
-  if (value.trim().toLowerCase().replace(/\s+/g, " ") === "shift shift") {
-    return {
-      key: "double-shift",
-      metaKey: false,
-      ctrlKey: false,
-      shiftKey: false,
-      altKey: false,
-      modKey: false,
-    };
-  }
   const rawTokens = value
     .toLowerCase()
     .split("+")

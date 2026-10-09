@@ -2,7 +2,7 @@ import { splitPathAndPosition } from "./terminal-links";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useRightPanelStore } from "./rightPanelStore";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import type { ContextMenuItem } from "./localApiTypes";
 import { readLocalApi } from "./localApi";
 import { useCopyToClipboard } from "./hooks/useCopyToClipboard";
@@ -86,5 +86,23 @@ export function useFileContextMenuHandler(
         });
     },
     [environmentId, copyToClipboard, threadRef],
+  );
+}
+
+/**
+ * Coder: the file tree's file actions. Upstream's reveal and open-with-editor actions need a
+ * local editor or file manager, so the only action is copying the project-relative path.
+ */
+export function useFileContextMenu(_environmentId: EnvironmentId | null) {
+  const { copyToClipboard } = useCopyToClipboard({ target: "project-relative path" });
+  return useMemo(
+    () => ({
+      buildItems: (target: FileContextMenuTarget) => buildFileContextMenuItems(target),
+      activate: async (action: FileContextMenuAction, target: FileContextMenuTarget) => {
+        const relativePath = resolveFileContextMenuRelativePath(target);
+        if (action === "copy-path" && relativePath) copyToClipboard(relativePath, undefined);
+      },
+    }),
+    [copyToClipboard],
   );
 }

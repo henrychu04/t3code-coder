@@ -1,5 +1,5 @@
 import { getFiletypeFromFileName } from "@pierre/diffs";
-import type { ProjectTextSearchMatch } from "@t3tools/contracts";
+import type { ProjectContentMatch } from "@t3tools/contracts";
 import { memo, Suspense, use, useMemo, type CSSProperties } from "react";
 
 import { resolveDiffThemeName } from "~/lib/diffRendering";
@@ -19,7 +19,15 @@ interface CodeToken {
   readonly fontStyle?: number;
 }
 
-function normalizeRanges(match: ProjectTextSearchMatch): Range[] {
+interface Segment {
+  readonly content: string;
+  readonly isMatch: boolean;
+  readonly start: number;
+  readonly end: number;
+  readonly token: CodeToken;
+}
+
+function normalizeRanges(match: ProjectContentMatch): Range[] {
   const ranges = match.matchRanges
     .map((range) => ({
       start: Math.max(0, Math.min(match.lineContent.length, range.start)),
@@ -27,13 +35,60 @@ function normalizeRanges(match: ProjectTextSearchMatch): Range[] {
     }))
     .filter((range) => range.end > range.start)
     .toSorted((left, right) => left.start - right.start);
+
   const merged: Array<{ start: number; end: number }> = [];
   for (const range of ranges) {
     const previous = merged.at(-1);
-    if (previous && range.start <= previous.end) previous.end = Math.max(previous.end, range.end);
-    else merged.push({ ...range });
+    if (previous && range.start <= previous.end) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
   }
   return merged;
+}
+
+function splitToken(line: string, token: CodeToken, ranges: ReadonlyArray<Range>): Segment[] {
+  const segments: Segment[] = [];
+  const tokenEnd = token.offset + token.content.length;
+  let cursor = token.offset;
+
+  for (const range of ranges) {
+    if (range.end <= cursor) continue;
+    if (range.start >= tokenEnd) break;
+
+    const matchStart = Math.max(cursor, range.start);
+    if (matchStart > cursor) {
+      segments.push({
+        content: line.slice(cursor, matchStart),
+        isMatch: false,
+        start: cursor,
+        end: matchStart,
+        token,
+      });
+    }
+
+    const matchEnd = Math.min(tokenEnd, range.end);
+    segments.push({
+      content: line.slice(matchStart, matchEnd),
+      isMatch: true,
+      start: matchStart,
+      end: matchEnd,
+      token,
+    });
+    cursor = matchEnd;
+  }
+
+  if (cursor < tokenEnd) {
+    segments.push({
+      content: line.slice(cursor, tokenEnd),
+      isMatch: false,
+      start: cursor,
+      end: tokenEnd,
+      token,
+    });
+  }
+  return segments;
 }
 
 function tokenStyle(token: CodeToken): CSSProperties {
@@ -51,42 +106,23 @@ function HighlightedTokens(props: {
   readonly ranges: ReadonlyArray<Range>;
   readonly tokens: ReadonlyArray<CodeToken>;
 }) {
-  return props.tokens.flatMap((token) => {
-    const parts = [];
-    const tokenEnd = token.offset + token.content.length;
-    let cursor = token.offset;
-    for (const range of props.ranges) {
-      if (range.end <= cursor) continue;
-      if (range.start >= tokenEnd) break;
-      const start = Math.max(cursor, range.start);
-      if (start > cursor) {
-        parts.push(
-          <span key={`${cursor}:${start}:code`} style={tokenStyle(token)}>
-            {props.line.slice(cursor, start)}
-          </span>,
-        );
-      }
-      const end = Math.min(tokenEnd, range.end);
-      parts.push(
+  return props.tokens
+    .flatMap((token) => splitToken(props.line, token, props.ranges))
+    .map((segment) =>
+      segment.isMatch ? (
         <mark
-          className="rounded-[2px] bg-primary/25 text-inherit"
-          key={`${start}:${end}:match`}
-          style={tokenStyle(token)}
+          className="rounded-xs bg-primary/25 text-inherit"
+          key={`${segment.start}:${segment.end}:match`}
+          style={tokenStyle(segment.token)}
         >
-          {props.line.slice(start, end)}
-        </mark>,
-      );
-      cursor = end;
-    }
-    if (cursor < tokenEnd) {
-      parts.push(
-        <span key={`${cursor}:${tokenEnd}:code`} style={tokenStyle(token)}>
-          {props.line.slice(cursor, tokenEnd)}
-        </span>,
-      );
-    }
-    return parts;
-  });
+          {segment.content}
+        </mark>
+      ) : (
+        <span key={`${segment.start}:${segment.end}:code`} style={tokenStyle(segment.token)}>
+          {segment.content}
+        </span>
+      ),
+    );
 }
 
 function SyntaxHighlightedTokens(props: {
@@ -106,17 +142,20 @@ function SyntaxHighlightedTokens(props: {
       return undefined;
     }
   }, [highlighter, props.language, props.line, props.theme]);
-  return (
+
+  return tokens ? (
+    <HighlightedTokens line={props.line} ranges={props.ranges} tokens={tokens} />
+  ) : (
     <HighlightedTokens
       line={props.line}
       ranges={props.ranges}
-      tokens={tokens ?? [{ content: props.line, offset: 0 }]}
+      tokens={[{ content: props.line, offset: 0 }]}
     />
   );
 }
 
 export const HighlightedSearchLine = memo(function HighlightedSearchLine(props: {
-  readonly match: ProjectTextSearchMatch;
+  readonly match: ProjectContentMatch;
   readonly path: string;
   readonly theme: "light" | "dark";
 }) {
@@ -128,6 +167,7 @@ export const HighlightedSearchLine = memo(function HighlightedSearchLine(props: 
       tokens={[{ content: props.match.lineContent, offset: 0 }]}
     />
   );
+
   return (
     <RenderErrorBoundary fallback={fallback}>
       <Suspense fallback={fallback}>

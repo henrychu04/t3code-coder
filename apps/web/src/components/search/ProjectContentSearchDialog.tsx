@@ -1,6 +1,5 @@
-import { openFileViewerCommand } from "~/fileViewerCommandBus";
 import { Spinner } from "~/components/ui/spinner";
-import type { ProjectTextSearchMatch } from "@t3tools/contracts";
+import type { ProjectContentMatch } from "@t3tools/contracts";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
@@ -8,14 +7,14 @@ import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useAct
 import { useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
-import { useProjectTextSearch } from "~/state/queries";
+import { useProjectContentSearch } from "~/state/queries";
 
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { CommandPaletteContent } from "../CommandPaletteContent";
 import { ScrollArea } from "../ui/scroll-area";
 import { Toggle } from "../ui/toggle";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { HighlightedSearchLine } from "../files/HighlightedSearchLine";
+import { HighlightedSearchLine } from "./HighlightedSearchLine";
 
 interface ProjectContentSearchDialogProps {
   readonly onOpenChange: (open: boolean) => void;
@@ -31,7 +30,7 @@ const VISIBLE_MATCH_WINDOW = 100;
 
 interface MatchGroup {
   readonly path: string;
-  readonly matches: ReadonlyArray<ProjectTextSearchMatch & { readonly resultIndex: number }>;
+  readonly matches: ReadonlyArray<ProjectContentMatch & { readonly resultIndex: number }>;
 }
 
 function splitPath(path: string): { readonly name: string; readonly directory: string } {
@@ -41,11 +40,8 @@ function splitPath(path: string): { readonly name: string; readonly directory: s
     : { name: path.slice(separator + 1), directory: path.slice(0, separator) };
 }
 
-function groupMatches(matches: ReadonlyArray<ProjectTextSearchMatch>): MatchGroup[] {
-  const groups = new Map<
-    string,
-    Array<ProjectTextSearchMatch & { readonly resultIndex: number }>
-  >();
+function groupMatches(matches: ReadonlyArray<ProjectContentMatch>): MatchGroup[] {
+  const groups = new Map<string, Array<ProjectContentMatch & { readonly resultIndex: number }>>();
   matches.forEach((match, resultIndex) => {
     const group = groups.get(match.path);
     const indexedMatch = { ...match, resultIndex };
@@ -117,10 +113,11 @@ function OpenContentSearchDialog(props: {
 
   const [visibleCount, setVisibleCount] = useState(VISIBLE_MATCH_WINDOW);
 
-  const search = useProjectTextSearch({
+  const search = useProjectContentSearch({
     environmentId: target.environmentId,
-    cwd: target.cwd,
+    // Coder: the helper verifies that the project root belongs to this thread.
     threadId: target.threadRef.threadId,
+    cwd: target.cwd,
     query,
     caseSensitive,
     wholeWord,
@@ -134,11 +131,7 @@ function OpenContentSearchDialog(props: {
   useEffect(() => {
     setSelectedIndex(0);
     setVisibleCount(VISIBLE_MATCH_WINDOW);
-  }, [query, caseSensitive, wholeWord, useRegex]);
-
-  useEffect(() => {
-    setSelectedIndex((current) => Math.min(current, Math.max(0, matches.length - 1)));
-  }, [matches.length]);
+  }, [matches]);
 
   useEffect(() => {
     if (selectedIndex >= visibleCount) {
@@ -161,17 +154,14 @@ function OpenContentSearchDialog(props: {
     return () => observer.disconnect();
   }, []);
 
-  const openMatch = (match: ProjectTextSearchMatch) => {
+  const openMatch = (match: ProjectContentMatch) => {
     if (!canOpenMatches) return;
     props.onOpenChange(false);
     useRightPanelStore.getState().openFile(target.threadRef, match.path, match.lineNumber);
   };
   const fileCount = useMemo(() => new Set(matches.map((match) => match.path)).size, [matches]);
   const showSearchStatus =
-    query.length > 0 ||
-    search.isPending ||
-    search.error !== null ||
-    search.regexFallbackError !== null;
+    search.hasQuery || search.isPending || search.error !== null || search.invalidRegex;
 
   return (
     <CommandPaletteContent
@@ -214,7 +204,6 @@ function OpenContentSearchDialog(props: {
             event.preventDefault();
             setSelectedIndex((current) => (current - 1 + matches.length) % matches.length);
           } else if (event.key === "Enter") {
-            if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             // While a newer query is debouncing or in flight, the visible
             // matches belong to the previous query; opening one would jump
             // to a result the user did not ask for.
@@ -236,16 +225,6 @@ function OpenContentSearchDialog(props: {
       testId="project-content-search"
       value={query}
     >
-      <button
-        type="button"
-        className="px-3 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          props.onOpenChange(false);
-          openFileViewerCommand("projectSearch.toggle");
-        }}
-      >
-        Search with file mask and preview…
-      </button>
       {showSearchStatus ? (
         <div className="flex h-9 shrink-0 items-center border-b px-3 text-xs text-muted-foreground">
           {search.isPending ? (
@@ -254,7 +233,7 @@ function OpenContentSearchDialog(props: {
             </span>
           ) : search.error ? (
             <span className="text-destructive">{search.error}</span>
-          ) : search.regexFallbackError !== null ? (
+          ) : search.invalidRegex ? (
             <span className="text-destructive">Invalid regular expression</span>
           ) : (
             `${matches.length.toLocaleString()}${search.truncated ? "+" : ""} results in ${fileCount.toLocaleString()} files`
@@ -264,7 +243,7 @@ function OpenContentSearchDialog(props: {
 
       {matches.length === 0 ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
-          {query.length > 0 && !search.isPending && !search.error
+          {search.hasQuery && !search.isPending && !search.error
             ? "No results found."
             : "Type to search across your project."}
         </div>
@@ -320,16 +299,6 @@ function OpenContentSearchDialog(props: {
                 </section>
               );
             })}
-            {search.hasMore ? (
-              <button
-                type="button"
-                disabled={search.isPending}
-                onClick={search.loadMore}
-                className="w-full p-2 text-xs text-muted-foreground"
-              >
-                Load more results
-              </button>
-            ) : null}
             {matches.length > visibleCount ? (
               <div ref={observeLoadMoreSentinel} className="h-8" aria-hidden="true" />
             ) : null}

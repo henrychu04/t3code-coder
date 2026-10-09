@@ -1,11 +1,9 @@
-import { useEnvironmentKeybindings } from "~/state/environments";
-import { useProjectPathSearch } from "~/state/queries";
-import { openFileViewerCommand } from "~/fileViewerCommandBus";
 import { useMemo, useState, type ReactNode } from "react";
 
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useTheme } from "~/hooks/useTheme";
 import { useRightPanelStore } from "~/rightPanelStore";
+import { useEnvironmentKeybindings } from "~/state/environments";
 
 import { PierreEntryIcon } from "../chat/PierreEntryIcon";
 import { CommandPaletteContent } from "../CommandPaletteContent";
@@ -15,6 +13,7 @@ import {
   getProjectFilePickerMatches,
   PROJECT_FILE_PICKER_RESULT_LIMIT,
 } from "./ProjectFilePicker.logic";
+import { useProjectFilePickerQuery } from "./projectFilesQueryState";
 
 interface ProjectFilePickerProps {
   readonly setOpen: (open: boolean) => void;
@@ -72,18 +71,20 @@ function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveP
   const { target } = props;
   const [query, setQuery] = useState("");
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
-  const result = useProjectPathSearch(
-    { environmentId: target.environmentId, cwd: target.cwd, query, kind: "file" },
+  const result = useProjectFilePickerQuery(
+    target.environmentId,
+    target.cwd,
+    query,
     PROJECT_FILE_PICKER_RESULT_LIMIT,
-    { allowEmptyQuery: true },
   );
   const { resolvedTheme } = useTheme();
+  // Coder: there is no primary server; the target workspace supplies keybindings.
   const keybindings = useEnvironmentKeybindings(target.environmentId);
   const matches = useMemo(
-    () => getProjectFilePickerMatches(result.entries, result.searchedQuery),
-    [result.entries, result.searchedQuery],
+    () => getProjectFilePickerMatches(result.entries, result.matchedQuery),
+    [result.entries, result.matchedQuery],
   );
-  const hasMatchedQuery = /\S/.test(result.searchedQuery);
+  const hasMatchedQuery = /\S/.test(result.matchedQuery);
   const items = useMemo<CommandPaletteActionItem[]>(
     () =>
       matches.map((match) => ({
@@ -133,22 +134,12 @@ function OpenProjectFilePicker(props: ProjectFilePickerProps & { target: ActiveP
       testId="project-file-picker"
       value={query}
     >
-      <button
-        type="button"
-        className="px-3 py-2 text-left text-xs text-muted-foreground hover:text-foreground"
-        onClick={() => {
-          props.setOpen(false);
-          openFileViewerCommand("filePicker.toggle");
-        }}
-      >
-        Search with file mask and preview…
-      </button>
       <CommandPaletteResults
-        isActionsOnly={false}
         groups={
           items.length > 0 ? [{ value: "project-files", label: target.projectName, items }] : []
         }
         highlightedItemValue={highlightedItemValue}
+        isActionsOnly={false}
         keybindings={keybindings}
         onExecuteItem={(item) => {
           if (item.kind !== "action") return;

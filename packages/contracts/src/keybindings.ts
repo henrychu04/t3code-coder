@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { ForwardCompatibleArray, TrimmedString } from "./baseSchemas.ts";
 
-const MAX_KEYBINDING_VALUE_LENGTH = 64;
+export const MAX_KEYBINDING_VALUE_LENGTH = 64;
 const MAX_KEYBINDING_WHEN_LENGTH = 256;
 export const MAX_WHEN_EXPRESSION_DEPTH = 64;
 export const MAX_SCRIPT_ID_LENGTH = 24;
@@ -36,11 +36,11 @@ export type ModelPickerJumpKeybindingCommand =
 
 const THREAD_KEYBINDING_COMMANDS = [
   "thread.stop",
-  "thread.copyReference",
   "thread.steerQueuedMessage",
   "thread.editQueuedMessage",
   "thread.previous",
   "thread.next",
+  "thread.copyReference",
   "thread.settle",
   "thread.pin",
   "thread.undo",
@@ -71,14 +71,19 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "rightPanel.close",
   "pullRequest.copyNumber",
   "diff.toggle",
+  "preview.toggle",
+  "preview.refresh",
+  "preview.focusUrl",
+  "preview.zoomIn",
+  "preview.zoomOut",
+  "preview.resetZoom",
   "commandPalette.toggle",
   "filePicker.toggle",
   "projectSearch.toggle",
-  "fileViewer.find",
-  "fileViewer.goToLine",
+  "usage.open",
   "theme.select",
-  "themeEditor.toggle",
   "appearance.cycle",
+  "themeEditor.toggle",
   "composer.stash",
   "composer.sendAlternate",
   "composer.sendBackground",
@@ -89,8 +94,16 @@ export const STATIC_KEYBINDING_COMMANDS = [
   "composer.previousWorktree",
   "composer.branch",
   "chat.new",
-  "chat.newWithoutProject",
   "chat.newLocal",
+  "chat.newWithoutProject",
+  "editor.openFavorite",
+  "usage.cost",
+  "usage.tokens",
+  "usage.limits",
+  "usage.period.day",
+  "usage.period.week",
+  "usage.period.month",
+  "usage.period.quarter",
   ...MODEL_PICKER_KEYBINDING_COMMANDS,
   ...THREAD_KEYBINDING_COMMANDS,
 ] as const;

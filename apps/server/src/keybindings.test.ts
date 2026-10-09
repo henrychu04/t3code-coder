@@ -50,14 +50,6 @@ const writeKeybindingsConfig = (configPath: string, rules: readonly KeybindingRu
     yield* fileSystem.writeFileString(configPath, encoded);
   });
 
-const writeRawKeybindingsConfig = (configPath: string, entries: readonly unknown[]) =>
-  Effect.gen(function* () {
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    yield* fileSystem.makeDirectory(path.dirname(configPath), { recursive: true });
-    yield* fileSystem.writeFileString(configPath, JSON.stringify(entries));
-  });
-
 const readKeybindingsConfig = (configPath: string) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -83,14 +75,6 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         shiftKey: false,
         altKey: false,
         modKey: true,
-      });
-      assert.deepEqual(Keybindings.parseKeybindingShortcut("Shift Shift"), {
-        key: "double-shift",
-        metaKey: false,
-        ctrlKey: false,
-        shiftKey: false,
-        altKey: false,
-        modKey: false,
       });
     }),
   );
@@ -204,64 +188,6 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
-  it.effect("ships only supported configurable navigation defaults", () =>
-    Effect.sync(() => {
-      const defaultsByCommand = new Map(
-        Keybindings.DEFAULT_KEYBINDINGS.map((binding) => [binding.command, binding.key] as const),
-      );
-
-      assert.equal(defaultsByCommand.get("thread.previous"), "mod+shift+[");
-      assert.equal(defaultsByCommand.get("thread.next"), "mod+shift+]");
-      assert.equal(defaultsByCommand.get("thread.settle"), "mod+shift+s");
-      assert.equal(defaultsByCommand.get("thread.pin"), "mod+shift+p");
-      assert.equal(defaultsByCommand.get("thread.jump.1"), "mod+1");
-      assert.equal(defaultsByCommand.get("thread.jump.9"), "mod+9");
-      assert.equal(defaultsByCommand.get("modelPicker.toggle"), "mod+shift+m");
-      assert.equal(defaultsByCommand.get("filePicker.toggle"), "shift shift");
-      assert.deepEqual(
-        Keybindings.DEFAULT_KEYBINDINGS.filter(
-          (binding) => binding.command === "filePicker.toggle",
-        ).map((binding) => binding.key),
-        ["mod+p", "shift shift"],
-      );
-      assert.equal(defaultsByCommand.get("projectSearch.toggle"), "mod+shift+f");
-      assert.equal(defaultsByCommand.get("fileViewer.find"), "mod+f");
-      assert.equal(defaultsByCommand.get("fileViewer.goToLine"), "mod+g");
-      assert.equal(
-        Keybindings.DEFAULT_KEYBINDINGS.find(
-          (binding) => binding.command === "projectSearch.toggle",
-        )?.when,
-        "!terminalFocus",
-      );
-      assert.deepInclude(Keybindings.DEFAULT_KEYBINDINGS, {
-        key: "mod+p",
-        command: "filePicker.toggle",
-        when: "!terminalFocus",
-      });
-      assert.deepInclude(Keybindings.DEFAULT_KEYBINDINGS, {
-        key: "shift shift",
-        command: "filePicker.toggle",
-        when: "projectOpen && !terminalFocus",
-      });
-      assert.equal(
-        Keybindings.DEFAULT_KEYBINDINGS.find((binding) => binding.command === "fileViewer.find")
-          ?.when,
-        "fileOpen && fileViewerFocus && !terminalFocus",
-      );
-      assert.equal(
-        Keybindings.DEFAULT_KEYBINDINGS.find((binding) => binding.command === "fileViewer.goToLine")
-          ?.when,
-        "fileOpen && fileViewerFocus && !terminalFocus",
-      );
-      assert.equal(defaultsByCommand.get("sidebar.toggle"), "mod+b");
-      assert.equal(defaultsByCommand.get("rightPanel.toggle"), "mod+alt+b");
-      assert.isFalse(defaultsByCommand.has("rightPanel.toggleMaximized"));
-      assert.equal(defaultsByCommand.get("terminal.splitVertical"), "mod+shift+d");
-      assert.equal(defaultsByCommand.get("modelPicker.jump.1"), "mod+1");
-      assert.equal(defaultsByCommand.get("modelPicker.jump.9"), "mod+9");
-    }),
-  );
-
   it.effect("uses defaults in runtime when config is malformed without overriding file", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -332,7 +258,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
         yield* writeKeybindingsConfig(keybindingsConfigPath, [
           { key: "mod+shift+t", command: "terminal.toggle" },
-          { key: "mod+shift+r", command: "projectSearch.toggle", when: "!terminalFocus" },
+          { key: "mod+shift+r", command: "script.run-tests.run" },
         ]);
 
         yield* Effect.gen(function* () {
@@ -353,104 +279,8 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         for (const defaultRule of Keybindings.DEFAULT_KEYBINDINGS) {
           assert.isTrue(byCommand.has(defaultRule.command), `expected ${defaultRule.command}`);
         }
-        assert.isTrue(byCommand.has("projectSearch.toggle"));
+        assert.isTrue(byCommand.has("script.run-tests.run"));
       }).pipe(Effect.provide(makeKeybindingsLayer())),
-  );
-
-  it.effect("removes retired Coder defaults without deleting active or customized rules", () =>
-    Effect.gen(function* () {
-      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      yield* writeRawKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+shift+f", command: "projectSearch.toggle", when: "!terminalFocus" },
-        { key: "mod+alt+shift+t", command: "themeEditor.toggle" },
-        { key: "mod+o", command: "editor.openFavorite" },
-        { key: "mod+9", command: "script.deploy.run" },
-        { key: "mod+p", command: "filePicker.toggle", when: "!terminalFocus" },
-        { key: "mod+alt+p", command: "filePicker.toggle", when: "!terminalFocus" },
-        {
-          key: "shift shift",
-          command: "fileViewer.searchFiles",
-          when: "projectOpen && !terminalFocus",
-        },
-        { key: "mod+shift+g", command: "projectSearch.toggle", when: "!terminalFocus" },
-      ]);
-
-      yield* Effect.gen(function* () {
-        const keybindings = yield* Keybindings.Keybindings;
-        yield* keybindings.syncDefaultKeybindingsOnStartup;
-      });
-
-      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
-      assert.isTrue(
-        persisted.some(
-          (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+f",
-        ),
-      );
-      assert.isTrue(persisted.some((entry) => String(entry.command) === "themeEditor.toggle"));
-      assert.isFalse(persisted.some((entry) => String(entry.command) === "editor.openFavorite"));
-      assert.isTrue(persisted.some((entry) => String(entry.command) === "script.deploy.run"));
-      assert.isTrue(
-        persisted.some((entry) => entry.command === "filePicker.toggle" && entry.key === "mod+p"),
-      );
-      assert.isTrue(
-        persisted.some(
-          (entry) => entry.command === "filePicker.toggle" && entry.key === "mod+alt+p",
-        ),
-      );
-      assert.isTrue(
-        persisted.some(
-          (entry) => entry.command === "projectSearch.toggle" && entry.key === "mod+shift+g",
-        ),
-      );
-    }).pipe(Effect.provide(makeKeybindingsLayer())),
-  );
-
-  it.effect("migrates file-panel search defaults to project-wide defaults", () =>
-    Effect.gen(function* () {
-      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      yield* writeRawKeybindingsConfig(keybindingsConfigPath, [
-        {
-          key: "mod+shift+f",
-          command: "projectSearch.toggle",
-          when: "projectOpen && !terminalFocus",
-        },
-        {
-          key: "shift shift",
-          command: "fileViewer.searchFiles",
-          when: "fileViewerOpen && !terminalFocus",
-        },
-      ]);
-
-      yield* Effect.gen(function* () {
-        const keybindings = yield* Keybindings.Keybindings;
-        yield* keybindings.syncDefaultKeybindingsOnStartup;
-      });
-
-      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
-      assert.isFalse(persisted.some((entry) => entry.when === "fileViewerOpen && !terminalFocus"));
-      assert.isFalse(
-        persisted.some(
-          (entry) =>
-            entry.command === "projectSearch.toggle" &&
-            entry.when === "projectOpen && !terminalFocus",
-        ),
-      );
-      assert.deepInclude(persisted, {
-        key: "mod+shift+f",
-        command: "projectSearch.toggle",
-        when: "!terminalFocus",
-      });
-      assert.deepInclude(persisted, {
-        key: "shift shift",
-        command: "filePicker.toggle",
-        when: "projectOpen && !terminalFocus",
-      });
-      assert.deepInclude(persisted, {
-        key: "mod+p",
-        command: "filePicker.toggle",
-        when: "!terminalFocus",
-      });
-    }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
   it.effect("skips conflicting default keybindings on startup and logs a detailed warning", () => {
@@ -462,7 +292,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     return Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+j", command: "rightPanel.toggleMaximized" },
+        { key: "mod+j", command: "script.custom-action.run" },
       ]);
 
       yield* Effect.gen(function* () {
@@ -472,7 +302,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       assert.isFalse(persisted.some((entry) => entry.command === "terminal.toggle"));
-      assert.isTrue(persisted.some((entry) => entry.command === "rightPanel.toggleMaximized"));
+      assert.isTrue(persisted.some((entry) => entry.command === "script.custom-action.run"));
 
       assert.isTrue(
         messages.some((message) =>
@@ -500,7 +330,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
       });
 
@@ -509,9 +339,9 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
 
       assert.deepEqual(persistedView, [
         { key: "mod+j", command: "terminal.toggle" },
-        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
+        { key: "mod+shift+r", command: "script.run-tests.run" },
       ]);
-      assert.isTrue(resolved.some((entry) => entry.command === "rightPanel.toggleMaximized"));
+      assert.isTrue(resolved.some((entry) => entry.command === "script.run-tests.run"));
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
@@ -519,21 +349,21 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+r", command: "rightPanel.toggleMaximized" },
+        { key: "mod+r", command: "script.run-tests.run" },
       ]);
       yield* Effect.gen(function* () {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
       });
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
       assert.deepEqual(persistedView, [
-        { key: "mod+r", command: "rightPanel.toggleMaximized" },
-        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
+        { key: "mod+r", command: "script.run-tests.run" },
+        { key: "mod+shift+r", command: "script.run-tests.run" },
       ]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
@@ -542,58 +372,23 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+r", command: "rightPanel.toggleMaximized" },
-        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
+        { key: "mod+r", command: "script.run-tests.run" },
+        { key: "mod+shift+r", command: "script.run-tests.run" },
       ]);
       yield* Effect.gen(function* () {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+alt+r",
-          command: "rightPanel.toggleMaximized",
-          replace: { key: "mod+r", command: "rightPanel.toggleMaximized" },
+          command: "script.run-tests.run",
+          replace: { key: "mod+r", command: "script.run-tests.run" },
         });
       });
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
       assert.deepEqual(persistedView, [
-        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
-        { key: "mod+alt+r", command: "rightPanel.toggleMaximized" },
-      ]);
-    }).pipe(Effect.provide(makeKeybindingsLayer())),
-  );
-
-  it.effect("replaces a target whose when clause has equivalent formatting", () =>
-    Effect.gen(function* () {
-      const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
-      yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        {
-          key: "mod+f",
-          command: "fileViewer.find",
-          when: "fileOpen && !terminalFocus",
-        },
-      ]);
-      yield* Effect.gen(function* () {
-        const keybindings = yield* Keybindings.Keybindings;
-        return yield* keybindings.upsertKeybindingRule({
-          key: "mod+alt+f",
-          command: "fileViewer.find",
-          when: "(fileOpen) && (!(terminalFocus))",
-          replace: {
-            key: "mod+f",
-            command: "fileViewer.find",
-            when: "(fileOpen) && (!(terminalFocus))",
-          },
-        });
-      });
-
-      const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
-      assert.deepEqual(persisted, [
-        {
-          key: "mod+alt+f",
-          command: "fileViewer.find",
-          when: "(fileOpen) && (!(terminalFocus))",
-        },
+        { key: "mod+shift+r", command: "script.run-tests.run" },
+        { key: "mod+alt+r", command: "script.run-tests.run" },
       ]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
@@ -602,23 +397,21 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+r", command: "rightPanel.toggleMaximized" },
-        { key: "mod+alt+r", command: "rightPanel.toggleMaximized" },
+        { key: "mod+r", command: "script.run-tests.run" },
+        { key: "mod+alt+r", command: "script.run-tests.run" },
       ]);
       yield* Effect.gen(function* () {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+alt+r",
-          command: "rightPanel.toggleMaximized",
-          replace: { key: "mod+r", command: "rightPanel.toggleMaximized" },
+          command: "script.run-tests.run",
+          replace: { key: "mod+r", command: "script.run-tests.run" },
         });
       });
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
-      assert.deepEqual(persistedView, [
-        { key: "mod+alt+r", command: "rightPanel.toggleMaximized" },
-      ]);
+      assert.deepEqual(persistedView, [{ key: "mod+alt+r", command: "script.run-tests.run" }]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
@@ -626,22 +419,20 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
     Effect.gen(function* () {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, [
-        { key: "mod+r", command: "rightPanel.toggleMaximized" },
-        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
+        { key: "mod+r", command: "script.run-tests.run" },
+        { key: "mod+shift+r", command: "script.run-tests.run" },
       ]);
       yield* Effect.gen(function* () {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.removeKeybindingRule({
           key: "mod+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
       });
 
       const persisted = yield* readKeybindingsConfig(keybindingsConfigPath);
       const persistedView = persisted.map(({ key, command }) => ({ key, command }));
-      assert.deepEqual(persistedView, [
-        { key: "mod+shift+r", command: "rightPanel.toggleMaximized" },
-      ]);
+      assert.deepEqual(persistedView, [{ key: "mod+shift+r", command: "script.run-tests.run" }]);
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
 
@@ -655,7 +446,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
       }).pipe(toDetailResult);
       assertFailure(result, "expected JSON array");
@@ -678,7 +469,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
       }).pipe(toDetailResult);
       assertFailure(firstResult, "expected JSON array");
@@ -687,7 +478,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         const keybindings = yield* Keybindings.Keybindings;
         return yield* keybindings.upsertKeybindingRule({
           key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
       }).pipe(toDetailResult);
       assertFailure(secondResult, "expected JSON array");
@@ -711,7 +502,7 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
           const keybindings = yield* Keybindings.Keybindings;
           return yield* keybindings.upsertKeybindingRule({
             key: "mod+shift+r",
-            command: "rightPanel.toggleMaximized",
+            command: "script.run-tests.run",
           });
         }).pipe(toDetailResult);
         assertFailure(result, "failed to write keybindings config");
@@ -755,14 +546,12 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
         yield* keybindings.loadConfigState;
         yield* keybindings.upsertKeybindingRule({
           key: "mod+shift+r",
-          command: "rightPanel.toggleMaximized",
+          command: "script.run-tests.run",
         });
         return (yield* keybindings.loadConfigState).keybindings;
       });
 
-      assert.isTrue(
-        loadedAfterUpsert.some((entry) => entry.command === "rightPanel.toggleMaximized"),
-      );
+      assert.isTrue(loadedAfterUpsert.some((entry) => entry.command === "script.run-tests.run"));
       assert.isTrue(loadedAfterUpsert.some((entry) => entry.command === "terminal.toggle"));
     }).pipe(Effect.provide(makeKeybindingsLayer())),
   );
@@ -772,28 +561,10 @@ it.layer(NodeServices.layer)("keybindings", (it) => {
       const { keybindingsConfigPath } = yield* ServerConfig.ServerConfig;
       yield* writeKeybindingsConfig(keybindingsConfigPath, []);
 
-      const commands: readonly KeybindingCommand[] = [
-        "sidebar.toggle",
-        "terminal.toggle",
-        "terminal.split",
-        "terminal.splitVertical",
-        "terminal.new",
-        "terminal.close",
-        "rightPanel.toggle",
-        "rightPanel.toggleMaximized",
-        "diff.toggle",
-        "commandPalette.toggle",
-        "filePicker.toggle",
-        "projectSearch.toggle",
-        "fileViewer.find",
-        "fileViewer.goToLine",
-        "composer.stash",
-        "chat.new",
-        "chat.newLocal",
-        "modelPicker.toggle",
-        "thread.previous",
-        "thread.next",
-      ];
+      const commands = Array.from(
+        { length: 20 },
+        (_, index): KeybindingCommand => `script.concurrent-${index}.run`,
+      );
       yield* Effect.gen(function* () {
         const keybindings = yield* Keybindings.Keybindings;
         yield* Effect.forEach(

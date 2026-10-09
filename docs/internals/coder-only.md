@@ -393,8 +393,9 @@ connections.
 
 The Files surface exposes no upload, export, drag-and-drop, absolute path, or local file access for
 text files. An explicit Copy path action may copy only the project-relative path to the browser
-clipboard. Media previews carry main's media menu, described below. Open
-tabs, explorer state, Markdown source/render mode, and editor state are not persisted locally.
+clipboard. Media previews carry main's media menu, described below. Open files and editor state
+are not persisted locally; the explorer visibility and rendered Markdown/table preferences are UI
+preferences in browser storage, as on main.
 
 Media previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
 resolve image and video paths without capture events or source-path fingerprints. The helper verifies
@@ -727,6 +728,15 @@ listed here is drift to remove rather than fork behavior to keep.
     separate from the Files surface, whose Copy path action stays project-relative.
   - Relative and non-web links render as inert text. GitHub-authenticated media (`githubMedia`)
     is omitted; web images and videos load directly from their host.
+- **Files and search UI.** `components/files/*`, `components/search/*`, the file picker, and the
+  keybindings are upstream's. Coder deltas (marked `Coder:`): file reads, listings, writes, and
+  content search name the thread so the helper can verify the project root; reads return a
+  revision that each write must match, and a rejected save offers **Reload and discard edits**;
+  content search uses the helper's time-budgeted search (`projects.searchText`), showing its first
+  page; image, video, and audio previews read through the helper instead of signed asset URLs;
+  there is no PDF or HTML browser preview, open-in-editor or reveal action, attachment preview,
+  drag-to-composer mention, or Copy mention (the tree's only clipboard action is Copy path).
+  `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
   `!` references and GitLab wording are used. Actor avatars load as on main. MR links everywhere

@@ -17,13 +17,11 @@ import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
 
 const environmentId = EnvironmentId.make("save-lifecycle-audit");
 const onPendingChange = vi.fn();
-const onSaveFailed = vi.fn();
-const threadRef = { environmentId, threadId: ThreadId.make("save-thread") };
 const defaultProps = {
   environmentId,
-  threadRef,
-  revision: "rev-1",
-  onSaveFailed,
+  threadId: ThreadId.make("save-lifecycle-thread"),
+  revision: "r1",
+  onSaveFailed: vi.fn(),
   cwd: "/workspace",
   relativePath: "file.txt",
   onPendingChange,
@@ -57,9 +55,7 @@ beforeEach(() => {
   renderer = null;
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  writeFile
-    .mockReset()
-    .mockResolvedValue(AsyncResult.success({ relativePath: "file.txt", revision: "rev-2" }));
+  writeFile.mockReset().mockResolvedValue(AsyncResult.success({ revision: "r2" }));
   confirmFile.mockReset();
   onPendingChange.mockReset();
 });
@@ -79,20 +75,20 @@ describe("file-save React lifecycle", () => {
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: {
-        threadId: threadRef.threadId,
-        expectedRevision: "rev-1",
+        threadId: defaultProps.threadId,
         cwd: "/workspace",
         relativePath: "file.txt",
         contents: "AUDIT7907NATIVE\n",
+        expectedRevision: "r1",
       },
     });
     expect(confirmFile).toHaveBeenCalledExactlyOnceWith(
       environmentId,
-      threadRef.threadId,
+      defaultProps.threadId,
       "/workspace",
       "file.txt",
       "AUDIT7907NATIVE\n",
-      "rev-2",
+      "r2",
     );
     expect(onPendingChange).toHaveBeenLastCalledWith("file.txt", false);
   });
@@ -105,11 +101,11 @@ describe("file-save React lifecycle", () => {
     expect(writeFile).toHaveBeenCalledExactlyOnceWith({
       environmentId,
       input: {
-        threadId: threadRef.threadId,
-        expectedRevision: "rev-1",
+        threadId: defaultProps.threadId,
         cwd: "/workspace",
         relativePath: "README.md",
         contents: "- [x] task\n",
+        expectedRevision: "r1",
       },
     });
   });
@@ -168,21 +164,21 @@ describe("file-save React lifecycle", () => {
       {
         environmentId,
         input: {
-          threadId: threadRef.threadId,
-          expectedRevision: "rev-1",
+          threadId: defaultProps.threadId,
           cwd: "/workspace",
           relativePath: "file.txt",
           contents: "old file edit",
+          expectedRevision: "r1",
         },
       },
       {
         environmentId: nextProps.environmentId,
         input: {
-          threadId: threadRef.threadId,
-          expectedRevision: "rev-1",
+          threadId: defaultProps.threadId,
           cwd: nextProps.cwd,
           relativePath: nextProps.relativePath,
           contents: "new file edit",
+          expectedRevision: "r1",
         },
       },
     ]);

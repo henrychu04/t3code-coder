@@ -285,6 +285,8 @@ export const ProjectTextSearchMatch = Schema.Struct({
   matchRanges: Schema.Array(ProjectTextSearchMatchRange).check(Schema.isMaxLength(100)),
 });
 export type ProjectTextSearchMatch = typeof ProjectTextSearchMatch.Type;
+/** Coder: upstream's name for a content-search match, used by its search dialog. */
+export type ProjectContentMatch = ProjectTextSearchMatch;
 
 export const ProjectTextSearchResult = Schema.Struct({
   nextCursor: Schema.optional(Schema.String.check(Schema.isMaxLength(64))),

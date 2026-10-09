@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId, ProjectEntry } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectEntry, ThreadId } from "@t3tools/contracts";
 import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -7,10 +7,10 @@ import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { projectEnvironment } from "~/state/projects";
 
 /** Loads only requested directories; collapsing a folder keeps its children cached. */
+// Coder: listings name the thread whose project root the helper verifies.
 export function useDirectoryEntries(environmentId: EnvironmentId, threadId: ThreadId, cwd: string) {
   const [directories, setDirectories] = useState(new Map<string, readonly ProjectEntry[]>());
   const [errors, setErrors] = useState(new Map<string, string>());
-  const [truncated, setTruncated] = useState(new Set<string>());
   const [pending, setPending] = useState(0);
   const requests = useRef(new Map<string, Promise<void>>());
   const loaded = useRef(new Set<string>());
@@ -52,12 +52,6 @@ export function useDirectoryEntries(environmentId: EnvironmentId, threadId: Thre
         .then((result) => {
           if (!active.current || !result) return;
           if (result._tag === "Success") {
-            setTruncated((previous) => {
-              const next = new Set(previous);
-              if (result.value.truncated) next.add(directoryPath);
-              else next.delete(directoryPath);
-              return next;
-            });
             setDirectories((previous) =>
               new Map(previous).set(
                 directoryPath,
@@ -90,7 +84,7 @@ export function useDirectoryEntries(environmentId: EnvironmentId, threadId: Thre
       requests.current.set(directoryPath, request);
       return request;
     },
-    [cwd, environmentId, threadId],
+    [cwd, environmentId],
   );
 
   useEffect(() => {
@@ -141,7 +135,6 @@ export function useDirectoryEntries(environmentId: EnvironmentId, threadId: Thre
     refresh,
     isPending: pending > 0,
     ready: directories.has(""),
-    truncated: [...truncated].some((path) => reachableDirectories.has(path)),
     error: [...errors].find(([path]) => reachableDirectories.has(path))?.[1] ?? null,
   };
 }

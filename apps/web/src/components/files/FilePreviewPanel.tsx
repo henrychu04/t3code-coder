@@ -1,90 +1,42 @@
-import { FILE_LINK_REVEAL_ATTRIBUTE, FILE_LINK_REVEAL_UNSAFE_CSS } from "./fileSurfaceChrome";
 import { Spinner } from "~/components/ui/spinner";
-import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
-import {
-  type DiffLineAnnotation,
-  type FileContents,
-  type SelectedLineRange,
-  VirtualizedFile,
-} from "@pierre/diffs";
-import { EditContext, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
-import {
-  type EnvironmentId,
-  PROJECT_SEARCH_INPUT_MAX_LENGTH,
-  type ProjectTextSearchMatch,
-  type ScopedThreadRef,
-} from "@t3tools/contracts";
-import {
-  ArrowDown,
-  ArrowUp,
-  CaseSensitive,
-  Check,
-  ChevronRight,
-  Code2,
-  Copy,
-  Eye,
-  FileIcon,
-  Filter,
-  FolderTree,
-  LoaderCircle,
-  Search,
-  WholeWord,
-  X,
-} from "lucide-react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import {
   isWorkspaceAudioPreviewPath,
   isWorkspaceImagePreviewPath,
   isWorkspaceVideoPreviewPath,
 } from "@t3tools/shared/filePreview";
-import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
-import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
+import { VirtualizedFile, type SelectedLineRange } from "@pierre/diffs";
+import { Editor } from "@pierre/diffs/editor";
+import { EditProvider, File, type FileOptions, Virtualizer } from "@pierre/diffs/react";
+import { DiffWorkerPoolProvider } from "../DiffWorkerPoolProvider";
+import { Code2, Eye, FolderTree, Table2, WrapTextIcon } from "lucide-react";
+import * as Schema from "effect/Schema";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { projectMediaReference } from "~/components/chat/projectMediaReference";
 import { useProjectImages } from "~/components/chat/useProjectImages";
 import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useProjectVideo";
-import { projectMediaReference } from "~/components/chat/projectMediaReference";
+import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
+import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
+import { Button } from "~/components/ui/button";
+import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
+import { useTheme } from "~/hooks/useTheme";
+import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "~/hooks/useLocalStorage";
+import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
+import { resolveDiffThemeName } from "~/lib/diffRendering";
+import { PREFERRED_HIGHLIGHTER } from "~/lib/syntaxHighlighting";
+import { cn } from "~/lib/utils";
+import { isAbsolutePath, resolvePathLinkTarget } from "~/terminal-links";
+import { ScrollArea } from "~/components/ui/scroll-area";
+import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
+import { buildFileReviewComment } from "~/reviewCommentContext";
+
 import { AudioPreview } from "./AudioPreview";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
-import { FileMarkdownPreview } from "./FileMarkdownPreview";
-import { DiffCommentAnnotation } from "~/components/diffs/DiffCommentAnnotation";
-import { Button } from "~/components/ui/button";
-import { CommandDialog, CommandDialogPopup, CommandFooter } from "~/components/ui/command";
-import {
-  Dialog,
-  DialogFooter,
-  DialogHeader,
-  DialogPopup,
-  DialogTitle,
-} from "~/components/ui/dialog";
-import { Input } from "~/components/ui/input";
-import { InputGroup, InputGroupAddon, InputGroupInput } from "~/components/ui/input-group";
-import { ScrollArea } from "~/components/ui/scroll-area";
-import { Kbd, KbdGroup } from "~/components/ui/kbd";
-import { Toggle } from "~/components/ui/toggle";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
-import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
-import { useClientSettings } from "~/hooks/useSettings";
-import { useTheme } from "~/hooks/useTheme";
-import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
-import { resolveShortcutCommand } from "~/keybindings";
-import { resolveDiffThemeName } from "~/lib/diffRendering";
-import { isTerminalFocused } from "~/lib/terminalFocus";
-import { cn } from "~/lib/utils";
-import { buildFileReviewComment } from "~/reviewCommentContext";
-import { useProjectPathSearch, useProjectTextSearch } from "~/state/queries";
-import { useEnvironmentKeybindings } from "~/state/environments";
-
 import FileBrowserPanel from "./FileBrowserPanel";
+import { FileBreadcrumbs } from "./FileBreadcrumbs";
+import { FileMarkdownPreview } from "./FileMarkdownPreview";
 import {
   type FileCommentAnnotationEntry,
   type FileCommentAnnotationGroup,
@@ -95,29 +47,27 @@ import {
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
 import { installFileEditorDismissal } from "./fileEditorDismissal";
-import { HighlightedSearchLine } from "./HighlightedSearchLine";
-import { findTextMatches, type FileTextMatch } from "./fileFind";
-import { retainFileFindFocus } from "./fileFindFocus";
-import { getFileSearchMatches } from "./fileSearchMatches";
 import {
-  type FileEditorViewAnchor,
-  bindFileEditorSession,
-  discardFileEditorSession,
-  getFileEditorSession,
-} from "./fileEditorSessions";
-import { projectFileCacheKey } from "./fileContentRevision";
+  FILE_LINK_REVEAL_ATTRIBUTE,
+  FILE_LINK_REVEAL_UNSAFE_CSS,
+  FILE_SURFACE_SUBHEADER_CLASS,
+  FileSurfaceAction,
+  FileSurfaceFailure,
+  FileSurfaceLoading,
+} from "./fileSurfaceChrome";
+import SourceFilePreview from "./ReadOnlySourcePreview";
+import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
+import { DiffCommentAnnotation } from "../diffs/DiffCommentAnnotation";
+import { projectFileCacheKey, projectFileEditorCacheKey } from "./fileContentRevision";
 import {
-  type FileLineRevealRequest,
-  isSameFileLineRevealRequest,
-  resolveAnchoredFileLineScrollTop,
-  resolveCenteredFileLineScrollTop,
-  resolveVisibleFileLineAnchor,
-} from "./fileLineReveal";
-import { fileBreadcrumbs } from "./filePath";
-import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
+  isMarkdownPreviewFile,
+  resolveFilePreviewPath,
+  setMarkdownTaskChecked,
+  shouldShowFileExplorer,
+} from "./filePreviewMode";
 import { useFileSaveCoordinator } from "./useFileSaveCoordinator";
 import {
-  discardProjectFileQueryData,
+  clearProjectFileQueryData,
   getOptimisticProjectFileQueryData,
   setProjectFileQueryData,
   useProjectFileQuery,
@@ -128,27 +78,27 @@ interface FilePreviewPanelProps {
   cwd: string;
   projectName: string;
   relativePath: string | null;
+  // Coder: no attachment previews, local editors, or open-in keybindings; sent file attachments
+  // render as static rows and Files only opens project files.
   threadRef: ScopedThreadRef;
   composerDraftTarget: ScopedThreadRef | DraftId;
   revealLine: number | null;
   revealRequestId: number;
-  onOpenFile: (relativePath: string, line?: number) => void;
+  onOpenFile: (relativePath: string) => void;
   onPendingChange: (relativePath: string, pending: boolean) => void;
   selectedFilePending: boolean;
   workspaceMutationId: string | null;
 }
 
-type FileSearchCommandRequest = {
-  readonly id: number;
-  readonly command: "filePicker.toggle" | "projectSearch.toggle";
-};
-
+const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
+const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
+const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
 type FilePostRender = NonNullable<FileOptions<unknown>["onPostRender"]>;
 
 /**
- * Main's workspace media previews. Main loads each file from a signed asset URL; Coder reads it
- * through bounded helper stdio chunks into a memory-only blob URL. Opening the file is the
- * explicit request, so the read starts immediately.
+ * Coder: main loads workspace media from signed asset URLs; Coder reads each file through bounded
+ * helper stdio chunks into a memory-only blob URL. Opening the file is the explicit request, so
+ * the read starts immediately. There is no PDF or HTML browser preview.
  */
 function WorkspaceImagePreview(props: {
   readonly source: ProjectVideoSource;
@@ -187,7 +137,7 @@ function WorkspaceImagePreview(props: {
     </div>
   ) : (
     <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-      <Spinner className="size-5" />
+      <Spinner size="lg" />
     </div>
   );
 }
@@ -227,252 +177,31 @@ function WorkspaceAudioPreview(props: {
   const url = state.status === "loaded" ? state.src : null;
   if (state.status === "failed" || (url !== null && failedUrl === url)) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-xs leading-relaxed text-destructive">
-        Unable to load audio.
-        <Button
-          size="xs"
-          variant="outline"
-          onClick={() => {
-            setFailedUrl(null);
-            void retry();
-          }}
-        >
-          Retry
-        </Button>
-      </div>
+      <FileSurfaceFailure
+        message="Unable to load audio."
+        onRetry={() => {
+          setFailedUrl(null);
+          void retry();
+        }}
+      />
     );
   }
-  if (url === null)
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-        <Spinner className="size-5" />
-      </div>
-    );
+  if (url === null) return <FileSurfaceLoading />;
   return <AudioPreview src={url} name={props.name} onError={() => setFailedUrl(url)} />;
 }
 
-function parseLineColumn(value: string): { line: number; column: number } | null {
-  const match = /^\s*(\d+)(?:\s*:\s*(\d+))?\s*$/.exec(value);
-  if (!match?.[1]) return null;
-  return {
-    line: Math.max(1, Number.parseInt(match[1], 10)),
-    column: Math.max(1, Number.parseInt(match[2] ?? "1", 10)),
-  };
-}
-
-function GoToLineDialog(props: {
-  open: boolean;
-  initialValue: string;
-  onOpenChange: (open: boolean) => void;
-  onSubmit: (line: number, column: number) => void;
-}) {
-  const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const parsed = parseLineColumn(value);
-  useEffect(() => {
-    if (!props.open) return;
-    setValue(props.initialValue);
-    requestAnimationFrame(() => inputRef.current?.select());
-  }, [props.initialValue, props.open]);
-  return (
-    <Dialog open={props.open} onOpenChange={props.onOpenChange}>
-      <DialogPopup className="max-w-md" showCloseButton={false}>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!parsed) return;
-            props.onSubmit(parsed.line, parsed.column);
-            props.onOpenChange(false);
-            setValue("");
-          }}
-        >
-          <DialogHeader className="pb-5">
-            <DialogTitle className="text-lg">Go to line</DialogTitle>
-          </DialogHeader>
-          <div className="flex items-center gap-3 px-6 pb-5">
-            <label htmlFor="file-go-to-line" className="shrink-0 text-sm text-muted-foreground">
-              Line and column
-            </label>
-            <Input
-              id="file-go-to-line"
-              ref={inputRef}
-              autoFocus
-              nativeInput
-              aria-label="Line and column"
-              placeholder="12:4"
-              value={value}
-              onChange={(event) => setValue(event.currentTarget.value)}
-            />
-          </div>
-          <DialogFooter className="py-3">
-            <Button type="button" variant="outline" onClick={() => props.onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={!parsed}>
-              OK
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogPopup>
-    </Dialog>
-  );
-}
-
-function FileFindBar(props: {
-  open: boolean;
-  requestId: number;
-  contents: string;
-  onClose: () => void;
-  onMatchChange: (match: FileTextMatch | null) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
-  const [useRegex, setUseRegex] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const findBarRef = useRef<HTMLDivElement>(null);
-  const matchResult = useMemo(
-    () =>
-      findTextMatches({
-        contents: props.contents,
-        query,
-        caseSensitive,
-        wholeWord,
-        useRegex,
-      }),
-    [caseSensitive, props.contents, query, useRegex, wholeWord],
-  );
-  const matches = matchResult.matches;
-  const resolvedIndex = matches.length === 0 ? 0 : Math.min(selectedIndex, matches.length - 1);
-
-  useEffect(() => setSelectedIndex(0), [caseSensitive, query, useRegex, wholeWord]);
-
-  useEffect(() => {
-    if (!props.open || !findBarRef.current) return;
-    return retainFileFindFocus(findBarRef.current);
-  }, [props.open]);
-  useEffect(() => {
-    if (!props.open) return;
-    // Let the editor finish its layout before moving focus into the find bar.
-    const frame = requestAnimationFrame(() => {
-      inputRef.current?.focus({ preventScroll: true });
-      inputRef.current?.select();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [props.open, props.requestId]);
-  useEffect(() => {
-    if (!props.open) return;
-    props.onMatchChange(matches[resolvedIndex] ?? null);
-  }, [matches, props.onMatchChange, props.open, resolvedIndex]);
-
-  if (!props.open) return null;
-
-  const navigate = (direction: -1 | 1) => {
-    if (matches.length === 0) return;
-    setSelectedIndex((current) => (current + direction + matches.length) % matches.length);
-  };
-
-  return (
-    <div
-      ref={findBarRef}
-      className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 bg-muted/25 px-2"
-    >
-      <InputGroup className="h-8 min-w-0 flex-1 max-w-xl bg-background">
-        <InputGroupAddon>
-          <Search className="size-3.5 text-icon-muted" />
-        </InputGroupAddon>
-        <InputGroupInput
-          ref={inputRef}
-          aria-label="Find in file"
-          placeholder="Find in file"
-          spellCheck={false}
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              props.onClose();
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              navigate(event.shiftKey ? -1 : 1);
-            }
-          }}
-        />
-        <InputGroupAddon align="inline-end" className="gap-0.5 pe-1">
-          <Toggle
-            pressed={caseSensitive}
-            onPressedChange={setCaseSensitive}
-            aria-label="Match case"
-            size="sm"
-            variant="ghost"
-          >
-            <CaseSensitive className="size-3.5" />
-          </Toggle>
-
-          <Toggle
-            pressed={wholeWord}
-            onPressedChange={setWholeWord}
-            aria-label="Match whole word"
-            size="sm"
-            variant="ghost"
-          >
-            <WholeWord className="size-3.5" />
-          </Toggle>
-          <Toggle
-            pressed={useRegex}
-            onPressedChange={setUseRegex}
-            aria-label="Use regular expression"
-            size="sm"
-            variant="ghost"
-          >
-            <span className="font-mono text-xs">.*</span>
-          </Toggle>
-        </InputGroupAddon>
-      </InputGroup>
-      <span className="w-16 shrink-0 text-center text-[11px] tabular-nums text-muted-foreground">
-        {query
-          ? matchResult.regexError
-            ? "Invalid regex"
-            : matches.length > 0
-              ? `${resolvedIndex + 1} of ${matches.length}${matchResult.truncated ? "+" : ""}`
-              : "0 results"
-          : ""}
-      </span>
-      <Button
-        type="button"
-        size="icon-xs"
-        variant="ghost"
-        aria-label="Previous match"
-        onClick={() => navigate(-1)}
-      >
-        <ArrowUp />
-      </Button>
-      <Button
-        type="button"
-        size="icon-xs"
-        variant="ghost"
-        aria-label="Next match"
-        onClick={() => navigate(1)}
-      >
-        <ArrowDown />
-      </Button>
-      <Button
-        type="button"
-        size="icon-xs"
-        variant="ghost"
-        aria-label="Close find"
-        onClick={props.onClose}
-      >
-        <X />
-      </Button>
-    </div>
-  );
-}
-
 function clampFileLine(contents: string, requestedLine: number): number {
-  const count = contents.split(/\r\n|\r|\n/).length;
-  return Math.min(Math.max(1, requestedLine), count);
+  let lineCount = 1;
+  for (let index = 0; index < contents.length; index += 1) {
+    const character = contents.charCodeAt(index);
+    if (character === 10) {
+      lineCount += 1;
+    } else if (character === 13) {
+      lineCount += 1;
+      if (contents.charCodeAt(index + 1) === 10) index += 1;
+    }
+  }
+  return Math.min(Math.max(1, requestedLine), lineCount);
 }
 
 function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): void {
@@ -481,6 +210,7 @@ function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): 
     element.removeAttribute(FILE_LINK_REVEAL_ATTRIBUTE);
   }
   if (line === null) return;
+
   root
     .querySelector<HTMLElement>(`[data-line="${line}"]`)
     ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
@@ -489,1005 +219,320 @@ function updateFileLinkReveal(fileContainer: HTMLElement, line: number | null): 
     ?.setAttribute(FILE_LINK_REVEAL_ATTRIBUTE, "");
 }
 
+/**
+ * Frames to keep retrying while the file contents or line metrics are not
+ * available yet (fresh mounts hydrate asynchronously).
+ */
+const REVEAL_MAX_ATTEMPTS = 30;
+/**
+ * After scrolling to the target, hold it for a short window so late
+ * programmatic scroll resets (editable-editor focus and state restoration)
+ * cannot silently snap the file back to the top. Real user input cancels the
+ * guard immediately.
+ */
+const REVEAL_GUARD_FRAMES = 20;
+const REVEAL_GUARD_TOLERANCE_PX = 2;
+
+interface FileRevealState {
+  frameId: number | null;
+  cancelGuard: (() => void) | null;
+  handledRequestId: number | null;
+  latestRequestId: number | null;
+}
+
 function useFileLineReveal(
   relativePath: string | null,
   revealLine: number | null,
   revealRequestId: number,
 ): FilePostRender {
-  const stateRef = useRef<{ request: FileLineRevealRequest | null; frame: number | null }>({
-    request: null,
-    frame: null,
-  });
+  const [revealStatesByPath] = useState(() => new Map<string, FileRevealState>());
+
   return useCallback<FilePostRender>(
     (fileContainer, instance, phase) => {
+      if (relativePath === null) return;
+
+      const existingState = revealStatesByPath.get(relativePath);
+      const state: FileRevealState = existingState ?? {
+        frameId: null,
+        cancelGuard: null,
+        handledRequestId: null,
+        latestRequestId: null,
+      };
+      if (!existingState) revealStatesByPath.set(relativePath, state);
+
+      const cancelPendingReveal = () => {
+        if (state.frameId !== null) {
+          cancelAnimationFrame(state.frameId);
+          state.frameId = null;
+        }
+        state.cancelGuard?.();
+      };
+
       if (phase === "unmount") {
-        if (stateRef.current.frame !== null) cancelAnimationFrame(stateRef.current.frame);
-        stateRef.current.frame = null;
+        cancelPendingReveal();
         return;
       }
+
       const contents = instance.file?.contents;
-      const line =
+      const targetLine =
         revealLine === null || contents === undefined ? null : clampFileLine(contents, revealLine);
-      updateFileLinkReveal(fileContainer, line);
-      const request =
-        relativePath === null || line === null
-          ? null
-          : { requestId: revealRequestId, relativePath, line };
-      if (
-        request === null ||
-        !(instance instanceof VirtualizedFile) ||
-        isSameFileLineRevealRequest(stateRef.current.request, request) ||
-        stateRef.current.frame !== null
-      ) {
+      updateFileLinkReveal(fileContainer, targetLine);
+
+      if (!(instance instanceof VirtualizedFile)) return;
+
+      if (state.latestRequestId !== revealRequestId) {
+        cancelPendingReveal();
+        state.latestRequestId = revealRequestId;
+        state.handledRequestId = null;
+      }
+
+      if (revealLine === null) {
+        fileContainer.style.minHeight = "";
         return;
       }
+
       const scrollContainer = fileContainer.closest<HTMLElement>(".file-preview-virtualizer");
       if (!scrollContainer) return;
-      const attemptReveal = (attempt: number) => {
-        stateRef.current.frame = requestAnimationFrame(() => {
-          stateRef.current.frame = null;
-          const position = instance.getLinePosition(request.line);
-          if (!position) {
-            if (attempt < 30) attemptReveal(attempt + 1);
-            return;
-          }
-          const viewport = scrollContainer.getBoundingClientRect();
-          const fileTop =
-            scrollContainer.scrollTop + fileContainer.getBoundingClientRect().top - viewport.top;
-          const rendered = (fileContainer.shadowRoot ?? fileContainer)
-            .querySelector<HTMLElement>(`[data-line="${request.line}"]`)
-            ?.getBoundingClientRect();
-          scrollContainer.scrollTop = resolveCenteredFileLineScrollTop({
-            scrollTop: scrollContainer.scrollTop,
-            scrollHeight: scrollContainer.scrollHeight,
-            viewportTop: viewport.top,
-            viewportHeight: scrollContainer.clientHeight,
-            fileTop,
-            estimatedLine: position,
-            ...(rendered ? { renderedLine: { top: rendered.top, height: rendered.height } } : {}),
-          });
-          stateRef.current.request = request;
-          updateFileLinkReveal(fileContainer, request.line);
-        });
-      };
-      attemptReveal(0);
-    },
-    [relativePath, revealLine, revealRequestId],
-  );
-}
+      fileContainer.style.minHeight = `${Math.ceil(
+        Math.max(instance.height, scrollContainer.clientHeight),
+      )}px`;
 
-function SearchFilePreview(props: {
-  environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
-  cwd: string;
-  relativePath: string | null;
-  line: number | null;
-  revealRequestId: number;
-}) {
-  const { resolvedTheme } = useTheme();
-  const file = useProjectFileQuery(
-    props.environmentId,
-    props.threadRef.threadId,
-    props.cwd,
-    props.relativePath,
-  );
-  const onPostRender = useFileLineReveal(props.relativePath, props.line, props.revealRequestId);
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col bg-code-background">
-      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border/60 bg-background px-3 text-xs">
-        <FileIcon className="size-3.5 text-icon-muted" />
-        <span className="min-w-0 flex-1 truncate font-medium">
-          {props.relativePath ?? "File preview"}
-        </span>
-        {props.line ? <span className="text-muted-foreground">Line {props.line}</span> : null}
-      </div>
-      {!props.relativePath ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center text-xs text-muted-foreground">
-          Select a result to preview it.
-        </div>
-      ) : file.data === null ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          {file.error ? (
-            <span className="px-4 text-center text-xs text-destructive">{file.error}</span>
-          ) : (
-            <LoaderCircle className="size-4 animate-spin text-muted-foreground" />
-          )}
-        </div>
-      ) : (
-        <Virtualizer className="file-preview-virtualizer min-h-0 flex-1 overflow-auto">
-          <File
-            file={{
-              name: props.relativePath,
-              contents: file.data.contents,
-              cacheKey: projectFileCacheKey(props.cwd, props.relativePath, file.data.contents),
-            }}
-            options={{
-              disableFileHeader: true,
-              overflow: "scroll",
-              theme: resolveDiffThemeName(resolvedTheme),
-              preferredHighlighter: PREFERRED_HIGHLIGHTER,
-              themeType: resolvedTheme,
-              unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
-              onPostRender,
-            }}
-            className="min-h-full"
-          />
-        </Virtualizer>
-      )}
-    </div>
-  );
-}
-
-function SearchDialogHeader(props: {
-  title: string;
-  summary: string;
-  summaryLive?: boolean;
-  query: string;
-  fileMask: string;
-  queryPlaceholder: string;
-  queryTestId?: string;
-  queryOptions?: ReactNode;
-  queryActiveDescendant?: string;
-  queryControls?: string;
-  onQueryChange: (value: string) => void;
-  onFileMaskChange: (value: string) => void;
-}) {
-  return (
-    <div className="shrink-0 border-b border-border/60 bg-background">
-      <div className="flex min-h-11 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 sm:h-11 sm:flex-nowrap sm:px-4 sm:py-0">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <h2 className="shrink-0 whitespace-nowrap font-heading font-semibold text-sm">
-            {props.title}
-          </h2>
-          <span
-            aria-atomic={props.summaryLive || undefined}
-            aria-live={props.summaryLive ? "polite" : undefined}
-            className="min-w-0 truncate text-xs text-muted-foreground"
-            role={props.summaryLive ? "status" : undefined}
-          >
-            {props.summary}
-          </span>
-        </div>
-        <InputGroup className="h-7 w-full sm:ms-auto sm:w-64" variant="ghost">
-          <InputGroupAddon>
-            <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-muted-foreground">
-              <Filter className="mx-0! size-3.5 shrink-0" />
-              <span className="whitespace-nowrap text-[11px]">File mask:</span>
-            </span>
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="File mask"
-            placeholder="*.ts, !*.test.ts"
-            maxLength={PROJECT_SEARCH_INPUT_MAX_LENGTH}
-            size="sm"
-            spellCheck={false}
-            value={props.fileMask}
-            onChange={(event) =>
-              props.onFileMaskChange(
-                event.currentTarget.value.slice(0, PROJECT_SEARCH_INPUT_MAX_LENGTH),
-              )
-            }
-          />
-        </InputGroup>
-      </div>
-      <div className="px-[var(--command-shell-inset)] py-1.5">
-        <InputGroup
-          className="h-10 rounded-lg border-transparent! bg-transparent! shadow-none! ring-0! hover:bg-transparent! has-[input:focus-visible]:border-transparent! has-[input:focus-visible]:bg-transparent! has-[input:focus-visible]:ring-0!"
-          variant="ghost"
-        >
-          <InputGroupAddon>
-            <Search className="size-4 text-icon-muted" />
-          </InputGroupAddon>
-          <InputGroupInput
-            autoFocus
-            data-testid={props.queryTestId}
-            aria-activedescendant={props.queryActiveDescendant}
-            aria-autocomplete={props.queryControls ? "list" : undefined}
-            aria-controls={props.queryControls}
-            aria-expanded={props.queryControls ? true : undefined}
-            aria-label={props.title}
-            role={props.queryControls ? "combobox" : undefined}
-            placeholder={props.queryPlaceholder}
-            maxLength={PROJECT_SEARCH_INPUT_MAX_LENGTH}
-            size="lg"
-            spellCheck={false}
-            value={props.query}
-            onChange={(event) =>
-              props.onQueryChange(
-                event.currentTarget.value.slice(0, PROJECT_SEARCH_INPUT_MAX_LENGTH),
-              )
-            }
-          />
-          {props.queryOptions ? (
-            <InputGroupAddon align="inline-end" className="gap-0.5 pe-1">
-              {props.queryOptions}
-            </InputGroupAddon>
-          ) : null}
-        </InputGroup>
-      </div>
-    </div>
-  );
-}
-
-function SearchDialogFooter() {
-  return (
-    <CommandFooter className="shrink-0 gap-3 border-t border-border/60 max-sm:flex-col max-sm:items-start">
-      <div className="flex items-center gap-3">
-        <KbdGroup className="items-center gap-1.5">
-          <Kbd>
-            <ArrowUp />
-          </Kbd>
-          <Kbd>
-            <ArrowDown />
-          </Kbd>
-          <span>Navigate</span>
-        </KbdGroup>
-        <KbdGroup className="items-center gap-1.5">
-          <Kbd>Enter</Kbd>
-          <span>Open</span>
-        </KbdGroup>
-        <KbdGroup className="items-center gap-1.5">
-          <Kbd>Esc</Kbd>
-          <span>Close</span>
-        </KbdGroup>
-      </div>
-    </CommandFooter>
-  );
-}
-
-function HighlightedFuzzyText(props: {
-  readonly active: boolean;
-  readonly indices: ReadonlyArray<number>;
-  readonly value: string;
-}) {
-  if (!props.active) return props.value;
-  const parts: ReactNode[] = [];
-  let start = 0;
-  for (const index of props.indices) {
-    if (start < index) parts.push(props.value.slice(start, index));
-    parts.push(
-      <strong className="font-semibold text-current" key={index}>
-        {props.value[index]}
-      </strong>,
-    );
-    start = index + 1;
-  }
-  if (start < props.value.length) parts.push(props.value.slice(start));
-  return <>{parts}</>;
-}
-
-export function FileSearchDialog(props: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
-  cwd: string;
-  projectName: string;
-  onOpenFile: (relativePath: string) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [fileMask, setFileMask] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const result = useProjectPathSearch(
-    {
-      environmentId: props.open ? props.environmentId : null,
-      cwd: props.open ? props.cwd : null,
-      query,
-      kind: "file",
-      fileMask,
-    },
-    200,
-    { allowEmptyQuery: true },
-  );
-  const files = useMemo(
-    () => getFileSearchMatches(result.entries, result.searchedQuery),
-    [result.entries, result.searchedQuery],
-  );
-  const hasSearchedQuery = /\S/u.test(result.searchedQuery);
-  const selected = files[Math.min(selectedIndex, Math.max(0, files.length - 1))] ?? null;
-
-  useEffect(() => setSelectedIndex(0), [fileMask, query]);
-  useEffect(() => {
-    if (props.open) return;
-    setQuery("");
-    setFileMask("");
-    setSelectedIndex(0);
-  }, [props.open]);
-
-  const openSelected = () => {
-    if (!selected) return;
-    props.onOpenFile(selected.path);
-    props.onOpenChange(false);
-  };
-
-  return (
-    <CommandDialog open={props.open} onOpenChange={props.onOpenChange}>
-      {props.open ? (
-        <CommandDialogPopup
-          aria-label="Search files"
-          className="h-[min(46rem,82vh)] w-[min(64rem,calc(100vw-2rem))] max-h-[82vh] max-w-none overflow-hidden p-0"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setSelectedIndex((current) => Math.min(files.length - 1, current + 1));
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setSelectedIndex((current) => Math.max(0, current - 1));
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              openSelected();
-            }
-          }}
-        >
-          <div className="flex size-full min-h-0 flex-col" data-testid="file-search-dialog">
-            <SearchDialogHeader
-              title="Search Files"
-              summary={`${files.length}${files.length === 200 ? "+" : ""} files in ${props.projectName}`}
-              query={query}
-              fileMask={fileMask}
-              queryPlaceholder="Search by file name or path…"
-              onQueryChange={setQuery}
-              onFileMaskChange={setFileMask}
-            />
-            <div className="grid min-h-0 flex-1 grid-rows-[minmax(9rem,42%)_minmax(0,1fr)]">
-              <div className="min-h-0 overflow-auto border-b border-border/60 p-2">
-                {result.isPending && files.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    Loading project files…
-                  </div>
-                ) : files.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No files match this search.
-                  </div>
-                ) : (
-                  files.map((entry, index) => (
-                    <button
-                      key={entry.path}
-                      type="button"
-                      className={cn(
-                        "flex min-h-8 w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-base sm:min-h-7 sm:text-sm",
-                        index === selectedIndex
-                          ? "bg-accent text-accent-foreground"
-                          : "hover:bg-foreground/[0.06]",
-                      )}
-                      onClick={() => setSelectedIndex(index)}
-                      onDoubleClick={() => {
-                        props.onOpenFile(entry.path);
-                        props.onOpenChange(false);
-                      }}
-                    >
-                      <FileIcon className="size-3.5 shrink-0 opacity-75" />
-                      <span className="shrink-0 font-medium">
-                        <HighlightedFuzzyText
-                          active={hasSearchedQuery}
-                          indices={entry.nameMatchIndices}
-                          value={entry.name}
-                        />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate opacity-65">
-                        <HighlightedFuzzyText
-                          active={hasSearchedQuery}
-                          indices={entry.pathMatchIndices}
-                          value={entry.path}
-                        />
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-              <SearchFilePreview
-                environmentId={props.environmentId}
-                threadRef={props.threadRef}
-                cwd={props.cwd}
-                relativePath={selected?.path ?? null}
-                line={null}
-                revealRequestId={selectedIndex + 1}
-              />
-            </div>
-            <SearchDialogFooter />
-          </div>
-        </CommandDialogPopup>
-      ) : null}
-    </CommandDialog>
-  );
-}
-
-const CONTENT_SEARCH_VISIBLE_WINDOW = 100;
-const CONTENT_SEARCH_RESULTS_ID = "project-text-search-results";
-
-function contentSearchResultId(resultIndex: number): string {
-  return `project-text-search-result-${resultIndex}`;
-}
-
-function formatContentSearchSummary(matchCount: number, fileCount: number, truncated: boolean) {
-  const matches = matchCount === 1 ? "match" : "matches";
-  const files = fileCount === 1 ? "file" : "files";
-  return `${matchCount}${truncated ? "+" : ""} ${matches} in ${fileCount} ${files}`;
-}
-
-interface ContentSearchGroup {
-  readonly path: string;
-  readonly totalCount: number;
-  readonly matches: ReadonlyArray<ProjectTextSearchMatch & { readonly resultIndex: number }>;
-}
-
-function groupContentMatches(
-  matches: ReadonlyArray<ProjectTextSearchMatch>,
-  visibleCount: number,
-): ContentSearchGroup[] {
-  const totals = new Map<string, number>();
-  for (const match of matches) totals.set(match.path, (totals.get(match.path) ?? 0) + 1);
-  const groups = new Map<
-    string,
-    Array<ProjectTextSearchMatch & { readonly resultIndex: number }>
-  >();
-  matches.slice(0, visibleCount).forEach((match, resultIndex) => {
-    const indexed = { ...match, resultIndex };
-    const group = groups.get(match.path);
-    if (group) group.push(indexed);
-    else groups.set(match.path, [indexed]);
-  });
-  return [...groups].map(([path, groupedMatches]) => ({
-    path,
-    totalCount: totals.get(path) ?? groupedMatches.length,
-    matches: groupedMatches,
-  }));
-}
-
-export function ProjectTextSearchDialog(props: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
-  cwd: string;
-  projectName: string;
-  onOpenFile: (relativePath: string, line?: number) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [fileMask, setFileMask] = useState("");
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [wholeWord, setWholeWord] = useState(false);
-  const [useRegex, setUseRegex] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [visibleCount, setVisibleCount] = useState(CONTENT_SEARCH_VISIBLE_WINDOW);
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  const searchRootRef = useRef<HTMLDivElement>(null);
-  const focusSelectedResultRef = useRef(false);
-  const { resolvedTheme } = useTheme();
-  const result = useProjectTextSearch({
-    environmentId: props.open ? props.environmentId : null,
-    threadId: props.open ? props.threadRef.threadId : null,
-    cwd: props.open ? props.cwd : null,
-    query,
-    fileMask,
-    caseSensitive,
-    wholeWord,
-    useRegex,
-  });
-  const groups = useMemo(
-    () => groupContentMatches(result.matches, visibleCount),
-    [result.matches, visibleCount],
-  );
-  const fileCount = useMemo(
-    () => new Set(result.matches.map((match) => match.path)).size,
-    [result.matches],
-  );
-  const resolvedSelectedIndex =
-    result.matches.length === 0 ? null : Math.min(selectedIndex, result.matches.length - 1);
-  const selected =
-    resolvedSelectedIndex === null ? null : (result.matches[resolvedSelectedIndex] ?? null);
-  const canOpenSelected = !result.isPending && !result.error && !result.regexFallbackError;
-
-  useEffect(() => {
-    focusSelectedResultRef.current = false;
-    setSelectedIndex(0);
-    setVisibleCount(CONTENT_SEARCH_VISIBLE_WINDOW);
-  }, [caseSensitive, fileMask, query, useRegex, wholeWord]);
-  useEffect(() => {
-    if (selectedIndex >= visibleCount) {
-      setVisibleCount(selectedIndex + CONTENT_SEARCH_VISIBLE_WINDOW);
-      return;
-    }
-    const resultElement = searchRootRef.current?.querySelector<HTMLElement>(
-      `[data-content-search-result="${selectedIndex}"]`,
-    );
-    resultElement?.scrollIntoView({ block: "nearest" });
-    if (focusSelectedResultRef.current && resultElement) {
-      focusSelectedResultRef.current = false;
-      resultElement.focus();
-    }
-  }, [selectedIndex, visibleCount]);
-  useEffect(() => {
-    const sentinel = loadMoreRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) {
-        setVisibleCount((current) => current + CONTENT_SEARCH_VISIBLE_WINDOW);
-      }
-    });
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [groups]);
-  useEffect(() => {
-    if (props.open) return;
-    setQuery("");
-    setFileMask("");
-    setCaseSensitive(false);
-    setWholeWord(false);
-    setUseRegex(false);
-    setSelectedIndex(0);
-  }, [props.open]);
-
-  const openSelected = () => {
-    if (!selected || !canOpenSelected) return;
-    props.onOpenFile(selected.path, selected.lineNumber);
-    props.onOpenChange(false);
-  };
-
-  return (
-    <CommandDialog open={props.open} onOpenChange={props.onOpenChange}>
-      {props.open ? (
-        <CommandDialogPopup
-          aria-label="Find text in project"
-          className="h-[min(46rem,82vh)] w-[min(64rem,calc(100vw-2rem))] max-h-[82vh] max-w-none overflow-hidden p-0"
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              if (result.matches.length > 0) {
-                const moveFocus =
-                  event.target instanceof Element &&
-                  event.target.closest("[data-content-search-result]") !== null;
-                focusSelectedResultRef.current = moveFocus;
-                setSelectedIndex((current) => {
-                  const next = (current + 1) % result.matches.length;
-                  return next;
-                });
-              }
-            } else if (event.key === "ArrowUp") {
-              event.preventDefault();
-              if (result.matches.length > 0) {
-                const moveFocus =
-                  event.target instanceof Element &&
-                  event.target.closest("[data-content-search-result]") !== null;
-                focusSelectedResultRef.current = moveFocus;
-                setSelectedIndex((current) => {
-                  const next = (current - 1 + result.matches.length) % result.matches.length;
-                  return next;
-                });
-              }
-            } else if (event.key === "Enter") {
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-              if (event.target instanceof Element && event.target.closest("button")) return;
-              event.preventDefault();
-              openSelected();
-            }
-          }}
-        >
-          <div
-            ref={searchRootRef}
-            className="flex size-full min-h-0 flex-col"
-            data-testid="project-text-search"
-          >
-            <SearchDialogHeader
-              title="Find in Files"
-              summary={
-                query.length === 0
-                  ? `Search ${props.projectName}`
-                  : result.isPending
-                    ? "Searching…"
-                    : result.error
-                      ? "Search failed"
-                      : result.regexFallbackError
-                        ? "Invalid regular expression"
-                        : formatContentSearchSummary(
-                            result.matches.length,
-                            fileCount,
-                            result.truncated,
-                          )
-              }
-              summaryLive
-              query={query}
-              fileMask={fileMask}
-              queryPlaceholder={`Find text in ${props.projectName}…`}
-              queryTestId="project-text-search-input"
-              {...(query.length > 0 && canOpenSelected && resolvedSelectedIndex !== null
-                ? { queryActiveDescendant: contentSearchResultId(resolvedSelectedIndex) }
-                : {})}
-              queryControls={CONTENT_SEARCH_RESULTS_ID}
-              queryOptions={
-                <>
-                  <Toggle
-                    aria-label="Match case"
-                    pressed={caseSensitive}
-                    size="sm"
-                    variant="ghost"
-                    onPressedChange={setCaseSensitive}
-                  >
-                    <CaseSensitive className="size-3.5" />
-                  </Toggle>
-                  <Toggle
-                    aria-label="Match whole word"
-                    pressed={wholeWord}
-                    size="sm"
-                    variant="ghost"
-                    onPressedChange={setWholeWord}
-                  >
-                    <WholeWord className="size-3.5" />
-                  </Toggle>
-                  <Toggle
-                    aria-label="Use regular expression"
-                    pressed={useRegex}
-                    size="sm"
-                    variant="ghost"
-                    onPressedChange={setUseRegex}
-                  >
-                    <span className="font-mono text-xs">.*</span>
-                  </Toggle>
-                </>
-              }
-              onQueryChange={setQuery}
-              onFileMaskChange={setFileMask}
-            />
-            <div className="grid min-h-0 flex-1 grid-rows-[minmax(10rem,46%)_minmax(0,1fr)]">
-              <div
-                id={CONTENT_SEARCH_RESULTS_ID}
-                className="min-h-0 overflow-auto border-b border-border/60 px-2 pb-2"
-              >
-                {query.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    Type to search project text.
-                  </div>
-                ) : result.error ? (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 text-xs text-destructive">
-                    Project search failed.
-                    <button type="button" onClick={result.restartSearch} className="underline">
-                      Retry search
-                    </button>
-                  </div>
-                ) : result.regexFallbackError ? (
-                  <div className="flex h-full items-center justify-center text-xs text-destructive">
-                    Invalid regular expression.
-                  </div>
-                ) : !result.isPending && result.matches.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                    No matches found.
-                  </div>
-                ) : (
-                  <div role="listbox" aria-label="Search results">
-                    {groups.map((group) => (
-                      <section
-                        aria-label={group.path}
-                        className="pb-2"
-                        key={group.path}
-                        role="group"
-                      >
-                        <div className="sticky top-0 z-10 flex h-8 items-center gap-2 bg-background px-2 text-xs">
-                          <FileIcon className="size-3.5 shrink-0 opacity-75" />
-                          <span className="min-w-0 flex-1 truncate font-medium">{group.path}</span>
-                          <span className="rounded-full bg-muted px-1.5 py-0.5 tabular-nums text-[10px] text-muted-foreground">
-                            {group.totalCount}
-                          </span>
-                        </div>
-                        {group.matches.map((match) => (
-                          <button
-                            key={`${match.path}:${match.lineNumber}:${match.resultIndex}`}
-                            id={contentSearchResultId(match.resultIndex)}
-                            type="button"
-                            role="option"
-                            data-content-search-result={match.resultIndex}
-                            disabled={!canOpenSelected}
-                            aria-current={
-                              match.resultIndex === resolvedSelectedIndex ? "true" : undefined
-                            }
-                            aria-selected={match.resultIndex === resolvedSelectedIndex}
-                            aria-label={`${group.path}, line ${match.lineNumber}: ${match.lineContent}`}
-                            tabIndex={match.resultIndex === resolvedSelectedIndex ? 0 : -1}
-                            className={cn(
-                              "flex h-7 w-full min-w-0 items-center gap-3 rounded-sm px-2 text-left font-mono text-xs disabled:pointer-events-none",
-                              match.resultIndex === resolvedSelectedIndex
-                                ? "bg-accent text-accent-foreground [&_mark]:bg-foreground/15! [&_mark]:text-foreground!"
-                                : "hover:bg-foreground/[0.06]",
-                            )}
-                            onKeyDown={(event) => {
-                              if (event.key !== "Enter") return;
-                              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
-                              event.preventDefault();
-                              event.stopPropagation();
-                              if (!canOpenSelected) return;
-                              props.onOpenFile(match.path, match.lineNumber);
-                              props.onOpenChange(false);
-                            }}
-                            onFocus={() => setSelectedIndex(match.resultIndex)}
-                            onClick={() => setSelectedIndex(match.resultIndex)}
-                            onDoubleClick={() => {
-                              if (!canOpenSelected) return;
-                              props.onOpenFile(match.path, match.lineNumber);
-                              props.onOpenChange(false);
-                            }}
-                          >
-                            <span className="w-10 shrink-0 text-right tabular-nums opacity-65">
-                              {match.lineNumber}
-                            </span>
-                            <span className="min-w-0 flex-1 truncate whitespace-pre">
-                              <HighlightedSearchLine
-                                match={match}
-                                path={group.path}
-                                theme={resolvedTheme}
-                              />
-                            </span>
-                          </button>
-                        ))}
-                      </section>
-                    ))}
-                    {result.matches.length > visibleCount ? (
-                      <div ref={loadMoreRef} className="h-8" aria-hidden="true" />
-                    ) : null}
-                  </div>
-                )}
-                {result.hasMore && (
-                  <button
-                    type="button"
-                    disabled={result.isPending}
-                    onClick={result.loadMore}
-                    className="px-4 py-2 text-sm"
-                  >
-                    Load more matches
-                  </button>
-                )}
-              </div>
-              <SearchFilePreview
-                environmentId={props.environmentId}
-                threadRef={props.threadRef}
-                cwd={props.cwd}
-                relativePath={selected?.path ?? null}
-                line={selected?.lineNumber ?? null}
-                revealRequestId={(resolvedSelectedIndex ?? 0) + 1}
-              />
-            </div>
-            <SearchDialogFooter />
-          </div>
-        </CommandDialogPopup>
-      ) : null}
-    </CommandDialog>
-  );
-}
-
-function captureFileViewAnchor(
-  fileContainer: HTMLElement,
-  instance: VirtualizedFile<unknown>,
-): FileEditorViewAnchor | undefined {
-  const scrollContainer = fileContainer.closest<HTMLElement>(".file-preview-virtualizer");
-  if (!scrollContainer || scrollContainer.scrollTop === 0) return undefined;
-  const viewport = scrollContainer.getBoundingClientRect();
-  const renderedAnchor = resolveVisibleFileLineAnchor({
-    viewportTop: viewport.top,
-    viewportBottom: viewport.bottom,
-    lines: [
-      ...(fileContainer.shadowRoot ?? fileContainer).querySelectorAll<HTMLElement>(
-        "[data-line], [data-column-number]",
-      ),
-    ].flatMap((element) => {
-      const lineNumber = Number(element.dataset.line ?? element.dataset.columnNumber);
-      if (!Number.isFinite(lineNumber) || lineNumber < 1) return [];
-      const bounds = element.getBoundingClientRect();
-      return [{ lineNumber, top: bounds.top, bottom: bounds.bottom }];
-    }),
-  });
-  if (renderedAnchor) {
-    return renderedAnchor;
-  }
-  const fileTop =
-    scrollContainer.scrollTop + fileContainer.getBoundingClientRect().top - viewport.top;
-  const lineAnchor = instance.getNumericScrollAnchor(
-    Math.max(0, scrollContainer.scrollTop - fileTop),
-  );
-  if (!lineAnchor) return undefined;
-  return {
-    lineNumber: lineAnchor.lineNumber,
-    viewportOffset: fileTop + lineAnchor.top - scrollContainer.scrollTop,
-  };
-}
-
-function useRetainedFileViewAnchor(
-  editorSession: { viewAnchor: FileEditorViewAnchor | undefined },
-  enabled: boolean,
-  onPostRender: FilePostRender,
-): FilePostRender {
-  const stateRef = useRef<{ frame: number | null; restored: boolean }>({
-    frame: null,
-    restored: false,
-  });
-  return useCallback<FilePostRender>(
-    (fileContainer, instance, phase) => {
-      onPostRender(fileContainer, instance, phase);
-      if (!(instance instanceof VirtualizedFile)) return;
-      if (phase === "unmount") {
-        if (stateRef.current.frame !== null) cancelAnimationFrame(stateRef.current.frame);
-        stateRef.current.frame = null;
-        stateRef.current.restored = false;
-        editorSession.viewAnchor = captureFileViewAnchor(fileContainer, instance);
+      if (state.handledRequestId === revealRequestId || state.frameId !== null) {
         return;
       }
-      const anchor = editorSession.viewAnchor;
-      if (!enabled || !anchor || stateRef.current.restored || stateRef.current.frame !== null) {
-        return;
-      }
-      const attemptRestore = (attempt: number) => {
-        stateRef.current.frame = requestAnimationFrame(() => {
-          stateRef.current.frame = null;
-          if (attempt < 2) {
-            attemptRestore(attempt + 1);
-            return;
-          }
-          const scrollContainer = fileContainer.closest<HTMLElement>(".file-preview-virtualizer");
-          const linePosition = instance.getLinePosition(anchor.lineNumber);
-          if (!scrollContainer || !linePosition || !fileContainer.isConnected) {
-            if (attempt < 30) attemptRestore(attempt + 1);
-            return;
-          }
-          const viewport = scrollContainer.getBoundingClientRect();
-          const fileTop =
-            scrollContainer.scrollTop + fileContainer.getBoundingClientRect().top - viewport.top;
-          scrollContainer.scrollTop = resolveAnchoredFileLineScrollTop({
-            scrollHeight: scrollContainer.scrollHeight,
-            viewportHeight: scrollContainer.clientHeight,
-            fileTop,
-            lineTop: linePosition.top,
-            viewportOffset: anchor.viewportOffset,
-          });
-          const renderedLine = (fileContainer.shadowRoot ?? fileContainer)
-            .querySelector<HTMLElement>(`[data-line="${anchor.lineNumber}"]`)
-            ?.getBoundingClientRect();
-          if (!renderedLine) {
-            if (attempt < 30) attemptRestore(attempt + 1);
-            return;
-          }
-          const renderedViewport = scrollContainer.getBoundingClientRect();
-          scrollContainer.scrollTop = resolveAnchoredFileLineScrollTop({
-            scrollHeight: scrollContainer.scrollHeight,
-            viewportHeight: scrollContainer.clientHeight,
-            fileTop: scrollContainer.scrollTop,
-            lineTop: renderedLine.top - renderedViewport.top,
-            viewportOffset: anchor.viewportOffset,
-          });
-          stateRef.current.restored = true;
+
+      const resolveScrollTarget = (line: number): number | null => {
+        const linePosition = instance.getLinePosition(line);
+        if (!linePosition) return null;
+
+        const scrollContainerRect = scrollContainer.getBoundingClientRect();
+        const fileTop =
+          scrollContainer.scrollTop +
+          fileContainer.getBoundingClientRect().top -
+          scrollContainerRect.top;
+        const root = fileContainer.shadowRoot ?? fileContainer;
+        const renderedLineElement = root.querySelector<HTMLElement>(`[data-line="${line}"]`);
+        const renderedLineRect = renderedLineElement?.getBoundingClientRect();
+
+        return resolveCenteredFileLineScrollTop({
+          scrollTop: scrollContainer.scrollTop,
+          scrollHeight: scrollContainer.scrollHeight,
+          viewportTop: scrollContainerRect.top,
+          viewportHeight: scrollContainer.clientHeight,
+          fileTop,
+          estimatedLine: linePosition,
+          ...(renderedLineRect && renderedLineRect.height > 0
+            ? {
+                renderedLine: {
+                  top: renderedLineRect.top,
+                  height: renderedLineRect.height,
+                },
+              }
+            : {}),
         });
       };
-      attemptRestore(0);
+
+      const guardScrollTarget = (line: number) => {
+        let framesLeft = REVEAL_GUARD_FRAMES;
+        let guardFrameId: number | null = null;
+        const cancelGuard = () => {
+          if (guardFrameId !== null) {
+            cancelAnimationFrame(guardFrameId);
+            guardFrameId = null;
+          }
+          scrollContainer.removeEventListener("wheel", cancelGuard);
+          scrollContainer.removeEventListener("touchstart", cancelGuard);
+          scrollContainer.removeEventListener("pointerdown", cancelGuard, true);
+          window.removeEventListener("keydown", cancelGuard, true);
+          if (state.cancelGuard === cancelGuard) state.cancelGuard = null;
+        };
+        scrollContainer.addEventListener("wheel", cancelGuard, { passive: true });
+        scrollContainer.addEventListener("touchstart", cancelGuard, { passive: true });
+        // Pierre stops gutter pointer events from bubbling. Listen in capture
+        // so starting a comment cancels the reveal guard before the row expands.
+        scrollContainer.addEventListener("pointerdown", cancelGuard, {
+          passive: true,
+          capture: true,
+        });
+        window.addEventListener("keydown", cancelGuard, true);
+        const holdTarget = () => {
+          guardFrameId = null;
+          framesLeft -= 1;
+          if (framesLeft <= 0 || !scrollContainer.isConnected) {
+            cancelGuard();
+            return;
+          }
+          const targetTop = resolveScrollTarget(line);
+          if (
+            targetTop !== null &&
+            Math.abs(scrollContainer.scrollTop - targetTop) > REVEAL_GUARD_TOLERANCE_PX
+          ) {
+            scrollContainer.scrollTop = targetTop;
+          }
+          guardFrameId = requestAnimationFrame(holdTarget);
+        };
+        guardFrameId = requestAnimationFrame(holdTarget);
+        state.cancelGuard = cancelGuard;
+      };
+
+      const scheduleReveal = (attempt: number) => {
+        state.frameId = requestAnimationFrame(() => {
+          state.frameId = null;
+          if (state.latestRequestId !== revealRequestId || !fileContainer.isConnected) {
+            return;
+          }
+
+          // Contents and line metrics can lag the first post-render on fresh
+          // mounts; clamping against missing contents would scroll to line 1
+          // and wrongly mark the request handled.
+          const currentContents = instance.file?.contents;
+          const line =
+            currentContents === undefined ? null : clampFileLine(currentContents, revealLine);
+          const targetTop = line === null ? null : resolveScrollTarget(line);
+          if (line === null || targetTop === null) {
+            if (attempt < REVEAL_MAX_ATTEMPTS) scheduleReveal(attempt + 1);
+            return;
+          }
+          updateFileLinkReveal(fileContainer, line);
+
+          scrollContainer.scrollTop = targetTop;
+          state.handledRequestId = revealRequestId;
+          guardScrollTarget(line);
+        });
+      };
+
+      scheduleReveal(0);
     },
-    [editorSession, enabled, onPostRender],
+    [revealStatesByPath, relativePath, revealLine, revealRequestId],
   );
 }
 
-function EditableFileSurface(props: {
+interface EditableFileSurfaceProps {
   environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
+  // Coder: writes name the owning thread and the revision the edit is based on.
+  threadId: ThreadId;
+  revision: string;
   cwd: string;
   relativePath: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
   contents: string;
-  revision: string;
   resolvedTheme: "light" | "dark";
   revealRequestId: number;
-  restoreViewAnchor: boolean;
   wordWrap: boolean;
   onPostRender: FilePostRender;
   onPendingChange: (relativePath: string, pending: boolean) => void;
   onSaveFailed: (relativePath: string) => void;
-}) {
+}
+
+interface FileSelectionOverride {
+  revealRequestId: number;
+  range: SelectedLineRange | null;
+}
+
+function EditableFileSurface({
+  environmentId,
+  threadId,
+  revision,
+  cwd,
+  relativePath,
+  composerDraftTarget,
+  contents,
+  resolvedTheme,
+  revealRequestId,
+  wordWrap,
+  onPostRender,
+  onPendingChange,
+  onSaveFailed,
+}: EditableFileSurfaceProps) {
   const addReviewComment = useComposerDraftStore((store) => store.addReviewComment);
   const removeReviewComment = useComposerDraftStore((store) => store.removeReviewComment);
   const [lineAnnotations, setLineAnnotations] = useState<FileCommentLineAnnotation[]>([]);
-  const [selectedRange, setSelectedRange] = useState<SelectedLineRange | null>(null);
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const saveCoordinator = useFileSaveCoordinator(props);
-  const handleEditorChange = useCallback(
-    (file: FileContents, nextAnnotations?: DiffLineAnnotation<FileCommentAnnotationGroup>[]) => {
-      setProjectFileQueryData(
-        props.environmentId,
-        props.threadRef.threadId,
-        props.cwd,
-        props.relativePath,
-        file.contents,
-      );
-      saveCoordinator.change(file.contents);
-      if (!nextAnnotations) return;
-      const remapped = remapFileCommentAnnotations(nextAnnotations as FileCommentLineAnnotation[]);
-      setLineAnnotations(remapped);
-      for (const annotation of remapped) {
-        for (const entry of annotation.metadata.entries) {
-          if (entry.kind !== "comment") continue;
-          addReviewComment(
-            props.composerDraftTarget,
-            buildFileReviewComment({
-              id: entry.id,
-              filePath: props.relativePath,
-              startLine: entry.startLine,
-              endLine: entry.endLine,
-              text: entry.text,
-              contents: file.contents,
-            }),
-          );
-        }
-      }
+  const [selectionOverride, setSelectionOverride] = useState<FileSelectionOverride | null>(null);
+  const selectedRange =
+    selectionOverride?.revealRequestId === revealRequestId ? selectionOverride.range : null;
+  const setSelectedRange = useCallback(
+    (range: SelectedLineRange | null) => {
+      setSelectionOverride({ revealRequestId, range });
     },
-    [
-      addReviewComment,
-      props.composerDraftTarget,
-      props.cwd,
-      props.environmentId,
-      props.relativePath,
-      props.threadRef.threadId,
-      saveCoordinator,
-    ],
+    [revealRequestId],
   );
-  const editorSession = useMemo(
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const selectionFrameRef = useRef<number | null>(null);
+  const saveCoordinator = useFileSaveCoordinator({
+    environmentId,
+    threadId,
+    revision,
+    cwd,
+    relativePath,
+    onPendingChange,
+    onSaveFailed,
+  });
+  // Coder: the editor is rebuilt per file, so it reads the revision through a ref.
+  const revisionRef = useRef(revision);
+  revisionRef.current = revision;
+  const editor = useMemo(
     () =>
-      getFileEditorSession(
-        {
-          threadRef: props.threadRef,
-          cwd: props.cwd,
-          relativePath: props.relativePath,
+      new Editor<FileCommentAnnotationGroup>({
+        persistState: true,
+        persistStateStorage: "inMemory",
+        onChange: (file, nextLineAnnotations) => {
+          setProjectFileQueryData(
+            environmentId,
+            cwd,
+            relativePath,
+            file.contents,
+            revisionRef.current,
+          );
+          saveCoordinator.change(file.contents);
+          if (nextLineAnnotations) {
+            const remapped = remapFileCommentAnnotations(
+              nextLineAnnotations as FileCommentLineAnnotation[],
+            );
+            setLineAnnotations(remapped);
+            for (const annotation of remapped) {
+              for (const entry of annotation.metadata.entries) {
+                if (entry.kind !== "comment") continue;
+                addReviewComment(
+                  composerDraftTarget,
+                  buildFileReviewComment({
+                    id: entry.id,
+                    filePath: relativePath,
+                    startLine: entry.startLine,
+                    endLine: entry.endLine,
+                    text: entry.text,
+                    contents: file.contents,
+                  }),
+                );
+              }
+            }
+          }
         },
-        props.contents,
-        props.revision,
-      ),
-    [props.contents, props.cwd, props.relativePath, props.revision, props.threadRef],
+      }),
+    [addReviewComment, composerDraftTarget, cwd, environmentId, relativePath, saveCoordinator],
   );
-  const editor = editorSession.editor;
-  const onPostRender = useRetainedFileViewAnchor(
-    editorSession,
-    props.restoreViewAnchor,
-    props.onPostRender,
-  );
-  useLayoutEffect(
-    () => bindFileEditorSession(editorSession, handleEditorChange),
-    [editorSession, handleEditorChange],
-  );
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const verifyRestoredViewport = (attempt: number) => {
-      timer = setTimeout(() => {
-        timer = null;
-        const scrollContainer = surfaceRef.current?.querySelector<HTMLElement>(
-          ".file-preview-virtualizer",
-        );
-        const fileContainer = scrollContainer?.querySelector<HTMLElement>("diffs-container");
-        const editable = fileContainer?.shadowRoot?.querySelector<HTMLElement>(
-          '[contenteditable="true"]',
-        );
-        if (!scrollContainer || !editable || scrollContainer.clientHeight === 0) {
-          if (attempt < 4) verifyRestoredViewport(attempt + 1);
-          return;
-        }
-        if (scrollContainer.scrollTop === 0) return;
-        const viewport = scrollContainer.getBoundingClientRect();
-        const content = editable.getBoundingClientRect();
-        if (content.bottom > viewport.top && content.top < viewport.bottom) return;
-        scrollContainer.scrollTop = 0;
-      }, 250);
-    };
-    verifyRestoredViewport(0);
-    return () => {
-      if (timer !== null) clearTimeout(timer);
-    };
-  }, [editorSession]);
 
-  const removeAnnotation = useCallback(
+  useEffect(
+    () => () => {
+      editor.cleanUp();
+    },
+    [editor],
+  );
+
+  const removeAnnotationEntry = useCallback(
     (entryId: string) => {
       setSelectedRange(null);
-      removeReviewComment(props.composerDraftTarget, entryId);
-      setLineAnnotations((current) =>
-        current.flatMap((annotation) => {
+      removeReviewComment(composerDraftTarget, entryId);
+      setLineAnnotations((current) => {
+        return current.flatMap((annotation) => {
           const entries = annotation.metadata.entries.filter((entry) => entry.id !== entryId);
           return entries.length > 0 ? [{ ...annotation, metadata: { entries } }] : [];
-        }),
-      );
+        });
+      });
     },
-    [props.composerDraftTarget, removeReviewComment],
+    [composerDraftTarget, removeReviewComment, setSelectedRange],
   );
-  const submitAnnotation = useCallback(
+
+  const submitAnnotationEntry = useCallback(
     (entryId: string, text: string) => {
       setSelectedRange(null);
       const entry = lineAnnotations
@@ -1495,14 +540,14 @@ function EditableFileSurface(props: {
         .find((candidate) => candidate.id === entryId);
       if (entry) {
         addReviewComment(
-          props.composerDraftTarget,
+          composerDraftTarget,
           buildFileReviewComment({
             id: entry.id,
-            filePath: props.relativePath,
+            filePath: relativePath,
             startLine: entry.startLine,
             endLine: entry.endLine,
             text,
-            contents: props.contents,
+            contents,
           }),
         );
       }
@@ -1510,8 +555,10 @@ function EditableFileSurface(props: {
         current.map((annotation) => ({
           ...annotation,
           metadata: {
-            entries: annotation.metadata.entries.map((candidate) =>
-              candidate.id === entryId ? { ...candidate, kind: "comment", text } : candidate,
+            entries: annotation.metadata.entries.map((annotationEntry) =>
+              annotationEntry.id === entryId
+                ? { ...annotationEntry, kind: "comment", text }
+                : annotationEntry,
             ),
           },
         })),
@@ -1519,37 +566,56 @@ function EditableFileSurface(props: {
     },
     [
       addReviewComment,
+      composerDraftTarget,
+      contents,
       lineAnnotations,
-      props.composerDraftTarget,
-      props.contents,
-      props.relativePath,
+      relativePath,
+      setSelectedRange,
     ],
   );
-  const beginComment = useCallback((range: SelectedLineRange) => {
-    const { startLine, endLine } = normalizeFileCommentRange(range);
-    const draft: FileCommentAnnotationEntry = {
-      id: nextFileCommentId(),
-      kind: "draft",
-      startLine,
-      endLine,
-      text: "",
-    };
-    setLineAnnotations((current) => {
-      const withoutDraft = current.flatMap((annotation) => {
-        const entries = annotation.metadata.entries.filter((entry) => entry.kind !== "draft");
-        return entries.length > 0 ? [{ ...annotation, metadata: { entries } }] : [];
+
+  const beginComment = useCallback(
+    (range: SelectedLineRange) => {
+      editor.setSelections([]);
+      editor.blur();
+      const { startLine, endLine } = normalizeFileCommentRange(range);
+      const draftEntry: FileCommentAnnotationEntry = {
+        id: nextFileCommentId(),
+        kind: "draft",
+        startLine,
+        endLine,
+        text: "",
+      };
+      setLineAnnotations((current) => {
+        const withoutDraft = current.flatMap((annotation) => {
+          const entries = annotation.metadata.entries.filter((entry) => entry.kind !== "draft");
+          return entries.length > 0 ? [{ ...annotation, metadata: { entries } }] : [];
+        });
+        const existingIndex = withoutDraft.findIndex(
+          (annotation) => annotation.lineNumber === endLine,
+        );
+        if (existingIndex < 0) {
+          return [
+            ...withoutDraft,
+            {
+              lineNumber: endLine,
+              metadata: { entries: [draftEntry] },
+            },
+          ];
+        }
+        return withoutDraft.map((annotation, index) =>
+          index === existingIndex
+            ? {
+                ...annotation,
+                metadata: { entries: [...annotation.metadata.entries, draftEntry] },
+              }
+            : annotation,
+        );
       });
-      const existing = withoutDraft.find((annotation) => annotation.lineNumber === endLine);
-      return existing
-        ? withoutDraft.map((annotation) =>
-            annotation === existing
-              ? { ...annotation, metadata: { entries: [...annotation.metadata.entries, draft] } }
-              : annotation,
-          )
-        : [...withoutDraft, { lineNumber: endLine, metadata: { entries: [draft] } }];
-    });
-  }, []);
-  const hasDraft = lineAnnotations.some((annotation) =>
+    },
+    [editor],
+  );
+  const hasOpenCommentForm = lineAnnotations.some((annotation) =>
     annotation.metadata.entries.some((entry) => entry.kind === "draft"),
   );
   useEffect(() => {
@@ -1558,14 +624,42 @@ function EditableFileSurface(props: {
     return installFileEditorDismissal({
       root,
       editor,
-      isBlocked: () => hasDraft,
+      isBlocked: () => hasOpenCommentForm,
       onDismiss: () => setSelectedRange(null),
     });
-  }, [editor, hasDraft]);
+  }, [editor, hasOpenCommentForm, setSelectedRange]);
+  const handleLineSelectionEnd = useCallback(
+    (range: SelectedLineRange | null) => {
+      setSelectedRange(range);
+      if (range) {
+        beginComment(range);
+      }
+    },
+    [beginComment, setSelectedRange],
+  );
+
+  const handlePostRender = useCallback<FilePostRender>(
+    (fileContainer, instance, phase) => {
+      onPostRender(fileContainer, instance, phase);
+
+      if (selectionFrameRef.current !== null) {
+        cancelAnimationFrame(selectionFrameRef.current);
+        selectionFrameRef.current = null;
+      }
+      if (phase === "unmount") return;
+
+      selectionFrameRef.current = requestAnimationFrame(() => {
+        selectionFrameRef.current = null;
+        if (!fileContainer.isConnected) return;
+        instance.setSelectedLines(selectedRange, { notify: false });
+      });
+    },
+    [onPostRender, selectedRange],
+  );
 
   return (
-    <EditContext.Provider value={editor}>
-      <div ref={surfaceRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <EditProvider editor={editor}>
+      <div ref={surfaceRef} className="flex min-h-0 flex-1">
         <Virtualizer
           className="file-preview-virtualizer min-h-0 flex-1 overflow-auto"
           config={{
@@ -1575,26 +669,29 @@ function EditableFileSurface(props: {
         >
           <File<FileCommentAnnotationGroup>
             file={{
-              name: props.relativePath,
-              contents: editorSession.contents,
-              cacheKey: editorSession.cacheKey,
+              name: relativePath,
+              contents,
+              cacheKey: projectFileEditorCacheKey(
+                environmentId,
+                cwd,
+                relativePath,
+                contents,
+                editor.getFile(),
+              ),
             }}
             options={{
               disableFileHeader: true,
-              enableGutterUtility: !hasDraft,
-              enableLineSelection: !hasDraft,
+              enableGutterUtility: !hasOpenCommentForm,
+              enableLineSelection: !hasOpenCommentForm,
               onGutterUtilityClick: setSelectedRange,
               onLineSelectionChange: setSelectedRange,
-              onLineSelectionEnd: (range) => {
-                setSelectedRange(range);
-                if (range) beginComment(range);
-              },
-              overflow: props.wordWrap ? "wrap" : "scroll",
-              theme: resolveDiffThemeName(props.resolvedTheme),
+              onLineSelectionEnd: handleLineSelectionEnd,
+              overflow: wordWrap ? "wrap" : "scroll",
+              theme: resolveDiffThemeName(resolvedTheme),
               preferredHighlighter: PREFERRED_HIGHLIGHTER,
-              themeType: props.resolvedTheme,
+              themeType: resolvedTheme,
               unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
-              onPostRender,
+              onPostRender: handlePostRender,
             }}
             selectedLines={selectedRange}
             lineAnnotations={lineAnnotations}
@@ -1606,9 +703,9 @@ function EditableFileSurface(props: {
                     kind={entry.kind}
                     rangeLabel={formatFileCommentRange(entry.startLine, entry.endLine)}
                     text={entry.text}
-                    onCancel={() => removeAnnotation(entry.id)}
-                    onComment={(text) => submitAnnotation(entry.id, text)}
-                    onDelete={() => removeAnnotation(entry.id)}
+                    onCancel={() => removeAnnotationEntry(entry.id)}
+                    onComment={(text) => submitAnnotationEntry(entry.id, text)}
+                    onDelete={() => removeAnnotationEntry(entry.id)}
                   />
                 ))}
               </div>
@@ -1618,517 +715,411 @@ function EditableFileSurface(props: {
           />
         </Virtualizer>
       </div>
-    </EditContext.Provider>
+    </EditProvider>
   );
 }
 
-function RenderedMarkdownSurface(props: {
-  environmentId: EnvironmentId;
-  cwd: string;
-  relativePath: string;
+function RenderedMarkdownSurface({
+  environmentId,
+  threadId,
+  revision,
+  cwd,
+  relativePath,
+  contents,
+  threadRef,
+  readOnly,
+  onPendingChange,
+  onSaveFailed,
+}: Omit<
+  EditableFileSurfaceProps,
+  | "resolvedTheme"
+  | "composerDraftTarget"
+  | "revealLine"
+  | "revealRequestId"
+  | "wordWrap"
+  | "onPostRender"
+> & {
   threadRef: ScopedThreadRef;
-  contents: string;
-  revision: string;
-  onPendingChange: (relativePath: string, pending: boolean) => void;
-  onSaveFailed: (relativePath: string) => void;
+  readOnly: boolean;
 }) {
-  const saveCoordinator = useFileSaveCoordinator(props);
+  const saveCoordinator = useFileSaveCoordinator({
+    environmentId,
+    threadId,
+    revision,
+    cwd,
+    relativePath,
+    onPendingChange,
+    onSaveFailed,
+  });
+
   return (
     <ScrollArea className="min-h-0 flex-1">
       <FileMarkdownPreview
-        text={props.contents}
-        cwd={props.cwd}
-        relativePath={props.relativePath}
-        threadRef={props.threadRef}
-        onTaskListChange={({ markerOffset, checked }) => {
-          const current =
-            getOptimisticProjectFileQueryData(props.environmentId, props.cwd, props.relativePath)
-              ?.contents ?? props.contents;
-          const next = setMarkdownTaskChecked(current, markerOffset, checked);
-          if (next === current) return;
-          setProjectFileQueryData(
-            props.environmentId,
-            props.threadRef.threadId,
-            props.cwd,
-            props.relativePath,
-            next,
-          );
-          saveCoordinator.change(next);
-        }}
+        text={contents}
+        cwd={cwd}
+        relativePath={relativePath}
+        threadRef={threadRef}
+        onTaskListChange={
+          readOnly
+            ? undefined
+            : ({ markerOffset, checked }) => {
+                const currentContents =
+                  getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.contents ??
+                  contents;
+                const nextContents = setMarkdownTaskChecked(currentContents, markerOffset, checked);
+                if (nextContents === currentContents) return;
+                const currentRevision =
+                  getOptimisticProjectFileQueryData(environmentId, cwd, relativePath)?.revision ??
+                  revision;
+                setProjectFileQueryData(
+                  environmentId,
+                  cwd,
+                  relativePath,
+                  nextContents,
+                  currentRevision,
+                );
+                saveCoordinator.change(nextContents);
+              }
+        }
       />
     </ScrollArea>
   );
 }
 
-export default function FilePreviewPanel(props: FilePreviewPanelProps) {
+function renderedToggleLabel(mode: "markdown" | "table", rendered: boolean): string {
+  if (mode === "markdown") return rendered ? "Show markdown source" : "Show rendered markdown";
+  return rendered ? "Show source" : "Show table";
+}
+
+function initialExplorerOpen(): boolean {
+  try {
+    return getLocalStorageItem(FILE_EXPLORER_STORAGE_KEY, Schema.Boolean) ?? true;
+  } catch (error) {
+    console.error(error);
+    return true;
+  }
+}
+
+export default function FilePreviewPanel({
+  environmentId,
+  cwd,
+  projectName,
+  relativePath: requestedPath,
+  threadRef,
+  composerDraftTarget,
+  revealLine,
+  revealRequestId,
+  onOpenFile,
+  onPendingChange,
+  selectedFilePending,
+  workspaceMutationId,
+}: FilePreviewPanelProps) {
+  const relativePath = resolveFilePreviewPath(requestedPath, cwd);
   const { resolvedTheme } = useTheme();
-  const keybindings = useEnvironmentKeybindings(props.environmentId);
   const wordWrap = useClientSettings((settings) => settings.wordWrap);
-  const file = useProjectFileQuery(
-    props.environmentId,
-    props.threadRef.threadId,
-    props.cwd,
-    props.relativePath,
-  );
-  const previewPath = file.isNotFile ? null : props.relativePath;
-  const isVideo = props.relativePath !== null && isWorkspaceVideoPreviewPath(props.relativePath);
-  const isAudio =
-    props.relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(props.relativePath);
-  const isImage =
-    props.relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(props.relativePath);
+  const isVideo = relativePath !== null && isWorkspaceVideoPreviewPath(relativePath);
+  const isAudio = relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(relativePath);
+  const isImage = relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(relativePath);
   const isMedia = isImage || isVideo || isAudio;
+  // A file outside the workspace (an absolute path) is shown, never edited.
+  const isHostFile = relativePath !== null && isAbsolutePath(relativePath);
+  // Media and PDFs render from their absolute path, so their contents are never
+  // shown. The read still runs: a folder named `assets.png` is only knowable as a
+  // folder from the read failure, and the server stats before reading, so a folder
+  // costs an open and a stat and returns no body.
+  const file = useProjectFileQuery(
+    environmentId,
+    threadRef.threadId,
+    cwd,
+    relativePath,
+    relativePath !== null,
+  );
+  // Coder: media reads go through the helper by thread, root, and project-relative path.
   const mediaSource: ProjectVideoSource | null =
-    props.relativePath !== null && isMedia
+    relativePath !== null && isMedia
       ? {
-          environmentId: props.environmentId,
-          target: {
-            threadId: props.threadRef.threadId,
-            cwd: props.cwd,
-            filePath: props.relativePath,
-          },
+          environmentId,
+          target: { threadId: threadRef.threadId, cwd, filePath: relativePath },
         }
       : null;
+  // A chat link cannot tell a folder from a file, so a folder arrives here as
+  // a file surface and the read fails. Keep the breadcrumbs, drop the preview
+  // pane, and let the tree fill the surface with the folder revealed. Mutation
+  // refresh stays on so the surface notices if the path becomes a file. A host
+  // path cannot be revealed in the workspace tree, so it keeps the read error.
+  const isDirectory = file.isNotFile && !isHostFile;
+  // Everything preview-related keys off previewPath; a folder has no preview.
+  const previewPath = isDirectory ? null : relativePath;
+  const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
+  const showExplorer = shouldShowFileExplorer({
+    relativePath: previewPath,
+    explorerOpen,
+    attachmentOpen: false,
+  });
+  // Reading markdown rendered is a preference, not a property of one file. Keeping
+  // it on the panel meant a thread switch dropped it and forced source back.
+  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(
+    RENDER_MARKDOWN_STORAGE_KEY,
+    false,
+    Schema.Boolean,
+  );
+  const [renderTablePreferred, setRenderTablePreferred] = useLocalStorage(
+    RENDER_TABLE_STORAGE_KEY,
+    true,
+    Schema.Boolean,
+  );
+  // Paired with the path on purpose: each file surface counts its reveals from
+  // one, so a bare id would let a dismissed reveal on one file swallow the first
+  // reveal on the next.
+  const [handledReveal, setHandledReveal] = useState<{ path: string; requestId: number } | null>(
+    null,
+  );
+  const breadcrumbRef = useRef<HTMLDivElement>(null);
+  const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
+  const tableDelimiter = previewPath ? filePreviewDelimiter({ name: previewPath }) : null;
+  // A reveal still wins over the preference: the line only exists in the source.
+  const revealHandled =
+    revealLine === null ||
+    (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
+  const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
+  const renderTable = tableDelimiter !== null && renderTablePreferred && revealHandled;
+  const renderedMode = isMarkdown
+    ? ("markdown" as const)
+    : tableDelimiter
+      ? ("table" as const)
+      : null;
+  const canToggleRendered = previewPath !== null && renderedMode !== null;
+  const updateClientSettings = useUpdateClientSettings();
+  // Word wrap only reaches the text bodies. A rendered Markdown document and a table lay
+  // themselves out, so the toggle stays hidden rather than inert.
+  const showsRawText =
+    previewPath !== null &&
+    file.data !== null &&
+    !(isMarkdown && renderMarkdown) &&
+    !(tableDelimiter && renderTable);
+  const rendered = isMarkdown ? renderMarkdown : renderTable;
+  const setRenderedPreferred = isMarkdown ? setRenderMarkdownPreferred : setRenderTablePreferred;
+  const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
   useWorkspaceMutationRefresh({
     enabled:
-      props.relativePath !== null && (file.isNotFile || !isMedia) && !props.selectedFilePending,
-    mutationId: props.workspaceMutationId,
+      relativePath !== null &&
+      // Media never shows its contents, so re-reading it on every workspace
+      // mutation is waste. A folder named like one still re-reads, so it
+      // notices when the path becomes a file.
+      (isDirectory || !isMedia) &&
+      !selectedFilePending,
+    mutationId: workspaceMutationId,
     refresh: file.refresh,
-    resourceKey: `file:${props.environmentId}:${props.cwd}:${props.relativePath ?? ""}`,
+    resourceKey: `file:${environmentId}:${cwd}:${relativePath ?? ""}`,
   });
-  const [explorerOpen, setExplorerOpen] = useState(true);
-  const [renderMarkdown, setRenderMarkdown] = useState(false);
+
+  useEffect(() => {
+    const currentCrumb = breadcrumbRef.current?.querySelector<HTMLElement>(
+      "[data-current-file-crumb='true']",
+    );
+    currentCrumb?.scrollIntoView({ block: "nearest", inline: "end" });
+  }, [relativePath]);
+
+  const toggleExplorer = () => {
+    setExplorerOpen((current) => {
+      const next = !current;
+      try {
+        setLocalStorageItem(FILE_EXPLORER_STORAGE_KEY, next, Schema.Boolean);
+      } catch (error) {
+        console.error(error);
+      }
+      return next;
+    });
+  };
+
+  // Coder: a rejected save (for example a stale revision after the file changed in the
+  // workspace) leaves the edit pending; offer to discard it and reload the file.
   const [saveFailedPath, setSaveFailedPath] = useState<string | null>(null);
-  const [goToLineOpen, setGoToLineOpen] = useState(false);
-  const [goToLineInitialValue, setGoToLineInitialValue] = useState("1:1");
-  const [findOpen, setFindOpen] = useState(false);
-  const [findRequestId, setFindRequestId] = useState(0);
-  const [findRevealLine, setFindRevealLine] = useState<number | null>(null);
-  const [findRevealRequestId, setFindRevealRequestId] = useState(0);
-  const lastFindMatchKeyRef = useRef<string | null>(null);
-  const breadcrumbRef = useRef<HTMLDivElement>(null);
-  const editorFindAvailable = previewPath !== null && file.data !== null && !file.data.truncated;
-  const tableDelimiter = previewPath ? filePreviewDelimiter({ name: previewPath }) : null;
-  const isMarkdown = previewPath ? isMarkdownPreviewFile(previewPath) : false;
-  const breadcrumbs = useMemo(
-    () => (props.relativePath ? fileBreadcrumbs(props.projectName, props.relativePath) : []),
-    [props.projectName, props.relativePath],
-  );
-  const onPostRender = useFileLineReveal(
-    props.relativePath,
-    findOpen ? findRevealLine : props.revealLine,
-    findOpen ? findRevealRequestId : props.revealRequestId,
-  );
-  const { copyToClipboard, isCopied } = useCopyToClipboard({ target: "project-relative path" });
+  const [reloadCount, setReloadCount] = useState(0);
   const handlePendingChange = useCallback(
-    (relativePath: string, pending: boolean) => {
-      if (pending) setSaveFailedPath((current) => (current === relativePath ? null : current));
-      props.onPendingChange(relativePath, pending);
+    (path: string, pending: boolean) => {
+      if (pending) setSaveFailedPath((current) => (current === path ? null : current));
+      onPendingChange(path, pending);
     },
-    [props.onPendingChange],
+    [onPendingChange],
   );
   const reloadFile = useCallback(() => {
-    if (!props.relativePath) return;
-    discardFileEditorSession({
-      threadRef: props.threadRef,
-      cwd: props.cwd,
-      relativePath: props.relativePath,
-    });
-    discardProjectFileQueryData(
-      props.environmentId,
-      props.threadRef.threadId,
-      props.cwd,
-      props.relativePath,
-    );
-    props.onPendingChange(props.relativePath, false);
+    if (!relativePath) return;
+    clearProjectFileQueryData(environmentId, cwd, relativePath);
+    file.refresh();
+    onPendingChange(relativePath, false);
     setSaveFailedPath(null);
-  }, [props.cwd, props.environmentId, props.onPendingChange, props.relativePath, props.threadRef]);
-
-  useEffect(() => {
-    breadcrumbRef.current
-      ?.querySelector<HTMLElement>("[data-current-file-crumb='true']")
-      ?.scrollIntoView({ block: "nearest", inline: "end" });
-  }, [props.relativePath]);
-
-  const openEditorFind = useCallback(() => {
-    if (!props.relativePath || !file.data || file.data.truncated) return;
-    if (renderMarkdown) setRenderMarkdown(false);
-    setFindOpen(true);
-    setFindRequestId((current) => current + 1);
-  }, [file.data, props.relativePath, renderMarkdown]);
-
-  const openGoToLine = useCallback(() => {
-    let initialValue = "1:1";
-    if (props.relativePath && file.data && !file.data.truncated) {
-      const session = getFileEditorSession(
-        {
-          threadRef: props.threadRef,
-          cwd: props.cwd,
-          relativePath: props.relativePath,
-        },
-        file.data.contents,
-        file.data.revision,
-      );
-      const position = session.editor.getState().selections?.[0]?.end;
-      if (position) initialValue = `${position.line + 1}:${position.character + 1}`;
-    }
-    setGoToLineInitialValue(initialValue);
-    setGoToLineOpen(true);
-  }, [file.data, props.cwd, props.relativePath, props.threadRef]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!event.isTrusted || event.defaultPrevented) return;
-      if (
-        event.target instanceof HTMLElement &&
-        event.target.closest("[data-keybinding-capture], [role='dialog']")
-      ) {
-        return;
-      }
-      const context = {
-        terminalFocus: isTerminalFocused(),
-        fileViewerOpen: true,
-        fileViewerFocus: event
-          .composedPath()
-          .some(
-            (target) => target instanceof Element && target.closest("[data-file-viewer]") !== null,
-          ),
-        fileOpen: previewPath !== null,
-      };
-      const command = resolveShortcutCommand(event, keybindings, { context });
-      if (command !== "fileViewer.find" && command !== "fileViewer.goToLine") {
-        return;
-      }
-      if (command === "fileViewer.find" && !editorFindAvailable) return;
-      event.preventDefault();
-      event.stopPropagation();
-      if (command === "fileViewer.find") openEditorFind();
-      else openGoToLine();
-    };
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [editorFindAvailable, keybindings, openEditorFind, openGoToLine, props.relativePath]);
-
-  useEffect(() => {
-    setFindOpen(false);
-    setFindRevealLine(null);
-    lastFindMatchKeyRef.current = null;
-  }, [props.relativePath]);
-
-  const revealFindMatch = useCallback(
-    (match: FileTextMatch | null) => {
-      if (!props.relativePath || !file.data || file.data.truncated) return;
-      const matchKey = match
-        ? `${match.start.line}:${match.start.character}:${match.end.line}:${match.end.character}`
-        : null;
-      if (lastFindMatchKeyRef.current === matchKey) return;
-      lastFindMatchKeyRef.current = matchKey;
-      const session = getFileEditorSession(
-        {
-          threadRef: props.threadRef,
-          cwd: props.cwd,
-          relativePath: props.relativePath,
-        },
-        file.data.contents,
-        file.data.revision,
-      );
-      if (!match) {
-        if (session.editor.getFile()) session.editor.setSelections([]);
-        setFindRevealLine(null);
-        return;
-      }
-      setFindRevealLine(match.start.line + 1);
-      setFindRevealRequestId((current) => current + 1);
-      const selectMatch = (attempt: number) => {
-        requestAnimationFrame(() => {
-          if (!session.editor.getFile()) {
-            if (attempt < 10) selectMatch(attempt + 1);
-            return;
-          }
-          session.editor.setSelections([{ ...match, direction: "none" }]);
-        });
-      };
-      selectMatch(0);
-    },
-    [file.data, props.cwd, props.relativePath, props.threadRef],
-  );
-
-  const closeFind = useCallback(() => {
-    setFindOpen(false);
-    lastFindMatchKeyRef.current = null;
-    if (!props.relativePath || !file.data || file.data.truncated) return;
-    requestAnimationFrame(() => {
-      getFileEditorSession(
-        {
-          threadRef: props.threadRef,
-          cwd: props.cwd,
-          relativePath: props.relativePath!,
-        },
-        file.data!.contents,
-        file.data!.revision,
-      ).editor.focus();
-    });
-  }, [file.data, props.cwd, props.relativePath, props.threadRef]);
-
-  const goToLine = useCallback(
-    (line: number, column: number) => {
-      if (!props.relativePath || !file.data) return;
-      const resolvedLine = clampFileLine(file.data.contents, line);
-      props.onOpenFile(props.relativePath, resolvedLine);
-      if (file.data.truncated) return;
-      const lineText = file.data.contents.split(/\r\n|\r|\n/)[resolvedLine - 1] ?? "";
-      const resolvedColumn = Math.min(Math.max(1, column), lineText.length + 1);
-      requestAnimationFrame(() => {
-        const session = getFileEditorSession(
-          {
-            threadRef: props.threadRef,
-            cwd: props.cwd,
-            relativePath: props.relativePath!,
-          },
-          file.data!.contents,
-          file.data!.revision,
-        );
-        const position = { line: resolvedLine - 1, character: resolvedColumn - 1 };
-        session.editor.setSelections([{ start: position, end: position, direction: "none" }]);
-        session.editor.focus();
-      });
-    },
-    [file.data, props.cwd, props.onOpenFile, props.relativePath, props.threadRef],
-  );
+    setReloadCount((current) => current + 1);
+  }, [cwd, environmentId, file, onPendingChange, relativePath]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background" data-file-viewer="">
-      <GoToLineDialog
-        open={goToLineOpen}
-        initialValue={goToLineInitialValue}
-        onOpenChange={setGoToLineOpen}
-        onSubmit={goToLine}
-      />
-      {props.relativePath ? (
-        <div className="flex h-10 min-h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+      {relativePath ? (
+        <div className={FILE_SURFACE_SUBHEADER_CLASS} data-surface-subheader>
           <ScrollArea
+            radius="none"
             ref={breadcrumbRef}
             hideScrollbars
             scrollFade
-            className="min-w-0 flex-1 rounded-none"
+            className="min-w-0 flex-1"
+            data-file-breadcrumbs
           >
             <div className="flex h-full w-max min-w-full items-center text-xs">
-              {breadcrumbs.map((crumb, index) => (
-                <div
-                  key={crumb.path || "project"}
-                  className="flex min-w-0 shrink-0 items-center"
-                  data-current-file-crumb={crumb.kind === "file"}
-                >
-                  {index > 0 ? (
-                    <ChevronRight className="mx-1 size-3.5 text-muted-foreground/60" />
-                  ) : null}
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <span
-                          className={cn(
-                            "max-w-40 truncate",
-                            crumb.kind === "file" ? "font-medium" : "text-muted-foreground",
-                          )}
-                        />
-                      }
-                    >
-                      {crumb.label}
-                    </TooltipTrigger>
-                    <TooltipPopup side="top" className="max-w-80">
-                      {crumb.path || props.projectName}
-                    </TooltipPopup>
-                  </Tooltip>
-                </div>
-              ))}
+              <FileBreadcrumbs
+                cwd={cwd}
+                environmentId={environmentId}
+                threadId={threadRef.threadId}
+                onOpenFile={onOpenFile}
+                projectName={projectName}
+                relativePath={relativePath}
+                workspaceMutationId={workspaceMutationId}
+              />
             </div>
           </ScrollArea>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  className="shrink-0"
-                  pressed={isCopied}
-                  onPressedChange={() => copyToClipboard(props.relativePath!, undefined)}
-                  aria-label="Copy project-relative path"
-                  variant="ghost"
-                  size="sm"
-                >
-                  {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                </Toggle>
-              }
-            />
-            <TooltipPopup>{isCopied ? "Copied" : "Copy path"}</TooltipPopup>
-          </Tooltip>
-          {isMarkdown || tableDelimiter ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Toggle
-                    className="shrink-0"
-                    pressed={renderMarkdown}
-                    onPressedChange={setRenderMarkdown}
-                    aria-label={
-                      renderMarkdown
-                        ? "Show source"
-                        : tableDelimiter
-                          ? "Show table"
-                          : "Show rendered Markdown"
-                    }
-                    variant="ghost"
-                    size="sm"
-                  >
-                    {renderMarkdown ? <Code2 className="size-3.5" /> : <Eye className="size-3.5" />}
-                  </Toggle>
-                }
-              />
-              <TooltipPopup>
-                {renderMarkdown ? "Show source" : tableDelimiter ? "Show table" : "Render Markdown"}
-              </TooltipPopup>
-            </Tooltip>
+          {canToggleRendered && renderedMode ? (
+            <FileSurfaceAction
+              label={renderedToggleLabel(renderedMode, rendered)}
+              pressed={rendered}
+              onPress={() => {
+                const pressed = !rendered;
+                setRenderedPreferred(pressed);
+                setHandledReveal(
+                  pressed && relativePath !== null
+                    ? { path: relativePath, requestId: revealRequestId }
+                    : null,
+                );
+              }}
+            >
+              {rendered ? (
+                <Code2 className="size-3.5" />
+              ) : renderedMode === "table" ? (
+                <Table2 className="size-3.5" />
+              ) : (
+                <Eye className="size-3.5" />
+              )}
+            </FileSurfaceAction>
           ) : null}
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <Toggle
-                  className="shrink-0"
-                  pressed={explorerOpen}
-                  onPressedChange={setExplorerOpen}
-                  aria-label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
-                  variant="ghost"
-                  size="sm"
-                >
-                  <FolderTree className="size-3.5" />
-                </Toggle>
-              }
-            />
-            <TooltipPopup>{explorerOpen ? "Hide explorer" : "Show explorer"}</TooltipPopup>
-          </Tooltip>
+          {showsRawText ? (
+            <FileSurfaceAction
+              label={wordWrap ? "Disable word wrap" : "Enable word wrap"}
+              pressed={wordWrap}
+              onPress={() => updateClientSettings({ wordWrap: !wordWrap })}
+            >
+              <WrapTextIcon className="size-3.5" />
+            </FileSurfaceAction>
+          ) : null}
+          {!isHostFile && previewPath !== null ? (
+            <FileSurfaceAction
+              label={explorerOpen ? "Hide file explorer" : "Show file explorer"}
+              pressed={explorerOpen}
+              onPress={toggleExplorer}
+            >
+              <FolderTree className="size-3.5" />
+            </FileSurfaceAction>
+          ) : null}
         </div>
       ) : null}
-      {props.relativePath && file.data && !file.data.truncated ? (
-        <FileFindBar
-          open={findOpen}
-          requestId={findRequestId}
-          contents={file.data.contents}
-          onClose={closeFind}
-          onMatchChange={revealFindMatch}
-        />
-      ) : null}
-      {props.relativePath && !isMedia && file.data?.truncated ? (
-        <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-[11px] text-warning-foreground">
-          Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
-        </div>
-      ) : null}
-      {props.relativePath && saveFailedPath === props.relativePath ? (
-        <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-[11px] text-destructive-foreground">
-          <span className="min-w-0 flex-1 truncate">
-            Could not save. The file may have changed in the workspace.
+      {previewPath && saveFailedPath === previewPath ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-1.5 text-2xs text-destructive">
+          <span className="min-w-0 flex-1">
+            Your edits were not saved. Reload the file to continue editing.
           </span>
           <Button size="xs" variant="outline" onClick={reloadFile}>
             Reload and discard edits
           </Button>
         </div>
       ) : null}
+      {previewPath && !isMedia && file.data?.truncated ? (
+        <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
+          Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
+        </div>
+      ) : null}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
           className={cn("min-w-0 flex-1 flex-col overflow-hidden", previewPath ? "flex" : "hidden")}
         >
-          {file.isNotFile ? null : mediaSource && isVideo ? (
+          {isDirectory ? null : mediaSource && isVideo ? (
             <WorkspaceVideoPreview
-              key={`${props.environmentId}:${props.threadRef.threadId}:${props.relativePath}`}
+              key={`${environmentId}:${threadRef.threadId}:${relativePath}`}
               source={mediaSource}
-              name={props.relativePath ?? "video"}
+              name={relativePath ?? "video"}
             />
           ) : mediaSource && isAudio ? (
             <WorkspaceAudioPreview
-              key={`${props.environmentId}:${props.threadRef.threadId}:${props.relativePath}`}
+              key={`${environmentId}:${threadRef.threadId}:${relativePath}`}
               source={mediaSource}
-              name={props.relativePath ?? "audio"}
+              name={relativePath ?? "audio"}
             />
           ) : mediaSource && isImage ? (
             // Like main's revision suffix, a workspace mutation rereads the current image.
             <WorkspaceImagePreview
-              key={`${props.relativePath}:${props.workspaceMutationId ?? ""}`}
+              key={`${relativePath}:${workspaceMutationId ?? ""}`}
               source={mediaSource}
-              alt={props.relativePath ?? "image"}
+              alt={relativePath ?? "image"}
             />
-          ) : props.relativePath && file.error && file.data === null ? (
-            <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs text-destructive">
+          ) : relativePath && file.error && file.data === null ? (
+            <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-xs leading-relaxed text-destructive">
               {file.error}
             </div>
-          ) : props.relativePath && file.data === null ? (
+          ) : relativePath && file.data === null ? (
             <div className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
-              <Spinner className="size-5" />
+              <Spinner size="lg" />
             </div>
-          ) : props.relativePath && file.data ? (
-            tableDelimiter && renderMarkdown ? (
-              <DelimitedTablePreview
-                key={props.relativePath}
-                name={props.relativePath}
-                text={file.data.contents}
-                delimiter={tableDelimiter}
-              />
-            ) : isMarkdown && renderMarkdown ? (
+          ) : relativePath && file.data ? (
+            isMarkdown && renderMarkdown ? (
               // Markdown reconciles in place across text updates, so a file
               // switch needs a new key or the previous file's disclosure and
               // wrap state carries into the next document.
               <RenderedMarkdownSurface
-                key={props.relativePath}
-                environmentId={props.environmentId}
-                threadRef={props.threadRef}
-                cwd={props.cwd}
-                relativePath={props.relativePath}
-                contents={file.data.contents}
+                key={`${relativePath}:${reloadCount}`}
+                environmentId={environmentId}
+                threadId={threadRef.threadId}
                 revision={file.data.revision}
+                cwd={cwd}
+                relativePath={relativePath}
+                threadRef={threadRef}
+                contents={file.data.contents}
+                readOnly={isHostFile}
                 onPendingChange={handlePendingChange}
                 onSaveFailed={setSaveFailedPath}
               />
-            ) : file.data.truncated ? (
-              <Virtualizer className="file-preview-virtualizer min-h-0 flex-1 overflow-auto">
-                <File
-                  file={{
-                    name: props.relativePath,
-                    contents: file.data.contents,
-                    cacheKey: projectFileCacheKey(
-                      props.cwd,
-                      props.relativePath,
-                      file.data.contents,
-                    ),
-                  }}
-                  options={{
-                    disableFileHeader: true,
-                    overflow: wordWrap ? "wrap" : "scroll",
-                    theme: resolveDiffThemeName(resolvedTheme),
-                    preferredHighlighter: PREFERRED_HIGHLIGHTER,
-                    themeType: resolvedTheme,
-                    unsafeCSS: FILE_LINK_REVEAL_UNSAFE_CSS,
-                    onPostRender,
-                  }}
-                  className="min-h-full"
-                />
-              </Virtualizer>
+            ) : tableDelimiter && renderTable ? (
+              <DelimitedTablePreview
+                key={relativePath}
+                name={relativePath}
+                text={file.data.contents}
+                delimiter={tableDelimiter}
+              />
+            ) : file.data.truncated || isHostFile ? (
+              <SourceFilePreview
+                name={relativePath}
+                text={file.data.contents}
+                cacheKey={projectFileCacheKey(cwd, relativePath, file.data.contents)}
+                onPostRender={onFilePostRender}
+              />
             ) : (
-              <EditableFileSurface
-                key={`${props.relativePath}:${resolvedTheme}`}
-                environmentId={props.environmentId}
-                threadRef={props.threadRef}
-                cwd={props.cwd}
-                relativePath={props.relativePath}
-                composerDraftTarget={props.composerDraftTarget}
-                contents={file.data.contents}
-                revision={file.data.revision}
-                resolvedTheme={resolvedTheme}
-                revealRequestId={props.revealRequestId}
-                restoreViewAnchor={props.revealLine === null}
-                wordWrap={wordWrap}
-                onPostRender={onPostRender}
-                onPendingChange={handlePendingChange}
-                onSaveFailed={setSaveFailedPath}
-              />
+              <DiffWorkerPoolProvider>
+                <EditableFileSurface
+                  key={`${relativePath}:${resolvedTheme}:${reloadCount}`}
+                  environmentId={environmentId}
+                  threadId={threadRef.threadId}
+                  revision={file.data.revision}
+                  cwd={cwd}
+                  relativePath={relativePath}
+                  composerDraftTarget={composerDraftTarget}
+                  contents={file.data.contents}
+                  resolvedTheme={resolvedTheme}
+                  revealRequestId={revealRequestId}
+                  wordWrap={wordWrap}
+                  onPostRender={onFilePostRender}
+                  onPendingChange={handlePendingChange}
+                  onSaveFailed={setSaveFailedPath}
+                />
+              </DiffWorkerPoolProvider>
             )
           ) : null}
         </div>
-        {explorerOpen || previewPath === null ? (
+        {showExplorer ? (
           <aside
             className={cn(
               "flex min-h-0 shrink-0 bg-background",
@@ -2138,64 +1129,20 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             )}
           >
             <FileBrowserPanel
-              key={`${props.environmentId}:${props.cwd}`}
-              environmentId={props.environmentId}
-              threadId={props.threadRef.threadId}
-              cwd={props.cwd}
-              projectName={props.projectName}
-              selectedPath={props.relativePath}
-              selectedPathRevealId={props.revealRequestId}
-              onOpenFile={props.onOpenFile}
-              workspaceMutationId={props.workspaceMutationId}
-              {...(props.relativePath ? { onRefreshSelectedFile: file.refresh } : {})}
+              key={`${environmentId}:${cwd}`}
+              environmentId={environmentId}
+              threadId={threadRef.threadId}
+              cwd={cwd}
+              projectName={projectName}
+              selectedPath={relativePath}
+              selectedPathRevealId={revealRequestId}
+              onOpenFile={onOpenFile}
+              workspaceMutationId={workspaceMutationId}
+              {...(previewPath && !isMedia ? { onRefreshSelectedFile: file.refresh } : {})}
             />
           </aside>
         ) : null}
       </div>
     </div>
-  );
-}
-
-export function FileSearchDialogs(props: {
-  commandRequest: FileSearchCommandRequest | null;
-  onCommandRequestHandled: (id: number) => void;
-  environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
-  cwd: string;
-  projectName: string;
-  onOpenFile: (relativePath: string, line?: number) => void;
-}) {
-  const [projectSearchOpen, setProjectSearchOpen] = useState(false);
-  const [fileSearchOpen, setFileSearchOpen] = useState(false);
-
-  useEffect(() => {
-    const request = props.commandRequest;
-    if (!request) return;
-    if (request.command === "projectSearch.toggle") setProjectSearchOpen(true);
-    else setFileSearchOpen(true);
-    props.onCommandRequestHandled(request.id);
-  }, [props.commandRequest, props.onCommandRequestHandled]);
-
-  return (
-    <>
-      <ProjectTextSearchDialog
-        open={projectSearchOpen}
-        onOpenChange={setProjectSearchOpen}
-        environmentId={props.environmentId}
-        threadRef={props.threadRef}
-        cwd={props.cwd}
-        projectName={props.projectName}
-        onOpenFile={props.onOpenFile}
-      />
-      <FileSearchDialog
-        open={fileSearchOpen}
-        onOpenChange={setFileSearchOpen}
-        environmentId={props.environmentId}
-        threadRef={props.threadRef}
-        cwd={props.cwd}
-        projectName={props.projectName}
-        onOpenFile={props.onOpenFile}
-      />
-    </>
   );
 }

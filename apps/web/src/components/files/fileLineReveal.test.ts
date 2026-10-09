@@ -1,96 +1,32 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  isSameFileLineRevealRequest,
-  resolveAnchoredFileLineScrollTop,
-  resolveVisibleFileLineAnchor,
-} from "./fileLineReveal";
+import { resolveCenteredFileLineScrollTop } from "./fileLineReveal";
 
-describe("file line reveal request identity", () => {
-  const request = { requestId: 1, relativePath: "src/main.ts", line: 10 };
-
-  it("treats only the same request, file, and line as already revealed", () => {
-    expect(isSameFileLineRevealRequest(request, request)).toBe(true);
-    expect(isSameFileLineRevealRequest(null, request)).toBe(false);
-    expect(isSameFileLineRevealRequest(request, { ...request, requestId: 2 })).toBe(false);
-    expect(isSameFileLineRevealRequest(request, { ...request, relativePath: "src/other.ts" })).toBe(
-      false,
-    );
-    expect(isSameFileLineRevealRequest(request, { ...request, line: 20 })).toBe(false);
-  });
-});
-
-describe("anchored file line reveal", () => {
-  it("keeps the same line offset after virtualized heights change", () => {
+describe("resolveCenteredFileLineScrollTop", () => {
+  it("centers an estimated virtualized line position", () => {
     expect(
-      resolveAnchoredFileLineScrollTop({
-        scrollHeight: 410_000,
-        viewportHeight: 700,
-        fileTop: 0,
-        lineTop: 408_950,
-        viewportOffset: 50,
-      }),
-    ).toBe(408_900);
-  });
-
-  it("clamps anchors near the end of the file", () => {
-    expect(
-      resolveAnchoredFileLineScrollTop({
-        scrollHeight: 410_000,
-        viewportHeight: 700,
-        fileTop: 0,
-        lineTop: 409_990,
-        viewportOffset: 10,
-      }),
-    ).toBe(409_300);
-  });
-});
-
-describe("visible file line anchor", () => {
-  it("chooses the first fully visible rendered line", () => {
-    expect(
-      resolveVisibleFileLineAnchor({
+      resolveCenteredFileLineScrollTop({
+        scrollTop: 0,
+        scrollHeight: 2_000,
         viewportTop: 100,
-        viewportBottom: 300,
-        lines: [
-          { lineNumber: 40, top: 80, bottom: 120 },
-          { lineNumber: 41, top: 120, bottom: 160 },
-          { lineNumber: 42, top: 160, bottom: 200 },
-        ],
+        viewportHeight: 400,
+        fileTop: 20,
+        estimatedLine: { top: 1_000, height: 20 },
       }),
-    ).toEqual({ lineNumber: 41, viewportOffset: 20 });
+    ).toBe(830);
   });
 
-  it("allows subpixel rounding at the viewport edge", () => {
+  it("corrects a stale estimate from the rendered line geometry", () => {
     expect(
-      resolveVisibleFileLineAnchor({
+      resolveCenteredFileLineScrollTop({
+        scrollTop: 830,
+        scrollHeight: 2_000,
         viewportTop: 100,
-        viewportBottom: 300,
-        lines: [{ lineNumber: 41, top: 99.75, bottom: 140 }],
+        viewportHeight: 400,
+        fileTop: 20,
+        estimatedLine: { top: 1_000, height: 20 },
+        renderedLine: { top: 620, height: 20 },
       }),
-    ).toEqual({ lineNumber: 41, viewportOffset: -0.25 });
-  });
-
-  it("falls back to an intersecting line when none fits fully", () => {
-    expect(
-      resolveVisibleFileLineAnchor({
-        viewportTop: 100,
-        viewportBottom: 300,
-        lines: [{ lineNumber: 41, top: 80, bottom: 320 }],
-      }),
-    ).toEqual({ lineNumber: 41, viewportOffset: -20 });
-  });
-
-  it("returns no anchor when no rendered line intersects the viewport", () => {
-    expect(
-      resolveVisibleFileLineAnchor({
-        viewportTop: 100,
-        viewportBottom: 300,
-        lines: [
-          { lineNumber: 40, top: 20, bottom: 80 },
-          { lineNumber: 41, top: 320, bottom: 360 },
-        ],
-      }),
-    ).toBeUndefined();
+    ).toBe(1_160);
   });
 });
