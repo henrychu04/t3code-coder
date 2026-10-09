@@ -486,8 +486,7 @@ changes are made in the table. Connections holds the Coder deployments, workspac
 and TCP/UDP port forwards instead of upstream's pairing and network access. Providers uses upstream's provider panel and add-instance dialog,
 limited to the Codex and Claude drivers (any instance), without sign-in, provider setup or
 managed install, per-instance environment variables, ACP registry, or usage-limit sources;
-favorites and model preferences stay per workspace (`providerPreferencesByEnvironment`), and the
-provider health interval stays in General. Source Control appends GitLab
+the provider health interval stays in General. Source Control appends GitLab
 workspace status and the write-policy probe. Background activity keeps the fork's Git fetch and
 provider health presets under General. The last project grouping mode is remembered in memory for
 the page session rather than in browser storage.
@@ -653,7 +652,6 @@ listed here is drift to remove rather than fork behavior to keep.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
-  - Client settings add per-workspace `providerPreferencesByEnvironment`.
   - Terminal attach input adds `afterSequence`, and the attach stream adds a `resumed` event.
   - Claude launch args reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
     `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,

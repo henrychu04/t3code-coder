@@ -27,7 +27,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   useEnvironmentSettings,
   usePersistEnvironmentProviderInstanceMutation,
-  useUpdateEnvironmentSettings,
+  useUpdateClientSettings,
 } from "../../hooks/useSettings";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { cn } from "../../lib/utils";
@@ -434,9 +434,7 @@ export function EnvironmentProviderSettings({
   // Provider instances hold per-machine binaries, so this page always edits
   // exactly the environment it displays.
   const persistProviderInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
-  // Coder: favorites and model preferences are kept per workspace
-  // (`providerPreferencesByEnvironment`), matching what the pickers read.
-  const updateClientSettings = useUpdateEnvironmentSettings(environmentId);
+  const updateClientSettings = useUpdateClientSettings();
   const serverProviders =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
