@@ -751,8 +751,7 @@ it.layer(CodexTextGenerationTestLayer)("CodexTextGeneration", (it) => {
           expect(Result.isFailure(result)).toBe(true);
           if (Result.isFailure(result)) {
             expect(result.failure).toBeInstanceOf(TextGenerationError);
-            // Coder: PastedImageAttachments fails closed instead of skipping the image.
-            expect(result.failure.message).toContain("could not be read safely");
+            expect(result.failure.message).toContain("missing --image input");
           }
         }),
     ),

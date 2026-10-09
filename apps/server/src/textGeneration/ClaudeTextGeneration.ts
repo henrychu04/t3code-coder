@@ -51,8 +51,6 @@ import {
 import { makeClaudeEnvironment } from "../provider/Drivers/ClaudeHome.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
-// Coder: branch names and thread titles always use Haiku, whatever model the thread selected.
-const LABEL_GENERATION_MODEL = "claude-haiku-4-5";
 
 /**
  * Schema for the wrapper JSON returned by `claude -p --output-format json`.
@@ -71,13 +69,6 @@ const encodeJsonString = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknow
 const decodeClaudeOutput = Schema.decodeEffect(
   Schema.fromJsonString(Schema.Union([ClaudeOutputEnvelope, Schema.Array(ClaudeOutputMessage)])),
 );
-
-// Coder: workspace Claude launchers may print status lines before the JSON result.
-function stripClaudeLauncherPreamble(output: string): string {
-  const lines = output.split(/\r?\n/);
-  const jsonLine = lines.findIndex((line) => /^[{[]/.test(line.trimStart()));
-  return jsonLine === -1 ? output : lines.slice(jsonLine).join("\n");
-}
 
 export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(function* (
   claudeSettings: ClaudeSettings,
@@ -288,7 +279,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ),
     );
 
-    const output = yield* decodeClaudeOutput(stripClaudeLauncherPreamble(rawStdout)).pipe(
+    const output = yield* decodeClaudeOutput(rawStdout).pipe(
       Effect.catchTags({
         SchemaError: (cause) =>
           Effect.fail(
@@ -389,10 +380,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
-        modelSelection: {
-          instanceId: input.modelSelection.instanceId,
-          model: LABEL_GENERATION_MODEL,
-        },
+        modelSelection: input.modelSelection,
       });
 
       return {
@@ -414,10 +402,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         cwd: input.cwd,
         prompt,
         outputSchemaJson: outputSchema,
-        modelSelection: {
-          instanceId: input.modelSelection.instanceId,
-          model: LABEL_GENERATION_MODEL,
-        },
+        modelSelection: input.modelSelection,
       });
 
       return {

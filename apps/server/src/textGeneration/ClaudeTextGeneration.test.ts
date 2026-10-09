@@ -429,57 +429,6 @@ it.layer(ClaudeTextGenerationTestLayer)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  // Coder: labels always use Haiku, and launcher status lines before the JSON are skipped.
-  it.effect("generates thread titles with Haiku past a launcher preamble", () =>
-    withFakeClaudeEnv(
-      {
-        output: [
-          "Claude Startup Script",
-          "Authentication verified",
-          JSON.stringify({ structured_output: { title: "Haiku labels" } }),
-        ].join("\n"),
-        argsMustContain: "--model claude-haiku-4-5",
-        argsMustNotContain: SYNTHETIC_CLAUDE_STANDARD_MODEL,
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateThreadTitle({
-            cwd: process.cwd(),
-            message: "Name this thread",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
-            },
-          });
-
-          expect(generated.title).toBe("Haiku labels");
-        }),
-    ),
-  );
-
-  it.effect("generates branch names with Haiku", () =>
-    withFakeClaudeEnv(
-      {
-        output: JSON.stringify({ structured_output: { branch: "haiku-labels" } }),
-        argsMustContain: "--model claude-haiku-4-5",
-        argsMustNotContain: SYNTHETIC_CLAUDE_STANDARD_MODEL,
-      },
-      (textGeneration) =>
-        Effect.gen(function* () {
-          const generated = yield* textGeneration.generateBranchName({
-            cwd: process.cwd(),
-            message: "Use Haiku for branch names",
-            modelSelection: {
-              instanceId: ProviderInstanceId.make("claudeAgent"),
-              model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
-            },
-          });
-
-          expect(generated.branch).toBe("haiku-labels");
-        }),
-    ),
-  );
-
   it.effect("runs Claude text generation with the configured CLAUDE_CONFIG_DIR", () =>
     Effect.gen(function* () {
       const path = yield* Path.Path;

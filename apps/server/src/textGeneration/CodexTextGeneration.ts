@@ -19,7 +19,7 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 
 import * as ServerConfig from "../config.ts";
 import { expandHomePath } from "../pathExpansion.ts";
-import { resolvePastedImageAttachments } from "../provider/PastedImageAttachments.ts";
+import { resolvePastedImageAttachment } from "../provider/PastedImageAttachments.ts";
 import {
   discoverCodexMcpServerNames,
   type CodexMcpServerNameResolver,
@@ -142,7 +142,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
 
   const materializeImageAttachments = Effect.fn("materializeImageAttachments")(function* (
-    operation:
+    _operation:
       | "generateCommitMessage"
       | "generatePrContent"
       | "generateBranchName"
@@ -153,17 +153,23 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       return { imagePaths: [] };
     }
 
-    // Coder: provider input reads images only through PastedImageAttachments, which verifies
-    // each file's identity, size, and signature and fails closed instead of skipping.
-    const images = yield* resolvePastedImageAttachments({
-      attachmentsDir: serverConfig.attachmentsDir,
-      attachments: attachments.filter((attachment) => attachment.type === "image"),
-    }).pipe(
-      Effect.mapError(
-        (cause) => new TextGenerationError({ operation, detail: cause.message, cause }),
-      ),
-    );
-    return { imagePaths: images.map((image) => image.path) };
+    const imagePaths: string[] = [];
+    for (const attachment of attachments) {
+      if (attachment.type !== "image") {
+        continue;
+      }
+
+      // Coder: provider input reads images only through PastedImageAttachments, which checks
+      // each file's identity, size, and signature. Unreadable images are skipped, as upstream.
+      const image = yield* resolvePastedImageAttachment({
+        attachmentsDir: serverConfig.attachmentsDir,
+        attachment,
+      }).pipe(Effect.option);
+      if (Option.isSome(image)) {
+        imagePaths.push(image.value.path);
+      }
+    }
+    return { imagePaths };
   });
 
   const runCodexJson = Effect.fn("runCodexJson")(function* <S extends Schema.Top>({
