@@ -17,14 +17,21 @@ import type {
 } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import {
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import {
   CheckIcon,
   ChevronDownIcon,
   CloudDownloadIcon,
   CloudUploadIcon,
-  ExternalLinkIcon,
   FileDiffIcon,
   GitBranchPlusIcon,
   GitCommitIcon,
@@ -38,6 +45,7 @@ import { RadioGroup } from "~/components/ui/radio-group";
 import { Spinner } from "~/components/ui/spinner";
 import { Toggle, ToggleGroup } from "~/components/ui/toggle-group";
 import { cn } from "~/lib/utils";
+import { useOpenPrLink } from "~/lib/openPullRequestLink";
 import {
   buildMenuItems,
   formatGitActionElapsed,
@@ -101,7 +109,6 @@ import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsActionManager, vcsEnvironment } from "~/state/vcs";
 import { randomUUID } from "~/lib/utils";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
-import { readLocalApi } from "~/localApi";
 import {
   THREAD_DETAILS_PANEL_CHEVRON_CLASS,
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -109,6 +116,7 @@ import {
   THREAD_DETAILS_PANEL_SPLIT_SEPARATOR_CLASS,
 } from "./chat/threadDetailsPanelStyles";
 import { getSourceControlPresentation } from "~/sourceControlPresentation";
+import { useOpenLink } from "~/browser/useOpenLink";
 
 interface GitActionsControlProps {
   presentation?: "toolbar" | "menu";
@@ -120,6 +128,7 @@ interface GitActionsControlProps {
    * place it against, in which case it still opens in the browser.
    */
   onOpenPullRequest?: ((number: number) => void) | undefined;
+  /** Coder: changed files open in the Files surface; there is no local editor. */
   onOpenFile?: ((relativePath: string) => void) | undefined;
   displayMode?: "toolbar" | "panel";
   compact?: boolean;
@@ -135,6 +144,7 @@ interface PendingDefaultBranchAction {
   filePaths?: string[];
 }
 
+// Coder: repositories publish only to GitLab.
 type PublishProviderKind = Extract<SourceControlProviderKind, "gitlab">;
 
 type GitActionToastId = ReturnType<typeof toastManager.add>;
@@ -264,7 +274,7 @@ function getMenuActionDisabledReason({
 
   if (item.id === "push") {
     if (!hasBranch) {
-      return "Detached HEAD: checkout a refName before pushing.";
+      return "Detached HEAD: check out a branch before pushing.";
     }
     if (hasChanges) {
       return "Commit or stash local changes before pushing.";
@@ -285,7 +295,7 @@ function getMenuActionDisabledReason({
     return "GitLab writes are disabled because the workspace write probe did not succeed.";
   }
   if (!hasBranch) {
-    return `Detached HEAD: checkout a refName before creating a ${terminology.singular}.`;
+    return `Detached HEAD: check out a branch before creating a ${terminology.singular}.`;
   }
   if (hasChanges) {
     return `Commit local changes before creating a ${terminology.singular}.`;
@@ -473,10 +483,13 @@ interface PublishRepositoryDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly environmentId: ScopedThreadRef["environmentId"] | null;
+  /** Thread the dialog was opened from, so the new repository can open beside it. */
+  readonly threadRef: ScopedThreadRef | null;
   readonly gitCwd: string;
 }
 
 function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
+  const openLink = useOpenLink(props.threadRef);
   const navigate = useNavigate();
   const sourceControlDiscovery = useEnvironmentQuery(
     props.environmentId === null
@@ -638,6 +651,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
     },
     [props, resetState],
   );
+
   const openSourceControlSettings = useCallback(() => {
     handleOpenChange(false);
     void navigate({ to: "/settings/source-control" });
@@ -663,6 +677,7 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
             onStepChange={setPublishWizardStep}
           />
         </WizardHeader>
+
         <WizardPanel>
           <div className={cn("space-y-2", publishWizardStep !== 0 && "hidden")}>
             <span id="publish-provider-cards-label" className="text-xs font-medium text-foreground">
@@ -698,7 +713,6 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                               size="micro"
                               onClick={(event) => {
                                 event.preventDefault();
-
                                 event.stopPropagation();
                                 openSourceControlSettings();
                               }}
@@ -931,12 +945,9 @@ function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   size="sm"
                   className="w-full"
                   onClick={() => {
-                    const api = readLocalApi();
-                    if (!api) return;
-                    void api.shell.openExternal(publishResult.repository.url);
+                    void openLink(publishResult.repository.url).catch(() => undefined);
                   }}
                 >
-                  <ExternalLinkIcon className="size-3.5" aria-hidden />
                   Open on {publishProviderLabel}
                 </Button>
               </>
@@ -1017,6 +1028,7 @@ export default function GitActionsControl({
     [activeThreadRef],
   );
   const activeServerThread = useThreadShell(activeThreadRef);
+  const openPrLink = useOpenPrLink(activeThreadRef ?? undefined);
   const activeDraftThread = useComposerDraftStore((store) =>
     draftId
       ? store.getDraftSession(draftId)
@@ -1050,7 +1062,7 @@ export default function GitActionsControl({
   }, [inlineSuccess]);
 
   const persistThreadBranchSync = useCallback(
-    (branch: string | null) => {
+    (branch: string | null, manualSelection = false) => {
       if (!activeThreadRef) {
         return;
       }
@@ -1078,6 +1090,10 @@ export default function GitActionsControl({
       setDraftThreadContext(draftId ?? activeThreadRef, {
         branch,
         worktreePath: activeDraftThread.worktreePath,
+        environmentSelection: manualSelection
+          ? "manual"
+          : (activeDraftThread.environmentSelection ??
+            (activeDraftThread.branch ? "manual" : "auto")),
       });
     },
     [
@@ -1097,7 +1113,7 @@ export default function GitActionsControl({
         return;
       }
 
-      persistThreadBranchSync(branchUpdate.branch);
+      persistThreadBranchSync(branchUpdate.branch, true);
     },
     [persistThreadBranchSync],
   );
@@ -1131,6 +1147,7 @@ export default function GitActionsControl({
   // Default to true while loading so we don't flash init controls.
   const isRepo = gitStatus?.isRepo ?? true;
   const hasPrimaryRemote = gitStatus?.hasPrimaryRemote ?? false;
+  // Coder: MR creation follows the workspace GitLab write probe.
   const canCreateChangeRequest =
     sourceControlDiscovery.data?.sourceControlProviders.find(
       (provider) => provider.kind === "gitlab",
@@ -1352,7 +1369,7 @@ export default function GitActionsControl({
       const toastCta = actionResult.toast.cta;
       let toastActionProps: {
         children: string;
-        onClick: () => void;
+        onClick: (event: MouseEvent<HTMLButtonElement>) => void;
       } | null = null;
       if (toastCta.kind === "run_action") {
         toastActionProps = {
@@ -1367,11 +1384,9 @@ export default function GitActionsControl({
       } else if (toastCta.kind === "open_pr") {
         toastActionProps = {
           children: toastCta.label,
-          onClick: () => {
-            const api = readLocalApi();
-            if (!api) return;
+          onClick: (event) => {
             closeResultToast();
-            void api.shell.openExternal(toastCta.url);
+            openPrLink(event, toastCta.url);
           },
         };
       }
@@ -1905,9 +1920,7 @@ export default function GitActionsControl({
                   <span className="font-medium">
                     {gitStatusForActions?.refName ?? "(detached HEAD)"}
                   </span>
-                  {isDefaultRef && (
-                    <span className="text-right text-warning">Warning: default refName</span>
-                  )}
+                  {isDefaultRef && <span className="text-right text-warning">Default branch</span>}
                 </span>
               </div>
               <div className="space-y-1">
@@ -2045,7 +2058,7 @@ export default function GitActionsControl({
               disabled={noneSelected}
               onClick={runDialogActionOnNewBranch}
             >
-              Commit on new refName
+              Commit on new branch
             </Button>
             <Button size="sm" disabled={noneSelected} onClick={runDialogAction}>
               Commit
@@ -2058,6 +2071,7 @@ export default function GitActionsControl({
         open={isPublishDialogOpen}
         onOpenChange={setIsPublishDialogOpen}
         environmentId={activeEnvironmentId}
+        threadRef={activeThreadRef}
         gitCwd={gitCwd}
       />
 
@@ -2072,7 +2086,7 @@ export default function GitActionsControl({
         <DialogPopup className="max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {pendingDefaultBranchActionCopy?.title ?? "Run action on default refName?"}
+              {pendingDefaultBranchActionCopy?.title ?? "Run action on default branch?"}
             </DialogTitle>
             <DialogDescription>{pendingDefaultBranchActionCopy?.description}</DialogDescription>
           </DialogHeader>

@@ -1737,7 +1737,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         const preview = buildExpandedImagePreview(composerImages, imageId);
         if (preview) onExpandImage(preview);
       },
-      // Coder has no file or video previews; file attachments are never staged.
+      // Coder: draft file and video attachments have no in-browser preview.
       openFile: () => {},
       expandVideo: () => {},
       openMention: (path: string) => useRightPanelStore.getState().openFile(routeThreadRef, path),
@@ -2112,7 +2112,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   >(() => {
     const out = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
     for (const entry of providerInstanceEntries) {
-      out.set(entry.instanceId, getAppModelOptionsForInstance(settings, entry));
+      out.set(
+        entry.instanceId,
+        getAppModelOptionsForInstance(
+          settings,
+          entry,
+          entry.instanceId === selectedInstanceId ? selectedModelForPicker : null,
+        ),
+      );
     }
     return out;
   }, [providerInstanceEntries, selectedInstanceId, selectedModelForPicker, settings]);
@@ -2867,8 +2874,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   /**
    * Bytes for a pasted image come back through the source workspace helper's bounded
    * attachment read (the client is the only party that can reach both) and re-enter this
-   * draft as a normal composer image under a fresh id, staged again through the gateway. The pasted chip is rewritten to that id and reads as
-   * unresolved until the bytes land; a failed transfer says so and leaves the chip to remove.
+   * draft as a normal composer image under a fresh id, staged again through the gateway. The
+   * pasted chip is rewritten to that id and reads as unresolved until the bytes land; a failed
+   * transfer says so and leaves the chip to remove.
    */
   const runAttachmentImport = useCallback(
     async (
@@ -2884,14 +2892,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           description: `${reason} Remove the chip or attach the file again.`,
         });
       };
-      // Coder attaches images only; file attachments are never staged.
+      // Coder: the helper's bounded attachment read returns only signature-checked images, so a
+      // pasted file chip cannot bring its bytes into another message.
       if (
         record.kind !== "image" ||
         (record.mimeType !== "image/png" &&
           record.mimeType !== "image/jpeg" &&
           record.mimeType !== "image/webp")
       ) {
-        fail("Only PNG, JPEG, and WebP images can be attached.");
+        fail("Only PNG, JPEG, and WebP images can be copied into another message.");
         return;
       }
       let blob: Blob;
@@ -6578,6 +6587,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
               {!isComposerCollapsedMobile &&
                 !isComposerApprovalState &&
+                pendingUserInputs.length === 0 &&
                 expandedComposerImages.length > 0 && (
                   <div className="mb-3 flex max-w-full flex-wrap gap-2">
                     {expandedComposerImages.map((image) => {
@@ -6606,14 +6616,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                 alt={image.name}
                                 className="h-full w-full object-cover"
                                 fallback={
-                                  <span className="flex h-full items-center justify-center px-1 text-[10px] text-secondary-label">
+                                  <span className="flex h-full items-center justify-center px-1 text-3xs text-secondary-label">
                                     {image.name}
                                   </span>
                                 }
                               />
                             </button>
                           ) : (
-                            <div className="flex h-full w-full items-center justify-center px-1 text-center text-[10px] text-secondary-label">
+                            <div className="flex h-full w-full items-center justify-center px-1 text-center text-3xs text-secondary-label">
                               {image.name}
                             </div>
                           )}
@@ -6624,7 +6634,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                   <span
                                     role="img"
                                     aria-label="Draft attachment may not persist"
-                                    className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-amber-600"
+                                    className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-warning-foreground"
                                   >
                                     <CircleAlertIcon className="size-3" />
                                   </span>

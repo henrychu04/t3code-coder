@@ -465,7 +465,9 @@ commit and MR content is
 produced by the workspace Claude CLI using bounded Git summaries and patches; repository MR
 templates are read from the committed base tree. The gateway never runs Git or `glab`, never
 connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other
-hosted providers remain unavailable.
+hosted providers remain unavailable. In the Git action control, a failed write probe disables MR creation
+with a reason, changed-file rows open the Files surface instead of a local editor, and
+authentication hints point to `glab auth login` in the workspace.
 
 The merge-request page, panel, stack menu, and right-panel tabs are upstream's, with these seams.
 Diffs load through the `pullRequests.diff` stdio RPC rather than upstream's environment HTTP
@@ -489,7 +491,8 @@ managed install, per-instance environment variables, ACP registry, or usage-limi
 workspace status and the write-policy probe. Background activity uses upstream's profiles and Advanced
 dialog, without the host power-monitor intervals or power and lock pauses, and profile
 descriptions name their intervals. The last project grouping mode is remembered in memory for
-the page session rather than in browser storage.
+the page session rather than in browser storage. Older fork settings links that name one checkout by its project settings
+key resolve to that checkout's group.
 
 Project icon choices use upstream's bounded Lucide names and color palette, or at most 32 characters
 of emoji text. Choices persist on workspace-owned project records and travel through the existing
@@ -678,7 +681,9 @@ listed here is drift to remove rather than fork behavior to keep.
   reports authenticated, writable access. Clone URLs are validated by the helper.
 - **Composer, timeline, and work log.** Upstream's context records, upload queue, chips, and
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
-  element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Images
+  element captures, SnapShot, upstream's large-paste-to-file folding, remote icons, and in-browser
+  previews of draft file and video attachments. A context fragment pasted from another workspace
+  brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks. Images
   and files move through the gateway and SCP (see
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
   the helper's advertised attachment capabilities, as upstream does. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
@@ -710,6 +715,10 @@ listed here is drift to remove rather than fork behavior to keep.
   to workspace (no exports, and Files edits only existing files). The provider-update launch notification uses the active workspace as upstream's primary
   environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
   upstream's `t3 theme set` CLI.
+- **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
+  deltas: there is no legacy sidebar (or its Settings switch), usage page, desktop app-update
+  pills, desktop window bridge (fullscreen insets and menu actions), or preview keybinding
+  context; the active workspace supplies keybindings and the pill's providers.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), sidebar file drops, and the favicon store.
