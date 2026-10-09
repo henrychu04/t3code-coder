@@ -13,6 +13,7 @@ export interface FileCommentAnnotationGroup {
 }
 
 export type FileCommentLineAnnotation = LineAnnotation<FileCommentAnnotationGroup>;
+
 let fileCommentSequence = 0;
 
 export function nextFileCommentId(): string {
@@ -20,8 +21,14 @@ export function nextFileCommentId(): string {
   return `file-comment-${Date.now()}-${fileCommentSequence}`;
 }
 
-export function normalizeFileCommentRange(range: SelectedLineRange) {
-  return { startLine: Math.min(range.start, range.end), endLine: Math.max(range.start, range.end) };
+export function normalizeFileCommentRange(range: SelectedLineRange): {
+  startLine: number;
+  endLine: number;
+} {
+  return {
+    startLine: Math.min(range.start, range.end),
+    endLine: Math.max(range.start, range.end),
+  };
 }
 
 export function formatFileCommentRange(startLine: number, endLine: number): string {

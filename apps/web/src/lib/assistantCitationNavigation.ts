@@ -1,7 +1,6 @@
 import type { AssistantCitation } from "@t3tools/contracts";
 import {
   formatAssistantCitationHref,
-  MAX_CITATION_HREF_LENGTH,
   parseAssistantCitationHref,
 } from "@t3tools/shared/assistantCitations";
 import * as Encoding from "effect/Encoding";
@@ -16,9 +15,6 @@ declare module "@tanstack/react-router" {
 }
 
 const CITATION_HASH_PREFIX = "assistant-citation=";
-// The inner URL is ASCII after percent encoding; base64 adds up to one third.
-const MAX_CITATION_HASH_LENGTH =
-  CITATION_HASH_PREFIX.length + 4 * Math.ceil(MAX_CITATION_HREF_LENGTH / 3);
 
 /** Base64url keeps router hash normalization from decoding quote whitespace or source IDs. */
 export function assistantCitationHash(citation: AssistantCitation) {
@@ -29,7 +25,7 @@ export function assistantCitationFromLocation(href: string) {
   const hashIndex = href.indexOf("#");
   if (hashIndex === -1) return null;
   const hash = href.slice(hashIndex + 1);
-  if (!hash.startsWith(CITATION_HASH_PREFIX) || hash.length > MAX_CITATION_HASH_LENGTH) return null;
+  if (!hash.startsWith(CITATION_HASH_PREFIX) || hash.length > 140_000) return null;
   try {
     return parseAssistantCitationHref(
       Result.getOrThrow(Encoding.decodeBase64UrlString(hash.slice(CITATION_HASH_PREFIX.length))),

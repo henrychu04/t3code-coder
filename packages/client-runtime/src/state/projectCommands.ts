@@ -55,6 +55,7 @@ export function createProjectEnvironmentAtoms<R, E>(
       JSON.stringify([environmentId, input.projectId]),
   };
   return {
+    // Coder: helper-only project config, content search, directory, and media reads.
     getConfig: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:config",
       tag: WS_METHODS.projectsGetConfig,

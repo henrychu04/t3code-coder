@@ -55,7 +55,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
 }: PanelLayoutControlsProps) {
   const threadPanelToggle = (
     <Toggle
-      className="relative shrink-0"
+      className="relative shrink-0 [-webkit-app-region:no-drag]"
       pressed={threadPanelOpen}
       aria-label="Toggle thread details panel"
       variant="ghost"
@@ -84,7 +84,10 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
   );
 
   return (
-    <div className="flex h-full shrink-0 items-center gap-1" data-panel-layout-controls>
+    <div
+      className="flex h-full shrink-0 items-center gap-1 [-webkit-app-region:no-drag]"
+      data-panel-layout-controls
+    >
       {showThreadPanelControl
         ? threadPanelPresentation === "popover"
           ? threadPanelTooltip(
@@ -96,7 +99,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         <Tooltip>
           <TooltipTrigger render={<span className="flex shrink-0" />}>
             <Toggle
-              className="shrink-0"
+              className="shrink-0 [-webkit-app-region:no-drag]"
               pressed={terminalOpen}
               onPressedChange={onToggleTerminal}
               aria-label="Toggle terminal drawer"
@@ -118,7 +121,7 @@ export const PanelLayoutControls = memo(function PanelLayoutControls({
         <Tooltip>
           <TooltipTrigger render={<span className="flex shrink-0" />}>
             <Toggle
-              className="shrink-0"
+              className="shrink-0 [-webkit-app-region:no-drag]"
               pressed={rightPanelOpen}
               onPressedChange={onToggleRightPanel}
               aria-label="Toggle right panel"
@@ -153,7 +156,7 @@ export const RightPanelMaximizeControl = memo(function RightPanelMaximizeControl
       <TooltipTrigger
         render={
           <Toggle
-            className="shrink-0"
+            className="shrink-0 [-webkit-app-region:no-drag]"
             pressed={maximized}
             onPressedChange={onToggle}
             aria-label={label}

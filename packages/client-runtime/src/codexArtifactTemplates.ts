@@ -43,7 +43,6 @@ export type CodexArtifactTemplateAttributes = Readonly<Record<string, string | n
 
 const WINDOWS_DRIVE_PATH_REGEX = /^[A-Za-z]:[\\/]/;
 const WINDOWS_UNC_PATH_REGEX = /^(?:\\\\[^\\]+\\[^\\]+|\/\/[^/]+\/[^/]+)/;
-const CODEX_ARTIFACT_TEMPLATE_SKILL_NAME_REGEX = /^artifact-template-[A-Za-z0-9:_-]+$/;
 
 function isCodexArtifactTemplateKind(value: unknown): value is CodexArtifactTemplateKind {
   return CODEX_ARTIFACT_TEMPLATE_KINDS.some((kind) => kind === value);
@@ -80,7 +79,7 @@ export function resolveCodexArtifactTemplate(
     typeof skillDirectory !== "string" ||
     !isAbsoluteSkillDirectory(skillDirectory) ||
     typeof skillName !== "string" ||
-    !CODEX_ARTIFACT_TEMPLATE_SKILL_NAME_REGEX.test(skillName) ||
+    !skillName.startsWith("artifact-template-") ||
     (galleryKind !== undefined && !isCodexArtifactTemplateGalleryKind(galleryKind))
   ) {
     return null;

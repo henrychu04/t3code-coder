@@ -42,45 +42,7 @@ export type GitActionRequestInput = Pick<
   "action" | "commitMessage" | "featureBranch" | "filePaths"
 >;
 
-function buildGitActionProgressStages(input: {
-  action: GitStackedAction;
-  hasCustomCommitMessage: boolean;
-  hasWorkingTreeChanges: boolean;
-  pushTarget?: string;
-  featureBranch?: boolean;
-  shouldPushBeforePr?: boolean;
-}): string[] {
-  const branchStages = input.featureBranch ? ["Preparing feature branch..."] : [];
-  const pushStage = input.pushTarget ? `Pushing to ${input.pushTarget}...` : "Pushing...";
-  const prStages = [
-    "Preparing merge request...",
-    "Generating merge request content...",
-    "Creating GitLab merge request...",
-  ];
-
-  if (input.action === "push") {
-    return [pushStage];
-  }
-  if (input.action === "create_pr") {
-    return input.shouldPushBeforePr ? [pushStage, ...prStages] : prStages;
-  }
-
-  const shouldIncludeCommitStages = input.action === "commit" || input.hasWorkingTreeChanges;
-  const commitStages = !shouldIncludeCommitStages
-    ? []
-    : input.hasCustomCommitMessage
-      ? ["Committing..."]
-      : ["Generating commit message...", "Committing..."];
-  if (input.action === "commit") {
-    return [...branchStages, ...commitStages];
-  }
-  if (input.action === "commit_push") {
-    return [...branchStages, ...commitStages, pushStage];
-  }
-  return [...branchStages, ...commitStages, pushStage, ...prStages];
-}
-
-function buildMenuItems(
+export function buildMenuItems(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
   hasOriginRemote = true,
@@ -146,7 +108,7 @@ function buildMenuItems(
   ];
 }
 
-function resolveQuickAction(
+export function resolveQuickAction(
   gitStatus: VcsStatusResult | null,
   isBusy: boolean,
   isDefaultBranch = false,
@@ -281,7 +243,7 @@ function resolveQuickAction(
   };
 }
 
-function getGitActionDisabledReason(input: {
+export function getGitActionDisabledReason(input: {
   item: GitActionMenuItem;
   gitStatus: VcsStatusResult | null;
   isBusy: boolean;
@@ -345,7 +307,7 @@ function getGitActionDisabledReason(input: {
   return "Create PR is currently unavailable.";
 }
 
-function requiresDefaultBranchConfirmation(
+export function requiresDefaultBranchConfirmation(
   action: GitStackedAction,
   isDefaultBranch: boolean,
 ): boolean {
@@ -358,7 +320,7 @@ function requiresDefaultBranchConfirmation(
   );
 }
 
-function resolveDefaultBranchActionDialogCopy(input: {
+export function resolveDefaultBranchActionDialogCopy(input: {
   action: DefaultBranchConfirmableAction;
   branchName: string;
   includesCommit: boolean;

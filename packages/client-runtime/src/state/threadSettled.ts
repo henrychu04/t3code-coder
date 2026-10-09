@@ -29,8 +29,6 @@ interface QueuedThreadShell {
   readonly runtime?: SettlementRuntimeLike | null;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1_000;
-
 /**
  * A queued turn start lives for at most this long: session adoption takes
  * seconds, so a user message still unadopted after the grace window is a
@@ -38,7 +36,8 @@ const DAY_MS = 24 * 60 * 60 * 1_000;
  * messages with no latestTurn at all), not pending work. Without this bound
  * such threads would be permanently unsettleable.
  */
-const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
+export const QUEUED_TURN_START_GRACE_MS = 2 * 60 * 1_000;
+const DAY_MS = 24 * 60 * 60 * 1_000;
 
 /**
  * A user message no turn has picked up yet: the turn.start command was
@@ -99,8 +98,7 @@ export interface ThreadSnoozeShell extends QueuedThreadShell {
  * the session failed, or a run completed after the snooze was set — the
  * v1 taste of event-based snooze ("something happened" wakes early).
  * Raising a hand never clears the server-side snooze fields; it only stops
- * the thread from CLASSIFYING as snoozed, exactly like blocked work and
- * effectiveSettled.
+ * the thread from classifying as snoozed.
  */
 export function threadRaisedHandWhileSnoozed(shell: ThreadSnoozeShell): boolean {
   if (shell.hasPendingApprovals || shell.hasPendingUserInput) return true;

@@ -1,3 +1,5 @@
+// Coder: workspaces come from the gateway's Coder config; there are no saved, relay, bearer,
+// or SSH connections to persist or toggle.
 import * as Schema from "effect/Schema";
 
 import { ConnectionTarget } from "./model.ts";

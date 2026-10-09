@@ -19,8 +19,7 @@ export function DelimitedTablePreview(props: {
     <div className="flex min-h-0 flex-1 flex-col">
       {table.truncated ? (
         <FileSurfaceNotice>
-          Table preview is limited to 100 rows, 30 columns, and 2,000 characters per cell.
-          Incomplete rows may be shown. Switch to source for the full text.
+          Table limited to the first 100 rows and 30 columns. Switch to source for the rest.
         </FileSurfaceNotice>
       ) : null}
       <div className="min-h-0 flex-1 overflow-auto">

@@ -1,4 +1,4 @@
-import { ChevronRightIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, ExternalLinkIcon, SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -60,6 +60,18 @@ function LicenseNoticeRow({
               {entry.license} · {formatLicenseBundles(entry.bundles)}
             </span>
           </CollapsibleTrigger>
+          {entry.sourceUrl ? (
+            <Button
+              aria-label={`View project source for ${entry.name}`}
+              className="me-3 shrink-0 sm:me-4"
+              render={<a href={entry.sourceUrl} rel="noreferrer noopener" target="_blank" />}
+              size="icon-micro"
+              title="Project source"
+              variant="ghost-muted"
+            >
+              <ExternalLinkIcon aria-hidden className="size-3" />
+            </Button>
+          ) : null}
         </div>
         <CollapsiblePanel>
           {open ? (

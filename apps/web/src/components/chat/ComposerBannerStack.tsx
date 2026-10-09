@@ -17,7 +17,6 @@ export interface ComposerBannerStackItem {
   readonly icon: ReactNode;
   readonly title: ReactNode;
   readonly description?: ReactNode;
-  readonly className?: string;
   readonly children?: ReactNode;
   readonly actions?: ReactNode;
   readonly dismissLabel?: string;
@@ -26,7 +25,7 @@ export interface ComposerBannerStackItem {
 
 export type ComposerBannerStackContent = Pick<
   ComposerBannerStackItem,
-  "id" | "variant" | "priority" | "className"
+  "id" | "variant" | "priority"
 > & { readonly content: ReactNode };
 
 type ComposerBannerStackEntry = ComposerBannerStackItem | ComposerBannerStackContent;
@@ -336,7 +335,6 @@ function ComposerBannerStackAlert({
         density="comfortable"
         placement={attached ? "attached" : "floating"}
         variant={item.variant}
-        className={item.className}
       >
         {item.content}
       </ComposerBanner.Root>
@@ -347,7 +345,6 @@ function ComposerBannerStackAlert({
       role="alert"
       placement={attached ? "attached" : "floating"}
       variant={item.variant}
-      className={item.className}
       density="comfortable"
     >
       <ComposerBanner.Row layout={item.compact ? "wrap-actions-narrow" : "wrap-actions"}>

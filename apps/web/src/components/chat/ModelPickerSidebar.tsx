@@ -14,7 +14,7 @@ import {
 /**
  * Build the hover tooltip for an instance button. Mirrors the old
  * kind-based copy but uses the entry's configured `displayName` so custom
- * instances get their user-authored name (e.g. "Claude Personal — Unavailable.").
+ * instances get their user-authored name (e.g. "Codex Personal — Unavailable.").
  */
 function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   const label = entry.displayName;
@@ -46,8 +46,8 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   onFocusSearch: () => void;
   /**
    * Instance entries to render as rail buttons. Each entry becomes one icon
-   * keyed by `instanceId`, so the default built-in Claude instance and a user-authored
-   * `claude_personal` appear as two distinct rail items, each routing to
+   * keyed by `instanceId`, so the default built-in Codex and a user-authored
+   * `codex_personal` appear as two distinct rail items, each routing to
    * their own model list.
    */
   instanceEntries: ReadonlyArray<ProviderInstanceEntry>;
@@ -55,6 +55,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   showFavorites?: boolean;
   /** Instance ids shown in the rail but unavailable for the current picker context. */
   disabledInstanceIds?: ReadonlySet<ProviderInstanceId>;
+  /** Non-ready instances whose selected unavailable model remains reachable. */
   selectableUnavailableInstanceIds?: ReadonlySet<ProviderInstanceId>;
   getDisabledInstanceTooltip?: (entry: ProviderInstanceEntry) => string;
   /**
@@ -150,9 +151,10 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
           {props.instanceEntries.map((entry) => {
             const isUnavailable = !isProviderInstancePickerReady(entry);
             const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
+            const unavailableSelectionIsReachable =
+              props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
             const isDisabled =
-              (isUnavailable && !props.selectableUnavailableInstanceIds?.has(entry.instanceId)) ||
-              isContextDisabled;
+              (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
             const isSelected = props.selectedInstanceId === entry.instanceId;
             const isHovered = hoveredInstanceId === entry.instanceId;
             const showNewBadge = props.newBadgeInstanceIds?.has(entry.instanceId) ?? false;
@@ -187,7 +189,7 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
                 aria-pressed={isSelected}
                 type="button"
                 aria-label={
-                  isDisabled
+                  isUnavailable || isContextDisabled
                     ? tooltip
                     : showNewBadge
                       ? `${entry.displayName}, new`

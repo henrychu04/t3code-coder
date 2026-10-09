@@ -54,7 +54,7 @@ function canUseVcsRefsCache(input: VcsListRefsInput): boolean {
   );
 }
 
-const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh")(function* (
+export const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh")(function* (
   registry: AtomRegistry.AtomRegistry,
   cache: Persistence.EnvironmentCacheStore["Service"],
   input: {
@@ -120,7 +120,7 @@ const commitVcsRefsRefresh = Effect.fn("CachedVcsRefsState.commitRefresh")(funct
  * partial result as a complete offline list would make branch selection
  * misleading.
  */
-const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChanges")(function* (
+export const makeCachedVcsRefsChanges = Effect.fn("CachedVcsRefsState.makeChanges")(function* (
   input: VcsListRefsInput,
   expectedRevision?: number,
   registry?: AtomRegistry.AtomRegistry,
@@ -294,6 +294,7 @@ export function createVcsEnvironmentAtoms<R, E>(
           ),
         ),
     }),
+    // Coder: local ref status and thread branch renames; see docs/internals/coder-only.md.
     refStatus: createEnvironmentSubscriptionAtomFamily(runtime, {
       label: "environment-data:vcs:ref-status",
       subscribe: (input: EnvironmentRpcInput<typeof WS_METHODS.subscribeVcsRefStatus>) =>

@@ -46,6 +46,7 @@ export function resolveTimestampLocale(
   }
 }
 
+// Coder: no desktop bridge; the browser's preferred language stands in for the host locale.
 const timestampLocale = resolveTimestampLocale(
   typeof navigator === "undefined" ? null : navigator.language,
 );

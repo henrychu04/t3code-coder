@@ -1,3 +1,4 @@
+// Coder: every connection is a gateway target, so its address is the gateway URL.
 import type { ServerConfig } from "@t3tools/contracts";
 import type { ConnectionCatalogEntry } from "./catalog.ts";
 import type { SupervisorConnectionState } from "./model.ts";

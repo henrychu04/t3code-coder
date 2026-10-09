@@ -5,7 +5,7 @@ export interface KnownEnvironmentConnectionTarget {
   readonly wsBaseUrl: string;
 }
 
-export type KnownEnvironmentSource = "configured" | "manual" | "window-origin";
+export type KnownEnvironmentSource = "configured" | "desktop-managed" | "manual" | "window-origin";
 
 export interface KnownEnvironment {
   readonly id: string;
@@ -29,7 +29,7 @@ export function createKnownEnvironment(input: {
   };
 }
 
-function attachEnvironmentDescriptor(
+export function attachEnvironmentDescriptor(
   environment: KnownEnvironment,
   descriptor: ExecutionEnvironmentDescriptor,
 ): KnownEnvironment {

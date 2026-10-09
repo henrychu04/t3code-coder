@@ -150,7 +150,7 @@ export function ZoomableImage({
         aria-label={`${name}, zoomable image`}
         aria-description="Click to zoom in or return to fit. Scroll to zoom, drag to pan. Use Enter to toggle zoom, plus or minus to zoom, and 0 to fit."
         tabIndex={0}
-        className="max-w-[var(--media-width,92vw)] overflow-auto overscroll-contain rounded-lg bg-background shadow-2xl ring-1 ring-border/70 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="max-w-[var(--media-width)] overflow-auto overscroll-contain rounded-lg bg-background shadow-2xl ring-1 ring-border/70 outline-none focus-visible:ring-2 focus-visible:ring-ring"
         style={{
           width: width || undefined,
           height: height || undefined,
@@ -228,9 +228,7 @@ export function ZoomableImage({
           draggable={false}
           className="block max-w-none select-none"
           style={
-            naturalSize.width
-              ? { width, height }
-              : { maxWidth: "var(--media-width,92vw)", maxHeight }
+            naturalSize.width ? { width, height } : { maxWidth: "var(--media-width)", maxHeight }
           }
           onLoad={(event) => {
             setNaturalSize({

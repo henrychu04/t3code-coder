@@ -1,3 +1,5 @@
+// Coder: the Coder config owns registration; no GitHub routing permissions or
+// register/remove/enable commands.
 import type { EnvironmentId as EnvironmentIdType } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
