@@ -15,7 +15,6 @@ import {
 } from "../../provider/CodexTurnTokenUsage.ts";
 import type { ServerProviderShape } from "../../provider/Services/ServerProvider.ts";
 import type { CodexEffectiveRuntime } from "../../provider/CodexManagedRuntime.ts";
-import type { CodexMcpServerNameResolver } from "../../provider/Layers/CodexIntegrationPolicy.ts";
 import { buildCodexInitializeParams } from "../../provider/Layers/CodexProvider.ts";
 import {
   codexRateLimitsToUpdate,
@@ -90,6 +89,10 @@ import {
   buildCodexAdditionalContext,
   buildCodexDeveloperInstructions,
 } from "../../provider/CodexDeveloperInstructions.ts";
+import {
+  describeMcpElicitation,
+  toMcpElicitationResponse,
+} from "../../provider/CodexMcpElicitation.ts";
 import {
   materializeCodexShadowHome,
   resolveCodexHomeLayout,
@@ -231,17 +234,6 @@ const CODEX_CLIENT_CAPABILITIES = {
   experimentalApi: true,
   optOutNotificationMethods: ["turn/diff/updated"],
 } as const;
-
-/** Coder: MCP integrations are disabled, so every MCP elicitation is declined. */
-export const declineCodexMcpElicitation = Effect.fn("CodexAdapterV2.declineMcpElicitation")(
-  function* (payload: CodexSchema.McpServerElicitationRequestParams) {
-    yield* Effect.logWarning("Declined an MCP elicitation because integrations are disabled.", {
-      serverName: payload.serverName,
-      mode: payload.mode,
-    });
-    return { action: "decline" } satisfies CodexSchema.McpServerElicitationRequestResponse;
-  },
-);
 
 export const CodexProviderCapabilitiesV2 = {
   sessions: {
@@ -1188,8 +1180,6 @@ export interface CodexAppServerClientFactoryShape {
     readonly runtimePolicy: ProviderAdapterV2RuntimePolicy;
     readonly settings: CodexSettings;
     readonly environment: NodeJS.ProcessEnv;
-    /** Coder: workspace MCP servers to disable for this session. */
-    readonly disabledMcpServerNames?: ReadonlyArray<string>;
   }) => Effect.Effect<
     CodexClient.CodexAppServerClient["Service"],
     ProviderAdapterOpenSessionError,
@@ -1411,7 +1401,6 @@ export const codexAppServerClientFactoryFromSettingsLayer: Layer.Layer<
             command: input.settings.binaryPath || "codex",
             args: codexAppServerArgs(
               resolveCodexLaunchArgs(input.settings.launchArgs, input.environment),
-              input.disabledMcpServerNames,
             ),
             env: environment,
           });
@@ -1459,7 +1448,7 @@ export const createCodexAdapterV2 = (
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
   hooks: Pick<
     CodexAdapterV2Options,
-    "onUsageLimits" | "resolveRuntime" | "resolveMcpServerNames"
+    "onUsageLimits" | "resolveRuntime"
   > = {},
 ) =>
   Effect.gen(function* () {
@@ -1549,8 +1538,6 @@ export interface CodexAdapterV2Options {
    * Codex with a current access token.
    */
   readonly resolveRuntime?: Effect.Effect<CodexEffectiveRuntime, ProviderSetupError, Scope.Scope>;
-  /** Coder: MCP is disabled, so every workspace MCP server is disabled for the session cwd. */
-  readonly resolveMcpServerNames?: CodexMcpServerNameResolver;
   readonly fileSystem: FileSystem.FileSystem;
   readonly idAllocator: IdAllocatorV2Shape;
   readonly serverConfig: ServerConfig["Service"];
@@ -1589,21 +1576,6 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
                     }),
                 ),
               );
-        const disabledMcpServerNames =
-          adapterOptions.resolveMcpServerNames === undefined
-            ? []
-            : yield* adapterOptions
-                .resolveMcpServerNames(input.runtimePolicy.cwd ?? serverConfig.cwd)
-                .pipe(
-                  Effect.mapError(
-                    (cause) =>
-                      new ProviderAdapterOpenSessionError({
-                        driver: CODEX_PROVIDER,
-                        providerSessionId: input.providerSessionId,
-                        cause,
-                      }),
-                  ),
-                );
         const client = yield* clientFactory.open({
           instanceId: adapterOptions.instanceId,
           threadId: input.threadId,
@@ -1611,7 +1583,6 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           runtimePolicy: input.runtimePolicy,
           settings: resolvedRuntime?.config ?? adapterOptions.settings,
           environment: resolvedRuntime?.environment ?? adapterOptions.environment,
-          disabledMcpServerNames,
         });
         const additionalContextByThread = yield* Ref.make(
           new Map<
@@ -4690,9 +4661,86 @@ export function makeCodexAdapterV2(adapterOptions: CodexAdapterV2Options): Provi
           }).pipe(Effect.orDie),
         );
 
-        yield* client.handleServerRequest(
-          "mcpServer/elicitation/request",
-          declineCodexMcpElicitation,
+        yield* client.handleServerRequest("mcpServer/elicitation/request", (payload) =>
+          Effect.gen(function* () {
+            // Unsupported elicitation shapes cannot express an approval, so
+            // decline instead of presenting a request the user cannot answer.
+            if (toMcpElicitationResponse(payload, "accept").action !== "accept") {
+              yield* Effect.logWarning("Declined an unsupported MCP elicitation.", {
+                serverName: payload.serverName,
+                mode: payload.mode,
+              });
+              return {
+                action: "decline",
+              } satisfies CodexSchema.McpServerElicitationRequestResponse;
+            }
+            const context =
+              payload.turnId === undefined || payload.turnId === null
+                ? undefined
+                : yield* awaitActiveTurn(payload.turnId);
+            if (context === undefined) {
+              yield* Effect.logWarning(
+                "Declined an MCP elicitation without an active Codex turn context.",
+                { serverName: payload.serverName },
+              );
+              return {
+                action: "decline",
+              } satisfies CodexSchema.McpServerElicitationRequestResponse;
+            }
+
+            const nativeRequestId =
+              payload.mode === "url"
+                ? payload.elicitationId
+                : `mcp-elicitation:${payload.serverName}`;
+            const described = describeMcpElicitation(payload);
+            const artifacts = yield* buildApprovalRequestArtifacts({
+              context,
+              nativeItemId: nativeRequestId,
+              nativeRequestId,
+              requestKind: "mcp-elicitation",
+              prompt: payload.message,
+              appName: described.appName,
+              options: described.options,
+            });
+            const decision = yield* Deferred.make<ProviderApprovalDecision, never>();
+            yield* Ref.update(pendingRuntimeRequests, (current) => {
+              const updated = new Map(current);
+              updated.set(String(artifacts.request.id), {
+                type: "approval",
+                requestId: artifacts.request.id,
+                requestKind: "mcp-elicitation",
+                decision,
+              });
+              return updated;
+            });
+            yield* emitProviderEvent({
+              type: "node.updated",
+              driver: CODEX_PROVIDER,
+              node: artifacts.node,
+            });
+            yield* emitProviderEvent({
+              type: "runtime_request.updated",
+              driver: CODEX_PROVIDER,
+              threadId: artifacts.node.threadId,
+              runtimeRequest: artifacts.request,
+            });
+            yield* emitProviderEvent({
+              type: "turn_item.updated",
+              driver: CODEX_PROVIDER,
+              turnItem: artifacts.turnItem,
+            });
+
+            const resolved = yield* Deferred.await(decision).pipe(
+              Effect.ensuring(
+                Ref.update(pendingRuntimeRequests, (current) => {
+                  const updated = new Map(current);
+                  updated.delete(String(artifacts.request.id));
+                  return updated;
+                }),
+              ),
+            );
+            return toMcpElicitationResponse(payload, resolved);
+          }).pipe(Effect.orDie),
         );
 
         yield* client.handleServerRequest("execCommandApproval", (payload) =>

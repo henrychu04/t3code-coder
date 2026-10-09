@@ -72,11 +72,11 @@ You can paste PNG, JPEG, or WebP images into a message. T3 Coder validates and p
 workspace attachment area. Codex receives validated images as native image input. This exception
 does not enable general file uploads.
 
-## Deliberately disabled integrations
+## MCP servers and integrations
 
-T3-managed Codex and Claude sessions do not use MCP servers. Codex app integrations and the Claude
-browser integration are also disabled. Skills and native provider commands remain available; they
-are distinct from MCP and app integrations.
+T3-managed Codex and Claude sessions use the MCP servers and Codex app integrations configured in
+the workspace, as upstream does. When a Codex MCP server asks for confirmation, T3 Coder shows it as
+an approval request. The Claude browser integration is disabled.
 
 ## Provider settings
 
@@ -120,8 +120,9 @@ When Codex reports a usage-limit failure, the conversation names the exhausted w
 reset time when available. These are provider runtime errors, not an API billing dashboard.
 
 Claude verbose output is supported for generated titles, branch names, commit messages, and merge
-request descriptions. These metadata requests run in the workspace with executable tools, hooks,
-skills, and configured MCP servers disabled; title generation also runs outside the project folder.
+request descriptions. These metadata requests run in the workspace. Claude runs them with
+executable tools, hooks, skills, and MCP servers disabled; title generation also runs outside the
+project folder.
 
 ## Update providers
 

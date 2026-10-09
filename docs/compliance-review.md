@@ -41,12 +41,9 @@ forwarded port. Separately, validated settings may start foreground `coder port-
 whose local endpoint is fixed to `127.0.0.1`; raw arguments, reverse forwards, and non-loopback bind
 addresses are not accepted. SCP is restricted to generated helper and clipboard-image paths and
 reaches the workspace only through a temporary Coder ProxyCommand. Network telemetry and direct
-workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Claude
-sessions use an empty strict MCP configuration and disable connected claude.ai MCP servers. Every
-T3-managed Codex process enumerates configured MCP names without starting the servers, appends a
-final per-server disable override for every name, and disables app integrations. Configured launch
-arguments cannot supersede these final overrides; failed discovery prevents the managed process
-from starting.
+workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Codex
+and Claude sessions load the MCP servers and app integrations configured in the workspace, as
+upstream does; those servers run as workspace processes started by the provider executables.
 
 User commands entered in a workspace terminal, repository-local Git hooks, and the externally
 installed Codex, Claude, GitLab, Git, or Coder executables remain subject to the workspace and

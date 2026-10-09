@@ -209,12 +209,9 @@ No provider executable or Anthropic Agent SDK runtime is bundled. The Agent SDK 
 development dependency; pnpm's `ignoredOptionalDependencies` keeps its bundled Claude Code
 binaries from ever installing. T3 does not inject its removed
 preview MCP server or a local-host transport into Codex. Codex authentication and other
-configuration remain workspace-owned and subject to workspace policy. Before every managed Codex
-process, T3 enumerates configured MCP names without starting the servers, appends a final
-per-server disable override for every name, and disables app integrations. Failed discovery is
-fail-closed and prevents the managed process from starting.
-T3 passes an empty strict MCP configuration and disables connected claude.ai MCP servers for
-managed Claude sessions. Both provider connections remain owned by their workspace executables.
+configuration remain workspace-owned and subject to workspace policy, including the MCP servers
+and app integrations each provider loads from workspace configuration, as upstream. Both provider
+connections remain owned by their workspace executables.
 Native context compaction and asynchronous Codex questions use the same provider stdio sessions
 and orchestration event stream; they do not introduce another listener or transport. The upstream
 usage/cost dashboard is not included: remote pricing aggregation and user-configured CLI-proxy
@@ -554,10 +551,9 @@ listed here is drift to remove rather than fork behavior to keep.
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather
     than copying transcript files.
-  - MCP is disabled for both providers: `McpSessionRegistry` never issues or resolves a
-    credential, the provider session manager runs with `configureMcp: false`, Codex app-server
-    launches pass `features.apps=false` and disable every workspace MCP server for the session
-    cwd, and `declineCodexMcpElicitation` declines every elicitation. `RuntimeInstructions.ts`
+  - T3's own MCP server is absent: `McpSessionRegistry` never issues or resolves a credential and
+    the provider session manager runs with `configureMcp: false`. Workspace MCP servers, Codex app
+    integrations, and Codex MCP elicitations follow upstream. `RuntimeInstructions.ts`
     omits upstream's `link_pull_request` block; agents link merge requests through the workspace
     MR command. Bridging upstream's T3 tools to the helper (for example through an async file
     channel) is follow-up work.
@@ -592,8 +588,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - Absent: client-origin attribution, orchestration and provider metrics, turn analytics, NDJSON
     event logs (`EventNdjsonLogger` and `ProviderEventLoggers` keep only the no-op service),
     provider sign-in commands and credential-change guards, Codex feedback upload, SnapShot
-    sources, data-URL and non-image file uploads, attachments on question answers, MCP tool
-    presentation, preview-tool metadata, and the agent device shim.
+    sources, data-URL and non-image file uploads, attachments on question answers, preview-tool
+    metadata, and the agent device shim.
 - **Runtime modes.** New threads use upstream's `defaultRuntimeMode` setting (`full-access` by
   default), limited to the modes the workspace provider reports. Until a provider reports its
   supported modes, the composer and the Codex adapter offer only the safe modes; an unsupported
@@ -612,7 +608,9 @@ listed here is drift to remove rather than fork behavior to keep.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
   - Client settings add per-workspace `providerPreferencesByEnvironment`.
   - `shared/serverSettings.ts` adds `resolveCoderTextGenerationModelSelection`. Claude launch args
-    reach the workspace CLI except MCP and stream-json transport flags.
+    reach the workspace CLI except the stream-json transport flags. `ClaudeAgentSdk.ts` passes
+    `mcpServers` and `strictMcpConfig` as the SDK does and rejects in-process (`sdk`) MCP servers,
+    which the CLI transport cannot host.
   - The web provider list and client-runtime `state/server.ts` stay limited to the methods and
     providers the helper serves.
 - **Command palette.** `CommandPalette.tsx` is upstream's, including its add-project browse,

@@ -29,8 +29,8 @@ describe("ClaudeCli", () => {
       "--print",
     ]);
     assert.equal(args[args.indexOf("--thinking-display") + 1], "summarized");
-    assert.ok(args.includes("--strict-mcp-config"));
-    assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
+    assert.ok(!args.includes("--strict-mcp-config"));
+    assert.ok(!args.includes("--mcp-config"));
     assert.ok(!args.includes("--chrome"));
     assert.ok(!args.includes("--plugin-dir"));
   });
@@ -49,7 +49,19 @@ describe("ClaudeCli", () => {
     assert.equal(args[args.indexOf("--session-id") + 1], "new-session");
   });
 
-  it("passes launch args through without overriding the integration or transport flags", () => {
+  it("passes MCP options to the CLI as the Agent SDK does", () => {
+    const servers = { docs: { type: "http", url: "https://example.test/mcp" } };
+    const args = buildClaudeCliArgs({
+      pathToClaudeCodeExecutable: "claude",
+      mcpServers: servers,
+      strictMcpConfig: true,
+    });
+
+    assert.equal(args[args.indexOf("--mcp-config") + 1], JSON.stringify({ mcpServers: servers }));
+    assert.ok(args.includes("--strict-mcp-config"));
+  });
+
+  it("passes launch args through without overriding the transport flags", () => {
     const args = buildClaudeCliArgs({
       pathToClaudeCodeExecutable: "claude",
       thinking: { type: "adaptive", display: "summarized" },
@@ -65,11 +77,8 @@ describe("ClaudeCli", () => {
 
     assert.ok(args.includes("--chrome"));
     assert.equal(args[args.indexOf("--max-turns") + 1], "5");
-    assert.deepEqual(
-      args.filter((arg) => arg === "--mcp-config" || arg === "--strict-mcp-config"),
-      ["--strict-mcp-config", "--mcp-config"],
-    );
-    assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{}}');
+    assert.equal(args[args.indexOf("--mcp-config") + 1], '{"mcpServers":{"x":{}}}');
+    assert.ok(args.includes("--strict-mcp-config"));
     assert.equal(args.filter((arg) => arg === "--output-format").length, 1);
     assert.equal(args.filter((arg) => arg === "--thinking-display").length, 1);
   });

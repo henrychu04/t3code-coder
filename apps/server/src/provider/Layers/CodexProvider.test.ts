@@ -4,7 +4,7 @@ import { CodexSettings } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { CodexIntegrationPolicyError } from "./CodexIntegrationPolicy.ts";
+import * as CodexErrors from "effect-codex-app-server/errors";
 import { resolveUsageLimitsAfterProbe } from "../providerUsageLimits.ts";
 import {
   applyPreferredCodexDefaultModel,
@@ -266,9 +266,7 @@ it.layer(NodeServices.layer)("Codex provider availability", (it) => {
     Effect.gen(function* () {
       const provider = yield* checkCodexProviderStatus(decodeCodexSettings({}), () =>
         Effect.fail(
-          new CodexIntegrationPolicyError("Codex MCP policy discovery failed.", {
-            unavailable: true,
-          }),
+          new CodexErrors.CodexAppServerSpawnError({ command: "codex app-server", cause: null }),
         ),
       );
 

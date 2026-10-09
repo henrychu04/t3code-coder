@@ -207,10 +207,18 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
     // SessionStart hooks would run on every health check.
     settings: { disableAllHooks: true },
     allowedTools: [],
-    // The CLI transport enforces an empty strict integration config. Probes
-    // are noninteractive, so skip IDE discovery and its periodic process tree.
+    // Ignore MCP definitions from every filesystem setting source above. The
+    // SDK combines this empty explicit map with --strict-mcp-config.
+    mcpServers: {},
+    strictMcpConfig: true,
     env: {
       ...input.environment,
+      // Connected claude.ai MCP servers are discovered outside filesystem
+      // config; disable them independently for this health check.
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
+      // This is a noninteractive health check, so IDE discovery cannot add any
+      // useful capability data. Skipping it also avoids Claude spawning a
+      // Windows `tasklist | findstr` process tree on every periodic refresh.
       FORCE_CODE_TERMINAL: undefined,
       CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
       CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",

@@ -21,10 +21,6 @@ import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { expandHomePath } from "../pathExpansion.ts";
 import { getCodexServiceTierOptionValue } from "../codexModelOptions.ts";
 import { resolvePastedImageAttachments } from "../provider/PastedImageAttachments.ts";
-import {
-  discoverCodexMcpServerNames,
-  type CodexMcpServerNameResolver,
-} from "../provider/Layers/CodexIntegrationPolicy.ts";
 import { codexExecLaunchArgs, resolveCodexLaunchArgs } from "../provider/Layers/codexLaunchArgs.ts";
 import * as TextGeneration from "./TextGeneration.ts";
 import {
@@ -51,23 +47,12 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
   codexConfig: CodexSettings,
   environment?: NodeJS.ProcessEnv,
   attachmentsDir?: string,
-  mcpServerNameResolver?: CodexMcpServerNameResolver,
   getModels: Effect.Effect<ReadonlyArray<ServerProviderModel>> = Effect.succeed([]),
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const commandSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const resolvedEnvironment = environment ?? process.env;
   const launchArgs = resolveCodexLaunchArgs(codexConfig.launchArgs, resolvedEnvironment);
-  const resolveMcpServerNames: CodexMcpServerNameResolver =
-    mcpServerNameResolver ??
-    ((cwd) =>
-      discoverCodexMcpServerNames({
-        binaryPath: codexConfig.binaryPath || "codex",
-        launchArgs,
-        cwd,
-        homePath: codexConfig.homePath,
-        environment: resolvedEnvironment,
-      }).pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, commandSpawner)));
 
   const readStreamAsString = <E>(
     operation:
@@ -133,16 +118,6 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
     );
     const schemaPath = yield* writeTempFile(input.operation, "codex-schema", schemaJson);
     const outputPath = yield* writeTempFile(input.operation, "codex-output", "");
-    const disabledMcpServerNames = yield* resolveMcpServerNames(input.cwd).pipe(
-      Effect.mapError(
-        (cause) =>
-          new TextGenerationError({
-            operation: input.operation,
-            detail: cause.message,
-            cause,
-          }),
-      ),
-    );
     const models = yield* getModels;
     const requestedModel = input.modelSelection.model;
     const model =
@@ -159,7 +134,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
       codexConfig.binaryPath || "codex",
       [
         "exec",
-        ...codexExecLaunchArgs(launchArgs, disabledMcpServerNames),
+        ...codexExecLaunchArgs(launchArgs),
         "--ephemeral",
         "--skip-git-repo-check",
         "-s",

@@ -50,6 +50,5 @@ permit. While provider capabilities are unknown, T3 Coder limits the menu to **S
 If a previously selected mode becomes unavailable, T3 Coder uses the first supported mode instead
 of sending an unsupported configuration to the provider.
 
-Permission mode does not enable features outside the T3 Coder product boundary. T3 Coder runs
-managed Codex and Claude sessions without MCP servers or provider app integrations, and does not
+Permission mode does not enable features outside the T3 Coder product boundary. T3 Coder does not
 expose free-form provider launch flags.

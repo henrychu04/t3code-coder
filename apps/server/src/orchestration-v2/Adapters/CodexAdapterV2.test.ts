@@ -611,23 +611,6 @@ describe("CodexAdapterV2 runtime policy", () => {
   );
 });
 
-// Coder: MCP integrations are disabled.
-describe("CodexAdapterV2 MCP elicitations", () => {
-  it.effect("declines every MCP elicitation", () =>
-    Effect.gen(function* () {
-      const response = yield* CodexAdapterV2.declineCodexMcpElicitation({
-        mode: "form",
-        message: "Allow ChatGPT to use Safari?",
-        serverName: "computer-use",
-        threadId: "thread-codex-mcp-disabled",
-        turnId: "turn-codex-mcp-disabled",
-        requestedSchema: { type: "object", properties: {} },
-      } as never);
-      assert.deepEqual(response, { action: "decline" });
-    }),
-  );
-});
-
 describe("CodexAdapterV2 process spawning", () => {
   it("injects cwd, model, and MCP authorization into thread-scoped params", () => {
     const threadId = ThreadId.make("thread-codex-mcp");
@@ -766,17 +749,9 @@ describe("CodexAdapterV2 process spawning", () => {
       yield* open({});
       yield* open({ T3CODE_CODEX_LAUNCH_ARGS: " --enable env-feature " });
 
-      // Coder: every app-server launch disables Codex apps, which reach MCP connectors.
       assert.deepEqual(spawnedArgs, [
-        [
-          "app-server",
-          "--strict-config",
-          "-c",
-          "model_reasoning_summary=detailed",
-          "--config",
-          "features.apps=false",
-        ],
-        ["app-server", "--enable", "env-feature", "--config", "features.apps=false"],
+        ["app-server", "--strict-config", "-c", "model_reasoning_summary=detailed"],
+        ["app-server", "--enable", "env-feature"],
       ]);
     }).pipe(Effect.provideService(HostProcessPlatform, "linux")),
   );

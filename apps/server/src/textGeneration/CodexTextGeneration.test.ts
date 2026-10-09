@@ -82,7 +82,6 @@ function withFakeCodex<A, E, R>(
       }),
       environment,
       tempDir,
-      () => Effect.succeed([]),
       Effect.succeed(
         input.modelSlug
           ? [{ slug: input.modelSlug, name: "Test", isCustom: false, capabilities: null }]

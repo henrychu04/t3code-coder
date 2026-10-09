@@ -124,9 +124,9 @@ Type `/` to open the command menu. Commands and skills discovered in the workspa
 built-in Claude commands such as `/compact` as well as commands your project defines. Type `$` to
 find and add a skill.
 
-After you add or change skills, plugins, or configuration in the workspace, use **Restart agent
+After you add or change skills, plugins, or MCP servers in the workspace, use **Restart agent
 session** in the command palette. The conversation continues, and your next message starts the
-agent again with the new setup. T3 Coder disables MCP servers for managed sessions.
+agent again with the new setup.
 
 ## Recall a sent prompt
 

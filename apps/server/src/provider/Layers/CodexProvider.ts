@@ -34,10 +34,6 @@ import {
 import { resolveSpawnCommand } from "@t3tools/shared/shell";
 import { codexAppServerArgs, resolveCodexLaunchArgs } from "./codexLaunchArgs.ts";
 import {
-  CodexIntegrationPolicyError,
-  discoverCodexMcpServerNames,
-} from "./CodexIntegrationPolicy.ts";
-import {
   decodeCodexRuntimeRequirementsResponse,
   resolveCodexSupportedRuntimeModes,
 } from "../CodexRuntimeModes.ts";
@@ -373,16 +369,9 @@ const probeCodexAppServerProvider = Effect.fn("probeCodexAppServerProvider")(fun
     ...input.environment,
     ...(resolvedHomePath ? { CODEX_HOME: resolvedHomePath } : {}),
   };
-  const disabledMcpServerNames = yield* discoverCodexMcpServerNames({
-    binaryPath: input.binaryPath,
-    cwd: input.cwd,
-    ...(input.launchArgs ? { launchArgs: input.launchArgs } : {}),
-    ...(input.homePath ? { homePath: input.homePath } : {}),
-    ...(input.environment ? { environment: input.environment } : {}),
-  });
   const spawnCommand = yield* resolveSpawnCommand(
     input.binaryPath,
-    codexAppServerArgs(input.launchArgs, disabledMcpServerNames),
+    codexAppServerArgs(input.launchArgs),
     {
       env: environment,
       extendEnv: true,
@@ -547,7 +536,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
     readonly skipNativeUsage?: boolean;
   }) => Effect.Effect<
     CodexAppServerProviderSnapshot,
-    CodexErrors.CodexAppServerError | CodexIntegrationPolicyError,
+    CodexErrors.CodexAppServerError,
     ChildProcessSpawner.ChildProcessSpawner | Scope.Scope
   > = probeCodexAppServerProvider,
   environment?: NodeJS.ProcessEnv,
@@ -593,10 +582,7 @@ export const checkCodexProviderStatus = Effect.fn("checkCodexProviderStatus")(fu
 
   if (Result.isFailure(probeResult)) {
     const error = probeResult.failure;
-    const unavailable =
-      isCodexAppServerSpawnError(error) ||
-      (error instanceof CodexIntegrationPolicyError && error.unavailable);
-    const installed = !unavailable;
+    const installed = !isCodexAppServerSpawnError(error);
     return buildServerProvider({
       presentation: CODEX_PRESENTATION,
       enabled: codexSettings.enabled,

@@ -180,6 +180,8 @@ it("isolates Claude capability probes without dropping workspace setting sources
     cwd: "/workspace/project",
   });
 
+  assert.deepEqual(options.mcpServers, {});
+  assert.equal(options.strictMcpConfig, true);
   assert.equal(options.cwd, "/workspace/project");
   assert.deepEqual(options.settingSources, [...CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES]);
   assert.deepEqual(options.settings, { disableAllHooks: true });
@@ -188,7 +190,7 @@ it("isolates Claude capability probes without dropping workspace setting sources
   assert.equal(options.pathToClaudeCodeExecutable, "/usr/bin/claude");
   assert.equal(options.abortController, abortController);
   assert.equal(options.env?.HOME, "/home/user");
-  assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "true");
+  assert.equal(options.env?.ENABLE_CLAUDEAI_MCP_SERVERS, "false");
   assert.equal(options.env?.FORCE_CODE_TERMINAL, undefined);
   assert.equal(options.env?.CLAUDE_CODE_AUTO_CONNECT_IDE, "0");
   assert.equal(options.env?.CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL, "1");
@@ -405,8 +407,8 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
       assert.equal(invocation.cwd, yield* fs.realPath(workspaceCwd));
       assert.equal(invocation.connectorEnv, "false");
       assert.equal(invocation.args.includes("--strict-mcp-config"), true);
-      assert.equal(invocation.args.includes("--mcp-config"), true);
-      assert.deepEqual(invocation.mcpConfig, { mcpServers: {} });
+      assert.equal(invocation.args.includes("--mcp-config"), false);
+      assert.equal(invocation.mcpConfig, undefined);
 
       assert.equal(invocation.args.includes("--setting-sources=user,project,local"), true);
 
