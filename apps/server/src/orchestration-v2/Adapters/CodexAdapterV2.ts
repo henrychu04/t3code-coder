@@ -1434,10 +1434,7 @@ export type CodexAdapterV2DriverEnv =
 
 export const createCodexAdapterV2 = (
   { instanceId, environment, enabled, config }: ProviderAdapterDriverCreateInput<CodexSettings>,
-  hooks: Pick<
-    CodexAdapterV2Options,
-    "onUsageLimits" | "resolveRuntime"
-  > = {},
+  hooks: Pick<CodexAdapterV2Options, "onUsageLimits" | "resolveRuntime"> = {},
 ) =>
   Effect.gen(function* () {
     const clientFactory = yield* CodexAppServerClientFactory;
