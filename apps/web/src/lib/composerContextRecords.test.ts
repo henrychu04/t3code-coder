@@ -16,6 +16,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   asKnownContextRecord,
+  attachmentContextRecord,
+  buildMessageContext,
   composerContextImportLookupIds,
   isPullRequestSummaryContext,
   isSameComposerContextPayload,
@@ -314,7 +316,67 @@ describe("composerContextRecords", () => {
   });
 });
 
-describe("attachment context records", () => {});
+describe("attachment context records", () => {
+  it("binds image and file records to the given attachment id", () => {
+    const image = attachmentContextRecord({
+      attachment: {
+        type: "image",
+        id: "img-1",
+        name: "shot.png",
+        mimeType: "image/png",
+        sizeBytes: 10,
+        previewUrl: "blob:x",
+        file: new File(["x"], "shot.png", { type: "image/png" }),
+      },
+      attachmentId: "pending-abc",
+    });
+    expect(image).toEqual({
+      version: 1,
+      contextId: "image_img-1",
+      kind: "image",
+      label: "shot.png",
+      attachmentId: "pending-abc",
+      name: "shot.png",
+      mimeType: "image/png",
+      sizeBytes: 10,
+    });
+    const file = attachmentContextRecord({
+      attachment: {
+        type: "file",
+        id: "file-1",
+        name: "notes.txt",
+        mimeType: "text/plain",
+        sizeBytes: 3,
+        file: null,
+        uploadedAttachmentId: "pending-def",
+      },
+      attachmentId: "pending-def",
+    });
+    expect(file).toMatchObject({
+      kind: "file",
+      contextId: "file_file-1",
+      attachmentId: "pending-def",
+    });
+    const context = buildMessageContext({
+      terminalContexts: [],
+      reviewComments: [],
+      attachments: [
+        {
+          attachment: {
+            type: "file",
+            id: "file-1",
+            name: "n",
+            mimeType: "text/plain",
+            sizeBytes: 1,
+            file: null,
+          },
+          attachmentId: "file-1",
+        },
+      ],
+    });
+    expect(context?.records.map((record) => record.kind)).toEqual(["file"]);
+  });
+});
 
 describe("producer ids that do not fit the grammar", () => {
   it("folds review comment ids and keeps the raw id in the draft shape", () => {

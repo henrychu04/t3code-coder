@@ -1,4 +1,10 @@
-import type { EnvironmentId, VcsRef, ProjectId, WorktreeSubmodules } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  EnvironmentMachineKind,
+  VcsRef,
+  ProjectId,
+  WorktreeSubmodules,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { sanitizeNewRefName } from "@t3tools/shared/git";
 import { toSortableTimestamp } from "../lib/threadSort";
@@ -12,10 +18,14 @@ export interface EnvironmentOption {
   environmentId: EnvironmentId;
   projectId: ProjectId;
   label: string;
+  isPrimary: boolean;
+  machine: EnvironmentMachineKind;
 }
 
 export const EnvMode = Schema.Literals(["local", "worktree"]);
 export type EnvMode = typeof EnvMode.Type;
+
+const GENERIC_LOCAL_ENVIRONMENT_LABELS = new Set(["local", "local environment"]);
 
 function normalizeDisplayLabel(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -23,6 +33,7 @@ function normalizeDisplayLabel(value: string | null | undefined): string | null 
 }
 
 export function resolveEnvironmentOptionLabel(input: {
+  isPrimary: boolean;
   environmentId: EnvironmentId;
   runtimeLabel?: string | null;
   savedLabel?: string | null;
@@ -30,14 +41,26 @@ export function resolveEnvironmentOptionLabel(input: {
   const runtimeLabel = normalizeDisplayLabel(input.runtimeLabel);
   const savedLabel = normalizeDisplayLabel(input.savedLabel);
 
+  if (input.isPrimary) {
+    const preferredLocalLabel = [runtimeLabel, savedLabel].find((label) => {
+      if (!label) return false;
+      return !GENERIC_LOCAL_ENVIRONMENT_LABELS.has(label.toLowerCase());
+    });
+    return preferredLocalLabel ?? "This device";
+  }
+
   return runtimeLabel ?? savedLabel ?? input.environmentId;
 }
 
+// A remote (non-primary) environment is always surfaced, even when it is the
+// only environment available: with a single connected machine there is nothing
+// to pick, but the user still needs to see where the project runs.
 export function shouldShowEnvironmentIndicator(input: {
-  activeEnvironment: object | null;
+  activeEnvironment: Pick<EnvironmentOption, "isPrimary"> | null;
   canPickEnvironment: boolean;
 }): boolean {
-  return input.activeEnvironment !== null && input.canPickEnvironment;
+  if (input.canPickEnvironment) return true;
+  return input.activeEnvironment !== null && !input.activeEnvironment.isPrimary;
 }
 
 export function shouldShowComposerContextStrip(input: {
@@ -230,6 +253,10 @@ export function resolveBranchToolbarPrBranch(input: {
   return input.activeThreadBranch === input.resolvedActiveBranch ? input.activeThreadBranch : null;
 }
 
+/**
+ * Coder: the branch notice also covers a managed worktree whose branch moved. Only a local
+ * checkout can be restored; a worktree only warns.
+ */
 export function resolveCheckoutBranchMismatch(input: {
   effectiveEnvMode: EnvMode;
   activeWorktreePath: string | null;
@@ -285,7 +312,7 @@ export function shouldIncludeBranchPickerItem(input: {
   itemValue: string;
   normalizedQuery: string;
   createBranchItemValue: string | null;
-  checkoutPullRequestItemValue?: string | null;
+  checkoutPullRequestItemValue: string | null;
 }): boolean {
   const { itemValue, normalizedQuery, createBranchItemValue, checkoutPullRequestItemValue } = input;
 

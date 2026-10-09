@@ -13,8 +13,8 @@ import {
   resolveBranchToolbarPrBranch,
   resolveBranchToolbarValue,
   resolveLockedWorkspaceLabel,
-  resolveCheckoutBranchMismatch,
   resolveWorkspaceDisplayName,
+  resolveCheckoutBranchMismatch,
   resolvePreviousWorktreeLabel,
   resolvePreviousWorktreeSeed,
   sanitizeNewRefName,
@@ -274,22 +274,35 @@ describe("resolveBranchTriggerLabel", () => {
 });
 
 describe("resolveBranchToolbarPrBranch", () => {
-  it("shows the MR only while the composer is on the thread's branch", () => {
+  it("uses the explicit thread branch when it matches the displayed branch", () => {
     expect(
       resolveBranchToolbarPrBranch({
-        activeThreadBranch: "feature/panel",
-        resolvedActiveBranch: "feature/panel",
+        activeThreadBranch: "feature/current",
+        resolvedActiveBranch: "feature/current",
       }),
-    ).toBe("feature/panel");
+    ).toBe("feature/current");
+  });
+
+  it("hides PR state while an optimistic branch switch is in flight", () => {
     expect(
       resolveBranchToolbarPrBranch({
-        activeThreadBranch: "feature/panel",
-        resolvedActiveBranch: "main",
+        activeThreadBranch: "feature/current",
+        resolvedActiveBranch: "feature/next",
+      }),
+    ).toBeNull();
+  });
+
+  it("does not infer PR state without an explicit thread branch", () => {
+    expect(
+      resolveBranchToolbarPrBranch({
+        activeThreadBranch: null,
+        resolvedActiveBranch: "feature/current",
       }),
     ).toBeNull();
   });
 });
 
+// Coder: the notice also covers a managed worktree whose branch moved.
 describe("resolveCheckoutBranchMismatch", () => {
   it("detects when a local thread is associated with a different branch than the checkout", () => {
     expect(
@@ -345,9 +358,10 @@ describe("resolveCheckoutBranchMismatch", () => {
 });
 
 describe("resolveEnvironmentOptionLabel", () => {
-  it("prefers the workspace runtime label", () => {
+  it("prefers the primary environment's machine label", () => {
     expect(
       resolveEnvironmentOptionLabel({
+        isPrimary: true,
         environmentId: localEnvironmentId,
         runtimeLabel: "Julius's Mac mini",
         savedLabel: "Local environment",
@@ -355,19 +369,21 @@ describe("resolveEnvironmentOptionLabel", () => {
     ).toBe("Julius's Mac mini");
   });
 
-  it("falls back to the saved workspace label", () => {
+  it("falls back to 'This device' for generic primary labels", () => {
     expect(
       resolveEnvironmentOptionLabel({
+        isPrimary: true,
         environmentId: localEnvironmentId,
         runtimeLabel: "Local environment",
         savedLabel: "Local",
       }),
-    ).toBe("Local environment");
+    ).toBe("This device");
   });
 
-  it("keeps configured workspace labels", () => {
+  it("keeps configured labels for non-primary environments", () => {
     expect(
       resolveEnvironmentOptionLabel({
+        isPrimary: false,
         environmentId: remoteEnvironmentId,
         runtimeLabel: null,
         savedLabel: "Build box",
@@ -380,16 +396,25 @@ describe("shouldShowEnvironmentIndicator", () => {
   it("shows the indicator whenever multiple environments are pickable", () => {
     expect(
       shouldShowEnvironmentIndicator({
-        activeEnvironment: {},
+        activeEnvironment: { isPrimary: true },
         canPickEnvironment: true,
       }),
     ).toBe(true);
   });
 
-  it("hides the indicator when only one workspace is available", () => {
+  it("shows a sole remote environment so the user knows where the project runs", () => {
     expect(
       shouldShowEnvironmentIndicator({
-        activeEnvironment: {},
+        activeEnvironment: { isPrimary: false },
+        canPickEnvironment: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("hides a sole primary (this-device) environment", () => {
+    expect(
+      shouldShowEnvironmentIndicator({
+        activeEnvironment: { isPrimary: true },
         canPickEnvironment: false,
       }),
     ).toBe(false);
@@ -755,12 +780,24 @@ describe("resolveBranchSelectionTarget", () => {
 });
 
 describe("shouldIncludeBranchPickerItem", () => {
+  it("keeps the synthetic checkout PR item visible for gh pr checkout input", () => {
+    expect(
+      shouldIncludeBranchPickerItem({
+        itemValue: "__checkout_pull_request__:1359",
+        normalizedQuery: "gh pr checkout 1359",
+        createBranchItemValue: "__create_new_branch__:gh pr checkout 1359",
+        checkoutPullRequestItemValue: "__checkout_pull_request__:1359",
+      }),
+    ).toBe(true);
+  });
+
   it("keeps the synthetic create-ref item visible for arbitrary ref input", () => {
     expect(
       shouldIncludeBranchPickerItem({
         itemValue: "__create_new_branch__:feature/demo",
         normalizedQuery: "feature/demo",
         createBranchItemValue: "__create_new_branch__:feature/demo",
+        checkoutPullRequestItemValue: null,
       }),
     ).toBe(true);
   });
@@ -769,8 +806,9 @@ describe("shouldIncludeBranchPickerItem", () => {
     expect(
       shouldIncludeBranchPickerItem({
         itemValue: "main",
-        normalizedQuery: "feature",
-        createBranchItemValue: "__create_new_branch__:feature",
+        normalizedQuery: "gh pr checkout 1359",
+        createBranchItemValue: "__create_new_branch__:gh pr checkout 1359",
+        checkoutPullRequestItemValue: "__checkout_pull_request__:1359",
       }),
     ).toBe(false);
   });
@@ -783,6 +821,7 @@ describe("shouldIncludeBranchPickerItem", () => {
         itemValue: "new-branch",
         normalizedQuery: "new branch",
         createBranchItemValue: null,
+        checkoutPullRequestItemValue: null,
       }),
     ).toBe(true);
   });
@@ -795,6 +834,7 @@ describe("shouldIncludeBranchPickerItem", () => {
         itemValue: "hello-world",
         normalizedQuery: "hello w",
         createBranchItemValue: null,
+        checkoutPullRequestItemValue: null,
       }),
     ).toBe(true);
   });
@@ -805,6 +845,7 @@ describe("shouldIncludeBranchPickerItem", () => {
         itemValue: "main",
         normalizedQuery: "new branch",
         createBranchItemValue: null,
+        checkoutPullRequestItemValue: null,
       }),
     ).toBe(false);
   });
