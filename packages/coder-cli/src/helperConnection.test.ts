@@ -179,7 +179,8 @@ describe("Coder helper connection", () => {
 
     connection.close();
     strictEqual((await connection.closed).expected, true);
-    await NodeFS.rm(helperHome, { recursive: true, force: true });
+    // Provider probe children can finish writing to HOME just after the helper exits.
+    await NodeFS.rm(helperHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
   it("waits for remote terminal setup before sending negotiation data", async () => {

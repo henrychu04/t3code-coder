@@ -19,7 +19,10 @@ vi.mock("./useSettings", () => ({
   useClientSettings: (select: (settings: object) => unknown) =>
     select({ confirmThreadDelete: false, confirmThreadArchive: false, timestampFormat: "24-hour" }),
 }));
+vi.mock("@tanstack/react-router", () => ({ useRouter: () => ({ navigate: vi.fn() }) }));
 vi.mock("../state/entities", () => ({
+  useActiveEnvironmentId: () => null,
+  useProjects: () => [],
   readEnvironmentSupportsAutoSettleOptOut: () => true,
   readEnvironmentSupportsPinning: () => true,
   readEnvironmentSupportsSettlement: () => true,

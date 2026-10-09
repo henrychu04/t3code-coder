@@ -158,7 +158,13 @@ describe("Coder foreground helper", () => {
     } finally {
       if (helper.exitCode === null && helper.signalCode === null) helper.kill("SIGKILL");
       await exit;
-      await NodeFS.rm(helperHome, { recursive: true, force: true });
+      // Provider probe children can finish writing to HOME just after the helper exits.
+      await NodeFS.rm(helperHome, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 100,
+      });
     }
   });
 });

@@ -151,6 +151,7 @@ it("runs the bundled ESM helper under Node", async () => {
       helper.kill();
       await exit;
     }
-    await NodeFS.rm(testRoot, { recursive: true, force: true });
+    // Provider probe children can finish writing to HOME just after the helper exits.
+    await NodeFS.rm(testRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
