@@ -26,7 +26,6 @@ export type ThreadActionMenuId =
   | "copy"
   | "copy-path"
   | "copy-branch"
-  | "copy-reference"
   | "copy-thread-id"
   | "archive"
   | "delete";
@@ -174,10 +173,10 @@ export function buildThreadActionMenuItems(
         ...(state.branch
           ? [{ id: "copy-branch" as const, label: "Branch", icon: "git-branch" }]
           : []),
-        { id: "copy-reference", label: "Reference", icon: "link" },
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
+    { id: "project-settings", label: "Project settings", icon: "settings" },
     // Archive removes the thread from the sidebar while keeping its
     // conversation under Settings > Archived threads — distinct from Settle
     // (stays visible in the Settled shelf) and Delete (clears history for

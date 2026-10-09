@@ -5,6 +5,7 @@ import { useCallback } from "react";
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { resolveThreadRouteTarget } from "../threadRoutes";
+import { releaseProjectDraftUploads } from "../lib/composerDraftUploads";
 import { projectEnvironment } from "../state/projects";
 import { useAtomCommand } from "../state/use-atom-command";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -49,6 +50,7 @@ export function useRemoveClonedProject() {
       const viewingThisProject =
         viewingDraft?.environmentId === projectRef.environmentId &&
         viewingDraft.projectId === projectRef.projectId;
+      releaseProjectDraftUploads(projectRef);
       const projectDraft = draftStore.getDraftThreadByProjectRef(projectRef);
       if (projectDraft) draftStore.clearDraftThread(projectDraft.draftId);
       draftStore.clearProjectDraftThreadId(projectRef);

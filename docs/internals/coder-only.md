@@ -797,8 +797,8 @@ listed here is drift to remove rather than fork behavior to keep.
   before upstream's migrator runs. A V2 preview ledger is reconciled before that rewrite, because
   the Coder legacy registry never recorded `OrchestrationV2`. New migrations take upstream's next ID; never add a Coder-only
   migration ID.
-- **Persistence.** Merge-request snapshots, right-panel tabs, the last merge method, and the last
-  project grouping mode stay in memory where upstream uses browser storage. `storage.ts` keeps
+- **Persistence.** Merge-request snapshots, right-panel tabs, diff-panel selections (branch
+  base refs and turn ids), the last merge method, and the last project grouping mode stay in memory where upstream uses browser storage. `storage.ts` keeps
   upstream's IndexedDB environment cache without the connection catalog, credentials, GitHub
   routing permissions, or project favicons. The upstream idle thread-snapshot retention lifecycle
   keeps Coder's 24-thread / 64 MiB cap. Composer drafts and the prompt stash keep text in browser

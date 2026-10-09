@@ -119,6 +119,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
     {
       name: "t3code:diff-panel-state:v1",
       version: 2,
+      // Coder: branch refs and turn ids are workspace data; keep them in memory.
       storage: createJSONStorage(createMemoryStorage),
       partialize: (state) => ({
         byThreadKey: state.byThreadKey,

@@ -141,10 +141,8 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                 ? props.triggerKind === "skill"
                   ? "Searching workspace skills..."
                   : props.triggerKind === "pull-request"
-                    ? "Finding merge request..."
-                    : props.triggerKind === "slash-command"
-                      ? "Loading provider commands..."
-                      : "Searching workspace files..."
+                    ? "Finding pull request..."
+                    : "Searching workspace files..."
                 : (props.emptyStateText ??
                   (props.triggerKind === "skill"
                     ? "No skills found. Try / to browse provider commands."

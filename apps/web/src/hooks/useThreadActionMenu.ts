@@ -1,4 +1,3 @@
-import { readThreadReference } from "../lib/threadReference";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { requestCustomSnooze } from "../components/CustomSnoozeDialog";
 import {
@@ -9,7 +8,8 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { canSnooze, effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import type { ScopedThreadRef, ThreadId } from "@t3tools/contracts";
-import { useCallback } from "react";
+import { useRouter } from "@tanstack/react-router";
+import { useCallback, useMemo } from "react";
 
 import { resolveSnoozePresets } from "../components/Sidebar.snooze";
 import {
@@ -26,8 +26,16 @@ import {
   readEnvironmentSupportsSnooze,
   readEnvironmentSupportsTitleRegeneration,
   readThreadShell,
+  useActiveEnvironmentId,
+  useProjects,
 } from "../state/entities";
 import { readLocalApi } from "../localApi";
+import {
+  deriveLogicalProjectKeyFromSettings,
+  derivePhysicalProjectKey,
+  selectProjectGroupingSettings,
+} from "../logicalProject";
+import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
@@ -61,6 +69,20 @@ export function useThreadActionMenu(input: {
   readonly onStartRename: () => void;
 }) {
   const { threadRef, projectCwd, onStartRename } = input;
+  const router = useRouter();
+  const projects = useProjects();
+  // Coder: there is no primary environment; the active workspace takes its place.
+  const primaryEnvironmentId = useActiveEnvironmentId();
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const logicalProjectKeyByPhysicalKey = useMemo(
+    () =>
+      buildPhysicalToLogicalProjectKeyMap({
+        projects,
+        settings: projectGroupingSettings,
+        preferredEnvironmentId: primaryEnvironmentId,
+      }),
+    [primaryEnvironmentId, projectGroupingSettings, projects],
+  );
   const {
     settleThread,
     unsettleThread,
@@ -92,14 +114,6 @@ export function useThreadActionMenu(input: {
       toastManager.add({ type: "success", title: "Branch copied", description: branch });
     },
     onError: (error) => failureToast("Failed to copy branch", error),
-  });
-  const { copyToClipboard: copyReferenceToClipboard } = useCopyToClipboard({
-    onCopy: () => {
-      toastManager.add({ type: "success", title: "Reference copied" });
-    },
-    onError: () => {
-      toastManager.add({ type: "error", title: "Failed to copy reference" });
-    },
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
     onCopy: ({ threadId }) => {
@@ -166,6 +180,22 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "project-settings": {
+            const project = projects.find(
+              (candidate) =>
+                candidate.environmentId === thread.environmentId &&
+                candidate.id === thread.projectId,
+            );
+            if (!project) return;
+            const projectKey =
+              logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??
+              deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings);
+            void router.navigate({
+              to: "/projects/$projectKey",
+              params: { projectKey },
+            });
+            return;
+          }
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -194,9 +224,10 @@ export function useThreadActionMenu(input: {
           case "pin":
             await reportFailure("Failed to pin thread", () => pinThread(threadRef));
             return;
-          case "unpin":
+          case "unpin": {
             await reportFailure("Failed to unpin thread", () => confirmAndUnpinThread(threadRef));
             return;
+          }
           case "auto-settle:enabled":
           case "auto-settle:disabled":
             await reportFailure("Failed to update auto-settle", () =>
@@ -237,9 +268,6 @@ export function useThreadActionMenu(input: {
             if (thread.branch) {
               copyBranchToClipboard(thread.branch, { branch: thread.branch });
             }
-            return;
-          case "copy-reference":
-            copyReferenceToClipboard(readThreadReference(threadRef));
             return;
           case "copy-thread-id":
             copyThreadIdToClipboard(thread.id, { threadId: thread.id });
@@ -300,22 +328,25 @@ export function useThreadActionMenu(input: {
       archiveThread,
       confirmThreadArchive,
       confirmThreadDelete,
+      confirmAndUnpinThread,
       copyBranchToClipboard,
       copyPathToClipboard,
-      copyReferenceToClipboard,
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,
+      logicalProjectKeyByPhysicalKey,
       markThreadUnread,
       onStartRename,
       pinThread,
       projectCwd,
+      projectGroupingSettings,
+      projects,
+      router,
       setThreadAutoSettle,
       settleThread,
       snoozeThread,
       threadRef,
       timestampFormat,
-      confirmAndUnpinThread,
       unsettleThread,
       unsnoozeThread,
       updateThreadMetadata,

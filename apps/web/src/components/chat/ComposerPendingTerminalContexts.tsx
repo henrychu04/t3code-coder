@@ -8,12 +8,12 @@ import { TerminalContextInlineChip } from "./TerminalContextInlineChip";
 
 interface ComposerPendingTerminalContextChipProps {
   context: TerminalContextDraft;
-  detailsMode?: ContextPresentationCapability["details"];
+  detailsMode: ContextPresentationCapability["details"];
 }
 
 export function ComposerPendingTerminalContextChip({
   context,
-  detailsMode = "popover",
+  detailsMode,
 }: ComposerPendingTerminalContextChipProps) {
   const label = formatTerminalContextLabel(context);
   const expired = isTerminalContextExpired(context);
