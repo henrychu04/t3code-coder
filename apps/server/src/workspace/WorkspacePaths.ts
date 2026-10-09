@@ -6,7 +6,6 @@
  *
  * @module WorkspacePaths
  */
-import { expandHomePathWith } from "../pathExpansion.ts";
 
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -14,6 +13,8 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+
+import { expandHomePathWith } from "../pathExpansion.ts";
 
 export class WorkspaceRootNotExistsError extends Schema.TaggedError<WorkspaceRootNotExistsError>()(
   "WorkspaceRootNotExistsError",

@@ -1,3 +1,6 @@
+// Coder: listings stay inside the verified project root, and content search is the fork's
+// `searchText` (see "File search" in docs/internals/coder-only.md) in place of upstream's
+// `searchContents`; `listDirectories` serves the Add project workspace picker.
 import * as VcsProcess from "../vcs/VcsProcess.ts";
 import type { ProjectEntry } from "@t3tools/contracts";
 // @effect-diagnostics nodeBuiltinImport:off -- Directory browsing is a small Linux filesystem adapter.

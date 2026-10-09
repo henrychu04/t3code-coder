@@ -545,7 +545,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials.
     Thread MR links must belong to a known GitLab host.
   - Files listings, reads, writes, content search, and media reads verify the requesting thread's
-    project root. Path-only FFF errors and stale-write errors retain the fork's bounded-service
+    project root. `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
+    `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
+    of upstream's absolute-path reads, create-anywhere writes, and `searchContents`;
+    `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
     error mapping.
   - Coder-only methods remain beside their upstream neighbors: local ref status, managed
     branch/worktree rename with `moveWorktree`, write-access probing, chunked review files,
