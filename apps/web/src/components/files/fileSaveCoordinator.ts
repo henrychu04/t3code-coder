@@ -4,7 +4,9 @@ export interface FileSaveCoordinatorOptions<A, E> {
   readonly debounceMs: number;
   readonly persist: (contents: string) => Promise<AtomCommandResult<A, E>>;
   readonly onPendingChange: (pending: boolean) => void;
+  // Coder: the write result carries the file's new revision for stale-write detection.
   readonly onConfirmed: (contents: string, result: A) => void;
+  // Coder: a rejected write (for example a stale revision) lets the surface offer a reload.
   readonly onFailed?: () => void;
 }
 
@@ -13,7 +15,6 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   private latestContents = "";
   private latestRevision = 0;
   private confirmedRevision = 0;
-  private failedRevision = 0;
   private lastChangeAt = 0;
   private saving = false;
   private disposed = false;
@@ -32,19 +33,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
   dispose(): void {
     this.disposed = true;
     this.clearTimer();
-    if (
-      this.latestRevision > this.confirmedRevision &&
-      this.latestRevision !== this.failedRevision
-    ) {
-      void this.persistLatest();
-    }
-  }
-
-  discard(): void {
-    this.clearTimer();
-    this.confirmedRevision = this.latestRevision;
-    this.failedRevision = 0;
-    this.options.onPendingChange(false);
+    if (this.latestRevision > 0) void this.persistLatest();
   }
 
   private schedule(delay: number): void {
@@ -63,6 +52,7 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
 
   private async persistLatest(): Promise<void> {
     if (this.saving || this.latestRevision === this.confirmedRevision) return;
+
     this.saving = true;
     const contents = this.latestContents;
     const revision = this.latestRevision;
@@ -70,19 +60,25 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
     const succeeded = result._tag === "Success";
     if (succeeded) {
       this.confirmedRevision = revision;
-      this.failedRevision = 0;
       this.options.onConfirmed(contents, result.value);
     } else {
-      this.failedRevision = revision;
       this.options.onFailed?.();
     }
+
     this.saving = false;
     if (revision === this.latestRevision) {
       if (succeeded) this.options.onPendingChange(false);
       return;
     }
-    const remaining = Math.max(0, this.options.debounceMs - (Date.now() - this.lastChangeAt));
-    if (this.disposed) void this.persistLatest();
-    else this.schedule(remaining);
+
+    const remainingDebounce = Math.max(
+      0,
+      this.options.debounceMs - (Date.now() - this.lastChangeAt),
+    );
+    if (this.disposed) {
+      void this.persistLatest();
+    } else {
+      this.schedule(remainingDebounce);
+    }
   }
 }

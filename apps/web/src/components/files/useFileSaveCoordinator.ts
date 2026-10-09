@@ -1,80 +1,89 @@
-import type { EnvironmentId, ScopedThreadRef, ProjectWriteFileResult } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectWriteFileResult, ThreadId } from "@t3tools/contracts";
 import { createRef, useEffect, useMemo } from "react";
+
 import { projectEnvironment } from "~/state/projects";
 import { useAtomCommand } from "~/state/use-atom-command";
+
 import { FileSaveCoordinator } from "./fileSaveCoordinator";
 import { confirmProjectFileQueryData } from "./projectFilesQueryState";
-import { confirmFileEditorSession } from "./fileEditorSessions";
+
+const FILE_SAVE_DEBOUNCE_MS = 500;
 
 interface FileSaveOptions {
   environmentId: EnvironmentId;
-  threadRef: ScopedThreadRef;
+  // Coder: writes name the owning thread and the revision the edit is based on.
+  threadId: ThreadId;
+  revision: string;
   cwd: string;
   relativePath: string;
-  revision: string;
   onPendingChange: (relativePath: string, pending: boolean) => void;
   onSaveFailed: (relativePath: string) => void;
 }
 
-export function useFileSaveCoordinator(input: FileSaveOptions) {
+export function useFileSaveCoordinator({
+  environmentId,
+  threadId,
+  revision,
+  cwd,
+  relativePath,
+  onPendingChange,
+  onSaveFailed,
+}: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
   const writeFile = useAtomCommand(projectEnvironment.writeFile);
-  const { environmentId, threadRef, cwd, relativePath, onPendingChange, onSaveFailed } = input;
   const session = useMemo(() => {
-    const revisionRef = { current: input.revision };
-    const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult, unknown>>();
+    const coordinatorRef = createRef<FileSaveCoordinator<ProjectWriteFileResult>>();
+    const revisionRef = { current: "" };
     return {
-      updateRevision: (revision: string) => {
-        revisionRef.current = revision;
-      },
+      revisionRef,
       change: (contents: string) => coordinatorRef.current?.change(contents),
       setup: () => {
-        const coordinator = new FileSaveCoordinator<ProjectWriteFileResult, unknown>({
-          debounceMs: 500,
+        // Coder: a retired editor still retries its pending edit on close, as upstream does,
+        // but its failure must not flag the surface that replaced it.
+        let active = true;
+        const coordinator = new FileSaveCoordinator<ProjectWriteFileResult>({
+          debounceMs: FILE_SAVE_DEBOUNCE_MS,
           onPendingChange: (pending) => onPendingChange(relativePath, pending),
-          onFailed: () => onSaveFailed(relativePath),
-          persist: (contents) =>
+          onFailed: () => {
+            if (active) onSaveFailed(relativePath);
+          },
+          persist: (nextContents) =>
             writeFile({
               environmentId,
               input: {
-                threadId: threadRef.threadId,
+                threadId,
                 cwd,
                 relativePath,
-                contents,
+                contents: nextContents,
                 expectedRevision: revisionRef.current,
               },
             }),
-          onConfirmed: (contents, result) => {
+          onConfirmed: (confirmedContents, result) => {
             revisionRef.current = result.revision;
-            confirmFileEditorSession({ threadRef, cwd, relativePath }, contents, result.revision);
             confirmProjectFileQueryData(
               environmentId,
-              threadRef.threadId,
+              threadId,
               cwd,
               relativePath,
-              contents,
+              confirmedContents,
               result.revision,
             );
           },
         });
         coordinatorRef.current = coordinator;
         return () => {
+          active = false;
           coordinatorRef.current = null;
           coordinator.dispose();
         };
       },
     };
-  }, [
-    environmentId,
-    threadRef.environmentId,
-    threadRef.threadId,
-    cwd,
-    relativePath,
-    onPendingChange,
-    onSaveFailed,
-    writeFile,
-  ]);
-  useEffect(() => session.updateRevision(input.revision), [session, input.revision]);
-  // StrictMode setup replay needs a fresh coordinator; old file sessions remain inert.
+  }, [cwd, environmentId, onPendingChange, onSaveFailed, relativePath, threadId, writeFile]);
+  useEffect(() => {
+    session.revisionRef.current = revision;
+  }, [revision, session]);
+
+  // StrictMode replays effect setup. Retired file sessions stay inert, while the
+  // replay gets a fresh coordinator instead of reusing a disposed one.
   useEffect(session.setup, [session]);
   return session;
 }

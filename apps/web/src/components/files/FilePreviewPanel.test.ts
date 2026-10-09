@@ -5,16 +5,24 @@ import {
   normalizeFileCommentRange,
   remapFileCommentAnnotations,
 } from "./fileCommentAnnotations";
-import { isMarkdownPreviewFile, setMarkdownTaskChecked } from "./filePreviewMode";
+import {
+  isMarkdownPreviewFile,
+  resolveFilePreviewPath,
+  setMarkdownTaskChecked,
+  shouldShowFileExplorer,
+} from "./filePreviewMode";
 
 describe("file comment annotations", () => {
-  it("normalizes and remaps selected line ranges", () => {
+  it("normalizes and formats selected line ranges", () => {
     expect(normalizeFileCommentRange({ start: 16, end: 7 })).toEqual({
       startLine: 7,
       endLine: 16,
     });
     expect(formatFileCommentRange(7, 7)).toBe("L7");
     expect(formatFileCommentRange(7, 16)).toBe("L7 to L16");
+  });
+
+  it("keeps an annotation range attached when Pierre remaps its anchor line", () => {
     expect(
       remapFileCommentAnnotations([
         {
@@ -51,17 +59,86 @@ describe("file comment annotations", () => {
   });
 });
 
-describe("Markdown file previews", () => {
-  it("recognizes Markdown and MDX case-insensitively", () => {
+describe("isMarkdownPreviewFile", () => {
+  it("recognizes markdown and MDX files case-insensitively", () => {
     expect(isMarkdownPreviewFile("README.md")).toBe(true);
     expect(isMarkdownPreviewFile("docs/guide.MDX")).toBe(true);
-    expect(isMarkdownPreviewFile("docs/guide.txt")).toBe(false);
   });
 
-  it("updates only a valid task marker", () => {
-    const markdown = "- [ ] First\n- [x] Second\n";
+  it("does not treat other text files as markdown", () => {
+    expect(isMarkdownPreviewFile("docs/guide.txt")).toBe(false);
+    expect(isMarkdownPreviewFile("docs/markdown.ts")).toBe(false);
+  });
+});
+
+describe("shouldShowFileExplorer", () => {
+  it("hides the workspace tree for host files and attachments", () => {
+    expect(
+      shouldShowFileExplorer({
+        relativePath: "/tmp/report.pdf",
+        explorerOpen: true,
+        attachmentOpen: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowFileExplorer({
+        relativePath: "report.pdf",
+        explorerOpen: true,
+        attachmentOpen: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps the saved explorer preference for workspace files", () => {
+    expect(
+      shouldShowFileExplorer({
+        relativePath: "docs/report.pdf",
+        explorerOpen: true,
+        attachmentOpen: false,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowFileExplorer({
+        relativePath: "docs/report.pdf",
+        explorerOpen: false,
+        attachmentOpen: false,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("setMarkdownTaskChecked", () => {
+  const markdown = "- [ ] First\n- [x] Second\n";
+
+  it("checks and unchecks the task marker at the supplied offset", () => {
     expect(setMarkdownTaskChecked(markdown, 2, true)).toBe("- [x] First\n- [x] Second\n");
     expect(setMarkdownTaskChecked(markdown, 14, false)).toBe("- [ ] First\n- [ ] Second\n");
+    expect(setMarkdownTaskChecked("1. [X] Ordered\n", 3, false)).toBe("1. [ ] Ordered\n");
+  });
+
+  it("leaves the document unchanged for a stale or invalid marker offset", () => {
     expect(setMarkdownTaskChecked(markdown, 0, true)).toBe(markdown);
+    expect(setMarkdownTaskChecked(markdown, 200, true)).toBe(markdown);
+  });
+});
+
+describe("resolveFilePreviewPath", () => {
+  it.each([
+    ["/repo/project", null],
+    ["/repo/project/", null],
+    [".", null],
+    [null, null],
+    ["/repo/project/src", "/repo/project/src"],
+    ["/repo/project/src/main.ts", "/repo/project/src/main.ts"],
+    ["src/main.ts", "src/main.ts"],
+    ["/repo/project-other", "/repo/project-other"],
+  ])("opens %s in the appropriate workspace surface", (path, expected) => {
+    const relativePath = resolveFilePreviewPath(path, "/repo/project");
+    expect(relativePath).toBe(expected);
+    if (expected === null) {
+      expect(
+        shouldShowFileExplorer({ relativePath, explorerOpen: false, attachmentOpen: false }),
+      ).toBe(true);
+    }
   });
 });

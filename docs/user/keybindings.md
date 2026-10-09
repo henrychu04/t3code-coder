@@ -1,151 +1,125 @@
-# Keyboard shortcuts
+# Keybindings
 
-Edit shortcuts from **Settings → Keybindings**. The page lists every command, its current
-shortcut, whether it is a default or your own, and warns about conflicts.
-
-Your shortcuts are stored in the workspace, so they follow your work rather than the browser you
-happen to be using. The page needs a workspace connection to save; if saving fails, reconnect and
-try again.
-
-## Defaults
-
-`mod` means `cmd` on macOS and `ctrl` on Windows and Linux.
-
-| Shortcut        | Command                                                      |
-| --------------- | ------------------------------------------------------------ |
-| `mod+k`         | Command palette                                              |
-| `mod+b`         | Toggle sidebar                                               |
-| `mod+alt+b`     | Toggle right panel                                           |
-| `mod+j`         | Toggle terminal                                              |
-| `mod+p`         | Search project files                                         |
-| `shift` `shift` | Search project files (project open)                          |
-| `mod+shift+f`   | Find text in project                                         |
-| `mod+f`         | Find in current file                                         |
-| `mod+g`         | Go to line and column                                        |
-| `mod+d`         | Toggle diff (or split terminal, when the terminal has focus) |
-| `mod+s`         | Stash composer draft                                         |
-| `mod+n`         | New thread                                                   |
-| `mod+shift+o`   | New thread                                                   |
-| `mod+shift+n`   | New thread in current project                                |
-| `mod+shift+m`   | Open model picker                                            |
-| `mod+1`…`mod+9` | Go to thread _n_                                             |
-| `mod+shift+[`   | Previous thread                                              |
-| `mod+shift+]`   | Next thread                                                  |
-| `mod+shift+s`   | Settle or un-settle current thread                           |
-| `mod+shift+p`   | Pin or unpin current thread                                  |
-
-When the terminal has focus, `mod+n` opens a new terminal and `mod+w` closes the current one;
-`mod+shift+d` splits the terminal vertically.
-
-When the model picker is open, `mod+1`…`mod+9` choose the _n_-th model instead of jumping to a
-thread.
-
-`thread.stop` interrupts the running turn in the focused thread. It has no default shortcut;
-assign one in **Settings → Keybindings**.
-
-## Queue and steer
-
-**Follow-up behavior** in **Settings → General** chooses Queue or Steer while the agent runs.
-Use `mod+Enter` to do the opposite for one message, even when the send shortcut requires a
-modifier. In a new thread, `mod+alt+Enter` starts the thread in the background and opens a fresh
-composer. Change either shortcut under **Composer: Opposite Queue or Steer Action** or
-**Composer: Start in Background**. These bindings take priority over the send shortcut. Click the
-send button to use the configured follow-up behavior.
-
-When an active turn has queued messages, `mod+shift+Enter` sends the first as a steer. Change it
-under **Queue: Send First Queued Message as Steer**. `alt+Up` at the start of the composer edits
-the most recently queued message.
-
-## How rules work
-
-A shortcut is a rule with three parts:
-
-- `key` — the shortcut string, like `mod+j` or `ctrl+shift+d`
-- `command` — the command to run
-- `when` — optional condition controlling when the shortcut is active
-
-### `when` conditions
-
-`when` is an expression evaluated against the current UI state. Available keys include
-`terminalFocus`, `terminalOpen`, `fileOpen`, `fileViewerFocus`, `projectOpen`,
-`modelPickerOpen`, `composerFocus`, `draftThreadRoute`, and `turnRunning`. Combine them with `!`, `&&`, `||`, and parentheses:
-
-- `terminalFocus` — only while the terminal has focus
-- `!terminalFocus` — everywhere except the terminal
-- `terminalOpen && !terminalFocus` — terminal is visible but does not have focus
-
-A condition the current screen cannot evaluate is false.
-
-### Precedence
-
-Rules are evaluated in order and the last matching rule wins — including across different
-commands. That is how the defaults above work: a later rule for one command can take a key away
-from an earlier rule for another, depending on context. The settings page warns when your rules
-conflict with each other or with a default.
-
-## Command palette
-
-`mod+k` opens the command palette (when the terminal does not have focus). It searches commands
-and your threads' messages, so it doubles as a way to find that thing Claude said earlier.
-Start a search with `>` to show only actions.
-
-`mod+p` switches the same overlay to project files, and `mod+shift+f` switches it to project
-content. Repeating the current mode's shortcut closes it. Use the arrow keys and Enter to open
-a result in Coder's Files surface. Content search supports case-sensitive, whole-word, and
-regular-expression matching, with highlighted snippets and additional result pages. Choose
-**Search with file mask and preview…** for the expanded search view. File access requires an
-existing thread with an owned project; draft threads cannot read project files.
-
-The authoritative command list is always the one in **Settings → Keybindings** for the
-build you are running — use that rather than any copied table.
-
-## Copy the current reference
-
-**Cmd+Shift+C** on macOS or **Ctrl+Shift+C** on Windows runs `thread.copyReference` outside terminal
-focus. It copies the visible merge request's link first, then the thread's linked or discovered
-merge-request link, then the thread ID. On the merge-request page it copies only the selected MR's
-link. If that panel's URL is still unavailable, the copy action is unavailable until the URL resolves; it never substitutes a different reference. The command palette also offers this action.
+Customize shortcuts in **Settings → Keybindings**. That page also lists the command IDs and
+defaults available in your version.
 
 ## Composer controls
 
-Use `mod+shift+m` to choose a model, `mod+shift+h` for the Coder workspace,
-`mod+shift+e` for effort, `mod+shift+a` for permissions, `mod+shift+x` for checkout mode,
-and `mod+shift+g` for the Git branch. Use `mod+shift+l` to reuse the previous worktree.
+In **Settings → General → Send shortcut**, choose whether Enter sends, requires
+`mod+Enter` for multiline prompts, or always requires `mod+Enter`. `Shift+Enter`
+inserts a new line. This applies to the composer at desktop widths.
 
-In the model picker, Left in an empty search field or Shift+Tab reaches the provider list.
-Up/Down moves, Enter chooses, and Right returns to search. `mod+shift+up` and
-`mod+shift+down` switch providers directly and clear the search.
+**Follow-up behavior** chooses Queue or Steer while the agent runs. Use
+`mod+Enter` to do the opposite for one message, even when the send shortcut
+requires a modifier. In a new thread, `mod+Alt+Enter` starts the thread in the
+background and opens a fresh composer. Change either shortcut in
+**Settings → Keybindings** under **Composer: Opposite Queue or Steer Action** or
+**Composer: Start in Background**. These bindings take priority over the send
+shortcut. Click the send button to use the configured follow-up behavior.
 
-With a merge request open, `mod+shift+c` copies its URL and `mod+shift+k` copies its number
-with a `#` prefix. These shortcuts leave terminal input alone and can be changed in Settings.
+When an active turn has queued messages, `mod+Shift+Enter` sends the first as a
+steer. Change it under **Queue: Send First Queued Message as Steer** in Keybindings.
 
-## Selected workspaces
+Use `mod+shift+m` to choose a model and `mod+shift+h` to choose a Coder workspace.
+Use `mod+shift+e` for effort, `mod+shift+a` for access mode, `mod+shift+x` for the
+checkout, and `mod+shift+g` for the Git branch. The checkout menu includes the
+current checkout, a new worktree, and the previous worktree when available.
+Use `mod+shift+l` to reuse the previous worktree directly.
 
-The displayed bindings come from the representative workspace. Add, edit, remove, and reset apply
-to every selected connected workspace. A failed save keeps successful changes in the other
-workspaces; reconnect and retry. Reset uses each workspace's own current rules.
+In the model picker, press Left in an empty search field or Shift+Tab to reach
+the provider list. Use Up/Down to move and Enter to choose. Right returns to
+model search. `mod+shift+up` and `mod+shift+down` switch providers directly and clear the
+search. These provider shortcuts can also be changed in Settings.
 
-You can configure **Stop current thread**, **Pin or unpin current thread**, and **Copy MR URL or
-thread ID**. Stop has no default shortcut.
+These shortcuts run inside the focused browser tab. `mod` uses Command on macOS and Ctrl on
+Windows and Linux. The browser may claim some shortcuts before T3 Coder sees them; choose another
+binding in Settings if one does not reach the app.
 
-## Project actions
+## Copy merge request references
 
-Saved project actions appear as **Run project action: name**. Assign a shortcut to run that action
-in a new terminal in the active thread's checkout or worktree. The thread must already exist in the
-workspace. Commands use the active project's effective actions, including inherited workspace
-defaults. Bindings use `script.{id}.run`, so matching action IDs in different projects run each
-project's own command. Legacy action IDs that cannot be represented as a shortcut remain editable.
+With a merge request open in the right panel or on the Merge Requests page, use `mod+shift+c`
+to copy its URL and `mod+shift+k` to copy its number with a `!` prefix.
+Both shortcuts can be changed in Settings. Search for “Copy Link or Thread ID”
+or “Copy Number”. They copy the selected merge request and leave terminal input alone.
 
-New action shortcuts default to `!terminalFocus` so they do not intercept terminal input.
+## Edit the configuration file
+
+Keybindings live in the Coder workspace, in `~/.t3-coder/userdata/keybindings.json`. You can
+edit this file directly from a workspace terminal. It is a JSON array of rules:
+
+```json
+[
+  { "key": "mod+g", "command": "terminal.toggle" },
+  { "key": "mod+shift+g", "command": "terminal.new", "when": "terminalFocus" }
+]
+```
+
+T3 Coder creates the file with its defaults and adds new defaults on later startups.
+New defaults do not replace commands you customized. If a new default overlaps one
+of your shortcuts, [rule order](#precedence) decides which runs.
+Invalid rules are ignored; if the file cannot be parsed, T3 Coder uses defaults.
+
+## Rule shape
+
+Each rule requires a `key` shortcut and a `command` ID. An optional `when`
+expression restricts when it runs.
+
+Project scripts use `script.{id}.run`, such as `script.test.run`.
+
+## Key syntax
+
+Join modifiers and a key with `+`, such as `mod+shift+d` or `ctrl+l`.
+`mod` means Command on macOS and Control elsewhere. Other modifiers are
+`cmd` / `meta`, `ctrl` / `control`, `alt` / `option`, and `shift`.
+
+## When conditions
+
+Available context keys are `terminalFocus`, `terminalOpen`, `modelPickerOpen`,
+`composerFocus`, `composerDraft`, `turnRunning`, `editableFocus`, `isWeb`, and `isDesktop`.
+`editableFocus` is true while a text field, the composer, or another editor has
+the keyboard. `isWeb` is always true and `isDesktop` always false, because T3 Coder runs in a
+browser. Unknown keys evaluate to `false`.
+
+`mod+1` through `mod+9` jump to the first nine threads, and to models while the
+model picker is open. Those defaults use `isDesktop` so they do not steal the
+browser's tab-switch shortcuts. Remove that condition in Settings if you want
+the same jumps in the browser.
+
+Combine keys with `!` for not, `&&` for and, `||` for or, and parentheses:
+
+```json
+{ "key": "mod+j", "command": "terminal.toggle", "when": "terminalOpen && !terminalFocus" }
+```
+
+## Precedence
+
+The last rule whose key and condition both match wins, even if it belongs to a
+different command. Put a more specific rule after a general one when they share
+a shortcut.
+
+## Commands with special behavior
+
+`thread.stop` interrupts the running turn in the focused thread. It has no default
+shortcut; assign one in **Settings → Keybindings**.
 
 `thread.undo` (`mod+z` by default) reverses the actions shown in the notice at the
 bottom of the sidebar, such as unpin, settle, snooze, or archive. Consecutive
 actions of the same kind undo together. The notice remains available for five
 seconds after the latest action. The default shortcut skips text fields and
-terminals so native undo keeps working there; the `editableFocus` context key is
-true while a text field, the composer, or another editor has the keyboard.
+terminals so native undo keeps working there.
 
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
 
-`chat.newWithoutProject` (`mod+alt+n`) starts a thread without a project in the active Coder workspace.
+`chat.new` may ask you to choose a project when there is more than one.
+`chat.newLocal` skips that chooser. Both use your
+[new-thread defaults](./projects-and-threads.md#new-threads). `chat.newWithoutProject`
+(`mod+alt+n`) starts a thread [without a project](./projects-and-threads.md#start-without-a-project).
+
+## Reserved shortcuts
+
+In a browser, `mod+w` closes the browser tab; rebind `rightPanel.close` and `terminal.close` to
+an available shortcut such as `alt+w`.
+
+Many defaults include `!terminalFocus` so they do not intercept terminal input.
+Keep that condition when remapping them if you want the same behavior.

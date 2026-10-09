@@ -8,6 +8,7 @@ import {
   type ModelPickerJumpKeybindingCommand,
   type ThreadJumpKeybindingCommand,
 } from "@t3tools/contracts";
+import { isElectron } from "./env";
 import { isMacPlatform } from "./lib/utils";
 
 export interface ShortcutEventLike {
@@ -32,13 +33,15 @@ export interface ShortcutModifierStateLike {
 export interface ShortcutMatchContext {
   terminalFocus: boolean;
   terminalOpen: boolean;
+  previewFocus: boolean;
+  previewOpen: boolean;
+  isWeb: boolean;
+  isDesktop: boolean;
   /** A text field, textarea, select or rich-text editor owns the keyboard.
       Optional: only chords that collide with native editing consult it. */
   editableFocus?: boolean;
   [key: string]: boolean;
 }
-
-export const DOUBLE_SHIFT_MAX_INTERVAL_MS = 500;
 
 interface ShortcutMatchOptions {
   platform?: string;
@@ -146,6 +149,10 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
   return {
     terminalFocus: false,
     terminalOpen: false,
+    previewFocus: false,
+    previewOpen: false,
+    isWeb: !isElectron,
+    isDesktop: isElectron,
     editableFocus: false,
     ...options?.context,
   };
@@ -174,11 +181,13 @@ function matchesWhenClause(
   return evaluateWhenNode(whenAst, context);
 }
 
-function shortcutConflictKey(shortcut: KeybindingShortcut, platform = navigator.platform): string {
+export function shortcutConflictKey(
+  shortcut: KeybindingShortcut,
+  platform = navigator.platform,
+): string {
   const useMetaForMod = isMacPlatform(platform);
   const metaKey = shortcut.metaKey || (shortcut.modKey && useMetaForMod);
   const ctrlKey = shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod);
-
   return [
     shortcut.key,
     metaKey ? "meta" : "",
@@ -187,6 +196,7 @@ function shortcutConflictKey(shortcut: KeybindingShortcut, platform = navigator.
     shortcut.altKey ? "alt" : "",
   ].join("|");
 }
+
 function findEffectiveShortcutForCommand(
   keybindings: ResolvedKeybindingsConfig,
   command: KeybindingCommand,
@@ -242,8 +252,7 @@ export function resolveShortcutCommand(
   return null;
 }
 
-function formatShortcutKeyLabel(key: string): string {
-  if (key === "double-shift") return "Shift Shift";
+export function formatShortcutKeyLabel(key: string): string {
   if (key === " ") return "Space";
   if (key.length === 1) return key.toUpperCase();
   if (key === "escape") return "Esc";
@@ -259,7 +268,6 @@ export function formatShortcutLabel(
   platform = navigator.platform,
 ): string {
   const keyLabel = formatShortcutKeyLabel(shortcut.key);
-  if (shortcut.key === "double-shift") return keyLabel;
   const useMetaForMod = isMacPlatform(platform);
   const showMeta = shortcut.metaKey || (shortcut.modKey && useMetaForMod);
   const showCtrl = shortcut.ctrlKey || (shortcut.modKey && !useMetaForMod);
@@ -277,46 +285,6 @@ export function formatShortcutLabel(
   if (showMeta) parts.push("Meta");
   parts.push(keyLabel);
   return parts.join("+");
-}
-
-export function keybindingKeyForShortcut(shortcut: KeybindingShortcut): string {
-  if (shortcut.key === "double-shift") return "shift shift";
-  const modifiers: string[] = [];
-  if (shortcut.modKey) modifiers.push("mod");
-  if (shortcut.metaKey) modifiers.push("meta");
-  if (shortcut.ctrlKey) modifiers.push("ctrl");
-  if (shortcut.altKey) modifiers.push("alt");
-  if (shortcut.shiftKey) modifiers.push("shift");
-  modifiers.push(shortcut.key === " " ? "space" : shortcut.key);
-  return modifiers.join("+");
-}
-
-export function keybindingWhenForNode(node: KeybindingWhenNode | undefined): string | undefined {
-  if (!node) return undefined;
-  switch (node.type) {
-    case "identifier":
-      return node.name;
-    case "not":
-      return `!(${keybindingWhenForNode(node.node)})`;
-    case "and":
-      return `(${keybindingWhenForNode(node.left)}) && (${keybindingWhenForNode(node.right)})`;
-    case "or":
-      return `(${keybindingWhenForNode(node.left)}) || (${keybindingWhenForNode(node.right)})`;
-  }
-}
-
-export function resolveDoubleShiftShortcutCommand(
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): KeybindingCommand | null {
-  const context = resolveContext(options);
-  for (let index = keybindings.length - 1; index >= 0; index -= 1) {
-    const binding = keybindings[index];
-    if (!binding || binding.shortcut.key !== "double-shift") continue;
-    if (!matchesWhenClause(binding.whenAst, context)) continue;
-    return binding.command;
-  }
-  return null;
 }
 
 export function shortcutLabelForCommand(
@@ -349,14 +317,6 @@ export function threadTraversalDirectionFromCommand(
   if (command === "thread.previous") return "previous";
   if (command === "thread.next") return "next";
   return null;
-}
-
-export function shouldShowThreadJumpHints(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return shouldShowThreadJumpHintsForModifiers(event, keybindings, options);
 }
 
 export function shouldShowThreadJumpHintsForModifiers(
@@ -398,32 +358,6 @@ export function modelPickerJumpIndexFromCommand(command: string): number | null 
     command as ModelPickerJumpKeybindingCommand,
   );
   return index === -1 ? null : index;
-}
-
-export function shouldShowModelPickerJumpHints(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return shouldShowModelPickerJumpHintsForModifiers(event, keybindings, options);
-}
-
-export function shouldShowModelPickerJumpHintsForModifiers(
-  modifiers: ShortcutModifierStateLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  const platform = resolvePlatform(options);
-
-  for (const command of MODEL_PICKER_JUMP_KEYBINDING_COMMANDS) {
-    const shortcut = findEffectiveShortcutForCommand(keybindings, command, options);
-    if (!shortcut) continue;
-    if (matchesShortcutModifiers(modifiers, shortcut, platform)) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 export function isTerminalToggleShortcut(
@@ -474,20 +408,15 @@ export function isDiffToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "diff.toggle", options);
 }
 
-export function isChatNewShortcut(
+export function isOpenFavoriteEditorShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
   options?: ShortcutMatchOptions,
 ): boolean {
-  return matchesCommandShortcut(event, keybindings, "chat.new", options);
-}
-
-export function isChatNewLocalShortcut(
-  event: ShortcutEventLike,
-  keybindings: ResolvedKeybindingsConfig,
-  options?: ShortcutMatchOptions,
-): boolean {
-  return matchesCommandShortcut(event, keybindings, "chat.newLocal", options);
+  return (
+    event.repeat !== true &&
+    matchesCommandShortcut(event, keybindings, "editor.openFavorite", options)
+  );
 }
 
 /**

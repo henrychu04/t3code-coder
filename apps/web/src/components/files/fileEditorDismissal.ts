@@ -1,41 +1,53 @@
 interface FileEditorDismissalOptions {
   root: HTMLElement;
-  editor: { setSelections: (selections: []) => void };
+  editor: {
+    setSelections: (selections: []) => void;
+  };
   isBlocked: () => boolean;
   onDismiss: () => void;
 }
 
-function dismiss({ root, editor, onDismiss }: Omit<FileEditorDismissalOptions, "isBlocked">) {
+function dismissFileEditorInteraction({
+  root,
+  editor,
+  onDismiss,
+}: Pick<FileEditorDismissalOptions, "root" | "editor" | "onDismiss">): void {
   onDismiss();
   editor.setSelections([]);
-  const active = root.querySelector<HTMLElement>("diffs-container")?.shadowRoot?.activeElement;
-  if (active instanceof HTMLElement) active.blur();
+
+  const file = root.querySelector<HTMLElement>("diffs-container");
+  const activeElement = file?.shadowRoot?.activeElement;
+  if (activeElement instanceof HTMLElement) {
+    activeElement.blur();
+  }
 }
 
-export function installFileEditorDismissal(options: FileEditorDismissalOptions): () => void {
-  const onPointerDown = (event: PointerEvent) => {
-    if (options.isBlocked() || event.composedPath().includes(options.root)) return;
-    dismiss(options);
+function isFileEditorFocused(root: HTMLElement): boolean {
+  const file = root.querySelector<HTMLElement>("diffs-container");
+  return file?.shadowRoot?.activeElement?.hasAttribute("data-content") === true;
+}
+
+export function installFileEditorDismissal({
+  root,
+  editor,
+  isBlocked,
+  onDismiss,
+}: FileEditorDismissalOptions): () => void {
+  const handlePointerDown = (event: PointerEvent) => {
+    if (isBlocked() || event.composedPath().includes(root)) return;
+    dismissFileEditorInteraction({ root, editor, onDismiss });
   };
-  const onKeyDown = (event: KeyboardEvent) => {
-    const active =
-      options.root.querySelector<HTMLElement>("diffs-container")?.shadowRoot?.activeElement;
-    if (
-      event.key !== "Escape" ||
-      options.isBlocked() ||
-      !(active instanceof HTMLElement) ||
-      !active.hasAttribute("data-content")
-    ) {
-      return;
-    }
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || isBlocked() || !isFileEditorFocused(root)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    dismiss(options);
+    dismissFileEditorInteraction({ root, editor, onDismiss });
   };
-  document.addEventListener("pointerdown", onPointerDown, true);
-  document.addEventListener("keydown", onKeyDown, true);
+
+  document.addEventListener("pointerdown", handlePointerDown, true);
+  document.addEventListener("keydown", handleKeyDown, true);
   return () => {
-    document.removeEventListener("pointerdown", onPointerDown, true);
-    document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("pointerdown", handlePointerDown, true);
+    document.removeEventListener("keydown", handleKeyDown, true);
   };
 }
