@@ -1,3 +1,7 @@
+// Coder: the Files surface boundary (see "Files surface" in docs/internals/coder-only.md) replaces
+// upstream's reads of absolute host paths and create-anywhere writes: reads and edits accept only
+// project-relative paths inside the real project root, edits apply to existing text files under a
+// per-file lock with the read revision checked for staleness, and files are replaced atomically.
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 // @effect-diagnostics nodeBuiltinImport:off
 import { createHash, randomUUID } from "node:crypto";

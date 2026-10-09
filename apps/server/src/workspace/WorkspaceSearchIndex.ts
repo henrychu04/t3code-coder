@@ -1,3 +1,6 @@
+// Coder: a lightweight path-only FFF index plus a separate on-demand content index with the native
+// time budget, cursor pagination, match caps, idle TTL, and result validation described under
+// "File search" in docs/internals/coder-only.md, in place of upstream's single content-enabled index.
 import { randomUUID } from "node:crypto";
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFSP from "node:fs/promises";
