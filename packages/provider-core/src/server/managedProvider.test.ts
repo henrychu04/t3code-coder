@@ -96,11 +96,32 @@ const refreshedSnapshotSecond: ServerProvider = {
   message: "Refreshed provider availability again.",
 };
 
-function makeBackgroundPolicyLayer(shouldRunScopeWork: boolean) {
-  // Coder: the background policy is a stub that answers only scope work.
-  return Layer.mock(BackgroundPolicy.BackgroundPolicy)({
-    shouldRunScopeWork: () => Effect.succeed(shouldRunScopeWork),
-  });
+/** A host whose settings never change and whose background demand is fixed. */
+function layerProviderHost(input: {
+  readonly runBackgroundWork: boolean;
+  readonly settings?: Pick<ProviderHost.ProviderHost["Service"], "settings">["settings"];
+}) {
+  return Layer.succeed(
+    ProviderHost.ProviderHost,
+    ProviderHost.ProviderHost.of({
+      paths: {
+        cwd: process.cwd(),
+        baseDir: "/t3",
+        stateDir: "/t3/userdata",
+        providerStatusCacheDir: "/t3/caches",
+        attachmentsDir: "/t3/userdata/attachments",
+      },
+      settings: input.settings ?? {
+        get: Effect.succeed(DEFAULT_SERVER_SETTINGS),
+        withSnapshot: (use) => use(DEFAULT_SERVER_SETTINGS),
+        changes: Stream.empty,
+        subscribe: Effect.succeed(Stream.empty),
+      },
+      shouldRunBackgroundWork: () => Effect.succeed(input.runBackgroundWork),
+      resolveAttachmentPath: () => null,
+      credentials: () => Effect.die("unused"),
+    }),
+  );
 }
 
 const layerAlwaysRunTest = layerProviderHost({ runBackgroundWork: true });

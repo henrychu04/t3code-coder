@@ -24,7 +24,14 @@ import {
 import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import type { WsRpcProtocolClient } from "./protocol.ts";
 import type * as RpcSession from "./session.ts";
-import { request, runStream, subscribe } from "./client.ts";
+import {
+  request,
+  requestGuarded,
+  RpcPermissionGuard,
+  runStream,
+  runStreamGuarded,
+  subscribe,
+} from "./client.ts";
 import { setErrorDiagnosticReporter, type ErrorDiagnostic } from "../errors/diagnostics.ts";
 
 const TARGET = new ConnectionTarget({
@@ -84,22 +91,25 @@ describe("environment RPC", () => {
             closed: Effect.never,
           } as unknown as RpcSession.RpcSession),
         );
-        const checkout = yield* request(WS_METHODS.gitPreparePullRequestThread, {
+        const grantAll = { authorize: () => Effect.void };
+        const checkout = yield* requestGuarded(WS_METHODS.gitPreparePullRequestThread, {
           cwd: "/private-repo",
           reference: "42",
           mode: "worktree",
         }).pipe(
           Effect.flip,
+          Effect.provideService(RpcPermissionGuard, grantAll),
           Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
         );
         expect(checkout).toBe(checkoutError);
-        yield* runStream(WS_METHODS.gitRunStackedAction, {
+        yield* runStreamGuarded(WS_METHODS.gitRunStackedAction, {
           actionId: "test",
           cwd: "/private-repo",
           action: "push",
         }).pipe(
           Stream.runDrain,
           Effect.flip,
+          Effect.provideService(RpcPermissionGuard, grantAll),
           Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
         );
         const handled = yield* Deferred.make<void>();

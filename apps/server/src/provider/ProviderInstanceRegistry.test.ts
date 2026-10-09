@@ -1,3 +1,4 @@
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 /**
  * Multi-instance validation slices for the live `ProviderInstanceRegistry`.
  *
@@ -8,41 +9,53 @@
  *     asserts each gets its own closures and identity. This is the
  *     multi-codex capability the refactor exists to unlock.
  *
- *  2. Coder: upstream's "all drivers" slice boots drivers this fork does not
- *     ship, so it is omitted.
+ *  2. **Many drivers, one registry** — the "all drivers slice" describe
+ *     block below configures one instance of every shipped driver
+ *     (`codex`, `claudeAgent`, `pi`) in a single
+ *     `ProviderInstanceConfigMap` and asserts the registry boots them all
+ *     without cross-contamination. This proves the driver SPI is uniform
+ *     across every provider — any driver plugs into the registry through
+ *     the same `ProviderDriver` value contract.
  *
  * Every instance in these tests is configured with `enabled: false` so the
  * provider-status checks short-circuit to pending/disabled snapshots
- * without trying to spawn real `codex` / `claude` / `agent` / `grok` / `opencode`
+ * without trying to spawn real `codex` / `claude` / `pi`
  * binaries. That keeps the assertions focused on registry routing
  * behaviour rather than the runtime details of each provider.
  */
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
+  EnvironmentId,
   type ClaudeSettings,
   type CodexSettings,
   ProviderDriverKind,
   type ProviderInstanceConfigMap,
   ProviderInstanceId,
 } from "@t3tools/contracts";
-import { isHostWindows } from "@t3tools/shared/hostProcess";
+import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import { HostProcessPlatform, isHostWindows } from "@t3tools/shared/hostProcess";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientResponse } from "effect/http";
 
-import * as BackgroundPolicy from "../../background/BackgroundPolicy.ts";
-import * as ServerConfig from "../../config.ts";
-import { expandHomePath } from "../../pathExpansion.ts";
-import * as ServerSettings from "../../serverSettings.ts";
-import { ClaudeDriver, type ClaudeDriverEnv } from "../Drivers/ClaudeDriver.ts";
-import { CodexDriver, type CodexDriverEnv } from "../Drivers/CodexDriver.ts";
-import * as ModelManifest from "../ModelManifest.ts";
-import * as ProviderEventLoggers from "./ProviderEventLoggers.ts";
-import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistryLive.ts";
-import { ProviderOrchestrationAdapterInfrastructureLive } from "./ProviderOrchestrationAdapterInfrastructure.ts";
+import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
+import * as ServerConfig from "../config.ts";
+import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import * as ServerSettings from "../serverSettings.ts";
+import { PiDriver, type PiDriverEnv } from "@t3tools/provider-pi/server";
+import { ClaudeDriver, type ClaudeDriverEnv } from "./Drivers/ClaudeDriver.ts";
+import { CodexDriver, type CodexDriverEnv } from "./Drivers/CodexDriver.ts";
+import * as ModelManifest from "./ModelManifest.ts";
+import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import { makeProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
+import * as ProviderOrchestrationAdapterInfrastructure from "./ProviderOrchestrationAdapterInfrastructure.ts";
+import * as ProviderHostLive from "./ProviderHostLive.ts";
 
 const layerTestHttpClient = Layer.succeed(
   HttpClient.HttpClient,
@@ -51,8 +64,9 @@ const layerTestHttpClient = Layer.succeed(
   ),
 );
 
-// Coder: the background policy is a stub that always allows scope work.
-const BackgroundPolicyAlwaysRunLayer = Layer.mock(BackgroundPolicy.BackgroundPolicy)({
+const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
+
+const layerBackgroundPolicyAlwaysRun = Layer.mock(BackgroundPolicy.BackgroundPolicy)({
   shouldRunScopeWork: () => Effect.succeed(true),
 });
 
@@ -135,7 +149,8 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     prefix: "provider-instance-registry-test",
   }).pipe(
     Layer.provideMerge(NodeServices.layer),
-    Layer.provideMerge(BackgroundPolicyAlwaysRunLayer),
+    Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
+    Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
     Layer.provideMerge(ServerSettings.layerTest()),
     Layer.provideMerge(layerTestHttpClient),
     Layer.provideMerge(ServerSettings.layerTest()),
@@ -258,7 +273,6 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
-  // Coder: reset-credit redemption is not offered.
   it.live("runs Codex and Claude readiness probes from configured tilde paths", () =>
     Effect.gen(function* () {
       if (yield* isHostWindows) return;
@@ -351,5 +365,124 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
         expect(ghost.availability).toBe("unavailable");
         expect(ghost.unavailableReason).toMatch(/ghostDriver/);
       }).pipe(Effect.provide(layerTest)),
+  );
+});
+
+describe("ProviderInstanceRegistry — all drivers slice", () => {
+  // Coder: Codex, Claude, and Pi are the shipped drivers.
+  const layerBaseDeps = ServerConfig.layerTest(process.cwd(), {
+    prefix: "provider-instance-registry-all-drivers-test",
+  }).pipe(
+    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mock(ServerSecretStore.ServerSecretStore)({})),
+    Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
+    Layer.provideMerge(layerTestHttpClient),
+    Layer.provideMerge(ServerSettings.layerTest()),
+    Layer.provideMerge(
+      Layer.succeed(
+        ProviderEventLoggers.ProviderEventLoggers,
+        ProviderEventLoggers.NoOpProviderEventLoggers,
+      ),
+    ),
+    Layer.provideMerge(ProviderLatestVersions.layer),
+    Layer.provideMerge(McpProviderSessions.layer),
+    Layer.provideMerge(ModelManifest.layerTest),
+  );
+  const layerBase = ProviderHostLive.layer.pipe(Layer.provideMerge(layerBaseDeps));
+  const layerTest = ProviderOrchestrationAdapterInfrastructure.layer.pipe(
+    Layer.provideMerge(layerBase),
+  );
+
+  it.live("boots one instance of every shipped driver from a single config map", () =>
+    Effect.gen(function* () {
+      const codexId = ProviderInstanceId.make("codex_default");
+      const claudeId = ProviderInstanceId.make("claude_default");
+      const piId = ProviderInstanceId.make("pi_default");
+
+      const codexDriverKind = ProviderDriverKind.make("codex");
+      const claudeDriverKind = ProviderDriverKind.make("claudeAgent");
+      const piDriverKind = ProviderDriverKind.make("pi");
+
+      const configMap: ProviderInstanceConfigMap = {
+        [codexId]: {
+          driver: codexDriverKind,
+          displayName: "Codex",
+          enabled: false,
+          config: makeCodexConfig({ homePath: "/home/julius/.codex" }),
+        },
+        [claudeId]: {
+          driver: claudeDriverKind,
+          displayName: "Claude",
+          enabled: false,
+          config: makeClaudeConfig({
+            homePath: "/home/julius/.claude-work",
+            launchArgs: "--verbose",
+          }),
+        },
+        [piId]: {
+          driver: piDriverKind,
+          displayName: "Pi",
+          enabled: false,
+          config: { enabled: false },
+        },
+      };
+
+      const { registry } = yield* makeProviderInstanceRegistry<
+        CodexDriverEnv | ClaudeDriverEnv | PiDriverEnv
+      >({
+        drivers: [CodexDriver, ClaudeDriver, PiDriver],
+        configMap,
+      });
+
+      // Every configured instance must materialize — none downgraded to a
+      // shadow snapshot, because every driver in the map is registered.
+      const unavailable = yield* registry.listUnavailable;
+      expect(unavailable).toEqual([]);
+
+      const instances = yield* registry.listInstances;
+      expect(instances).toHaveLength(3);
+      expect(instances.map((instance) => instance.instanceId).toSorted()).toEqual(
+        [codexId, claudeId, piId].toSorted(),
+      );
+
+      const codex = yield* registry.getInstance(codexId);
+      const claude = yield* registry.getInstance(claudeId);
+      const pi = yield* registry.getInstance(piId);
+      expect(codex?.driverKind).toBe(codexDriverKind);
+      expect(claude?.driverKind).toBe(claudeDriverKind);
+      expect(pi?.driverKind).toBe(piDriverKind);
+      expect(pi?.displayName).toBe("Pi");
+
+      // Every instance owns its own set of closures — no sharing across drivers.
+      const adapters = [
+        codex!.orchestrationAdapter,
+        claude!.orchestrationAdapter,
+        pi!.orchestrationAdapter,
+      ];
+      expect(new Set(adapters).size).toBe(adapters.length);
+      const snapshots = [codex!.snapshot, claude!.snapshot, pi!.snapshot];
+      expect(new Set(snapshots).size).toBe(snapshots.length);
+
+      const codexSnapshot = yield* codex!.snapshot.getSnapshot;
+      expect(codexSnapshot.instanceId).toBe(codexId);
+      expect(codexSnapshot.driver).toBe(codexDriverKind);
+      expect(codexSnapshot.enabled).toBe(false);
+      expect(codexSnapshot.continuation?.groupKey).toBe(
+        `codex:home:${(yield* Path.Path).resolve("/home/julius/.codex")}`,
+      );
+
+      const claudeSnapshot = yield* claude!.snapshot.getSnapshot;
+      expect(claudeSnapshot.instanceId).toBe(claudeId);
+      expect(claudeSnapshot.driver).toBe(claudeDriverKind);
+      expect(claudeSnapshot.enabled).toBe(false);
+      expect(claudeSnapshot.continuation?.groupKey).toBe(
+        `claude:home:${(yield* Path.Path).resolve("/home/julius/.claude-work")}`,
+      );
+
+      const piSnapshot = yield* pi!.snapshot.getSnapshot;
+      expect(piSnapshot.instanceId).toBe(piId);
+      expect(piSnapshot.driver).toBe(piDriverKind);
+      expect(piSnapshot.enabled).toBe(false);
+    }).pipe(Effect.provide(layerTest)),
   );
 });

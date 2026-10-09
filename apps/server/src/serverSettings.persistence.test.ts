@@ -8,12 +8,12 @@ import * as Layer from "effect/Layer";
 import { DEFAULT_AUTOMATIC_GIT_FETCH_INTERVAL, ProjectId } from "@t3tools/contracts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as ServerConfig from "./config.ts";
-import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 const settingsLayer = ServerSettings.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
-  Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+  Layer.provideMerge(Layer.fresh(SqlitePersistence.layerMemory)),
   Layer.provideMerge(
     ServerConfig.layerTest(process.cwd(), {
       prefix: "t3code-server-settings-test-",

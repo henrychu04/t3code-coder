@@ -13,7 +13,6 @@ import {
   resolveBranchToolbarPrBranch,
   resolveBranchToolbarValue,
   resolveLockedWorkspaceLabel,
-  resolveWorkspaceDisplayName,
   resolveCheckoutBranchMismatch,
   resolvePreviousWorktreeLabel,
   resolvePreviousWorktreeSeed,
@@ -302,7 +301,6 @@ describe("resolveBranchToolbarPrBranch", () => {
   });
 });
 
-// Coder: the notice also covers a managed worktree whose branch moved.
 describe("resolveCheckoutBranchMismatch", () => {
   it("detects when a local thread is associated with a different branch than the checkout", () => {
     expect(

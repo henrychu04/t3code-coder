@@ -7,6 +7,7 @@ import { T3_MCP_TOOL_NAMES } from "@t3tools/shared/t3McpToolPresentation";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
+  liveThoughtLine,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
   toolGroupAction,

@@ -810,6 +810,14 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
 );
 
 // Coder: workspace RPCs run over authenticated helper stdio, with no HTTP/WebSocket listener.
+// A defect in a handler's effect fails only its own request. RpcServer's default
+// sends a socket-level Defect frame instead, and the client ends every pending
+// request on the socket with it. DefectReporter logs these defects.
+export const WS_RPC_SERVER_OPTIONS = {
+  disableTracing: true,
+  disableFatalDefects: true,
+} as const;
+
 export const layer = CoderWsRpcGroup.toLayer(
   Effect.gen(function* () {
     const crypto = yield* Crypto.Crypto;
@@ -943,19 +951,20 @@ export const layer = CoderWsRpcGroup.toLayer(
       };
     });
 
-    const getOrchestrationV2ArchivedShellSnapshot = sql
-      .withTransaction(
-        Effect.gen(function* () {
-          const threads = yield* threadManagement.getShellSnapshot({ location: "archive" });
-          return {
-            schemaVersion: threads.schemaVersion,
-            snapshotSequence: yield* applicationEvents.latestApplicationSequence,
-            projects: yield* projectStore.listShells(),
-            threads: threads.archivedThreads,
-          } as const;
-        }),
-      )
-      .pipe(
+    const getOrchestrationV2ArchivedShellSnapshot = Effect.gen(function* () {
+      const { threads, projects, snapshotSequence } = yield* loadShellSnapshotParts({
+        sql,
+        readThreads: threadManagement.readShellSnapshot({ location: "archive" }),
+        listProjects: projectStore.listShells(),
+        latestSequence: applicationEvents.latestApplicationSequence,
+      });
+      return {
+        schemaVersion: threads.schemaVersion,
+        snapshotSequence,
+        projects,
+        threads: threads.archivedThreads,
+      } as const;
+    }).pipe(
         Effect.flatMap((snapshot) =>
           enrichProjectShells(snapshot.projects).pipe(
             Effect.map(({ projects }) => ({ ...snapshot, projects })),
@@ -1411,11 +1420,15 @@ export const layer = CoderWsRpcGroup.toLayer(
       [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command) =>
         ensureCoderPullRequestLink(command).pipe(
           Effect.andThen(
-            ThreadMessageIntake.dispatchCommand(
-              ThreadManagementService.withCreationProvenance(command, {
-                createdBy: "user",
-                creationSource: "creationSource" in command ? command.creationSource : "web",
-              }),
+            // A retry also restarts the preparation work the launch owns.
+            (command.type === "prepared-run.retry"
+              ? threadLaunch.retryPreparation(command)
+              : ThreadMessageIntake.dispatchCommand(
+                  ThreadManagementService.withCreationProvenance(command, {
+                    createdBy: "user",
+                    creationSource: "creationSource" in command ? command.creationSource : "web",
+                  }),
+                )
             ).pipe(Effect.provide(intakeContext)),
           ),
           Effect.map((result) => ({ sequence: result.sequence })),

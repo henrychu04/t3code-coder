@@ -67,8 +67,6 @@ async function renderPanel(overrides: Partial<ComponentProps<typeof RightPanelTa
         environmentId={null}
         activeSurfaceId={null}
         pendingSurfaceIds={new Set()}
-        previewSessions={{}}
-        desktopByTabId={{}}
         terminalLabelsById={new Map()}
         onActivate={noop}
         onCloseSurface={noop}
@@ -76,21 +74,16 @@ async function renderPanel(overrides: Partial<ComponentProps<typeof RightPanelTa
         onCloseSurfacesToRight={noop}
         onCloseAllSurfaces={noop}
         onCopyFilePath={noop}
-        onAddBrowser={noop}
-        onAddBrowserInProfile={noop}
         onAddTerminal={noop}
         onAddDiff={noop}
         onAddFiles={addFiles}
         onAddPullRequest={noop}
         onAddPullRequests={noop}
-        onAddDevice={noop}
-        browserAvailable={false}
         terminalAvailable={false}
         diffAvailable={false}
         filesAvailable
         pullRequestAvailable={false}
         pullRequestsAvailable={false}
-        deviceAvailable={false}
         {...overrides}
       >
         content

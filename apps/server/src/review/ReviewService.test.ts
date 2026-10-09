@@ -14,7 +14,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as VcsDriverRegistry from "../vcs/VcsDriverRegistry.ts";
 import * as ReviewService from "./ReviewService.ts";
 
-function layer(input: {
+function makeLayer(input: {
   readonly workspaceRoot: string;
   readonly baseDir: string;
   readonly detectCalls?: Array<{ readonly cwd: string }>;
@@ -57,7 +57,7 @@ describe("ReviewService", () => {
       const error = yield* Effect.gen(function* () {
         const review = yield* ReviewService.ReviewService;
         return yield* review.getDiffPreview({ cwd: outsideRoot }).pipe(Effect.flip);
-      }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, detectCalls })));
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, detectCalls })));
 
       assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
       assert.strictEqual(error.operation, "ReviewService.getDiffPreview");
@@ -90,7 +90,7 @@ describe("ReviewService", () => {
             newPath: "file.ts",
           })
           .pipe(Effect.flip);
-      }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, detectCalls })));
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, detectCalls })));
 
       assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
       if (error._tag !== "VcsRepositoryDetectionError") return;
@@ -116,7 +116,7 @@ describe("ReviewService", () => {
         return yield* review.getDiffPreview({ cwd: previous });
       }).pipe(
         Effect.provide(
-          layer({
+          makeLayer({
             workspaceRoot,
             baseDir,
             worktreesDirectory: "/",
@@ -132,7 +132,7 @@ describe("ReviewService", () => {
         const error = yield* Effect.gen(function* () {
           const review = yield* ReviewService.ReviewService;
           return yield* review.getDiffPreview({ cwd: outsideRoot }).pipe(Effect.flip);
-        }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, worktreesDirectory })));
+        }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, worktreesDirectory })));
         assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
       }
     }).pipe(Effect.provide(NodeServices.layer)),
@@ -148,7 +148,7 @@ describe("ReviewService", () => {
       const result = yield* Effect.gen(function* () {
         const review = yield* ReviewService.ReviewService;
         return yield* review.getDiffPreview({ cwd: workspaceRoot });
-      }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, detectCalls })));
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, detectCalls })));
 
       assert.strictEqual(result.cwd, workspaceRoot);
       assert.deepStrictEqual(result.sources, []);
@@ -173,6 +173,7 @@ describe("ReviewService", () => {
             getReviewDiffFileContents: () => Effect.succeed(contents),
           }),
         ),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -235,6 +236,7 @@ describe("ReviewService", () => {
               Effect.succeed({ oldContents: contents, newContents: contents }),
           }),
         ),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -286,6 +288,7 @@ describe("ReviewService", () => {
               Effect.succeed({ oldContents: "abc", newContents: "def" }),
           }),
         ),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -358,6 +361,7 @@ describe("ReviewService", () => {
             getReviewDiffFileContents: () => Effect.succeed({ oldContents: "", newContents: "" }),
           }),
         ),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -427,6 +431,7 @@ describe("ReviewService", () => {
               }),
           }),
         ),
+        Layer.provide(ServerSettings.ServerSettingsService.layerTest()),
         Layer.provide(ServerConfig.layerTest(workspaceRoot, baseDir)),
         Layer.provideMerge(NodeServices.layer),
       );
@@ -479,7 +484,7 @@ describe("ReviewService", () => {
       const error = yield* Effect.gen(function* () {
         const review = yield* ReviewService.ReviewService;
         return yield* review.getDiffPreview({ cwd: invalidCwd }).pipe(Effect.flip);
-      }).pipe(Effect.provide(layer({ workspaceRoot, baseDir, detectCalls })));
+      }).pipe(Effect.provide(makeLayer({ workspaceRoot, baseDir, detectCalls })));
 
       assert.strictEqual(error._tag, "VcsRepositoryDetectionError");
       if (error._tag !== "VcsRepositoryDetectionError") return;

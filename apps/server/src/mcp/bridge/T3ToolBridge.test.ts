@@ -22,8 +22,9 @@ import * as CoderEnvironment from "../../coderEnvironment.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
-import * as ProviderRegistry from "../../provider/Services/ProviderRegistry.ts";
+import * as ProviderRegistry from "../../provider/ProviderRegistry.ts";
 import * as ScheduledTaskService from "../../scheduledTasks/ScheduledTaskService.ts";
+import * as SecretRequests from "../../secrets/SecretRequests.ts";
 import * as GitWorkflowService from "../../git/GitWorkflowService.ts";
 import * as ProjectSetupScriptRunner from "../../project/ProjectSetupScriptRunner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
@@ -126,6 +127,7 @@ const harness = (options: {
       Layer.mock(ProjectSetupScriptRunner.ProjectSetupScriptRunner)({}),
       Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),
       Layer.mock(ScheduledTaskService.ScheduledTaskService)({}),
+      Layer.mock(SecretRequests.SecretRequests)({}),
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
       T3ToolDispatch.layer,

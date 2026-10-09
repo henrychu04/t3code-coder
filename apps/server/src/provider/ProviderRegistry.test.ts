@@ -1,6 +1,4 @@
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import * as CodexInstallation from "./CodexInstallation.ts";
-import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, it, assert, expect } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
@@ -41,14 +39,10 @@ import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
-import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { applyProviderCompatibility } from "./providerCompatibility.ts";
-import * as ResetCreditCoordinator from "./resetCreditCoordinator.ts";
 import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as OpenCodeRuntime from "@t3tools/provider-opencode/server/OpenCodeRuntime";
-import * as OpenCodeServerLedger from "@t3tools/provider-opencode/server/OpenCodeServerLedger";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
 import * as ProviderInstanceRegistryHydration from "./ProviderInstanceRegistryHydration.ts";
 import * as ServerConfig from "../config.ts";
@@ -110,32 +104,7 @@ const layerTestHttpClient = Layer.succeed(
 ).pipe(Layer.provideMerge(ModelManifest.layerTest));
 
 const layerBackgroundPolicyAlwaysRun = Layer.mock(BackgroundPolicy.BackgroundPolicy)({
-  reportClientActivity: () => Effect.void,
-  removeRpcClient: () => Effect.void,
-  reportHostPowerState: () => Effect.void,
-  snapshot: Effect.succeed({
-    hostPower: {
-      source: "unknown",
-      idle: "unknown",
-      idleSeconds: null,
-      locked: "unknown",
-      suspended: false,
-      onBattery: "unknown",
-      lowPowerMode: "unknown",
-      thermalState: "unknown",
-      stale: true,
-      updatedAt: TEST_EPOCH,
-    },
-    leases: [],
-    activeForegroundLeaseCount: 0,
-    activeScopeKeys: [],
-    shouldRunOpportunisticWork: true,
-    updatedAt: TEST_EPOCH,
-  }),
-  streamChanges: Stream.empty,
-  hasDemand: () => Effect.succeed(true),
   shouldRunScopeWork: () => Effect.succeed(true),
-  shouldRunOpportunisticWork: Effect.succeed(true),
 });
 
 function selectDescriptor(
@@ -168,6 +137,9 @@ type TestClaudeCapabilities = {
   readonly tokenSource: string | undefined;
   readonly apiKeySource: string | undefined;
   readonly apiProvider: string | undefined;
+  readonly models: ReadonlyArray<never> | undefined;
+  readonly autoModeDisabled: boolean;
+  readonly bypassPermissionsDisabled: boolean;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
 };
 
@@ -179,9 +151,12 @@ function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
       tokenSource: undefined,
       apiKeySource: undefined,
       apiProvider: undefined,
+      models: undefined,
+      autoModeDisabled: false,
+      bypassPermissionsDisabled: false,
       slashCommands: [],
       ...overrides,
-    });
+    } satisfies TestClaudeCapabilities);
 }
 
 const noClaudeCapabilities = () =>
@@ -403,13 +378,7 @@ const awaitPersistedProvider = (
 
 const layerTestNodeServices = Layer.mergeAll(
   NodeServices.layer,
-  Layer.mock(CodexInstallation.CodexInstallation)({
-    managedDirectory: "unused-managed-installation",
-  }),
   Layer.mock(ServerSecretStore.ServerSecretStore)({}),
-  Layer.succeed(ServerEnvironment.ServerEnvironmentIdentity, {
-    getEnvironmentId: Effect.succeed(EnvironmentId.make("00000000-0000-4000-8000-000000000001")),
-  }),
 );
 
 it.layer(
@@ -2744,7 +2713,6 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const layerProviderRegistry = ProviderRegistry.layer.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-          Layer.provideMerge(AntigravityInstallation.AntigravityInstallation.layer),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
@@ -2764,10 +2732,6 @@ it.layer(
           Layer.provideMerge(ProviderLatestVersions.layer),
           Layer.provideMerge(McpProviderSessions.layer),
           Layer.provideMerge(ModelManifest.layerTest),
-          Layer.provideMerge(ResetCreditCoordinator.layerTest),
-          Layer.provideMerge(
-            OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layerTest)),
-          ),
           Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
           // NO spawner mock — `ChildProcessSpawner` is supplied by the
           // outer `NodeServices.layer` on `it.layer(...)` and will
@@ -2849,7 +2813,6 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const layerProviderRegistry = ProviderRegistry.layer.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-          Layer.provideMerge(AntigravityInstallation.AntigravityInstallation.layer),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
@@ -2869,10 +2832,6 @@ it.layer(
           Layer.provideMerge(ProviderLatestVersions.layer),
           Layer.provideMerge(McpProviderSessions.layer),
           Layer.provideMerge(ModelManifest.layerTest),
-          Layer.provideMerge(ResetCreditCoordinator.layerTest),
-          Layer.provideMerge(
-            OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layerTest)),
-          ),
           Layer.updateService(ChildProcessSpawner.ChildProcessSpawner, (spawner) =>
             ChildProcessSpawner.make((command) => {
               if (command._tag !== "StandardCommand") return spawner.spawn(command);
@@ -2969,7 +2928,6 @@ it.layer(
         yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
         const layerProviderRegistry = ProviderRegistry.layer.pipe(
           Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-          Layer.provideMerge(AntigravityInstallation.AntigravityInstallation.layer),
           Layer.provideMerge(
             Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
           ),
@@ -2989,10 +2947,6 @@ it.layer(
           Layer.provideMerge(ProviderLatestVersions.layer),
           Layer.provideMerge(McpProviderSessions.layer),
           Layer.provideMerge(ModelManifest.layerTest),
-          Layer.provideMerge(ResetCreditCoordinator.layerTest),
-          Layer.provideMerge(
-            OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layerTest)),
-          ),
           Layer.provideMerge(NodeServices.layer),
           Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
         );
@@ -3029,7 +2983,6 @@ it.layer(
           yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
           const layerProviderRegistry = ProviderRegistry.layer.pipe(
             Layer.provideMerge(ProviderInstanceRegistryHydration.layer),
-            Layer.provideMerge(AntigravityInstallation.AntigravityInstallation.layer),
             Layer.provideMerge(
               Layer.succeed(ServerSettingsModule.ServerSettingsService, serverSettings),
             ),
@@ -3049,10 +3002,6 @@ it.layer(
             Layer.provideMerge(ProviderLatestVersions.layer),
             Layer.provideMerge(McpProviderSessions.layer),
             Layer.provideMerge(ModelManifest.layerTest),
-            Layer.provideMerge(ResetCreditCoordinator.layerTest),
-            Layer.provideMerge(
-              OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layerTest)),
-            ),
             Layer.provideMerge(layerBackgroundPolicyAlwaysRun),
             Layer.provideMerge(
               layerMockCommandSpawner((command, args) => {
@@ -3294,43 +3243,6 @@ it.layer(
                 stderr: "",
                 code: 0,
               };
-            throw new Error(`Unexpected args: ${joined}`);
-          }),
-        ),
-      ),
-    );
-
-    it.effect("reads banked resets only for subscription logins", () =>
-      Effect.gen(function* () {
-        const check = (overrides: Partial<TestClaudeCapabilities>) =>
-          checkClaudeProviderStatus(
-            defaultClaudeSettings,
-            () =>
-              Effect.succeed({
-                email: undefined,
-                subscriptionType: undefined,
-                tokenSource: undefined,
-                apiKeySource: undefined,
-                apiProvider: undefined,
-                slashCommands: [],
-                usage: { rate_limits_available: true, rate_limits: {} },
-                ...overrides,
-              }),
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            () => Effect.succeed({ availableCount: 2 }),
-          );
-        const subscription = yield* check({ subscriptionType: "max" });
-        const bedrock = yield* check({ apiProvider: "bedrock" });
-        assert.deepStrictEqual(subscription.usageLimits?.resetCredits, { availableCount: 2 });
-        assert.strictEqual(bedrock.usageLimits?.resetCredits, undefined);
-      }).pipe(
-        Effect.provide(
-          layerMockSpawner((args) => {
-            const joined = args.join(" ");
-            if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
             throw new Error(`Unexpected args: ${joined}`);
           }),
         ),

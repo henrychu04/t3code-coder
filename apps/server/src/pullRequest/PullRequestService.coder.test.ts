@@ -15,6 +15,7 @@ import type {
 import * as ProjectService from "../project/ProjectService.ts";
 import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolver.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
 import type { PullRequestProviderApi } from "./PullRequestProvider.ts";
 import { PullRequestProviderRegistry, fromProviders } from "./PullRequestProviderRegistry.ts";
@@ -170,6 +171,7 @@ const service = PullRequestService.make.pipe(
       }),
       Layer.mock(PullRequestFilesViewedRepository)({}),
       SourceControlRateLimit.layer,
+      ServerSettings.layerTest(),
     ),
   ),
 );

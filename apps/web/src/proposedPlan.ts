@@ -42,6 +42,7 @@ export function buildCollapsedProposedPlanPreviewMarkdown(
   return previewLines.join("\n");
 }
 
+/** Prefix of the message the app sends when the user approves a plan. */
 export const PLAN_IMPLEMENTATION_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:\n";
 
 export function buildPlanImplementationPrompt(planMarkdown: string): string {

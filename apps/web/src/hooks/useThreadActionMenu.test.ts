@@ -1,13 +1,9 @@
-import {
-  AuthOrchestrationOperateScope,
-  EnvironmentId,
-  ThreadId,
-  type ContextMenuItem,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ThreadActionMenuId } from "../components/threadActionMenu.logic";
+import type { ContextMenuItem } from "../localApiTypes";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

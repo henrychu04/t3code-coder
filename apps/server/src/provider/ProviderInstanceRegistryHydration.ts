@@ -43,7 +43,6 @@ import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import type * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import type * as ServerConfig from "../config.ts";
 
-// Coder: no ACP Registry driver, so no ACP catalog to provide.
 type ProviderInstanceRegistryHydrationEnv =
   // Coder: no ACP Registry driver, so no ACP catalog to provide.
   | Exclude<

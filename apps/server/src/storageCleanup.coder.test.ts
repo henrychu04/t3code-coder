@@ -21,7 +21,7 @@ import * as Workflow from "./git/GitManager.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
-import { SqlitePersistenceMemory } from "./persistence/Layers/Sqlite.ts";
+import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as Settings from "./serverSettings.ts";
 import * as Cleanup from "./storageCleanup.ts";
 import * as Terminals from "./terminal/Manager.ts";
@@ -55,7 +55,7 @@ function fixtures(snapshot: Snapshot = emptySnapshot) {
     Layer.mock(Terminals.TerminalManager)({
       subscribeMetadata: () => Effect.succeed(() => {}),
     }),
-    SqlitePersistenceMemory,
+    SqlitePersistence.layerMemory,
   );
 }
 

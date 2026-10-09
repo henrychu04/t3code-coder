@@ -4,7 +4,6 @@ import {
   buildCollapsedProposedPlanPreviewMarkdown,
   buildPlanImplementationThreadTitle,
   buildPlanImplementationPrompt,
-  proposedPlanTitle,
   resolvePlanFollowUpSubmission,
 } from "./proposedPlan";
 
@@ -84,3 +83,4 @@ describe("buildPlanImplementationThreadTitle", () => {
     expect(buildPlanImplementationThreadTitle("- step 1")).toBe("Implement plan");
   });
 });
+

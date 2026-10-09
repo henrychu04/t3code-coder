@@ -281,6 +281,9 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         tokenSource: "oauth",
         apiKeySource: undefined,
         apiProvider: undefined,
+        models: [],
+        autoModeDisabled: true,
+        bypassPermissionsDisabled: true,
         slashCommands: [
           {
             name: "review",

@@ -23,7 +23,7 @@ import {
   releaseClaimedAttachments,
 } from "./AttachmentClaims.ts";
 
-const layerTest = Layer.mergeAll(NodeServices.layer).pipe(
+const testLayer = Layer.mergeAll(NodeServices.layer).pipe(
   Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-attachment-claims-" })),
   Layer.provideMerge(NodeServices.layer),
 );
@@ -66,7 +66,7 @@ describe("AttachmentClaims", () => {
       const claimed = yield* claimPendingAttachments({ threadId: "thread-many", attachments });
       expect(claimed.attachments).toEqual(attachments);
       expect(claimed.claimedPaths).toEqual([]);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rejects oversized image batches before copying a pending upload", () =>
@@ -93,7 +93,7 @@ describe("AttachmentClaims", () => {
       if (result._tag === "Failure") expect(String(result.cause)).toContain("80 MiB");
       const config = yield* ServerConfig.ServerConfig;
       expect(NodeFS.readdirSync(config.attachmentsDir)).toHaveLength(1);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("claims a pending upload into the thread store and rewrites the id", () =>
@@ -121,7 +121,7 @@ describe("AttachmentClaims", () => {
         entry.startsWith("pending-"),
       );
       expect(pendingFiles).toHaveLength(1);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("passes already-claimed attachments through untouched", () =>
@@ -139,7 +139,7 @@ describe("AttachmentClaims", () => {
       });
       expect(claimed.attachments[0]).toBe(stored);
       expect(claimed.claimedPaths).toHaveLength(0);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rejects a pending ref whose staged file is missing", () =>
@@ -155,7 +155,7 @@ describe("AttachmentClaims", () => {
         claimPendingAttachments({ threadId: "thread-claims-3", attachments: [missing] }),
       );
       expect(result._tag).toBe("Failure");
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rejects a size mismatch and cleans up earlier claims from the batch", () =>
@@ -190,7 +190,7 @@ describe("AttachmentClaims", () => {
         entry.startsWith("thread-claims-4-"),
       );
       expect(claimedFiles).toHaveLength(0);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rejects duplicate attachment ids before copying anything", () =>
@@ -222,7 +222,7 @@ describe("AttachmentClaims", () => {
       expect(
         NodeFS.readdirSync(config.attachmentsDir).filter((entry) => entry.startsWith("pending-")),
       ).toHaveLength(1);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("rolls back a copy that finishes after the claim is interrupted", () =>
@@ -277,7 +277,7 @@ describe("AttachmentClaims", () => {
       expect(
         NodeFS.readdirSync(config.attachmentsDir).filter((entry) => entry.startsWith("pending-")),
       ).toHaveLength(1);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   it.effect("releaseClaimedAttachments removes claimed copies best-effort", () =>
@@ -296,7 +296,7 @@ describe("AttachmentClaims", () => {
       expect(NodeFS.existsSync(claimed.claimedPaths[0]!)).toBe(false);
       // Releasing again is a no-op, not an error.
       yield* releaseClaimedAttachments(claimed.claimedPaths);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 
   // Coder: only signature-matched images and regular files reach the thread store.
@@ -361,6 +361,6 @@ describe("AttachmentClaims", () => {
       });
       expect(claimed.attachments[0]).toBe(bogus);
       expect(claimed.claimedPaths).toHaveLength(0);
-    }).pipe(Effect.provide(layerTest)),
+    }).pipe(Effect.provide(testLayer)),
   );
 });

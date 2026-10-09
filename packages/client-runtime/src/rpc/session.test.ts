@@ -123,7 +123,7 @@ const makeFactory = Effect.fn("TestRpcSessionFactory.make")(function* () {
     return socket as unknown as globalThis.WebSocket;
   });
   const factory = yield* RpcSession.RpcSessionFactory.pipe(
-    Effect.provide(RpcSession.layer.pipe(Layer.provide(constructorLayer))),
+    Effect.provide(RpcSession.layer.pipe(Layer.provide(layerConstructor))),
   );
   return { factory, sockets };
 });

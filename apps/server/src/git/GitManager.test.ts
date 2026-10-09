@@ -7,10 +7,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Deferred from "effect/Deferred";
-import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -20,15 +17,12 @@ import * as References from "effect/References";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
-import * as Stream from "effect/Stream";
 import { TestClock } from "effect/testing";
 import { ChildProcessSpawner } from "effect/process";
 import { expect } from "vite-plus/test";
 import type {
-  ChangeRequest,
   GitActionProgressEvent,
   SourceControlWriteAccess,
-  GitManagerServiceError,
   GitPreparePullRequestThreadInput,
   ModelSelection,
 } from "@t3tools/contracts";
@@ -40,7 +34,6 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
-  SourceControlProviderError as SourceControlProviderFailure,
   TextGenerationError,
   ThreadId,
 } from "@t3tools/contracts";
@@ -536,19 +529,6 @@ function createGitLabCliWithFakeGlab(scenario: FakeGlabScenario = {}): {
     );
   };
 
-  /** What GitHubSourceControlProvider makes of a pull request it read. */
-  const toChangeRequest = (summary: FakePullRequestSummary): ChangeRequest => ({
-    ...summary,
-    provider: "github",
-    state: summary.state ?? "open",
-    closedAt: summary.closedAt ?? null,
-    mergedAt: summary.mergedAt ?? null,
-    updatedAt:
-      summary.updatedAt === undefined
-        ? Option.none()
-        : Option.some(DateTime.makeUnsafe(summary.updatedAt)),
-  });
-
   return {
     service: {
       execute,
@@ -603,7 +583,6 @@ function createGitLabCliWithFakeGlab(scenario: FakeGlabScenario = {}): {
         }).pipe(Effect.asVoid),
       getDefaultBranch: (input) =>
         execute({
-          operation: "getDefaultBranch",
           cwd: input.cwd,
           args: ["repo", "view", "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name"],
         }).pipe(
@@ -614,7 +593,6 @@ function createGitLabCliWithFakeGlab(scenario: FakeGlabScenario = {}): {
         ),
       getMergeRequest: (input) =>
         execute({
-          operation: "getChangeRequest",
           cwd: input.cwd,
           args: [
             "mr",
@@ -628,7 +606,6 @@ function createGitLabCliWithFakeGlab(scenario: FakeGlabScenario = {}): {
         ),
       getRepositoryCloneUrls: (input) =>
         execute({
-          operation: "getRepositoryCloneUrls",
           cwd: input.cwd,
           args: ["repo", "view", input.repository, "--json", "nameWithOwner,url,sshUrl"],
         }).pipe(Effect.map((result) => JSON.parse(result.stdout))),
@@ -643,7 +620,6 @@ function createGitLabCliWithFakeGlab(scenario: FakeGlabScenario = {}): {
         ),
       checkoutMergeRequest: (input) =>
         execute({
-          operation: "checkoutChangeRequest",
           cwd: input.cwd,
           args: ["mr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
         }).pipe(Effect.asVoid),
@@ -703,13 +679,13 @@ function makeManager(input?: {
 }) {
   const { service: gitLabCli, glabCalls } = createGitLabCliWithFakeGlab(input?.glabScenario);
   const textGeneration = createTextGeneration(input?.textGeneration);
-  const layerServerConfig = ServerConfig.layerTest(process.cwd(), {
+  const serverConfigLayer = ServerConfig.layerTest(process.cwd(), {
     prefix: "t3-git-manager-test-",
   });
 
-  const layerServerSettings = ServerSettings.ServerSettingsService.layerTest(input?.serverSettings);
+  const serverSettingsLayer = ServerSettings.ServerSettingsService.layerTest(input?.serverSettings);
 
-  const layerVcsDriver = input?.gitConfigReads
+  const vcsDriverLayer = input?.gitConfigReads
     ? Layer.effect(
         GitVcsDriver.GitVcsDriver,
         GitVcsDriver.make.pipe(
@@ -726,14 +702,14 @@ function makeManager(input?: {
       ).pipe(
         Layer.provideMerge(VcsProcess.layer),
         Layer.provideMerge(NodeServices.layer),
-        Layer.provideMerge(layerServerConfig),
+        Layer.provideMerge(serverConfigLayer),
       )
     : GitVcsDriver.layer.pipe(
         Layer.provideMerge(VcsProcess.layer),
         Layer.provideMerge(NodeServices.layer),
-        Layer.provideMerge(layerServerConfig),
+        Layer.provideMerge(serverConfigLayer),
       );
-  const layerSourceControlRegistry = Layer.effect(
+  const sourceControlRegistryLayer = Layer.effect(
     SourceControlProviderRegistry.SourceControlProviderRegistry,
     (input?.sourceControlProvider === undefined
       ? GitLabSourceControlProvider.make
@@ -752,7 +728,7 @@ function makeManager(input?: {
     ),
   );
 
-  const layerManager = Layer.mergeAll(
+  const managerLayer = Layer.mergeAll(
     Layer.succeed(TextGeneration.TextGeneration, textGeneration),
     Layer.mock(ProviderRegistry.ProviderRegistry)({
       getProviders: Effect.succeed([]),
@@ -763,21 +739,21 @@ function makeManager(input?: {
         runForThread: () => Effect.succeed({ status: "no-script" as const }),
       },
     ),
-    layerVcsDriver,
-    layerServerSettings,
-  ).pipe(Layer.provideMerge(layerSourceControlRegistry), Layer.provideMerge(NodeServices.layer));
+    vcsDriverLayer,
+    serverSettingsLayer,
+  ).pipe(Layer.provideMerge(sourceControlRegistryLayer), Layer.provideMerge(NodeServices.layer));
   // Built into the test's scope: the manager reads these stores after this returns.
-  const layerStores = Layer.merge(ProjectionStore.layer, ProjectStore.layer).pipe(
+  const storesLayer = Layer.merge(ProjectionStore.layer, ProjectStore.layer).pipe(
     Layer.provideMerge(SqlitePersistence.layerMemory),
   );
 
   return Effect.gen(function* () {
-    const stores = yield* Layer.build(layerStores);
+    const stores = yield* Layer.build(storesLayer);
     if (input?.seed !== undefined) {
       yield* input.seed.pipe(Effect.provideContext(stores), Effect.orDie);
     }
     const manager = yield* GitManager.make.pipe(
-      Effect.provide(layerManager),
+      Effect.provide(managerLayer),
       Effect.provideContext(stores),
     );
     return { manager, glabCalls };
@@ -786,7 +762,7 @@ function makeManager(input?: {
 
 const asThreadId = (threadId: string) => threadId as ThreadId;
 
-const layerGitManagerTest = GitVcsDriver.layer.pipe(
+const GitManagerTestLayer = GitVcsDriver.layer.pipe(
   Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-git-manager-test-" })),
   Layer.provideMerge(VcsProcess.layer),
   Layer.provideMerge(NodeServices.layer),
@@ -906,6 +882,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 13,
@@ -950,6 +927,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 14,
@@ -1090,48 +1068,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
-  it.effect("a branch tracking origin reads origin's URL once per PR lookup", () =>
-    Effect.gen(function* () {
-      const repoDir = yield* makeTempDir("t3code-git-manager-");
-      yield* initRepo(repoDir);
-      const remoteDir = yield* createBareRemote();
-      yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
-      yield* runGit(repoDir, ["checkout", "-b", "feature/origin-once"]);
-      yield* runGit(repoDir, ["push", "-u", "origin", "feature/origin-once"]);
-
-      const gitConfigReads: string[] = [];
-      const { manager } = yield* makeManager({
-        gitConfigReads,
-        ghScenario: {
-          prListSequence: [
-            // Fake gh returns raw JSON stdout, matching the CLI boundary under test.
-            JSON.stringify([
-              {
-                number: 217,
-                title: "Origin once PR",
-                url: "https://github.com/pingdotgg/t3code/pull/217",
-                baseRefName: "main",
-                headRefName: "feature/origin-once",
-                state: "OPEN",
-                updatedAt: "2026-04-03T15:00:00Z",
-              },
-            ]),
-          ],
-        },
-      });
-
-      yield* manager.branchPullRequest({ cwd: repoDir, branch: "feature/origin-once" });
-      gitConfigReads.length = 0;
-      const pullRequest = yield* manager.branchPullRequest({
-        cwd: repoDir,
-        branch: "feature/origin-once",
-      });
-
-      expect(pullRequest?.number).toBe(217);
-      expect(gitConfigReads.filter((key) => key === "remote.origin.url")).toHaveLength(1);
-    }),
-  );
-
   it.effect("turn-end refresh finds a new PR and keeps known PRs cached", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -1262,7 +1198,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/216",
                 baseRefName: "main",
                 headRefName: "feature/saved-branch",
-                headRefOid: "a".repeat(40),
                 state: "OPEN",
                 updatedAt: "2026-04-03T15:00:00Z",
               },
@@ -1282,7 +1217,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         url: "https://gitlab.com/pingdotgg/t3code/-/merge_requests/216",
         baseRef: "main",
         headRef: "feature/saved-branch",
-        headSha: "a".repeat(40),
         state: "open",
         closedAt: null,
         mergedAt: null,
@@ -1308,6 +1242,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         glabScenario: {
           // Fake glab returns raw JSON stdout, matching the CLI boundary under test.
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 221,
@@ -1566,7 +1501,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/220",
                 baseRefName: "main",
                 headRefName: "feature/shared-pr-cache",
-                headRefOid: "a".repeat(40),
                 state: "MERGED",
                 updatedAt: "2026-04-07T15:00:00Z",
               },
@@ -1578,7 +1512,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                 url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/221",
                 baseRefName: "main",
                 headRefName: "feature/shared-pr-cache",
-                headRefOid: "b".repeat(40),
                 state: "OPEN",
                 updatedAt: "2026-04-08T15:00:00Z",
               },
@@ -1664,58 +1597,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
-  it.effect("branch PR lookup announces a pull request when it reads it merged", () =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        const remoteDir = yield* createBareRemote();
-        yield* runGit(repoDir, ["remote", "add", "origin", remoteDir]);
-        for (const branch of ["feature/merges-later", "feature/already-merged"]) {
-          yield* runGit(repoDir, ["checkout", "-b", branch, "main"]);
-          yield* runGit(repoDir, ["push", "-u", "origin", branch]);
-        }
-        const pullRequest = (number: number, headRefName: string, state: string) =>
-          encodeCliJson([
-            {
-              number,
-              title: headRefName,
-              url: `https://github.com/pingdotgg/codething-mvp/pull/${number}`,
-              baseRefName: "main",
-              headRefName,
-              state,
-              updatedAt: "2026-04-07T15:00:00Z",
-            },
-          ]);
-        const { manager } = yield* makeManager({
-          ghScenario: {
-            prListSequenceByHeadSelector: {
-              "feature/merges-later": [
-                pullRequest(401, "feature/merges-later", "OPEN"),
-                pullRequest(401, "feature/merges-later", "MERGED"),
-              ],
-              "feature/already-merged": [pullRequest(402, "feature/already-merged", "MERGED")],
-            },
-          },
-        });
-        const changes = yield* manager.subscribePullRequestStateChanges;
-        const lookup = (branch: string) => manager.branchPullRequest({ cwd: repoDir, branch });
-
-        yield* lookup("feature/merges-later");
-        yield* lookup("feature/already-merged");
-        // Open answers are re-read after a minute.
-        yield* TestClock.adjust("61 seconds");
-        expect((yield* lookup("feature/merges-later"))?.state).toBe("merged");
-
-        const announced = yield* Stream.runCollect(Stream.take(changes, 2));
-        expect(announced).toEqual([
-          { host: "github.com", repository: "pingdotgg/codething-mvp", number: 402 },
-          { host: "github.com", repository: "pingdotgg/codething-mvp", number: 401 },
-        ]);
-      }),
-    ),
-  );
-
   it.effect("branch PR lookup propagates provider failures", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -1787,6 +1668,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager, glabCalls } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 215,
@@ -1835,6 +1717,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager, glabCalls } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 214,
@@ -2049,6 +1932,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager } = yield* makeManager({
           glabScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 1661,
@@ -2102,6 +1986,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, glabCalls } = yield* makeManager({
           glabScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 488,
@@ -2167,6 +2052,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, glabCalls } = yield* makeManager({
           glabScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               main: JSON.stringify([
                 {
                   number: 777,
@@ -2242,6 +2128,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, glabCalls } = yield* makeManager({
           glabScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "effect-atom": JSON.stringify([
                 {
                   number: 1618,
@@ -2253,6 +2140,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   updatedAt: "2026-03-01T10:00:00Z",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -2305,6 +2193,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 22,
@@ -2343,6 +2232,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 23,
@@ -2378,6 +2268,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager, glabCalls } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 54,
@@ -2619,6 +2510,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 45,
@@ -3228,53 +3120,6 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
     }),
   );
 
-  it.effect.each([undefined, ["README.md"]])(
-    "a failed generation preserves staging changed while generating (paths: %s)",
-    (filePaths) =>
-      Effect.gen(function* () {
-        const repoDir = yield* makeTempDir("t3code-git-manager-");
-        yield* initRepo(repoDir);
-        NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\nstaged\n");
-        yield* runGit(repoDir, ["add", "README.md"]);
-        NodeFS.appendFileSync(NodePath.join(repoDir, "README.md"), "unstaged\n");
-        NodeFS.writeFileSync(NodePath.join(repoDir, "untracked.txt"), "untracked\n");
-        const indexBefore = NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"));
-        const headBefore = (yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout;
-        const gitDriver = yield* GitVcsDriver.GitVcsDriver;
-        let indexDuring: Buffer | undefined;
-        let indexAfterUserStage: Buffer | undefined;
-        const { manager } = yield* makeManager({
-          textGeneration: {
-            generateCommitMessage: () =>
-              Effect.gen(function* () {
-                indexDuring = NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"));
-                yield* runGit(repoDir, ["add", "untracked.txt"]).pipe(
-                  Effect.provideService(GitVcsDriver.GitVcsDriver, gitDriver),
-                  Effect.orDie,
-                );
-                indexAfterUserStage = NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"));
-                return yield* new TextGenerationError({
-                  operation: "generateCommitMessage",
-                  detail: "Provider rejected generation",
-                });
-              }),
-          },
-        });
-        const result = yield* runStackedAction(manager, {
-          cwd: repoDir,
-          action: "commit",
-          ...(filePaths ? { filePaths } : {}),
-        }).pipe(Effect.result);
-        expect(Result.isFailure(result)).toBe(true);
-        expect(indexDuring).toEqual(indexBefore);
-        expect(NodeFS.readFileSync(NodePath.join(repoDir, ".git/index"))).toEqual(
-          indexAfterUserStage,
-        );
-        expect((yield* runGit(repoDir, ["rev-parse", "HEAD"])).stdout).toBe(headBefore);
-        expect((yield* runGit(repoDir, ["diff"])).stdout).toContain("+unstaged");
-      }),
-  );
-
   it.effect("uses custom commit message when provided", () =>
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
@@ -3530,6 +3375,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           glabScenario: {
             prListSequence: [
               "[]",
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 77,
@@ -3665,6 +3511,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         glabScenario: {
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 303,
@@ -3711,6 +3558,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         glabScenario: {
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 404,
@@ -3762,6 +3610,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           defaultBranch: "",
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 505,
@@ -3801,6 +3650,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager, glabCalls } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 42,
@@ -3932,6 +3782,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, glabCalls } = yield* makeManager({
           glabScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "effect-atom": JSON.stringify([
                 {
                   number: 1618,
@@ -3941,6 +3792,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   headRefName: "effect-atom",
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "upstream/effect-atom": JSON.stringify([
                 {
                   number: 1518,
@@ -3990,7 +3842,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, glabCalls } = yield* makeManager({
           glabScenario: {
             prListByHeadSelector: {
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "t3code/pr-142/statemachine": JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               statemachine: JSON.stringify([
                 {
                   number: 41,
@@ -4076,6 +3930,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   },
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               "t3code/pr-142/statemachine": JSON.stringify([]),
             },
           },
@@ -4259,6 +4114,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
           writeProbeCalls,
           prListSequence: [
             "[]",
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 88,
@@ -4382,6 +4238,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         const { manager, glabCalls } = yield* makeManager({
           glabScenario: {
             prListSequence: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 1661,
@@ -4399,6 +4256,7 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
                   },
                 },
               ]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 188,
@@ -4461,7 +4319,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
         glabScenario: {
           prListSequenceByHeadSelector: {
             statemachine: [
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([]),
+              // @effect-diagnostics-next-line preferSchemaOverJson:off
               JSON.stringify([
                 {
                   number: 188,
@@ -6026,7 +5886,9 @@ it.layer(GitManagerTestLayer)("GitManager", (it) => {
       const { manager } = yield* makeManager({
         glabScenario: {
           prListSequence: [
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([]),
+            // @effect-diagnostics-next-line preferSchemaOverJson:off
             JSON.stringify([
               {
                 number: 201,

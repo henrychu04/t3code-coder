@@ -18,10 +18,9 @@ import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import type { ProviderAuthController } from "../provider/Services/ProviderAuthService.ts";
-import type { ProviderInstance } from "../provider/ProviderDriver.ts";
-import * as ProviderInstanceRegistry from "../provider/Services/ProviderInstanceRegistry.ts";
-import { ProviderAdapterOpenSessionError, type ProviderAdapterV2Shape } from "./ProviderAdapter.ts";
+import type { ProviderAuthController } from "../provider/ProviderAuthService.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
