@@ -52,6 +52,7 @@ const CAPABILITIES: PullRequestCapabilities = {
   edit: { changeRequest: true, comment: true },
 };
 
+// Coder: what the panel offers while the workspace write-access probe forbids host writes.
 const READ_ONLY_CAPABILITIES: PullRequestCapabilities = {
   ...CAPABILITIES,
   comment: false,
@@ -92,6 +93,7 @@ const MERGE_ACTIONS: ReadonlySet<string> = new Set([
  */
 export function gitLabViewerPermissions(input: {
   readonly viewerCanMerge: boolean;
+  /** Coder: false while the workspace write-access probe forbids host writes. */
   readonly writeAvailable?: boolean;
 }): PullRequestViewerPermissions {
   if (input.writeAvailable === false) {
@@ -118,7 +120,7 @@ export function gitLabViewerPermissions(input: {
 }
 
 /** The CLI tags that mean the tool itself is unusable, rather than one request failing. */
-function gitLabProviderFailure(
+export function gitLabProviderFailure(
   error: GitLabPullRequestCli.GitLabPullRequestCliError,
 ): PullRequestProviderFailure {
   if (error._tag === "GitLabCliUnavailableError") return { reason: "missing-tool" };
@@ -165,6 +167,8 @@ export const make = Effect.gen(function* () {
           Effect.map((batch) => ({ ...batch, continues: true })),
         ),
 
+    // Coder: GitLab implementations of upstream's optional preview, summary, and file-contents
+    // reads, which upstream implements only for GitHub.
     // A hover card needs only the merge request itself, not merge settings or write access.
     getChangeRequestPreview: (input) =>
       cli.getMergeRequestDetail(input).pipe(

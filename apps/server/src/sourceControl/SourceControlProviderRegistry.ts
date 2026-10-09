@@ -65,6 +65,7 @@ function unsupportedProvider(
 ): SourceControlProvider.SourceControlProvider["Service"] {
   return SourceControlProvider.SourceControlProvider.of({
     kind,
+    // Coder: no registered provider means writes are not available.
     probeWriteAccess: () =>
       Effect.succeed({
         status: "indeterminate",
@@ -129,13 +130,20 @@ function unsupportedProvider(
 }
 
 function selectProviderContext(
-  remotes: ReadonlyArray<{ readonly name: string; readonly url: string }>,
+  remotes: ReadonlyArray<{
+    readonly name: string;
+    readonly url: string;
+  }>,
 ): SourceControlProvider.SourceControlProviderContext | null {
   const candidates: Array<SourceControlProvider.SourceControlProviderContext> = [];
   for (const remote of remotes) {
     const provider = detectSourceControlProviderFromRemoteUrl(remote.url);
     if (provider) {
-      candidates.push({ provider, remoteName: remote.name, remoteUrl: remote.url });
+      candidates.push({
+        provider,
+        remoteName: remote.name,
+        remoteUrl: remote.url,
+      });
     }
   }
 
@@ -234,11 +242,13 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
               }),
           ),
         );
+        const context = selectProviderContext(remotes.remotes);
+
         return yield* refineUnknownRemoteProvider({
           specs: discoverySpecs,
           process,
           cwd,
-          context: selectProviderContext(remotes.remotes),
+          context,
         });
       },
     );
@@ -297,6 +307,7 @@ export const makeWithProviders = Effect.fn("makeSourceControlProviderRegistryWit
   },
 );
 
+// Coder: GitLab is the only hosted provider.
 export const make = Effect.gen(function* () {
   const gitlab = yield* GitLabSourceControlProvider.make;
   return yield* makeWithProviders([

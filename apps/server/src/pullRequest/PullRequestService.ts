@@ -1,3 +1,7 @@
+// Coder: GitLab is the only hosted provider and every workspace resolves its own links, so
+// upstream's cross-environment routing (routing identities, verified credentials,
+// `expectedAccountId`/`allowStale` refs) and Forgejo SSH-alias refinement are omitted. Change
+// requests may carry `capabilities` that reflect the workspace write-access probe.
 import {
   canonicalRepositoryKey,
   sourceControlRepositorySelector,

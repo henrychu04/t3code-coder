@@ -9,14 +9,13 @@ import type * as DateTime from "effect/DateTime";
 
 import {
   TrimmedNonEmptyString,
-  VcsProcessExitError,
-  VcsProcessTimeoutError,
   type SourceControlRepositoryVisibility,
   type SourceControlWriteAccess,
   type VcsError,
 } from "@t3tools/contracts";
 
 import * as VcsProcess from "../vcs/VcsProcess.ts";
+// Coder: GitLab writes run only after the workspace write-access probe allows them.
 import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 import {
   decodeGitLabMergeRequestJson,
@@ -78,6 +77,7 @@ export class GitLabCliRateLimitError extends Schema.TaggedError<GitLabCliRateLim
   }
 }
 
+// Coder: a write the workspace write-access probe did not allow.
 export class GitLabWriteUnavailableError extends Schema.TaggedError<GitLabWriteUnavailableError>()(
   "GitLabWriteUnavailableError",
   {
@@ -156,12 +156,6 @@ export class GitLabCliCommandError extends Schema.TaggedError<GitLabCliCommandEr
   gitLabCliExecutionErrorContext,
 ) {
   get detail(): string {
-    if (Schema.is(VcsProcessExitError)(this.cause) && this.cause.failureKind === "not-found") {
-      return "The GitLab resource was not found or is not accessible. Check the repository path, GitLab host, and workspace account access.";
-    }
-    if (Schema.is(VcsProcessTimeoutError)(this.cause)) {
-      return "GitLab CLI request timed out. Check workspace network access and retry.";
-    }
     return "GitLab CLI command failed.";
   }
 
@@ -243,6 +237,7 @@ export class GitLabRepositoryDecodeError extends Schema.TaggedError<GitLabReposi
     operation: Schema.Literals([
       "getRepositoryCloneUrls",
       "createRepository",
+      // Coder: merge-request creation reads project identities.
       "createMergeRequest",
       "getDefaultBranch",
     ]),
@@ -323,7 +318,7 @@ export class GitLabCli extends Context.Service<
       readonly maxOutputBytes?: number;
     }) => Effect.Effect<VcsProcess.VcsProcessOutput, GitLabCliError>;
 
-    /** Executes only after the state-free workspace write probe succeeds. */
+    /** Coder: executes only after the state-free workspace write probe succeeds. */
     readonly executeWrite: (input: {
       readonly cwd: string;
       readonly args: ReadonlyArray<string>;
@@ -381,6 +376,7 @@ export class GitLabCli extends Context.Service<
     readonly checkoutMergeRequest: (input: {
       readonly cwd: string;
       readonly reference: string;
+      /** Coder: the local branch name `glab mr checkout --branch` creates. */
       readonly branch?: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, GitLabCliError>;
@@ -398,6 +394,7 @@ const RawGitLabDefaultBranchSchema = Schema.Struct({
   default_branch: Schema.optional(Schema.NullOr(TrimmedNonEmptyString)),
 });
 
+// Coder: numeric project identity for merge requests between projects.
 const RawGitLabProjectIdentitySchema = Schema.Struct({
   id: Schema.Number,
   path: TrimmedNonEmptyString,
@@ -448,6 +445,7 @@ function normalizeHeadSelector(headSelector: string): string {
   return ownerBranch?.[1]?.trim() || trimmed;
 }
 
+// Coder: upstream passes MR URLs straight to `glab`, which older versions read as branch names.
 function mergeRequestReferenceArgs(reference: string): ReadonlyArray<string> {
   // Older glab versions interpret MR URLs as branch names. Keep the URL's repository
   // and host explicit while using the numeric MR selector supported by those versions.
@@ -583,6 +581,7 @@ export const make = Effect.gen(function* () {
       ),
     );
 
+  // Coder: resolves project identities for merge requests between projects.
   const readProjectIdentity = (input: { readonly cwd: string; readonly repository?: string }) =>
     execute({
       cwd: input.cwd,
@@ -730,6 +729,7 @@ export const make = Effect.gen(function* () {
 
       return namespaceId.pipe(
         Effect.flatMap((resolvedNamespaceId) =>
+          // Coder: repository creation is a write.
           executeWrite({
             cwd: input.cwd,
             args: [
@@ -767,6 +767,9 @@ export const make = Effect.gen(function* () {
         Effect.map(normalizeRepositoryCloneUrls),
       );
     },
+    // Coder: upstream sends the repository text as `source_project_id`, which GitLab rejects. A
+    // merge request between projects posts to the source project with a numeric
+    // `target_project_id`.
     createMergeRequest: (input) =>
       Effect.gen(function* () {
         const hasProjectSelector =
@@ -843,6 +846,7 @@ export const make = Effect.gen(function* () {
       executeMergeRequest({
         cwd: input.cwd,
         reference: input.reference,
+        // Coder: upstream ignores `branch` and `force`, and passes MR URLs straight through.
         args: [
           "mr",
           "checkout",
@@ -854,6 +858,7 @@ export const make = Effect.gen(function* () {
   });
 });
 
+// Coder: the write probe is a layer so tests can replace it.
 export function layerWithWriteProbe(
   writeProbe: Layer.Layer<GitLabWriteProbe.GitLabWriteProbe, never, VcsProcess.VcsProcess>,
 ) {

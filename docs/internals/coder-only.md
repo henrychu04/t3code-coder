@@ -735,6 +735,26 @@ listed here is drift to remove rather than fork behavior to keep.
   Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
   `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
   unused.
+- **Source control and merge-request services.** `sourceControl/` and `pullRequest/` are
+  upstream's, GitLab-only. Coder deltas, each marked `Coder:`:
+  - Only GitLab is registered. `GitLabWriteProbe` gates every host write (`GitLabCli.executeWrite`,
+    repository and merge-request creation, merge-request mutations); discovery reports its
+    `writeAccess`, and while writes are blocked the merge-request detail and viewer permissions
+    become read-only.
+  - GitLab implements upstream's optional hover-preview, summary (batched through aliased GraphQL
+    reads), and diff-file-contents reads, which upstream implements only for GitHub. Diff output
+    is capped at 6 MiB to fit the gateway's 8 MiB message ceiling.
+  - GitLab fixes for bugs still in upstream (checked against upstream `main` 42c6623d49):
+    merge requests between projects post to the source project with a numeric
+    `target_project_id` instead of sending the repository text as `source_project_id`; merge
+    request URLs reach `glab` as `<iid> --repo <url>` because older versions read URLs as branch
+    names; `mr checkout` honours `branch` and `force`.
+  - Merge-request templates include `.gitlab/merge_request_templates`, preferring `Default.md`.
+    `glab auth status` lines carrying a token label or a `glpat-` token are never surfaced. Clones
+    accept only GitLab URLs without credentials, query, or fragment, and pass `--` before the URL.
+  - `PullRequestService` omits upstream's cross-environment routing (routing identities,
+    verified credentials, `expectedAccountId` and `allowStale` refs) and Forgejo SSH-alias
+    refinement.
 - **Git layer.** `vcs/GitVcsDriver.ts`, `vcs/GitVcsDriverCore.ts`, `vcs/VcsProcess.ts`,
   `vcs/VcsStatusBroadcaster.ts`, `git/GitManager.ts`, `git/GitWorkflowService.ts`, and
   `git/remoteRefs.ts` are upstream's. Each difference is marked `Coder:` in the file:

@@ -942,13 +942,12 @@ export function decodeOwnAwardIdJson(
     return Result.fail(decoded.failure);
   }
   const name = gitLabAwardName(input.content);
-  const viewer = input.viewer.trim().toLowerCase();
   for (const entry of decoded.success) {
     const award = decodeAward(entry);
     if (Exit.isFailure(award)) continue;
     const value = award.value;
     if (trimmed(value.name)?.toLowerCase() !== name) continue;
-    if (trimmed(value.user?.username)?.toLowerCase() !== viewer) continue;
+    if (trimmed(value.user?.username) !== input.viewer) continue;
     return Result.succeed(value.id);
   }
   return Result.succeed(null);
@@ -1032,6 +1031,8 @@ export function decodeRepositoryBlobsJson(
   }
   return Result.succeed(blobs);
 }
+
+// Coder: batched merge-request summaries for `GitLabPullRequestCli.getMergeRequestSummary`.
 
 /** A project path the batched GraphQL read can address: a GitLab full path, no URL or selector. */
 const GRAPHQL_PROJECT_PATH = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)+$/;

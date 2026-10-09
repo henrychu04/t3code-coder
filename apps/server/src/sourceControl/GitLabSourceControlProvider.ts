@@ -152,6 +152,7 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: "gitlab",
+    // Coder: the workspace write-access probe.
     probeWriteAccess: gitlab.probeWriteAccess,
     resolveLink: (input) => {
       // Automatic enrichment must not send ambient CLI credentials to a host from message text.

@@ -18,6 +18,7 @@ const TEMPLATE_PATHS = [
 ] as const;
 
 const TEMPLATE_DIRECTORIES = [
+  // Coder: GitLab merge-request templates, preferring `Default.md`.
   ".gitlab/merge_request_templates",
   ".github/PULL_REQUEST_TEMPLATE",
   "PULL_REQUEST_TEMPLATE",

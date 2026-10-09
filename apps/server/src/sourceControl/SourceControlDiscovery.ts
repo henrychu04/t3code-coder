@@ -1,4 +1,8 @@
-import type { SourceControlDiscoveryResult, VcsDiscoveryItem } from "@t3tools/contracts";
+import {
+  type SourceControlDiscoveryResult,
+  type VcsDiscoveryItem,
+  type VcsDriverKind,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,67 +14,141 @@ import { detailFromCause, firstNonEmptyLine } from "./SourceControlProviderDisco
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as GitLabCli from "./GitLabCli.ts";
 
+interface DiscoveryProbe {
+  readonly label: string;
+  readonly executable?: string;
+  readonly versionArgs?: ReadonlyArray<string>;
+  readonly implemented: boolean;
+  readonly installHint: string;
+}
+
+type VcsProbe = DiscoveryProbe & {
+  readonly kind: VcsDriverKind;
+  readonly executable: string;
+  readonly versionArgs: ReadonlyArray<string>;
+};
+
+interface DiscoveryProbeResult<Kind extends string> {
+  readonly kind: Kind;
+  readonly label: string;
+  readonly executable?: string;
+  readonly implemented: boolean;
+  readonly status: "available" | "missing";
+  readonly version: Option.Option<string>;
+  readonly installHint: string;
+  readonly detail: Option.Option<string>;
+}
+
+const VCS_PROBES: ReadonlyArray<VcsProbe> = [
+  {
+    kind: "git",
+    label: "Git",
+    executable: "git",
+    versionArgs: ["--version"],
+    implemented: true,
+    installHint: "Install Git from https://git-scm.com/downloads or with your package manager.",
+  },
+  {
+    kind: "jj",
+    label: "Jujutsu",
+    executable: "jj",
+    versionArgs: ["--version"],
+    implemented: false,
+    installHint: "Install Jujutsu with `brew install jj` or from https://github.com/jj-vcs/jj.",
+  },
+];
+
 export class SourceControlDiscovery extends Context.Service<
   SourceControlDiscovery,
-  { readonly discover: Effect.Effect<SourceControlDiscoveryResult> }
+  {
+    readonly discover: Effect.Effect<SourceControlDiscoveryResult>;
+  }
 >()("t3/sourceControl/SourceControlDiscovery") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const process = yield* VcsProcess.VcsProcess;
-  const providers = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
+  const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const gitLab = yield* GitLabCli.GitLabCli;
 
-  const discoverGit: Effect.Effect<VcsDiscoveryItem> = process
-    .run({
-      operation: "source-control.discovery.probe",
-      command: "git",
-      args: ["--version"],
-      cwd: config.cwd,
-      timeoutMs: 5_000,
-      maxOutputBytes: 8_000,
-      appendTruncationMarker: true,
-    })
-    .pipe(
-      Effect.map((result) => ({
-        kind: "git" as const,
-        label: "Git",
-        executable: "git",
-        implemented: true,
-        status: "available" as const,
-        version: Option.orElse(firstNonEmptyLine(result.stdout), () =>
-          firstNonEmptyLine(result.stderr),
+  const probe = <Kind extends VcsDriverKind>(
+    input: DiscoveryProbe & { readonly kind: Kind },
+  ): Effect.Effect<DiscoveryProbeResult<Kind>> => {
+    const executable = input.executable;
+    const versionArgs = input.versionArgs;
+
+    if (!executable || !versionArgs) {
+      return Effect.succeed({
+        kind: input.kind,
+        label: input.label,
+        implemented: input.implemented,
+        status: "missing" as const,
+        version: Option.none<string>(),
+        installHint: input.installHint,
+        detail: Option.some(input.installHint),
+      } satisfies DiscoveryProbeResult<Kind>);
+    }
+
+    return process
+      .run({
+        operation: "source-control.discovery.probe",
+        command: executable,
+        args: versionArgs,
+        cwd: config.cwd,
+        timeoutMs: 5_000,
+        maxOutputBytes: 8_000,
+        appendTruncationMarker: true,
+      })
+      .pipe(
+        Effect.map(
+          (result) =>
+            ({
+              kind: input.kind,
+              label: input.label,
+              executable,
+              implemented: input.implemented,
+              status: "available" as const,
+              version: Option.orElse(firstNonEmptyLine(result.stdout), () =>
+                firstNonEmptyLine(result.stderr),
+              ),
+              installHint: input.installHint,
+              detail: Option.none<string>(),
+            }) satisfies DiscoveryProbeResult<Kind>,
         ),
-        installHint: "Git is required in the Coder workspace.",
-        detail: Option.none<string>(),
-      })),
-      Effect.catch((cause) =>
-        Effect.succeed({
-          kind: "git" as const,
-          label: "Git",
-          executable: "git",
-          implemented: true,
-          status: "missing" as const,
-          version: Option.none<string>(),
-          installHint: "Install Git in the Coder workspace.",
-          detail: detailFromCause(cause),
-        }),
-      ),
-    );
+        Effect.catch((cause) =>
+          Effect.succeed({
+            kind: input.kind,
+            label: input.label,
+            executable,
+            implemented: input.implemented,
+            status: "missing" as const,
+            version: Option.none<string>(),
+            installHint: input.installHint,
+            detail: detailFromCause(cause),
+          } satisfies DiscoveryProbeResult<Kind>),
+        ),
+      );
+  };
 
   return SourceControlDiscovery.of({
-    discover: Effect.all(
-      [discoverGit, providers.discover, gitLab.probeWriteAccess({ cwd: config.cwd })],
-      { concurrency: 3 },
-    ).pipe(
-      Effect.map(([git, sourceControlProviders, writeAccess]) => ({
-        versionControlSystems: [git],
-        sourceControlProviders: sourceControlProviders.map((provider) =>
-          provider.kind === "gitlab" ? { ...provider, writeAccess } : provider,
+    discover: Effect.all({
+      versionControlSystems: Effect.all(
+        VCS_PROBES.map((entry) => probe(entry)) as ReadonlyArray<Effect.Effect<VcsDiscoveryItem>>,
+        { concurrency: "unbounded" },
+      ),
+      // Coder: GitLab discovery carries the workspace write-access probe result.
+      sourceControlProviders: Effect.all(
+        [sourceControlProviders.discover, gitLab.probeWriteAccess({ cwd: config.cwd })],
+        { concurrency: 2 },
+      ).pipe(
+        Effect.map(([providers, writeAccess]) =>
+          providers.map((provider) =>
+            provider.kind === "gitlab" ? { ...provider, writeAccess } : provider,
+          ),
         ),
-      })),
-    ),
+      ),
+    }),
   });
 });
 

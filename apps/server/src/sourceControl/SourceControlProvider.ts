@@ -26,6 +26,8 @@ export interface SourceControlProviderContext {
   readonly provider: SourceControlProviderInfo;
   readonly remoteName: string;
   readonly remoteUrl: string;
+  /** An explicit web authority can disambiguate Forgejo logins sharing an SSH alias. */
+  readonly requestedHost?: string;
 }
 
 export interface SourceControlRefSelector {
@@ -64,7 +66,9 @@ export function transportSafeSourceControlErrorValue(value: string): string {
   return safe.slice(0, MAX_ERROR_TRANSPORT_VALUE_LENGTH);
 }
 
-function parseSourceControlOwnerRef(headSelector: string): SourceControlRefSelector | undefined {
+export function parseSourceControlOwnerRef(
+  headSelector: string,
+): SourceControlRefSelector | undefined {
   const match = /^([^:/\s]+):(.+)$/u.exec(headSelector.trim());
   const owner = match?.[1]?.trim();
   const refName = match?.[2]?.trim();
@@ -75,7 +79,7 @@ function normalizeSourceBranch(headSelector: string): string {
   return parseSourceControlOwnerRef(headSelector)?.refName ?? headSelector.trim();
 }
 
-function sourceBranch(input: {
+export function sourceBranch(input: {
   readonly headSelector: string;
   readonly source?: SourceControlRefSelector;
 }): string {
@@ -93,6 +97,7 @@ export class SourceControlProvider extends Context.Service<
   SourceControlProvider,
   {
     readonly kind: SourceControlProviderKind;
+    /** Coder: whether this workspace may write to the host (see the GitLab write probe). */
     readonly probeWriteAccess: (input: {
       readonly cwd: string;
     }) => Effect.Effect<SourceControlWriteAccess>;
@@ -139,6 +144,7 @@ export class SourceControlProvider extends Context.Service<
       readonly cwd: string;
       readonly context?: SourceControlProviderContext;
       readonly reference: string;
+      /** Coder: the local branch name for the checkout. */
       readonly branch?: string;
       readonly force?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
