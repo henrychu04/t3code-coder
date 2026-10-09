@@ -12,7 +12,6 @@ import {
   isTerminalCompositionCommitInput,
   isTerminalCompositionKey,
   isTerminalCopyShortcut,
-  isTerminalLinkPointerGesture,
   isTerminalPasteShortcut,
   loadTerminalFontFamily,
   primeTerminalCopyInput,
@@ -20,7 +19,6 @@ import {
   resolveTerminalMouseTrackingState,
   shouldBlinkTerminalCursor,
   shouldReportTerminalMouse,
-  shouldShowTerminalLinkHover,
   terminalGridCellAt,
   terminalScrollbarGeometry,
   terminalScrollbarOffsetAtPointer,
@@ -35,16 +33,10 @@ import {
 } from "./surface";
 
 vi.mock("./vendor/ghostty-vt.wasm?url", async () => ({
-  default: `data:application/wasm;base64,${(await import("node:fs")).readFileSync(
-    new URL("./vendor/ghostty-vt.wasm", import.meta.url),
-    "base64",
-  )}`,
+  default: (await import("./vendor/ghostty-vt.wasm?inline")).default,
 }));
 vi.mock("./vendor/ghostty-write-pty.wasm?url&no-inline", async () => ({
-  default: `data:application/wasm;base64,${(await import("node:fs")).readFileSync(
-    new URL("./vendor/ghostty-write-pty.wasm", import.meta.url),
-    "base64",
-  )}`,
+  default: (await import("./vendor/ghostty-write-pty.wasm?inline")).default,
 }));
 
 describe("GhosttyTerminalSurface visibility", () => {
@@ -175,14 +167,15 @@ describe("GhosttyTerminalSurface visibility", () => {
       resize() {
         for (const callback of resizeCallbacks) callback();
       },
-      pointer(type: string, clientX: number, buttons: number) {
+      pointer(type: string, clientX: number, buttons: number, shiftKey = false, button = 0) {
         canvas.dispatchEvent(
           Object.assign(new Event(type, { cancelable: true }), {
             clientX,
             clientY: 5,
             pointerId: 1,
-            button: buttons === 4 ? 1 : 0,
+            button,
             buttons,
+            shiftKey,
           }),
         );
       },
@@ -285,6 +278,109 @@ describe("GhosttyTerminalSurface visibility", () => {
     expect(surface.getSelection()).toBe("");
     expect(surface.getSelectionPosition()).toBeNull();
     expect(harness.renderedSnapshot.rowData[0]?.cells.some((cell) => cell.selected)).toBe(false);
+  });
+
+  it("pastes the terminal selection, and only that, on a Linux middle click", async () => {
+    const harness = createHarness();
+    const readText = vi.fn(async () => "clipboard text");
+    vi.stubGlobal("navigator", { platform: "Linux x86_64", clipboard: { readText } });
+    const surface = await harness.create();
+    surface.write("hello world");
+    harness.flushFrame();
+    harness.pointer("pointerdown", 5, 1);
+    harness.pointer("pointermove", 37, 1);
+    harness.pointer("pointerup", 37, 0);
+    expect(surface.getSelection()).toBe("hello");
+
+    harness.onData.mockClear();
+    harness.pointer("pointerdown", 5, 4, false, 1);
+    await vi.waitFor(() => expect(harness.onData).toHaveBeenCalled());
+    expect(harness.onData.mock.calls.at(-1)?.[0]).toBe("hello");
+    expect(surface.getSelection()).toBe("hello");
+
+    // Without a selection there is no primary buffer to paste; the clipboard
+    // holds what the user copied and must not be substituted.
+    surface.clearSelection();
+    harness.pointer("pointerdown", 5, 4, false, 1);
+    expect(readText).not.toHaveBeenCalled();
+  });
+
+  it("starts a selection when dragging from a link", async () => {
+    const harness = createHarness();
+    const onLinkActivate = vi.fn();
+    const surface = await harness.create({ onLinkActivate });
+    surface.write("https://example.com");
+    harness.flushFrame();
+
+    harness.pointer("pointerdown", 5, 1);
+    harness.pointer("pointermove", 37, 1);
+    harness.pointer("pointerup", 37, 0);
+
+    expect(onLinkActivate).not.toHaveBeenCalled();
+    expect(surface.getSelection()).toBe("https");
+  });
+
+  it("keeps a link click active through slight pointer movement", async () => {
+    const harness = createHarness();
+    const onLinkActivate = vi.fn();
+    const surface = await harness.create({ onLinkActivate });
+    surface.write("https://example.com");
+    harness.flushFrame();
+
+    harness.pointer("pointerdown", 5, 1);
+    harness.pointer("pointermove", 6, 1);
+    harness.pointer("pointerup", 6, 0);
+
+    expect(onLinkActivate).toHaveBeenCalledOnce();
+  });
+
+  it("uses repeated link clicks for word and line selection", async () => {
+    const harness = createHarness();
+    const onLinkActivate = vi.fn();
+    const surface = await harness.create({ onLinkActivate });
+    surface.write("https://example.com tail");
+    harness.flushFrame();
+
+    harness.pointer("pointerdown", 5, 1);
+    harness.pointer("pointerup", 5, 0);
+    harness.pointer("pointerdown", 5, 1);
+    harness.pointer("pointerup", 5, 0);
+    expect(onLinkActivate).toHaveBeenCalledOnce();
+    expect(surface.getSelection()).not.toBe("");
+
+    harness.pointer("pointerdown", 5, 1);
+    harness.pointer("pointerup", 5, 0);
+    expect(onLinkActivate).toHaveBeenCalledOnce();
+    expect(surface.getSelection()).toBe("https://example.com tail");
+  });
+
+  it("uses Shift drags over links for selection", async () => {
+    const harness = createHarness();
+    const onLinkActivate = vi.fn();
+    const surface = await harness.create({ onLinkActivate });
+    surface.write("https://example.com");
+    harness.flushFrame();
+
+    harness.pointer("pointerdown", 5, 1, true);
+    harness.pointer("pointermove", 37, 1, true);
+    harness.pointer("pointerup", 37, 0, true);
+    expect(onLinkActivate).not.toHaveBeenCalled();
+    expect(surface.getSelection()).toBe("https");
+  });
+
+  it("does not activate a link replaced before pointer release", async () => {
+    const harness = createHarness();
+    const onLinkActivate = vi.fn();
+    const surface = await harness.create({ onLinkActivate });
+    surface.write("https://first.example");
+    harness.flushFrame();
+
+    harness.pointer("pointerdown", 5, 1);
+    surface.write("\x1b[2J\x1b[Hhttps://second.example");
+    harness.flushFrame();
+    harness.pointer("pointerup", 5, 0);
+
+    expect(onLinkActivate).not.toHaveBeenCalled();
   });
 
   it("stops zero-size mounts and repaints when the same size returns", async () => {
@@ -778,13 +874,6 @@ describe("application mouse reporting", () => {
       motionData: "\u001b[<35;8;4M",
     });
   });
-
-  it("only shows link hover during mouse tracking when the link modifier is held", () => {
-    expect(shouldShowTerminalLinkHover(false, false)).toBe(true);
-    expect(shouldShowTerminalLinkHover(false, true)).toBe(true);
-    expect(shouldShowTerminalLinkHover(true, false)).toBe(false);
-    expect(shouldShowTerminalLinkHover(true, true)).toBe(true);
-  });
 });
 
 describe("terminal font resolution", () => {
@@ -901,19 +990,6 @@ describe("terminalWheelArrowData", () => {
     expect(terminalWheelArrowData(3, false)).toBe("\u001b[B\u001b[B\u001b[B");
     expect(terminalWheelArrowData(-1, true)).toBe("\u001bOA");
     expect(terminalWheelArrowData(0, true)).toBe("");
-  });
-});
-
-describe("isTerminalLinkPointerGesture", () => {
-  it("uses Command on macOS and Control elsewhere", () => {
-    expect(isTerminalLinkPointerGesture({ ctrlKey: false, metaKey: true }, "MacIntel")).toBe(true);
-    expect(isTerminalLinkPointerGesture({ ctrlKey: true, metaKey: false }, "MacIntel")).toBe(false);
-    expect(isTerminalLinkPointerGesture({ ctrlKey: true, metaKey: false }, "Linux x86_64")).toBe(
-      true,
-    );
-    expect(isTerminalLinkPointerGesture({ ctrlKey: false, metaKey: true }, "Linux x86_64")).toBe(
-      false,
-    );
   });
 });
 

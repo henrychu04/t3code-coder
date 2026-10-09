@@ -2,6 +2,7 @@ import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { TerminalBufferCache } from "./terminalBufferCache.ts";
+import { resetOutput, terminalOutputText } from "./terminalOutput.ts";
 import { EMPTY_TERMINAL_BUFFER_STATE, type TerminalBufferState } from "./terminalSession.ts";
 
 const input = (threadId: string, terminalId = "terminal-1") => ({
@@ -11,9 +12,11 @@ const input = (threadId: string, terminalId = "terminal-1") => ({
 
 const state = (buffer: string, sequence: number): TerminalBufferState => ({
   ...EMPTY_TERMINAL_BUFFER_STATE,
-  buffer,
+  output: resetOutput(EMPTY_TERMINAL_BUFFER_STATE.output, buffer, 1_024),
+  version: 1,
   sequence,
 });
+const text = (value: TerminalBufferState) => terminalOutputText(value.output);
 
 describe("TerminalBufferCache", () => {
   it("isolates entries by environment, thread, and terminal", () => {
@@ -23,10 +26,10 @@ describe("TerminalBufferCache", () => {
     cache.write("environment-a", input("thread-b"), state("c", 3));
     cache.write("environment-a", input("thread-a", "terminal-2"), state("d", 4));
 
-    expect(cache.read("environment-a", input("thread-a")).buffer).toBe("a");
-    expect(cache.read("environment-b", input("thread-a")).buffer).toBe("b");
-    expect(cache.read("environment-a", input("thread-b")).buffer).toBe("c");
-    expect(cache.read("environment-a", input("thread-a", "terminal-2")).buffer).toBe("d");
+    expect(text(cache.read("environment-a", input("thread-a")))).toBe("a");
+    expect(text(cache.read("environment-b", input("thread-a")))).toBe("b");
+    expect(text(cache.read("environment-a", input("thread-b")))).toBe("c");
+    expect(text(cache.read("environment-a", input("thread-a", "terminal-2")))).toBe("d");
   });
 
   it("evicts least-recently-used entries by count", () => {
@@ -36,9 +39,9 @@ describe("TerminalBufferCache", () => {
     cache.read("environment", input("thread-a"));
     cache.write("environment", input("thread-c"), state("c", 3));
 
-    expect(cache.read("environment", input("thread-a")).buffer).toBe("a");
+    expect(text(cache.read("environment", input("thread-a")))).toBe("a");
     expect(cache.read("environment", input("thread-b"))).toBe(EMPTY_TERMINAL_BUFFER_STATE);
-    expect(cache.read("environment", input("thread-c")).buffer).toBe("c");
+    expect(text(cache.read("environment", input("thread-c")))).toBe("c");
   });
 
   it("accounts in UTF-8 bytes, handles replacement, and skips oversized entries", () => {
@@ -47,12 +50,12 @@ describe("TerminalBufferCache", () => {
     cache.write("environment", input("thread-a"), state("a", 2));
     cache.write("environment", input("thread-b"), state("bcd", 3));
 
-    expect(cache.read("environment", input("thread-a")).buffer).toBe("a");
-    expect(cache.read("environment", input("thread-b")).buffer).toBe("bcd");
+    expect(text(cache.read("environment", input("thread-a")))).toBe("a");
+    expect(text(cache.read("environment", input("thread-b")))).toBe("bcd");
 
     cache.write("environment", input("thread-c"), state("🙂x", 4));
     expect(cache.read("environment", input("thread-c"))).toBe(EMPTY_TERMINAL_BUFFER_STATE);
-    expect(cache.read("environment", input("thread-a")).buffer).toBe("a");
+    expect(text(cache.read("environment", input("thread-a")))).toBe("a");
   });
 
   it("stores nothing when configured with zero capacity", () => {
