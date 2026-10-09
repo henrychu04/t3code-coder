@@ -1,9 +1,23 @@
-import { SCRIPT_RUN_COMMAND_PATTERN, type KeybindingCommand } from "@t3tools/contracts";
+import {
+  MAX_SCRIPT_ID_LENGTH,
+  SCRIPT_RUN_COMMAND_PATTERN,
+  type KeybindingCommand,
+  type ProjectScript,
+} from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import type { ProjectScript } from "@t3tools/contracts";
-import type { NewProjectScriptInput } from "./components/projectScriptEditor";
-const MAX_SCRIPT_ID_LENGTH = 64;
-export function buildProjectScript(id: string, input: NewProjectScriptInput): ProjectScript {
+const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
+
+export interface ProjectScriptInput {
+  readonly name: ProjectScript["name"];
+  readonly command: ProjectScript["command"];
+  readonly icon: ProjectScript["icon"];
+  readonly runOnWorktreeCreate: ProjectScript["runOnWorktreeCreate"];
+  readonly waitForSetup: boolean;
+  readonly previewUrl: Exclude<ProjectScript["previewUrl"], undefined> | null;
+  readonly autoOpenPreview: boolean;
+}
+
+export function buildProjectScript(id: string, input: ProjectScriptInput): ProjectScript {
   return {
     id,
     name: input.name,
@@ -11,8 +25,15 @@ export function buildProjectScript(id: string, input: NewProjectScriptInput): Pr
     icon: input.icon,
     runOnWorktreeCreate: input.runOnWorktreeCreate,
     ...(input.runOnWorktreeCreate && input.waitForSetup ? { async: false } : {}),
+    ...(input.previewUrl === null
+      ? {}
+      : {
+          previewUrl: input.previewUrl,
+          autoOpenPreview: input.autoOpenPreview,
+        }),
   };
 }
+
 function normalizeScriptId(value: string): string {
   const cleaned = value
     .trim()
@@ -26,6 +47,21 @@ function normalizeScriptId(value: string): string {
     return cleaned;
   }
   return cleaned.slice(0, MAX_SCRIPT_ID_LENGTH).replace(/-+$/g, "") || "script";
+}
+
+/** Legacy script IDs may not support shortcuts; keep those scripts usable without one. */
+export function commandForProjectScript(scriptId: string): KeybindingCommand | null {
+  const command = `script.${scriptId}.run`;
+  return isScriptRunCommand(command) ? command : null;
+}
+
+export function projectScriptIdFromCommand(command: string): string | null {
+  const trimmed = command.trim();
+  if (!isScriptRunCommand(trimmed)) {
+    return null;
+  }
+  const [prefix, , suffix] = SCRIPT_RUN_COMMAND_PATTERN.parts;
+  return trimmed.slice(prefix.literal.length, -suffix.literal.length);
 }
 
 export function nextProjectScriptId(name: string, existingIds: Iterable<string>): string {
@@ -50,11 +86,7 @@ export function nextProjectScriptId(name: string, existingIds: Iterable<string>)
   return `${baseId}-${Date.now()}`.slice(0, MAX_SCRIPT_ID_LENGTH);
 }
 
-const isScriptRunCommand = Schema.is(SCRIPT_RUN_COMMAND_PATTERN);
-export function commandForProjectScript(id: string): KeybindingCommand | null {
-  const command = `script.${id}.run`;
-  return isScriptRunCommand(command) ? command : null;
-}
-export function projectScriptIdFromCommand(command: string): string | null {
-  return isScriptRunCommand(command) ? command.slice(7, -4) : null;
+export function primaryProjectScript(scripts: ReadonlyArray<ProjectScript>): ProjectScript | null {
+  const regular = scripts.find((script) => !script.runOnWorktreeCreate);
+  return regular ?? scripts[0] ?? null;
 }

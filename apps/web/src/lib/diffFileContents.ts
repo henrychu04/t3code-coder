@@ -1,3 +1,5 @@
+// Coder: review and merge-request files are read as bounded, chunked helper RPCs below the
+// gateway's RPC-frame limit, with a bounded browser cache; see docs/internals/coder-only.md.
 import type { FileDiffContentsLoader } from "@pierre/diffs";
 import {
   squashAtomCommandFailure,

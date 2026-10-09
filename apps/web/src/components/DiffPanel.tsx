@@ -327,6 +327,7 @@ export default function DiffPanel({
       return undefined;
     }
 
+    // Coder: expanded context is read in bounded chunks over the helper RPC.
     return createChunkedGitDiffFileContentsLoader(
       openDiffFileContents,
       readDiffFileChunk,

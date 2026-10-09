@@ -4,6 +4,24 @@ import * as path from "node:path";
 import * as Schema from "effect/Schema";
 import { T3ProjectFile, type ProjectGetConfigResult } from "@t3tools/contracts";
 
+/**
+ * Coder: return only fields Coder honors. Project icons never come from repository paths, and
+ * there is no in-app preview, so `iconPath` and script preview fields are dropped.
+ */
+function supportedProjectConfig(file: typeof T3ProjectFile.Type): typeof T3ProjectFile.Type {
+  const { iconPath: _iconPath, ...rest } = file;
+  return {
+    ...rest,
+    ...(file.scripts
+      ? {
+          scripts: file.scripts.map(
+            ({ previewUrl: _previewUrl, autoOpenPreview: _autoOpenPreview, ...script }) => script,
+          ),
+        }
+      : {}),
+  };
+}
+
 /** Read one small regular file, with checks tied to the descriptor actually read. */
 export function readConfigMetadata(
   filePath: string,
@@ -59,7 +77,7 @@ export function readProjectConfig(workspaceRoot: string): ProjectGetConfigResult
     if (text === null) return { status: "invalid", file: null };
     const decoded = Schema.decodeUnknownExit(Schema.fromJsonString(T3ProjectFile))(text);
     return decoded._tag === "Success"
-      ? { status: "valid", file: decoded.value }
+      ? { status: "valid", file: supportedProjectConfig(decoded.value) }
       : { status: "invalid", file: null };
   } catch {
     return { status: "unavailable", file: null };

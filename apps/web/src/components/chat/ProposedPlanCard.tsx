@@ -1,3 +1,5 @@
+// Coder: plans can be copied but not downloaded or saved as new workspace files (no exports,
+// and the Files surface edits only existing files).
 import { memo, useState } from "react";
 import type { ScopedThreadRef } from "@t3tools/contracts";
 import {

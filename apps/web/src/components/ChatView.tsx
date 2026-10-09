@@ -46,6 +46,7 @@ import {
   type MessageId,
   type ModelSelection,
   type ProjectScript,
+  type KeybindingCommand,
   type ProjectId,
   type ProviderApprovalDecision,
   ProviderInstanceId,
@@ -145,6 +146,8 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/unstable/reactivity";
+import * as Cause from "effect/Cause";
+import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
@@ -242,7 +245,14 @@ import {
 import { cn, randomUUID } from "~/lib/utils";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 import { stackedThreadToast, toastManager } from "./ui/toast";
-import { projectScriptIdFromCommand } from "~/projectScripts";
+import { decodeProjectScriptKeybindingRule } from "~/lib/projectScriptKeybindings";
+import { type NewProjectScriptInput } from "./ProjectScriptsControl";
+import {
+  buildProjectScript,
+  commandForProjectScript,
+  nextProjectScriptId,
+  projectScriptIdFromCommand,
+} from "~/projectScripts";
 import { newDraftId, newMessageId, newThreadId } from "~/lib/utils";
 import { getProviderModelCapabilities } from "../providerModels";
 import {
@@ -307,7 +317,7 @@ import { environmentCatalog } from "../connection/catalog";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { useKnownTerminalSessions, useThreadRunningTerminalIds } from "../state/terminalSessions";
 import { useEnvironmentQuery } from "../state/query";
-import { environmentServerConfigsAtom } from "../state/server";
+import { environmentServerConfigsAtom, serverEnvironment } from "../state/server";
 import { terminalEnvironment } from "../state/terminal";
 import { threadEnvironment } from "../state/threads";
 import { resolveProviderSkillsForCwd } from "@t3tools/client-runtime/providerSkills";
@@ -1416,6 +1426,12 @@ export default function ChatView(props: ChatViewProps) {
       currentRouteThreadKeyRef.current = null;
     };
   }, [routeThreadKey]);
+  const updateProjectScriptSettings = useAtomCommand(serverEnvironment.updateSettings, {
+    reportFailure: false,
+  });
+  const upsertKeybinding = useAtomCommand(serverEnvironment.upsertKeybinding, {
+    reportFailure: false,
+  });
   const openTerminal = useAtomCommand(terminalEnvironment.open, "terminal open");
   const writeTerminal = useAtomCommand(terminalEnvironment.write, "terminal write");
   const closeTerminalMutation = useAtomCommand(terminalEnvironment.close, "terminal close");
@@ -1733,7 +1749,7 @@ export default function ChatView(props: ChatViewProps) {
     pendingServerThreadStartFromOriginByThreadId,
     setPendingServerThreadStartFromOriginByThreadId,
   ] = useState<Record<string, boolean>>({});
-  const [, setLastInvokedScriptByProjectId] = useLocalStorage(
+  const [lastInvokedScriptByProjectId, setLastInvokedScriptByProjectId] = useLocalStorage(
     LAST_INVOKED_SCRIPT_BY_PROJECT_KEY,
     {},
     LastInvokedScriptByProjectSchema,
@@ -4120,6 +4136,170 @@ export default function ChatView(props: ChatViewProps) {
   }, []);
 
   // Coder: project actions are edited in settings, not from the thread panel.
+  const supportsProjectSettingsOverrides =
+    environmentById.get(environmentId)?.serverConfig?.environment.capabilities
+      .projectSettingsOverrides === true;
+  const persistProjectScripts = useCallback(
+    async (input: {
+      projectId: ProjectId;
+      projectCwd: string;
+      previousScripts: ReadonlyArray<ProjectScript>;
+      nextScripts: ReadonlyArray<ProjectScript>;
+      keybinding?: string | null;
+      keybindingCommand: KeybindingCommand | null;
+    }): Promise<AtomCommandResult<void, unknown>> => {
+      const updateResult = mapAtomCommandResult(
+        await updateProjectScriptSettings({
+          environmentId,
+          input: {
+            // The canonical key on servers that understand it; the legacy
+            // per-project map is still translated on older ones.
+            patch: supportsProjectSettingsOverrides
+              ? {
+                  projectSettingsOverrides: {
+                    [input.projectId]: {
+                      ...settings.projectSettingsOverrides[input.projectId],
+                      defaultProjectScripts: input.nextScripts,
+                    },
+                  },
+                }
+              : {
+                  projectScriptOverrides: {
+                    [input.projectId]: input.nextScripts,
+                  },
+                },
+          },
+        }),
+        () => undefined,
+      );
+      if (updateResult._tag === "Failure") {
+        return updateResult;
+      }
+
+      const keybindingRule = decodeProjectScriptKeybindingRule({
+        keybinding: input.keybinding,
+        command: input.keybindingCommand,
+      });
+
+      if (isElectron && keybindingRule) {
+        return mapAtomCommandResult(
+          await upsertKeybinding({
+            environmentId,
+            input: keybindingRule,
+          }),
+          () => undefined,
+        );
+      }
+      return updateResult;
+    },
+    [
+      environmentId,
+      settings.projectSettingsOverrides,
+      supportsProjectSettingsOverrides,
+      updateProjectScriptSettings,
+      upsertKeybinding,
+    ],
+  );
+  const saveProjectScript = useCallback(
+    async (input: NewProjectScriptInput): Promise<AtomCommandResult<void, unknown>> => {
+      if (!activeProject) {
+        return AsyncResult.success(undefined);
+      }
+      const nextId = nextProjectScriptId(
+        input.name,
+        activeProjectScripts.map((script) => script.id),
+      );
+      const nextScript = buildProjectScript(nextId, input);
+      const nextScripts = input.runOnWorktreeCreate
+        ? [
+            ...activeProjectScripts.map((script) =>
+              script.runOnWorktreeCreate ? { ...script, runOnWorktreeCreate: false } : script,
+            ),
+            nextScript,
+          ]
+        : [...activeProjectScripts, nextScript];
+
+      return persistProjectScripts({
+        projectId: activeProject.id,
+        projectCwd: activeProject.workspaceRoot,
+        previousScripts: activeProjectScripts,
+        nextScripts,
+        keybinding: input.keybinding,
+        keybindingCommand: commandForProjectScript(nextId),
+      });
+    },
+    [activeProject, activeProjectScripts, persistProjectScripts],
+  );
+  const updateProjectScript = useCallback(
+    async (
+      scriptId: string,
+      input: NewProjectScriptInput,
+    ): Promise<AtomCommandResult<void, unknown>> => {
+      if (!activeProject) {
+        return AsyncResult.success(undefined);
+      }
+      const existingScript = activeProjectScripts.find((script) => script.id === scriptId);
+      if (!existingScript) {
+        return AsyncResult.failure(Cause.fail(new Error("Script not found.")));
+      }
+
+      const updatedScript = buildProjectScript(existingScript.id, input);
+      const nextScripts = activeProjectScripts.map((script) =>
+        script.id === scriptId
+          ? updatedScript
+          : input.runOnWorktreeCreate
+            ? { ...script, runOnWorktreeCreate: false }
+            : script,
+      );
+
+      return persistProjectScripts({
+        projectId: activeProject.id,
+        projectCwd: activeProject.workspaceRoot,
+        previousScripts: activeProjectScripts,
+        nextScripts,
+        keybinding: input.keybinding,
+        keybindingCommand: commandForProjectScript(scriptId),
+      });
+    },
+    [activeProject, activeProjectScripts, persistProjectScripts],
+  );
+  const deleteProjectScript = useCallback(
+    async (scriptId: string): Promise<AtomCommandResult<void, unknown>> => {
+      if (!activeProject) {
+        return AsyncResult.success(undefined);
+      }
+      const nextScripts = activeProjectScripts.filter((script) => script.id !== scriptId);
+
+      const deletedName = activeProjectScripts.find((s) => s.id === scriptId)?.name;
+
+      const result = await persistProjectScripts({
+        projectId: activeProject.id,
+        projectCwd: activeProject.workspaceRoot,
+        previousScripts: activeProjectScripts,
+        nextScripts,
+        keybinding: null,
+        keybindingCommand: commandForProjectScript(scriptId),
+      });
+      if (result._tag === "Success") {
+        toastManager.add({
+          type: "success",
+          title: `Deleted action "${deletedName ?? "Unknown"}"`,
+        });
+      } else if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not delete action",
+            description: error instanceof Error ? error.message : "An unexpected error occurred.",
+          }),
+        );
+      }
+      return result;
+    },
+    [activeProject, activeProjectScripts, persistProjectScripts],
+  );
+
   const handleRuntimeModeChange = useCallback(
     (mode: RuntimeMode) => {
       if (mode === runtimeMode) return;
@@ -9096,6 +9276,12 @@ export default function ChatView(props: ChatViewProps) {
     threadId: activeThread.id,
     ...(draftId ? { draftId } : {}),
     activeProjectName: activeProject?.title,
+    activeProjectScripts: activeProject ? activeProjectScripts : undefined,
+    activeProjectId: activeProject?.id ?? null,
+    preferredScriptId: activeProject
+      ? (lastInvokedScriptByProjectId[activeProject.id] ?? null)
+      : null,
+    keybindings,
     gitCwd,
     isGitRepo,
     envLocked,
@@ -9116,6 +9302,10 @@ export default function ChatView(props: ChatViewProps) {
       : {}),
     onComposerFocusRequest: scheduleComposerFocus,
     ...(isServerThread && isGitRepo ? { onOpenChanges: openChangesFromThreadPanel } : {}),
+    onRunProjectScript: runProjectScript,
+    onAddProjectScript: saveProjectScript,
+    onUpdateProjectScript: updateProjectScript,
+    onDeleteProjectScript: deleteProjectScript,
   };
   const panelToggleControlProps = {
     terminalAvailable: activeProject !== null,

@@ -698,6 +698,10 @@ listed here is drift to remove rather than fork behavior to keep.
   100). The timeline's `LegacyScreenshotArtifactsTimelineRow` renders them after messages without
   a run, through the bounded legacy chunk read. Nothing is written, so already-migrated
   workspaces need no backfill.
+- **Project actions.** The thread details panel, action editor, and Settings → Actions are
+  upstream's. Coder deltas: repository actions come from the helper's validated `t3.json` read by
+  project (`projects.getConfig`), which drops `iconPath` and script preview fields; the editor has
+  no preview URL; and, as upstream's browser build, action keybindings are saved only on desktop.
 - **Right panel and composer chrome.** `RightPanelTabs.tsx` is a Coder rewrite of upstream's tab
   strip without browser, device, and preview tabs, their favicons, audio controls, and
   `PreviewPanelShell`; it keeps upstream's launcher, shortcuts, tab menus, and merge-request
@@ -709,8 +713,7 @@ listed here is drift to remove rather than fork behavior to keep.
   adoption, which follows upstream's `t3 theme set` CLI.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
-  usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), project-script
-  editing (run from keybindings and settings only), sidebar file drops, and the favicon store.
+  usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), sidebar file drops, and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
   route workspace's config. The Files surface requires a persisted thread whose project root
   the helper verifies (`canUseOwnedFilesSurface`). The checkout branch notice also covers a

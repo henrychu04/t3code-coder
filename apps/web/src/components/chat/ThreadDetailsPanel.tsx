@@ -1,15 +1,30 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  ProjectId,
+  ProjectScript,
+  ResolvedKeybindingsConfig,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import type { DraftId } from "../../composerDraftStore";
+import { useT3ProjectFile } from "../../hooks/useT3ProjectFile";
 import type { EnvMode, EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
 import { BranchToolbarEnvironmentSelector } from "../BranchToolbarEnvironmentSelector";
 import GitActionsControl from "../GitActionsControl";
+import ProjectScriptsControl, {
+  type NewProjectScriptInput,
+  type ProjectScriptActionResult,
+} from "../ProjectScriptsControl";
 import type { ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
 import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";
+
+// Coder: there is no local editor to open, and the gateway installs the helper matching this
+// client, so there is no version mismatch warning. Repository actions come from the helper's
+// validated t3.json read by project.
 
 export interface ThreadDetailsPanelProps extends Pick<
   ComponentProps<typeof ThreadDetailsCard>,
@@ -20,10 +35,16 @@ export interface ThreadDetailsPanelProps extends Pick<
   threadId: ThreadId;
   draftId?: DraftId;
   activeProjectName: string | undefined;
+  activeProjectScripts: ReadonlyArray<ProjectScript> | undefined;
+  activeProjectId: ProjectId | null;
+  preferredScriptId: string | null;
+  keybindings: ResolvedKeybindingsConfig;
   gitCwd: string | null;
   isGitRepo: boolean;
   envLocked: boolean;
   availableEnvironments: readonly EnvironmentOption[];
+  autoEnvironmentLabel?: string | undefined;
+  onAutoEnvironment?: (() => void) | undefined;
   onEnvironmentChange: (environmentId: EnvironmentId) => void;
   onEnvModeChange: (mode: EnvMode) => void;
   /** The thread's env mode as ChatView resolves it. */
@@ -35,13 +56,22 @@ export interface ThreadDetailsPanelProps extends Pick<
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest: () => void;
   onOpenChanges?: () => void;
+  onRunProjectScript: (script: ProjectScript) => void;
+  onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
+  onUpdateProjectScript: (
+    scriptId: string,
+    input: NewProjectScriptInput,
+  ) => Promise<ProjectScriptActionResult>;
+  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;
 }
 
-// Coder: there is no local editor to open, and project scripts are managed in settings rather
-// than run from the thread panel. The gateway installs the helper matching this client, so there
-// is no client/server version mismatch warning.
-
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
+  const projectFile = useT3ProjectFile(
+    props.activeProjectScripts && props.activeProjectId
+      ? { environmentId: props.environmentId, projectId: props.activeProjectId }
+      : null,
+  );
+  const fileScripts = projectFile.file?.scripts ?? [];
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
@@ -84,6 +114,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {density === "full" && props.availableEnvironments.length > 1 ? (
                 <BranchToolbarEnvironmentSelector
                   displayMode="panel"
+                  autoEnvironmentLabel={props.autoEnvironmentLabel}
+                  onAutoEnvironment={props.onAutoEnvironment}
                   envLocked={props.envLocked}
                   environmentId={props.environmentId}
                   availableEnvironments={props.availableEnvironments}
@@ -93,6 +125,20 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
 
               {density === "full" ? (
                 <BranchToolbar layout="panel" panelSection="workspace" {...branchToolbarProps} />
+              ) : null}
+
+              {props.activeProjectScripts ? (
+                <ProjectScriptsControl
+                  displayMode="panel"
+                  scripts={props.activeProjectScripts}
+                  fileScripts={fileScripts}
+                  keybindings={props.keybindings}
+                  preferredScriptId={props.preferredScriptId}
+                  onRunScript={props.onRunProjectScript}
+                  onAddScript={props.onAddProjectScript}
+                  onUpdateScript={props.onUpdateProjectScript}
+                  onDeleteScript={props.onDeleteProjectScript}
+                />
               ) : null}
             </div>
           </ThreadDetailsSection>
