@@ -46,10 +46,15 @@ export function resolveTimestampLocale(
   }
 }
 
-// Coder: no desktop bridge; the browser's preferred language stands in for the host locale.
-const timestampLocale = resolveTimestampLocale(
-  typeof navigator === "undefined" ? null : navigator.language,
-);
+function readHostSystemLocale(): string | null {
+  if (typeof window === "undefined") return null;
+  // Coder: the browser app has no desktop bridge type; in a browser this is always null.
+  const bridge = (window as { desktopBridge?: { getSystemLocale?: () => string | null } })
+    .desktopBridge;
+  return bridge?.getSystemLocale?.() ?? null;
+}
+
+const timestampLocale = resolveTimestampLocale(readHostSystemLocale());
 
 const WEEKDAY_INDEXES = [0, 1, 2, 3, 4, 5, 6] as const;
 type WeekdayIndex = (typeof WEEKDAY_INDEXES)[number];
