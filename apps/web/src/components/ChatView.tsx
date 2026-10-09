@@ -205,6 +205,8 @@ import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useElementWidth } from "../hooks/useElementWidth";
+import { usePreviewPanelInlineSize } from "../hooks/usePreviewPanelInlineSize";
 import { useTurnDiffSummaries } from "../hooks/useTurnDiffSummaries";
 import {
   RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY,
@@ -1730,6 +1732,7 @@ export default function ChatView(props: ChatViewProps) {
     useState<Record<string, number>>({});
   const shouldUsePlanSidebarSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const isMobileViewport = useMediaQuery("max-sm");
+  const [workspaceLayoutRef, workspaceLayoutWidth] = useElementWidth<HTMLDivElement>();
   const threadPanelPopoverAnchorRef = useRef<HTMLElement | null>(null);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
@@ -2042,6 +2045,10 @@ export default function ChatView(props: ChatViewProps) {
     [activeThread],
   );
   const activeThreadKey = activeThreadRef ? scopedThreadKey(activeThreadRef) : null;
+  const previewPanelInlineSize = usePreviewPanelInlineSize(undefined, {
+    containerWidth: workspaceLayoutWidth ?? undefined,
+    widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,
+  });
   const activeThreadShell = useThreadShell(isServerThread ? activeThreadRef : null);
   const timelineThreadError =
     serverRuntime?.status === "failed" &&
@@ -4373,8 +4380,6 @@ export default function ChatView(props: ChatViewProps) {
   const visiblePullRequestCount = visiblePullRequests.length;
   const pullRequestsSurfaceAvailable =
     isServerThread && supportsThreadPullRequests && visiblePullRequestCount > 0;
-  // Coder: the launcher offers linked MRs only when the thread has some; otherwise it offers the
-  // branch's GitLab MR.
   const addPullRequestsSurface = useCallback(() => {
     if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
@@ -9381,7 +9386,10 @@ export default function ChatView(props: ChatViewProps) {
   });
 
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background">
+    <div
+      ref={workspaceLayoutRef}
+      className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-background"
+    >
       {rightPanelControlsAtRoot ? panelLayoutControls : null}
       <div
         className={cn(
@@ -9955,7 +9963,7 @@ export default function ChatView(props: ChatViewProps) {
           mode="inline"
           open={rightPanelOpen}
           maximized={rightPanelMaximized}
-          widthStorageKey={`t3:panel-width:${activeThreadKey}`}
+          inlineSize={previewPanelInlineSize}
           surfaces={renderedRightPanelSurfaces}
           environmentId={activeThreadRef.environmentId}
           activeSurfaceId={renderedRightPanelSurface?.id ?? null}
@@ -9971,11 +9979,12 @@ export default function ChatView(props: ChatViewProps) {
           onAddDiff={addDiffSurface}
           onAddFiles={addFilesSurface}
           onAddPullRequest={addPullRequestSurface}
-          onAddPullRequests={pullRequestsSurfaceAvailable ? addPullRequestsSurface : undefined}
+          onAddPullRequests={addPullRequestsSurface}
           terminalAvailable={activeProject !== null}
           diffAvailable={isServerThread && isGitRepo}
           filesAvailable={filesAvailable}
           pullRequestAvailable={pullRequestSurfaceAvailable}
+          pullRequestsAvailable={pullRequestsSurfaceAvailable}
         >
           {rightPanelContent}
         </RightPanelTabs>
@@ -9988,6 +9997,7 @@ export default function ChatView(props: ChatViewProps) {
         >
           <RightPanelTabs
             mode="sheet"
+            inlineSize={previewPanelInlineSize}
             // Same effective inset as the closed-state titlebar controls
             // (pr-3 in the tab bar plus this pixel equals the absolute
             // right inset plus mr-px), so the cluster does not creep when
@@ -10012,11 +10022,12 @@ export default function ChatView(props: ChatViewProps) {
             onAddDiff={addDiffSurface}
             onAddFiles={addFilesSurface}
             onAddPullRequest={addPullRequestSurface}
-            onAddPullRequests={pullRequestsSurfaceAvailable ? addPullRequestsSurface : undefined}
+            onAddPullRequests={addPullRequestsSurface}
             terminalAvailable={activeProject !== null}
             diffAvailable={isServerThread && isGitRepo}
             filesAvailable={filesAvailable}
             pullRequestAvailable={pullRequestSurfaceAvailable}
+            pullRequestsAvailable={pullRequestsSurfaceAvailable}
           >
             {rightPanelContent}
           </RightPanelTabs>
