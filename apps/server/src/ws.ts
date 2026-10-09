@@ -152,6 +152,7 @@ import * as CoderRuntimeStartup from "./serverRuntimeStartup.ts";
 import { renameBranchWithCompensation } from "./git/renameBranchWithCompensation.ts";
 import { readProjectImage } from "./workspace/ProjectImages.ts";
 import * as ScreenshotArtifacts from "./workspace/ScreenshotArtifacts.ts";
+import * as LegacyScreenshotArtifacts from "./orchestration-v2/legacy/LegacyScreenshotArtifacts.ts";
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 function unexpectedCompatibilityError(error: never): never {
@@ -879,6 +880,7 @@ export const layer = CoderWsRpcGroup.toLayer(
 
     // Coder: legacy images are read in bounded chunks over helper stdio.
     const screenshotArtifacts = yield* ScreenshotArtifacts.ScreenshotArtifacts;
+    const legacyScreenshotArtifacts = yield* LegacyScreenshotArtifacts.LegacyScreenshotArtifacts;
     const worktreeSetupTracker = yield* WorktreeSetupTracker.WorktreeSetupTracker;
     const projectCloneTracker = yield* ProjectCloneTracker.ProjectCloneTracker;
     const repositoryIdentityResolver = yield* RepositoryIdentityResolver.RepositoryIdentityResolver;
@@ -1856,6 +1858,8 @@ export const layer = CoderWsRpcGroup.toLayer(
         ),
       // Coder: read preserved legacy artifacts through bounded stdio chunks.
       [WS_METHODS.workspaceReadScreenshotArtifact]: (input) => screenshotArtifacts.readChunk(input),
+      [WS_METHODS.workspaceListLegacyScreenshotArtifacts]: (input) =>
+        legacyScreenshotArtifacts.listAfterMessage(input.messageId),
       [WS_METHODS.subscribeVcsStatus]: (input) =>
         vcsStatusBroadcaster.streamStatus(input, {
           automaticRemoteRefreshInterval: automaticGitFetchInterval,

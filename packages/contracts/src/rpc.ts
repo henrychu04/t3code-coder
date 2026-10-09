@@ -299,6 +299,8 @@ import {
   ProjectImageChunk,
   ProjectImageReadError,
   ScreenshotArtifactChunk,
+  LegacyScreenshotArtifactsInput,
+  LegacyScreenshotArtifactsResult,
   ScreenshotArtifactReadError,
   ScreenshotArtifactReadInput,
 } from "./screenshotArtifact.ts";
@@ -513,6 +515,7 @@ export const WS_METHODS = {
   projectsReadImage: "projects.readImage",
   workspaceListDirectories: "workspace.listDirectories",
   workspaceReadScreenshotArtifact: "workspace.readScreenshotArtifact",
+  workspaceListLegacyScreenshotArtifacts: "workspace.listLegacyScreenshotArtifacts",
   providerListSlashCommands: "provider.listSlashCommands",
   sourceControlProbeWriteAccess: "sourceControl.probeWriteAccess",
   vcsRenameThreadBranch: "vcs.renameThreadBranch",
@@ -1649,6 +1652,14 @@ const WsWorkspaceReadScreenshotArtifactRpc = Rpc.make(WS_METHODS.workspaceReadSc
   error: ScreenshotArtifactReadError,
 });
 
+const WsWorkspaceListLegacyScreenshotArtifactsRpc = Rpc.make(
+  WS_METHODS.workspaceListLegacyScreenshotArtifacts,
+  {
+    payload: LegacyScreenshotArtifactsInput,
+    success: LegacyScreenshotArtifactsResult,
+  },
+);
+
 const WsProviderListSlashCommandsRpc = Rpc.make(WS_METHODS.providerListSlashCommands, {
   payload: ServerProviderSlashCommandsInput,
   success: ServerProviderSlashCommands,
@@ -1732,6 +1743,7 @@ export const CoderWsRpcGroup = RpcGroup.make(
   WsAgentSessionsImportRpc,
   WsWorkspaceListDirectoriesRpc,
   WsWorkspaceReadScreenshotArtifactRpc,
+  WsWorkspaceListLegacyScreenshotArtifactsRpc,
   WsProviderListSlashCommandsRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
