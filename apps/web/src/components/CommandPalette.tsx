@@ -978,6 +978,7 @@ function OpenCommandPaletteDialog(props: {
         return {
           environmentId: environment.environmentId,
           label: resolveEnvironmentOptionLabel({
+            isPrimary,
             environmentId: environment.environmentId,
             runtimeLabel: environment.label,
           }),

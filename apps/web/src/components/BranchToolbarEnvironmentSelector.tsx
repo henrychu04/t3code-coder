@@ -2,7 +2,7 @@ import { ThreadDetailsSelectControl } from "./chat/ThreadDetailsControl";
 import { ComposerContextLabel } from "./ComposerContextLabel";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "./ui/tooltip";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { CloudIcon } from "lucide-react";
+import { ScaleIcon } from "lucide-react";
 import { memo, useMemo } from "react";
 
 import type { EnvironmentOption } from "./BranchToolbar.logic";
@@ -11,6 +11,7 @@ import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
   THREAD_DETAILS_PANEL_LOCKED_ROW_CLASS,
 } from "./chat/threadDetailsPanelStyles";
+import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { useComposerMenuProps } from "./chat/composerEventScope";
 import {
   Select,
@@ -21,8 +22,9 @@ import {
   SelectValue,
 } from "./ui/select";
 
-// Coder: every workspace is a remote Coder machine and there is no automatic placement.
 interface BranchToolbarEnvironmentSelectorProps {
+  autoEnvironmentLabel?: string | undefined;
+  onAutoEnvironment?: (() => void) | undefined;
   envLocked: boolean;
   environmentId: EnvironmentId;
   availableEnvironments: readonly EnvironmentOption[];
@@ -31,6 +33,8 @@ interface BranchToolbarEnvironmentSelectorProps {
 }
 
 export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvironmentSelector({
+  autoEnvironmentLabel,
+  onAutoEnvironment,
   envLocked,
   environmentId,
   availableEnvironments,
@@ -43,12 +47,16 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   }, [availableEnvironments, environmentId]);
 
   const environmentItems = useMemo(
-    () =>
-      availableEnvironments.map((env) => ({
+    () => [
+      ...(onAutoEnvironment
+        ? [{ value: "auto", label: autoEnvironmentLabel ?? "Auto balance" }]
+        : []),
+      ...availableEnvironments.map((env) => ({
         value: env.environmentId,
         label: env.label,
       })),
-    [availableEnvironments],
+    ],
+    [availableEnvironments, autoEnvironmentLabel, onAutoEnvironment],
   );
 
   // The static label carries the xs control's height (h-7 sm:h-6) as well as
@@ -65,7 +73,8 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
         )}
         data-composer-context-control
       >
-        <CloudIcon
+        <EnvironmentMachineIcon
+          kind={activeEnvironment?.machine ?? "server"}
           className={displayMode === "panel" ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"}
         />
         <ComposerContextLabel displayMode={displayMode}>
@@ -84,8 +93,10 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
   return (
     <Select
       modal={false}
-      value={environmentId}
-      onValueChange={(value) => onEnvironmentChange(value as EnvironmentId)}
+      value={autoEnvironmentLabel ? "auto" : environmentId}
+      onValueChange={(value) =>
+        value === "auto" ? onAutoEnvironment?.() : onEnvironmentChange(value as EnvironmentId)
+      }
       items={environmentItems}
     >
       <Tooltip>
@@ -100,16 +111,26 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
             />
           }
         >
-          <CloudIcon
-            className={
-              displayMode === "panel" ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"
-            }
-          />
+          {autoEnvironmentLabel ? (
+            <ScaleIcon
+              className={
+                displayMode === "panel" ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"
+              }
+              aria-hidden="true"
+            />
+          ) : (
+            <EnvironmentMachineIcon
+              kind={activeEnvironment?.machine ?? "server"}
+              className={
+                displayMode === "panel" ? THREAD_DETAILS_PANEL_ICON_CLASS : "size-3 shrink-0"
+              }
+            />
+          )}
           <ComposerContextLabel displayMode={displayMode}>
             <SelectValue />
           </ComposerContextLabel>
         </TooltipTrigger>
-        <TooltipPopup>{activeEnvironment?.label ?? "Run on"}</TooltipPopup>
+        <TooltipPopup>{autoEnvironmentLabel ?? activeEnvironment?.label ?? "Run on"}</TooltipPopup>
       </Tooltip>
       <SelectPopup
         alignItemWithTrigger={false}
@@ -122,10 +143,23 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
       >
         <SelectGroup>
           <SelectGroupLabel>Run on</SelectGroupLabel>
+          {onAutoEnvironment && (
+            <SelectItem
+              value="auto"
+              onClick={() => {
+                if (autoEnvironmentLabel) onAutoEnvironment?.();
+              }}
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <ScaleIcon className="size-3" aria-hidden="true" />
+                {autoEnvironmentLabel ?? "Auto balance"}
+              </span>
+            </SelectItem>
+          )}
           {availableEnvironments.map((env) => (
             <SelectItem key={env.environmentId} value={env.environmentId}>
               <span className="inline-flex items-center gap-1.5">
-                <CloudIcon className="size-3" />
+                <EnvironmentMachineIcon kind={env.machine} className="size-3" />
                 {env.label}
               </span>
             </SelectItem>

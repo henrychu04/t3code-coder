@@ -698,6 +698,15 @@ listed here is drift to remove rather than fork behavior to keep.
   100). The timeline's `LegacyScreenshotArtifactsTimelineRow` renders them after messages without
   a run, through the bounded legacy chunk read. Nothing is written, so already-migrated
   workspaces need no backfill.
+- **Right panel and composer chrome.** `RightPanelTabs.tsx` is a Coder rewrite of upstream's tab
+  strip without browser, device, and preview tabs, their favicons, audio controls, and
+  `PreviewPanelShell`; it keeps upstream's launcher, shortcuts, tab menus, and merge-request
+  status icons. The branch toolbar is upstream's; workspace options are never primary and use
+  the server's machine kind, and the branch notice also covers a managed worktree whose branch
+  moved (`resolveCheckoutBranchMismatch`). Proposed-plan cards offer Copy but no Download or Save
+  to workspace (no exports, and Files edits only existing files). The root route has no
+  provider-update launch notification (updates stay in the sidebar action) and no default-theme
+  adoption, which follows upstream's `t3 theme set` CLI.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), project-script

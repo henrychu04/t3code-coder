@@ -59,6 +59,7 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   ProviderInteractionMode,
   ProviderDriverKind,
+  resolveEnvironmentMachineKind,
   RuntimeMode,
   TerminalOpenInput,
   type WorktreeSetupSnapshot,
@@ -2431,10 +2432,14 @@ export default function ChatView(props: ChatViewProps) {
     for (const p of memberProjects) {
       if (seen.has(p.environmentId)) continue;
       seen.add(p.environmentId);
+      const environment = environmentById.get(p.environmentId) ?? null;
       envs.push({
         environmentId: p.environmentId,
         projectId: p.id,
-        label: environmentById.get(p.environmentId)?.label ?? p.environmentId,
+        label: environment?.label ?? p.environmentId,
+        // Coder: every workspace is remote; there is no primary environment.
+        isPrimary: false,
+        machine: resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
       });
     }
     // Coder: workspaces have no primary environment, so sort alphabetically.
