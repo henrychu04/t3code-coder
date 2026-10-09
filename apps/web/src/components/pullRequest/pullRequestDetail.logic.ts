@@ -1350,7 +1350,7 @@ export function resolveDisplayedPullRequestDetail(input: {
   if (input.reference.host === undefined) return input.cached;
   try {
     const url = new URL(input.cached.url);
-    const host = url.hostname;
+    const host = input.cached.provider === "forgejo" ? url.host : url.hostname;
     return (url.protocol === "https:" || url.protocol === "http:") &&
       host.toLowerCase() === input.reference.host.toLowerCase()
       ? input.cached
