@@ -964,7 +964,7 @@ export function buildFixFindingsHandoff(input: {
         ? ["Failing checks:", ...includedChecks.map((check) => `> ${check}`)]
         : []),
       ...(input.commentsTruncated
-        ? ["The conversation was truncated; more review comments may exist on GitHub."]
+        ? ["The conversation was truncated; more review comments may exist on GitLab."]
         : []),
       ...(omitted > 0 ? [`${omitted} further findings were omitted.`] : []),
       ...(includedThreads.length === 0 &&

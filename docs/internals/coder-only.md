@@ -813,6 +813,14 @@ listed here is drift to remove rather than fork behavior to keep.
   Link/Unlink to thread through `usePullRequestLinking`). GitLab autolinks keep their
   `merge-request`, `issue`, and `commit` kinds, so upstream's GitHub reference confirmation is
   unused.
+  - User-facing text says "merge request", "MR", and `!123` wherever upstream says "pull
+    request", "PR", or `#123`: the panels, composer, settings, toasts, keybinding labels, and
+    the strings the web shows from `client-runtime` (work-log tool labels and MR actions) and
+    `shared` (T3 tool presentation, watch descriptions, and copy-link toasts). Identifiers, wire
+    names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
+    Web `sourceControlPresentation.ts` treats a missing provider as GitLab rather than
+    upstream's GitHub default. Text for paths GitLab never reaches (native stacks, stack merges,
+    `PullRequestsUnavailableState`'s GitHub link, GitHub-only setting rows) is upstream's.
 - **Source control and merge-request services.** `sourceControl/` and `pullRequest/` are
   upstream's, GitLab-only. Coder deltas, each marked `Coder:`:
   - Only GitLab is registered. `GitLabWriteProbe` gates every host write (`GitLabCli.executeWrite`,

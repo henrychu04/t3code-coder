@@ -237,7 +237,7 @@ export function ThreadDetailsPrRow({
   // detail rows, so the two read as one family.
   const rowTooltip =
     detail === null || statePresentation === null ? (
-      <TooltipPopup side="top">{status?.tooltip ?? `Pull request #${number}`}</TooltipPopup>
+      <TooltipPopup side="top">{status?.tooltip ?? `Merge request !${number}`}</TooltipPopup>
     ) : (
       <TooltipPopup
         side="top"
@@ -249,7 +249,7 @@ export function ThreadDetailsPrRow({
         <div className="flex min-w-0 max-w-80 flex-col gap-2 px-1 py-2">
           <div className="flex min-w-0 items-baseline gap-1.5 text-xs leading-none">
             <span className="min-w-0 truncate font-medium text-foreground">{detail.title}</span>
-            <span className="shrink-0 text-muted-foreground">#{detail.number}</span>
+            <span className="shrink-0 text-muted-foreground">!{detail.number}</span>
           </div>
           <div className="grid gap-1.5 pl-0.5 text-xs text-muted-foreground">
             <div className="flex min-w-0 items-center gap-2">
@@ -320,7 +320,7 @@ export function ThreadDetailsPrRow({
             pending: actionPending,
             destructive: false,
             suffix: null,
-            tooltip: "Mark this pull request as ready for review",
+            tooltip: "Mark this merge request as ready for review",
             onClick: () => void perform("ready"),
           }
         : rowAction === "fix"
@@ -340,7 +340,7 @@ export function ThreadDetailsPrRow({
                 pending: actionPending,
                 destructive: false,
                 suffix: null,
-                tooltip: `Merge this pull request (${selectedMergeMethod})`,
+                tooltip: `Merge this merge request (${selectedMergeMethod})`,
                 onClick: () => setConfirmingMerge(true),
               }
             : null;
@@ -359,7 +359,7 @@ export function ThreadDetailsPrRow({
               size="sm"
               part={part}
               className="group/watch"
-              aria-label={`Stop watching #${number}`}
+              aria-label={`Stop watching !${number}`}
               onClick={onStopWatching}
             />
           }
@@ -415,7 +415,7 @@ export function ThreadDetailsPrRow({
         <div className="pb-2">
           {openRow(detail.title, "row")}
           <div className="-mt-1 flex h-6 min-w-0 items-center gap-0.5 ps-9 pe-1 text-xs text-muted-foreground">
-            <span className="me-1 shrink-0 tabular-nums">#{number}</span>
+            <span className="me-1 shrink-0 tabular-nums">!{number}</span>
             {showChecks && checksRollup !== null ? (
               <PullRequestChecksPopover
                 checksState={checksRollup}
@@ -462,9 +462,9 @@ export function ThreadDetailsPrRow({
         <AlertDialog open={confirmingMerge} onOpenChange={(open) => setConfirmingMerge(open)}>
           <AlertDialogPopup>
             <AlertDialogHeader>
-              <AlertDialogTitle>Merge pull request?</AlertDialogTitle>
+              <AlertDialogTitle>Merge merge request?</AlertDialogTitle>
               <AlertDialogDescription>
-                This merges #{number} using {selectedMergeMethod}.
+                This merges !{number} using {selectedMergeMethod}.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

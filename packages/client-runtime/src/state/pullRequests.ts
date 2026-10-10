@@ -293,7 +293,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
             ) {
               return yield* new PullRequestOperationError({
                 operation: "runAction",
-                detail: "This pull request cannot be merged.",
+                detail: "This merge request cannot be merged.",
               });
             }
             if (detail.capabilities.stackActions) {
@@ -301,7 +301,7 @@ export function createPullRequestEnvironmentAtoms<R, E>(
               if (stack !== null) {
                 return yield* new PullRequestOperationError({
                   operation: "runAction",
-                  detail: "Open this pull request to merge its stack.",
+                  detail: "Open this merge request to merge its stack.",
                 });
               }
             }

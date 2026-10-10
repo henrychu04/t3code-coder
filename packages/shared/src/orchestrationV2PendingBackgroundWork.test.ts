@@ -557,7 +557,7 @@ describe("derivePendingBackgroundWork kinds", () => {
       expect(tasks).toEqual([
         {
           taskId: "pull-request-watch:github.com/acme/app#1",
-          description: "Watching pull request #1",
+          description: "Watching merge request !1",
           kind: "monitor",
         },
       ]);

@@ -342,7 +342,7 @@ export function commandLabel(command: KeybindingCommand): string {
   if (command === "composer.sendAndNewThread") return "Composer: Send and Start New Thread";
   if (command === "thread.steerQueuedMessage") return "Queue: Send First Queued Message as Steer";
   if (command === "thread.editQueuedMessage") return "Queue: Edit Last Queued Message";
-  if (command === "thread.copyReference") return "Pull Request: Copy Link or Thread ID";
+  if (command === "thread.copyReference") return "Merge Request: Copy Link or Thread ID";
   if (command === "view.reopenClosed") return "Reopen Closed Tab";
   const raw = String(command);
   if (raw.startsWith("script.") && raw.endsWith(".run")) {

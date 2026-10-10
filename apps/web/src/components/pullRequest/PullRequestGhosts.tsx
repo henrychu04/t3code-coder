@@ -268,7 +268,7 @@ export function PullRequestDetailGhost({
                     key={seed.headBranch}
                     value={seed.headBranch}
                     target="branch name"
-                    copyLabel="Copy pull request branch"
+                    copyLabel="Copy merge request branch"
                     copiedLabel="Branch name copied"
                     className="min-w-0 font-mono"
                   />

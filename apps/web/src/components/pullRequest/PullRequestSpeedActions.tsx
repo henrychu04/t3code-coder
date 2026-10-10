@@ -82,7 +82,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
       className="shrink-0 items-center gap-1 pr-3"
       style={{ display: visible || busy ? "flex" : "none" }}
       role="group"
-      aria-label={`Quick actions for pull request #${entry.number}`}
+      aria-label={`Quick actions for merge request !${entry.number}`}
       data-pull-request-action-pending={actionPending || closing}
     >
       {actions.map((action) => {
@@ -96,7 +96,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
                   variant={action === "close" ? "destructive-outline" : "outline"}
                   size="xs"
                   disabled={!canWrite || busy || (action === "merge" && entry.stack !== undefined)}
-                  aria-label={`${label} #${entry.number}`}
+                  aria-label={`${label} !${entry.number}`}
                   onClick={() => void perform(action)}
                   onPointerDown={(event) => {
                     if (action !== "close" || !event.isPrimary || event.button !== 0) return;
@@ -111,7 +111,7 @@ export function PullRequestSpeedActions<Entry extends PullRequestSpeedActionEntr
             </TooltipTrigger>
             <TooltipPopup>
               {action === "merge" && entry.stack
-                ? "Open this pull request to merge its stack"
+                ? "Open this merge request to merge its stack"
                 : action === "close" && onCloseSweepStart
                   ? "Close immediately, or drag across rows to close several"
                   : `${label} immediately`}

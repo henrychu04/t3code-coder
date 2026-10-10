@@ -370,26 +370,26 @@ export function summarizeT3ToolCalls(
       break;
     }
     case "link-pr":
-      label = phrase("Linked", "link", quantity(selected.length, "pull request"));
+      label = phrase("Linked", "link", quantity(selected.length, "merge request"));
       break;
     case "unlink-pr":
-      label = phrase("Unlinked", "unlink", quantity(selected.length, "pull request"));
+      label = phrase("Unlinked", "unlink", quantity(selected.length, "merge request"));
       break;
     case "watch-pr":
-      label = phrase("Watching", "watch", quantity(selected.length, "pull request"));
+      label = phrase("Watching", "watch", quantity(selected.length, "merge request"));
       break;
     case "unwatch-pr":
       label = phrase(
         "Stopped watching",
         "stop watching",
-        quantity(selected.length, "pull request"),
+        quantity(selected.length, "merge request"),
       );
       break;
     case "list-prs":
       label = phrase(
         "Checked",
         "check",
-        `linked pull requests${selected.length === 1 ? "" : ` ${times}`}`,
+        `linked merge requests${selected.length === 1 ? "" : ` ${times}`}`,
       );
       break;
     case "browser":

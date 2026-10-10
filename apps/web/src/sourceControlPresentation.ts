@@ -3,18 +3,39 @@ import { PullRequestGlyph } from "./components/pullRequest/pullRequestIcons";
 import type { ElementType } from "react";
 import type { SourceControlProviderInfo, SourceControlProviderKind } from "@t3tools/contracts";
 export {
-  DEFAULT_CHANGE_REQUEST_TERMINOLOGY,
-  getChangeRequestTerminology,
-  resolveChangeRequestPresentation,
   type ChangeRequestPresentation,
   type ChangeRequestTerminology,
 } from "@t3tools/shared/sourceControl";
 import {
-  getChangeRequestTerminology,
-  resolveChangeRequestPresentation,
+  getChangeRequestTerminology as getSharedChangeRequestTerminology,
+  resolveChangeRequestPresentation as resolveSharedChangeRequestPresentation,
+  type ChangeRequestPresentation,
   type ChangeRequestTerminology,
 } from "@t3tools/shared/sourceControl";
 import { GitLabIcon } from "./components/Icons";
+
+// Coder: GitLab is the only hosted provider, so a status without one says "MR" and "merge
+// request" rather than upstream's GitHub default.
+const DEFAULT_SOURCE_CONTROL_PROVIDER: SourceControlProviderInfo = {
+  kind: "gitlab",
+  name: "",
+  baseUrl: "",
+};
+
+export const DEFAULT_CHANGE_REQUEST_TERMINOLOGY: ChangeRequestTerminology =
+  getSharedChangeRequestTerminology(DEFAULT_SOURCE_CONTROL_PROVIDER);
+
+export function getChangeRequestTerminology(
+  provider: SourceControlProviderInfo | null | undefined,
+): ChangeRequestTerminology {
+  return getSharedChangeRequestTerminology(provider ?? DEFAULT_SOURCE_CONTROL_PROVIDER);
+}
+
+export function resolveChangeRequestPresentation(
+  provider: SourceControlProviderInfo | null | undefined,
+): ChangeRequestPresentation {
+  return resolveSharedChangeRequestPresentation(provider ?? DEFAULT_SOURCE_CONTROL_PROVIDER);
+}
 
 export interface SourceControlPresentation {
   readonly providerName: string;

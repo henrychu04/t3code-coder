@@ -89,7 +89,7 @@ export function usePullRequestLinking(environmentId: EnvironmentId | null | unde
     const changeLink = async (threadRef: ScopedThreadRef, url: string, linked: boolean) => {
       const parsed = parseChangeRequestUrl(url);
       if (parsed === null || threadRef.environmentId !== environmentId || (linked && !canLink(url)))
-        throw new Error("The pull request is not available in this environment.");
+        throw new Error("The merge request is not available in this environment.");
       const legacyProject = findProjectForChangeRequest(environmentProjects, parsed);
       const mutation = planThreadPullRequestMutation({
         capabilities,
@@ -101,7 +101,7 @@ export function usePullRequestLinking(environmentId: EnvironmentId | null | unde
         linked,
       });
       if (mutation === null)
-        throw new Error("This environment does not support linking this pull request.");
+        throw new Error("This environment does not support linking this merge request.");
       const result = await (mutation.type === "thread.meta.update"
         ? updateMetadata({ environmentId: threadRef.environmentId, input: mutation.input })
         : mutation.type === "thread.pull-request.link"

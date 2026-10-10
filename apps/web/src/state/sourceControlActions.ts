@@ -358,7 +358,7 @@ export function usePreparePullRequestThreadAction(scope: SourceControlActionScop
   );
   return useAction({
     kind: "preparePullRequestThread",
-    label: "Preparing pull request thread",
+    label: "Preparing merge request thread",
     scope,
     action,
   });

@@ -803,18 +803,18 @@ describe("pull request tool presentation", () => {
       toolLifecycleStatus: "completed",
     };
     expect(resolveWorkEntryToolPresentation(entry)).toMatchObject({
-      displayName: "Linked a pull request",
+      displayName: "Linked a merge request",
       icon: "pull-request",
     });
     expect(toolGroupAction(entry)).toBe("link-pr");
   });
 
   it.each([
-    ["inProgress", "Linking PR #42"],
-    ["completed", "Linked PR #42"],
-    ["failed", "Failed to link PR #42"],
-    ["declined", "Declined to link PR #42"],
-    ["stopped", "Stopped linking PR #42"],
+    ["inProgress", "Linking MR !42"],
+    ["completed", "Linked MR !42"],
+    ["failed", "Failed to link MR !42"],
+    ["declined", "Declined to link MR !42"],
+    ["stopped", "Stopped linking MR !42"],
   ] as const)("describes the target and %s status", (toolLifecycleStatus, displayName) => {
     expect(
       resolveWorkEntryToolPresentation({
@@ -840,7 +840,7 @@ describe("pull request tool presentation", () => {
           rawInput: { repository: "acme/web", number: 42 },
         },
       }),
-    ).toMatchObject({ displayName: "Unlinked PR #42", icon: "pull-request", action: "unlink-pr" });
+    ).toMatchObject({ displayName: "Unlinked MR !42", icon: "pull-request", action: "unlink-pr" });
   });
 
   it("summarizes native PR work separately from ordinary tools and integration metadata", () => {
@@ -858,13 +858,13 @@ describe("pull request tool presentation", () => {
       label: "T3-code · list_thread_pull_requests",
     };
     expect(summarizeToolGroup([link, link, list]).summary).toBe(
-      "Linked 2 pull requests and checked linked pull requests",
+      "Linked 2 merge requests and checked linked merge requests",
     );
     expect(summarizeToolGroup([{ ...link, label: "T3-code · unlink_pull_request" }]).summary).toBe(
-      "Unlinked 1 pull request",
+      "Unlinked 1 merge request",
     );
     expect(toolGroupSummaryKind([link, link, list])).toBe("pull-request");
-    expect(summarizeToolGroup([list, list]).summary).toBe("Checked linked pull requests 2 times");
+    expect(summarizeToolGroup([list, list]).summary).toBe("Checked linked merge requests 2 times");
     expect(
       resolveWorkEntryToolPresentation({ label: "mcp__another-server__link_pull_request" }),
     ).toBeNull();

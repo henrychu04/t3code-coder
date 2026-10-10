@@ -26,9 +26,9 @@ export function resolveThreadReferenceCopyTarget(input: {
     ? {
         kind: "pull-request",
         value: pullRequestUrl,
-        clipboardTarget: "pull request link",
-        successTitle: "PR link copied",
-        failureTitle: "Failed to copy PR link",
+        clipboardTarget: "merge request link",
+        successTitle: "MR link copied",
+        failureTitle: "Failed to copy MR link",
       }
     : {
         kind: "thread",

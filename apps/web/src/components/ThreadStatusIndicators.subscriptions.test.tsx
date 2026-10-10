@@ -48,7 +48,7 @@ vi.mock("../state/pullRequests", async (importOriginal) => {
     Atom.make(() => {
       state.queries.push(`pr:${number}`);
       return AsyncResult.success({
-        provider: "github" as const,
+        provider: "gitlab" as const,
         projectId: ProjectId.make("project-test"),
         repository: "example/repo",
         number,
@@ -154,7 +154,7 @@ it("leases only visible palette results while retaining observed and cached PR b
     const mounted = renderer!;
     const badgeCount = () =>
       mounted.root.findAll(
-        (node) => node.type === "span" && String(node.props["aria-label"] ?? "").startsWith("PR #"),
+        (node) => node.type === "span" && String(node.props["aria-label"] ?? "").startsWith("MR !"),
       ).length;
     expect(observers).toHaveLength(128);
     expect(state.queries).toEqual([]);
