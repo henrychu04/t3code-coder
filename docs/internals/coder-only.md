@@ -355,7 +355,10 @@ bounded project image read.
 The Files surface is a contained text-editing capability, not a transfer mechanism or general
 filesystem API. The browser supplies the active project root plus a project-relative path to the
 workspace helper over the existing RPC stream. The helper first verifies that the root is the
-requesting thread's project checkout or managed worktree. Reads are capped at 1 MiB; binary files
+requesting thread's project checkout or managed worktree. A draft the server does not know yet
+names its project instead of a thread, and its root must be that project's checkout or a worktree
+one of the project's persisted threads owns; a request naming a thread is always checked as that
+thread. Reads are capped at 1 MiB; binary files
 are rejected, larger text files are truncated and read-only, and both lexical traversal and symlinks
 resolving outside the project are rejected. Writes apply only to an existing, non-truncated text
 file, use the revision returned by the read to reject stale edits, and replace the file atomically.
@@ -561,7 +564,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials.
     Thread MR links must belong to a known GitLab host.
   - Files listings, reads, writes, content search, and media reads verify the requesting thread's
-    project root. `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
+    project root; Files listings, reads, writes, and media reads from a draft verify its named
+    project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
     `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
     of upstream's absolute-path reads, create-anywhere writes, and `searchContents`;
     `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
@@ -763,8 +767,8 @@ listed here is drift to remove rather than fork behavior to keep.
   mini-player, automatic machine placement, server self-update and version-skew banners,
   usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), sidebar file drops, and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
-  route workspace's config. The Files surface requires a persisted thread whose project root
-  the helper verifies (`canUseOwnedFilesSurface`). The checkout branch notice also covers a
+  route workspace's config. The Files surface opens for drafts as on main; a draft's Files
+  requests name its project so the helper can verify the root. The checkout branch notice also covers a
   worktree whose branch moved, but only a local checkout can be restored or follow the current
   branch on send. `chatCanvasLayout.ts` has no preview obstacles, and the right panel keeps
   Coder's per-thread width storage instead of upstream's preview inline size.
@@ -795,7 +799,9 @@ listed here is drift to remove rather than fork behavior to keep.
   content search name the thread so the helper can verify the project root; reads return a
   revision that each write must match, and a rejected save offers **Reload and discard edits**;
   content search uses the helper's time-budgeted search (`projects.searchText`), showing its first
-  page; image, video, and audio previews read through the helper instead of signed asset URLs;
+  page; image, video, and audio previews read through the helper instead of signed asset URLs
+  (a workspace mutation rereads an open image, but video and audio reread only on retry or
+  reopen because each read moves the whole file); a draft names its project rather than a thread;
   there is no PDF or HTML browser preview, open-in-editor or reveal action, attachment preview,
   drag-to-composer mention, or Copy mention (the tree's only clipboard action is Copy path).
   `env.ts` reports `isElectron = false` for upstream's desktop branches.

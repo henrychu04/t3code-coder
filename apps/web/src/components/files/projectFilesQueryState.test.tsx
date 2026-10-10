@@ -6,6 +6,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -80,7 +81,8 @@ import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh
 import { useProjectEntriesQuery, useProjectFileQuery } from "./projectFilesQueryState";
 
 const environmentId = EnvironmentId.make("environment-1");
-const threadId = ThreadId.make("thread-1");
+const owner = { threadId: ThreadId.make("thread-1") };
+const decodeReadError = Schema.decodeSync(ProjectReadFileError);
 
 function deferred<A>() {
   let resolve!: (value: A) => void;
@@ -138,7 +140,8 @@ describe("project query refresh", () => {
 
     const render = (mutationId: string | null) => {
       reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, threadId, "/repo", "src/preview.ts");
+      const query = useProjectFileQuery(environmentId, owner, "/repo", "src/preview.ts");
+      expect(query.readError).toBeNull();
       renderedContents = query.data?.contents ?? null;
       useWorkspaceMutationRefresh({
         mutationId,
@@ -237,7 +240,7 @@ describe("project query refresh", () => {
 
     try {
       reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, threadId, "/repo", "preview.png", false);
+      const query = useProjectFileQuery(environmentId, owner, "/repo", "preview.png", false);
       useWorkspaceMutationRefresh({
         enabled: false,
         mutationId: "mutation-1",
@@ -247,6 +250,7 @@ describe("project query refresh", () => {
       await flushEffects();
 
       expect(projectMocks.readFile).not.toHaveBeenCalled();
+      expect(query.readError).toBeNull();
       expect(requests).toHaveLength(0);
     } finally {
       registry.dispose();
@@ -273,8 +277,9 @@ describe("project query refresh", () => {
     try {
       await flushEffects();
       reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, threadId, "/repo", "assets.png");
+      const query = useProjectFileQuery(environmentId, owner, "/repo", "assets.png");
       expect(query.isNotFile).toBe(true);
+      expect(query.readError?.failure).toBe("path_not_file");
       expect(query.data).toBeNull();
     } finally {
       unmount();
@@ -302,8 +307,47 @@ describe("project query refresh", () => {
     try {
       await flushEffects();
       reactHooks.beginRender();
-      const query = useProjectFileQuery(environmentId, threadId, "/repo", ".agents/skills");
+      const query = useProjectFileQuery(environmentId, owner, "/repo", ".agents/skills");
       expect(query.isNotFile).toBe(true);
+      expect(query.readError?.failure).toBe("path_not_file");
+      expect(query.data).toBeNull();
+    } finally {
+      unmount();
+      registry.dispose();
+      atomHooks.registry = null;
+    }
+  });
+
+  it("retains decoded read failure context for the connected environment", async () => {
+    const error = decodeReadError({
+      _tag: "ProjectReadFileError",
+      cwd: "C:\\workspace",
+      relativePath: "workspace/outline.md",
+      failure: "operation_failed",
+      operation: "realpath-target",
+      operationPath: "C:\\workspace\\workspace\\outline.md",
+      resolvedPath: "C:\\workspace\\workspace\\outline.md",
+      message: "Failed to read workspace file.",
+    });
+    const readAtom = Atom.make(Effect.fail(error));
+    const registry = AtomRegistry.make();
+    const unmount = registry.mount(readAtom);
+    projectMocks.readFile.mockReturnValue(readAtom);
+    projectMocks.optimisticFile.mockReturnValue(Atom.make(null));
+    atomHooks.registry = registry;
+
+    try {
+      await flushEffects();
+      reactHooks.beginRender();
+      const query = useProjectFileQuery(
+        environmentId,
+        owner,
+        "C:\\workspace",
+        "workspace/outline.md",
+      );
+      expect(query.readError).toBe(error);
+      expect(query.error).toBe(error.message);
+      expect(query.isNotFile).toBe(false);
       expect(query.data).toBeNull();
     } finally {
       unmount();

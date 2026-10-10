@@ -2,10 +2,12 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 
 export interface FileSaveCoordinatorOptions<A, E> {
   readonly debounceMs: number;
+  readonly canPersist?: () => boolean;
   readonly persist: (contents: string) => Promise<AtomCommandResult<A, E>>;
   readonly onPendingChange: (pending: boolean) => void;
+  /** Return false when another editor has newer unsaved contents. */
   // Coder: the write result carries the file's new revision for stale-write detection.
-  readonly onConfirmed: (contents: string, result: A) => void;
+  readonly onConfirmed: (contents: string, result: A) => boolean | void;
   // Coder: a rejected write (for example a stale revision) lets the surface offer a reload.
   readonly onFailed?: () => void;
 }
@@ -52,22 +54,26 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
 
   private async persistLatest(): Promise<void> {
     if (this.saving || this.latestRevision === this.confirmedRevision) return;
+    if (this.options.canPersist?.() === false) {
+      return;
+    }
 
     this.saving = true;
     const contents = this.latestContents;
     const revision = this.latestRevision;
     const result = await this.options.persist(contents);
     const succeeded = result._tag === "Success";
+    let confirmed = false;
     if (succeeded) {
       this.confirmedRevision = revision;
-      this.options.onConfirmed(contents, result.value);
+      confirmed = this.options.onConfirmed(contents, result.value) !== false;
     } else {
       this.options.onFailed?.();
     }
 
     this.saving = false;
     if (revision === this.latestRevision) {
-      if (succeeded) this.options.onPendingChange(false);
+      if (confirmed) this.options.onPendingChange(false);
       return;
     }
 

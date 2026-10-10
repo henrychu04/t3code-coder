@@ -84,7 +84,9 @@ claim: shared provider protocols may still report subscription metadata.
   scoped to its own mechanism and authorizes nothing beyond it.
   - **Files surface (the only text-file exception).** It may list, read, and edit bounded UTF-8
     text files inside the active project through the existing helper stdio RPC. Accept only
-    validated project-relative paths, verify the project root belongs to the requesting thread,
+    validated project-relative paths, verify the project root belongs to the requesting thread
+    (for a draft the server does not know yet, to the draft's project: its workspace root or a
+    worktree one of its persisted threads owns),
     reject path and symlink escapes and binary files, detect stale writes, and keep open-file and
     editor state in browser memory only. Its explicit Copy path action may place only that
     project-relative path—not file contents or an absolute path—on the local clipboard. Ordinary
@@ -134,7 +136,7 @@ claim: shared provider protocols may still report subscription metadata.
       video, and audio viewers. Main's media menu may copy a previewed file's full or
       project-relative path or a web media URL to the local clipboard, and its explicit Save and
       Copy image actions may save the displayed media to the local machine or copy an image to the
-      clipboard; these are the only media download and clipboard exceptions. Verify the root belongs to the requesting thread, resolve relative paths from
+      clipboard; these are the only media download and clipboard exceptions. Verify the root belongs to the requesting thread (or a draft's project, as for the Files surface), resolve relative paths from
       that root, and allow exact absolute image paths elsewhere on the Linux workspace machine,
       including symlinks. Verify the actual opened file identity and reject unsupported media and
       files over their bound. This does not authorize general file reads or outside-project text

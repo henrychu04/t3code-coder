@@ -20,13 +20,15 @@ export function projectMediaActionFields(
 ): { reference: MediaReference; onOpenFile?: () => void } {
   const reference = projectMediaReference(target);
   const relativePath = reference.kind === "file" ? reference.relativePath : undefined;
-  return relativePath
+  // A draft's media names its project, not a thread whose Files panel could open it.
+  const threadId = target.threadId;
+  return relativePath && threadId
     ? {
         reference,
         onOpenFile: () =>
           useRightPanelStore
             .getState()
-            .openFile(scopeThreadRef(environmentId, target.threadId), relativePath),
+            .openFile(scopeThreadRef(environmentId, threadId), relativePath),
       }
     : { reference };
 }

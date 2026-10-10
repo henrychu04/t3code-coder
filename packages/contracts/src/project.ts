@@ -324,11 +324,25 @@ export const ProjectTextSearchResult = Schema.Struct({
 });
 export type ProjectTextSearchResult = typeof ProjectTextSearchResult.Type;
 
+/**
+ * Coder: the helper verifies every Files request against its owner. A persisted thread names
+ * itself, and its project root (or worktree) must match `cwd`. A draft the server does not know
+ * yet names its project instead, and `cwd` must be that project's workspace root or a worktree
+ * one of the project's persisted threads owns. A request naming a thread is checked as a thread.
+ */
+export const ProjectFilesOwnerFields = {
+  threadId: Schema.optional(ThreadId),
+  draftProjectId: Schema.optional(ProjectId),
+};
+export type ProjectFilesOwner =
+  | { readonly threadId: ThreadId; readonly draftProjectId?: never }
+  | { readonly draftProjectId: ProjectId; readonly threadId?: never };
+
 export const ProjectListEntriesInput = Schema.Struct({
   directoryPath: Schema.optional(
     Schema.String.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
   ),
-  threadId: ThreadId,
+  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
 });
 export type ProjectListEntriesInput = typeof ProjectListEntriesInput.Type;
@@ -473,7 +487,7 @@ export class ProjectListEntriesError extends Schema.TaggedError<ProjectListEntri
 }
 
 export const ProjectReadFileInput = Schema.Struct({
-  threadId: ThreadId,
+  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_READ_FILE_PATH_MAX_LENGTH)),
 });
@@ -569,7 +583,7 @@ export class ProjectReadFileError extends Schema.TaggedError<ProjectReadFileErro
 }
 
 export const ProjectWriteFileInput = Schema.Struct({
-  threadId: ThreadId,
+  ...ProjectFilesOwnerFields,
   cwd: TrimmedNonEmptyString,
   relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
   contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENT_MAX_LENGTH)),
