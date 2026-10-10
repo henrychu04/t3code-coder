@@ -174,6 +174,7 @@ const CoderVcsLive = Layer.empty.pipe(
   Layer.provideMerge(CoderGitWorkflowLive),
   Layer.provideMerge(
     ReviewService.layer.pipe(
+      Layer.provide(ProjectStore.layer),
       Layer.provideMerge(GitVcsDriver.layer),
       Layer.provideMerge(CoderVcsDriverRegistryLive),
     ),
