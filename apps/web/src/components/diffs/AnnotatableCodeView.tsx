@@ -12,13 +12,13 @@ import { useCallback, useMemo, useState, type ReactNode, type Ref } from "react"
 
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { fnv1a32, resolveFileDiffPath } from "~/lib/diffRendering";
-import { nextFileCommentId } from "../files/fileCommentAnnotations";
 import {
   buildDiffReviewComment,
   restoreDiffReviewCommentRange,
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 
+import { nextFileCommentId } from "../files/fileCommentAnnotations";
 import { DiffCommentAnnotation } from "./DiffCommentAnnotation";
 import { StyledDiffCodeView, type StyledDiffCodeViewOptions } from "./StyledDiffCodeView";
 
@@ -89,7 +89,7 @@ interface AnnotatableCodeViewProps {
   renderCodeViewFooter?: () => ReactNode;
   unsafeCSSExtra?: string;
   renderHeaderMetadata?: (fileDiff: FileDiffMetadata) => ReactNode;
-  renderHeaderFilenameSuffix?: (fileDiff: FileDiffMetadata) => ReactNode;
+  renderHeaderFilenameSuffix: (fileDiff: FileDiffMetadata) => ReactNode;
   renderHeaderPrefix: (
     fileDiff: FileDiffMetadata,
     fileKey: string,
@@ -115,6 +115,7 @@ export function AnnotatableCodeView({
   renderCodeViewFooter,
   unsafeCSSExtra,
   renderHeaderMetadata,
+  renderHeaderFilenameSuffix,
   renderHeaderPrefix,
   onRevealSearchMatch,
 }: AnnotatableCodeViewProps) {
@@ -271,6 +272,9 @@ export function AnnotatableCodeView({
         enableLineSelection: !hasOpenComment,
         onGutterUtilityClick: beginComment,
       }}
+      renderHeaderFilenameSuffix={(item) =>
+        item.type === "diff" ? renderHeaderFilenameSuffix(item.fileDiff) : null
+      }
       renderHeaderPrefix={(item) =>
         item.type === "diff"
           ? renderHeaderPrefix(item.fileDiff, item.id, item.collapsed === true)

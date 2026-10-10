@@ -888,6 +888,13 @@ listed here is drift to remove rather than fork behavior to keep.
   config, because stopped and disconnected workspaces also leave the platform registrations.
   The workspace-to-environment mapping that makes this possible is memory-only, so a workspace
   removed before it reconnects after a reload keeps its drafts.
+- **Diff panel.** `DiffPanel.tsx`, `DiffPanelShell.tsx`, `diffFileActions.ts`, and
+  `components/diffs/*` are upstream's. Coder deltas, each marked `Coder:` in `DiffPanel.tsx`:
+  expanded context loads through the chunked review RPCs (`createChunkedGitDiffFileContentsLoader`),
+  and a file over the expansion limit is listed in `DiffFileExpansionErrorNotice` above the viewer
+  instead of failing the diff. Branch previews ask for one top-level `sourceKind`. A file title
+  opens the Files surface through ChatView's `onOpenFile` and has no local-editor fallback. The
+  header's copy button and the context menu copy only the project-relative path.
 - **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
   that ignores loaded file contents unless the current diff is still the partial diff that asked
   for them.

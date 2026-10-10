@@ -41,7 +41,10 @@ export function diffFileTreeEntries(
   return [...statusByPath].map(([path, status]) => ({ path, status }));
 }
 
-/** Every directory on the way to each file, with the trailing slash Pierre uses for directory ids. */
+/**
+ * Every directory on the way to each file, registered with the trailing slash Pierre uses for
+ * directory ids. Parents come before children so the tree can add them in order.
+ */
 export function collectDirectoryPaths(paths: ReadonlyArray<string>): ReadonlyArray<string> {
   const directories = new Set<string>();
   for (const path of paths) {
@@ -87,7 +90,14 @@ function pathDepth(path: string): number {
   return path.split("/").filter(Boolean).length;
 }
 
-/** Reconciles changed paths without resetting the reader's folder expansion state. */
+/**
+ * The adds and removes that turn one set of file paths into another, so a diff that changes
+ * under the reader (a new slice, a refresh after an agent edit) keeps the directories they
+ * have already opened or closed instead of rebuilding the tree from scratch.
+ *
+ * Directories are removed only once no file needs them; a directory that gains its first file
+ * is added before that file.
+ */
 export function buildDiffFileTreeUpdates(
   previousPaths: ReadonlyArray<string>,
   nextPaths: ReadonlyArray<string>,
@@ -101,6 +111,7 @@ export function buildDiffFileTreeUpdates(
   for (const path of previousPaths) {
     if (!next.has(path)) updates.push({ type: "remove", path });
   }
+  // Deepest first: a directory can only go once everything under it has.
   const removedDirectories = [...previousDirectories]
     .filter((directory) => !nextDirectories.has(directory))
     .toSorted((left, right) => pathDepth(right) - pathDepth(left));
@@ -108,6 +119,7 @@ export function buildDiffFileTreeUpdates(
     updates.push({ type: "remove", path: directory, recursive: true });
   }
 
+  // Shallowest first: a file's directory has to exist before the file does.
   const addedDirectories = [...nextDirectories]
     .filter((directory) => !previousDirectories.has(directory))
     .toSorted((left, right) => pathDepth(left) - pathDepth(right));
