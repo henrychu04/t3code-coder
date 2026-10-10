@@ -67,6 +67,7 @@ const NOOP_OPEN_ATTACHMENT = (_attachment: ChatFileAttachment) => {};
 import { resolveChatListAnchoredEndSpace } from "@t3tools/shared/chatList";
 import { toolActivityFaviconUrl } from "@t3tools/shared/favicon";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
 import { observeVisibleAnimation } from "../../lib/visibleAnimation";
 import {
   createContext,
@@ -157,8 +158,8 @@ import type {
   KnownComposerContextRecord,
 } from "@t3tools/contracts";
 import { Button, InlineButton } from "../ui/button";
-import { isAttachmentImageMimeType, useAssetUrls } from "../../assets/assetUrls";
 import { MorphIcon } from "~/components/MorphIcon";
+import { isAttachmentImageMimeType, useAssetUrls } from "../../assets/assetUrls";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
@@ -290,7 +291,6 @@ import {
   type ReviewCommentContext,
 } from "../../reviewCommentContext";
 
-import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
 // ---------------------------------------------------------------------------
 // Context — shared state consumed by every row component via Context.
 // Propagates through LegendList's memo boundaries for shared callbacks and
@@ -1303,6 +1303,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onImageExpand,
       onFileOpen,
       onUseArtifactTemplate,
+      onSendAppMessage,
+      onAppFullscreenChange,
       openPullRequest,
       onOpenTurnDiff,
       onOpenThread,
@@ -1318,12 +1320,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onWorktreeSetupWorkLocally: onWorktreeSetupWorkLocally ?? null,
       onOpenWorktreeSetupTerminal: onOpenWorktreeSetupTerminal ?? null,
       workGroupViewState,
-      onSendAppMessage,
-      onAppFullscreenChange,
     }),
     [
-      onSendAppMessage,
-      onAppFullscreenChange,
       readyCitationRequest,
       listRef,
       timestampFormat,
@@ -1342,6 +1340,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
       onImageExpand,
       onFileOpen,
       onUseArtifactTemplate,
+      onSendAppMessage,
+      onAppFullscreenChange,
       openPullRequest,
       onOpenTurnDiff,
       onOpenThread,
@@ -2848,6 +2848,26 @@ function AssistantCopyButton({
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
 }
 
+function ProposedPlanTimelineRow({
+  row,
+}: {
+  row: Extract<TimelineRow, { kind: "proposed-plan" }>;
+}) {
+  const ctx = use(TimelineRowCtx);
+
+  return (
+    <div className="min-w-0 px-1 py-0.5">
+      <ProposedPlanCard
+        planMarkdown={row.proposedPlan.planMarkdown}
+        environmentId={ctx.activeThreadEnvironmentId}
+        threadRef={ctx.threadRef ?? undefined}
+        cwd={ctx.markdownCwd}
+        findActive={ctx.findActive}
+      />
+    </div>
+  );
+}
+
 function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mcp-app" }> }) {
   const ctx = use(TimelineRowCtx);
   const { awaitingUser } = use(TimelineRowActivityCtx);
@@ -2866,24 +2886,6 @@ function McpAppTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "mcp-app
         onSendMessage={ctx.onSendAppMessage}
         awaitingUser={awaitingUser}
         onFullscreenChange={(fullscreen) => ctx.onAppFullscreenChange(row.id, fullscreen)}
-      />
-    </div>
-  );
-}
-
-function ProposedPlanTimelineRow({
-  row,
-}: {
-  row: Extract<TimelineRow, { kind: "proposed-plan" }>;
-}) {
-  const ctx = use(TimelineRowCtx);
-
-  return (
-    <div className="min-w-0 px-1 py-0.5">
-      <ProposedPlanCard
-        planMarkdown={row.proposedPlan.planMarkdown}
-        threadRef={ctx.threadRef ?? undefined}
-        cwd={ctx.markdownCwd}
       />
     </div>
   );

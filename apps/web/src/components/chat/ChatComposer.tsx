@@ -1,7 +1,6 @@
-import { runtimeModeConfig } from "./runtimeModeConfig";
 import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+import { runtimeModeConfig } from "./runtimeModeConfig";
 import { useRightPanelStore } from "~/rightPanelStore";
-
 import { filterComposerPullRequestMatches } from "@t3tools/shared/composerPullRequestMatches";
 import { importPastedComposerText, readPastedComposerContext } from "../composerInlineTokenPaste";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
@@ -38,8 +37,8 @@ import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
-  ScreenshotArtifactId,
   PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS,
+  ScreenshotArtifactId,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import {
@@ -1388,7 +1387,6 @@ export interface ChatComposerHandle {
     files: ComposerFileAttachment[];
     terminalContexts: TerminalContextDraft[];
     reviewComments: ReviewCommentContext[];
-    runtimeMode: RuntimeMode;
     threadContexts: ThreadContextRecord[];
     selectedPromptEffort: string | null;
     selectedModelOptionsForDispatch: unknown;
@@ -1703,6 +1701,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onRemoveEditingQueuedAttachment,
   } = props;
   const isLiteralPendingAnswer = activePendingProgress?.activeQuestion?.initialAnswer !== undefined;
+  const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
+  // Opening a running thread resyncs for a few frames. Show the sync row, and
+  // hide the tasks row for it, only when the sync lasts. Logic that depends on
+  // the real phase keeps reading `props.threadSyncPhase`.
+  const shownSyncPhase = useDelayedStatus(composerDraftTargetKey, props.threadSyncPhase);
+  const activeTasksProgress = shownSyncPhase === null ? props.activeTasksProgress : null;
+  const activeTaskSteps = shownSyncPhase === null ? props.activeTaskSteps : null;
   const isEditingQueuedMessage = editingQueuedAttachments !== null;
   // ------------------------------------------------------------------
   // Store subscriptions (prompt / images / terminal contexts)
@@ -1710,10 +1715,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const composerDraft = useComposerThreadDraft(composerDraftTarget);
   // Live target key, for async flows that must notice a thread switch that
   // happened while they awaited.
-  const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
-  const shownSyncPhase = useDelayedStatus(composerDraftTargetKey, props.threadSyncPhase);
-  const activeTasksProgress = shownSyncPhase === null ? props.activeTasksProgress : null;
-  const activeTaskSteps = shownSyncPhase === null ? props.activeTaskSteps : null;
   const composerDraftTargetKeyRef = useRef("");
   composerDraftTargetKeyRef.current = composerDraftTargetKey;
   const questionAttachmentTarget =
@@ -6219,8 +6220,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         files: composerFilesRef.current,
         terminalContexts: composerTerminalContextsRef.current,
         reviewComments: composerReviewComments,
-        // Coder offers only the provider's supported runtime modes.
-        runtimeMode: compatibleRuntimeMode,
         threadContexts: composerThreadContexts,
         selectedPromptEffort,
         selectedModelOptionsForDispatch,
@@ -6822,6 +6821,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                                         draftTarget: attachmentDraftTarget,
                                       })
                                     }
+                                    disabled={!canOperateThread}
                                     aria-label={`Retry upload for ${image.name}`}
                                   />
                                 }
