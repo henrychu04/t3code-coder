@@ -11,7 +11,7 @@ Reviewers can expect:
 - the local app to remember only non-secret Coder targets and explicit port-forward rules, while
   the browser keeps UI preferences and the text of unsent drafts and stashed prompts;
 - Coder to own deployment authentication and provider CLIs to own provider authentication;
-- no general upload, download, synchronization, or non-GitLab hosted source-control surface; MCP
+- no general upload, synchronization, or non-GitLab hosted source-control surface; MCP
   servers and app integrations are only those the workspace's provider configuration defines;
 - workspace lifecycle and port-forward actions to remain explicit and visible to the user.
 
@@ -79,16 +79,13 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
 
 - Electron, native desktop packaging, mobile, hosted web, relay, Tailscale, Cloudflare, OAuth,
   Clerk, telemetry, auto-update, and browser preview;
-- providers other than workspace Codex and Claude Code;
+- providers other than workspace Codex, Claude Code, and Pi;
 - generic user-facing SSH, reverse forwarding, arbitrary tunnels, non-loopback port-forward binds,
   and background workspace daemons; the structured foreground `coder port-forward` feature is the
   sole forwarding exception;
-- arbitrary uploads, downloads, exports, drag-and-drop transfer, clipboard text transfer, and
-  background file synchronization; pasted images and on-demand project image previews are scoped
-  exceptions. Both accept signature-validated PNG, JPEG, and WebP images up to 20 MiB. Project reads
-  validate thread ownership and contained relative paths; legacy captures and submitted attachments
-  use generated opaque IDs. All image reads use bounded chunks and bounded browser memory, with no
-  per-turn count limit, storage quota, or automatic purge;
+- arbitrary uploads and background file synchronization; composer attachments are the only
+  upload. Upstream's Save, Download, Copy, and Export actions save bytes the browser already holds,
+  read through the existing helper connection in bounded chunks; no gateway download route exists;
 - Hosted source-control providers other than GitLab. Repository-scoped fetch, pull, commit, push,
   clone, repository publishing, and merge-request operations are available only in the workspace
   helper through Git and the workspace-installed `glab` CLI; the local gateway performs none of

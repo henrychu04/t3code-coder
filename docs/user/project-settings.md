@@ -152,7 +152,8 @@ The upstream editor has guided Canvas and Accent controls, advanced color roles,
 for picking colors from the app. Its live preview and draft remain open as you navigate, so you can
 judge colors in threads and other pages. Save to apply the theme; closing without saving restores
 your saved colors. The library supports editing, duplicating, removing, and mixing light/dark
-palettes. Custom themes are browser preferences. File imports and exports are not available.
+palettes. Custom themes are browser preferences; **Add theme** imports theme files, and each
+custom theme can be exported as JSON.
 
 ## Repository configuration
 

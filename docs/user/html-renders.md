@@ -8,7 +8,7 @@ with Codex, Claude Code, and Pi.
 Pages use your current theme, including custom themes, and follow light and dark mode as you
 switch. Scripts run inside the page, but it is sandboxed away from T3 Coder and your session. Links
 you click in a page open in a new browser tab. Use the expand button to open a page full size; from
-there you can view its source. Pages cannot be saved or downloaded.
+there you can view its source or save it.
 
 Agents can place images from the workspace in a page by their absolute paths. T3 Coder embeds them
 when the page is published, so the page keeps working after the original files move or are
@@ -30,7 +30,8 @@ Apps follow your theme. An app can call tools on its own server and post a messa
 T3 Coder asks first unless the server marks the tool as read-only, and it asks before every
 message. An app stays viewable after its agent stops, but using it needs the agent of the thread
 that created it running, so send a message in that thread first if the app says it is unavailable.
-An app that navigates away from its own page is stopped. Apps cannot save files.
+An app that navigates away from its own page is stopped. An app can offer a file to save;
+T3 Coder asks you first.
 
 An app can open full screen; use the button in its top corner, or press Escape outside the app, to
 return it to the thread. Anything else that needs your attention, such as an approval, also returns

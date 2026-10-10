@@ -5,36 +5,9 @@
 > differences](../product-differences.md).
 
 T3 Coder runs its browser interface on the developer's computer while repository, Codex, Claude,
-terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The
-architecture exists to preserve that product promise without using upstream desktop, relay,
-Tailscale, hosted-web, or direct remote-server connection paths.
-
-## Repository branch model
-
-The fork keeps two permanent branches with deliberately different responsibilities:
-
-- `main` is a commit-for-commit mirror of `pingdotgg/t3code`'s `main`. The two refs must resolve to
-  the same commit. No fork commit, merge commit, or pull request belongs on `main`.
-- `coder-only` is the default branch and the T3 Coder product line. Coder adaptations, fixes, and
-  upstream synchronization work are merged through pull requests targeting `coder-only`.
-
-The repository ruleset for `main` rejects every normal update and has no persistent bypass. Treat
-updating `main` as a mirror operation rather than ordinary development: after explicit
-authorization, grant a temporary bypass, fetch upstream, verify the intended upstream commit, move
-`origin/main` directly to that exact commit, and remove the bypass immediately. To update the
-product, start from `coder-only`, merge `upstream/main` into a temporary sync branch, adapt
-conflicts at the Coder boundary, and open the pull request against `coder-only`. Confirm the pull
-request base before creating or merging it. If adopting upstream would remove fork-specific
-behavior, notify the maintainer before making that removal.
-
-## Product guarantees
-
-- The browser interface is local-only.
-- Coder owns workspace connectivity and Coder authentication.
-- Codex, Claude Code, and Pi run only in the workspace and use workspace-owned configuration.
-- Durable development and conversation data remains in the workspace.
-- Workspace actions, file access, image exceptions, and port forwards stay within the deliberate
-  product boundaries described below.
+Pi, terminal, checkpoint, and durable orchestration work stays inside Linux Coder workspaces. The
+laptop runs only the loopback gateway, the Coder CLI, and a browser; `AGENTS.md` lists the
+boundaries, and this document records how the code keeps them and where it departs from upstream.
 
 ## Runtime boundary
 
@@ -92,37 +65,18 @@ shows synchronization progress if replay changes its contents. The marker follow
 events accumulated during snapshot or replay loading. The browser and helper are built from the
 same checkout; helper protocol version 2 remains the transport compatibility fence.
 
-Live shell and thread subscriptions retain a bounded number of events and serialized bytes per
-subscription (`LiveStreamBudget.ts`), including batches awaiting an RPC acknowledgement. Overflow detaches that live
-source even if the browser is stalled during snapshot loading or acknowledgement; reconnect uses
-the existing snapshot/replay and synchronization marker. Unused browser thread subscriptions are
-released immediately. Following upstream's resume-snapshot design (`ea6af5924`), recent thread
-snapshots, including running messages and their applied event cursors, survive while idle
-(`THREAD_SNAPSHOT_IDLE_TTL_MS`) without retaining RPC or environment scopes. The additional idle
-snapshot pool is bounded by entry count and conservatively estimated size per browser atom
-registry (`threadRetention.ts`); least recently used snapshots are removed when either limit is
-reached. Sizing uses string lengths without serializing or encoding message bodies and stops at a
-bounded depth and value count. Snapshots exceeding those limits are dropped. This can evict large or complex threads earlier than exact byte accounting,
-but avoids scanning large message bodies when navigating away. Settled snapshots also remain in
-main's IndexedDB thread cache.
-
-The browser keeps a bounded in-memory terminal cache. Terminal attach requests resume
-from an event sequence when the helper's bounded replay window still covers the gap, otherwise they
-receive a complete capped snapshot. Shell subscriptions use upstream's per-aggregate coalescing
-window, projecting the latest project or thread state once per batch. Thread subscriptions use
-upstream's live-event coalescer and per-thread replay limits, including the serialized replay
-payload budget. The browser applies each bounded received RPC batch with one state write.
-Migration 049 stores manual active-thread order in the workspace. Initial thread snapshots and older pages
-target bounded encoded sizes by reducing the requested turn window;
-the newest requested turn is always retained, even when that one turn exceeds the target. Older
-pages use a unary RPC on the existing workspace connection. Review file snapshots remain bounded
-and immutable (held in helper memory under `ReviewService.ts`'s byte, entry, and idle limits), use adaptive per-chunk gzip when it reduces bytes, and are fetched only when the diff
-renderer asks to expand omitted context; completed contents stay in a bounded browser cache.
-Opening a file above the expansion limit returns a typed `tooLarge` outcome, not an RPC failure, so
-the browser can keep the diff usable and render the limit notice without error-level diagnostics.
-GitLab merge-request diffs are paged by file and capped below the gateway's RPC-frame limit
-(`MAX_RPC_MESSAGE_BYTES`); host-backed full-file expansion is capped too (`GitLabPullRequestCli.ts`). These reads remain in browser or
-helper memory and are not persisted by the gateway.
+Live shell and thread subscriptions are bounded (`LiveStreamBudget.ts`), including batches awaiting
+an RPC acknowledgement; overflow detaches that live source, and reconnect uses the existing
+snapshot/replay and synchronization marker. Idle thread snapshots follow upstream's resume-snapshot
+design with Coder's entry and size cap (`threadRetention.ts`), sized from string lengths so
+navigating away never serializes large message bodies. Terminal attaches resume from an event
+sequence when the helper's replay window still covers the gap. Thread snapshots and older pages
+target bounded encoded sizes but always keep the newest requested turn; older pages use a unary
+RPC on the existing connection. Review file snapshots stay in bounded helper memory
+(`ReviewService.ts`) and are fetched only when the diff renderer expands omitted context; a file
+above the expansion limit returns a typed `tooLarge` outcome rather than an RPC failure. GitLab
+merge-request diffs are paged by file below the gateway's `MAX_RPC_MESSAGE_BYTES` frame. Migration
+049 stores manual active-thread order in the workspace.
 
 Branch-to-merge-request discovery is workspace-owned. The helper discovers GitLab MR links at
 startup, after relevant thread changes, and periodically without an open browser. It uses the
@@ -225,15 +179,10 @@ configuration remain workspace-owned and subject to workspace policy, including 
 and app integrations each provider loads from workspace configuration, as upstream. Each provider
 connection remains owned by its workspace executable.
 Native context compaction and asynchronous Codex questions use the same provider stdio sessions
-and orchestration event stream; they do not introduce another listener or transport. The upstream
-usage/cost dashboard is not included: remote pricing aggregation and user-configured CLI-proxy
-sources would add a separate external-data and secret-bearing surface. This fork supports
-API-backed provider usage only, with API authentication configured in the workspace. Subscription
-plans and quota dashboards are outside the supported product scope. Provider settings therefore
-omit subscription-limit summaries; context/token usage and runtime rate-limit errors remain.
-This scope does not enforce authentication mode at runtime. Existing shared provider health probes
-and protocol handling may still report native subscription metadata, but it is not displayed as
-API billing information. T3 does not provide API spend, credit, or billing-limit tracking.
+and orchestration event stream; they do not introduce another listener or transport. Upstream's
+usage/cost dashboard is not carried (remote pricing aggregation and CLI-proxy sources are an
+external-data and secret-bearing surface). API-only provider scope is a product rule, not runtime
+enforcement: shared provider probes may still report subscription metadata, which is not shown.
 The helper also starts repository-scoped Git commands and the workspace-installed `glab`
 executable with argument-array spawning and `shell: false` for GitLab source-control operations.
 GitLab authentication and network policy remain owned by the workspace CLI; T3 never asks for,
@@ -284,244 +233,124 @@ are then negotiated before a helper is used.
 
 ## Network and transfer constraints
 
-The T3 gateway does not make external HTTP requests. The installed Coder CLI is the only process
-allowed to make a non-loopback workspace connection. Structured port-forward rules use foreground
-`coder port-forward` processes and bind only to IPv4 loopback; reverse forwarding, arbitrary bind
-addresses, and raw tunnel arguments are not exposed. The helper bundle and validated composer
-attachments reach the workspace over the stdin of a foreground `coder ssh <workspace> -- sh -l -c
-'<command>'` process (`packages/coder-cli/src/transfer.ts`). Coder 2.25 always allocates a remote
-PTY, so the remote command first runs `stty raw -echo`, prints `T3_CODER_TRANSFER_READY`, and only
-then does the gateway write; `head -c <size>` reads exactly the expected byte count because a PTY
-does not deliver end-of-file. The helper bundle travels as a ustar archive built in Node (Windows
-has no `tar -c` to stream) and is extracted with `tar -xf`. The helper opens
-no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
+The gateway makes no external request of its own. The installed Coder CLI is the only local process
+that connects to a workspace or deployment; its network telemetry and direct connections follow
+the configured deployment and CLI defaults. Structured port-forward rules use foreground
+`coder port-forward` processes bound to IPv4 loopback; reverse forwarding, arbitrary bind
+addresses, and raw tunnel arguments are not exposed. The helper opens no network listener; Codex,
+Claude, Pi, and user-initiated terminal commands remain subject to workspace policy.
+
+Both laptop-to-workspace transfers, the helper bundle install and composer attachments, stream over
+the stdin of one foreground `coder ssh <workspace> -- sh -l -c '<command>'` process
+(`packages/coder-cli/src/transfer.ts`); no OpenSSH client is involved. Coder 2.25 always allocates
+a remote PTY, so the remote command first runs `stty raw -echo` and prints
+`T3_CODER_TRANSFER_READY`; only then does the gateway write, and `head -c <size>` reads exactly the
+expected byte count because a PTY never delivers end-of-file. Each transfer writes a generated
+temporary name under `$HOME/.t3-coder/bin` or `$HOME/.t3-coder/attachments`, checks the received
+size, and renames atomically into place. The helper bundle travels as a ustar archive built in
+Node (Windows has no `tar -c` to stream) and is extracted with `tar -xf`; the workspace shell then
+recomputes `hashCoderHelperBundle`'s digest and refuses a mismatch before replacing the helper and
+recording `.t3-bundle-sha256`. Failed, damaged, or interrupted transfers are removed by a follow-up
+`coder ssh` cleanup. Bytes, local paths, and Coder credentials are never logged, and nothing is
+staged on local disk.
 
 Provider version checks are workspace-originated network requests: the helper queries
 `registry.npmjs.org` for the latest version of each enabled provider whose installer it can
-identify; manual installations are not checked. The workspace
-setting `enableProviderUpdateChecks` is on by default; disabling **Settings → General → Provider
-update checks** opts that workspace out. Explicit provider updates run the installation’s identified
-installer inside the workspace. Versions marked broken or unsupported by the bundled compatibility
-policy are not offered. The model manifest and compatibility policy remain bundled-only and are
-never refreshed over HTTP.
+identify; manual installations are not checked. The workspace setting `enableProviderUpdateChecks`
+is on by default; disabling **Settings → General → Provider update checks** opts that workspace
+out. Explicit provider updates run the installation's identified installer inside the workspace.
+Versions marked broken or unsupported by the bundled compatibility policy are not offered. The
+model manifest and compatibility policy remain bundled-only and are never refreshed over HTTP.
 
-Composer attachments are the only laptop-to-workspace transfer: an image or file pasted, picked,
-or dropped into the message composer or a question answer. The browser sends it only to the
-loopback gateway. The gateway's `clipboard-image` route accepts signature-validated PNG, JPEG, or
-WebP content within `PROVIDER_SEND_TURN_MAX_IMAGE_BYTES`; its `attachment-file` route accepts any
-non-empty file within `PROVIDER_SEND_TURN_MAX_FILE_BYTES`, using the file name only to derive the stored extension
-(`[a-z0-9]{1,10}`, otherwise `bin`, by the helper's `attachmentFileExtension` rule, shared as
-`@t3tools/shared/attachmentFileExtension`). The gateway streams the bytes from memory over
-`coder ssh` stdin beneath `$HOME/.t3-coder/attachments` as upstream's pending upload,
-`pending-<uuid>-<ext>.<ext>`, and returns the workspace path plus the pending attachment's id, byte size, and (for images) media type
-to the draft's in-memory attachment state. The helper advertises upstream's `attachmentUploads`,
-`questionAttachments`, and `fileAttachments` capabilities, which the composer gates on. The browser uses upstream's attachment upload queue with the Coder
-gateway as its transport: at most three concurrent transfers per workspace, matching upstream's
-per-environment limit. Source images within main's `MAX_COMPRESSIBLE_SOURCE_BYTES` are prepared
-with main's byte-limit compression algorithm inside the queue slot: images within the attachment
-limit pass through unchanged, and larger images are resized and re-encoded to fit. The draft keeps the source bytes in memory, so a retry prepares
-them again. The browser upload API, gateway, and workspace provider-input reader all enforce the
-same image constant; files upload unchanged under main's file constant. Images in
-other formats are rejected before queueing, and pending uploads are never deleted from the
-browser; the helper's pending sweep removes unsent ones. Completed images retain their workspace identity. Moving or restoring
-images into another workspace queues them for that destination and cancels any old transfer. The
-browser retains failed images for explicit retry, requeues them when their workspace reconnects,
-and aborts a transfer when its draft attachment is removed. Persisted drafts and stashed prompts
-never store image bytes or image upload ids; a stashed prompt records only the names of images it dropped. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
-child process and removes the partial remote copy. Progress updates use upstream's five-percent steps.
-Percentage progress covers only the loopback upload; the
-workspace copy remains pending until the Coder transfer and finalization complete. A sent message or question
-answer carries upstream's bounded attachment list, never a caller-supplied path or inline data
-URL. As upstream does, the helper claims each pending upload into a thread-scoped copy when it
-accepts the message; Coder reads the staged file once through a no-follow handle, requires its
-exact declared size (and, for images, a PNG, JPEG, or WebP signature matching the declared type),
-and writes those bytes exclusively to the claimed path. Files reach the provider as workspace
-paths, as on main. A failed dispatch removes
-its claimed copies; unsent pending uploads expire after a day. Provider input resolves attachments
-only beneath the attachment directory, rejects symlinks, size violations, and signature
-mismatches, bounds one message's total image bytes as upstream's contract does, and sends the validated bytes to Codex
-as native image input and to Claude as image content blocks. The same validated images may be
-passed by fixed path to the workspace Codex process that generates the initial branch name and
-thread title. Images Coder stored before adopting upstream's attachment ids (`<uuid>.<ext>`)
-decode as `legacy-<uuid>-<ext>` attachments that resolve to their original files; they are never
-claimable. The timeline previews a message's image attachments by id through the bounded chunk
-read; rewinding stages fresh copies of them in the draft.
+### Composer attachments
 
-The composer uses upstream's structured context records. Mentions, terminal contexts, review
-comments, and images travel as `t3-context://v1/<kind>/<id>` links in the message text plus
-`message.context` records, which the helper persists with the message and renders for the provider
-through upstream's projection. Coder omits upstream's preview annotations, element captures,
-and SnapShot frames. Rewinding and restoring queued
-messages read images back through the bounded chunk read. The composer's provider refresh action
-uses upstream's `server.refreshProviders` RPC over the existing stdio stream, without upstream's
-remote model-manifest or usage-limit refreshes. The timeline renders sent context as upstream's inline chips; messages sent
-before context records are upgraded in memory by upstream's legacy converter, and their links to
-pasted image files are hidden because the images render from the message's attachments. Work-log
-presentation uses upstream's client-runtime module without provider tool sources, favicons,
-logos, or native app icons: tool rows use built-in icons, and viewed images load through the
-bounded project image read.
+Composer attachments are the only laptop-to-workspace upload: an image or file pasted, picked, or
+dropped into the message composer or a question answer. The browser posts it only to the loopback
+gateway: `clipboard-image` accepts signature-validated PNG, JPEG, or WebP within
+`PROVIDER_SEND_TURN_MAX_IMAGE_BYTES`, and `attachment-file` accepts any non-empty file within
+`PROVIDER_SEND_TURN_MAX_FILE_BYTES`, using the name only for the stored extension
+(`@t3tools/shared/attachmentFileExtension`). The gateway streams the bytes from memory to
+upstream's pending-upload name, `pending-<uuid>-<ext>.<ext>`, and returns the workspace path, id,
+size, and (for images) media type. The helper advertises upstream's `attachmentUploads`,
+`questionAttachments`, and `fileAttachments` capabilities. The browser uses upstream's upload queue,
+progress steps, and compression with the gateway as transport; percentage progress covers only the
+loopback upload. Closing the HTTP response interrupts the transfer's Effect scope, which stops its
+exact child process and removes the partial remote copy. Drafts and stashed prompts never store
+image bytes or upload ids.
 
-The Files surface is a contained text-editing capability, not a transfer mechanism or general
-filesystem API. The browser supplies the active project root plus a project-relative path to the
-workspace helper over the existing RPC stream. The helper first verifies that the root is the
-requesting thread's project checkout or managed worktree. A draft the server does not know yet
-names its project instead of a thread, and its root must be that project's checkout or a worktree
-one of the project's persisted threads owns; a request naming a thread is always checked as that
-thread. Reads are capped at `PROJECT_FILE_MAX_BYTES`; binary files
-are rejected, larger text files are truncated and read-only, and both lexical traversal and symlinks
-resolving outside the project are rejected. Writes apply only to an existing, non-truncated text
-file, use the revision returned by the read to reject stale edits, and replace the file atomically.
-These ordinary user-initiated read and edit operations retain that bound and all existing root,
-path, UTF-8, binary-file, symlink, revision, and atomic-write validation.
+As upstream does, the helper claims each pending upload into a thread-scoped copy when it accepts
+the message; `AttachmentClaims.ts` reads the staged file once through a no-follow handle at its
+exact declared size (and, for images, a matching signature) and writes it exclusively. Files reach
+the provider as workspace paths; images are validated again before Codex and Claude read them.
+Images Coder stored before upstream's attachment ids (`<uuid>.<ext>`) decode as
+`legacy-<uuid>-<ext>` attachments that are never claimable. Sent images and files are read back by
+id through bounded helper chunks for previews, Save, and rewind.
 
-File search has two deliberately separate indexes. Filename and path search continues to use a
-lightweight path-only FFF index. Project-content search may create a separate, on-demand,
-content-enabled `@ff-labs/fff-node` index only after the helper verifies that the exact project root
-belongs to the requesting thread. The helper must resolve that verified root and pass the resulting
-real project root as FFF's `basePath`; a filesystem root or home directory must never be indexed or
-searched. Content search may use FFF's native plain-text grep and native regex grep. It must enforce
-a hard native search time budget and support cursor-based pagination, cap matches per file and per
-request, and give each content index an idle TTL (bounded; see the `PROJECT_CONTENT_SEARCH_*` and
-`PROJECT_SEARCH_INDEX_IDLE_TTL` constants). A content index must be destroyed deterministically on expiry and when its owning
-project or helper lifecycle ends.
+The composer uses upstream's structured context records (`t3-context://v1/<kind>/<id>` links plus
+`message.context`) without preview annotations, element captures, or SnapShot frames. The work log
+uses upstream's client-runtime presentation without provider tool sources, favicons, logos, or
+native app icons.
 
-FFF output is untrusted input. Before a match is exposed, the helper must reject absolute paths,
-traversal, NUL bytes, malformed relative paths, and any path whose realpath or symlink resolution
-escapes the verified project root. Returned paths remain project-relative. Results may contain only
-bounded UTF-8 line snippets and match ranges; binary-file matches must be rejected or suppressed.
-The search RPC must not expose arbitrary file bytes or become a general content-reading API. Errors
-and logs must omit query text, matching contents, absolute paths, and secrets. Cancellation and
-timeout handling must terminate or yield search work so content search cannot monopolize the
-helper's stdio RPC connection.
+### Files and search
 
-The time budget and match caps replace the old scanner's aggregate scan limits; they are not
-permission for unbounded request time or result delivery. Focused tests on the supported Linux x86-64 helper target must characterize FFF's behavior for symlinks,
-binary files, oversized files, regex failures, cancellation, and time budgets. This exception is
-only for project-content search. It does not change ordinary file-read or edit limits, and it does
-not authorize uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace
-connections.
+The Files surface is a contained text-editing capability. The browser supplies the active project
+root plus a project-relative path; the helper verifies that the root is the requesting thread's
+checkout or managed worktree (a draft names its project, whose checkout or a worktree one of its
+threads owns qualifies). Reads are bounded by `PROJECT_FILE_MAX_BYTES`; binary files are rejected,
+larger text files are truncated and read-only, and lexical traversal and symlinks resolving outside
+the project are rejected. Writes apply only to an existing, non-truncated text file, use the read's
+revision to reject stale edits, and replace the file atomically. `projects.createFile`, used by the
+proposed plan's Save to workspace, creates only a new file inside the verified root. Open files and
+editor state stay in browser memory.
 
-The Files surface exposes no upload or local file access for text files. The tree carries main's
-Copy mention and drag-to-composer mention, and adds a Copy path action for the project-relative
-path. Media previews carry main's media menu, described below. Open files and editor state
-are not persisted locally; the explorer visibility and rendered Markdown/table preferences are UI
-preferences in browser storage, as on main.
+Filename and path search use a lightweight path-only FFF index. Project-content search uses a
+separate, on-demand, content-enabled `@ff-labs/fff-node` index whose `basePath` is the verified real
+project root, never a filesystem root or home directory, with a hard time budget, per-file and
+per-request match caps, cursor pagination, and an idle TTL (the `PROJECT_CONTENT_SEARCH_*` and
+`PROJECT_SEARCH_INDEX_IDLE_TTL` constants). FFF output is untrusted: the helper rejects absolute,
+traversing, NUL-containing, malformed, and escaping paths and binary matches, returns only
+project-relative paths, bounded line snippets, and match ranges, and keeps query text, contents,
+and absolute paths out of errors and logs. Cancellation and timeouts yield so search cannot
+monopolize the stdio connection.
 
-Media previews follow main's on-demand file flow. Markdown and expanded image-view tool activities
-resolve image and video paths without capture events or source-path fingerprints. The helper verifies
-that the requested root belongs to the thread, resolves relative paths from that root and accepts
-absolute or home-relative image paths elsewhere on the Linux workspace machine. Symlinks resolve
-to an exact file; the helper checks its opened path, device and inode, rejects non-files, and
-validates each file's signature against its extension: PNG, JPEG, WebP, GIF, AVIF, SVG, BMP, and
-ICO images; MP4, M4V, MOV, WebM, OGV, MKV, and AVI videos; and MP3, WAV, OGG, OGA, Opus, FLAC, AAC, M4A, and
-AIFF audio. No remote URLs or general file reads are accepted. Images are bounded by
-`MAX_SCREENSHOT_ARTIFACT_BYTES`, video and audio by `MAX_PROJECT_MEDIA_BYTES`, and each stdio chunk
-by `MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES`, whose base64 stays beneath the gateway's RPC frame limit. A revision based on file identity,
-size, and modification/change timestamps must remain constant across chunks; a changed file fails
-with a generic retryable error. No file content or path is included in image errors.
+### Media and document previews
 
-The helper does not create screenshot artifact copies or coordinate per-turn image capture. New
-previews use current source files, so changing, moving, or deleting a file affects future reads.
-There is no per-turn image count or storage quota. Existing artifact IDs and submitted attachment
-IDs remain readable through the legacy bounded chunk RPC; their workspace copies are not purged.
-The artifact directory is no longer created for new workspaces. Draft attachment bytes stay in
-browser memory; submitted copies remain under the workspace attachment directory.
+Media previews follow main's on-demand file flow. The helper verifies the thread's root, resolves
+relative paths from it, and also accepts exact absolute image paths elsewhere on the workspace
+machine. It checks the opened file's identity, rejects non-files, validates each signature against
+its extension (main's image, video, and audio formats), and keeps a file revision constant across
+chunks. Images are bounded by `MAX_SCREENSHOT_ARTIFACT_BYTES`, video and audio by
+`MAX_PROJECT_MEDIA_BYTES`, and each stdio chunk by `MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES`. No
+artifact copies, capture budgets, or quotas exist; existing artifact ids stay readable through the
+legacy chunk read.
 
-The UI retains main's thumbnail, Markdown, zoom/pan, and gallery presentation with Coder transport.
-Media links follow main's file chips: a project file opens in the Files surface, and media outside
-the project opens the gallery. Inline images load near the viewport. The shared
-memory-only image resource store bounds concurrent reads and reserved bytes (`imageResources.ts`).
-Selected gallery images take priority over other previews; deferred previews can still be opened.
-The gateway persists no image bytes and opens no additional route or workspace connection.
-Main streams workspace video through signed range URLs; Coder instead reads the whole file into a
-memory-only blob URL for main's `MediaVideoPlayer`. Because that read is not a cheap metadata
-preload, inline videos show a play card and load only when pressed, with byte progress; a video
-opened in main's gallery loads when the gallery opens. External web images and videos load directly
-from their host as on main. Like main's desktop policy, the gateway CSP allows `https:`/`http:` in
-`img-src`, `media-src`, and `connect-src`, plus `blob:`; `script-src` stays limited to the app.
-`frame-src` allows `'self'` (the document shells) and `blob:` (PDF previews).
-Main's `MediaActions` menu copies paths and URLs and offers Save and Copy image. Coder has no signed
-asset URL to re-request, so those byte actions read the media element's current source: the
-memory-only blob for workspace media, or the web URL, which works when its host allows CORS.
-Browsers may be unable to play some accepted containers, such as AVI; main's player then shows its
-unavailable state with a download action.
+The browser keeps main's thumbnails, gallery, and `MediaActions` menu (copy path or URL, Save, Copy
+image). Workspace media has no signed URL, so the browser reads it whole into a memory-only blob
+(`imageResources.ts` bounds concurrent reads and bytes), and byte actions use that blob or the web
+URL. Inline videos show a play card and read only when pressed. External web images and videos load
+from their host as on main; the gateway CSP allows `https:`/`http:` and `blob:` in `img-src`,
+`media-src`, and `connect-src`, keeps `script-src` to the app, and allows `frame-src 'self' blob:`.
 
-The Files surface uses main's image, video, and audio previews through the same helper reads. Opening
-the file is the explicit request, so it loads immediately. Images reread after a workspace mutation,
-like main's revision suffix; video and audio keep the loaded copy until the file is reopened, because
-a whole-file reread on every mutation would be expensive. PDF and HTML files preview as on main,
-but only inside the verified project root: the helper's media read accepts a `.pdf` with a `%PDF-`
-signature within `MAX_PROJECT_PDF_BYTES` and a `.html`/`.htm` without NUL bytes within
-`MAX_PROJECT_HTML_BYTES`, and the browser reads
-either whole into a memory-only blob when the file opens and again after a workspace mutation. A
-PDF renders in the browser's built-in viewer from that blob, in an unsandboxed frame as on main
-(a PDF runs no script in the app's origin). An HTML file toggles between source and page; the page
-is written into the gateway's document shell `/html-document-frame.html`, whose CSP sandbox is
-upstream's file frame (`allow-scripts allow-forms allow-popups allow-downloads`, no
-`allow-same-origin`). Its relative assets do not load, because there is no asset server. Outside-project
-access is limited to validated media previews; the text Files surface and search retain project
-containment.
+In Files, PDF and HTML files preview as on main, project files only, within `MAX_PROJECT_PDF_BYTES`
+(`%PDF-` signature) and `MAX_PROJECT_HTML_BYTES` (no NUL bytes). A PDF renders from a memory-only
+blob in the browser's built-in viewer; an HTML page is written into the gateway's document shell
+`/html-document-frame.html`, whose CSP sandbox is upstream's file frame (`allow-scripts allow-forms
+allow-popups allow-downloads`, never `allow-same-origin`). Its relative assets do not load, because
+there is no asset server.
 
-Remote transfers first write a generated temporary name, check the received byte count (and, for
-the helper bundle, recompute `hashCoderHelperBundle`'s digest in the workspace shell), and then
-rename atomically to the final generated name. Failed, damaged, or interrupted transfers are
-removed by a follow-up `coder ssh` cleanup. Transferred bytes, local paths, and Coder credentials
-are not logged.
+### Source control
 
-Source-control UI restores upstream's Git action control and merge-request detail experience with a
-GitLab-only provider registry. Repository status, fetch, pull, commit, push, repository publishing,
-merge-request creation, and MR checkout all travel over the existing helper stdio RPC and execute
-inside the Linux workspace. The helper uses repository-scoped Git commands and the
-workspace-installed `glab` CLI to read MR summary, hover preview, activity, discussions, checks,
-reviewers, and diffs and to perform actions permitted for the signed-in viewer. At helper startup, a replaceable,
-state-free `glab` probe checks the workspace-wide GS write policy once for that helper lifetime. The
-default sends an incomplete merge-request creation request to the impossible project ID `0` and
-includes the response headers. A normal GitLab validation or not-found response with a
-GitLab-specific response fingerprint proves
-the request reached GitLab, while neither a project nor an MR can be changed. A generic proxy 404,
-failed probe, or indeterminate response disables every GitLab mutation
-while leaving reads, Git operations, and MR checkout available. The Source Control settings surface
-shows the structured result and can explicitly rerun the probe. A later mutation that matches the
-configured GS policy-block response immediately downgrades the cached workspace result. Generated
-commit and MR content is
-produced by the workspace Claude CLI using bounded Git summaries and patches; repository MR
-templates are read from the committed base tree. The gateway never runs Git or `glab`, never
-connects to GitLab, and receives no GitLab credentials. GitHub, Azure DevOps, Bitbucket, and other
-hosted providers remain unavailable. In the Git action control, a failed write probe disables MR creation
-with a reason, changed-file rows open the Files surface instead of a local editor, and
-authentication hints point to `glab auth login` in the workspace.
-
-The merge-request page, panel, stack menu, and right-panel tabs are upstream's, with these seams.
-Diffs load through the `pullRequests.diff` stdio RPC rather than upstream's environment HTTP
-loader, and upstream's GitHub account routing between environments is omitted. The label RPCs
-exist but GitLab, like upstream's GitLab provider, does not advertise label editing, and native
-stack actions are never advertised. List and detail snapshots that upstream keeps in browser
-storage, the right-panel tabs, and the last merge method chosen stay in memory for the page
-session; a project's default merge method is a workspace setting whose `null` means "last
-selected". Links the panels open go to the system browser through the validated HTTP(S)
-`shell.openExternal`, because Coder has no in-app preview. The panels use GitLab wording and `!`
-references, play video uploads inline and link other uploads as on main, and resolve `/uploads/`
-links against the repository host.
-
-Settings use upstream's layout, sidebar navigation, search catalog, and scope picker with these
-seams. The Integrations and SnapShot categories, desktop update and quit rows, the diagnostics row,
-browser and hosted-pairing settings, and the `keybindings.json` editor do not exist; keybinding
-changes are made in the table. Connections holds the Coder deployments, workspaces, workspace icon,
-and TCP/UDP port forwards instead of upstream's pairing and network access. Providers uses upstream's provider panel and add-instance dialog,
-limited to the Codex, Claude, and Pi drivers (any instance), without sign-in, provider setup or
-managed install, per-instance environment variables, ACP registry, or usage-limit sources. Source Control appends GitLab
-workspace status and the write-policy probe. Background activity uses upstream's profiles and Advanced
-dialog, without the host power-monitor intervals or power and lock pauses, and profile
-descriptions name their intervals. The last project grouping mode is remembered in memory for
-the page session rather than in browser storage. Older fork settings links that name one checkout by its project settings
-key resolve to that checkout's group.
-
-Project icon choices use upstream's bounded Lucide names and color palette, or a bounded emoji string
-(`ProjectEmoji`). Choices persist on workspace-owned project records and travel through the existing
-project metadata command/event stream over helper stdio. SQLite migration 047 adds the nullable
-`project_icon_json` projection column; resetting a choice stores null. The browser renders bundled
-vectors, emoji, or upstream's name-based monograms. No image-path lookup, transfer, or external fetch
-is introduced.
+Git action control and merge-request detail are upstream's with a GitLab-only provider registry.
+Repository status, fetch, pull, commit, push, publishing, merge-request creation, and checkout run
+in the workspace over helper RPC, using repository-scoped Git and the workspace `glab`. At helper
+startup a replaceable, state-free `glab` probe checks the workspace-wide write policy once: it sends
+an incomplete merge-request creation to the impossible project ID `0`, and only a GitLab-
+fingerprinted validation or not-found response enables writes. A generic proxy 404, failed probe,
+or indeterminate response disables every GitLab mutation while reads, Git, and checkout stay
+available; Settings → Source Control shows the result and can rerun it, and a later mutation that
+matches the configured policy-block response downgrades the cached result. Generated commit and MR
+text comes from the workspace Claude CLI. The gateway never runs Git or `glab`, never connects to
+GitLab, and receives no GitLab credentials.
 
 ## Fixed settings metadata
 
@@ -892,8 +721,12 @@ listed here is drift to remove rather than fork behavior to keep.
   open-in-editor or reveal action, and the tree adds Copy path.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
-  come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
-  `!` references and GitLab wording are used. Actor avatars load as on main. MR links everywhere
+  come over the `pullRequests.diff` RPC without upstream's cross-environment GitHub routing,
+  snapshots and the last merge method stay in memory (a project's default merge method is a
+  workspace setting whose `null` means "last selected"), and `!` references and GitLab wording are
+  used. Label RPCs exist but GitLab does not advertise label editing, and native stack actions are
+  never advertised. Video uploads play inline, other uploads link as on main, and `/uploads/`
+  links resolve against the repository host. Actor avatars load as on main. MR links everywhere
   (Markdown, the sidebar, composer and timeline chips, and the thread MR panel) open through
   upstream's `lib/openPullRequestLink.ts`. Its `parseChangeRequestUrl` narrows the shared parser to
   `/-/merge_requests/` URLs, and project matching skips checkouts whose provider is neither GitLab
@@ -979,7 +812,16 @@ listed here is drift to remove rather than fork behavior to keep.
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor. Appearance's **Add theme** is upstream's
   `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
-  reads picked, dropped, or pasted theme files itself.
+  reads picked, dropped, or pasted theme files itself. Connections holds the Coder deployments,
+  workspaces, workspace icon, and TCP/UDP port forwards in place of pairing and network access.
+  Providers is upstream's panel and add-instance dialog limited to Codex, Claude, and Pi drivers,
+  without sign-in, setup or managed install, per-instance environment variables, ACP registry, or
+  usage-limit sources. Source Control appends GitLab workspace status and the write-policy probe.
+  Background activity uses upstream's profiles without host power-monitor intervals or power and
+  lock pauses. Older fork links that name one checkout by its settings key resolve to its group.
+- **Project icons.** Upstream's bounded Lucide names, palette, or emoji (`ProjectEmoji`), persisted
+  on workspace project records through the project metadata command stream; migration 047 adds the
+  nullable `project_icon_json` column. No image-path lookup or external fetch.
 - **Scheduled tasks.** Settings → Scheduled tasks and its draft logic are upstream's, including
   interval and fixed-time schedules, run-now, and webhook draft round-tripping. T3 Coder serves no
   inbound webhook route, so the editor has no "On webhook" option, URL field, token rotation, or

@@ -32,11 +32,11 @@ move with the prompt when stashed. Draft images and their previews stay in brows
 are lost on page reload.
 
 The image is copied into the workspace under a generated filename (you cannot choose the path)
-and the message references it there, where the model can open it. The local temporary copy is deleted
-as soon as the transfer finishes, either way it goes.
+and the message references it there, where the model can open it. The image travels through the
+local app's memory and the Coder CLI; no copy is written on your computer.
 
 Paste, drop, and the image picker use the same upload queue. Unsupported files are rejected with
-an explanation. There is no general document upload or download action.
+an explanation.
 
 ## Images in agent messages
 
