@@ -22,11 +22,12 @@ import { useTurnItemDetail } from "../../state/queries";
 import { useV2ItemSupport } from "../../state/v2ItemSupport";
 import { formatWorkspaceRelativePath } from "../../filePathDisplay";
 import { Button } from "../ui/button";
-import ChatMarkdown, { ChatMarkdownAssetImage } from "../ChatMarkdown";
+import ChatMarkdown from "../ChatMarkdown";
 import { RenderErrorBoundary } from "../RenderErrorBoundary";
 import { resolveExternalWebLinkHref } from "./externalLinkContextMenu";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ShellCommandBlock } from "./ShellCommandBlock";
+import { ToolOutputImages } from "./ToolOutputImages";
 
 interface V2ItemInspectorProps {
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
@@ -147,9 +148,18 @@ interface ToolOutputState {
 }
 
 function ToolOutput(props: ToolOutputState) {
-  // Coder: tool output images load through upstream's signed asset route, which the helper does
-  // not serve, so the inspector shows none of `props.images`.
-  const images: ReadonlyArray<React.ReactNode> = [];
+  // Coder: the helper reads each image in bounded chunks, in place of upstream's signed asset URL.
+  const images =
+    props.images.length === 0
+      ? []
+      : [
+          <ToolOutputImages
+            key="images"
+            environmentId={props.environmentId}
+            images={props.images}
+            onImageExpand={props.onImageExpand}
+          />,
+        ];
   const text = props.output ? (
     <div className="max-h-80 overflow-auto text-muted-foreground">{props.output}</div>
   ) : props.pending ? (

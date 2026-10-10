@@ -1889,42 +1889,11 @@ type ClaudeNativeToolOutput =
 
 const NO_CLAUDE_NATIVE_TOOL_OUTPUT = { type: "none" } satisfies ClaudeNativeToolOutput;
 
-const OMITTED_TOOL_RESULT_IMAGE_TEXT = "[image content omitted by T3]";
-
-/**
- * Coder: tool results keep no image or file bytes in persisted turn items. Base64 image
- * blocks become a text placeholder and every `base64` field is dropped.
- */
-export function omitClaudeToolResultBytes<A>(value: A): A {
-  if (Array.isArray(value)) {
-    return value.map((entry: unknown) => omitClaudeToolResultBytes(entry)) as A;
-  }
-  if (value === null || typeof value !== "object") return value;
-  const record = value as Record<string, unknown>;
-  const source = record.source;
-  if (
-    record.type === "image" &&
-    source !== null &&
-    typeof source === "object" &&
-    (source as Record<string, unknown>).type === "base64"
-  ) {
-    return { type: "text", text: OMITTED_TOOL_RESULT_IMAGE_TEXT } as A;
-  }
-  const sanitized: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(record)) {
-    if (key === "base64" && typeof entry === "string") continue;
-    sanitized[key] = omitClaudeToolResultBytes(entry);
-  }
-  return sanitized as A;
-}
-
 function claudeNativeToolOutputFromToolResult(
   toolResult: ClaudeToolResultContentBlock,
 ): ClaudeNativeToolOutput {
   const value = outputFromClaudeToolResult(toolResult);
-  return value === undefined
-    ? NO_CLAUDE_NATIVE_TOOL_OUTPUT
-    : { type: "content_block", value: omitClaudeToolResultBytes(value) };
+  return value === undefined ? NO_CLAUDE_NATIVE_TOOL_OUTPUT : { type: "content_block", value };
 }
 
 function claudeNativeToolOutputFromStructuredResult(input: {
@@ -1933,10 +1902,8 @@ function claudeNativeToolOutputFromStructuredResult(input: {
 }): ClaudeNativeToolOutput {
   return {
     type: "structured_tool_use_result",
-    value: omitClaudeToolResultBytes(input.structuredOutput),
-    ...(input.fallbackValue === undefined
-      ? {}
-      : { fallbackValue: omitClaudeToolResultBytes(input.fallbackValue) }),
+    value: input.structuredOutput,
+    ...(input.fallbackValue === undefined ? {} : { fallbackValue: input.fallbackValue }),
   };
 }
 

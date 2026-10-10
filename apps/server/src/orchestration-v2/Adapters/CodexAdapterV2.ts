@@ -1,6 +1,5 @@
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
-import { sanitizeCodexScreenshotImages } from "../../provider/CodexScreenshotImages.ts";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
 import {
   mcpToolPresentation,
@@ -486,10 +485,8 @@ export const projectCodexDynamicToolItem = Effect.fn("CodexAdapterV2.projectDyna
   function* (
     item: CodexDynamicToolItem,
   ): Effect.fn.Return<CodexDynamicToolProjection, never, Crypto.Crypto> {
-    // Coder: persisted tool results carry no image bytes.
-    const output = sanitizeCodexScreenshotImages(
-      item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item),
-    );
+    const output =
+      item.type === "mcpToolCall" ? codexMcpToolOutput(item) : codexDynamicToolOutput(item);
     const toolName =
       item.type === "mcpToolCall"
         ? `${item.server}.${item.tool}`

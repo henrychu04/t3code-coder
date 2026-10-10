@@ -642,29 +642,6 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
   });
 });
 
-// Coder: persisted tool results carry no image or file bytes.
-describe("ClaudeAdapterV2 tool result bytes", () => {
-  it("omits base64 image blocks and structured base64 fields", () => {
-    assert.deepEqual(
-      ClaudeAdapterV2.omitClaudeToolResultBytes([
-        { type: "text", text: "kept" },
-        { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
-      ]),
-      [
-        { type: "text", text: "kept" },
-        { type: "text", text: "[image content omitted by T3]" },
-      ],
-    );
-    assert.deepEqual(
-      ClaudeAdapterV2.omitClaudeToolResultBytes<unknown>({
-        type: "image",
-        file: { base64: "AAAA", type: "image/png", originalSize: 4 },
-      }),
-      { type: "image", file: { type: "image/png", originalSize: 4 } },
-    );
-  });
-});
-
 describe("ClaudeAdapterV2 native protocol logging", () => {
   // Coder: the T3 tool bridge command reaches the system prompt; no MCP server or credential does.
   it("injects the thread's T3 tool command without an MCP server or credential", () => {

@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Captured app documents are Linux workspace files.
 /**
- * Coder: upstream serves a stored item's MCP App document through a signed asset URL. The helper
- * has no HTTP listener, so it serves the same bytes as bounded stdio chunks, and only the
- * document the named item itself references.
+ * Coder: upstream serves a stored item's MCP App document and its tool output images through
+ * signed asset URLs. The helper has no HTTP listener, so it serves the same bytes as bounded
+ * stdio chunks, and only bytes the named item itself references.
  */
 import { constants as FILE_SYSTEM_CONSTANTS } from "node:fs";
 import * as NodeFS from "node:fs/promises";
@@ -18,16 +18,47 @@ import {
   type TurnItemId,
 } from "@t3tools/contracts";
 import { MCP_APP_MAX_HTML_BYTES } from "@t3tools/shared/mcpApp";
-import { mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import {
+  MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
+  mcpAppFromToolItem,
+  toolOutputImages,
+} from "@t3tools/shared/toolOutput";
 import * as Effect from "effect/Effect";
 
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
 import { parseAttachmentFileExtension, parseAttachmentUuid } from "../attachmentStore.ts";
 
+const IMAGE_MIME_TYPES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/webp"]);
+
 interface AssetBytes {
   readonly mimeType: TurnItemAssetMimeType;
   readonly totalBytes: number;
   readonly bytes: Buffer;
+}
+
+/** One image the item's tool returned inline, decoded within a provider turn's image limit. */
+function readToolOutputImage(
+  item: OrchestrationV2TurnItem,
+  index: number,
+  offset: number,
+  limit: number,
+): AssetBytes | undefined {
+  if (item.type !== "dynamic_tool") return undefined;
+  const image = toolOutputImages(item.output)[index];
+  if (
+    image?.data === undefined ||
+    image.data.length > MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH ||
+    !IMAGE_MIME_TYPES.has(image.mimeType)
+  ) {
+    return undefined;
+  }
+  const bytes = Buffer.from(image.data, "base64");
+  if (offset >= bytes.byteLength) return undefined;
+  return {
+    mimeType: image.mimeType as TurnItemAssetMimeType,
+    totalBytes: bytes.byteLength,
+    bytes: bytes.subarray(offset, offset + limit),
+  };
 }
 
 /** The captured document of the app the item carries, read without following a symlink. */
@@ -84,9 +115,11 @@ export const readTurnItemAssetChunk = Effect.fn("TurnItemAssets.readChunk")(func
   const asset =
     item === null
       ? undefined
-      : yield* Effect.tryPromise(() =>
-          readMcpAppDocument(dependencies.attachmentsDir, item, input.offset, limit),
-        ).pipe(Effect.orElseSucceed(() => undefined));
+      : input.asset._tag === "tool-output-image"
+        ? readToolOutputImage(item, input.asset.index, input.offset, limit)
+        : yield* Effect.tryPromise(() =>
+            readMcpAppDocument(dependencies.attachmentsDir, item, input.offset, limit),
+          ).pipe(Effect.orElseSucceed(() => undefined));
   if (asset === undefined || asset.bytes.byteLength === 0) {
     return yield* new TurnItemAssetReadError({ message: "The asset was not found." });
   }
