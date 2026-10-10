@@ -608,7 +608,8 @@ listed here is drift to remove rather than fork behavior to keep.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
-    the empty strict configuration. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
+    the empty strict configuration. `executableArgs` go before the CLI's own arguments, as the
+    SDK passes them, so upstream's agent scope wrapper launches the CLI. It has no `forkSession`: `ClaudeAdapterV2.forkThread`
     allocates the fork's session id and stores the source session and message boundary as the
     provider thread's `claudeFork` native metadata. The fork's first query then runs
     `--resume <source> --fork-session --resume-session-at <message> --session-id <new>` rather

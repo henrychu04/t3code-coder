@@ -65,6 +65,8 @@ export type Options = {
   readonly strictMcpConfig?: boolean;
   readonly onUserDialog?: NonNullable<Sdk.Options["onUserDialog"]>;
   readonly pathToClaudeCodeExecutable: string;
+  /** Arguments before the CLI's own, as the SDK passes them to a native executable. */
+  readonly executableArgs?: ReadonlyArray<string>;
   readonly permissionMode?: PermissionMode;
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly persistSession?: boolean;
@@ -388,13 +390,17 @@ class ClaudeCliQuery implements Query {
     if (!environment.CLAUDE_CODE_ENTRYPOINT) {
       environment.CLAUDE_CODE_ENTRYPOINT = "sdk-ts";
     }
-    this.process = spawn(options.pathToClaudeCodeExecutable, buildClaudeCliArgs(options), {
-      cwd: options.cwd,
-      env: environment,
-      shell: false,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
+    this.process = spawn(
+      options.pathToClaudeCodeExecutable,
+      [...(options.executableArgs ?? []), ...buildClaudeCliArgs(options)],
+      {
+        cwd: options.cwd,
+        env: environment,
+        shell: false,
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
+      },
+    );
 
     this.process.stderr.setEncoding("utf8");
     this.process.stderr.on("data", (data: string) => {

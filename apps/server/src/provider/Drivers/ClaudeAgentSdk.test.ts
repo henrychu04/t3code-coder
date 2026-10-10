@@ -4,6 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
 import { assert, describe, it } from "@effect/vitest";
+import { agentScopeCommand } from "@t3tools/shared/AgentScope";
 
 import {
   claudeProjectDirectoryName,
@@ -95,10 +96,13 @@ for await (const line of lines) {
       { mode: 0o700 },
     );
     try {
+      // The agent scope launches the CLI through `/bin/sh` with the CLI as an executable argument.
+      const launch = agentScopeCommand({ command: executablePath, args: [] });
       const runtime = query({
         prompt: "hello",
         options: {
-          pathToClaudeCodeExecutable: executablePath,
+          pathToClaudeCodeExecutable: launch.command,
+          executableArgs: [...launch.args],
           systemPrompt: { type: "preset", preset: "claude_code", append: "Extra." },
         },
       });
