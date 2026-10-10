@@ -34,7 +34,12 @@ only fork behavior to keep. Commands run from the repository root of the sync wo
 ## 3. Deleted directories
 
 Upstream files under directories the fork deleted stay deleted, whether upstream modified or added
-them. The categories (top-level directories in brackets):
+them. After `git merge` stops, run `node scripts/sync-resolve-deleted.mjs` (or
+`pnpm sync:resolve-deleted` when no `package.json` or `pnpm-lock.yaml` is conflicted, since pnpm
+checks dependencies before running a script). It `git rm`s each modify/delete conflict under the
+paths listed in the script and prints every other conflict and every upstream-added file under
+those paths, untouched, for you to decide. It never resolves a content conflict. The categories
+(top-level directories in brackets):
 
 - Auth and pairing (`apps/server/src/auth`, web `components/auth`, client-runtime `authorization`).
 - Preview and browser (`apps/server/src/preview`, web `browser`, `components/preview`).
@@ -50,7 +55,7 @@ them. The categories (top-level directories in brackets):
   (`apps/server/src/{telemetry,resourceTelemetry,usage,diagnostics}`, web `components/usage`).
 - Upstream repository tooling (`.github`, `.repos`, `oxlint-plugin-t3code`, `docs/operations`).
 
-Re-derive the list when the fork cuts or restores a surface:
+Re-derive the list, and update the script's data, when the fork cuts or restores a surface:
 
 ```sh
 git -c diff.renameLimit=0 diff --no-renames --name-status "$MB" origin/coder-only |

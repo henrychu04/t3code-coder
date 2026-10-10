@@ -31,7 +31,8 @@
     "test:shared:coder": "vp test run packages/shared/src scripts/lib/third-party-licenses.test.ts",
     "knip:exports": "knip --workspace apps/server --workspace packages/client-runtime --workspace packages/contracts --workspace packages/shared --workspace packages/effect-codex-app-server --workspace packages/coder-cli --workspace packages/provider-core --workspace packages/provider-pi --workspace packages/provider-testing --workspace packages/source-control-core --workspace packages/source-control-gitlab --workspace packages/source-control-testing --exports --preprocessor ./scripts/knip-schemas.ts --no-config-hints",
     "test:knip": "vp test run scripts/knip-schemas.test.ts",
-    "licenses:sync": "node scripts/sync-third-party-license-notices.ts"
+    "licenses:sync": "node scripts/sync-third-party-license-notices.ts",
+    "sync:resolve-deleted": "node scripts/sync-resolve-deleted.mjs"
   },
   "devDependencies": {
     "@types/node": "catalog:",
