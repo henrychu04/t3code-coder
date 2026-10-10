@@ -708,7 +708,7 @@ listed here is drift to remove rather than fork behavior to keep.
   context; the active workspace supplies keybindings and the pill's providers.
 - **Chat view.** `ChatView.tsx` is upstream's, minus the browser and device preview panels and
   mini-player, automatic machine placement, server self-update and version-skew banners,
-  usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), sidebar file drops, and the favicon store.
+  usage-limit panel, Codex feedback upload, local editors (`OpenInPicker`), and the favicon store.
   The active workspace stands in for upstream's primary environment, and drafts read their
   route workspace's config. The Files surface opens for drafts as on main; a draft's Files
   requests name its project so the helper can verify the root. The checkout branch notice also covers a
