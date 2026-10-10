@@ -18,6 +18,7 @@ function makeDriver(calls: string[]): VcsDriver.VcsDriver["Service"] {
       supportsWorktrees: true,
       supportsBookmarks: false,
       supportsAtomicSnapshot: false,
+      supportsPushDefaultRemote: true,
       ignoreClassifier: "native",
     },
     execute: () =>

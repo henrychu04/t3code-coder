@@ -70,6 +70,8 @@ export const coderHelperStdioLayer = RpcServer.layer(
   Layer.provide(NodeStdio.layer),
   Layer.provide(coderServerConfigLayer),
   Layer.provide(NodeServices.layer),
+  // Keep Effect logs, including DefectReporter's, off stdout, which carries the NDJSON RPC
+  // transport. The helper launch discards stderr, so these logs are not kept anywhere.
   Layer.provide(Layer.succeed(Logger.LogToStderr)(true)),
 );
 

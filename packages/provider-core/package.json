@@ -79,10 +79,6 @@
       "types": "./src/server/ModelCatalog.ts",
       "import": "./src/server/ModelCatalog.ts"
     },
-    "./server/nativeProtocolLogging": {
-      "types": "./src/server/nativeProtocolLogging.ts",
-      "import": "./src/server/nativeProtocolLogging.ts"
-    },
     "./server/notification": {
       "types": "./src/server/notification.ts",
       "import": "./src/server/notification.ts"
@@ -102,10 +98,6 @@
     "./server/ProviderAdapter": {
       "types": "./src/server/ProviderAdapter.ts",
       "import": "./src/server/ProviderAdapter.ts"
-    },
-    "./server/providerAuthFlow": {
-      "types": "./src/server/providerAuthFlow.ts",
-      "import": "./src/server/providerAuthFlow.ts"
     },
     "./server/ProviderContinuationRequests": {
       "types": "./src/server/ProviderContinuationRequests.ts",

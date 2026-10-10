@@ -274,18 +274,22 @@ describe("pullRequestWatchMessage", () => {
     );
     const message = pullRequestWatchMessage({
       number: 12,
-      url: "https://github.com/o/r/pull/12",
+      url: "https://gitlab.com/o/r/-/merge_requests/12",
       baseBranch: "main",
       headSha: report.next.headSha,
       report,
     });
+    assert.include(
+      message.text,
+      "Update on merge request !12 (https://gitlab.com/o/r/-/merge_requests/12), which T3 Coder",
+    );
     assert.include(message.text, "- Checks failed on aaaaaaa:\n  - lint https://ci.example/lint");
     assert.include(message.text, '  - reviewer on src/index.ts: "Needs a test."');
     assert.include(message.text, "unwatch_pull_request");
     assert.deepEqual(message.notification, {
       source: { kind: "monitor" },
       outcome: "failed",
-      summary: "#12: checks failed, new comments",
+      summary: "!12: checks failed, new comments",
     });
   });
 });

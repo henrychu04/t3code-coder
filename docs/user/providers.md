@@ -1,4 +1,4 @@
-# Codex and Claude Code
+# Codex, Claude Code, and Pi
 
 T3 Coder uses the Codex, Claude Code, and Pi installations already available in the connected
 Coder workspace. It does not run a provider on the local computer, install a missing provider in the
@@ -21,14 +21,14 @@ Each provider is checked independently.
 Only ready providers contribute models to the model picker. An unavailable provider remains visible
 with an explanation where that context is useful, but it cannot be selected for new work.
 
-Only one provider needs to be installed for the workspace to connect. If Codex is unavailable and
-Claude is ready, Claude continues to work; the reverse is also true. There is no automatic
+Only one provider needs to be installed for the workspace to connect. If one provider is
+unavailable, the others that are ready continue to work. There is no automatic
 mid-thread or mid-turn fallback. Existing work remains tied to its provider so T3 Coder does not
 silently change agent behavior or conversation history.
 
 ## API authentication
 
-Configure API access through the workspace's Codex or Claude Code configuration and your
+Configure API access through the workspace's Codex, Claude Code, or Pi configuration and your
 organization's credential-management process. Credentials belong in the workspace provider
 configuration, never in T3 Coder's browser or local gateway. T3 Coder does not collect API keys.
 
@@ -40,6 +40,7 @@ The model picker is capability-driven rather than a hard-coded compatibility lis
 
 - Codex models, reasoning choices, and service tiers come from the workspace Codex app server.
 - Claude models and supported access modes come from the workspace Claude Code installation.
+- Pi models and thinking levels come from the workspace Pi installation; see [Pi](./providers-pi.md).
 - A model appears only while its provider is ready.
 - The current and older model sections follow the upstream model lifecycle list bundled with the
   T3 Coder release.
@@ -55,7 +56,7 @@ See [Access modes](./permission-modes.md) for what each mode means.
 
 Type `/` in the composer to search available commands. Type `$` to search available skills.
 T3 Coder uses the inventory reported by the selected workspace provider and project, so the list
-can differ between Codex and Claude or between workspaces.
+can differ between Codex, Claude, and Pi or between workspaces.
 
 Codex sub-agent activity includes model and reasoning information when Codex reports it. T3 Coder
 leaves missing metadata blank rather than copying the parent agent's settings.
@@ -80,7 +81,7 @@ an approval request. The Claude browser integration is disabled.
 
 ## T3 tools
 
-Codex and Claude can still use T3 Coder's own tools: delegating work to child agents, reading and
+Codex, Claude, and Pi can still use T3 Coder's own tools: delegating work to child agents, reading and
 messaging other threads, managing the queue and pending questions, scheduling recurring tasks,
 launching threads in worktrees, managing projects, and linking merge requests. Instead of an MCP
 server, T3 gives each provider session a workspace command that runs these tools and removes it
@@ -98,13 +99,13 @@ connections before its provider settings can be read or changed.
 Provider configuration and text-generation defaults are stored in the selected workspace. Model
 favorites, hidden models, and model ordering are browser preferences shared by every workspace.
 
-The default Codex and Claude settings use the workspace's standard executables, provider homes,
+The default Codex, Claude, and Pi settings use the workspace's standard executables, provider homes,
 and existing API authentication. Most users should leave them unchanged. Each provider can be enabled or
 disabled independently.
 
-Additional provider instances let a workspace expose another Codex or Claude installation,
+Additional provider instances let a workspace expose another Codex, Claude, or Pi installation,
 identity, or configuration without replacing the default. The same settings experience is used
-for both providers, while each provider shows only the choices it supports.
+for every provider, while each provider shows only the choices it supports.
 
 The Models section also lets you add, edit, and remove custom model IDs, give them display names,
 and configure the controls exposed for those models. Existing custom model IDs remain valid
@@ -140,7 +141,7 @@ identifiable package manager, the workspace helper checks the npm registry (`reg
 for its latest version. Manual installations are not checked. To turn these checks off, disable
 **Settings → General → Provider update checks** for the workspace.
 
-**Update all** in the sidebar updates outdated Codex and Claude installations on connected Coder
+**Update all** in the sidebar updates outdated Codex, Claude, and Pi installations on connected Coder
 workspaces by running each provider’s identified installer inside its workspace. Hover it to see
 which installations will update. Only installations whose updater can be identified are included;
 manual-only installations must be updated in their workspace terminal.

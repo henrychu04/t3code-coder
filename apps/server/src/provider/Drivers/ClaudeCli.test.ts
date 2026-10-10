@@ -221,6 +221,66 @@ for await (const line of lines) {
     }
   });
 
+  it("delivers a tool_result line larger than a megabyte intact", async () => {
+    const temporaryDirectory = await NodeFS.mkdtemp(
+      NodePath.join(NodeOS.tmpdir(), "t3-claude-cli-large-"),
+    );
+    const executablePath = NodePath.join(temporaryDirectory, "fake-claude");
+    await NodeFS.writeFile(
+      executablePath,
+      `#!/usr/bin/env node
+import * as readline from "node:readline";
+const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+const send = (value) => process.stdout.write(JSON.stringify(value) + "\\n");
+for await (const line of lines) {
+  const message = JSON.parse(line);
+  if (message.type !== "control_request" || message.request.subtype !== "initialize") continue;
+  send({ type: "control_response", response: { subtype: "success", request_id: message.request_id, response: { commands: [] } } });
+  send({
+    type: "user",
+    session_id: "workspace-session",
+    parent_tool_use_id: null,
+    message: {
+      role: "user",
+      content: [{
+        type: "tool_result",
+        tool_use_id: "tool-1",
+        content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "A".repeat(2 * 1024 * 1024) } }]
+      }]
+    }
+  });
+  send({ type: "result", subtype: "success", session_id: "workspace-session", is_error: false });
+  lines.close();
+  process.stdin.destroy();
+}
+`,
+      { mode: 0o700 },
+    );
+
+    try {
+      const runtime = query({
+        prompt: (async function* (): AsyncGenerator<SDKUserMessage> {})(),
+        options: { pathToClaudeCodeExecutable: executablePath, env: process.env },
+      });
+      await runtime.initializationResult();
+      const messages = [];
+      for await (const message of runtime) messages.push(message);
+      assert.deepEqual(
+        messages.map((message) => message.type),
+        ["user", "result"],
+      );
+      const content = (messages[0] as { message: { content: unknown } }).message.content;
+      assert.equal(
+        (content as Array<{ content: Array<{ source: { data: string } }> }>)[0]?.content[0]?.source
+          .data,
+        "A".repeat(2 * 1024 * 1024),
+      );
+      runtime.close();
+    } finally {
+      await NodeFS.rm(temporaryDirectory, { recursive: true, force: true });
+    }
+  });
+
   for (const testCase of [
     {
       name: "malformed control responses",
@@ -239,7 +299,7 @@ for await (const line of lines) {
     },
     {
       name: "oversized lines",
-      output: '"x".repeat(1024 * 1024 + 1)',
+      output: '"x".repeat(32 * 1024 * 1024 + 1)',
       expected: "oversized",
     },
   ]) {

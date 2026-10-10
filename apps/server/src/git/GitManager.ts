@@ -1091,7 +1091,7 @@ export const make = Effect.gen(function* () {
                 localBranch,
                 cause: new AggregateError(
                   [primaryCause, fallbackCause],
-                  `Repository-head and pull-request-ref fetches both failed for pull request #${pullRequest.number}.`,
+                  `Repository-head and merge-request-ref fetches both failed for merge request !${pullRequest.number}.`,
                   { cause: primaryCause },
                 ),
               }),

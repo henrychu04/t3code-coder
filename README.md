@@ -1,10 +1,10 @@
 # T3 Coder
 
-T3 Coder is a browser interface for Codex and Claude Code running inside your Coder workspaces.
+T3 Coder is a browser interface for Codex, Claude Code, and Pi running inside your Coder workspaces.
 Start threads, review changes, run terminals, and manage repositories from a local web app while
 your code, provider sessions, and history stay in the workspace.
 
-This fork is intended solely for API-backed Codex and Claude Code usage. Configure API credentials
+This fork is intended solely for API-backed Codex, Claude Code, and Pi usage. Configure API credentials
 inside the workspace using your provider's configuration. Subscription-backed ChatGPT and Claude
 consumer plans are outside the supported scope; T3 Coder does not provide subscription-quota or
 API billing dashboards.
@@ -64,7 +64,7 @@ never opens the browser for you. Then:
    `npm start`; the token is handled there, never in the browser.
 3. Choose **Add project** in the sidebar, pick your domain and workspace, and select a folder in
    the remote folder picker.
-4. Choose an available Codex or Claude model and start a thread.
+4. Choose an available Codex, Claude, or Pi model and start a thread.
 
 The first connection to a workspace runs a short preflight. It verifies the workspace platform,
 Git, Nix, and that at least one supported provider is present, then installs a version-matched
@@ -77,7 +77,7 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 | Guide                                                            | Covers                                                       |
 | ---------------------------------------------------------------- | ------------------------------------------------------------ |
 | [Install and first run](./docs/user/getting-started.md)          | Requirements, setup, and the first connection                |
-| [Codex and Claude Code](./docs/user/providers.md)                | Availability, sign-in, models, skills, and provider settings |
+| [Codex, Claude Code, and Pi](./docs/user/providers.md)           | Availability, sign-in, models, skills, and provider settings |
 | [Pi](./docs/user/providers-pi.md)                                | Setting up Pi, permission modes, extensions, skills          |
 | [Coder workspaces](./docs/user/workspaces.md)                    | Domains, lifecycle, health, port forwards, troubleshooting   |
 | [Projects and threads](./docs/user/projects-and-threads.md)      | Organizing projects, threads, pins, snooze, archive          |

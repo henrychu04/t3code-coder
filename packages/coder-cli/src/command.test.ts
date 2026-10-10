@@ -98,9 +98,16 @@ describe("Coder CLI command construction", () => {
       "-c",
       quotePosixShellArgument(REMOTE_WORKSPACE_STATS_COMMAND),
     ]);
-    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder stat cpu --output=json/u);
-    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder stat mem --output=json/u);
-    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder stat disk --path "\$HOME" --output=json/u);
+    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder --no-version-warning stat cpu --output=json/u);
+    match(REMOTE_WORKSPACE_STATS_COMMAND, /coder --no-version-warning stat mem --output=json/u);
+    match(
+      REMOTE_WORKSPACE_STATS_COMMAND,
+      /coder --no-version-warning stat disk --path "\$HOME" --output=json/u,
+    );
+    deepStrictEqual(
+      REMOTE_WORKSPACE_STATS_COMMAND.match(/\bcoder \S+/gu),
+      Array.from({ length: 3 }, () => "coder --no-version-warning"),
+    );
     deepStrictEqual(buildCoderHelperInvocation(deployment, workspace).args, [
       "--no-version-warning",
       "--url",

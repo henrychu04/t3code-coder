@@ -120,7 +120,7 @@ agent registers its GitLab URL so T3 tracks it alongside the thread. These tools
 associations; they do not create, close, merge, or rebase GitLab MRs. Plan mode allows listing
 only.
 
-No MCP setup is needed: Codex and Claude run T3 tools through a workspace command that T3 supplies
+No MCP setup is needed: Codex, Claude, and Pi run T3 tools through a workspace command that T3 supplies
 to each provider session and removes when the session stops. URLs must identify a GitLab host
 known to workspace project metadata, including when linking an MR from another repository.
 

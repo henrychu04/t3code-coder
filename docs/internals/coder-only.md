@@ -564,8 +564,10 @@ listed here is drift to remove rather than fork behavior to keep.
   - No HTTP/WebSocket listener, auth/session scopes, pairing, relay, client-origin attribution,
     analytics, RPC metrics, or trace export. The helper's RPC server uses upstream's
     `WS_RPC_SERVER_OPTIONS`, so a handler defect fails only its own request rather than every
-    request on the stdio connection, and `observability/DefectReporter.ts` logs those defects to
-    the helper's stderr. `CoderRuntimeStartup` completes before the RPC
+    request on the stdio connection. `observability/DefectReporter.ts` logs those defects as
+    upstream does, and the helper sends Effect logs to stderr so they never reach the NDJSON
+    stdout. The launch discards that stderr (`2>/dev/null`, because Coder's remote PTY merges it
+    into stdout), so handler defects are not observable; T3 keeps no log file. `CoderRuntimeStartup` completes before the RPC
     layer is built, replacing upstream's startup command queue. Lifecycle welcome/ready events
     are synthesized from workspace projections rather than a startup publisher.
   - Config comes from the Coder environment descriptor and omits auth, editors, device hosts,
@@ -605,6 +607,9 @@ listed here is drift to remove rather than fork behavior to keep.
   - Claude runs through `Drivers/ClaudeCli.ts`, which implements the Agent SDK's `query()` and
     `Query` surface over the workspace `claude` executable. Rollback and resume use upstream's
     native `resumeSessionAt` from the conversation head, which the CLI accepts directly.
+    Where the SDK's `readline` has no line cap, a stream-json line may be as large as the 32 MiB
+    pending-message budget allows, minus whatever is already queued; that fits a tool-result image
+    at the provider's 10 MiB base64 limit, and a longer line fails the session.
   - `Drivers/ClaudeAgentSdk.ts` provides SDK-typed `query` and `getSubagentMessages` over the CLI,
     so upstream code that calls the SDK changes only its import source. Options the CLI transport
     cannot honour fail instead of being dropped, except `mcpServers`, which is always replaced by
@@ -753,9 +758,15 @@ listed here is drift to remove rather than fork behavior to keep.
     upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
     (`searchThread`, `searchThreadStream`), turn-item reads, passive terminal observation, agent
-    secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's `EnvironmentAuthorizationError` stays in
+    secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's
+    `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
+    ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability.
+  - `VcsProcessExitFailureKind` adds `policy-blocked` for the GitLab write probe, and
+    `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
+    The rest of `vcs.ts` and `git.ts` keep upstream's shapes, plus the helper-only ref-status
+    and thread-branch rename schemas.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.
@@ -891,7 +902,12 @@ listed here is drift to remove rather than fork behavior to keep.
   - User-facing text says "merge request", "MR", and `!123` wherever upstream says "pull
     request", "PR", or `#123`: the panels, composer, settings, toasts, keybinding labels, and
     the strings the web shows from `client-runtime` (work-log tool labels and MR actions) and
-    `shared` (T3 tool presentation, watch descriptions, and copy-link toasts). Identifiers, wire
+    `shared` (T3 tool presentation, watch descriptions, and copy-link toasts). The agent-facing
+    text the server writes says "merge request", `!123`, and "T3 Coder" too: the merge-request
+    watch wakes and their notification summaries (`pullRequestWatch.ts`,
+    `PullRequestWatchReactor.ts`), the merge-request T3 tool descriptions and errors
+    (`mcp/toolkits/pullRequests/tools.ts`, with GitLab example URLs), and `GitManager`'s
+    merge-request ref fetch error. `runtimeInstructions.ts` stays upstream's. Identifiers, wire
     names, and search haystacks keep upstream's spelling, and the composer trigger stays `#`.
     Web `sourceControlPresentation.ts` treats a missing provider as GitLab rather than
     upstream's GitHub default. Text for paths GitLab never reaches (native stacks, stack merges,
@@ -1025,9 +1041,14 @@ listed here is drift to remove rather than fork behavior to keep.
   texts are committed under `licenses/spdx`, and only `pnpm licenses:sync` downloads missing
   ones. `knip.jsonc` lists the upstream files whose exports are used only by surfaces the fork
   does not carry, so `pnpm knip:check` still catches fork-introduced dead exports elsewhere.
-  The real-Coder live harness behind `pnpm coder:live:*` (`scripts/coder-live-test.mjs` and
-  `scripts/coder-live-template/`) is kept local and is not committed, because it provisions
-  external tooling.
+  The real-Coder live harness behind `pnpm coder:live:*` and `pnpm test:coder:live`
+  (`scripts/coder-live-test.mjs` and `scripts/coder-live-template/`) is kept local and is not
+  committed, because it provisions external tooling; `.gitignore` excludes both, so those scripts
+  fail in a fresh clone. Its two checks are tracked: `scripts/coder-live-images.mjs` drives a
+  running gateway's upload and helper image reads against a connected workspace, and
+  `scripts/coder-live-provider-images.mjs` (`pnpm coder:live:providers`) runs one real turn per
+  provider, which needs authenticated workspace or local Codex and Claude Code CLIs and spends
+  their quota.
 - **Omitted surfaces.** Desktop, mobile, hosted web, browser preview, telemetry, OTLP and trace
   export, the diagnostics page, usage dashboards, and hosted providers other than GitLab. Without
   browser preview, `composerDraftStore.ts` does not keep an empty draft alive for an open page,

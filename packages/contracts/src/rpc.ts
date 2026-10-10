@@ -1643,6 +1643,8 @@ const WsSubscribeBackgroundPolicyRpc = Rpc.make(WS_METHODS.subscribeBackgroundPo
   stream: true,
 });
 
+// Coder: upstream's group, kept dormant with the RPCs only it uses. The helper serves
+// `CoderWsRpcGroup` alone, so nothing references this group.
 export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
