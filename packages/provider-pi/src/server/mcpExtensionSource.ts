@@ -257,6 +257,7 @@ function createMcpClient(endpoint: string, token: string) {
 
 // Coder: the workspace file bridge. Its catalog lists the tools, and each call runs the bridge
 // client with the arguments on stdin; a failed call prints its structured error and exits 1.
+// The printed JSON object is also the call's structured content, as T3's MCP server returns it.
 function createBridgeClient(command: string, catalogPath: string) {
   return {
     async connect(_signal?: AbortSignal) {},
@@ -284,8 +285,18 @@ function createBridgeClient(command: string, catalogPath: string) {
         child.on("close", (code: number | null) => {
           const output = Buffer.concat(stdout).toString("utf8").trim();
           const failure = Buffer.concat(stderr).toString("utf8").trim();
+          let structuredContent: unknown;
+          try {
+            const parsed: unknown = JSON.parse(output);
+            if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+              structuredContent = parsed;
+            }
+          } catch {
+            // Plain text output, such as a transport failure, has no structured content.
+          }
           resolve({
             content: [{ type: "text", text: output.length > 0 ? output : failure }],
+            ...(structuredContent === undefined ? {} : { structuredContent }),
             ...(code === 0 ? {} : { isError: true }),
           });
         });

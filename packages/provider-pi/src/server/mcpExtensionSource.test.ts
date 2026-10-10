@@ -316,6 +316,11 @@ describe("Pi T3 tools over the file bridge", () => {
         mode: "-",
         params: { limit: 2 },
       });
+      // Scripts get the call's typed result, as they do from T3's MCP server.
+      assert.deepEqual((result as { readonly structuredContent?: unknown }).structuredContent, {
+        content: result.content,
+        structuredContent: { tool: "t3_thread_list", mode: "-", params: { limit: 2 } },
+      });
       assert.notProperty(result, "isError");
     } finally {
       await NodeFSP.rm(directory, { recursive: true, force: true });
@@ -332,6 +337,11 @@ describe("Pi T3 tools over the file bridge", () => {
       };
       assert.isTrue(result.isError);
       assert.deepEqual(JSON.parse(result.content[0]!.text!), { error: "Broken" });
+      assert.deepEqual((result as { readonly structuredContent?: unknown }).structuredContent, {
+        content: result.content,
+        structuredContent: { error: "Broken" },
+        isError: true,
+      });
     } finally {
       await NodeFSP.rm(directory, { recursive: true, force: true });
     }
