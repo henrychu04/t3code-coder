@@ -176,7 +176,7 @@ export class GitLabWriteProbe extends Context.Service<
     readonly markPolicyBlocked: Effect.Effect<void>;
     readonly isPolicyBlockedWriteFailure: (stderr: string) => boolean;
   }
->()("t3/sourceControl/GitLabWriteProbe") {}
+>()("@t3tools/source-control-gitlab/server/GitLabWriteProbe") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export function make(behavior: GitLabWriteProbeBehavior = workspacePolicyWriteProbe) {
