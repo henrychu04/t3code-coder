@@ -1,5 +1,7 @@
 import {
+  MAX_PROJECT_HTML_BYTES,
   MAX_PROJECT_MEDIA_BYTES,
+  MAX_PROJECT_PDF_BYTES,
   MAX_SCREENSHOT_ARTIFACT_BYTES,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
   type ProjectFilesOwner,
@@ -11,12 +13,21 @@ import type { ImageResourceBlob } from "../components/chat/imageResources";
 export type ProjectImageTarget = ProjectFilesOwner &
   Pick<ProjectImageReadInput, "cwd" | "filePath">;
 
-export type ProjectMediaKind = "image" | "video" | "audio";
+// Coder: `pdf` and `html` are the documents the Files surface previews.
+export type ProjectMediaKind = "image" | "video" | "audio" | "pdf" | "html";
 const MAX_BYTES: Record<ProjectMediaKind, number> = {
   image: MAX_SCREENSHOT_ARTIFACT_BYTES,
   video: MAX_PROJECT_MEDIA_BYTES,
   audio: MAX_PROJECT_MEDIA_BYTES,
+  pdf: MAX_PROJECT_PDF_BYTES,
+  html: MAX_PROJECT_HTML_BYTES,
 };
+const acceptsMimeType = (kind: ProjectMediaKind, mimeType: string) =>
+  kind === "pdf"
+    ? mimeType === "application/pdf"
+    : kind === "html"
+      ? mimeType === "text/html"
+      : mimeType.startsWith(`${kind}/`);
 
 export function readProjectImageBlob(
   target: ProjectImageTarget,
@@ -53,7 +64,7 @@ export async function readProjectMediaBlob(
     const chunk = Uint8Array.from(atob(result.dataBase64), (c) => c.charCodeAt(0));
     const next = offset + chunk.length;
     if (
-      !result.mimeType.startsWith(`${kind}/`) ||
+      !acceptsMimeType(kind, result.mimeType) ||
       result.offset !== offset ||
       result.totalBytes !== first.totalBytes ||
       result.revision !== first.revision ||

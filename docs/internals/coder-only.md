@@ -153,11 +153,11 @@ deleted, or the helper stops. If a bridge cannot be created, turns run without T
 processes run as the same OS user; these directories are not an isolation boundary between mutually
 untrusted agents.
 
-The bridge carries upstream's orchestrator, thread, project, environment, worktree, and
-pull-request toolkits. The pull-request tools accept only merge requests on a GitLab host that a
+The bridge carries upstream's orchestrator, thread, project, environment, worktree, pull-request,
+and `html_render` toolkits. The pull-request tools accept only merge requests on a GitLab host that a
 workspace project uses; project clones go through the same GitLab-only repository service as the
-browser. Preview, device, and attachment-upload toolkits are not carried, and neither is
-upstream's MCP HTTP server.
+browser. Preview, device, attachment-upload, and `html_preview` toolkits are not carried, and
+neither is upstream's MCP HTTP server.
 
 Thread settlement is workspace-owned. The helper's settlement reactor checks persisted workspace
 settings at startup, after relevant settings changes, and once per minute, including while no
@@ -439,6 +439,7 @@ preload, inline videos show a play card and load only when pressed, with byte pr
 opened in main's gallery loads when the gallery opens. External web images and videos load directly
 from their host as on main. Like main's desktop policy, the gateway CSP allows `https:`/`http:` in
 `img-src`, `media-src`, and `connect-src`, plus `blob:`; `script-src` stays limited to the app.
+`frame-src` allows `'self'` (the document shells) and `blob:` (PDF previews).
 Main's `MediaActions` menu copies paths and URLs and offers Save and Copy image. Coder has no signed
 asset URL to re-request, so those byte actions read the media element's current source: the
 memory-only blob for workspace media, or the web URL, which works when its host allows CORS.
@@ -448,9 +449,17 @@ unavailable state with a download action.
 The Files surface uses main's image, video, and audio previews through the same helper reads. Opening
 the file is the explicit request, so it loads immediately. Images reread after a workspace mutation,
 like main's revision suffix; video and audio keep the loaded copy until the file is reopened, because
-a whole-file reread on every mutation would be expensive. PDF and HTML browser previews are not
-ported. Outside-project access is limited to validated media previews; the text Files surface and
-search retain project containment.
+a whole-file reread on every mutation would be expensive. PDF and HTML files preview as on main,
+but only inside the verified project root: the helper's media read accepts a `.pdf` with a `%PDF-`
+signature up to 50 MiB and a `.html`/`.htm` without NUL bytes up to 10 MiB, and the browser reads
+either whole into a memory-only blob when the file opens and again after a workspace mutation. A
+PDF renders in the browser's built-in viewer from that blob, in an unsandboxed frame as on main
+(a PDF runs no script in the app's origin). An HTML file toggles between source and page; the page
+is written into the gateway's document shell `/html-document-frame.html`, whose CSP sandbox is
+upstream's file frame (`allow-scripts allow-forms allow-popups`, no `allow-same-origin`, no
+`allow-downloads`). Its relative assets do not load, because there is no asset server. Outside-project
+access is limited to validated media previews; the text Files surface and search retain project
+containment.
 
 Remote uploads must first use a generated temporary filename and then be atomically renamed to
 their final generated filename after successful transfer. Failed or incomplete transfers must be
@@ -618,7 +627,8 @@ listed here is drift to remove rather than fork behavior to keep.
       hosts. `toolkits/environment/` reads the `CoderEnvironment` descriptor in place of
       upstream's `ServerEnvironment`.
     - `mcp/bridge/T3ToolInstructions.ts` reuses upstream's orchestration guidance without its MCP
-      and ACP transport paragraphs; its test fails if upstream rewords them.
+      and ACP transport paragraphs or its `html_preview` step; its test fails if upstream rewords
+      them.
     - `CodexAdapterV2.ts` configures no `mcp_servers`, attaches T3 context only when the bridge
       exists, and never advertises preview or device tools; `CodexDeveloperInstructions.ts` and
       `ClaudeAdapterV2.ts` describe the bridge command (`mcp/bridge/T3ToolInstructions.ts`) in
@@ -706,6 +716,24 @@ listed here is drift to remove rather than fork behavior to keep.
   `frame-src 'self'`, and every other gateway response keeps `frame-ancestors 'none'`. The shell's
   load and the written document's load both count as the app's own; a third load means the app
   navigated away.
+- **HTML renders.** Upstream's `html_render` tool, `HtmlRender` service, and inline frame, with
+  these Coder deltas (each marked `Coder:`):
+  - The bridge carries `html_render` only. `htmlRender/HtmlRender.ts` keeps upstream's image
+    inlining and storage but not `preview` or height measurement, because T3 Coder installs no
+    headless browser; pages publish at the agent's height, the frame shrinks to a shorter page's
+    reported height, and a page with its images inlined is capped at 10 MiB, the bounded turn-item read.
+  - Over the bridge the call is a shell command, so `htmlRenderFromBridgeCommand` (shared
+    `toolOutput.ts`) recognizes a completed `…/t3-tools-<id>/t3.mjs html_render` command whose
+    output is the tool's JSON result. `WireProjection` keeps only that compact reference on the
+    wire (other command output stays withheld), and the timeline shows the page there, as
+    upstream shows a `dynamic_tool` render. Any command could print such output, so
+    `workspace.readTurnItemAsset` (`html-render` asset) serves only a page stored in the item's own
+    thread, opened without following symlinks.
+  - `chat/HtmlRenderFrame.tsx` reads the page through that read and `files/BrowserDocumentFrame.tsx`
+    writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
+    signed URL carries it. **Open full size** shows the in-memory page and its source in
+    `AttachmentFilePreview`; there is no Save action.
+  - Pages are kept like other attachments; deleting a thread does not delete them.
 - **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does.
   The inspector reads each image by index from the stored item through `workspace.readTurnItemAsset`
   into the shared bounded image store, in place of upstream's signed `tool-output-image` asset
@@ -839,7 +867,9 @@ listed here is drift to remove rather than fork behavior to keep.
   page; image, video, and audio previews read through the helper instead of signed asset URLs
   (a workspace mutation rereads an open image, but video and audio reread only on retry or
   reopen because each read moves the whole file); a draft names its project rather than a thread;
-  there is no PDF or HTML browser preview, open-in-editor or reveal action, attachment preview,
+  PDF and HTML previews read through the same helper media chunks, project files only (see
+  [Network and transfer constraints](#network-and-transfer-constraints)); there is no
+  open-in-editor or reveal action, attachment preview,
   drag-to-composer mention, or Copy mention (the tree's only clipboard action is Copy path).
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs

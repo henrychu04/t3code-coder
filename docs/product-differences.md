@@ -18,6 +18,7 @@ against these decisions and record new intentional differences here.
   access modes appear when the selected workspace provider reports them.
 - Repository-local Git status, diffs, branches, worktrees, commits, checkpoints, and revert flows.
 - Thread organization, keyboard shortcuts, appearance preferences, and project-aware search.
+- Visual replies: HTML pages agents publish in the thread, and workspace MCP apps.
 
 ## Adjusted for Coder
 

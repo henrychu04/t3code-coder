@@ -3,7 +3,11 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import { MAX_SCREENSHOT_ARTIFACT_BYTES, ThreadId } from "@t3tools/contracts";
+import {
+  MAX_PROJECT_HTML_BYTES,
+  MAX_SCREENSHOT_ARTIFACT_BYTES,
+  ThreadId,
+} from "@t3tools/contracts";
 import { readProjectImage } from "./ProjectImages.ts";
 
 const png = Buffer.from(
@@ -207,4 +211,30 @@ it.effect(
       ])
         expect((yield* read(filePath).pipe(Effect.result))._tag).toBe("Failure");
     }),
+);
+
+// Coder: PDF and HTML previews read only project files within their own bounds.
+it.effect("reads project PDF and HTML documents but not ones outside the project", () =>
+  Effect.gen(function* () {
+    const root = yield* fixture;
+    const cwd = path.join(root, "project");
+    yield* Effect.promise(async () => {
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "spec.pdf"), "%PDF-1.7\n%stub\n");
+      await fs.writeFile(path.join(cwd, "page.html"), "<!doctype html><p>page</p>");
+      await fs.writeFile(path.join(cwd, "fake.pdf"), "not a pdf");
+      await fs.writeFile(path.join(cwd, "binary.html"), Buffer.from([60, 0, 62]));
+      await fs.writeFile(path.join(cwd, "huge.html"), "<p>");
+      await fs.truncate(path.join(cwd, "huge.html"), MAX_PROJECT_HTML_BYTES + 1);
+      await fs.writeFile(path.join(root, "outside.pdf"), "%PDF-1.7\n");
+    });
+    const read = (filePath: string) =>
+      readProjectImage({ threadId: ThreadId.make("thread"), cwd, filePath, offset: 0, limit: 512 });
+    expect((yield* read("spec.pdf")).mimeType).toBe("application/pdf");
+    expect((yield* read("page.html")).mimeType).toBe("text/html");
+    for (const filePath of ["fake.pdf", "binary.html", "huge.html", "../outside.pdf"]) {
+      expect((yield* read(filePath).pipe(Effect.result))._tag, filePath).toBe("Failure");
+    }
+    expect((yield* read(path.join(root, "outside.pdf")).pipe(Effect.result))._tag).toBe("Failure");
+  }).pipe(Effect.scoped),
 );

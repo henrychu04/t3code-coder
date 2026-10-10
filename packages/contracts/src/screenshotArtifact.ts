@@ -20,6 +20,10 @@ export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 export const MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES = 4 * 1024 * 1024;
 /** Workspace video and audio are read whole into browser memory, so they keep a larger explicit bound. */
 export const MAX_PROJECT_MEDIA_BYTES = 256 * 1024 * 1024;
+/** Coder: Files previews read a project PDF whole into browser memory, up to this size. */
+export const MAX_PROJECT_PDF_BYTES = 50 * 1024 * 1024;
+/** Coder: Files previews render a project HTML file, up to this size, in a sandboxed frame. */
+export const MAX_PROJECT_HTML_BYTES = 10 * 1024 * 1024;
 
 // Attachment reads share this id; upstream's thread-scoped attachment ids run up to 128 characters.
 export const ScreenshotArtifactId = TrimmedNonEmptyString.check(Schema.isMaxLength(128)).pipe(
@@ -116,6 +120,9 @@ export const ProjectMediaMimeType = Schema.Literals([
   "audio/aac",
   "audio/mp4",
   "audio/aiff",
+  // Coder: PDF and HTML documents the Files surface previews, project files only.
+  "application/pdf",
+  "text/html",
 ]);
 export type ProjectMediaMimeType = typeof ProjectMediaMimeType.Type;
 
@@ -152,6 +159,8 @@ export class ProjectImageReadError extends Schema.TaggedError<ProjectImageReadEr
 export const TurnItemAsset = Schema.Union([
   Schema.TaggedStruct("mcp-app-document", {}),
   Schema.TaggedStruct("tool-output-image", { index: NonNegativeInt }),
+  // Coder: the page an `html_render` call stored in the item's own thread.
+  Schema.TaggedStruct("html-render", {}),
 ]);
 export type TurnItemAsset = typeof TurnItemAsset.Type;
 

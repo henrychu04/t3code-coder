@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   compactDynamicToolOutput,
+  htmlRenderFromTurnItem,
   MAX_TOOL_OUTPUT_IMAGES,
   omitToolOutputImageData,
   toolOutputImages,
@@ -225,5 +226,46 @@ describe("toolOutputImages", () => {
       { mimeType: "image/jpeg" },
       { mimeType: "image/png" },
     ]);
+  });
+});
+
+// Coder: html_render reaches agents as a bridge shell command.
+describe("htmlRenderFromTurnItem", () => {
+  const reference = {
+    attachmentId: "thread-abc-123e4567-e89b-42d3-a456-426614174000-html",
+    title: "Chart",
+    height: 400,
+  };
+  const command = `/root/.t3-coder/node24/bin/node /tmp/t3-tools-AbC123/t3.mjs html_render '{"title":"Chart"}'`;
+
+  it("reads the render a successful bridge command printed", () => {
+    expect(
+      htmlRenderFromTurnItem({
+        type: "command_execution",
+        input: command,
+        output: JSON.stringify({ htmlRender: reference, message: "Shown" }),
+        exitCode: 0,
+      }),
+    ).toEqual(reference);
+  });
+
+  it("ignores other commands, failures, and malformed output", () => {
+    const output = JSON.stringify({ htmlRender: reference });
+    expect(
+      htmlRenderFromTurnItem({ type: "command_execution", input: `echo '${output}'`, output }),
+    ).toBeUndefined();
+    expect(
+      htmlRenderFromTurnItem({ type: "command_execution", input: command, output, exitCode: 1 }),
+    ).toBeUndefined();
+    expect(
+      htmlRenderFromTurnItem({ type: "command_execution", input: command, output: "not json" }),
+    ).toBeUndefined();
+    expect(
+      htmlRenderFromTurnItem({
+        type: "command_execution",
+        input: command.replace("html_render", "thread_list"),
+        output,
+      }),
+    ).toBeUndefined();
   });
 });

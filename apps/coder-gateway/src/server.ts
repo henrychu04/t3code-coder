@@ -23,7 +23,7 @@ import * as FiberSet from "effect/FiberSet";
 import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 import { WebSocket, WebSocketServer } from "ws";
-import { MCP_APP_FRAME_PATH } from "@t3tools/shared/mcpApp";
+import { HTML_DOCUMENT_FRAME_PATH, MCP_APP_FRAME_PATH } from "@t3tools/shared/mcpApp";
 
 import {
   emptyCoderProfileConfig,
@@ -126,11 +126,18 @@ const mcpAppFrameHtml = `<!doctype html>
   });
 </script>`;
 
-function sendMcpAppFrame(response: NodeHttp.ServerResponse): void {
+/**
+ * Coder: the shell also frames agent HTML renders (same sandbox as upstream's render frame) and,
+ * with `allow-popups` so their links open new tabs, HTML files previewed in Files.
+ */
+function sendMcpAppFrame(
+  response: NodeHttp.ServerResponse,
+  sandbox = "allow-scripts allow-forms",
+): void {
   response.writeHead(200, {
     "Cache-Control": "no-store",
     "Content-Type": "text/html; charset=utf-8",
-    "Content-Security-Policy": "sandbox allow-scripts allow-forms; frame-ancestors 'self'",
+    "Content-Security-Policy": `sandbox ${sandbox}; frame-ancestors 'self'`,
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "SAMEORIGIN",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -149,7 +156,7 @@ function sendText(
     "Cache-Control": "no-store",
     "Content-Type": contentType,
     "Content-Security-Policy":
-      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'sha256-66N88M2Gs4tvXNc8z6k+OKKok8OCKne3d83NpL7KJ9A='; connect-src 'self' blob: https: http: ws://127.0.0.1:*; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; worker-src 'self' blob:; object-src 'none'; frame-src 'self'",
+      "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval' 'sha256-66N88M2Gs4tvXNc8z6k+OKKok8OCKne3d83NpL7KJ9A='; connect-src 'self' blob: https: http: ws://127.0.0.1:*; img-src 'self' data: blob: https: http:; media-src 'self' blob: https: http:; worker-src 'self' blob:; object-src 'none'; frame-src 'self' blob:",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Cross-Origin-Resource-Policy": "same-origin",
@@ -2366,6 +2373,10 @@ export function makeLocalCoderGateway(
           } finally {
             response.off("close", abortUpload);
           }
+          return;
+        }
+        if (request.method === "GET" && requestUrl.pathname === HTML_DOCUMENT_FRAME_PATH) {
+          sendMcpAppFrame(response, "allow-scripts allow-forms allow-popups");
           return;
         }
         if (request.method === "GET" && requestUrl.pathname === MCP_APP_FRAME_PATH) {

@@ -39,6 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { projectMediaReference } from "~/components/chat/projectMediaReference";
 import { useProjectImages } from "~/components/chat/useProjectImages";
 import { useProjectMedia, type ProjectVideoSource } from "~/components/chat/useProjectVideo";
+import { BrowserDocumentFrame, isPdfPreviewFile } from "./BrowserDocumentFrame";
 import { MediaVideoPlayer } from "~/components/media/MediaVideoPlayer";
 import { MediaActions, type MediaActionSource } from "~/components/media/MediaActions";
 import { MorphIcon } from "~/components/MorphIcon";
@@ -121,6 +122,8 @@ interface FilePreviewPanelProps {
 const FILE_EXPLORER_STORAGE_KEY = "t3code.fileExplorerOpen";
 const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";
 const RENDER_TABLE_STORAGE_KEY = "t3code.renderTable";
+const RENDER_BROWSER_FILE_STORAGE_KEY = "t3code.renderBrowserFile";
+const isHtmlPreviewFile = (path: string): boolean => /\.html?$/i.test(path);
 // Shared by the read-only and annotated surfaces, so it is generic over annotation metadata.
 type FilePostRender = <LAnnotation>(
   fileContainer: HTMLElement,
@@ -131,7 +134,9 @@ type FilePostRender = <LAnnotation>(
 /**
  * Coder: main loads workspace media from signed asset URLs; Coder reads each file through bounded
  * helper stdio chunks into a memory-only blob URL. Opening the file is the explicit request, so
- * the read starts immediately. There is no PDF or HTML browser preview. Unlike main's re-signed
+ * the read starts immediately. PDFs open in the browser's viewer and HTML pages in the sandboxed
+ * document shell (see BrowserDocumentFrame); a page's relative assets do not load, because there
+ * is no asset server to resolve them against. Unlike main's re-signed
  * URLs, video and audio do not reread on workspace mutations: each read moves the whole file
  * through helper stdio, so a retry or reopen shows the current file.
  */
@@ -175,6 +180,36 @@ function WorkspaceImagePreview(props: {
       <Spinner size="lg" />
     </div>
   );
+}
+
+/** Coder: a project PDF or HTML file read whole through the helper, then rendered from memory. */
+function WorkspaceBrowserPreview(props: {
+  readonly source: ProjectVideoSource;
+  readonly kind: "pdf" | "html";
+  readonly title: string;
+}) {
+  const { state, retry } = useProjectMedia(props.kind, props.source, true);
+  const url = state.status === "loaded" ? state.src : null;
+  const [html, setHtml] = useState<{ readonly url: string; readonly text: string } | null>(null);
+  useEffect(() => {
+    if (props.kind !== "html" || url === null) return;
+    let cancelled = false;
+    void fetch(url)
+      .then((response) => response.text())
+      .then((text) => {
+        if (!cancelled) setHtml({ url, text });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.kind, url]);
+  if (state.status === "failed") {
+    return <FileSurfaceFailure message="Unable to load file preview." onRetry={retry} />;
+  }
+  if (url === null) return <FileSurfaceLoading />;
+  if (props.kind === "pdf") return <BrowserDocumentFrame pdfUrl={url} title={props.title} />;
+  if (html === null || html.url !== url) return <FileSurfaceLoading />;
+  return <BrowserDocumentFrame html={html.text} title={props.title} />;
 }
 
 function WorkspaceVideoPreview(props: {
@@ -895,9 +930,10 @@ function RenderedMarkdownSurface({
   );
 }
 
-function renderedToggleLabel(mode: "markdown" | "table", rendered: boolean): string {
+function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: boolean): string {
   if (mode === "markdown") return rendered ? "Show markdown source" : "Show rendered markdown";
-  return rendered ? "Show source" : "Show table";
+  if (mode === "table") return rendered ? "Show source" : "Show table";
+  return rendered ? "Show HTML source" : "Show rendered page";
 }
 
 function initialExplorerOpen(): boolean {
@@ -939,6 +975,9 @@ export default function FilePreviewPanel({
   const isAudio = relativePath !== null && !isVideo && isWorkspaceAudioPreviewPath(relativePath);
   const isImage = relativePath !== null && !isVideo && isWorkspaceImagePreviewPath(relativePath);
   const isMedia = isImage || isVideo || isAudio;
+  // Coder: PDFs have no text to show; HTML has, and can toggle between page and source.
+  const isPdf = relativePath !== null && isPdfPreviewFile(relativePath);
+  const isHtml = relativePath !== null && !isPdf && isHtmlPreviewFile(relativePath);
   // A file outside the workspace (an absolute path) is shown, never edited.
   const isHostFile = relativePath !== null && isAbsolutePath(relativePath);
   const fileAccess = useFilesystemReadAccess(environmentId);
@@ -952,7 +991,7 @@ export default function FilePreviewPanel({
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
   // Coder: media reads go through the helper by owner, root, and project-relative path.
   const mediaSource: ProjectVideoSource | null =
-    relativePath !== null && isMedia
+    relativePath !== null && (isMedia || isPdf || isHtml)
       ? { environmentId, target: { ...owner, cwd, filePath: relativePath } }
       : null;
   // A chat link cannot tell a folder from a file, so a folder arrives here as
@@ -981,6 +1020,11 @@ export default function FilePreviewPanel({
     true,
     Schema.Boolean,
   );
+  const [renderBrowserFilePreferred, setRenderBrowserFilePreferred] = useLocalStorage(
+    RENDER_BROWSER_FILE_STORAGE_KEY,
+    true,
+    Schema.Boolean,
+  );
   // Paired with the path on purpose: each file surface counts its reveals from
   // one, so a bare id would let a dismissed reveal on one file swallow the first
   // reveal on the next.
@@ -996,11 +1040,14 @@ export default function FilePreviewPanel({
     (handledReveal?.path === relativePath && handledReveal.requestId === revealRequestId);
   const renderMarkdown = isMarkdown && renderMarkdownPreferred && revealHandled;
   const renderTable = tableDelimiter !== null && renderTablePreferred && revealHandled;
+  const renderHtml = isHtml && renderBrowserFilePreferred && revealHandled;
   const renderedMode = isMarkdown
     ? ("markdown" as const)
-    : tableDelimiter
-      ? ("table" as const)
-      : null;
+    : isHtml
+      ? ("html" as const)
+      : tableDelimiter
+        ? ("table" as const)
+        : null;
   const canToggleRendered = previewPath !== null && renderedMode !== null;
   const updateClientSettings = useUpdateClientSettings();
   // Word wrap only reaches the text bodies. A rendered Markdown document and a table lay
@@ -1008,10 +1055,16 @@ export default function FilePreviewPanel({
   const showsRawText =
     previewPath !== null &&
     file.data !== null &&
+    !isPdf &&
     !(isMarkdown && renderMarkdown) &&
+    !(isHtml && renderHtml) &&
     !(tableDelimiter && renderTable);
-  const rendered = isMarkdown ? renderMarkdown : renderTable;
-  const setRenderedPreferred = isMarkdown ? setRenderMarkdownPreferred : setRenderTablePreferred;
+  const rendered = isMarkdown ? renderMarkdown : isHtml ? renderHtml : renderTable;
+  const setRenderedPreferred = isMarkdown
+    ? setRenderMarkdownPreferred
+    : isHtml
+      ? setRenderBrowserFilePreferred
+      : setRenderTablePreferred;
   const onFilePostRender = useFileLineReveal(relativePath, revealLine, revealRequestId);
   useWorkspaceMutationRefresh({
     enabled:
@@ -1019,7 +1072,7 @@ export default function FilePreviewPanel({
       // Media never shows its contents, so re-reading it on every workspace
       // mutation is waste. A folder named like one still re-reads, so it
       // notices when the path becomes a file.
-      (isDirectory || !isMedia) &&
+      (isDirectory || (!isMedia && !isPdf)) &&
       !selectedFilePending,
     mutationId: workspaceMutationId,
     refresh: file.refresh,
@@ -1160,7 +1213,7 @@ export default function FilePreviewPanel({
           </Button>
         </div>
       ) : null}
-      {previewPath && !isMedia && file.data?.truncated ? (
+      {previewPath && !isMedia && !isPdf && !renderHtml && file.data?.truncated ? (
         <div className="shrink-0 border-b border-warning/20 bg-warning-surface px-3 py-1.5 text-2xs text-warning-foreground">
           Preview limited to the first 1 MB of a {file.data.byteLength.toLocaleString()} byte file.
         </div>
@@ -1180,6 +1233,14 @@ export default function FilePreviewPanel({
               key={`${environmentId}:${threadRef.threadId}:${relativePath}`}
               source={mediaSource}
               name={relativePath ?? "audio"}
+            />
+          ) : mediaSource && (isPdf || renderHtml) ? (
+            // Like images, a workspace mutation rereads the current document.
+            <WorkspaceBrowserPreview
+              key={`${relativePath}:${workspaceMutationId ?? ""}`}
+              source={mediaSource}
+              kind={isPdf ? "pdf" : "html"}
+              title={relativePath ?? "document"}
             />
           ) : mediaSource && isImage ? (
             // Like main's revision suffix, a workspace mutation rereads the current image.

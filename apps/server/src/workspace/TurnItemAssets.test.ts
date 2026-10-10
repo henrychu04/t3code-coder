@@ -132,4 +132,36 @@ describe("readTurnItemAssetChunk", () => {
       "Failure",
     );
   });
+
+  // Coder: a page published through the T3 tool bridge's shell command.
+  it("reads a bridge html_render page only from the item's own thread", async () => {
+    const commandItem = (reference: string): OrchestrationV2TurnItem => {
+      const {
+        toolName: _toolName,
+        output: _output,
+        ...base
+      } = toolItem(undefined) as Extract<OrchestrationV2TurnItem, { type: "dynamic_tool" }>;
+      return {
+        ...base,
+        type: "command_execution",
+        input: `/nix/node /tmp/t3-tools-AbC123/t3.mjs html_render -`,
+        output: JSON.stringify({
+          htmlRender: { attachmentId: reference, title: "Chart", height: 320 },
+        }),
+        exitCode: 0,
+      };
+    };
+    const html = "<!doctype html><p>chart</p>";
+    await fs.writeFile(path.join(attachmentsDir, `${attachmentId}.html`), html);
+    const page = await read(commandItem(attachmentId), { _tag: "html-render" });
+    expect(
+      page._tag === "Success" && Buffer.from(page.success.dataBase64, "base64").toString(),
+    ).toBe(html);
+
+    const otherThreadPage = "thread-other-550e8400-e29b-41d4-a716-446655440000-html";
+    await fs.writeFile(path.join(attachmentsDir, `${otherThreadPage}.html`), html);
+    expect((await read(commandItem(otherThreadPage), { _tag: "html-render" }))._tag).toBe(
+      "Failure",
+    );
+  });
 });

@@ -192,6 +192,22 @@ describe("local Coder gateway", () => {
     strictEqual(shell.body.includes("event.source !== parent"), true);
   });
 
+  // Coder: HTML files previewed in Files may open their links in new tabs, and PDFs render
+  // from memory-only blobs in the browser's viewer.
+  it("serves the HTML document shell with popups and allows blob frames for PDFs", async () => {
+    const gateway = await startLocalCoderGateway();
+    closeGateway = gateway.close;
+    const page = await request({ url: `${gateway.url}/healthz` });
+    strictEqual(page.headers["content-security-policy"]?.includes("frame-src 'self' blob:"), true);
+    const shell = await request({ url: `${gateway.url}/html-document-frame.html` });
+    strictEqual(shell.statusCode, 200);
+    strictEqual(
+      shell.headers["content-security-policy"],
+      "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'",
+    );
+    strictEqual(shell.body.includes("event.source !== parent"), true);
+  });
+
   it("rejects an unexpected Host header", async () => {
     const gateway = await startLocalCoderGateway();
     closeGateway = gateway.close;

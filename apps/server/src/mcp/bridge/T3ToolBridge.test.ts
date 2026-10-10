@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -20,6 +20,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import * as CoderEnvironment from "../../coderEnvironment.ts";
+import * as ServerConfig from "../../config.ts";
 import * as Orchestrator from "../../orchestration-v2/Orchestrator.ts";
 import * as ProviderAdapterRegistry from "../../orchestration-v2/ProviderAdapterRegistry.ts";
 import * as ThreadManagementService from "../../orchestration-v2/ThreadManagementService.ts";
@@ -135,6 +136,9 @@ const harness = (options: {
       Layer.mock(ProviderRegistry.ProviderRegistry)({}),
       Layer.mock(ProviderAdapterRegistry.ProviderAdapterRegistryV2)({}),
       T3ToolDispatch.layer,
+      ServerConfig.layerTest(process.cwd(), { prefix: "t3-tool-bridge-" }).pipe(
+        Layer.provide(NodeServices.layer),
+      ),
       NodeServices.layer,
     );
     const context = yield* Layer.build(services);
@@ -159,7 +163,8 @@ const harness = (options: {
           }),
         ),
       );
-    return { registry, credential, call, commands };
+    const config = Context.get(context, ServerConfig.ServerConfig);
+    return { registry, credential, call, commands, config };
   });
 
 it.live("links a merge request through the bridge CLI with upstream's handler", () =>
@@ -261,10 +266,44 @@ it("publishes unique tools with reference-free object-root input schemas", () =>
     assert.notInclude(JSON.stringify(entry.inputSchema), '"$ref"', entry.name);
     assert.isAbove(entry.description.length, 0, entry.name);
   }
-  for (const name of ["delegate_task", "task_status", "t3_thread_launch", "link_pull_request"]) {
+  for (const name of [
+    "delegate_task",
+    "task_status",
+    "t3_thread_launch",
+    "link_pull_request",
+    "html_render",
+  ]) {
     assert.include(names, name);
   }
-  for (const name of ["preview_open", "device_list", "t3_attachment_prepare_upload"]) {
+  for (const name of [
+    "preview_open",
+    "device_list",
+    "t3_attachment_prepare_upload",
+    "html_preview",
+  ]) {
     assert.notInclude(names, name);
   }
 });
+
+// Coder: html_render runs over the bridge and stores the page as a thread attachment.
+it.live("publishes an HTML render as a thread attachment through the bridge", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { call, config } = yield* harness({});
+      const result = yield* call(
+        "html_render",
+        JSON.stringify({ html: "<!doctype html><p>Chart</p>", title: "Chart", height: 320 }),
+      );
+      assert.strictEqual(result.ok, true);
+      const output = result.output as {
+        readonly htmlRender: { readonly attachmentId: string; readonly title: string };
+      };
+      assert.strictEqual(output.htmlRender.title, "Chart");
+      assert.match(output.htmlRender.attachmentId, /^thread-bridge-.*-html$/u);
+      const page = yield* Effect.promise(() =>
+        readFile(`${config.attachmentsDir}/${output.htmlRender.attachmentId}.html`, "utf8"),
+      );
+      assert.include(page, "<p>Chart</p>");
+    }),
+  ),
+);

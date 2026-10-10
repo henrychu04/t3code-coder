@@ -11,6 +11,9 @@ describe("T3 tool bridge instructions", () => {
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).not.toMatch(/MCP|ACP|acp-mcp-call/u);
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain("Use `delegate_task`");
     expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain("stable `clientRequestId`");
+    // Coder: html_preview is not carried.
+    expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).not.toContain("html_preview");
+    expect(T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS).toContain("then publish it with `html_render`");
   });
 
   it("names the thread's exact command", () => {

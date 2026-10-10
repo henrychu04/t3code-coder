@@ -9,6 +9,7 @@ import {
   omitToolOutputImageData,
   toolOutputImages,
   toolOutputIndicatesFailure,
+  htmlRenderFromBridgeCommand,
 } from "@t3tools/shared/toolOutput";
 
 const MAX_DETAIL_STRING_BYTES = 32_768;
@@ -88,10 +89,17 @@ export function projectTurnItemForWire(item: OrchestrationV2TurnItem): Orchestra
         (item.exitCode !== undefined && item.exitCode !== 0) ||
         (output !== undefined &&
           toolOutputIndicatesFailure(output.slice(0, MAX_DETAIL_STRING_BYTES)));
+      // Coder: an `html_render` call over the T3 tool bridge is a shell command. Keep only its
+      // compact page reference, as the dynamic-tool output keeps upstream's, so the page shows.
+      const htmlRender = htmlRenderFromBridgeCommand(item);
       return {
         ...projected,
         ...(failed ? { outputIndicatesFailure: true } : {}),
-        ...(output?.trim() ? { outputOmitted: true } : {}),
+        ...(htmlRender !== undefined
+          ? { output: JSON.stringify({ htmlRender }) }
+          : output?.trim()
+            ? { outputOmitted: true }
+            : {}),
       };
     }
     case "file_change": {

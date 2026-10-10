@@ -18,6 +18,7 @@ the update here.
 - [Message composer](./user/composer.md)
 - [Files and search](./user/files-and-search.md)
 - [Images and screenshots](./user/images-and-screenshots.md)
+- [Visual replies and MCP apps](./user/html-renders.md)
 - [Source control](./user/source-control.md)
 - [Terminal history](./user/terminal.md)
 - [Appearance and themes](./user/appearance.md)

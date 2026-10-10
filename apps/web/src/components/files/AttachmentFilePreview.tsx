@@ -14,6 +14,7 @@ import { formatAttachmentSize } from "~/lib/attachmentDisplay";
 import { cn } from "~/lib/utils";
 
 import { AudioPreview } from "./AudioPreview";
+import { BrowserDocumentFrame } from "./BrowserDocumentFrame";
 import { DelimitedTablePreview } from "./DelimitedTablePreview";
 import {
   FILE_SURFACE_SUBHEADER_CLASS,
@@ -44,8 +45,9 @@ function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: bool
  * A draft attachment shown with the same chrome as a workspace file: one header row with crumbs
  * and icon actions, then the document.
  *
- * Coder: only draft files, whose bytes are still in browser memory, are previewed. There is no
- * signed asset URL to read a submitted attachment from, and no Save action (no downloads).
+ * Coder: previews bytes already in browser memory (a draft file, or an agent's HTML render the
+ * helper read). There is no signed asset URL to read a submitted attachment from, and no Save
+ * action (no downloads).
  */
 export function AttachmentFilePreview(props: {
   name: string;
@@ -53,6 +55,8 @@ export function AttachmentFilePreview(props: {
   /** Zero when unknown. */
   sizeBytes: number;
   file: Blob;
+  /** An agent's HTML render, shown in the app theme. */
+  htmlRender?: boolean;
   /** First crumb: where the file comes from. */
   origin?: string;
   onRemove?: () => void;
@@ -60,7 +64,8 @@ export function AttachmentFilePreview(props: {
 }) {
   const kind = filePreviewKind(props);
   const delimiter = filePreviewDelimiter(props);
-  const renderedMode = kind === "markdown" ? "markdown" : delimiter ? "table" : null;
+  const renderedMode =
+    kind === "markdown" ? "markdown" : kind === "html" ? "html" : delimiter ? "table" : null;
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
   const [localUrl, setLocalUrl] = useState<string | null>(null);
   const [rendered, setRendered] = useState(true);
@@ -77,8 +82,24 @@ export function AttachmentFilePreview(props: {
     return () => URL.revokeObjectURL(url);
   }, [props.file]);
   const url = localUrl;
-  // Coder: HTML pages have no rendered view here, so they show their source.
-  const needsText = kind === "text" || kind === "markdown" || kind === "html";
+  const needsText = kind === "text" || kind === "markdown" || (kind === "html" && !rendered);
+  // Coder: a rendered page needs its whole source, which the bounded text preview may cut.
+  const [pageHtml, setPageHtml] = useState<string | null>(null);
+  useEffect(() => {
+    if (kind !== "html") return;
+    let cancelled = false;
+    void props.file.text().then(
+      (text) => {
+        if (!cancelled) setPageHtml(text);
+      },
+      () => {
+        if (!cancelled) setError("Could not load this page.");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, props.file]);
   useEffect(() => {
     if (!needsText || !url) return;
     const controller = new AbortController();
@@ -131,6 +152,18 @@ export function AttachmentFilePreview(props: {
       </ScrollArea>
     ) : (
       <ReadOnlySourcePreview name={props.name} text={content.text} />
+    )
+  ) : kind === "pdf" ? (
+    <BrowserDocumentFrame pdfUrl={url} title={props.name} />
+  ) : kind === "html" ? (
+    pageHtml === null ? (
+      <FileSurfaceLoading />
+    ) : (
+      <BrowserDocumentFrame
+        html={pageHtml}
+        title={props.name}
+        htmlRender={props.htmlRender === true}
+      />
     )
   ) : kind === "audio" ? (
     <AudioPreview src={url} name={props.name} onError={() => setError("Unable to load audio.")} />

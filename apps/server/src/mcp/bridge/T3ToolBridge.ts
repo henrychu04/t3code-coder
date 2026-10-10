@@ -35,6 +35,9 @@ import * as ProjectToolkitHandlers from "../toolkits/project/handlers.ts";
 import { ProjectToolkit } from "../toolkits/project/tools.ts";
 import * as WorktreeToolkitHandlers from "../toolkits/worktree/handlers.ts";
 import { WorktreeToolkit } from "../toolkits/worktree/tools.ts";
+import * as HtmlToolkitHandlers from "../toolkits/html/handlers.ts";
+import { HtmlRenderToolkit } from "../toolkits/html/tools.ts";
+import * as HtmlRender from "../../htmlRender/HtmlRender.ts";
 import * as WorktreeMcpService from "../WorktreeMcpService.ts";
 import {
   type FileBridgeCatalogEntry,
@@ -43,7 +46,10 @@ import {
 } from "./FileBridge.ts";
 import { type T3ToolBinding, t3ToolFailure } from "./T3ToolDispatch.ts";
 
-/** Upstream's toolkits the bridge carries. Preview, device, and attachment uploads stay out. */
+/**
+ * Upstream's toolkits the bridge carries. Preview, device, attachment uploads, and `html_preview`
+ * stay out.
+ */
 const BridgedToolkit = Toolkit.merge(
   OrchestratorToolkit,
   ThreadToolkit,
@@ -51,6 +57,7 @@ const BridgedToolkit = Toolkit.merge(
   EnvironmentToolkit,
   WorktreeToolkit,
   PullRequestsToolkit,
+  HtmlRenderToolkit,
 );
 
 /** Handlers as upstream's MCP server registers them. */
@@ -66,6 +73,9 @@ const BridgedHandlersLive = Layer.mergeAll(
     Layer.provide(WorktreeMcpService.layer),
   ),
   McpToolAccess.HandlersLayer.layer(PullRequestsToolkitHandlers.layer),
+  McpToolAccess.HandlersLayer.layer(HtmlToolkitHandlers.layerRender).pipe(
+    Layer.provide(HtmlRender.layer),
+  ),
 );
 
 const INLINE_BUDGET_MS = 8_000;

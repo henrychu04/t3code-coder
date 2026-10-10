@@ -92,6 +92,13 @@ claim: shared provider protocols may still report subscription metadata.
     project-relative path—not file contents or an absolute path—on the local clipboard. Ordinary
     user-initiated reads and edits retain the 1 MiB limit and all existing path, UTF-8, binary-file,
     symlink, and stale-write validation.
+  - **PDF and HTML previews in Files.** The Files surface may preview PDF files (at most 50 MiB,
+    `%PDF-` signature) and HTML files (at most 10 MiB, no NUL bytes) inside the verified project
+    root only, read whole through the bounded helper media chunks when the user opens the file and
+    kept as memory-only blobs. A PDF renders in the browser's built-in viewer from its blob URL
+    (the page CSP allows `frame-src blob:` for this). An HTML file is written into the gateway's
+    sandboxed document shell (`sandbox allow-scripts allow-forms allow-popups`, never
+    `allow-same-origin`); its relative assets do not load. There is no Save, download, or export.
   - **Project-content search (the only additional text-content exception).**
     - Filename and path search must continue to use a lightweight path-only FFF index.
     - Content search may use a separate, on-demand, content-enabled `@ff-labs/fff-node` index only
@@ -154,6 +161,15 @@ claim: shared provider protocols may still report subscription metadata.
       chunk RPC. Submitted composer attachments remain preserved. Saved legacy image artifacts may be deleted by
       the upstream-compatible, opt-in artifact retention policy; cleanup is disabled by default.
       Never delete current workspace source images through this policy.
+  - **HTML renders.** Agents may publish a self-contained HTML page with upstream's T3
+    `html_render` tool over the workspace file bridge; `html_preview` and its headless browser are
+    not carried, and nothing is downloaded. The helper inlines only absolute-path images it
+    validates as images, stores the page (at most 10 MiB) as an attachment of the calling thread,
+    and serves it through the bounded turn-item read only for the stored item that references it
+    in that same thread. The browser writes it into the gateway's sandboxed MCP App shell
+    (`allow-scripts allow-forms`, never `allow-same-origin`, no camera, microphone, geolocation, or
+    clipboard permission). Links the page asks to open follow the Markdown link rule. Pages can be
+    viewed full size with their source, but there is no Save, download, or export.
   - **MCP Apps.** Interactive UIs that the workspace's own MCP servers declare may render inline in
     upstream's sandboxed iframe (`allow-scripts allow-forms`, never `allow-same-origin`). Their
     resource reads and tool calls go only through the helper's stdio RPC. The captured app document

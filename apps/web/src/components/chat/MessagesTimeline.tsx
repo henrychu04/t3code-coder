@@ -164,6 +164,7 @@ import { isAttachmentImageMimeType, useAssetUrls } from "../../assets/assetUrls"
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { buildExpandedImagePreview, ExpandedImagePreview } from "./ExpandedImagePreview";
 import { ProposedPlanCard } from "./ProposedPlanCard";
+import { HtmlRenderFrame } from "./HtmlRenderFrame";
 import { McpAppFrame } from "./McpAppFrame";
 import { ChangedFilesCard } from "./ChangedFilesTree";
 import { useFileContextMenuHandler } from "../../fileContextMenu";
@@ -2059,7 +2060,7 @@ const TimelineRowContent = memo(function TimelineRowContent({ row }: { row: Time
       {row.kind === "message" ? <LegacyScreenshotArtifactsTimelineRow row={row} /> : null}
       {row.kind === "assistant-meta" ? <AssistantMetaTimelineRow row={row} /> : null}
       {row.kind === "proposed-plan" ? <ProposedPlanTimelineRow row={row} /> : null}
-      {/* Coder: there is no html_render tool, so html-render rows have no frame. */}
+      {row.kind === "html-render" ? <HtmlRenderTimelineRow row={row} /> : null}
       {row.kind === "mcp-app" ? <McpAppTimelineRow row={row} /> : null}
       {row.kind === "working" ? <WorkingTimelineRow row={row} /> : null}
       {row.kind === "worktree-setup" ? <WorktreeSetupTimelineRow row={row} /> : null}
@@ -2863,6 +2864,23 @@ function ProposedPlanTimelineRow({
         threadRef={ctx.threadRef ?? undefined}
         cwd={ctx.markdownCwd}
         findActive={ctx.findActive}
+      />
+    </div>
+  );
+}
+
+function HtmlRenderTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "html-render" }> }) {
+  const ctx = use(TimelineRowCtx);
+
+  return (
+    <div className="min-w-0 px-1">
+      <HtmlRenderFrame
+        // A recycled row must not keep another page's frozen frame.
+        key={row.htmlRender.attachmentId}
+        environmentId={ctx.activeThreadEnvironmentId}
+        threadId={row.sourceThreadId}
+        itemId={row.itemId}
+        htmlRender={row.htmlRender}
       />
     </div>
   );
