@@ -9,6 +9,7 @@ import * as NodeFS from "node:fs/promises";
 
 import {
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
+  MAX_TURN_ITEM_ASSET_BYTES,
   type OrchestrationV2TurnItem,
   type ThreadId,
   type TurnItemAssetChunk,
@@ -19,6 +20,7 @@ import {
 } from "@t3tools/contracts";
 import { MCP_APP_MAX_HTML_BYTES } from "@t3tools/shared/mcpApp";
 import {
+  htmlRenderFromTurnItem,
   MAX_TOOL_OUTPUT_IMAGE_BASE64_LENGTH,
   mcpAppFromToolItem,
   toolOutputImages,
@@ -26,7 +28,12 @@ import {
 import * as Effect from "effect/Effect";
 
 import { resolveAttachmentRelativePath } from "../attachmentPaths.ts";
-import { parseAttachmentFileExtension, parseAttachmentUuid } from "../attachmentStore.ts";
+import {
+  parseAttachmentFileExtension,
+  parseAttachmentUuid,
+  parseThreadSegmentFromAttachmentId,
+  toSafeThreadAttachmentSegment,
+} from "../attachmentStore.ts";
 
 const IMAGE_MIME_TYPES: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/webp"]);
 
@@ -70,16 +77,61 @@ async function readMcpAppDocument(
 ): Promise<AssetBytes | undefined> {
   if (item.type !== "dynamic_tool") return undefined;
   const app = mcpAppFromToolItem(item);
+  if (app === undefined) return undefined;
+  return readHtmlAttachment(
+    attachmentsDir,
+    app.attachmentId,
+    MCP_APP_MAX_HTML_BYTES,
+    offset,
+    limit,
+  );
+}
+
+/**
+ * Coder: the page an `html_render` call stored. The bridge's result is command output any command
+ * could print, so only a page stored in the item's own thread is read.
+ */
+async function readHtmlRenderPage(
+  attachmentsDir: string,
+  threadId: ThreadId,
+  item: OrchestrationV2TurnItem,
+  offset: number,
+  limit: number,
+): Promise<AssetBytes | undefined> {
+  const reference = htmlRenderFromTurnItem(item);
+  const segment = toSafeThreadAttachmentSegment(threadId);
   if (
-    app === undefined ||
-    parseAttachmentUuid(app.attachmentId) === null ||
-    parseAttachmentFileExtension(app.attachmentId) !== "html"
+    reference === undefined ||
+    segment === null ||
+    parseThreadSegmentFromAttachmentId(reference.attachmentId) !== segment
+  ) {
+    return undefined;
+  }
+  return readHtmlAttachment(
+    attachmentsDir,
+    reference.attachmentId,
+    MAX_TURN_ITEM_ASSET_BYTES,
+    offset,
+    limit,
+  );
+}
+
+async function readHtmlAttachment(
+  attachmentsDir: string,
+  attachmentId: string,
+  maxBytes: number,
+  offset: number,
+  limit: number,
+): Promise<AssetBytes | undefined> {
+  if (
+    parseAttachmentUuid(attachmentId) === null ||
+    parseAttachmentFileExtension(attachmentId) !== "html"
   ) {
     return undefined;
   }
   const filePath = resolveAttachmentRelativePath({
     attachmentsDir,
-    relativePath: `${app.attachmentId}.html`,
+    relativePath: `${attachmentId}.html`,
   });
   if (filePath === null) return undefined;
   const handle = await NodeFS.open(
@@ -88,7 +140,7 @@ async function readMcpAppDocument(
   );
   try {
     const stat = await handle.stat();
-    if (!stat.isFile() || stat.size === 0 || stat.size > MCP_APP_MAX_HTML_BYTES) return undefined;
+    if (!stat.isFile() || stat.size === 0 || stat.size > maxBytes) return undefined;
     if (offset >= stat.size) return undefined;
     const buffer = Buffer.allocUnsafe(Math.min(limit, stat.size - offset));
     const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, offset);
@@ -118,7 +170,15 @@ export const readTurnItemAssetChunk = Effect.fn("TurnItemAssets.readChunk")(func
       : input.asset._tag === "tool-output-image"
         ? readToolOutputImage(item, input.asset.index, input.offset, limit)
         : yield* Effect.tryPromise(() =>
-            readMcpAppDocument(dependencies.attachmentsDir, item, input.offset, limit),
+            input.asset._tag === "html-render"
+              ? readHtmlRenderPage(
+                  dependencies.attachmentsDir,
+                  input.threadId,
+                  item,
+                  input.offset,
+                  limit,
+                )
+              : readMcpAppDocument(dependencies.attachmentsDir, item, input.offset, limit),
           ).pipe(Effect.orElseSucceed(() => undefined));
   if (asset === undefined || asset.bytes.byteLength === 0) {
     return yield* new TurnItemAssetReadError({ message: "The asset was not found." });

@@ -24,7 +24,7 @@ import {
 import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
 import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
 import type { McpAppReference } from "@t3tools/shared/mcpApp";
-import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import { htmlRenderFromTurnItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
 import {
   contextCompactionLabel,
   workEntryIndicatesToolFailure,
@@ -147,6 +147,9 @@ export type TimelineEntry = (
       readonly createdAt: string;
       readonly runId: RunId | null;
       readonly htmlRender: HtmlRenderReference;
+      /** Coder: the thread and item the helper reads the page through. */
+      readonly sourceThreadId: ThreadId;
+      readonly itemId: TurnItemId;
     }
   | {
       /** An MCP App a completed tool call captured, hosted where the call happened. */
@@ -718,9 +721,11 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
       continue;
     }
 
+    // Coder: also pages published through the T3 tool bridge's shell command.
     const htmlRender =
-      item.type === "dynamic_tool" && item.status === "completed"
-        ? htmlRenderFromToolItem(item)
+      (item.type === "dynamic_tool" || item.type === "command_execution") &&
+      item.status === "completed"
+        ? htmlRenderFromTurnItem(item)
         : undefined;
     if (htmlRender !== undefined) {
       entries.push({
@@ -729,6 +734,8 @@ export function deriveTimelineEntriesFromVisibleTurnItems(
         createdAt,
         runId: item.runId,
         htmlRender,
+        sourceThreadId: row.sourceThreadId,
+        itemId: row.sourceItemId,
         ...attemptMetadata,
       });
       continue;

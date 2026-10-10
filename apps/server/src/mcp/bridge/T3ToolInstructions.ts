@@ -10,6 +10,8 @@ import { T3_CODE_ORCHESTRATION_INSTRUCTIONS } from "@t3tools/provider-core/serve
 const UPSTREAM_MCP_INTRO = "The `t3-code` MCP server provides app-owned orchestration.";
 const UPSTREAM_MCP_TRANSPORT = /\nTool names may include a harness-normalized MCP prefix[^\n]*\n/u;
 const UPSTREAM_ACP_FALLBACK = /\nACP fallback:[^\n]*\n/u;
+// `html_preview` is not carried; pages publish with `html_render` alone.
+const UPSTREAM_HTML_PREVIEW_STEP = ", check it with `html_preview`, then publish it with";
 
 /** Upstream's orchestration guidance without its MCP and ACP transport paragraphs. */
 export const T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS = T3_CODE_ORCHESTRATION_INSTRUCTIONS.replace(
@@ -20,7 +22,8 @@ export const T3_BRIDGE_ORCHESTRATION_INSTRUCTIONS = T3_CODE_ORCHESTRATION_INSTRU
     UPSTREAM_MCP_TRANSPORT,
     "\nKeep polling/wait loops bounded, do not duplicate active work, and use stable `clientRequestId` values when retrying tools that accept them.\n",
   )
-  .replace(UPSTREAM_ACP_FALLBACK, "\n");
+  .replace(UPSTREAM_ACP_FALLBACK, "\n")
+  .replace(UPSTREAM_HTML_PREVIEW_STEP, ", then publish it with");
 
 export function t3ToolBridgeInstructions(command: string): string {
   return `

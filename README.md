@@ -87,6 +87,7 @@ Full walkthrough: [Install and first run](./docs/user/getting-started.md).
 | [Files in question answers](./docs/user/question-attachments.md) | Attaching files when an agent asks a question                |
 | [Files and search](./docs/user/files-and-search.md)              | Browsing, editing, and searching project files               |
 | [Images and screenshots](./docs/user/images-and-screenshots.md)  | Pasting images and viewing agent screenshots                 |
+| [Visual replies and MCP apps](./docs/user/html-renders.md)       | Pages agents publish and interactive MCP apps                |
 | [Source control](./docs/user/source-control.md)                  | Diffs, branches, worktrees, commits, checkpoints             |
 | [Terminal history](./docs/user/terminal.md)                      | Scrollback limits and navigation                             |
 | [Appearance and themes](./docs/user/appearance.md)               | Themes, theme import, workspace themes, motion               |

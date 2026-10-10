@@ -266,6 +266,25 @@ describe("orchestration V2 wire projection", () => {
     },
   );
 
+  // Coder: html_render over the T3 tool bridge is a shell command; its page reference stays.
+  it("keeps only the page reference of a bridge html_render command", () => {
+    const htmlRender = {
+      attachmentId: "thread-1-550e8400-e29b-41d4-a716-446655440000-html",
+      title: "Chart",
+      height: 320,
+    };
+    const item = {
+      ...base,
+      type: "command_execution" as const,
+      input: "/nix/node /tmp/t3-tools-AbC123/t3.mjs html_render -",
+      output: JSON.stringify({ htmlRender, message: "Shown to the reader above your reply." }),
+      exitCode: 0,
+    };
+    const projected = projectTurnItemForWire(item);
+    expect(projected).toMatchObject({ output: JSON.stringify({ htmlRender }) });
+    expect(projected).not.toHaveProperty("outputOmitted");
+  });
+
   it.each([
     ["echo ok", "echo ok"],
     ["a".repeat(262_143) + "😀", "a".repeat(262_143) + "\n… output truncated for transport"],

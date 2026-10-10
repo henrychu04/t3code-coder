@@ -27,6 +27,11 @@ export const MCP_APP_MAX_HTML_BYTES = 5 * 1024 * 1024;
  * since a blob or srcdoc frame would inherit the page's own Content-Security-Policy.
  */
 export const MCP_APP_FRAME_PATH = "/mcp-app-frame.html";
+/**
+ * Coder: the same document shell for HTML files previewed in Files. It adds `allow-popups` so the
+ * page's own links can open new tabs, as upstream's file frame allows.
+ */
+export const HTML_DOCUMENT_FRAME_PATH = "/html-document-frame.html";
 const MAX_DOMAINS = 32;
 const MAX_DOMAIN_LENGTH = 256;
 const MAX_NAME_LENGTH = 256;

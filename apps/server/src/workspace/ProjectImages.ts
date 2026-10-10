@@ -7,7 +7,9 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { homedir } from "node:os";
 import {
+  MAX_PROJECT_HTML_BYTES,
   MAX_PROJECT_MEDIA_BYTES,
+  MAX_PROJECT_PDF_BYTES,
   MAX_SCREENSHOT_ARTIFACT_BYTES,
   MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES,
   ProjectImageReadError,
@@ -107,6 +109,12 @@ async function detectProjectMediaMimeType(
         : undefined;
     case ".m4a":
       return ftypBrand ? "audio/mp4" : undefined;
+    // Coder: documents the Files surface previews; the reader keeps them inside the project.
+    case ".pdf":
+      return ascii(bytes, 0, 5) === "%PDF-" ? "application/pdf" : undefined;
+    case ".html":
+    case ".htm":
+      return bytes.includes(0) ? undefined : "text/html";
     case ".aiff":
       return ascii(bytes, 0, 4) === "FORM" && ["AIFF", "AIFC"].includes(ascii(bytes, 8, 12))
         ? "audio/aiff"
@@ -179,9 +187,14 @@ export const readProjectImage = (
             totalBytes,
             path.extname(input.filePath).toLowerCase(),
           );
+          const isDocument = mimeType === "application/pdf" || mimeType === "text/html";
           if (
             !mimeType ||
             (mimeType.startsWith("image/") && totalBytes > MAX_SCREENSHOT_ARTIFACT_BYTES) ||
+            (mimeType === "application/pdf" && totalBytes > MAX_PROJECT_PDF_BYTES) ||
+            (mimeType === "text/html" && totalBytes > MAX_PROJECT_HTML_BYTES) ||
+            // Coder: documents are previewed only from inside the verified project root.
+            (isDocument && !resolved.startsWith(`${root}${path.sep}`)) ||
             input.offset >= totalBytes
           )
             throw unavailable();

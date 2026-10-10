@@ -192,6 +192,52 @@ export function htmlRenderFromToolItem(item: {
   return output?.isError ? undefined : output?.htmlRender;
 }
 
+// Coder: T3 tools run over the workspace file bridge, so an agent's `html_render` call is a shell
+// command (`<node> …/t3-tools-<id>/t3.mjs html_render …`) whose output is the tool's JSON result.
+const BRIDGE_HTML_RENDER_COMMAND =
+  /(?:^|[\s'"])[^\s'"]*\/t3-tools-[A-Za-z0-9]+\/t3\.mjs['"]?\s+html_render(?=\s|$)/u;
+
+/**
+ * Coder: the HTML render a completed bridge command published, if any. The output can be forged
+ * by any command, so readers must still check that the page belongs to the item's own thread.
+ */
+export function htmlRenderFromBridgeCommand(item: {
+  readonly input?: string | undefined;
+  readonly output?: string | undefined;
+  readonly exitCode?: number | undefined;
+}): HtmlRenderReference | undefined {
+  if (item.exitCode !== undefined && item.exitCode !== 0) return undefined;
+  if (item.input === undefined || !BRIDGE_HTML_RENDER_COMMAND.test(item.input)) return undefined;
+  const output = item.output?.trim();
+  if (!output || output.length > 64 * 1024) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(output);
+    return typeof parsed === "object" && parsed !== null && "htmlRender" in parsed
+      ? readHtmlRenderReference(parsed.htmlRender)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The HTML render a turn item shows: upstream's tool item, or Coder's bridge command. */
+export function htmlRenderFromTurnItem(item: {
+  readonly type: string;
+  readonly toolName?: string | null | undefined;
+  readonly input?: unknown;
+  readonly output?: unknown;
+  readonly exitCode?: number | undefined;
+}): HtmlRenderReference | undefined {
+  if (item.type === "command_execution") {
+    return htmlRenderFromBridgeCommand({
+      ...(typeof item.input === "string" ? { input: item.input } : {}),
+      ...(typeof item.output === "string" ? { output: item.output } : {}),
+      ...(item.exitCode === undefined ? {} : { exitCode: item.exitCode }),
+    });
+  }
+  return htmlRenderFromToolItem({ toolName: item.toolName, output: item.output });
+}
+
 /**
  * The MCP App a completed tool call carries, if any. The adapter that captured
  * it put the reference in the output, beside the tool's own result. A tool's
