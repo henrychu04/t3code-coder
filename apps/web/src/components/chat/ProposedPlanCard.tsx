@@ -1,9 +1,13 @@
 // Coder: plans can be copied but not downloaded or saved as new workspace files (no exports,
 // and the Files surface edits only existing files).
-import { memo, useState } from "react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { buildCollapsedProposedPlanPreviewMarkdown } from "../../proposedPlan";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
+import { memo, useCallback, useState } from "react";
+import { useFindRevealRef } from "./markdownFindContext";
+import { type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  buildCollapsedProposedPlanPreviewMarkdown,
+  normalizePlanMarkdownForExport,
+} from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
@@ -15,12 +19,16 @@ import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
+  environmentId,
   threadRef,
   cwd,
+  findActive = false,
 }: {
   planMarkdown: string;
+  environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | undefined;
   cwd: string | undefined;
+  findActive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const { copyToClipboard, isCopied } = useCopyToClipboard({
@@ -42,8 +50,16 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   const collapsedPreview = canCollapse
     ? buildCollapsedProposedPlanPreviewMarkdown(planMarkdown, { maxLines: 10 })
     : null;
+  const isCollapsed = canCollapse && !expanded;
+  // While finding, the full plan stays mounted but clipped, so a match past the
+  // preview can be counted and then opened only once it is selected.
+  const showPreview = isCollapsed && !findActive;
+  const revealForFind = useCallback(() => setExpanded(true), []);
+  const findRevealRef = useFindRevealRef(revealForFind);
+  const saveContents = normalizePlanMarkdownForExport(planMarkdown);
+
   const handleCopyPlan = () => {
-    copyToClipboard(`${planMarkdown.trimEnd()}\n`);
+    copyToClipboard(saveContents);
   };
 
   return (
@@ -53,7 +69,9 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           <Badge variant="secondary">Plan</Badge>
           {/* Same heading level as the message author headings in the timeline,
               so a plan's own headings nest beneath it in the outline. */}
-          <h3 className="truncate text-sm font-medium text-foreground">{title}</h3>
+          <h3 data-thread-find-text="true" className="truncate text-sm font-medium text-foreground">
+            {title}
+          </h3>
         </div>
         <Menu>
           <MenuTrigger
@@ -69,12 +87,17 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
         </Menu>
       </div>
       <div className="mt-4">
-        <div className={cn("relative", canCollapse && !expanded && "max-h-104 overflow-hidden")}>
-          {canCollapse && !expanded ? (
+        <div
+          ref={findRevealRef}
+          className={cn("relative", isCollapsed && "max-h-104 overflow-hidden")}
+          data-thread-find-text="true"
+          data-thread-find-fold={isCollapsed ? "" : undefined}
+        >
+          {showPreview ? (
             <ChatMarkdown
               text={collapsedPreview ?? ""}
               cwd={cwd}
-              environmentId={threadRef?.environmentId}
+              environmentId={environmentId}
               threadRef={threadRef}
               isStreaming={false}
               headingLevelOffset={3}
@@ -83,13 +106,13 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
             <ChatMarkdown
               text={displayedPlanMarkdown}
               cwd={cwd}
-              environmentId={threadRef?.environmentId}
+              environmentId={environmentId}
               threadRef={threadRef}
               isStreaming={false}
               headingLevelOffset={3}
             />
           )}
-          {canCollapse && !expanded ? (
+          {isCollapsed ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-linear-to-t from-card/95 via-card/80 to-transparent" />
           ) : null}
         </div>

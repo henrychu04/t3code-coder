@@ -74,3 +74,7 @@ export function buildPlanImplementationThreadTitle(planMarkdown: string): string
   }
   return `Implement ${title}`;
 }
+
+export function normalizePlanMarkdownForExport(planMarkdown: string): string {
+  return `${planMarkdown.trimEnd()}\n`;
+}
