@@ -190,7 +190,7 @@ function resolveT3McpToolPresentation(
     typeof number === "number" &&
     Number.isSafeInteger(number) &&
     number > 0
-      ? `PR #${number}`
+      ? `MR !${number}`
       : detail;
   return {
     displayName: `${verb} ${target}`,
@@ -525,17 +525,17 @@ function toolGroupActionCount(
 function toolGroupActionLabel(action: ToolGroupAction, count: number): string {
   switch (action) {
     case "link-pr":
-      return `Linked ${count} ${count === 1 ? "pull request" : "pull requests"}`;
+      return `Linked ${count} ${count === 1 ? "merge request" : "merge requests"}`;
     case "unlink-pr":
-      return `Unlinked ${count} ${count === 1 ? "pull request" : "pull requests"}`;
+      return `Unlinked ${count} ${count === 1 ? "merge request" : "merge requests"}`;
     case "watch-pr":
-      return `Watching ${count} ${count === 1 ? "pull request" : "pull requests"}`;
+      return `Watching ${count} ${count === 1 ? "merge request" : "merge requests"}`;
     case "unwatch-pr":
-      return `Stopped watching ${count} ${count === 1 ? "pull request" : "pull requests"}`;
+      return `Stopped watching ${count} ${count === 1 ? "merge request" : "merge requests"}`;
     case "list-prs":
       return count === 1
-        ? "Checked linked pull requests"
-        : `Checked linked pull requests ${count} times`;
+        ? "Checked linked merge requests"
+        : `Checked linked merge requests ${count} times`;
     case "read":
       return `Read ${count} ${count === 1 ? "file" : "files"}`;
     case "edit":

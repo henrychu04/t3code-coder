@@ -141,7 +141,7 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
                 ? props.triggerKind === "skill"
                   ? "Searching workspace skills..."
                   : props.triggerKind === "pull-request"
-                    ? "Finding pull request..."
+                    ? "Finding merge request..."
                     : "Searching workspace files..."
                 : (props.emptyStateText ??
                   (props.triggerKind === "skill"
@@ -239,7 +239,7 @@ export function composerSuggestionOptionId(listId: string, itemId: string): stri
 
 const LISTBOX_LABEL_BY_TRIGGER: Record<ComposerTriggerKind, string> = {
   path: "Files and folders",
-  "pull-request": "Pull requests",
+  "pull-request": "Merge requests",
   "slash-command": "Commands",
   skill: "Skills",
 };

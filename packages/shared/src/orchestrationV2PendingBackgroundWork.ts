@@ -295,7 +295,7 @@ function pullRequestWatchTasks(
       : [
           {
             taskId: `pull-request-watch:${threadPullRequestKeyOf(link)}`,
-            description: `Watching pull request #${link.number}`,
+            description: `Watching merge request !${link.number}`,
             kind: "monitor" as const,
           },
         ],

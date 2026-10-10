@@ -286,7 +286,7 @@ export function StorageSettingsPanel() {
             <SettingsRow
               title="Delete merged worktrees"
               status={ruleStatus("worktreeOnMerge")}
-              description="Remove worktrees whose pull request is merged and whose commits are included in the default branch."
+              description="Remove worktrees whose merge request is merged and whose commits are included in the default branch."
               control={
                 <Switch
                   aria-label="Delete merged worktrees"

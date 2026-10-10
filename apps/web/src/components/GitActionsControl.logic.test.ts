@@ -215,7 +215,7 @@ describe("when: actions are busy", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -303,7 +303,7 @@ describe("when: ref is clean, ahead, and has no open PR", () => {
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "create_pr",
-      label: "Push & create PR",
+      label: "Push & create MR",
     });
   });
 
@@ -328,7 +328,7 @@ describe("when: ref is clean, ahead, and has no open PR", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: false,
         icon: "pr",
         kind: "open_dialog",
@@ -444,7 +444,7 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
 
     const quick = resolveQuickAction(syncedFeature, false);
     assert.deepInclude(quick, {
-      label: "Create PR",
+      label: "Create MR",
       disabled: false,
       kind: "run_action",
       action: "create_pr",
@@ -483,7 +483,7 @@ describe("when: ref is clean, up to date, and has no open PR", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -520,7 +520,7 @@ describe("when: ref is behind upstream", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -548,7 +548,7 @@ describe("when: working tree has local changes", () => {
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "commit_push_pr",
-      label: "Commit, push & PR",
+      label: "Commit, push & MR",
     });
   });
 
@@ -610,7 +610,7 @@ describe("when: working tree has local changes", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -652,7 +652,7 @@ describe("when: working tree has local changes", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -701,7 +701,7 @@ describe("when: working tree has local changes and ref is behind upstream", () =
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "commit_push_pr",
-      label: "Commit, push & PR",
+      label: "Commit, push & MR",
     });
   });
 
@@ -726,7 +726,7 @@ describe("when: working tree has local changes and ref is behind upstream", () =
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -766,7 +766,7 @@ describe("when: HEAD is detached and there are no local changes", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -859,7 +859,7 @@ describe("when: ref has no upstream configured", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -880,7 +880,7 @@ describe("when: ref has no upstream configured", () => {
     assert.deepInclude(quick, {
       kind: "run_action",
       action: "create_pr",
-      label: "Push & create PR",
+      label: "Push & create MR",
       disabled: false,
     });
   });
@@ -924,7 +924,7 @@ describe("when: ref has no upstream configured", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: false,
         icon: "pr",
         kind: "open_dialog",
@@ -1018,7 +1018,7 @@ describe("when: ref has no upstream configured", () => {
       },
       {
         id: "pr",
-        label: "Create PR",
+        label: "Create MR",
         disabled: true,
         icon: "pr",
         kind: "open_dialog",
@@ -1064,10 +1064,10 @@ describe("resolveDefaultBranchActionDialogCopy", () => {
     });
 
     assert.deepEqual(copy, {
-      title: "Push & create PR from default ref?",
+      title: "Push & create MR from default ref?",
       description:
-        'This action will push local commits and create a pull request on "main". You can continue on this ref or create a feature ref and run the same action there.',
-      continueLabel: "Push & create PR",
+        'This action will push local commits and create a merge request on "main". You can continue on this ref or create a feature ref and run the same action there.',
+      continueLabel: "Push & create MR",
     });
   });
 
@@ -1079,10 +1079,10 @@ describe("resolveDefaultBranchActionDialogCopy", () => {
     });
 
     assert.deepEqual(copy, {
-      title: "Commit, push & create PR from default ref?",
+      title: "Commit, push & create MR from default ref?",
       description:
-        'This action will commit, push, and create a pull request on "main". You can continue on this ref or create a feature ref and run the same action there.',
-      continueLabel: "Commit, push & create PR",
+        'This action will commit, push, and create a merge request on "main". You can continue on this ref or create a feature ref and run the same action there.',
+      continueLabel: "Commit, push & create MR",
     });
   });
 });
@@ -1108,9 +1108,9 @@ describe("buildGitActionProgressStages", () => {
     });
     assert.deepEqual(stages, [
       "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
+      "Preparing MR...",
+      "Generating MR content...",
+      "Creating merge request...",
     ]);
   });
 
@@ -1122,9 +1122,9 @@ describe("buildGitActionProgressStages", () => {
       shouldPushBeforePr: false,
     });
     assert.deepEqual(stages, [
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
+      "Preparing MR...",
+      "Generating MR content...",
+      "Creating merge request...",
     ]);
   });
 
@@ -1152,9 +1152,9 @@ describe("buildGitActionProgressStages", () => {
     assert.deepEqual(stages, [
       "Committing...",
       "Pushing to origin/feature/test...",
-      "Preparing PR...",
-      "Generating PR content...",
-      "Creating pull request...",
+      "Preparing MR...",
+      "Generating MR content...",
+      "Creating merge request...",
     ]);
   });
 });

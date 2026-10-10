@@ -2975,8 +2975,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
                       type: "error",
                       title:
                         operation === "link-pull-request-to-thread"
-                          ? "Unable to link pull request"
-                          : "Unable to unlink pull request",
+                          ? "Unable to link merge request"
+                          : "Unable to unlink merge request",
                       description: cause instanceof Error ? cause.message : "The request failed.",
                     }),
                   );

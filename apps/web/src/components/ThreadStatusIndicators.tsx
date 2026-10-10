@@ -400,7 +400,7 @@ function ThreadPullRequestMiniListItem({
         aria-hidden
         className={cn("size-3 shrink-0", presentation?.toneClassName ?? "stroke-muted-foreground")}
       />
-      <span className="shrink-0 font-mono tabular-nums">#{number}</span>
+      <span className="shrink-0 font-mono tabular-nums">!{number}</span>
       <span className="min-w-0 truncate text-foreground/75">{title}</span>
       {children}
     </>
@@ -433,7 +433,7 @@ export function prStatusIndicator(
   const presentation = resolveChangeRequestPresentation(provider);
   const state = resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true });
 
-  const tooltipLead = `${presentation.shortName} #${pr.number} - ${state.label}`;
+  const tooltipLead = `${presentation.shortName} !${pr.number} - ${state.label}`;
   return {
     label: `${presentation.shortName} ${state.label.toLowerCase()}`,
     colorClass: state.toneClassName,

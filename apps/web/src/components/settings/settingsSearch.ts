@@ -321,7 +321,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "auto-settle-merged-threads",
     title: "Auto-settle merged threads",
     to: "/settings/general",
-    searchTerms: ["pull request merge closed automatically sidebar"],
+    searchTerms: ["merge request mr merge closed automatically sidebar"],
     requiresThreadAutoSettlement: true,
     scope: "project-defaults",
   },
@@ -369,7 +369,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "default-diff-file-state",
     title: "Default diff file state",
     to: "/settings/general",
-    searchTerms: ["collapsed expanded collapse expand files pull request pr code tab"],
+    searchTerms: ["collapsed expanded collapse expand files merge request mr code tab"],
   },
   {
     id: "diff-layout",
@@ -381,7 +381,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "proactive-panels",
     title: "Proactive panels",
     to: "/settings/general",
-    searchTerms: ["automatically open diff pull request pr right panel agent completion"],
+    searchTerms: ["automatically open diff merge request mr right panel agent completion"],
   },
   {
     id: "skills-in-slash-menu",
@@ -537,19 +537,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "project-defaults",
     searchTerms: ["auto pull default branch current checkout fast forward upstream"],
   },
-  {
-    id: "remove-agent-credits-on-merge",
-    title: "Remove agent credits when merging",
-    to: "/settings/source-control",
-    scope: "project-defaults",
-    searchTerms: ["pull request github squash co-authored-by attribution claude codex generated"],
-  },
+  // Coder: no "Remove agent credits when merging"; it applies only to GitHub merges.
   {
     id: "pull-request-merge-method",
     title: "Default merge method",
     to: "/settings/source-control",
     scope: "project-defaults",
-    searchTerms: ["pull request merge squash rebase last selected"],
+    searchTerms: ["merge request mr merge squash rebase last selected"],
   },
   {
     id: "source-control",
@@ -609,7 +603,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "follow-change-request-templates",
     title: "Follow change request templates",
     to: "/settings/source-control",
-    searchTerms: ["repository pr pull request description structure"],
+    searchTerms: ["repository mr merge request description structure"],
     environmentOnly: true,
   },
   {
@@ -617,7 +611,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Source control writer model",
     to: "/settings/source-control",
     searchTerms: [
-      "override generated commit change request pr titles descriptions branch bookmark",
+      "override generated commit change request mr titles descriptions branch bookmark",
     ],
     environmentOnly: true,
     scope: "project-defaults",

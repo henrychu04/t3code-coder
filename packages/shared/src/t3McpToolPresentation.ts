@@ -84,27 +84,27 @@ const T3_MCP_SERVER_ALIASES = new Set(["t3-code", "t3_code", "t3code"]);
 // Cards, activity rows, summaries, and provider identity recovery share this inventory.
 const T3_MCP_TOOLS: Readonly<Record<string, T3McpToolDefinition>> = {
   link_pull_request: tool(
-    ["Link", "Linking", "Linked", "a pull request"],
+    ["Link", "Linking", "Linked", "a merge request"],
     "link-pr",
     "pull-request",
   ),
   unlink_pull_request: tool(
-    ["Unlink", "Unlinking", "Unlinked", "a pull request"],
+    ["Unlink", "Unlinking", "Unlinked", "a merge request"],
     "unlink-pr",
     "pull-request",
   ),
   list_thread_pull_requests: tool(
-    ["Check", "Checking", "Checked", "linked pull requests"],
+    ["Check", "Checking", "Checked", "linked merge requests"],
     "list-prs",
     "pull-request",
   ),
   watch_pull_request: tool(
-    ["Watch", "Watching", "Watching", "a pull request"],
+    ["Watch", "Watching", "Watching", "a merge request"],
     "watch-pr",
     "pull-request",
   ),
   unwatch_pull_request: tool(
-    ["Stop watching", "Stopping watching", "Stopped watching", "a pull request"],
+    ["Stop watching", "Stopping watching", "Stopped watching", "a merge request"],
     "unwatch-pr",
     "pull-request",
   ),

@@ -81,26 +81,26 @@ const ACTION_SUCCESS_LABELS: Record<PullRequestAction, string> = {
   merge: "Merge requested",
   ready: "Marked ready for review",
   draft: "Converted to draft",
-  close: "Pull request closed",
-  reopen: "Pull request reopened",
+  close: "Merge request closed",
+  reopen: "Merge request reopened",
   "update-branch": "Branch updated with the base branch",
   "enable-auto-merge": "Auto-merge enabled",
   "disable-auto-merge": "Auto-merge disabled",
-  revert: "Revert pull request opened",
+  revert: "Revert merge request opened",
   "approve-workflows": "Workflows approved",
 };
 
 /** Said as the thing that did not happen, rather than as the operation that returned an error. */
 const ACTION_FAILURE_LABELS: Record<PullRequestAction, string> = {
-  merge: "Could not merge this pull request",
+  merge: "Could not merge this merge request",
   ready: "Could not mark this ready for review",
   draft: "Could not convert this to a draft",
-  close: "Could not close this pull request",
-  reopen: "Could not reopen this pull request",
+  close: "Could not close this merge request",
+  reopen: "Could not reopen this merge request",
   "update-branch": "Could not update this branch",
   "enable-auto-merge": "Could not enable auto-merge",
   "disable-auto-merge": "Could not disable auto-merge",
-  revert: "Could not open a revert pull request",
+  revert: "Could not open a revert merge request",
   "approve-workflows": "Could not approve workflows",
 };
 
@@ -119,7 +119,7 @@ const ACTION_FAILURE_HINTS: Record<PullRequestAction, string> = {
     "The host refused it. Check that auto-merge is enabled for this repository and that you have write access.",
   "disable-auto-merge": "The host refused it. Check that you have write access to this repository.",
   revert:
-    "The host refused it. Check that you have write access and that this pull request was merged on the host.",
+    "The host refused it. Check that you have write access and that this merge request was merged on the host.",
   "approve-workflows":
     "The host refused it. Check that you have Actions write access and that these workflow runs are still awaiting approval.",
 };
@@ -213,7 +213,7 @@ export function usePullRequestCloseBatch(onClosed: (entry: EnvironmentPullReques
             onClosed(entry);
           } catch (failure) {
             failures.push(
-              `#${entry.number}: ${readableFailure(failure, ACTION_FAILURE_HINTS.close)}`,
+              `!${entry.number}: ${readableFailure(failure, ACTION_FAILURE_HINTS.close)}`,
             );
           } finally {
             pending.current.delete(pullRequestEntryKey(entry));
@@ -225,8 +225,8 @@ export function usePullRequestCloseBatch(onClosed: (entry: EnvironmentPullReques
         type: failures.length > 0 ? "error" : "success",
         title:
           failures.length > 0
-            ? `Closed ${closed} of ${batch.length} pull requests`
-            : `Closed ${closed} pull request${closed === 1 ? "" : "s"}`,
+            ? `Closed ${closed} of ${batch.length} merge requests`
+            : `Closed ${closed} merge request${closed === 1 ? "" : "s"}`,
         ...(failures.length > 0 ? { description: failures.slice(0, 3).join("\n") } : {}),
       });
     },
@@ -342,7 +342,7 @@ export function usePullRequestHandoffs({
       description:
         task.prompt.length > 0
           ? "The question is in the composer — read it over, then send."
-          : "The pull request is in the composer — type your question, then send.",
+          : "The merge request is in the composer — type your question, then send.",
     });
   };
 
@@ -364,7 +364,7 @@ export function usePullRequestHandoffs({
     // never expires, and an explicit one would survive the update and pin the result on screen.
     const toastId = toastManager.add({
       type: "loading",
-      title: "Preparing the pull request checkout...",
+      title: "Preparing the merge request checkout...",
     });
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
     // The thread is opened before the checkout rather than after it, because the project's setup
@@ -399,7 +399,7 @@ export function usePullRequestHandoffs({
         prepareThread.error instanceof Error ? prepareThread.error.message : null;
       toastManager.update(toastId, {
         type: "error",
-        title: "Could not prepare the pull request checkout",
+        title: "Could not prepare the merge request checkout",
         ...(detailMessage ? { description: detailMessage } : {}),
       });
       return;
@@ -436,7 +436,7 @@ export function usePullRequestHandoffs({
       type: "warning",
       title: "Checked out, but not on the latest commits",
       description:
-        "The checkout could not be moved onto the pull request's latest commits, so the code there is older than the pull request. Uncommitted work or local commits keep it where it is.",
+        "The checkout could not be moved onto the merge request's latest commits, so the code there is older than the merge request. Uncommitted work or local commits keep it where it is.",
     } as const;
     if (task === null) {
       toastManager.update(
@@ -447,8 +447,8 @@ export function usePullRequestHandoffs({
               title: mode === "local" ? "Checked out here" : "Checked out",
               description:
                 mode === "local"
-                  ? "This repository is on the pull request's branch, with a thread open on it."
-                  : "The pull request is in its own worktree, with a thread open on it.",
+                  ? "This repository is on the merge request's branch, with a thread open on it."
+                  : "The merge request is in its own worktree, with a thread open on it.",
             }
           : staleCheckoutToast,
       );

@@ -697,7 +697,7 @@ export function BranchToolbarBranchSelector({
   const panelPrLabel =
     prNumber === undefined
       ? ""
-      : `#${prNumber}${displayedPr?.title.trim() ? `: ${displayedPr.title}` : ""}`;
+      : `!${prNumber}${displayedPr?.title.trim() ? `: ${displayedPr.title}` : ""}`;
 
   function selectPickerItem(itemValue: string) {
     if (itemValue === checkoutPullRequestItemValue && prReference && onCheckoutPullRequestRequest) {
@@ -893,7 +893,7 @@ export function BranchToolbarBranchSelector({
               status={displayedPrStatus}
               project={activeProject}
               label={panelPrLabel}
-              openAriaLabel={prUrl ?? "Open pull request"}
+              openAriaLabel={prUrl ?? "Open merge request"}
               onOpen={(event) => openPrLink(event, prUrl)}
               onActed={() => branchStatusQuery.refresh()}
             />

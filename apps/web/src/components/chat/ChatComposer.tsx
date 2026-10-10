@@ -2608,7 +2608,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           state: pullRequest.state,
           isDraft: pullRequest.isDraft,
         },
-        label: `#${pullRequest.number}`,
+        label: `!${pullRequest.number}`,
         description: pullRequest.title,
       }));
     }
@@ -2717,17 +2717,17 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     if (composerTriggerKind === "pull-request") {
       if (pullRequestProjectId === null || pullRequestRepository === null) {
-        return "Pull requests are not available for this project.";
+        return "Merge requests are not available for this project.";
       }
       if (
         pullRequestLookup.error !== null ||
         pullRequestLookup.data?.errors.some((error) => error.projectId === pullRequestProjectId)
       ) {
-        return "Pull requests could not be read for this project.";
+        return "Merge requests could not be read for this project.";
       }
       return composerTrigger?.query
-        ? `No pull request matches ${composerTrigger.query}.`
-        : "No pull requests found in this repository.";
+        ? `No merge request matches ${composerTrigger.query}.`
+        : "No merge requests found in this repository.";
     }
     return composerTriggerKind === "path"
       ? "No matching files or folders."
@@ -6683,7 +6683,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                 {composerSuggestionsVisible && composerMenuItems.length === 0
                   ? isComposerMenuLoading
                     ? composerTriggerKind === "pull-request"
-                      ? "Finding pull request..."
+                      ? "Finding merge request..."
                       : "Searching workspace files..."
                     : composerMenuEmptyState
                   : ""}

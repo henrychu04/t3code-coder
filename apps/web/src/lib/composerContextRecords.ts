@@ -64,7 +64,7 @@ function basename(filePath: string): string {
 export function reviewCommentContextLabel(comment: ReviewCommentPresentation): string {
   const pullRequestNumber = pullRequestContextNumber(comment);
   if (isPullRequestSummaryContext(comment) && pullRequestNumber !== null) {
-    return `#${pullRequestNumber}`;
+    return `!${pullRequestNumber}`;
   }
   const diffRange = /^([+-])(\d+)(?: to \1(\d+))?$/u.exec(comment.rangeLabel);
   const rangeLabel = diffRange
@@ -100,8 +100,8 @@ export function pullRequestContextDisplayState(
 
 export function pullRequestContextKindLabel(comment: ReviewCommentPresentation): string {
   const state = pullRequestContextDisplayState(comment);
-  if (state === null) return "Pull request";
-  return `${state[0]!.toUpperCase()}${state.slice(1)} pull request`;
+  if (state === null) return "Merge request";
+  return `${state[0]!.toUpperCase()}${state.slice(1)} merge request`;
 }
 
 export function terminalContextReference(context: TerminalContextDraft): ComposerContextReference {

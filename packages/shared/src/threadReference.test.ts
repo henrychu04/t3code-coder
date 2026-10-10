@@ -37,7 +37,7 @@ describe("resolveThreadReferenceCopyTarget", () => {
     ).toMatchObject({
       kind: "pull-request",
       value: "https://github.com/t3/pr/14",
-      successTitle: "PR link copied",
+      successTitle: "MR link copied",
     });
   });
 
@@ -102,7 +102,7 @@ describe("resolveThreadReferenceCopyTarget", () => {
     ).toMatchObject({
       kind: "pull-request",
       value: "https://github.com/t3/pr/12",
-      successTitle: "PR link copied",
+      successTitle: "MR link copied",
     });
   });
 
