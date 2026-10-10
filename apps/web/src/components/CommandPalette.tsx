@@ -235,7 +235,7 @@ interface AddProjectEnvironmentOption {
 
 type AddProjectRemoteProviderKind = Extract<
   SourceControlProviderKind,
-  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops"
+  "github" | "gitlab" | "forgejo" | "bitbucket" | "azure-devops" | "gitcafe"
 >;
 type AddProjectRemoteSource = AddProjectRemoteProviderKind | "url";
 
@@ -261,6 +261,7 @@ const REMOTE_PROJECT_SOURCES: ReadonlyArray<AddProjectRemoteSource> = [
   "forgejo",
   "bitbucket",
   "azure-devops",
+  "gitcafe",
 ];
 // Coder: GitLab is the only hosted clone source offered in the UI.
 const REMOTE_PROJECT_PROVIDER_SOURCES: ReadonlyArray<AddProjectRemoteProviderKind> = ["gitlab"];
@@ -277,6 +278,8 @@ function remoteProjectSourceLabel(source: AddProjectRemoteSource): string {
       return "Bitbucket";
     case "azure-devops":
       return "Azure DevOps";
+    case "gitcafe":
+      return "GitCafe";
     case "url":
       return "Git URL";
   }
@@ -286,6 +289,7 @@ function remoteProjectSourcePathHint(source: AddProjectRemoteSource): string {
   switch (source) {
     case "forgejo":
     case "github":
+    case "gitcafe":
       return "owner/repo";
     case "gitlab":
       return "group/project";
@@ -324,6 +328,7 @@ function remoteProjectSourceIcon(source: AddProjectRemoteSource, className: stri
     case "forgejo":
     case "bitbucket":
     case "azure-devops":
+    case "gitcafe":
     case "url":
       return <LinkIcon className={className} />;
   }
@@ -378,6 +383,7 @@ function buildAddProjectRemoteSourceReadiness(
     forgejo: unavailable,
     bitbucket: unavailable,
     "azure-devops": unavailable,
+    gitcafe: unavailable,
   };
 
   if (!discovery) {
@@ -1960,7 +1966,7 @@ function OpenCommandPaletteDialog(props: {
           </>
         ),
         icon: <SquarePenIcon className={ITEM_ICON_CLASS} />,
-        shortcutCommand: "chat.new",
+        shortcutCommand: "chat.newLocal",
         run: async () => {
           await startNewThreadFromContext({
             activeDraftThread,
@@ -2156,6 +2162,7 @@ function OpenCommandPaletteDialog(props: {
       "bitbucket",
       "azure",
       "devops",
+      "gitcafe",
       "url",
       "environment",
     ],

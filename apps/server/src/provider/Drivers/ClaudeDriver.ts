@@ -186,6 +186,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const capabilitiesProbeCache = yield* Cache.make({
         capacity: 1,
         timeToLive: CAPABILITIES_PROBE_TTL,
+        // Coder: no organization id; it only keys usage accounts, which are not carried.
         lookup: () =>
           probeClaudeCapabilities(effectiveConfig, processEnv, cwd).pipe(
             Effect.provideService(Path.Path, path),

@@ -4169,6 +4169,104 @@ it.effect("reuses an observed merged state for strict settlement reads", () =>
   }),
 );
 
+it.effect("announces state a detail read sees first or newly", () =>
+  Effect.gen(function* () {
+    let detail = {
+      state: "open" as "open" | "closed" | "merged",
+      updatedAt: "2026-07-02T00:00:00Z",
+    };
+    let summaryState: "open" | "merged" = "open";
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () => Effect.succeed({ ...hostedChangeRequest("body"), ...detail }),
+          getChangeRequestSummary: () =>
+            Effect.succeed({
+              ...changeRequest(1, "2026-07-04T00:00:00Z"),
+              state: summaryState,
+            }),
+        }),
+      ],
+    });
+    const announced: Array<string> = [];
+    yield* Stream.runForEach(yield* service.subscribeStateChanges, (key) =>
+      Effect.sync(() => announced.push(`${key.host}/${key.repository}#${key.number}`)),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+    const readDetail = Effect.gen(function* () {
+      yield* service.invalidate({ reference });
+      yield* service.detail(reference);
+      yield* Effect.yieldNow;
+    });
+
+    // First sight announces; the same state again, even from a fresh read, does not.
+    yield* readDetail;
+    yield* readDetail;
+    assert.deepStrictEqual(announced, ["github.com/acme/web#1"]);
+
+    detail = { state: "closed", updatedAt: "2026-07-03T00:00:00Z" };
+    yield* readDetail;
+    assert.strictEqual(announced.length, 2);
+
+    // A summary seeing the merge first does not hide it from the detail read after.
+    summaryState = "merged";
+    yield* service.summary(reference, { recoverTransientFailure: false });
+    yield* Effect.yieldNow;
+    assert.strictEqual(announced.length, 2);
+    detail = { state: "merged", updatedAt: "2026-07-04T00:00:00Z" };
+    yield* readDetail;
+    assert.strictEqual(announced.length, 3);
+
+    // A detail read older than the merge cannot announce a reopen.
+    detail = { state: "open", updatedAt: "2026-07-03T00:00:00Z" };
+    yield* readDetail;
+    assert.strictEqual(announced.length, 3);
+  }),
+);
+
+it.effect("announces a reported state without trusting it", () =>
+  Effect.gen(function* () {
+    let detail = { state: "open" as "open" | "closed", updatedAt: "2026-07-02T00:00:00Z" };
+    const reference = { projectId: "p1" as ProjectId, repository: "acme/web", number: 1 };
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakeProvider("github", {
+          getChangeRequest: () => Effect.succeed({ ...hostedChangeRequest("body"), ...detail }),
+        }),
+      ],
+    });
+    const announced: Array<string> = [];
+    yield* Stream.runForEach(yield* service.subscribeStateChanges, (key) =>
+      Effect.sync(() => announced.push(`${key.host}/${key.repository}#${key.number}`)),
+    ).pipe(Effect.forkChild({ startImmediately: true }));
+    const note = (state: "open" | "closed" | "merged") =>
+      service.reportState({ reference, state }).pipe(Effect.andThen(Effect.yieldNow));
+    const readDetail = Effect.gen(function* () {
+      yield* service.invalidate({ reference });
+      yield* service.detail(reference);
+      yield* Effect.yieldNow;
+    });
+
+    yield* readDetail;
+    yield* note("closed");
+    yield* note("closed");
+    assert.strictEqual(announced.length, 2);
+    yield* TestClock.adjust("5 minutes");
+    yield* note("closed");
+    assert.strictEqual(announced.length, 3);
+
+    yield* note("open");
+    assert.strictEqual(announced.length, 4);
+
+    yield* note("merged");
+    detail = { state: "closed", updatedAt: "2026-07-03T00:00:00Z" };
+    yield* readDetail;
+    assert.strictEqual(announced.length, 6);
+  }),
+);
+
 it.effect("does not let a still-cached detail overwrite a fresher linked summary", () =>
   Effect.gen(function* () {
     let summaryTitle = "old title";

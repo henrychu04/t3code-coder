@@ -60,6 +60,7 @@
     "packages/provider-core/src/server/mcpSession.ts": ["exports", "nsExports"],
     "packages/provider-core/src/server/snapshotProbe.ts": ["exports", "nsExports"],
     "packages/provider-testing/src/fakeCli.ts": ["exports", "nsExports"],
+    "packages/shared/src/AgentScope.ts": ["exports", "nsExports"],
     "packages/shared/src/HostProcess.ts": ["exports", "nsExports"],
     "packages/shared/src/composerTrigger.ts": ["exports", "nsExports"],
     "packages/shared/src/filePreview.ts": ["exports", "nsExports"],
