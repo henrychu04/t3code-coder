@@ -3,8 +3,10 @@
   "rules": { "types": "off", "nsTypes": "off" },
   // Platform tools, not npm packages. Coder and glab remain user/workspace owned.
   "ignoreBinaries": ["coder", "glab", "git", "ssh", "scp", "nix"],
-  // Upstream exports whose only consumers are surfaces this fork does not carry. The files stay
-  // upstream's verbatim; drop an entry once its file no longer reports unused exports.
+  // Files whose remaining unused exports are upstream's, used only by surfaces this fork does not
+  // carry. Some files also carry marked Coder deltas (for example rpc.ts, ClaudeAdapterV2.ts, and
+  // the GitLab files); a delta must not add an unused export here. Drop an entry once its file no
+  // longer reports unused exports.
   "ignoreIssues": {
     "apps/server/src/attachmentStore.ts": ["exports", "nsExports"],
     "apps/server/src/auth/ServerSecretStore.ts": ["exports", "nsExports"],

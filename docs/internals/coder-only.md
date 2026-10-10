@@ -758,7 +758,9 @@ listed here is drift to remove rather than fork behavior to keep.
     upload, and HTTP content search) and adds the helper-only methods and `CoderWsRpcGroup`, the
     only group the helper serves. That group carries upstream's thread find
     (`searchThread`, `searchThreadStream`), turn-item reads, passive terminal observation, agent
-    secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's `EnvironmentAuthorizationError` stays in
+    secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's
+    `WsRpcGroup` stays dormant, unreferenced, with the RPCs only it uses, and `knip.jsonc`
+    ignores `rpc.ts`'s unused exports for it. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability.
   - `VcsProcessExitFailureKind` adds `policy-blocked` for the GitLab write probe, and
