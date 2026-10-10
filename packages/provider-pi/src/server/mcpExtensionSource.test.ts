@@ -1,4 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off -- Pi extensions run outside Effect; these tests exercise their native filesystem boundary.
+import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 import * as NodeOS from "node:os";
@@ -298,6 +299,96 @@ describe("Pi MCP tool exposure", () => {
       );
     },
   );
+});
+
+// Coder: T3 tools reach Pi through the workspace file bridge instead of an MCP server.
+describe("Pi T3 tools over the file bridge", () => {
+  async function loadFileBridge() {
+    const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-pi-bridge-"));
+    const catalog = [
+      { name: "delegate_task", description: "Delegate work to another agent.", readOnly: false },
+      { name: "t3_thread_list", description: "List threads.", readOnly: true },
+      { name: "broken", description: "Always fails.", readOnly: true },
+    ].map((tool) => ({ ...tool, inputSchema: { type: "object", properties: {} } }));
+    await NodeFSP.writeFile(NodePath.join(directory, "tools.json"), JSON.stringify(catalog));
+    // A stand-in for the bridge client: echoes the call, and fails like it for `broken`.
+    await NodeFSP.writeFile(
+      NodePath.join(directory, "t3.mjs"),
+      [
+        "const [tool, mode] = process.argv.slice(2);",
+        "let text = '';",
+        "for await (const chunk of process.stdin) text += chunk;",
+        "if (tool === 'broken') { process.stdout.write(JSON.stringify({ error: 'Broken' })); process.exit(1); }",
+        "process.stdout.write(JSON.stringify({ tool, mode, params: JSON.parse(text) }));",
+      ].join("\n"),
+    );
+    const tools: RegisteredTool[] = [];
+    const source = NodeModule.stripTypeScriptTypes(
+      PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
+        "export default async function",
+        "async function",
+      ),
+    );
+    await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
+      process: {
+        env: {
+          T3_TOOL_COMMAND: `'${process.execPath}' '${NodePath.join(directory, "t3.mjs")}'`,
+          T3_TOOL_CATALOG: NodePath.join(directory, "tools.json"),
+        },
+      },
+      AbortSignal,
+      Buffer,
+      NodeChildProcess,
+      NodeFSP,
+      Type: { Unsafe: (schema: unknown) => schema },
+      fetch: () => {
+        throw new Error("The file bridge must not use HTTP.");
+      },
+      pi: {
+        on: () => undefined,
+        registerTool: (tool: RegisteredTool) => tools.push(tool),
+        getActiveTools: () => [],
+        setActiveTools: () => undefined,
+        getAllTools: () => [],
+      },
+    });
+    return { directory, tools };
+  }
+
+  it("registers the bridge catalog and runs each call through the bridge command", async () => {
+    const { directory, tools } = await loadFileBridge();
+    try {
+      assert.deepEqual(
+        tools.map((tool) => tool.name),
+        ["mcp__t3-code__delegate_task", "mcp__t3-code__t3_thread_list", "mcp__t3-code__broken"],
+      );
+      const list = tools.find((tool) => tool.name === "mcp__t3-code__t3_thread_list")!;
+      const result = await list.execute("call-1", { limit: 2 });
+      assert.deepEqual(JSON.parse(result.content[0]!.text), {
+        tool: "t3_thread_list",
+        mode: "-",
+        params: { limit: 2 },
+      });
+      assert.notProperty(result, "isError");
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reports a failed bridge call as a tool error", async () => {
+    const { directory, tools } = await loadFileBridge();
+    try {
+      const broken = tools.find((tool) => tool.name === "mcp__t3-code__broken")!;
+      const result = (await broken.execute("call-2", {})) as {
+        readonly content: ReadonlyArray<{ readonly text: string }>;
+        readonly isError?: boolean;
+      };
+      assert.isTrue(result.isError);
+      assert.deepEqual(JSON.parse(result.content[0]!.text), { error: "Broken" });
+    } finally {
+      await NodeFSP.rm(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Pi tool discovery permissions", () => {

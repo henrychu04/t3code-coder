@@ -9,6 +9,8 @@ import {
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
+  T3_TOOL_CATALOG_ENV,
+  T3_TOOL_COMMAND_ENV,
 } from "./mcpExtensionSource.ts";
 import {
   buildPiRpcLaunch,
@@ -86,6 +88,33 @@ describe("pi T3 MCP injection", () => {
     assert.isUndefined(permissionOnly.env[T3_MCP_URL_ENV]);
     assert.isUndefined(permissionOnly.env[T3_MCP_BEARER_ENV]);
     assert.equal(permissionOnly.env[T3_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
+  });
+
+  // Coder: a file-bridge credential hands Pi the bridge command and catalog, never a token.
+  it("configures the workspace file bridge instead of an MCP endpoint", () => {
+    const launch = buildPiRpcLaunch({
+      launchArgs: [],
+      environment: {
+        [T3_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
+        [T3_MCP_BEARER_ENV]: "stale-token",
+        [T3_TOOL_COMMAND_ENV]: "stale-command",
+      },
+      mcpSession: {
+        ...mcpSession,
+        endpoint: "/tmp/t3-tools-pi",
+        toolCommand: "'/nix/store/node/bin/node' '/tmp/t3-tools-pi/t3.mjs'",
+      },
+      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+      runtimeMode: "approval-required",
+    });
+    assert.isTrue(launch.hasT3Mcp);
+    assert.equal(
+      launch.env[T3_TOOL_COMMAND_ENV],
+      "'/nix/store/node/bin/node' '/tmp/t3-tools-pi/t3.mjs'",
+    );
+    assert.equal(launch.env[T3_TOOL_CATALOG_ENV], "/tmp/t3-tools-pi/tools.json");
+    assert.isUndefined(launch.env[T3_MCP_URL_ENV]);
+    assert.isUndefined(launch.env[T3_MCP_BEARER_ENV]);
   });
 
   it("falls back to Pi's first supported mode for legacy auto threads", () => {

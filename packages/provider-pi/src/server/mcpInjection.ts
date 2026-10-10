@@ -9,6 +9,8 @@ import {
   T3_MCP_BEARER_ENV,
   T3_MCP_URL_ENV,
   T3_PI_RUNTIME_MODE_ENV,
+  T3_TOOL_CATALOG_ENV,
+  T3_TOOL_COMMAND_ENV,
 } from "./mcpExtensionSource.ts";
 
 const RESERVED_PI_LAUNCH_ARGUMENTS = new Set([
@@ -291,6 +293,8 @@ export function buildPiRpcLaunch(input: {
   // credentials inherited from the server or a parent provider process.
   delete environment[T3_MCP_URL_ENV];
   delete environment[T3_MCP_BEARER_ENV];
+  delete environment[T3_TOOL_COMMAND_ENV];
+  delete environment[T3_TOOL_CATALOG_ENV];
 
   return {
     args,
@@ -303,12 +307,18 @@ export function buildPiRpcLaunch(input: {
           }
         : {}),
       ...(hasT3Mcp && input.mcpSession !== undefined
-        ? {
-            [T3_MCP_URL_ENV]: input.mcpSession.endpoint,
-            [T3_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
-              input.mcpSession.authorizationHeader,
-            ),
-          }
+        ? input.mcpSession.toolCommand !== undefined
+          ? // Coder: T3 tools run over the workspace file bridge, whose directory is the endpoint.
+            {
+              [T3_TOOL_COMMAND_ENV]: input.mcpSession.toolCommand,
+              [T3_TOOL_CATALOG_ENV]: `${input.mcpSession.endpoint}/tools.json`,
+            }
+          : {
+              [T3_MCP_URL_ENV]: input.mcpSession.endpoint,
+              [T3_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
+                input.mcpSession.authorizationHeader,
+              ),
+            }
         : {}),
     },
     hasT3Mcp,

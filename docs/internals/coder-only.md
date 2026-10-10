@@ -625,9 +625,10 @@ listed here is drift to remove rather than fork behavior to keep.
     `@t3tools/provider-pi` package), and `ProviderOrchestrationAdapterInfrastructure.ts` provides
     only the Claude query runner and the Codex app-server factory. Only shipped providers have
     replay harnesses. Pi keeps upstream's T3 extension for its permission hook (Supervised and
-    Auto-accept edits) and skill chips, but `PiAdapterV2` gives it no T3 MCP endpoint, because
-    the extension speaks MCP over HTTP and T3 tools run over the file bridge; Pi turns therefore
-    have no T3 tools yet. Upstream's other provider packages (Cursor, OpenCode, Muse, ACP, ACP
+    Auto-accept edits), skill chips, and T3 tools. The extension speaks MCP over HTTP upstream;
+    here `buildPiRpcLaunch` hands it the file bridge instead (`T3_TOOL_COMMAND` and
+    `T3_TOOL_CATALOG`), and it registers the bridge catalog's tools under upstream's names,
+    running each call through the bridge command with its arguments on stdin. Upstream's other provider packages (Cursor, OpenCode, Muse, ACP, ACP
     Registry, Grok, Antigravity) are not carried.
   - Thread-title and branch-name generation use only Codex, Claude, or Pi models (Pi through
     upstream's ephemeral `pi --mode rpc --no-session` process). Text generation is
