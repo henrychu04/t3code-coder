@@ -295,7 +295,7 @@ async function runUpload(job: UploadJob): Promise<void> {
     },
   };
   try {
-    // Coder: composer attachments stage through the gateway's SCP transport. Images are
+    // Coder: composer attachments go through the gateway's Coder CLI transfer. Images are
     // compressed to main's 10 MiB limit first; files go as-is up to main's 50 MiB limit.
     let staged: { readonly id: string; readonly mimeType?: string; readonly sizeBytes?: number };
     if (job.image.type === "file") {

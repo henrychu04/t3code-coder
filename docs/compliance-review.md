@@ -26,10 +26,9 @@ that any employer has approved the software.
 | Gateway               | installed Coder CLI            | child stdio, `shell: false`           | Invoke authenticated Coder commands                    |
 | Local client          | configured `127.0.0.1` port    | TCP or UDP                            | Access one configured workspace service                |
 | Coder CLI             | configured Coder workspace     | foreground `coder port-forward`       | Carry a loopback-bound port forward                    |
-| Gateway               | installed OpenSSH `scp`        | child process, `shell: false`         | Copy the helper and validated pasted images            |
 | Coder CLI             | configured Coder deployment    | Coder-managed connection              | Authenticate, discover workspaces, and run `coder ssh` |
-| OpenSSH `scp`         | Coder CLI ProxyCommand         | `coder ssh --stdio`                   | Coder-authenticated transfer with no direct SSH path   |
 | Gateway               | workspace helper               | foreground `coder ssh` stdio          | Newline-delimited RPC                                  |
+| Gateway               | workspace shell                | foreground `coder ssh` stdin          | Copy the helper bundle and validated attachments       |
 | Workspace helper      | workspace Codex or Claude Code | child stdio, `shell: false`           | Provider conversation and permission control           |
 | Workspace provider    | approved provider backend      | workspace-managed provider connection | Inference and authentication                           |
 | Workspace helper      | workspace Git and `glab`       | child stdio, `shell: false`           | Repository and GitLab actions                          |
@@ -39,8 +38,9 @@ The gateway contains no general HTTP client and makes no direct external request
 IPv4 loopback and validates the exact Host and Origin. The helper opens no listener, tunnel, or
 forwarded port. Separately, validated settings may start foreground `coder port-forward` processes
 whose local endpoint is fixed to `127.0.0.1`; raw arguments, reverse forwards, and non-loopback bind
-addresses are not accepted. SCP is restricted to generated helper and clipboard-image paths and
-reaches the workspace only through a temporary Coder ProxyCommand. Network telemetry and direct
+addresses are not accepted. The helper bundle and composer attachments are streamed over a
+foreground `coder ssh` process's stdin to generated paths; no other program connects to the
+workspace. Network telemetry and direct
 workspace connections follow the configured Coder deployment and CLI defaults. T3-managed Codex
 and Claude sessions load the MCP servers and app integrations configured in the workspace, as
 upstream does; those servers run as workspace processes started by the provider executables.
@@ -59,8 +59,8 @@ server config, and branch lists) may use browser storage; the caches are cleared
 removed from the Coder config and never hold image bytes or credentials. Repositories, prompts,
 responses, provider sessions, terminals, checkpoints, project records, project roots, and SQLite state
 remain in the selected workspace. Live display data necessarily traverses the foreground stdio
-connection and loopback WebSocket but is not durably cached by the gateway. A validated pasted image
-may be staged in an OS temporary directory for one SCP attempt; the gateway removes it afterward.
+connection and loopback WebSocket but is not durably cached by the gateway. A validated composer
+attachment stays in gateway memory for one transfer and is never written to local disk.
 Native Codex image input accepts only bounded opaque ids for generated workspace attachment files;
 the helper rejects symlinks and revalidates file size and image signatures before reading bytes.
 Project image previews read current files through bounded helper stdio chunks after thread/root
@@ -98,10 +98,9 @@ installed Codex or Claude Code CLI. GitLab authentication is owned by the worksp
 - automatic browser launch and hosted CI workflows. The explicit `--open-browser` opt-in opens only
   the gateway's loopback URL.
 
-The versioned helper bootstrap through helper-scoped SCP is the sole control-plane transfer
-exception. Both helper and clipboard-image SCP use `coder ssh --stdio` as their ProxyCommand.
-Image preview display uses the already-running helper RPC and does not spawn SCP or another
-connection.
+The helper bootstrap and composer attachments travel over a foreground `coder ssh` process's stdin;
+the Coder CLI is the only local program that connects to a workspace. Image preview display uses
+the already-running helper RPC and does not spawn another connection.
 
 ## Distribution review
 

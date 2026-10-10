@@ -52,9 +52,8 @@ claim: shared provider protocols may still report subscription metadata.
   application authentication token. It reuses its last port when that port is free, so browser
   storage keeps one origin across restarts, and otherwise binds an ephemeral port.
 - The installed Coder CLI is the only process allowed to make a non-loopback workspace connection.
-  OpenSSH `scp` may be spawned for the versioned helper bootstrap and validated composer-attachment
-  uploads only when it uses `coder ssh --stdio` as its ProxyCommand. SCP must never connect directly
-  to a workspace. Use argument-array spawning with `shell: false` and include
+  The versioned helper bootstrap and validated composer-attachment uploads stream over a foreground
+  `coder ssh` process's stdin; no OpenSSH client is used. Use argument-array spawning with `shell: false` and include
   `--no-version-warning` in every underlying Coder invocation. Network telemetry and direct
   workspace connections follow the configured Coder deployment and CLI defaults.
 - User-configured TCP and UDP forwards may use foreground `coder port-forward` processes. Bind every
@@ -70,8 +69,8 @@ claim: shared provider protocols may still report subscription metadata.
   provider.
 - Keep durable application state in the workspace. T3-owned local persistence is limited to
   non-secret deployment URLs, Coder executable paths, workspace targets, structured port-forward
-  rules, the last gateway port, and ephemeral staging of validated composer attachments in an OS
-  temporary directory. Delete staged attachments immediately after each transfer attempt. Coder 2.25.3 may write tokens only inside
+  rules, and the last gateway port. Composer attachments stay in gateway memory during their
+  transfer and are never written to local disk. Coder 2.25.3 may write tokens only inside
   opaque deployment-specific CLI config directories; T3 must never read them.
 - Browser storage may additionally keep UI preferences and, as on main, the text of unsent composer
   drafts and stashed prompts, including their terminal excerpts, and main's IndexedDB caches of
@@ -134,7 +133,7 @@ claim: shared provider protocols may still report subscription metadata.
     play or opens the file.
     - Images and files pasted, selected, or dropped into the composer: generate filenames internally
       and copy only into `$HOME/.t3-coder/attachments` through the same gateway upload and
-      helper-scoped SCP path; never accept a user-controlled local or remote path. Submitted
+      `coder ssh` stdin transfer; never accept a user-controlled local or remote path. Submitted
       attachment references may read these validated workspace copies by opaque generated ID
       through bounded helper stdio chunks, including after reconnect. Draft bytes remain memory-only.
     - Media previews follow main's file-based flow. Markdown image and video references, media
@@ -181,7 +180,7 @@ claim: shared provider protocols may still report subscription metadata.
     user picks, drops, or pastes (at most 256 KiB each) inside the browser and keep the parsed
     themes as UI preferences in browser storage. The files never reach the gateway or workspace,
     and themes have no export or download.
-  - **Versioned helper bootstrap.** The remaining transfer exception; see the SCP rule above.
+  - **Versioned helper bootstrap.** The remaining transfer exception; see the Coder CLI rule above.
 - Git and hosted source-control operations run only in the Linux workspace through the existing
   helper stdio RPC. The helper may run repository-scoped Git fetch, pull, commit, push, clone, and
   remote-management commands, and may invoke the workspace-installed `glab` CLI to discover
@@ -193,8 +192,7 @@ claim: shared provider protocols may still report subscription metadata.
   OAuth, T3-owned telemetry, auto-update, browser preview, WSL, generic user-facing SSH, reverse
   forwarding, or arbitrary tunnels. Codex, Claude Code, and Pi are the only providers. Do not
   carry, register, or enable upstream's other provider drivers or packages (Cursor, OpenCode,
-  Muse, ACP, ACP Registry, Grok, Antigravity, or later additions). OpenSSH use is limited to helper bootstrap and validated
-  composer-attachment uploads through a `coder ssh --stdio` ProxyCommand.
+  Muse, ACP, ACP Registry, Grok, Antigravity, or later additions). Do not spawn OpenSSH.
 - Markdown HTTP(S) links follow main: they open in a new tab with `noopener noreferrer`, show
   main's favicon, and preview media links in the gallery. Relative and non-web links stay inert.
   Known merge requests keep their internal navigation. External images, videos, and GitLab actor
@@ -203,7 +201,7 @@ claim: shared provider protocols may still report subscription metadata.
 ## Supported platforms
 
 - Local development and testing: macOS.
-- Production local host: Windows 11 with the OpenSSH Client feature (`ssh.exe` and `scp.exe`).
+- Production local host: Windows 11.
 - Remote workspace: Linux x86-64 with Nix, Git, and Codex, Claude Code, or Pi. T3 provisions its pinned
   Node.js 24 runtime through Nix and bundles the native terminal runtime without changing the
   workspace's default Node.js version.

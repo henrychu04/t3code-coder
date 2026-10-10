@@ -60,9 +60,9 @@ import {
 } from "@t3tools/coder-cli/portForward";
 import {
   hashCoderHelperBundle,
-  installCoderHelperWithScp,
-  uploadCoderComposerAttachmentWithScp,
-} from "@t3tools/coder-cli/scp";
+  installCoderHelper,
+  uploadCoderComposerAttachment,
+} from "@t3tools/coder-cli/transfer";
 import {
   CLIPBOARD_IMAGE_MIME_TYPES,
   ComposerAttachmentValidationError,
@@ -70,7 +70,6 @@ import {
   MAX_COMPOSER_FILE_BYTES,
   validateClipboardImage,
   validateComposerFile,
-  withStagedAttachment,
 } from "./composerAttachment.ts";
 import { GatewayProcessError, runGatewayProcess } from "./process.ts";
 import {
@@ -721,10 +720,10 @@ export interface LocalCoderGatewayEffectOptions {
   readonly restartWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
   readonly updateWorkspace?: (invocation: CoderInvocation) => Effect.Effect<void, unknown>;
   readonly installHelper?: (
-    input: Parameters<typeof installCoderHelperWithScp>[0],
+    input: Parameters<typeof installCoderHelper>[0],
   ) => Effect.Effect<void, unknown>;
   readonly uploadComposerAttachment?: (
-    input: Parameters<typeof uploadCoderComposerAttachmentWithScp>[0],
+    input: Parameters<typeof uploadCoderComposerAttachment>[0],
   ) => Effect.Effect<string, unknown>;
   readonly connectPortForward?: (
     invocation: CoderInvocation,
@@ -848,9 +847,9 @@ export function makeLocalCoderGateway(
       options?.restartWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "restart"));
     const runWorkspaceUpdate =
       options?.updateWorkspace ?? ((invocation) => runCoderWorkspaceAction(invocation, "update"));
-    const installHelper = options?.installHelper ?? installCoderHelperWithScp;
+    const installHelper = options?.installHelper ?? installCoderHelper;
     const uploadComposerAttachment =
-      options?.uploadComposerAttachment ?? uploadCoderComposerAttachmentWithScp;
+      options?.uploadComposerAttachment ?? uploadCoderComposerAttachment;
     const openPortForward = options?.connectPortForward ?? connectCoderPortForward;
     const readWorkspaceResourceUsage =
       options?.readWorkspaceResourceUsage ??
@@ -1062,9 +1061,6 @@ export function makeLocalCoderGateway(
                         deployment,
                         workspace,
                         helperBundlePath: helperBundlePath!,
-                        ...(expectedBundleHash === undefined
-                          ? {}
-                          : { bundleHash: expectedBundleHash }),
                         invocationOptions,
                       }),
                     );
@@ -2260,8 +2256,8 @@ export function makeLocalCoderGateway(
           }
           return;
         }
-        // Composer images and files stage through the same SCP path; only their validation
-        // and size limit differ.
+        // Composer images and files stream through the same Coder CLI transfer; only their
+        // validation and size limit differ.
         const attachmentRoute = requestUrl.pathname.match(
           /^\/api\/workspaces\/([^/]+)\/(clipboard-image|attachment-file)$/,
         );
@@ -2313,17 +2309,15 @@ export function makeLocalCoderGateway(
             const extension = isImage
               ? validateClipboardImage(contentType, bytes)
               : validateComposerFile(fileName, bytes);
-            const path = await withStagedAttachment(bytes, extension, (localPath) =>
-              runPromise(
-                uploadComposerAttachment({
-                  deployment,
-                  workspace,
-                  localPath,
-                  extension,
-                  invocationOptions: coderInvocationOptions(deployment.id),
-                }),
-                { signal: uploadAbort.signal },
-              ),
+            const path = await runPromise(
+              uploadComposerAttachment({
+                deployment,
+                workspace,
+                bytes,
+                extension,
+                invocationOptions: coderInvocationOptions(deployment.id),
+              }),
+              { signal: uploadAbort.signal },
             );
             const attachmentId = NodePath.posix.basename(path, `.${extension}`);
             if (!new RegExp(`^pending-[0-9a-f-]{36}-${extension}$`).test(attachmentId)) {

@@ -17,7 +17,6 @@ import {
   buildCoderStartWorkspaceInvocation,
   buildCoderStopWorkspaceInvocation,
   buildCoderUpdateWorkspaceInvocation,
-  buildCoderScpConfigInvocation,
   buildCoderWorkspaceShellInvocation,
   buildCoderWorkspaceStatsInvocation,
   REMOTE_HELPER_BUNDLE_HASH_FILE,
@@ -266,30 +265,8 @@ describe("Coder CLI command construction", () => {
     });
   });
 
-  it("builds temporary SCP configuration and remote commands through Coder", () => {
+  it("builds remote shell commands through Coder", () => {
     const options = { globalConfig: String.raw`C:\T3 Coder\coder-profiles\goldman-us` };
-    deepStrictEqual(
-      buildCoderScpConfigInvocation(
-        deployment,
-        String.raw`C:\Temp\t3-coder\ssh-config`,
-        "t3-coder-1234-",
-        options,
-      ).args,
-      [
-        "--global-config",
-        String.raw`C:\T3 Coder\coder-profiles\goldman-us`,
-        "--no-version-warning",
-        "--url",
-        "https://coder.example.gs.com",
-        "config-ssh",
-        "--yes",
-        "--wait=no",
-        "--ssh-config-file",
-        String.raw`C:\Temp\t3-coder\ssh-config`,
-        "--ssh-host-prefix",
-        "t3-coder-1234-",
-      ],
-    );
     deepStrictEqual(
       buildCoderWorkspaceShellInvocation(deployment, workspace, 'printf "%s\\n" "$HOME"', options)
         .args,

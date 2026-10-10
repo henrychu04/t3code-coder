@@ -250,37 +250,6 @@ export function buildCoderPortForwardInvocation(
   );
 }
 
-export function buildCoderScpConfigInvocation(
-  deploymentInput: CoderDeploymentProfile,
-  sshConfigPath: string,
-  hostPrefix: string,
-  options?: CoderInvocationOptions,
-): CoderInvocation {
-  const deployment = normalizeCoderDeploymentProfile(deploymentInput);
-  if (sshConfigPath.trim().length === 0 || /\r|\n|\0/.test(sshConfigPath)) {
-    throw new Error("Temporary SSH config path must be a non-empty single line.");
-  }
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*-$/.test(hostPrefix)) {
-    throw new Error("Temporary SSH host prefix contains unsupported characters.");
-  }
-  return invocation(
-    deployment,
-    [
-      ...CODER_GLOBAL_ARGS,
-      "--url",
-      deployment.url,
-      "config-ssh",
-      "--yes",
-      "--wait=no",
-      "--ssh-config-file",
-      sshConfigPath,
-      "--ssh-host-prefix",
-      hostPrefix,
-    ],
-    options,
-  );
-}
-
 /** Exits with code 3 after the install sentinel unless the installed helper has `hash`. */
 export function remoteHelperBundleCheck(hash: string): string {
   if (!HELPER_BUNDLE_HASH_PATTERN.test(hash)) {

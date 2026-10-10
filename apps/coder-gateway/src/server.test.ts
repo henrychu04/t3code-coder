@@ -28,7 +28,7 @@ import {
   buildCoderWorkspaceStatsInvocation,
 } from "@t3tools/coder-cli/command";
 import { CoderHelperInstallRequiredError } from "@t3tools/coder-cli/helperConnection";
-import { hashCoderHelperBundle } from "@t3tools/coder-cli/scp";
+import { hashCoderHelperBundle } from "@t3tools/coder-cli/transfer";
 import {
   CODER_GATEWAY_HOST,
   makeLocalCoderGateway,
@@ -1176,13 +1176,13 @@ setTimeout(() => process.exit(0), 100);
     const bundleHash = await hashCoderHelperBundle(helperBundlePath);
     let installed = false;
     const launches: string[] = [];
-    const installs: Array<string | undefined> = [];
+    const installs: string[] = [];
     const closers: Array<() => void> = [];
     const gateway = await startLocalCoderGateway({
       configPath,
       helperBundlePath,
       installHelper: async (input) => {
-        installs.push(input.bundleHash);
+        installs.push(await hashCoderHelperBundle(input.helperBundlePath));
         installed = true;
       },
       connectHelper: async (invocation, hooks) => {
@@ -1598,7 +1598,6 @@ setTimeout(() => process.exit(0), 100);
     tempDirectories.push(directory);
     const configPath = NodePath.join(directory, "config.json");
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
-    let stagedPath = "";
     let closeConnection: (() => void) | undefined;
     const closed = new Promise<{ code: number; signal: null; expected: true }>((resolve) => {
       closeConnection = () => resolve({ code: 130, signal: null, expected: true });
@@ -1613,9 +1612,8 @@ setTimeout(() => process.exit(0), 100);
         close: () => closeConnection?.(),
       }),
       uploadComposerAttachment: async (input) => {
-        stagedPath = input.localPath;
         strictEqual(input.extension, "png");
-        strictEqual((await NodeFS.readFile(input.localPath)).equals(png), true);
+        strictEqual(input.bytes.equals(png), true);
         strictEqual(input.workspace.workspace, "henry/project-one");
         return "/home/henry/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-png.png";
       },
@@ -1675,13 +1673,6 @@ setTimeout(() => process.exit(0), 100);
         sizeBytes: png.byteLength,
       },
     });
-    await NodeFS.access(stagedPath).then(
-      () => {
-        throw new Error("staged clipboard image still exists");
-      },
-      () => undefined,
-    );
-
     const tooLarge = await request({
       url: `${gateway.url}/api/workspaces/project-one/clipboard-image`,
       method: "POST",
@@ -1730,7 +1721,7 @@ setTimeout(() => process.exit(0), 100);
         close: () => undefined,
       }),
       uploadComposerAttachment: async (input) => {
-        uploads.push({ extension: input.extension, bytes: await NodeFS.readFile(input.localPath) });
+        uploads.push({ extension: input.extension, bytes: input.bytes });
         return `/home/owner/.t3-coder/attachments/pending-11111111-1111-4111-8111-111111111111-${input.extension}.${input.extension}`;
       },
     });
@@ -1789,7 +1780,7 @@ setTimeout(() => process.exit(0), 100);
   });
 
   it(
-    "interrupts a cancelled clipboard transfer and deletes staging without closing the gateway",
+    "interrupts a cancelled clipboard transfer without closing the gateway",
     { timeout: 5_000 },
     async () => {
       const directory = await NodeFS.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-coder-gateway-"));
@@ -1816,7 +1807,6 @@ setTimeout(() => process.exit(0), 100);
       closeGateway = () => Effect.runPromise(Scope.close(scope, Exit.void));
       const started = Promise.withResolvers<void>();
       const interrupted = Promise.withResolvers<void>();
-      let stagedPath = "";
       const gateway = await Effect.runPromise(
         makeLocalCoderGateway({
           configPath,
@@ -1833,7 +1823,7 @@ setTimeout(() => process.exit(0), 100);
           uploadComposerAttachment: (input) =>
             Effect.acquireUseRelease(
               Effect.sync(() => {
-                stagedPath = input.localPath;
+                strictEqual(input.bytes.byteLength, 8);
                 started.resolve();
               }),
               () => Effect.never,
@@ -1854,20 +1844,8 @@ setTimeout(() => process.exit(0), 100);
       client.on("error", () => undefined);
       client.end(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
       await started.promise;
-      await NodeFS.access(stagedPath);
       client.destroy();
       await interrupted.promise;
-      // The transfer finalizer runs before withStagedAttachment's async unlink.
-      let removed = false;
-      for (let attempt = 0; attempt < 100; attempt += 1) {
-        removed = await NodeFS.access(stagedPath).then(
-          () => false,
-          () => true,
-        );
-        if (removed) break;
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      strictEqual(removed, true);
       strictEqual((await request({ url: `${gateway.url}/api/config` })).statusCode, 200);
     },
   );

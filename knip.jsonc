@@ -2,7 +2,7 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "rules": { "types": "off", "nsTypes": "off" },
   // Platform tools, not npm packages. Coder and glab remain user/workspace owned.
-  "ignoreBinaries": ["coder", "glab", "git", "ssh", "scp", "nix"],
+  "ignoreBinaries": ["coder", "glab", "git", "nix"],
   // Files whose remaining unused exports are upstream's, used only by surfaces this fork does not
   // carry. Some files also carry marked Coder deltas (for example rpc.ts, ClaudeAdapterV2.ts, and
   // the GitLab files); a delta must not add an unused export here. Drop an entry once its file no

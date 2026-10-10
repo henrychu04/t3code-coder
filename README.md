@@ -37,7 +37,7 @@ On the local machine (macOS for development, Windows 11 for daily use):
 
 - Node.js 24.10 or newer
 - pnpm 11.10
-- Coder CLI 2.25.3 (on Windows, with the OpenSSH Client feature installed)
+- Coder CLI 2.25.3
 
 Inside each Linux Coder workspace:
 

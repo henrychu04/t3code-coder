@@ -10,7 +10,6 @@ On the machine that runs T3 Coder:
 
 - Node.js 24.10 or newer and pnpm 11.10
 - Coder CLI 2.25.3
-- On Windows, the OpenSSH Client feature (`ssh.exe` and `scp.exe`)
 
 Development and testing happen on macOS; Windows 11 is the supported daily-use host.
 

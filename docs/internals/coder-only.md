@@ -42,9 +42,9 @@ The local process is a Node gateway that binds to an IPv4 loopback port and serv
 a browser opened by the user. It reuses the port saved in `gateway-port` beside `config.json` when
 that port is free, so browser storage keeps one origin across restarts; otherwise it binds an
 ephemeral port and saves that. It stores only non-secret Coder deployment URLs, workspace targets,
-structured port-forward rules, an optional Coder executable path, and the last gateway port. An
-attached image may be staged temporarily in an OS temporary directory while it is copied to the
-workspace; the local copy is deleted immediately after the transfer attempt. Browser UI preferences
+structured port-forward rules, an optional Coder executable path, and the last gateway port. A
+composer attachment stays in gateway memory while it is streamed to the workspace and is never
+written to local disk. Browser UI preferences
 such as theme and panel size may use browser storage. Composer drafts and prompt stashes retain
 text in browser storage, but never image bytes or upload IDs. As on main, IndexedDB caches each
 environment's shell, settled thread snapshots, server config, and full branch lists so a reload
@@ -266,9 +266,9 @@ created. Errors caught and discarded outside these boundaries cannot be observed
 
 ## Supported hosts
 
-Development is supported on macOS. The production local host is Windows 11 with the OpenSSH Client
-feature installed, so local paths and processes must use Node platform APIs and argument-array
-spawning with `shell: false`. The initial
+Development is supported on macOS. The production local host is Windows 11, so local paths and
+processes must use Node platform APIs and argument-array spawning with `shell: false`; no OpenSSH
+client is needed. The initial
 workspace target is Linux x86-64. The helper launch is one foreground `coder ssh` session that
 first runs the workspace preflight: it checks the remote OS and architecture, realizes a Node.js
 24 package from the workspace's configured `nixpkgs` only when that runtime is not already
@@ -287,10 +287,13 @@ are then negotiated before a helper is used.
 The T3 gateway does not make external HTTP requests. The installed Coder CLI is the only process
 allowed to make a non-loopback workspace connection. Structured port-forward rules use foreground
 `coder port-forward` processes and bind only to IPv4 loopback; reverse forwarding, arbitrary bind
-addresses, and raw tunnel arguments are not exposed. The gateway may invoke OpenSSH `scp` for helper
-bootstrap and validated composer-attachment (image and file) uploads only, with `coder ssh --stdio`
-as its ProxyCommand.
-SCP must not connect directly to a workspace or use authentication outside Coder. The helper opens
+addresses, and raw tunnel arguments are not exposed. The helper bundle and validated composer
+attachments reach the workspace over the stdin of a foreground `coder ssh <workspace> -- sh -l -c
+'<command>'` process (`packages/coder-cli/src/transfer.ts`). Coder 2.25 always allocates a remote
+PTY, so the remote command first runs `stty raw -echo`, prints `T3_CODER_TRANSFER_READY`, and only
+then does the gateway write; `head -c <size>` reads exactly the expected byte count because a PTY
+does not deliver end-of-file. The helper bundle travels as a ustar archive built in Node (Windows
+has no `tar -c` to stream) and is extracted with `tar -xf`. The helper opens
 no network listener; Codex, Claude, and user-initiated terminal commands remain subject to workspace policy.
 
 Provider version checks are workspace-originated network requests: the helper queries
@@ -308,10 +311,9 @@ browser sends it only to the loopback gateway. The gateway's `clipboard-image` r
 signature-validated PNG, JPEG, or WebP content up to 10 MiB; its `attachment-file` route accepts
 any non-empty file up to 50 MiB, using the file name only to derive the stored extension
 (`[a-z0-9]{1,10}`, otherwise `bin`, by the helper's `attachmentFileExtension` rule, shared as
-`@t3tools/shared/attachmentFileExtension`). The gateway stages the bytes in an OS temporary
-directory and copies them through helper-scoped SCP beneath `$HOME/.t3-coder/attachments` as
-upstream's pending upload, `pending-<uuid>-<ext>.<ext>`. It then deletes the local staging file and
-returns the workspace path plus the pending attachment's id, byte size, and (for images) media type
+`@t3tools/shared/attachmentFileExtension`). The gateway streams the bytes from memory over
+`coder ssh` stdin beneath `$HOME/.t3-coder/attachments` as upstream's pending upload,
+`pending-<uuid>-<ext>.<ext>`, and returns the workspace path plus the pending attachment's id, byte size, and (for images) media type
 to the draft's in-memory attachment state. The helper advertises upstream's `attachmentUploads`,
 `questionAttachments`, and `fileAttachments` capabilities, which the composer gates on. The browser uses upstream's attachment upload queue with the Coder
 gateway as its transport: at most three concurrent transfers per workspace, matching upstream's
@@ -326,9 +328,9 @@ images into another workspace queues them for that destination and cancels any o
 browser retains failed images for explicit retry, requeues them when their workspace reconnects,
 and aborts a transfer when its draft attachment is removed. Persisted drafts and stashed prompts
 never store image bytes or image upload ids; a stashed prompt records only the names of images it dropped. HTTP response closure interrupts that transfer's Effect scope, which stops its exact
-child process and cleans up staging. Progress updates use upstream's five-percent steps.
+child process and removes the partial remote copy. Progress updates use upstream's five-percent steps.
 Percentage progress covers only the loopback upload; the
-workspace copy remains pending until SCP and finalization complete. A sent message or question
+workspace copy remains pending until the Coder transfer and finalization complete. A sent message or question
 answer carries upstream's attachments—at most 100, never a caller-supplied path or inline data
 URL. As upstream does, the helper claims each pending upload into a thread-scoped copy when it
 accepts the message; Coder reads the staged file once through a no-follow handle, requires its
@@ -461,10 +463,11 @@ upstream's file frame (`allow-scripts allow-forms allow-popups`, no `allow-same-
 access is limited to validated media previews; the text Files surface and search retain project
 containment.
 
-Remote uploads must first use a generated temporary filename and then be atomically renamed to
-their final generated filename after successful transfer. Failed or incomplete transfers must be
-removed. Image bytes, local paths, Coder credentials, and SCP configuration must not be logged.
-Any temporary SSH configuration must contain no credentials and must be removed after the transfer.
+Remote transfers first write a generated temporary name, check the received byte count (and, for
+the helper bundle, recompute `hashCoderHelperBundle`'s digest in the workspace shell), and then
+rename atomically to the final generated name. Failed, damaged, or interrupted transfers are
+removed by a follow-up `coder ssh` cleanup. Transferred bytes, local paths, and Coder credentials
+are not logged.
 
 Source-control UI restores upstream's Git action control and merge-request detail experience with a
 GitLab-only provider registry. Repository status, fetch, pull, commit, push, repository publishing,
@@ -804,7 +807,7 @@ listed here is drift to remove rather than fork behavior to keep.
   action) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
   preview. A context fragment pasted from another workspace
   brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks. Images
-  and files move through the gateway and SCP (see
+  and files move through the gateway's Coder CLI transfer (see
   [Network and transfer constraints](#network-and-transfer-constraints)); `ChatView` gates them on
   the helper's advertised attachment capabilities, as upstream does. Upstream's `useAssetUrls` is replaced by `assets/assetUrls.ts`, which reads
   submitted images by id through the helper (`AttachmentImageResource` carries the media type
@@ -1065,7 +1068,7 @@ built helper bundle (SHA-256 over its relative paths and contents) once per sess
 hash to the helper launch, which compares it with the `.t3-bundle-sha256` file in the installed
 helper directory. When they differ, the launch prints `T3_CODER_HELPER_INSTALL_REQUIRED` and exits
 before starting the helper; the gateway then replaces the remote helper directory with the local
-bundle through helper-scoped SCP, records the hash, and launches again. A workspace whose helper
+bundle over `coder ssh` stdin, verifies and records the hash, and launches again. A workspace whose helper
 is current therefore connects with one `coder ssh` session and no transfer. Connection diagnostics
 show the preflight, any installation, and helper negotiation as separate phases.
 
