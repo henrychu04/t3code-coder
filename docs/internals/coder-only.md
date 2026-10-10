@@ -254,6 +254,11 @@ recording `.t3-bundle-sha256`. Failed, damaged, or interrupted transfers are rem
 `coder ssh` cleanup. Bytes, local paths, and Coder credentials are never logged, and nothing is
 staged on local disk.
 
+`apps/coder-gateway/src/boundaryGuard.test.ts` reads the gateway and coder-cli sources as text and
+fails on any non-loopback URL literal, `fetch(`, outbound `node:net`/`tls`/`https` use, child
+process import other than `spawn`, spawn target other than an invocation's executable, executable
+literal other than `coder`, `open`, `xdg-open`, or `explorer.exe`, or `shell: true`.
+
 Provider version checks are workspace-originated network requests: the helper queries
 `registry.npmjs.org` for the latest version of each enabled provider whose installer it can
 identify; manual installations are not checked. The workspace setting `enableProviderUpdateChecks`

@@ -101,19 +101,19 @@ pnpm --filter @t3tools/source-control-core --filter @t3tools/source-control-gitl
 pnpm build
 ```
 
-Backend boundary changes need focused tests. Do not launch browsers or use computer-control tooling
-without explicit user permission. Do not test against or modify `~/.t3/userdata`.
+Backend boundary changes need focused tests; `apps/coder-gateway/src/boundaryGuard.test.ts` checks
+the gateway's URLs, connections, and spawn targets. Do not launch browsers or use computer-control
+tooling without explicit user permission. Do not test against or modify `~/.t3/userdata`.
 
 ## Working practices
 
-- Prefer `rg`/`rg --files` for discovery.
 - Upstream is the source of truth for shared product behavior and its docs (`docs/user/` in
   `pingdotgg/t3code`). Port upstream's code rather than re-deriving it, and leave upstream bugs
   unfixed unless they break a boundary above.
 - Mark every fork delta in upstream code with a `Coder:` comment and list it in the upstream seams
   of `docs/internals/coder-only.md`; a difference not listed there is drift to remove.
 - Keep byte limits as named constants with a one-line reason; docs refer to the constant.
-- Preserve unrelated user changes and avoid destructive Git commands.
+- Prefer `rg`/`rg --files`. Preserve unrelated user changes and avoid destructive Git commands.
 - Never kill processes by pattern; stop only a PID captured at spawn.
-- Never commit plans, scratch notes, local state, secrets, credentials, or generated build output.
-- Do not create a pull request unless explicitly requested.
+- Never commit plans, scratch notes, local state, secrets, credentials, or build output, and do
+  not create a pull request unless explicitly requested.
