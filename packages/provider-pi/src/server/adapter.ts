@@ -410,10 +410,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
     ) {
       const scope = yield* Effect.scope;
       const cwd = input.runtimePolicy.cwd ?? host.paths.cwd;
-      // Coder: T3 tools run over the workspace file bridge, which Pi's extension cannot reach
-      // yet, so Pi gets no T3 MCP endpoint. The extension still owns the permission hook.
-      const bridgeSession = yield* mcpSessions.read(input.threadId);
-      const mcpSession = bridgeSession?.toolCommand === undefined ? bridgeSession : undefined;
+      const mcpSession = yield* mcpSessions.read(input.threadId);
       const provideCacheFs = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>) =>
         effect.pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
