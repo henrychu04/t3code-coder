@@ -4,12 +4,13 @@ import * as Layer from "effect/Layer";
 import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessTimeoutError } from "@t3tools/contracts";
-import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 
-const mockedRun = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
+const mockedRun = vi.fn<SourceControlHost.SourceControlHost["Service"]["process"]["run"]>();
 
-function output(exitCode: number, stderr = ""): VcsProcess.VcsProcessOutput {
+function output(exitCode: number, stderr = ""): SourceControlHost.SourceControlProcessOutput {
   return {
     exitCode: ChildProcessSpawner.ExitCode(exitCode),
     stdout: "{}",
@@ -46,7 +47,7 @@ it.effect("uses a state-free workspace-level mutation canary", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -68,7 +69,7 @@ it.effect("fails closed when GitLab returns an unrecognized response", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -90,7 +91,7 @@ it.effect("reports when the installed GitLab CLI rejects the probe syntax", () =
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -116,7 +117,7 @@ it.effect("runs once for concurrent and later checks in the workspace runtime", 
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -139,7 +140,7 @@ it.effect("allows the probe request and classifier to be replaced together", () 
         request: () => ({ args: ["custom", "probe"], stdin: "canary" }),
         classifyProbe: (result) => (result.exitCode === 9 ? "writable" : "indeterminate"),
         isPolicyBlockedWriteFailure: () => false,
-      }).pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun }))),
+      }).pipe(Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } }))),
     ),
   ),
 );
@@ -157,7 +158,7 @@ it.effect("requires a GitLab fingerprint before accepting the expected rejection
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -180,7 +181,7 @@ it.effect("recognizes an included HTTP/2 GitLab response", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -205,7 +206,7 @@ it.effect("recognizes GitLab's missing-field rejection with included response he
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -232,7 +233,7 @@ it.effect("fails closed when an otherwise writable response is truncated", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -249,7 +250,7 @@ it.effect("reports an HTTP 401 response as unauthenticated", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -271,7 +272,7 @@ it.effect("does not treat a generic proxy 404 as proof of write access", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -303,7 +304,7 @@ it.effect("reports a safe reason when the probe process times out", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -328,7 +329,7 @@ it.effect("reports a bounded HTTP rejection without exposing response contents",
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -347,7 +348,7 @@ it.effect("recognizes the GS write-route rejection as a workspace policy block",
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),
@@ -369,7 +370,7 @@ it.effect("reprobes explicitly and replaces the workspace result", () =>
   }).pipe(
     Effect.provide(
       GitLabWriteProbe.layer.pipe(
-        Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun })),
+        Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } })),
       ),
     ),
   ),

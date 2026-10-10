@@ -7,7 +7,7 @@ one. No type distinguishes those meanings and no single file states the whole pa
 this page is for.
 
 The failure is on record rather than hypothetical. The interface doc above
-[GitLab's `getFileRevisions`](../../apps/server/src/pullRequest/GitLabPullRequestCli.ts) once said
+[GitLab's `getFileRevisions`](../../packages/source-control-gitlab/src/server/GitLabPullRequestCli.ts) once said
 the opposite of the code beneath it, because it described a missing path the way the layer below
 means it. Anything written against that reading would treat a version the host declined to give as
 a file the change request deleted, which reports every file a reader has cleared as changed across
@@ -17,7 +17,7 @@ a project the token cannot see.
 
 Below the boundary, in a patch parser or a response decoder, a missing path means this revision
 does not carry that file. Above it, in
-[`ProviderFileRevisions`](../../apps/server/src/pullRequest/PullRequestProvider.ts), a missing path
+[`ProviderFileRevisions`](../../packages/source-control-core/src/server/PullRequestProvider.ts), a missing path
 means the read could not say. A provider's `getFileRevisions` converts on the way up: a path its
 host looked at and has no version for arrives as the empty string, and absence is kept for what
 the provider never got to look at. Absence below the boundary does not survive it.

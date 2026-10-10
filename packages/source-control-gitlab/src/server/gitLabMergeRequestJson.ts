@@ -19,7 +19,7 @@ import type {
   PullRequestState,
 } from "@t3tools/contracts";
 import { TrimmedNonEmptyString } from "@t3tools/contracts";
-import type { ProviderChangeRequestSummary } from "./PullRequestProvider.ts";
+import type { ProviderChangeRequestSummary } from "@t3tools/source-control-core/server/PullRequestProvider";
 import { quoteGitPatchPath } from "@t3tools/shared/gitPatchPath";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 

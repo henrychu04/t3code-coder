@@ -12,7 +12,7 @@ import { GitCommandError, type SourceControlCloneProtocol } from "@t3tools/contr
 import { parseGitLabCloneSource } from "@t3tools/shared/sourceControl";
 import * as ServerConfig from "../config.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
-import * as SourceControlProvider from "./SourceControlProvider.ts";
+import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
 import * as SourceControlProviderRegistry from "./SourceControlProviderRegistry.ts";
 import * as SourceControlRepositoryService from "./SourceControlRepositoryService.ts";
 

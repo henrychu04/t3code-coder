@@ -53,7 +53,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as SecretRequests from "./secrets/SecretRequests.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ServerSettings from "./serverSettings.ts";
-import * as GitLabCli from "./sourceControl/GitLabCli.ts";
+import * as GitLabCli from "@t3tools/source-control-gitlab/server/GitLabCli";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
 import * as TerminalManager from "./terminal/Manager.ts";

@@ -5,11 +5,12 @@ import { ChildProcessSpawner } from "effect/process";
 
 import { VcsProcessExitError } from "@t3tools/contracts";
 
-import * as VcsProcess from "../vcs/VcsProcess.ts";
+import type * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
+import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
 import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabWriteProbe from "./GitLabWriteProbe.ts";
 
-const mockedRun = vi.fn<VcsProcess.VcsProcess["Service"]["run"]>();
+const mockedRun = vi.fn<SourceControlHost.SourceControlHost["Service"]["process"]["run"]>();
 
 function writeProbe(status: "writable" | "policy-blocked") {
   const result = { status, writable: status === "writable" } as const;
@@ -25,16 +26,10 @@ function writeProbe(status: "writable" | "policy-blocked") {
 const layer = it.layer(
   GitLabCli.layerWithWriteProbe(
     Layer.succeed(GitLabWriteProbe.GitLabWriteProbe, writeProbe("writable")),
-  ).pipe(
-    Layer.provide(
-      Layer.mock(VcsProcess.VcsProcess)({
-        run: mockedRun,
-      }),
-    ),
-  ),
+  ).pipe(Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } }))),
 );
 
-function processOutput(stdout: string): VcsProcess.VcsProcessOutput {
+function processOutput(stdout: string): SourceControlHost.SourceControlProcessOutput {
   return {
     exitCode: ChildProcessSpawner.ExitCode(0),
     stdout,
@@ -548,7 +543,7 @@ it.effect("refuses a GitLab mutation before spawning it when the write probe fai
     Effect.provide(
       GitLabCli.layerWithWriteProbe(
         Layer.succeed(GitLabWriteProbe.GitLabWriteProbe, writeProbe("policy-blocked")),
-      ).pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun }))),
+      ).pipe(Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } }))),
     ),
   ),
 );
@@ -617,7 +612,7 @@ it.effect("downgrades the workspace after a real write is blocked by policy", ()
           classifyProbe: () => "writable",
           isPolicyBlockedWriteFailure: (stderr) => stderr.includes("workspace policy"),
         }),
-      ).pipe(Layer.provide(Layer.mock(VcsProcess.VcsProcess)({ run: mockedRun }))),
+      ).pipe(Layer.provide(TestSourceControlHost.layer({ process: { run: mockedRun } }))),
     ),
   ),
 );

@@ -3,10 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import type { SourceControlProviderKind } from "@t3tools/contracts";
 
-import * as GitLabCli from "../sourceControl/GitLabCli.ts";
-import * as GitLabPullRequestCli from "./GitLabPullRequestCli.ts";
-import * as GitLabPullRequestProvider from "./GitLabPullRequestProvider.ts";
-import type { PullRequestProviderApi } from "./PullRequestProvider.ts";
+import * as BuiltInDrivers from "../sourceControl/builtInDrivers.ts";
+import type { PullRequestProviderApi } from "@t3tools/source-control-core/server/PullRequestProvider";
 
 export class PullRequestProviderRegistry extends Context.Service<
   PullRequestProviderRegistry,
@@ -31,11 +29,18 @@ export function fromProviders(
 /**
  * The hosts this build can read change requests from. A host with no entry here still shows up
  * in the provider list as unimplemented, so its projects are explained rather than missing.
+ *
+ * @public Service construction is part of the canonical Effect module API.
  */
-// Coder: GitLab is the only hosted provider.
-/** @public Service construction is part of the canonical Effect module API. */
-export const make = Effect.map(Effect.all([GitLabPullRequestProvider.make]), fromProviders);
+export const make = Effect.gen(function* () {
+  const drivers = yield* Effect.forEach(BuiltInDrivers.BUILT_IN_SOURCE_CONTROL_DRIVERS, (driver) =>
+    driver.make.pipe(Effect.map((instance) => instance.pullRequests)),
+  );
+  return fromProviders(
+    drivers.filter((provider): provider is PullRequestProviderApi => provider !== null),
+  );
+});
 
 export const layer = Layer.effect(PullRequestProviderRegistry, make).pipe(
-  Layer.provide(GitLabPullRequestCli.layer.pipe(Layer.provide(GitLabCli.layer))),
+  Layer.provide(BuiltInDrivers.layer),
 );

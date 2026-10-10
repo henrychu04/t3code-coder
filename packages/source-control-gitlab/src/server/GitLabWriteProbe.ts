@@ -1,3 +1,4 @@
+// Coder: GitLab writes run only after this workspace write-access probe allows them.
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -8,7 +9,7 @@ import type {
   VcsError,
 } from "@t3tools/contracts";
 
-import * as VcsProcess from "../vcs/VcsProcess.ts";
+import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
 
 const PROBE_TIMEOUT_MS = 15_000;
 const PROBE_MAX_OUTPUT_BYTES = 16 * 1024;
@@ -19,7 +20,7 @@ export interface GitLabWriteProbeBehavior {
     readonly stdin?: string;
   };
   readonly classifyProbe: (
-    output: VcsProcess.VcsProcessOutput,
+    output: SourceControlHost.SourceControlProcessOutput,
   ) => Exclude<SourceControlWriteAccessStatus, "unchecked">;
   readonly isPolicyBlockedWriteFailure: (stderr: string) => boolean;
 }
@@ -84,7 +85,7 @@ function access(status: SourceControlWriteAccessStatus, detail?: string): Source
 }
 
 /** Returns only fixed text derived from coarse result categories, never command output. */
-function unrecognizedResponseDetail(output: VcsProcess.VcsProcessOutput): string {
+function unrecognizedResponseDetail(output: SourceControlHost.SourceControlProcessOutput): string {
   if (output.stdoutInvalidUtf8 === true || output.stderrInvalidUtf8 === true) {
     return "The GitLab CLI returned output that was not valid UTF-8, so the probe could not verify it.";
   }
@@ -175,12 +176,12 @@ export class GitLabWriteProbe extends Context.Service<
     readonly markPolicyBlocked: Effect.Effect<void>;
     readonly isPolicyBlockedWriteFailure: (stderr: string) => boolean;
   }
->()("t3/sourceControl/GitLabWriteProbe") {}
+>()("@t3tools/source-control-gitlab/server/GitLabWriteProbe") {}
 
 /** @public Service construction is part of the canonical Effect module API. */
 export function make(behavior: GitLabWriteProbeBehavior = workspacePolicyWriteProbe) {
   return Effect.gen(function* () {
-    const process = yield* VcsProcess.VcsProcess;
+    const { process } = yield* SourceControlHost.SourceControlHost;
     const state = yield* SynchronizedRef.make<GitLabWriteProbeResult>(access("unchecked"));
 
     const runProbe = (input: { readonly cwd: string }) => {

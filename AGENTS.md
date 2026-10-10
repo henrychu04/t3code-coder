@@ -204,6 +204,8 @@ Coder's arguments after `--`.
 - `apps/web`: browser client and Coder deployment/workspace manager.
 - `packages/contracts`, `packages/client-runtime`, `packages/shared`: typed wire and shared runtime
   logic retained by the web/helper pair.
+- `packages/source-control-core`, `packages/source-control-gitlab`, `packages/source-control-testing`:
+  upstream's source-control contracts, the GitLab driver, and its test host.
 
 ## Verification
 
@@ -220,6 +222,7 @@ pnpm --filter @t3tools/shared typecheck
 pnpm --filter @t3tools/client-runtime typecheck
 pnpm --filter @t3tools/coder-cli typecheck
 pnpm --filter @t3tools/provider-core --filter @t3tools/provider-pi --filter @t3tools/provider-testing typecheck
+pnpm --filter @t3tools/source-control-core --filter @t3tools/source-control-gitlab --filter @t3tools/source-control-testing typecheck
 pnpm build
 ```
 

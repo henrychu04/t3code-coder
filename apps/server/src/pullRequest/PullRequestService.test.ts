@@ -23,13 +23,13 @@ import * as RepositoryIdentityResolver from "../project/RepositoryIdentityResolv
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PullRequestFilesViewed from "../persistence/PullRequestFilesViewed.ts";
 import * as SourceControlProviderRegistry from "../sourceControl/SourceControlProviderRegistry.ts";
-import * as SourceControlRateLimit from "../sourceControl/SourceControlRateLimit.ts";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as ServerSettings from "../serverSettings.ts";
 import {
   PullRequestProviderError,
   type ProviderChangeRequest,
   type PullRequestProviderApi,
-} from "./PullRequestProvider.ts";
+} from "@t3tools/source-control-core/server/PullRequestProvider";
 import { PullRequestProviderRegistry, fromProviders } from "./PullRequestProviderRegistry.ts";
 import * as PullRequestService from "./PullRequestService.ts";
 import * as PullRequestReadCache from "./PullRequestReadCache.ts";
@@ -393,6 +393,11 @@ function fakeProvider(
     setReaction: () => Effect.void,
     listReviewerCandidates: () => Effect.succeed({ candidates: [], truncated: false }),
     setReviewerRequest: () => Effect.void,
+    // The hosts' own resolvers, which the service reads instead of the kind.
+    ...(kind === "github" ? { mergeMessageRewrite: (message: string) => message } : {}),
+    ...(kind === "azure-devops"
+      ? { repositoryKey: ({ canonicalKey }: { readonly canonicalKey: string }) => canonicalKey }
+      : {}),
     ...overrides,
   };
 }
