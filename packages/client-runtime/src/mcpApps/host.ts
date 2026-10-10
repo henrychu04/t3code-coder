@@ -1,12 +1,14 @@
 // @effect-diagnostics globalTimers:off - The bridge runs in the client, outside an Effect runtime.
 import { MCP_APP_PROTOCOL_VERSION, type McpAppReference } from "@t3tools/shared/mcpApp";
+import * as Base64 from "effect/encoding/Base64";
 import * as Predicate from "effect/Predicate";
+import * as Result from "effect/Result";
 
 /**
  * The host side of the MCP Apps bridge (spec 2026-01-26, plus the draft
- * addition the current SDK sends: `ui/notifications/request-teardown`; Coder: the
- * `ui/download-file` draft addition is not carried, since apps may not save files):
- * JSON-RPC 2.0 over postMessage between a client and one app document. It is transport-free so web (an iframe) and
+ * additions the current SDK sends: `ui/download-file` and
+ * `ui/notifications/request-teardown`): JSON-RPC 2.0 over postMessage between a
+ * client and one app document. It is transport-free so web (an iframe) and
  * mobile (a WebView) share every protocol rule; each platform supplies how to
  * post a message and how to reach the environment.
  */
@@ -50,6 +52,35 @@ export interface McpAppHostContext {
   readonly toolInfo?: { readonly tool: unknown };
 }
 
+/** A file an app asked the host to save (`ui/download-file`): embedded, or linked on its server. */
+export type McpAppDownload =
+  | {
+      readonly _tag: "embedded";
+      readonly name: string;
+      readonly mimeType: string;
+      readonly bytes: Uint8Array;
+    }
+  | {
+      readonly _tag: "link";
+      readonly name: string;
+      readonly uri: string;
+      readonly mimeType?: string;
+    };
+
+/**
+ * The bytes of an MCP resource's contents: `text` as UTF-8, `blob` decoded
+ * from base64. Undefined when it has neither or the base64 is malformed.
+ */
+export function mcpResourceBytes(content: unknown): Uint8Array | undefined {
+  if (!Predicate.isObject(content)) return undefined;
+  if (typeof content.text === "string") return encoder.encode(content.text);
+  if (typeof content.blob === "string") {
+    const decoded = Base64.decode(content.blob);
+    return Result.isSuccess(decoded) ? decoded.success : undefined;
+  }
+  return undefined;
+}
+
 export interface McpAppCallToolResult {
   readonly content: ReadonlyArray<unknown>;
   readonly structuredContent?: unknown;
@@ -84,6 +115,7 @@ export interface McpAppHostOptions {
    * resulting mode. The host has already checked both lists.
    */
   readonly requestDisplayMode: (mode: McpAppDisplayMode) => Promise<McpAppDisplayMode>;
+  readonly downloadFile: (files: ReadonlyArray<McpAppDownload>) => Promise<void>;
   /** The app asked to be closed (`ui/notifications/request-teardown`). */
   readonly onRequestTeardown: () => void;
   readonly onSizeChanged: (size: { readonly width?: number; readonly height?: number }) => void;
@@ -218,6 +250,7 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
             logging: {},
             message: { text: {} },
             updateModelContext: { text: {}, structuredContent: {} },
+            downloadFile: {},
             sandbox: {
               ...(options.app.csp === undefined ? {} : { csp: options.app.csp }),
               ...(options.app.permissions === undefined
@@ -330,6 +363,22 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
         );
         return;
       }
+      case "ui/download-file": {
+        const files = readDownloads(params.contents);
+        if (files === undefined) {
+          fail(id, -32602, "ui/download-file needs embedded resources or resource links.");
+          return;
+        }
+        answer(id, () =>
+          options.downloadFile(files).then(
+            () => ({}),
+            // The draft reports a refused or failed download in the result.
+            (error: unknown) =>
+              error instanceof McpAppHostRefusal ? { isError: true } : Promise.reject(error),
+          ),
+        );
+        return;
+      }
       default:
         fail(id, -32601, `Method not found: ${method}`);
     }
@@ -437,6 +486,54 @@ export function makeMcpAppHost(options: McpAppHostOptions): McpAppHost {
     },
   };
   return hostHandle;
+}
+
+const MAX_DOWNLOAD_NAME = 200;
+
+/** The file name an app gave a download, or the last part of its URI. */
+function downloadName(uri: unknown, name: unknown): string {
+  const raw =
+    typeof name === "string" && name.trim() !== ""
+      ? name
+      : typeof uri === "string"
+        ? (uri.split(/[/?#]/).findLast(Boolean) ?? "download")
+        : "download";
+  // Path separators, reserved characters, and control characters.
+  const safe = Array.from(raw, (char) =>
+    /[\\/:*?"<>|]/.test(char) || char.charCodeAt(0) < 32 ? "-" : char,
+  ).join("");
+  return safe.slice(0, MAX_DOWNLOAD_NAME) || "download";
+}
+
+/** `ui/download-file` contents: MCP embedded resources and resource links. */
+function readDownloads(contents: unknown): ReadonlyArray<McpAppDownload> | undefined {
+  if (!Array.isArray(contents) || contents.length === 0) return undefined;
+  const files: Array<McpAppDownload> = [];
+  for (const entry of contents) {
+    if (!Predicate.isObject(entry)) return undefined;
+    if (entry.type === "resource" && Predicate.isObject(entry.resource)) {
+      const resource = entry.resource;
+      const bytes = mcpResourceBytes(resource);
+      if (bytes === undefined) return undefined;
+      files.push({
+        _tag: "embedded",
+        name: downloadName(resource.uri, resource.name),
+        mimeType:
+          typeof resource.mimeType === "string" ? resource.mimeType : "application/octet-stream",
+        bytes,
+      });
+    } else if (entry.type === "resource_link" && typeof entry.uri === "string") {
+      files.push({
+        _tag: "link",
+        name: downloadName(entry.uri, entry.name),
+        uri: entry.uri,
+        ...(typeof entry.mimeType === "string" ? { mimeType: entry.mimeType } : {}),
+      });
+    } else {
+      return undefined;
+    }
+  }
+  return files;
 }
 
 /**

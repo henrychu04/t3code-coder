@@ -1,7 +1,7 @@
 import { filePreviewDelimiter } from "@t3tools/shared/delimitedPreview";
 import { readFilePreviewResponse } from "@t3tools/client-runtime/file-preview";
 import { filePreviewKind, FILE_TEXT_PREVIEW_MAX_BYTES } from "@t3tools/shared/filePreview";
-import { ChevronRightIcon, Trash2Icon, WrapTextIcon, XIcon } from "lucide-react";
+import { ChevronRightIcon, DownloadIcon, Trash2Icon, WrapTextIcon, XIcon } from "lucide-react";
 import { Check, Code2, Copy, Eye, Table2 } from "lucide";
 import { lazy, Suspense, useEffect, useState } from "react";
 
@@ -11,6 +11,7 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";
 import { formatAttachmentSize } from "~/lib/attachmentDisplay";
+import { saveBlob } from "~/lib/readAttachmentFile";
 import { cn } from "~/lib/utils";
 
 import { AudioPreview } from "./AudioPreview";
@@ -45,9 +46,8 @@ function renderedToggleLabel(mode: "markdown" | "html" | "table", rendered: bool
  * A draft attachment shown with the same chrome as a workspace file: one header row with crumbs
  * and icon actions, then the document.
  *
- * Coder: previews bytes already in browser memory (a draft file, or an agent's HTML render the
- * helper read). There is no signed asset URL to read a submitted attachment from, and no Save
- * action (no downloads).
+ * Coder: previews bytes already in browser memory (a draft file, a sent file or an agent's HTML
+ * render the helper read) in place of upstream's signed asset URL, and saves those bytes.
  */
 export function AttachmentFilePreview(props: {
   name: string;
@@ -192,7 +192,8 @@ export function AttachmentFilePreview(props: {
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
       <p className="text-sm font-medium">No preview for this file</p>
       <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-        Open it in an app that supports {props.name.split(".").at(-1) || "this format"} files.
+        Save it to open in an app that supports {props.name.split(".").at(-1) || "this format"}{" "}
+        files.
       </p>
     </div>
   );
@@ -243,6 +244,11 @@ export function AttachmentFilePreview(props: {
             <MorphIcon className="size-3.5" icon={isCopied ? Check : Copy} />
           </FileSurfaceAction>
         ) : null}
+        {url ? (
+          <FileSurfaceAction label="Save file" onPress={() => saveBlob(props.file, props.name)}>
+            <DownloadIcon className="size-3.5" />
+          </FileSurfaceAction>
+        ) : null}
         {props.onRemove ? (
           <FileSurfaceAction label="Remove from draft" onPress={props.onRemove}>
             <Trash2Icon className="size-3.5" />
@@ -257,7 +263,8 @@ export function AttachmentFilePreview(props: {
       {content?.truncated ? (
         <FileSurfaceNotice>
           Preview limited to the first 1 MB
-          {props.sizeBytes > 0 ? ` of a ${props.sizeBytes.toLocaleString()} byte file` : ""}.
+          {props.sizeBytes > 0 ? ` of a ${props.sizeBytes.toLocaleString()} byte file` : ""}. Save
+          the file to read it in full.
         </FileSurfaceNotice>
       ) : null}
       {body}

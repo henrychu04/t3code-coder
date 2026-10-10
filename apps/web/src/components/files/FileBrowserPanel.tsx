@@ -15,6 +15,7 @@ import { MorphIcon } from "~/components/MorphIcon";
 import { toastManager } from "~/components/ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { useComposerHandleContext } from "~/composerHandleContext";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useTheme } from "~/hooks/useTheme";
 import { useWorkspaceMutationRefresh } from "~/hooks/useWorkspaceMutationRefresh";
 import { useFileContextMenu, type FileContextMenuAction } from "~/fileContextMenu";
@@ -22,6 +23,7 @@ import { readLocalApi } from "~/localApi";
 import { T3_PIERRE_ICONS } from "~/pierre-icons";
 import { PIERRE_TREE_UNSAFE_CSS, pierreTreeStyle } from "~/pierre-tree-theme";
 
+import { createFileTreeDragMentionController } from "./fileTreeDragMention";
 import { areAllDirectoriesExpanded, setAllDirectoriesExpanded } from "./fileTreeExpansion";
 import { buildFileTreePathUpdates } from "./fileTreePathReconciliation";
 import { useDirectoryEntries } from "./useDirectoryEntries";
@@ -186,7 +188,7 @@ export default function FileBrowserPanel({
       const clicked = await api.contextMenu.show(
         [
           ...fileMenuItems,
-          // Coder: the only text clipboard action is the project-relative Copy path above.
+          { id: "copy-mention", label: "Copy mention" },
           { id: "add-to-chat", label: "Add to chat" },
         ],
         position,
@@ -198,6 +200,19 @@ export default function FileBrowserPanel({
         fileMenuItems.some((entry) => entry.id === clicked) || clicked.startsWith("editor:");
       if (isFileMenuAction) {
         await fileContextMenu.activate(clicked as FileContextMenuAction, fileTarget);
+        return;
+      }
+      if (clicked === "copy-mention") {
+        try {
+          await writeTextToClipboard(mention);
+          toastManager.add({ type: "success", title: "Mention copied", description: relativePath });
+        } catch (error) {
+          toastManager.add({
+            type: "error",
+            title: "Failed to copy mention",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          });
+        }
         return;
       }
       if (clicked === "add-to-chat") {
@@ -231,6 +246,14 @@ export default function FileBrowserPanel({
   // The tree reads decorations at render time; a folder still loading its
   // children shows a spinner in its row instead of a banner that shifts the tree.
   const loadingDirectoriesRef = useRef(loadingDirectories);
+  const treeModelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);
+  const dragMention = useMemo(
+    () =>
+      createFileTreeDragMentionController({
+        deselect: (path) => treeModelRef.current?.getItem(path)?.deselect(),
+      }),
+    [],
+  );
   const { model } = useFileTree({
     composition: {
       contextMenu: {
@@ -240,16 +263,26 @@ export default function FileBrowserPanel({
         },
       },
     },
-    // Coder: the Files surface has no drag-and-drop, so rows are not draggable.
+    // Rows only need to be draggable so entries can be dropped into the chat
+    // composer; rearranging files inside the tree stays off.
+    dragAndDrop: { canDrop: () => false },
     density: "compact",
     fileTreeSearchMode: "hide-non-matches",
     flattenEmptyDirectories: true,
     initialExpansion: "closed",
     icons: T3_PIERRE_ICONS,
     onSelectionChange: (selectedPaths) => {
+      // The drag controller's selection cache must track every change,
+      // including reveal-driven ones, or drags act on a stale selection.
+      dragMention.handleSelectionChange(selectedPaths);
       // Selection changes driven by the reveal sync below are echoes of an
       // already-open file, not a request to open it again.
       if (syncingSelectionRef.current) return;
+      // Starting a drag selects the dragged row; that selection is a side
+      // effect of the gesture, not a request to open the file.
+      if (dragMention.isDragInProgress()) {
+        return;
+      }
       const selectedPath = selectedPaths.at(-1)?.replace(/\/$/, "");
       if (selectedPath && entryKindsRef.current.get(selectedPath) === "file") {
         treeSelectionPathRef.current = selectedPath;
@@ -443,8 +476,34 @@ export default function FileBrowserPanel({
     });
   }, [entryKinds, model, selectedPath, selectedPathRevealId]);
 
+  // Tag tree drags with the composer mention payload. The row is read from
+  // the composed event path (the tree's shadow root is open), so this does
+  // not depend on running after the tree's own dragstart handler; the drag
+  // data store is writable for every dragstart listener in the dispatch.
+  // The capture phase runs before the tree's own dragstart handler selects
+  // the dragged row, so the drag flag is up before that selection emits.
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    treeModelRef.current = model;
+  }, [model]);
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (panel === null) {
+      return;
+    }
+    const handleDragStart = (event: DragEvent) => dragMention.handleDragStart(event);
+    const handleDragEnd = () => dragMention.handleDragEnd();
+    panel.addEventListener("dragstart", handleDragStart, true);
+    panel.addEventListener("dragend", handleDragEnd);
+    return () => {
+      panel.removeEventListener("dragstart", handleDragStart, true);
+      panel.removeEventListener("dragend", handleDragEnd);
+    };
+  }, [dragMention]);
+
   return (
     <div
+      ref={panelRef}
       className="flex min-h-0 flex-1 flex-col bg-background"
       data-file-browser-panel={`${environmentId}:${cwd}`}
     >

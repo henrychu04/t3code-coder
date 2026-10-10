@@ -2,6 +2,7 @@
 // upstream's reads of absolute host paths and create-anywhere writes: reads and edits accept only
 // project-relative paths inside the real project root, edits apply to existing text files under a
 // per-file lock with the read revision checked for staleness, and files are replaced atomically.
+// `createFile` writes a new text file only, for upstream's "Save to workspace" of a proposed plan.
 import { makeKeyedCoalescingWorker } from "@t3tools/shared/KeyedCoalescingWorker";
 // @effect-diagnostics nodeBuiltinImport:off
 import { createHash, randomUUID } from "node:crypto";
@@ -9,6 +10,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
 
 import type {
+  ProjectCreateFileInput,
   ProjectReadFileInput,
   ProjectReadFileResult,
   ProjectWriteFileInput,
@@ -27,6 +29,7 @@ import * as WorkspacePaths from "./WorkspacePaths.ts";
 const PROJECT_FILE_MAX_BYTES = 1024 * 1024;
 type WorkspaceReadFileInput = Omit<ProjectReadFileInput, "threadId">;
 type WorkspaceWriteFileInput = Omit<ProjectWriteFileInput, "threadId">;
+type WorkspaceCreateFileInput = Omit<ProjectCreateFileInput, "threadId" | "draftProjectId">;
 
 function revisionOf(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -111,6 +114,12 @@ export class WorkspaceFileSystem extends Context.Service<
     >;
     readonly writeFile: (
       input: WorkspaceWriteFileInput,
+    ) => Effect.Effect<
+      ProjectWriteFileResult,
+      WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
+    >;
+    readonly createFile: (
+      input: WorkspaceCreateFileInput,
     ) => Effect.Effect<
       ProjectWriteFileResult,
       WorkspaceFileSystemError | WorkspacePaths.WorkspacePathOutsideRootError
@@ -304,7 +313,86 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  return WorkspaceFileSystem.of({ readFile, writeFile });
+  /** Creates a new text file; an existing path, even a symlink, is never replaced or followed. */
+  const createFile: WorkspaceFileSystem["Service"]["createFile"] = Effect.fn(
+    "WorkspaceFileSystem.createFile",
+  )(function* (input) {
+    const target = yield* workspacePaths.resolveRelativePathWithinRoot({
+      workspaceRoot: input.cwd,
+      relativePath: input.relativePath,
+    });
+    const bytes = new TextEncoder().encode(input.contents);
+    const failure = (
+      operation: "realpath-workspace-root" | "make-directory" | "write-file",
+      cause: unknown,
+    ) =>
+      new WorkspaceFileSystemOperationError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedPath: target.absolutePath,
+        operationPath: target.absolutePath,
+        operation,
+        cause,
+      });
+    if (bytes.byteLength > PROJECT_FILE_MAX_BYTES) {
+      return yield* failure(
+        "write-file",
+        new Error(`Workspace text files are limited to ${PROJECT_FILE_MAX_BYTES} bytes.`),
+      );
+    }
+    const realWorkspaceRoot = yield* Effect.tryPromise({
+      try: () => NodeFSP.realpath(input.cwd),
+      catch: (cause) => failure("realpath-workspace-root", cause),
+    });
+    // A symlinked ancestor must not carry the new file, or the folders made for it, outside the
+    // project: the nearest existing ancestor is checked before any folder is made, and the parent
+    // is resolved again afterwards.
+    const realParent = yield* Effect.tryPromise({
+      try: async () => {
+        const parent = NodePath.dirname(target.absolutePath);
+        let existing = parent;
+        while (
+          !(await NodeFSP.stat(existing).then(
+            () => true,
+            () => false,
+          ))
+        ) {
+          existing = NodePath.dirname(existing);
+        }
+        if (!isContained(realWorkspaceRoot, await NodeFSP.realpath(existing))) return null;
+        await NodeFSP.mkdir(parent, { recursive: true });
+        return NodeFSP.realpath(parent);
+      },
+      catch: (cause) => failure("make-directory", cause),
+    });
+    if (realParent === null) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: target.absolutePath,
+      });
+    }
+    const realTargetPath = NodePath.join(realParent, NodePath.basename(target.absolutePath));
+    if (!isContained(realWorkspaceRoot, realTargetPath)) {
+      return yield* new WorkspaceFilePathEscapeError({
+        workspaceRoot: input.cwd,
+        relativePath: input.relativePath,
+        resolvedWorkspaceRoot: realWorkspaceRoot,
+        resolvedPath: realTargetPath,
+      });
+    }
+    yield* Effect.tryPromise({
+      try: () => NodeFSP.writeFile(realTargetPath, bytes, { flag: "wx" }),
+      catch: (cause) => failure("write-file", cause),
+    }).pipe(
+      Effect.tap(() => refreshWorker.enqueue(input.cwd, true)),
+      Effect.uninterruptible,
+    );
+    return { relativePath: target.relativePath, revision: revisionOf(bytes) };
+  });
+
+  return WorkspaceFileSystem.of({ readFile, writeFile, createFile });
 });
 
 export const layer = Layer.effect(WorkspaceFileSystem, make);

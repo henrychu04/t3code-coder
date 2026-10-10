@@ -1927,6 +1927,29 @@ export const layer = CoderWsRpcGroup.toLayer(
             ),
           );
         }),
+      // Coder: a new file for upstream's "Save to workspace", in the owner's verified project.
+      [WS_METHODS.projectsCreateFile]: (input) =>
+        Effect.gen(function* () {
+          const owned = yield* workspaceOwnedByThread(input).pipe(
+            Effect.orElseSucceed(() => false),
+          );
+          if (!owned)
+            return yield* new ProjectWriteFileError({
+              ...input,
+              failure: "workspace_not_owned_by_thread",
+            });
+          return yield* workspaceFileSystem.createFile(input).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProjectWriteFileError({
+                  cwd: input.cwd,
+                  relativePath: input.relativePath,
+                  ...projectFileFailureContext(cause),
+                  cause,
+                }),
+            ),
+          );
+        }),
       // Coder: list directories in the Linux workspace through stdio.
       [WS_METHODS.filesystemBrowse]: (input) =>
         workspaceEntries.browse(input).pipe(
@@ -1962,6 +1985,9 @@ export const layer = CoderWsRpcGroup.toLayer(
           attachmentsDir: config.attachmentsDir,
           getTurnItem: orchestrationEngine.getTurnItem,
         }),
+      // Coder: a sent file attachment, in place of upstream's signed attachment asset URL.
+      [WS_METHODS.workspaceReadAttachmentFile]: (input) =>
+        screenshotArtifacts.readAttachmentFileChunk(input),
       [WS_METHODS.workspaceListLegacyScreenshotArtifacts]: (input) =>
         legacyScreenshotArtifacts.listAfterMessage(input.messageId),
       [WS_METHODS.subscribeVcsStatus]: (input) =>

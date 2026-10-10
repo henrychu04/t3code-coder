@@ -3,6 +3,7 @@ import {
   makeMcpAppHost,
   McpAppHostRefusal,
   mcpAppStyleVariables,
+  mcpResourceBytes,
   type McpAppCallToolResult,
   type McpAppDisplayMode,
   type McpAppHost,
@@ -48,13 +49,27 @@ const commandFailure = (result: {
 const fullscreenSupported =
   typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype;
 
+/** Largest file an app may hand the user through `ui/download-file`. */
+const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
+
+/** Saves a file through the browser's own download, which asks where when it is set to. */
+function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.click();
+  // Long after the browser has read it: some start the download a task or
+  // more after the click, and a revoked URL saves nothing.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 /**
  * An MCP App inline in the thread: the captured document in an opaque-origin
  * frame, speaking the MCP Apps bridge. Its tool calls and resource reads reach
  * its own MCP server through the environment; calls to tools the server does
- * not mark read-only and chat messages ask first (Coder: apps cannot save
- * files). Full screen keeps the same frame (and the app's state) and only
- * restyles its box.
+ * not mark read-only, chat messages, and downloads ask first. Full screen keeps
+ * the same frame (and the app's state) and only restyles its box.
  */
 export function McpAppFrame(props: {
   readonly environmentId: EnvironmentId;
@@ -374,6 +389,36 @@ export function McpAppFrame(props: {
         }
         setDisplayMode(mode);
         return mode;
+      },
+      downloadFile: async (files) => {
+        const names = files.map((file) => file.name).join(", ");
+        const approved = await ask(`Save ${names} from ${app.server}?`);
+        if (approved !== true) throw new McpAppHostRefusal("Declined by the user.");
+        for (const file of files) {
+          // A linked file is read from the app's own server, like its other reads.
+          let bytes: Uint8Array | undefined;
+          let mimeType = file.mimeType ?? "application/octet-stream";
+          if (file._tag === "embedded") {
+            bytes = file.bytes;
+          } else {
+            const { environmentId, input } = scope();
+            const read = await latest.current.readResource({
+              environmentId,
+              input: { ...input, uri: file.uri },
+            });
+            if (read._tag !== "Success") throw commandFailure(read);
+            const content = read.value.contents[0];
+            bytes = mcpResourceBytes(content);
+            const declared = (content as { readonly mimeType?: unknown } | undefined)?.mimeType;
+            if (typeof declared === "string") mimeType = declared;
+          }
+          if (bytes === undefined) throw new McpAppHostRefusal(`${file.name} has no contents.`);
+          if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
+            throw new McpAppHostRefusal(`${file.name} is too large to save.`);
+          }
+          // A copy backed by a plain ArrayBuffer, which Blob requires.
+          saveBlob(new Blob([bytes.slice()], { type: mimeType }), file.name);
+        }
       },
       onRequestTeardown: () => {
         if (latest.current.displayMode === "fullscreen") {

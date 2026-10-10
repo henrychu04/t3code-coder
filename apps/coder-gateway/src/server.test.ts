@@ -192,9 +192,9 @@ describe("local Coder gateway", () => {
     strictEqual(shell.body.includes("event.source !== parent"), true);
   });
 
-  // Coder: HTML files previewed in Files may open their links in new tabs, and PDFs render
-  // from memory-only blobs in the browser's viewer.
-  it("serves the HTML document shell with popups and allows blob frames for PDFs", async () => {
+  // Coder: HTML files previewed in Files get upstream's file frame sandbox (popups and
+  // downloads), and PDFs render from memory-only blobs in the browser's viewer.
+  it("serves the HTML document shell with upstream's file sandbox and allows blob PDFs", async () => {
     const gateway = await startLocalCoderGateway();
     closeGateway = gateway.close;
     const page = await request({ url: `${gateway.url}/healthz` });
@@ -203,7 +203,7 @@ describe("local Coder gateway", () => {
     strictEqual(shell.statusCode, 200);
     strictEqual(
       shell.headers["content-security-policy"],
-      "sandbox allow-scripts allow-forms allow-popups; frame-ancestors 'self'",
+      "sandbox allow-scripts allow-forms allow-popups allow-downloads; frame-ancestors 'self'",
     );
     strictEqual(shell.body.includes("event.source !== parent"), true);
   });

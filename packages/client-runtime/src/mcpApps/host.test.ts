@@ -56,6 +56,7 @@ function setup(overrides: Partial<Parameters<typeof makeMcpAppHost>[0]> = {}) {
       mode = next === "fullscreen" ? "fullscreen" : "inline";
       return mode;
     },
+    downloadFile: async () => undefined,
     onRequestTeardown: () => undefined,
     onSizeChanged: () => undefined,
     ...overrides,
@@ -317,18 +318,22 @@ describe("makeMcpAppHost", () => {
     expect(declined.sent.find((m) => m.id === 3)?.result).toEqual({ mode: "inline" });
   });
 
-  // Coder: apps may not save files, so `ui/download-file` is neither declared nor served.
-  it("forwards model context and refuses download requests", async () => {
+  it("forwards model context and download requests, and declares both", async () => {
     const contexts: Array<unknown> = [];
+    const downloads: Array<unknown> = [];
     const { host, sent } = setup({
       updateModelContext: async (update) => void contexts.push(update),
+      downloadFile: async (files) => {
+        downloads.push(files);
+        if (files.length > 1) throw new McpAppHostRefusal("Declined by the user.");
+      },
     });
     initialize(host);
     const capabilities = (
       sent[0]?.result as { hostCapabilities: Record<string, unknown> } | undefined
     )?.hostCapabilities;
     expect(capabilities?.updateModelContext).toEqual({ text: {}, structuredContent: {} });
-    expect(capabilities?.downloadFile).toBeUndefined();
+    expect(capabilities?.downloadFile).toEqual({});
 
     host.receive({
       jsonrpc: "2.0",
@@ -336,24 +341,41 @@ describe("makeMcpAppHost", () => {
       method: "ui/update-model-context",
       params: { content: [{ type: "text", text: "2 overdue" }], structuredContent: { overdue: 2 } },
     });
+    const embedded = {
+      type: "resource",
+      resource: { uri: "file:///report.csv", mimeType: "text/csv", text: "a,b" },
+    };
     host.receive({
       jsonrpc: "2.0",
       id: 2,
       method: "ui/download-file",
+      params: { contents: [embedded] },
+    });
+    host.receive({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "ui/download-file",
       params: {
-        contents: [
-          {
-            type: "resource",
-            resource: { uri: "file:///report.csv", mimeType: "text/csv", text: "a,b" },
-          },
-        ],
+        contents: [embedded, { type: "resource_link", uri: "ui://todos/export", name: "x" }],
       },
     });
+    host.receive({ jsonrpc: "2.0", id: 4, method: "ui/download-file", params: { contents: [{}] } });
     await flush();
     expect(contexts).toEqual([
       { content: [{ type: "text", text: "2 overdue" }], structuredContent: { overdue: 2 } },
     ]);
-    expect(sent.find((m) => m.id === 2)?.error).toMatchObject({ code: -32601 });
+    expect(downloads[0]).toEqual([
+      {
+        _tag: "embedded",
+        name: "report.csv",
+        mimeType: "text/csv",
+        bytes: new TextEncoder().encode("a,b"),
+      },
+    ]);
+    expect(sent.find((m) => m.id === 2)?.result).toEqual({});
+    // A refused download is reported in the result, as the draft defines.
+    expect(sent.find((m) => m.id === 3)?.result).toEqual({ isError: true });
+    expect(sent.find((m) => m.id === 4)?.error).toMatchObject({ code: -32602 });
   });
 
   it("tears down after the app answers, or after the timeout, and passes on its own request", async () => {

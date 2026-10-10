@@ -1,4 +1,4 @@
-// Coder: draft attachments preview from their in-memory bytes, without a Save action.
+// Coder: attachments preview from their in-memory bytes, and Save writes those bytes.
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -9,6 +9,8 @@ vi.mock("~/hooks/useCopyToClipboard", () => ({
   useCopyToClipboard: () => ({ copyToClipboard: vi.fn(), isCopied: false }),
 }));
 vi.mock("~/components/ChatMarkdown", () => ({ default: () => null }));
+const saveBlob = vi.hoisted(() => vi.fn());
+vi.mock("~/lib/readAttachmentFile", () => ({ saveBlob }));
 vi.mock("~/components/ui/scroll-area", () => ({
   ScrollArea: ({ children }: { children: ReactNode }) => children,
 }));
@@ -38,7 +40,7 @@ describe("draft attachment preview", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows a text draft's contents from memory and offers no Save action", async () => {
+  it("shows a text draft's contents from memory and saves the same bytes", async () => {
     const file = new Blob(["hello from a draft\n"], { type: "text/plain" });
     await act(async () => {
       renderer = create(
@@ -48,9 +50,10 @@ describe("draft attachment preview", () => {
     await vi.waitFor(() => {
       expect(renderer!.root.findByType("pre").props.children).toBe("hello from a draft\n");
     });
-    const labels = renderer!.root
+    const save = renderer!.root
       .findAllByType("button")
-      .map((button) => button.props["aria-label"]);
-    expect(labels).not.toContain("Save file");
+      .find((button) => button.props["aria-label"] === "Save file");
+    act(() => save!.props.onClick());
+    expect(saveBlob).toHaveBeenCalledWith(file, "notes.txt");
   });
 });

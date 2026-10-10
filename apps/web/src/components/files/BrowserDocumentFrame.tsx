@@ -5,7 +5,8 @@
  * or data: frame would inherit the app page's Content-Security-Policy and block the page's own
  * scripts. The shell's CSP sandbox gives the page an opaque origin even if the shell is opened
  * directly. Agent renders use the MCP App shell (upstream's `allow-scripts allow-forms`); HTML
- * files use the document shell, which adds `allow-popups` as upstream's file frame does. A PDF
+ * files use the document shell, which adds `allow-popups allow-downloads` as upstream's file frame
+ * does. A PDF
  * opens from a memory-only blob in the browser's built-in viewer, which needs an unsandboxed
  * frame; a PDF runs no scripts in the app's origin.
  */

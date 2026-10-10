@@ -2,7 +2,7 @@
  * Coder: upstream's inline HTML render, with the page read through the helper's bounded turn-item
  * read (only the page the stored item references, in the item's own thread) instead of a signed
  * asset URL, and written into the gateway's sandboxed document shell. "Open full size" shows the
- * same in-memory page with its source; there is no Save action.
+ * same in-memory page with its source and saves it.
  */
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";

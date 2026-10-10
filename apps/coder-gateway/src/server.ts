@@ -127,7 +127,8 @@ const mcpAppFrameHtml = `<!doctype html>
 
 /**
  * Coder: the shell also frames agent HTML renders (same sandbox as upstream's render frame) and,
- * with `allow-popups` so their links open new tabs, HTML files previewed in Files.
+ * with upstream's file frame sandbox (`allow-popups allow-downloads`), HTML files previewed in
+ * Files.
  */
 function sendMcpAppFrame(
   response: NodeHttp.ServerResponse,
@@ -2370,7 +2371,7 @@ export function makeLocalCoderGateway(
           return;
         }
         if (request.method === "GET" && requestUrl.pathname === HTML_DOCUMENT_FRAME_PATH) {
-          sendMcpAppFrame(response, "allow-scripts allow-forms allow-popups");
+          sendMcpAppFrame(response, "allow-scripts allow-forms allow-popups allow-downloads");
           return;
         }
         if (request.method === "GET" && requestUrl.pathname === MCP_APP_FRAME_PATH) {

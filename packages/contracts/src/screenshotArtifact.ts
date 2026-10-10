@@ -8,7 +8,10 @@ import {
   TrimmedNonEmptyString,
   TurnItemId,
 } from "./baseSchemas.ts";
-import { PROVIDER_SEND_TURN_MAX_IMAGE_BYTES } from "./chatAttachment.ts";
+import {
+  PROVIDER_SEND_TURN_MAX_FILE_BYTES,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+} from "./chatAttachment.ts";
 import { ProjectFilesOwnerFields } from "./project.ts";
 
 export const MAX_SCREENSHOT_ARTIFACT_BYTES = 20 * 1024 * 1024;
@@ -88,6 +91,25 @@ export const ScreenshotArtifactChunk = Schema.Struct({
   nextOffset: Schema.NullOr(NonNegativeInt),
 });
 export type ScreenshotArtifactChunk = typeof ScreenshotArtifactChunk.Type;
+
+/**
+ * Coder: a sent composer file read back by its attachment id, for upstream's attachment preview
+ * and Save, which upstream loads from a signed asset URL. Bounded by the composer file limit.
+ */
+export const AttachmentFileReadInput = Schema.Struct({
+  attachmentId: ScreenshotArtifactId,
+  offset: NonNegativeInt,
+  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES)),
+});
+export type AttachmentFileReadInput = typeof AttachmentFileReadInput.Type;
+
+export const AttachmentFileChunk = Schema.Struct({
+  offset: NonNegativeInt,
+  totalBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(PROVIDER_SEND_TURN_MAX_FILE_BYTES)),
+  dataBase64: Schema.String,
+  nextOffset: Schema.NullOr(NonNegativeInt),
+});
+export type AttachmentFileChunk = typeof AttachmentFileChunk.Type;
 
 export class ScreenshotArtifactReadError extends Schema.TaggedError<ScreenshotArtifactReadError>()(
   "ScreenshotArtifactReadError",

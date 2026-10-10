@@ -1,36 +1,68 @@
-// Coder: plans can be copied but not downloaded or saved as new workspace files (no exports,
-// and the Files surface edits only existing files).
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback, useState, useId } from "react";
 import { useFindRevealRef } from "./markdownFindContext";
-import { type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  isAtomCommandInterrupted,
+  squashAtomCommandFailure,
+} from "@t3tools/client-runtime/state/runtime";
+import {
+  AuthFilesystemWriteScope,
+  type EnvironmentId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import {
   buildCollapsedProposedPlanPreviewMarkdown,
+  buildProposedPlanMarkdownFilename,
+  downloadPlanAsTextFile,
   normalizePlanMarkdownForExport,
 } from "../../proposedPlan";
 import ChatMarkdown from "../ChatMarkdown";
 import { EllipsisIcon } from "lucide-react";
 import { Button } from "../ui/button";
+import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
+import {
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "../ui/dialog";
 import { stackedThreadToast, toastManager } from "../ui/toast";
+import { projectEnvironment } from "~/state/projects";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
 
 export const ProposedPlanCard = memo(function ProposedPlanCard({
   planMarkdown,
   environmentId,
   threadRef,
   cwd,
+  workspaceRoot,
   findActive = false,
 }: {
   planMarkdown: string;
   environmentId: EnvironmentId;
   threadRef?: ScopedThreadRef | undefined;
   cwd: string | undefined;
+  workspaceRoot: string | undefined;
   findActive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
+  const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+  const [savePath, setSavePath] = useState("");
+  const [isSavingToWorkspace, setIsSavingToWorkspace] = useState(false);
+  // Coder: Save to workspace creates a new file in the thread's verified project root; the Files
+  // surface's writes edit existing files only.
+  const writeProjectFile = useAtomCommand(projectEnvironment.createFile, {
+    reportFailure: false,
+  });
   const { copyToClipboard, isCopied } = useCopyToClipboard({
     target: "plan",
     onError: (error) => {
@@ -43,6 +75,7 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
       );
     },
   });
+  const savePathInputId = useId();
   const title = proposedPlanTitle(planMarkdown) ?? "Proposed plan";
   const lineCount = planMarkdown.split("\n").length;
   const canCollapse = planMarkdown.length > 900 || lineCount > 20;
@@ -56,10 +89,82 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
   const showPreview = isCollapsed && !findActive;
   const revealForFind = useCallback(() => setExpanded(true), []);
   const findRevealRef = useFindRevealRef(revealForFind);
+  const downloadFilename = buildProposedPlanMarkdownFilename(planMarkdown);
   const saveContents = normalizePlanMarkdownForExport(planMarkdown);
+
+  const handleDownload = () => {
+    downloadPlanAsTextFile(downloadFilename, saveContents);
+  };
 
   const handleCopyPlan = () => {
     copyToClipboard(saveContents);
+  };
+
+  const openSaveDialog = () => {
+    if (!canWriteFiles) return;
+    if (!workspaceRoot) {
+      toastManager.add(
+        stackedThreadToast({
+          type: "error",
+          title: "Workspace path is unavailable",
+          description: "This thread does not have a workspace path to save into.",
+        }),
+      );
+      return;
+    }
+    setSavePath((existing) => (existing.length > 0 ? existing : downloadFilename));
+    setIsSaveDialogOpen(true);
+  };
+
+  const handleSaveToWorkspace = () => {
+    const relativePath = savePath.trim();
+    if (
+      !workspaceRoot ||
+      !threadRef ||
+      !readEnvironmentScope(environmentId, AuthFilesystemWriteScope)
+    ) {
+      return;
+    }
+    if (!relativePath) {
+      toastManager.add({
+        type: "warning",
+        title: "Enter a workspace path",
+      });
+      return;
+    }
+
+    setIsSavingToWorkspace(true);
+    void (async () => {
+      const result = await writeProjectFile({
+        environmentId,
+        input: {
+          threadId: threadRef.threadId,
+          cwd: workspaceRoot,
+          relativePath,
+          contents: saveContents,
+        },
+      });
+      setIsSavingToWorkspace(false);
+      if (result._tag === "Success") {
+        setIsSaveDialogOpen(false);
+        toastManager.add({
+          type: "success",
+          title: "Plan saved to workspace",
+          description: result.value.relativePath,
+        });
+        return;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not save plan",
+            description: error instanceof Error ? error.message : "An error occurred while saving.",
+          }),
+        );
+      }
+    })();
   };
 
   return (
@@ -82,6 +187,13 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           <MenuPopup align="end">
             <MenuItem onClick={handleCopyPlan}>
               {isCopied ? "Copied!" : "Copy to clipboard"}
+            </MenuItem>
+            <MenuItem onClick={handleDownload}>Download as markdown</MenuItem>
+            <MenuItem
+              onClick={openSaveDialog}
+              disabled={!canWriteFiles || !workspaceRoot || !threadRef || isSavingToWorkspace}
+            >
+              Save to workspace
             </MenuItem>
           </MenuPopup>
         </Menu>
@@ -129,6 +241,54 @@ export const ProposedPlanCard = memo(function ProposedPlanCard({
           </div>
         ) : null}
       </div>
+
+      <Dialog
+        open={isSaveDialogOpen}
+        onOpenChange={(open) => {
+          if (!isSavingToWorkspace) {
+            setIsSaveDialogOpen(open);
+          }
+        }}
+      >
+        <DialogPopup className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Save plan to workspace</DialogTitle>
+            <DialogDescription>
+              Enter a path relative to <code>{workspaceRoot ?? "the workspace"}</code>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogPanel>
+            <label htmlFor={savePathInputId} className="grid gap-1.5">
+              <span className="text-xs font-medium text-foreground">Workspace path</span>
+              <Input
+                id={savePathInputId}
+                value={savePath}
+                onChange={(event) => setSavePath(event.target.value)}
+                placeholder={downloadFilename}
+                spellCheck={false}
+                disabled={isSavingToWorkspace}
+              />
+            </label>
+          </DialogPanel>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsSaveDialogOpen(false)}
+              disabled={isSavingToWorkspace}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => void handleSaveToWorkspace()}
+              disabled={!canWriteFiles || isSavingToWorkspace}
+            >
+              {isSavingToWorkspace ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogPopup>
+      </Dialog>
     </div>
   );
 });

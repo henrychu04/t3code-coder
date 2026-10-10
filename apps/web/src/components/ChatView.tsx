@@ -212,10 +212,13 @@ import {
   DEFAULT_INTERACTION_MODE,
   DEFAULT_THREAD_TERMINAL_ID,
   MAX_TERMINALS_PER_GROUP,
+  type ChatFileAttachment,
   type ChatMessage,
   type SessionPhase,
   type Thread,
 } from "../types";
+import { saveBlob, useReadAttachmentFile } from "../lib/readAttachmentFile";
+import { SentAttachmentFilePreview } from "./files/SentAttachmentFilePreview";
 import { useTheme } from "../hooks/useTheme";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -1459,6 +1462,7 @@ const ENVIRONMENT_UNAVAILABLE_SEND_TOAST_TRAIL_SIZE = 3;
 const EMPTY_HELD_TURN_DIFF_SUMMARIES: readonly never[] = [];
 const noopHeldTurnDiff = (_turnId: RunId, _filePath?: string) => {};
 const noopHeldRevert = (_targetTurnCount: number) => {};
+const noopHeldAttachment = (_attachment: ChatFileAttachment) => {};
 
 /**
  * Drops the send-time anchored end space. That space is what holds a sent
@@ -4771,6 +4775,32 @@ export default function ChatView(props: ChatViewProps) {
     if (!activeThreadRef || !pullRequestsSurfaceAvailable) return;
     useRightPanelStore.getState().open(activeThreadRef, "pull-requests");
   }, [activeThreadRef, pullRequestsSurfaceAvailable]);
+  // Coder: a sent file is read through the helper into memory, where upstream downloads it from a
+  // signed asset URL.
+  const readSentAttachment = useReadAttachmentFile(environmentId);
+  const downloadFileAttachment = useCallback(
+    async (attachment: ChatFileAttachment) => {
+      try {
+        saveBlob(await readSentAttachment(attachment), attachment.name);
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not download " + attachment.name,
+          description: error instanceof Error ? error.message : "The attachment is unavailable.",
+        });
+      }
+    },
+    [readSentAttachment],
+  );
+  const openFileAttachment = useCallback(
+    (attachment: ChatFileAttachment) => {
+      if (activeThreadRef) {
+        useRightPanelStore.getState().openAttachment(activeThreadRef, attachment);
+        return;
+      }
+    },
+    [activeThreadRef],
+  );
   const openFileSurface = useCallback(
     (relativePath: string) => {
       if (!activeThreadRef || !filesAvailable) return;
@@ -9927,9 +9957,16 @@ export default function ChatView(props: ChatViewProps) {
       />
     ) : renderedRightPanelSurface?.kind === "pull-requests" && activeThreadRef ? (
       <ThreadPullRequestsPanel threadRef={activeThreadRef} />
+    ) : renderedRightPanelSurface?.kind === "file" && renderedRightPanelSurface.attachment ? (
+      // Coder: upstream's FilePreviewPanel shows only the attachment's preview in this mode; the
+      // helper reads it into memory in place of the signed asset URL.
+      <SentAttachmentFilePreview
+        key={`${activeThread.environmentId}:attachment:${renderedRightPanelSurface.attachment.id}`}
+        environmentId={activeThread.environmentId}
+        attachment={renderedRightPanelSurface.attachment}
+      />
     ) : (renderedRightPanelSurface?.kind === "files" ||
         renderedRightPanelSurface?.kind === "file") &&
-      // Coder: file attachments are not previewed; the Files surface reads project files only.
       activeProject &&
       activeWorkspaceRoot ? (
       <Suspense fallback={null}>
@@ -10249,6 +10286,10 @@ export default function ChatView(props: ChatViewProps) {
                   : {})}
                 isRevertingCheckpoint={isRevertingCheckpoint}
                 onImageExpand={onExpandTimelineImage}
+                onFileOpen={paintOnlyDisplayedTimeline ? noopHeldAttachment : openFileAttachment}
+                onFileDownload={
+                  paintOnlyDisplayedTimeline ? noopHeldAttachment : downloadFileAttachment
+                }
                 markdownCwd={
                   paintOnlyDisplayedTimeline
                     ? (heldPaintContext?.markdownCwd ?? undefined)

@@ -403,9 +403,9 @@ only for project-content search. It does not change ordinary file-read or edit l
 not authorize uploads, downloads, synchronization, arbitrary file reads, or non-Coder workspace
 connections.
 
-The Files surface exposes no upload, export, drag-and-drop, absolute path, or local file access for
-text files. An explicit Copy path action may copy only the project-relative path to the browser
-clipboard. Media previews carry main's media menu, described below. Open files and editor state
+The Files surface exposes no upload or local file access for text files. The tree carries main's
+Copy mention and drag-to-composer mention, and adds a Copy path action for the project-relative
+path. Media previews carry main's media menu, described below. Open files and editor state
 are not persisted locally; the explorer visibility and rendered Markdown/table preferences are UI
 preferences in browser storage, as on main.
 
@@ -458,8 +458,8 @@ either whole into a memory-only blob when the file opens and again after a works
 PDF renders in the browser's built-in viewer from that blob, in an unsandboxed frame as on main
 (a PDF runs no script in the app's origin). An HTML file toggles between source and page; the page
 is written into the gateway's document shell `/html-document-frame.html`, whose CSP sandbox is
-upstream's file frame (`allow-scripts allow-forms allow-popups`, no `allow-same-origin`, no
-`allow-downloads`). Its relative assets do not load, because there is no asset server. Outside-project
+upstream's file frame (`allow-scripts allow-forms allow-popups allow-downloads`, no
+`allow-same-origin`). Its relative assets do not load, because there is no asset server. Outside-project
 access is limited to validated media previews; the text Files surface and search retain project
 containment.
 
@@ -590,16 +590,19 @@ listed here is drift to remove rather than fork behavior to keep.
     uses upstream's socket fallback because no HTTP shell loader exists.
   - GitLab uses the workspace's `glab` login without upstream's viewer routing credentials.
     Thread MR links must belong to a known GitLab host.
-  - Files listings, reads, writes, content search, and media reads verify the requesting thread's
+  - Files listings, reads, writes, file creation, content search, and media reads verify the requesting thread's
     project root; Files listings, reads, writes, and media reads from a draft verify its named
     project's root or a worktree one of that project's threads owns (`draftProjectId`). `workspace/WorkspaceFileSystem.ts`, `WorkspaceEntries.ts`, and
     `WorkspaceSearchIndex.ts` implement the Files surface and file-search boundaries above in place
-    of upstream's absolute-path reads, create-anywhere writes, and `searchContents`;
-    `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
+    of upstream's absolute-path reads, create-anywhere writes, and `searchContents`.
+    `projects.createFile` serves upstream's proposed-plan "Save to workspace": it creates a new
+    text file inside the verified root and never replaces an existing path, where upstream's
+    `writeFile` overwrites. `ProjectImages.ts` and `ScreenshotArtifacts.ts` are Coder-only. Path-only FFF errors and stale-write errors retain the fork's bounded-service
     error mapping.
   - Coder-only methods remain beside their upstream neighbors: local ref status, managed
     branch/worktree rename with `moveWorktree`, write-access probing, chunked review files,
-    bounded text/content/media and legacy-artifact reads, fixed project-config reads, workspace
+    bounded text/content/media, sent-file (`workspace.readAttachmentFile`), and legacy-artifact
+    reads, new-file creation (`projects.createFile`), fixed project-config reads, workspace
     directory listing, and merge-request diffs. The method set stays `CoderWsRpcGroup`;
     unsupported upstream methods stay omitted.
 - **Provider and orchestration.** Upstream's orchestrator (`orchestration-v2/`: the orchestrator,
@@ -713,8 +716,8 @@ listed here is drift to remove rather than fork behavior to keep.
   browser storage, the transcript, projections, model context, or logs.
 - **MCP Apps.** Upstream's inline app rows and sandboxed frame, with resource reads and tool calls
   over the helper's MCP Apps RPCs. The frame has no camera, microphone, geolocation, or clipboard
-  permission. The host neither declares nor serves `ui/download-file`, and the frame has no save
-  action. Upstream frames the captured document through a signed asset URL. Here
+  permission. `ui/download-file` is upstream's: the user confirms, and the host page saves the
+  embedded or linked bytes. Upstream frames the captured document through a signed asset URL. Here
   `workspace.readTurnItemAsset` reads it in bounded chunks, but only the document that the named
   stored tool item references, opened without following symlinks. The frame then loads the
   gateway's `/mcp-app-frame.html` shell, and the page posts the document to it. The shell checks
@@ -742,7 +745,7 @@ listed here is drift to remove rather than fork behavior to keep.
   - `chat/HtmlRenderFrame.tsx` reads the page through that read and `files/BrowserDocumentFrame.tsx`
     writes it into the MCP App shell with the theme in the shell URL's fragment, as upstream's
     signed URL carries it. **Open full size** shows the in-memory page and its source in
-    `AttachmentFilePreview`; there is no Save action.
+    `AttachmentFilePreview`, whose Save writes those bytes.
   - Pages are kept like other attachments; deleting a thread does not delete them.
 - **Tool output images.** `turnItemOutputImages` lists a fetched item's images as upstream does.
   The inspector reads each image by index from the stored item through `workspace.readTurnItemAsset`
@@ -803,8 +806,8 @@ listed here is drift to remove rather than fork behavior to keep.
   work-log module (`client-runtime/work-log/toolPresentation.ts`), minus preview annotations,
   element captures, SnapShot, upstream's large-paste-to-file folding, and remote icons. Draft file
   and video attachments preview from their in-memory bytes as on main: files open in
-  `files/AttachmentFilePreview.tsx` (upstream's viewer without signed-URL loading or its Save
-  action) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
+  `files/AttachmentFilePreview.tsx` (upstream's viewer, with Save writing the in-memory bytes
+  instead of a signed-URL download) and videos in the gallery. A draft restored after a reload has no bytes, so it has no
   preview. A context fragment pasted from another workspace
   brings only its PNG, JPEG, and WebP images, read through the helper's bounded attachment chunks. Images
   and files move through the gateway's Coder CLI transfer (see
@@ -814,8 +817,10 @@ listed here is drift to remove rather than fork behavior to keep.
   and size the read verifies). Reads start only once the workspace is connected, because cached
   threads render before the helper is reachable. Rewind re-stages a message's images through the
   same reads.
-  Sent file attachments render as static rows without preview, download, or open actions, and
-  native app icons fall back to the tool glyph.
+  Sent file attachments keep upstream's preview and download actions; the helper reads them by
+  id (`workspace.readAttachmentFile`, bounded by the composer file limit) into memory, and the
+  right panel shows them in `files/SentAttachmentFilePreview.tsx` where upstream's
+  `FilePreviewPanel` loads a signed URL. Native app icons fall back to the tool glyph.
   Upstream's v1 importer carries only messages, so screenshots that pre-v2 conversations saved
   as `artifacts` on v1 tool activities have no v2 item. The v2 database starts as a copy of the
   v1 one, so `orchestration-v2/legacy/LegacyScreenshotArtifacts.ts` reads them from the kept v1
@@ -836,8 +841,8 @@ listed here is drift to remove rather than fork behavior to keep.
   the server's machine kind, and the branch notice also covers a managed worktree whose branch
   moved (`resolveCheckoutBranchMismatch`). The branch picker adds "Rename current branch…" for a
   thread's own branch (`vcs.renameThreadBranch`), which can also rename the T3 worktree folder
-  through the driver's `moveWorktree`. Proposed-plan cards offer Copy but no Download or Save
-  to workspace (no exports, and Files edits only existing files). The provider-update launch notification uses the active workspace as upstream's primary
+  through the driver's `moveWorktree`. Proposed-plan cards are upstream's; Save to workspace uses
+  `projects.createFile`, so it fails on an existing path. The provider-update launch notification uses the active workspace as upstream's primary
   environment and has no per-backend (WSL) split. There is no default-theme adoption, which follows
   upstream's `t3 theme set` CLI.
 - **App sidebar.** The layout, header, footer, and provider-update pill are upstream's. Coder
@@ -885,8 +890,7 @@ listed here is drift to remove rather than fork behavior to keep.
   reopen because each read moves the whole file); a draft names its project rather than a thread;
   PDF and HTML previews read through the same helper media chunks, project files only (see
   [Network and transfer constraints](#network-and-transfer-constraints)); there is no
-  open-in-editor or reveal action, attachment preview,
-  drag-to-composer mention, or Copy mention (the tree's only clipboard action is Copy path).
+  open-in-editor or reveal action, and the tree adds Copy path.
   `env.ts` reports `isElectron = false` for upstream's desktop branches.
 - **Merge requests.** Upstream's page, panel, stack menu, and right-panel tabs, GitLab-only. Diffs
   come over the `pullRequests.diff` RPC, snapshots and merge-method choices stay in memory, and
@@ -976,7 +980,7 @@ listed here is drift to remove rather than fork behavior to keep.
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, or `keybindings.json` editor. Appearance's **Add theme** is upstream's
   `ThemeImportDialog` without its remote theme catalog search or desktop file picker: the browser
-  reads picked, dropped, or pasted theme files itself. Custom themes have no Export action.
+  reads picked, dropped, or pasted theme files itself.
 - **Scheduled tasks.** Settings → Scheduled tasks and its draft logic are upstream's, including
   interval and fixed-time schedules, run-now, and webhook draft round-tripping. T3 Coder serves no
   inbound webhook route, so the editor has no "On webhook" option, URL field, token rotation, or
@@ -1010,7 +1014,7 @@ listed here is drift to remove rather than fork behavior to keep.
   and a file over the expansion limit is listed in `DiffFileExpansionErrorNotice` above the viewer
   instead of failing the diff. Branch previews ask for one top-level `sourceKind`. A file title
   opens the Files surface through ChatView's `onOpenFile` and has no local-editor fallback. The
-  header's copy button and the context menu copy only the project-relative path.
+  context menu offers Copy path (project-relative) in place of upstream's editor actions.
 - **Diff renderer patch.** `patches/@pierre%2Fdiffs@1.5.2.patch` is upstream's patch plus a guard
   that ignores loaded file contents unless the current diff is still the partial diff that asked
   for them.
@@ -1032,7 +1036,7 @@ listed here is drift to remove rather than fork behavior to keep.
     `/projects/$projectKey` redirect has no auth gate.
   - Merge-request list preferences remember presentation controls only, never repository
     identities or search text. Dropped folders are not uploaded (only files become composer
-    attachments). Custom themes have no Export (download) action. Project icons come from saved
+    attachments). Project icons come from saved
     metadata or monograms, without favicon reads. The worktree setup card says "Use project
     checkout", because the checkout is in the workspace.
 - **Codex app-server package.** `packages/effect-codex-app-server` is upstream's, including

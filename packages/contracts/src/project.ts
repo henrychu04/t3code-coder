@@ -591,6 +591,19 @@ export const ProjectWriteFileInput = Schema.Struct({
 });
 export type ProjectWriteFileInput = typeof ProjectWriteFileInput.Type;
 
+/**
+ * Coder: a new text file inside the owner's verified project root, for upstream's "Save to
+ * workspace" of a proposed plan. Upstream writes anywhere; Coder refuses an existing path, so
+ * edits keep the Files surface's revision check.
+ */
+export const ProjectCreateFileInput = Schema.Struct({
+  ...ProjectFilesOwnerFields,
+  cwd: TrimmedNonEmptyString,
+  relativePath: TrimmedNonEmptyString.check(Schema.isMaxLength(PROJECT_WRITE_FILE_PATH_MAX_LENGTH)),
+  contents: Schema.String.check(Schema.isMaxLength(PROJECT_FILE_CONTENT_MAX_LENGTH)),
+});
+export type ProjectCreateFileInput = typeof ProjectCreateFileInput.Type;
+
 export const ProjectWriteFileResult = Schema.Struct({
   relativePath: TrimmedNonEmptyString,
   revision: TrimmedNonEmptyString,
