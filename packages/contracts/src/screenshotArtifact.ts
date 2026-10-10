@@ -6,6 +6,7 @@ import {
   PositiveInt,
   ThreadId,
   TrimmedNonEmptyString,
+  TurnItemId,
 } from "./baseSchemas.ts";
 import { ProjectFilesOwnerFields } from "./project.ts";
 
@@ -134,5 +135,41 @@ export const ProjectImageChunk = Schema.Struct({
 export type ProjectImageChunk = typeof ProjectImageChunk.Type;
 export class ProjectImageReadError extends Schema.TaggedError<ProjectImageReadError>()(
   "ProjectImageReadError",
+  { message: TrimmedNonEmptyString },
+) {}
+
+/**
+ * Bytes a stored turn item names: its captured MCP App document. Upstream serves it through a
+ * signed asset URL; the helper serves it as bounded stdio chunks instead.
+ */
+export const TurnItemAsset = Schema.Union([Schema.TaggedStruct("mcp-app-document", {})]);
+export type TurnItemAsset = typeof TurnItemAsset.Type;
+
+/** An MCP App document's limit (`MCP_APP_MAX_HTML_BYTES` in shared). */
+export const MAX_TURN_ITEM_ASSET_BYTES = 5 * 1024 * 1024;
+
+export const TurnItemAssetMimeType = Schema.Literals(["text/html"]);
+export type TurnItemAssetMimeType = typeof TurnItemAssetMimeType.Type;
+
+export const TurnItemAssetReadInput = Schema.Struct({
+  threadId: ThreadId,
+  itemId: TurnItemId,
+  asset: TurnItemAsset,
+  offset: NonNegativeInt,
+  limit: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_SCREENSHOT_ARTIFACT_CHUNK_BYTES)),
+});
+export type TurnItemAssetReadInput = typeof TurnItemAssetReadInput.Type;
+
+export const TurnItemAssetChunk = Schema.Struct({
+  mimeType: TurnItemAssetMimeType,
+  offset: NonNegativeInt,
+  totalBytes: PositiveInt.check(Schema.isLessThanOrEqualTo(MAX_TURN_ITEM_ASSET_BYTES)),
+  dataBase64: Schema.String,
+  nextOffset: Schema.NullOr(NonNegativeInt),
+});
+export type TurnItemAssetChunk = typeof TurnItemAssetChunk.Type;
+
+export class TurnItemAssetReadError extends Schema.TaggedError<TurnItemAssetReadError>()(
+  "TurnItemAssetReadError",
   { message: TrimmedNonEmptyString },
 ) {}

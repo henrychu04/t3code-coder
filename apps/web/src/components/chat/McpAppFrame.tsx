@@ -3,7 +3,6 @@ import {
   makeMcpAppHost,
   McpAppHostRefusal,
   mcpAppStyleVariables,
-  mcpResourceBytes,
   type McpAppCallToolResult,
   type McpAppDisplayMode,
   type McpAppHost,
@@ -13,9 +12,9 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import {
   clampMcpAppHeight,
   MCP_APP_DEFAULT_HEIGHT,
+  MCP_APP_FRAME_PATH,
   MCP_APP_MAX_HEIGHT,
   mcpAppAllowAttribute,
-  mcpAppFileName,
   type McpAppReference,
 } from "@t3tools/shared/mcpApp";
 import { Minimize2Icon } from "lucide-react";
@@ -27,7 +26,10 @@ import { isConfirmDialogActive, requestConfirmDialog } from "~/confirmDialog";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { Button } from "~/components/ui/button";
 import { isElectron } from "~/env";
+import { readTurnItemAsset } from "~/lib/readTurnItemAsset";
 import { cn } from "~/lib/utils";
+import { useConnectedEnvironmentIds } from "~/state/environments";
+import { projectEnvironment } from "~/state/projects";
 import { useTurnItemDetail } from "~/state/queries";
 import { mcpAppEnvironment } from "~/state/mcpApps";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -42,32 +44,16 @@ const commandFailure = (result: {
 };
 
 /** Full screen shows the box in the top layer, which needs the Popover API. */
-/** A cached asset URL with less life than this is minted afresh first. */
-const MIN_URL_LIFE_MS = 5 * 60_000;
 const fullscreenSupported =
   typeof HTMLElement !== "undefined" && "popover" in HTMLElement.prototype;
-
-/** Largest file an app may hand the user through `ui/download-file`. */
-const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
-
-/** Saves a file through the browser's own download, which asks where when it is set to. */
-function saveBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  // Long after the browser has read it: some start the download a task or
-  // more after the click, and a revoked URL saves nothing.
-  setTimeout(() => URL.revokeObjectURL(url), 60_000);
-}
 
 /**
  * An MCP App inline in the thread: the captured document in an opaque-origin
  * frame, speaking the MCP Apps bridge. Its tool calls and resource reads reach
  * its own MCP server through the environment; calls to tools the server does
- * not mark read-only, chat messages, and downloads ask first. Full screen keeps
- * the same frame (and the app's state) and only restyles its box.
+ * not mark read-only and chat messages ask first (Coder: apps cannot save
+ * files). Full screen keeps the same frame (and the app's state) and only
+ * restyles its box.
  */
 export function McpAppFrame(props: {
   readonly environmentId: EnvironmentId;
@@ -110,11 +96,34 @@ export function McpAppFrame(props: {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Closing and reopening replaces the box.
   }, [closed]);
 
-  // Coder: upstream loads the captured app document through a signed asset URL, which the
-  // helper does not serve, so the frame reports the app as unavailable.
-  const asset = { _tag: "Failure" } as const;
-  const src: string | null = null;
-  const mintFailed = true;
+  // Coder: upstream frames the captured document through a signed asset URL. The helper reads
+  // it in bounded chunks instead, and the frame loads the gateway's sandboxed shell, which the
+  // document then replaces in place.
+  const connected = useConnectedEnvironmentIds().includes(props.environmentId);
+  const readAsset = useAtomCommand(projectEnvironment.readTurnItemAsset, { reportFailure: false });
+  const [html, setHtml] = useState<string | null>(null);
+  const [readFailed, setReadFailed] = useState(false);
+  useEffect(() => {
+    if (!connected || html !== null) return;
+    const controller = new AbortController();
+    const environmentId = props.environmentId;
+    void readTurnItemAsset(
+      { threadId: props.threadId, itemId: props.itemId, asset: { _tag: "mcp-app-document" } },
+      (mimeType) => mimeType === "text/html",
+      async (input) => {
+        const result = await readAsset({ environmentId, input });
+        if (result._tag !== "Success") throw squashAtomCommandFailure(result);
+        return result.value;
+      },
+      controller.signal,
+    )
+      .then((blob) => blob.text())
+      .then(setHtml, () => {
+        if (!controller.signal.aborted) setReadFailed(true);
+      });
+    return () => controller.abort();
+  }, [connected, html, props.environmentId, props.threadId, props.itemId, readAsset]);
+  const src = html === null ? null : MCP_APP_FRAME_PATH;
 
   // The wire timeline omits tool input and output; the app needs both.
   const detail = useTurnItemDetail({
@@ -233,7 +242,12 @@ export function McpAppFrame(props: {
       loads.current = { generation: documentGeneration, count: 0 };
     }
     loads.current.count += 1;
-    if (loads.current.count > 1) {
+    // Coder: the first load is the shell, which the document replaces and loads once more.
+    if (loads.current.count === 1) {
+      frameRef.current?.contentWindow?.postMessage({ html }, "*");
+      return;
+    }
+    if (loads.current.count > 2) {
       hostRef.current?.dispose();
       setNavigatedAway(true);
     }
@@ -362,36 +376,6 @@ export function McpAppFrame(props: {
         setDisplayMode(mode);
         return mode;
       },
-      downloadFile: async (files) => {
-        const names = files.map((file) => file.name).join(", ");
-        const approved = await ask(`Save ${names} from ${app.server}?`);
-        if (approved !== true) throw new McpAppHostRefusal("Declined by the user.");
-        for (const file of files) {
-          // A linked file is read from the app's own server, like its other reads.
-          let bytes: Uint8Array | undefined;
-          let mimeType = file.mimeType ?? "application/octet-stream";
-          if (file._tag === "embedded") {
-            bytes = file.bytes;
-          } else {
-            const { environmentId, input } = scope();
-            const read = await latest.current.readResource({
-              environmentId,
-              input: { ...input, uri: file.uri },
-            });
-            if (read._tag !== "Success") throw commandFailure(read);
-            const content = read.value.contents[0];
-            bytes = mcpResourceBytes(content);
-            const declared = (content as { readonly mimeType?: unknown } | undefined)?.mimeType;
-            if (typeof declared === "string") mimeType = declared;
-          }
-          if (bytes === undefined) throw new McpAppHostRefusal(`${file.name} has no contents.`);
-          if (bytes.byteLength > MAX_DOWNLOAD_BYTES) {
-            throw new McpAppHostRefusal(`${file.name} is too large to save.`);
-          }
-          // A copy backed by a plain ArrayBuffer, which Blob requires.
-          saveBlob(new Blob([bytes.slice()], { type: mimeType }), file.name);
-        }
-      },
       onRequestTeardown: () => {
         if (latest.current.displayMode === "fullscreen") {
           setDisplayMode("inline");
@@ -505,7 +489,7 @@ export function McpAppFrame(props: {
             className={cn("block w-full border-0", fullscreen ? "min-h-0 flex-1" : "h-full")}
             style={{ colorScheme: theme.appearance }}
           />
-        ) : asset._tag === "Failure" || mintFailed ? (
+        ) : readFailed ? (
           <p className="flex size-full items-center justify-center text-muted-foreground text-xs">
             Unable to load the {app.server} app
           </p>

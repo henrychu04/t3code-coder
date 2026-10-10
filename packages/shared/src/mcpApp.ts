@@ -22,6 +22,11 @@ export const MCP_APP_DEFAULT_HEIGHT = 320;
 export const MCP_APP_MAX_HEIGHT = 2000;
 /** Largest app document T3 stores. */
 export const MCP_APP_MAX_HTML_BYTES = 5 * 1024 * 1024;
+/**
+ * Coder: the gateway page an app frame loads before the client writes the app document into it,
+ * since a blob or srcdoc frame would inherit the page's own Content-Security-Policy.
+ */
+export const MCP_APP_FRAME_PATH = "/mcp-app-frame.html";
 const MAX_DOMAINS = 32;
 const MAX_DOMAIN_LENGTH = 256;
 const MAX_NAME_LENGTH = 256;
