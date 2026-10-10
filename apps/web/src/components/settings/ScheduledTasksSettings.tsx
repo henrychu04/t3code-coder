@@ -20,6 +20,7 @@ import type {
   ThreadId,
 } from "@t3tools/contracts";
 import {
+  MAX_WEBHOOK_DELIVERY_AGE_MINUTES,
   MIN_SCHEDULED_TASK_INTERVAL_MS,
   ProviderInstanceId,
   resolveEnvironmentMachineKind,
@@ -44,12 +45,17 @@ import { EMPTY_SERVER_PROVIDERS, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { WorktreeBaseBranchPicker } from "../WorktreeBaseBranchPicker";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
+import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { readEnvironmentScope } from "~/state/session";
 import { useSettingsScope } from "./SettingsScopeContext";
 import {
+  WEBHOOK_SIGNATURE_DEFAULTS,
   matchesScheduledTaskScope,
+  scheduleFromDraft,
   scheduledTaskDefaultModel,
   taskToDraft,
   type DraftState,
+  type ScheduleMode,
   type WorkspaceMode,
 } from "./scheduledTasksSettings.logic";
 import { Label } from "../ui/label";
@@ -112,6 +118,10 @@ const EMPTY_DRAFT: DraftState = {
   runtimeMode: "full-access",
   interactionMode: "default",
   baseModelSelection: null,
+  signatureEnabled: false,
+  ...WEBHOOK_SIGNATURE_DEFAULTS,
+  signatureSecret: "",
+  maxDeliveryAgeMinutes: "",
 };
 
 /** Labelled field: a caption sitting above its control. */
@@ -148,28 +158,14 @@ function splitModelKey(value: string): ModelSelection | null {
   };
 }
 
-function scheduleFromDraft(draft: DraftState): ScheduledTaskSchedule {
-  if (draft.scheduleMode === "interval") {
-    const everyMs = Math.round(Number(draft.intervalMinutes) * 60_000);
-    return { type: "interval", everyMs };
-  }
-  const selectedEveryDay = draft.weekdays.size === 0 || draft.weekdays.size === 7;
-  return {
-    type: "fixed_time",
-    timeOfDay: draft.timeOfDay || "09:00",
-    ...(selectedEveryDay ? {} : { weekdays: [...draft.weekdays].toSorted() }),
-  };
-}
-
 export function scheduleLabel(schedule: ScheduledTaskSchedule): string {
+  if (schedule.type === "webhook") return "On webhook";
   if (schedule.type === "interval") {
     const minutes = schedule.everyMs / 60_000;
     return Number.isInteger(minutes)
       ? `Every ${minutes} min`
       : `Every ${Math.round(schedule.everyMs / 1000)} sec`;
   }
-  // Coder: webhook schedules need a public URL and T3 Connect, which T3 Coder does not offer.
-  if (schedule.type === "webhook") return "On webhook";
   const weekdays = schedule.weekdays ?? [];
   const days =
     weekdays.length === 0
@@ -221,6 +217,9 @@ export function ScheduledTasksSettings(target: {
     setEditor({ environmentId, task });
   }, []);
   const defaultEnvironment = environment ?? connectedEnvironments[0];
+  const canCreate = useAtomValue(
+    serverEnvironment.upsertScheduledTask.permissionAtom(defaultEnvironment?.environmentId ?? null),
+  );
   return (
     <SettingsPageContainer>
       <SettingsSection
@@ -230,7 +229,7 @@ export function ScheduledTasksSettings(target: {
           <Button
             size="xs"
             variant="ghost-muted"
-            disabled={!defaultEnvironment}
+            disabled={!defaultEnvironment || !canCreate}
             onClick={() =>
               defaultEnvironment &&
               setEditor({ environmentId: defaultEnvironment.environmentId, task: null })
@@ -379,7 +378,11 @@ function ScheduledTaskRow({
   readonly task: ScheduledTask;
   readonly onEdit: () => void;
 }) {
+  const canOperate = useAtomValue(
+    serverEnvironment.upsertScheduledTask.permissionAtom(environmentId),
+  );
   const [busy, setBusy] = useState(false);
+  const isWebhook = task.schedule.type === "webhook";
   const toggle = useAtomCommand(serverEnvironment.setScheduledTaskEnabled, {
     label: "scheduled task enabled",
   });
@@ -390,7 +393,7 @@ function ScheduledTaskRow({
     label: "scheduled task delete",
   });
   const act = async (action: "toggle" | "run" | "delete") => {
-    if (busy) return;
+    if (busy || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) return;
     setBusy(true);
     const result =
       action === "toggle"
@@ -417,11 +420,12 @@ function ScheduledTaskRow({
         <div className="flex flex-wrap items-center gap-2">
           <span>
             {scheduleLabel(task.schedule)} ·{" "}
-            {task.enabled
-              ? task.nextRunAt
+            {/* Coder: no "Listening" for webhook tasks; T3 Coder serves no webhook route. */}
+            {!task.enabled
+              ? "Paused"
+              : task.nextRunAt
                 ? `Next run ${relativeLabel(task.nextRunAt)}`
-                : "Not scheduled"
-              : "Paused"}
+                : "Not scheduled"}
           </span>
           {task.lastRunStatus !== "never" ? (
             <Badge variant={statusVariant(task.lastRunStatus)}>{task.lastRunStatus}</Badge>
@@ -433,7 +437,7 @@ function ScheduledTaskRow({
         <div className="flex items-center gap-2">
           <Switch
             checked={task.enabled}
-            disabled={busy}
+            disabled={busy || !canOperate}
             aria-label={`Enable ${task.title}`}
             onCheckedChange={() => void act("toggle")}
           />
@@ -443,7 +447,7 @@ function ScheduledTaskRow({
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  disabled={busy}
+                  disabled={busy || !canOperate}
                   aria-label={`Actions for ${task.title}`}
                 />
               }
@@ -455,10 +459,13 @@ function ScheduledTaskRow({
                 <PencilIcon />
                 Edit
               </MenuItem>
-              <MenuItem onClick={() => void act("run")}>
-                <PlayIcon />
-                Run now
-              </MenuItem>
+              {/* Coder: webhook tasks have no Deliveries dialog; the server rejects their Run now. */}
+              {isWebhook ? null : (
+                <MenuItem onClick={() => void act("run")}>
+                  <PlayIcon />
+                  Run now
+                </MenuItem>
+              )}
               <MenuSeparator />
               <MenuItem onClick={() => void act("delete")}>
                 <Trash2Icon />
@@ -502,6 +509,9 @@ function ScheduledTaskEditorDialog({
   const settings = useEnvironmentSettings(environmentId);
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
+  const canOperate = useAtomValue(
+    serverEnvironment.upsertScheduledTask.permissionAtom(environmentId),
+  );
   const upsertTask = useAtomCommand(serverEnvironment.upsertScheduledTask, {
     label: "scheduled task upsert",
   });
@@ -521,6 +531,11 @@ function ScheduledTaskEditorDialog({
     draft.editingId !== null &&
     tasksQuery.data !== null &&
     !tasksQuery.data.tasks.some((entry) => entry.id === draft.editingId);
+  // The live row, so a rotated URL shows up without reopening the dialog.
+  // Once the list has loaded, a missing task is gone; don't keep showing its URL.
+  const liveTask = tasksQuery.data
+    ? (tasksQuery.data.tasks.find((entry) => entry.id === draft.editingId) ?? null)
+    : task;
   const selectedProjectId = draft.projectId || projects[0]?.id || "";
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
 
@@ -550,6 +565,7 @@ function ScheduledTaskEditorDialog({
 
   const submit = async () => {
     if (
+      !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope) ||
       submissionPending.current ||
       saving ||
       editingTaskMissing ||
@@ -568,6 +584,23 @@ function ScheduledTaskEditorDialog({
       return;
     }
     const schedule = scheduleFromDraft(draft);
+    if (schedule === null) {
+      reportFailure(
+        "Invalid age limit",
+        `Enter whole minutes from 1 to ${MAX_WEBHOOK_DELIVERY_AGE_MINUTES}, or leave it blank.`,
+      );
+      return;
+    }
+    if (
+      schedule.type === "webhook" &&
+      schedule.signature &&
+      (!schedule.signature.header ||
+        (!schedule.signature.secret &&
+          !(liveTask?.schedule.type === "webhook" && liveTask.webhook?.hasSecret)))
+    ) {
+      reportFailure("Signing secret is required", "Enter the signature header and secret.");
+      return;
+    }
     if (
       schedule.type === "interval" &&
       (!Number.isSafeInteger(schedule.everyMs) || schedule.everyMs < MIN_SCHEDULED_TASK_INTERVAL_MS)
@@ -637,6 +670,7 @@ function ScheduledTaskEditorDialog({
         <DialogHeader>
           <DialogTitle>{draft.editingId ? "Edit task" : "New task"}</DialogTitle>
           <DialogDescription>
+            {/* Coder: no webhook trigger; T3 Coder serves no inbound webhook route. */}
             Run a prompt automatically — on an interval or at a fixed time.
           </DialogDescription>
         </DialogHeader>
@@ -828,7 +862,9 @@ function ScheduledTaskEditorDialog({
                   aria-label="Schedule type"
                   value={[draft.scheduleMode]}
                   onValueChange={(values) => {
-                    const mode = values[0];
+                    const mode = values[0] as ScheduleMode | undefined;
+                    // Coder: no "On webhook" option. T3 Coder serves no inbound webhook route,
+                    // so it offers no webhook creation, URL, token rotation, or signature fields.
                     if (mode === "fixed" || mode === "interval")
                       setDraft((current) => ({ ...current, scheduleMode: mode }));
                   }}
@@ -838,7 +874,14 @@ function ScheduledTaskEditorDialog({
                 </ToggleGroup>
               </div>
 
-              {draft.scheduleMode === "fixed" ? (
+              {draft.scheduleMode === "webhook" ? (
+                // Coder: a webhook task keeps its stored schedule when saved, but it never runs
+                // here because T3 Coder serves no inbound webhook route.
+                <p className="text-sm text-muted-foreground" role="status">
+                  This task runs on webhook requests, which T3 Coder does not receive. Choose a time
+                  or interval to schedule it.
+                </p>
+              ) : draft.scheduleMode === "fixed" ? (
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
                     <Label htmlFor="scheduled-task-time">Run at</Label>
@@ -921,7 +964,7 @@ function ScheduledTaskEditorDialog({
           </DialogClose>
           <Button
             size="sm"
-            disabled={saving || editingTaskMissing || !connected || !tasksQuery.data}
+            disabled={!canOperate || saving || editingTaskMissing || !connected || !tasksQuery.data}
             onClick={() => void submit()}
           >
             {draft.editingId ? "Save task" : "Create task"}

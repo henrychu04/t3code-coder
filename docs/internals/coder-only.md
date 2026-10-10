@@ -861,6 +861,12 @@ listed here is drift to remove rather than fork behavior to keep.
 - **Settings.** Upstream's layout, navigation, and search, with Coder's Connections, Providers,
   GitLab, and background-activity panels. No Integrations, SnapShot, desktop, diagnostics,
   pairing, external agent-session imports, or `keybindings.json` editor.
+- **Scheduled tasks.** Settings → Scheduled tasks and its draft logic are upstream's, including
+  interval and fixed-time schedules, run-now, and webhook draft round-tripping. T3 Coder serves no
+  inbound webhook route, so the editor has no "On webhook" option, URL field, token rotation, or
+  signature and age-limit fields, and rows have no Deliveries dialog or "Listening" status.
+  Webhook tasks created another way (for example, through the agent `schedule_task` tool) keep
+  their stored schedule when edited, but they never run and do not offer Run now.
 - **Migrations.** `persistence/Migrations.ts` is upstream's registry with the same IDs. Upstream's
   auth migrations (20–22, 31, 32, and 41) keep their IDs but create nothing. Databases created
   before the fork adopted upstream's IDs recorded a renumbered registry (IDs 41–58, with the

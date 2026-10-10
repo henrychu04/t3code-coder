@@ -242,6 +242,10 @@
       "types": "./src/secretRequest.ts",
       "default": "./src/secretRequest.ts"
     },
+    "./scheduled-task-webhook": {
+      "types": "./src/scheduledTaskWebhook.ts",
+      "default": "./src/scheduledTaskWebhook.ts"
+    },
     "./providerUpdateRequiredModels": {
       "types": "./src/providerUpdateRequiredModels.ts",
       "default": "./src/providerUpdateRequiredModels.ts"
