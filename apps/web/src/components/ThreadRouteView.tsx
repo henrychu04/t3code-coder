@@ -14,6 +14,7 @@ import {
   useBackgroundDraftSubmissionPending,
   useComposerDraftStore,
 } from "../composerDraftStore";
+import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 import { useEnvironmentThreadRefs, useThreadRefs, useThreadShell } from "../state/entities";
 import { useEnvironmentQuery } from "../state/query";
 import { environmentShell } from "../state/shell";
@@ -149,6 +150,8 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     // passed its landing check; once the thread reads as missing it can
     // never be attached, release it even when there is nowhere to redirect.
     if (renderState === "missing") {
+      const { clearPendingFileDropsForThread } = useSidebarPendingFileDropStore.getState();
+      clearPendingFileDropsForThread(target.threadRef);
       if (environmentHasAnyThreads) {
         void navigate({ to: "/", replace: true });
       }
