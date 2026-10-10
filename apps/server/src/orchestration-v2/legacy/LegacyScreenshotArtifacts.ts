@@ -35,7 +35,7 @@ export class LegacyScreenshotArtifacts extends Context.Service<
   }
 >()("t3/orchestration-v2/legacy/LegacyScreenshotArtifacts") {}
 
-export const make = Effect.gen(function* () {
+const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 
   const listAfterMessage = (messageId: MessageId) =>

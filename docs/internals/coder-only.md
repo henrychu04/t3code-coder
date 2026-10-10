@@ -268,8 +268,8 @@ feature installed, so local paths and processes must use Node platform APIs and 
 spawning with `shell: false`. The initial
 workspace target is Linux x86-64. Before installing or launching a helper, the gateway checks the
 remote OS and architecture, realizes a Node.js 24 package from the workspace's configured
-`nixpkgs` only when that runtime is not already available, and checks Git, Codex or Claude Code,
-and the workspace state directory. As upstream, server settings keep sensitive provider
+`nixpkgs` only when that runtime is not already available, and checks Git, at least one of Claude
+Code, Codex, or Pi, and the workspace state directory. As upstream, server settings keep sensitive provider
 environment values out of `settings.json` in a `0700` secrets directory in that state directory;
 they never leave the workspace. The helper carries its locked Linux x86-64 `node-pty` runtime and
 is launched with the Nix package's absolute Node path without changing `PATH`, so workspace shells
@@ -555,8 +555,13 @@ listed here is drift to remove rather than fork behavior to keep.
     remote open targets, telemetry, model-manifest refreshes, and usage-limit sources. A failed
     keybinding-config load falls back to defaults instead of failing the config read. Config updates use upstream's full `providerStatuses` events and gated
     environment themes; subscriptions do not force a provider refresh.
-  - Shell/thread streams, replay validation, live-event budgets and coalescing, completion-marker
-    negotiation, and capability flags follow upstream. Coder replaces HTTP thread snapshot
+  - Shell/thread streams, replay validation, live-event budgets and coalescing, and completion-marker
+    negotiation follow upstream. `coderEnvironment.ts` advertises upstream's environment
+    capabilities and orchestration protocol version except the cut surfaces listed with a reason
+    in `CODER_OMITTED_CAPABILITIES` (usage dashboards, server self-update, desktop app update,
+    relay activity publishing, server browser, and native stack actions). `coderEnvironment.test.ts`
+    fails when a key of `ExecutionEnvironmentCapabilities` is in neither list, so a sync that adds
+    a capability must decide it. The worktree-location setting describes a workspace path. Coder replaces HTTP thread snapshot
     loading with `orchestration.getThreadSnapshot` over stdio. Initial snapshots and older pages
     retain `targetBytes` budgeting and the newest requested turn. Shell and thread snapshots
     that exceed the stdio frame bound fail before transport encoding. Shell snapshot loading

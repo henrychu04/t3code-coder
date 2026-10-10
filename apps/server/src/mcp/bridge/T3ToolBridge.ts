@@ -68,7 +68,7 @@ const BridgedHandlersLive = Layer.mergeAll(
   McpToolAccess.HandlersLayer.layer(PullRequestsToolkitHandlers.layer),
 );
 
-export const INLINE_BUDGET_MS = 8_000;
+const INLINE_BUDGET_MS = 8_000;
 const BRIDGE_JOB_PREFIX = "bridge-job:";
 const MAX_JOBS_PER_THREAD = 16;
 const JOB_RETENTION_MS = 60 * 60 * 1_000;

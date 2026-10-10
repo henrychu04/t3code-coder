@@ -96,10 +96,6 @@
       "types": "./src/projectScripts.ts",
       "import": "./src/projectScripts.ts"
     },
-    "./terminalEnvironment": {
-      "types": "./src/terminalEnvironment.ts",
-      "import": "./src/terminalEnvironment.ts"
-    },
     "./orchestrationTiming": {
       "types": "./src/orchestrationTiming.ts",
       "import": "./src/orchestrationTiming.ts"
@@ -211,10 +207,6 @@
     "./composerPullRequestMatches": {
       "types": "./src/composerPullRequestMatches.ts",
       "import": "./src/composerPullRequestMatches.ts"
-    },
-    "./tokenFormat": {
-      "types": "./src/tokenFormat.ts",
-      "import": "./src/tokenFormat.ts"
     },
     "./image": {
       "types": "./src/image.ts",

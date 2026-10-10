@@ -1,5 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import { deepStrictEqual, match, strictEqual, throws } from "node:assert";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 
 import {
@@ -144,11 +148,40 @@ describe("Coder CLI command construction", () => {
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/node24\/bin\/node/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v claude/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v codex/u);
-    match(REMOTE_WORKSPACE_PROBE_COMMAND, /requires Claude Code or Codex/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /command -v pi/u);
+    match(REMOTE_WORKSPACE_PROBE_COMMAND, /requires Claude Code, Codex, or Pi/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /workspace HOME directory/u);
     match(REMOTE_WORKSPACE_PROBE_COMMAND, /\.t3-coder\/attachments/u);
     strictEqual(quotePosixShellArgument("a b'c"), "'a b'\\''c'");
   });
+
+  it(
+    "accepts a workspace that provides any one supported provider",
+    { skip: process.platform === "win32" },
+    () => {
+      const providerCheck = REMOTE_WORKSPACE_PROBE_COMMAND.split("; ").find((clause) =>
+        clause.startsWith("command -v claude"),
+      );
+      strictEqual(typeof providerCheck, "string");
+      const binDirectory = mkdtempSync(join(tmpdir(), "t3-coder-probe-"));
+      try {
+        const run = () =>
+          spawnSync("/bin/sh", ["-c", `fail() { exit 1; }; ${providerCheck}`], {
+            env: { PATH: binDirectory },
+            shell: false,
+          }).status;
+        strictEqual(run(), 1);
+        for (const provider of ["claude", "codex", "pi"]) {
+          const providerPath = join(binDirectory, provider);
+          writeFileSync(providerPath, "#!/bin/sh\n", { mode: 0o755 });
+          strictEqual(run(), 0, provider);
+          rmSync(providerPath);
+        }
+      } finally {
+        rmSync(binDirectory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("builds non-interactive workspace lifecycle invocations", () => {
     const options = {
