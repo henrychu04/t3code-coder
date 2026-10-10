@@ -4,7 +4,12 @@ import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 export const VcsDriverKind = Schema.Literals(["git", "jj", "unknown"]);
 export type VcsDriverKind = typeof VcsDriverKind.Type;
 
-export const VcsFreshnessSource = Schema.Literals(["live-local", "cached-local"]);
+export const VcsFreshnessSource = Schema.Literals([
+  "live-local",
+  "cached-local",
+  "cached-remote",
+  "explicit-remote",
+]);
 export type VcsFreshnessSource = typeof VcsFreshnessSource.Type;
 
 export const VcsFreshness = Schema.Struct({
@@ -19,6 +24,7 @@ export const VcsDriverCapabilities = Schema.Struct({
   supportsWorktrees: Schema.Boolean,
   supportsBookmarks: Schema.Boolean,
   supportsAtomicSnapshot: Schema.Boolean,
+  supportsPushDefaultRemote: Schema.Boolean,
   ignoreClassifier: Schema.Literals(["native", "git-compatible-fallback"]),
 });
 export type VcsDriverCapabilities = typeof VcsDriverCapabilities.Type;
@@ -71,6 +77,7 @@ export const VcsProcessExitFailureKind = Schema.Literals([
   "authentication",
   "not-found",
   "rate-limited",
+  // Coder: GitLab's write probe reports a write the workspace policy blocks.
   "policy-blocked",
   "command-failed",
 ]);
@@ -130,6 +137,8 @@ export class VcsProcessExitError extends Schema.TaggedError<VcsProcessExitError>
     failureKind: VcsProcessExitFailureKind,
     retryable?: boolean,
   ) {
+    // Coder: only glab reaches VcsProcess, so upstream's gh/az "Pull request not found." branch
+    // is not carried, and a policy-blocked write gets its own detail.
     const detail =
       failureKind === "authentication"
         ? "Authentication failed."

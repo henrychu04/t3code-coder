@@ -759,6 +759,10 @@ listed here is drift to remove rather than fork behavior to keep.
     secret answers, storage cleanup runs and reports, and the MCP Apps methods. Upstream's `EnvironmentAuthorizationError` stays in
     error unions but is never emitted.
   - `ServerConfig` omits auth, editors, remote open targets, and observability.
+  - `VcsProcessExitFailureKind` adds `policy-blocked` for the GitLab write probe, and
+    `VcsProcessExitError`'s not-found detail drops upstream's `gh`/`az` "Pull request" text.
+    The rest of `vcs.ts` and `git.ts` keep upstream's shapes, plus the helper-only ref-status
+    and thread-branch rename schemas.
   - `ModelCapabilities` carries the provider-reported `supportedRuntimeModes`; custom models use
     `CustomModelCapabilities`, which cannot declare them.
   - Tool items keep legacy screenshot `artifacts`; rate-limit events carry the raw payload.

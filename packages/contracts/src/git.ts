@@ -1,3 +1,4 @@
+import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
   NonNegativeInt,
@@ -316,7 +317,7 @@ export const GitPreparePullRequestThreadResult = Schema.Struct({
    * holding local commits or uncommitted changes keeps its own state, so the code being handed
    * over is older than the pull request.
    */
-  isOnPullRequestHead: Schema.Boolean,
+  isOnPullRequestHead: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
 
@@ -361,7 +362,7 @@ export const VcsPullResult = Schema.Struct({
 });
 export type VcsPullResult = typeof VcsPullResult.Type;
 
-// Coder thread/worktree operations retained alongside upstream Git actions.
+// Coder: thread/worktree operations retained alongside upstream Git actions.
 export const VcsRefStatusResult = Schema.Struct({
   isRepo: Schema.Boolean,
   refName: Schema.NullOr(TrimmedNonEmptyStringSchema),
